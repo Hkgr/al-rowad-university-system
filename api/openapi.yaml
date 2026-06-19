@@ -1,0 +1,375 @@
+﻿openapi: 3.0.3
+
+info:
+  title: Al Rowad University API
+  version: 1.0.0
+  description: Official API documentation for Al Rowad University System.
+
+servers:
+  - url: http://127.0.0.1:8000/api
+    description: Local Laravel API
+
+tags:
+  - name: Auth
+  - name: Students
+  - name: Course Registration
+  - name: Lookups
+
+paths:
+  /login:
+    post:
+      tags:
+        - Auth
+      summary: Login user and return Sanctum token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: admin@example.com
+                password:
+                  type: string
+                  example: password
+      responses:
+        "200":
+          description: Login successful
+        "422":
+          description: Invalid credentials or validation error
+
+  /user:
+    get:
+      tags:
+        - Auth
+      summary: Get authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Authenticated user data
+        "401":
+          description: Unauthenticated
+
+  /logout:
+    post:
+      tags:
+        - Auth
+      summary: Logout current user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Logged out successfully
+        "401":
+          description: Unauthenticated
+
+  /v1/students:
+    get:
+      tags:
+        - Students
+      summary: List students
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Students list
+
+    post:
+      tags:
+        - Students
+      summary: Create new student
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - student_number
+                - first_name
+                - last_name
+                - academic_program_id
+                - current_academic_level_id
+                - enrollment_date
+                - student_status_id
+              properties:
+                student_number:
+                  type: string
+                  example: "2026-0001"
+                admission_application_id:
+                  type: integer
+                  nullable: true
+                  example: null
+                first_name:
+                  type: string
+                  example: Ahmad
+                last_name:
+                  type: string
+                  example: Ali
+                father_name:
+                  type: string
+                  nullable: true
+                  example: Mohammad
+                mother_name:
+                  type: string
+                  nullable: true
+                  example: Fatima
+                date_of_birth:
+                  type: string
+                  format: date
+                  nullable: true
+                  example: "2005-05-10"
+                gender:
+                  type: string
+                  nullable: true
+                  example: male
+                phone_number:
+                  type: string
+                  nullable: true
+                  example: "0999999999"
+                email:
+                  type: string
+                  format: email
+                  nullable: true
+                  example: student@example.com
+                address:
+                  type: string
+                  nullable: true
+                  example: Aleppo
+                nationality:
+                  type: string
+                  nullable: true
+                  example: Syrian
+                academic_program_id:
+                  type: integer
+                  example: 1
+                current_academic_level_id:
+                  type: integer
+                  example: 1
+                enrollment_date:
+                  type: string
+                  format: date
+                  example: "2026-09-01"
+                student_status_id:
+                  type: integer
+                  example: 1
+      responses:
+        "201":
+          description: Student created successfully
+        "422":
+          description: Validation error
+        "401":
+          description: Unauthenticated
+
+  /v1/students/search:
+    get:
+      tags:
+        - Students
+      summary: Search students
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+          example: Ahmad
+      responses:
+        "200":
+          description: Search results
+
+  /v1/students/{student}/profile:
+    get:
+      tags:
+        - Students
+      summary: Get student profile
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: student
+          in: path
+          required: true
+          schema:
+            type: integer
+          example: 1
+      responses:
+        "200":
+          description: Student profile
+
+  /v1/students/{student}/academic-info:
+    get:
+      tags:
+        - Students
+      summary: Get student academic info
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: student
+          in: path
+          required: true
+          schema:
+            type: integer
+          example: 1
+      responses:
+        "200":
+          description: Student academic info
+
+  /v1/students/{student}/registration-summary:
+    get:
+      tags:
+        - Students
+      summary: Get student registration summary
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: student
+          in: path
+          required: true
+          schema:
+            type: integer
+          example: 1
+      responses:
+        "200":
+          description: Student registration summary
+
+  /v1/registrations/register-student:
+    post:
+      tags:
+        - Course Registration
+      summary: Register existing student in a course offering
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - student_id
+                - course_offering_id
+              properties:
+                student_id:
+                  type: integer
+                  example: 1
+                course_offering_id:
+                  type: integer
+                  example: 5
+                registered_by_user_id:
+                  type: integer
+                  nullable: true
+                  example: 1
+                advisor_user_id:
+                  type: integer
+                  nullable: true
+                  example: null
+                registration_date:
+                  type: string
+                  format: date
+                  nullable: true
+                  example: "2026-09-01"
+      responses:
+        "201":
+          description: Student registered successfully
+        "422":
+          description: Validation error
+        "401":
+          description: Unauthenticated
+
+  /v1/registrations/{id}/drop:
+    post:
+      tags:
+        - Course Registration
+      summary: Drop student course registration
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          example: 1
+      responses:
+        "200":
+          description: Course registration dropped
+
+  /v1/registrations/{id}/withdraw:
+    post:
+      tags:
+        - Course Registration
+      summary: Withdraw student from course registration
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          example: 1
+      responses:
+        "200":
+          description: Student withdrawn from course registration
+
+  /v1/academic-programs:
+    get:
+      tags:
+        - Lookups
+      summary: List academic programs
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Academic programs list
+
+  /v1/academic-levels:
+    get:
+      tags:
+        - Lookups
+      summary: List academic levels
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Academic levels list
+
+  /v1/student-statuses:
+    get:
+      tags:
+        - Lookups
+      summary: List student statuses
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Student statuses list
+
+  /v1/course-offerings/open:
+    get:
+      tags:
+        - Lookups
+      summary: List open course offerings
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Open course offerings list
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Sanctum
