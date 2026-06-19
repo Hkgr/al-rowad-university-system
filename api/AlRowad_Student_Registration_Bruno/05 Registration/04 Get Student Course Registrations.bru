@@ -1,0 +1,16 @@
+meta {
+  name: 04 Get Student Course Registrations
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{api_base_url}}/student-course-registrations
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

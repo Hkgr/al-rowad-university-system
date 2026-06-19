@@ -1,0 +1,16 @@
+meta {
+  name: 05 Course Offering Capacity
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{api_base_url}}/course-offerings/{{course_offering_id}}/capacity
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

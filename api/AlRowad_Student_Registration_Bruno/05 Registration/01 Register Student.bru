@@ -1,0 +1,27 @@
+meta {
+  name: 01 Register Student
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{api_base_url}}/registrations/register-student
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+    "student_id": 1,
+    "course_offering_id": 1,
+    "registered_by_user_id": 1,
+    "advisor_user_id": 1,
+    "registration_date": "2026-06-17"
+  }
+}

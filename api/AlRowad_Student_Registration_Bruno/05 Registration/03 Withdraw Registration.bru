@@ -1,0 +1,16 @@
+meta {
+  name: 03 Withdraw Registration
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{api_base_url}}/registrations/{{registration_id}}/withdraw
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

@@ -1,0 +1,16 @@
+meta {
+  name: 07 Registration Summary
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{api_base_url}}/students/{{student_id}}/registration-summary?academic_year_id={{academic_year_id}}&semester_id={{semester_id}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

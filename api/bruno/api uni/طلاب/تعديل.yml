@@ -1,0 +1,15 @@
+info:
+  name: تعديل
+  type: http
+  seq: 1
+
+http:
+  method: PUT
+  url: ""
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

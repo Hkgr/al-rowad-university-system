@@ -1,0 +1,16 @@
+meta {
+  name: 01 Current Academic Year
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{api_base_url}}/academic-years/current
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

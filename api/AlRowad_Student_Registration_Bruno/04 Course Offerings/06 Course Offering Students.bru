@@ -1,0 +1,16 @@
+meta {
+  name: 06 Course Offering Students
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{api_base_url}}/course-offerings/{{course_offering_id}}/students
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

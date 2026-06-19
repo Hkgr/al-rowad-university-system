@@ -1,0 +1,16 @@
+meta {
+  name: 02 Course Offerings By Semester
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{api_base_url}}/course-offerings/by-semester?academic_year_id={{academic_year_id}}&semester_id={{semester_id}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

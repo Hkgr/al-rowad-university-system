@@ -1,0 +1,16 @@
+meta {
+  name: 04 Course Offering Details
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{api_base_url}}/course-offerings/{{course_offering_id}}/details
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

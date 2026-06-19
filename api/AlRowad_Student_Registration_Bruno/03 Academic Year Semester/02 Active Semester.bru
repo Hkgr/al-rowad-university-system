@@ -1,0 +1,16 @@
+meta {
+  name: 02 Active Semester
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{api_base_url}}/semesters/active
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

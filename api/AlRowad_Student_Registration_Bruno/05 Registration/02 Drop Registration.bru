@@ -1,0 +1,16 @@
+meta {
+  name: 02 Drop Registration
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{api_base_url}}/registrations/{{registration_id}}/drop
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

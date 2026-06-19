@@ -1,0 +1,16 @@
+meta {
+  name: 02 Search Students
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{api_base_url}}/students/search?q=Mutaz
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

@@ -1,0 +1,16 @@
+meta {
+  name: 01 Student Transcript
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{api_base_url}}/students/{{student_id}}/transcript
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

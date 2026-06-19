@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "Al Rowad University - Student Registration APIs",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

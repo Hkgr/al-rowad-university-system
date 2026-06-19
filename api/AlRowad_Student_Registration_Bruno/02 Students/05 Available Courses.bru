@@ -1,0 +1,16 @@
+meta {
+  name: 05 Available Courses
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{api_base_url}}/students/{{student_id}}/available-courses?academic_year_id={{academic_year_id}}&semester_id={{semester_id}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}
