@@ -1,0 +1,16 @@
+meta {
+  name: GET Course Offerings By Semester
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/v1/course-offerings/by-semester
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

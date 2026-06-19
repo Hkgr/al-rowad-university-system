@@ -1,0 +1,16 @@
+meta {
+  name: GET Students By Student Gpa
+  type: http
+  seq: 14
+}
+
+get {
+  url: {{base_url}}/v1/students/{{student_id}}/gpa
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

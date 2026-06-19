@@ -1,0 +1,16 @@
+meta {
+  name: GET Appeal Statuses By Appeal Status
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/v1/appeal-statuses/{{appeal_status}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

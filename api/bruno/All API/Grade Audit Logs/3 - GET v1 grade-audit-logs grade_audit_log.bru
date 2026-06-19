@@ -1,0 +1,16 @@
+meta {
+  name: GET Grade Audit Logs By Grade Audit Log
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/v1/grade-audit-logs/{{grade_audit_log}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

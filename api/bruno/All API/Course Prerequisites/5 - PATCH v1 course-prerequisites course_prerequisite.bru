@@ -1,0 +1,23 @@
+meta {
+  name: PATCH Course Prerequisites By Course Prerequisite
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{base_url}}/v1/course-prerequisites/{{course_prerequisite}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

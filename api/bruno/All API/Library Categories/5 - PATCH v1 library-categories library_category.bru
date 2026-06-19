@@ -1,0 +1,23 @@
+meta {
+  name: PATCH Library Categories By Library Category
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{base_url}}/v1/library-categories/{{library_category}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

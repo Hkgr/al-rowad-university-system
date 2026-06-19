@@ -1,0 +1,16 @@
+meta {
+  name: GET Approval Statuses By Approval Status
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/v1/approval-statuses/{{approval_status}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

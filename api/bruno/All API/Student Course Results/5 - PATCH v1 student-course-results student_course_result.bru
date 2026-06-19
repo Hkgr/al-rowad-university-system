@@ -1,0 +1,23 @@
+meta {
+  name: PATCH Student Course Results By Student Course Result
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{base_url}}/v1/student-course-results/{{student_course_result}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

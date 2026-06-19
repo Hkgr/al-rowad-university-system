@@ -1,0 +1,16 @@
+meta {
+  name: DELETE Applicants By Applicant
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{base_url}}/v1/applicants/{{applicant}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

@@ -1,0 +1,16 @@
+meta {
+  name: GET Departments By Department Programs
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{base_url}}/v1/departments/{{department}}/programs
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

@@ -1,0 +1,16 @@
+meta {
+  name: GET Programs By Id Mandatory Courses
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/v1/programs/{{id}}/mandatory-courses
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

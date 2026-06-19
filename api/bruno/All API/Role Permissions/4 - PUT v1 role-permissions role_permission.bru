@@ -1,0 +1,23 @@
+meta {
+  name: PUT Role Permissions By Role Permission
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{base_url}}/v1/role-permissions/{{role_permission}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

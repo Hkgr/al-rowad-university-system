@@ -1,0 +1,16 @@
+meta {
+  name: GET Semesters By Semester
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/v1/semesters/{{semester}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

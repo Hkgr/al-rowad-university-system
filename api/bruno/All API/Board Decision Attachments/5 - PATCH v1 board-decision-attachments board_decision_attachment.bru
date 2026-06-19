@@ -1,0 +1,23 @@
+meta {
+  name: PATCH Board Decision Attachments By Board Decision Attachment
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{base_url}}/v1/board-decision-attachments/{{board_decision_attachment}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

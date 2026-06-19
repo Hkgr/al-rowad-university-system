@@ -1,0 +1,16 @@
+meta {
+  name: GET Attendance Sessions By Id Students
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/v1/attendance-sessions/{{id}}/students
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

@@ -1,0 +1,16 @@
+meta {
+  name: List Students
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/v1/students
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

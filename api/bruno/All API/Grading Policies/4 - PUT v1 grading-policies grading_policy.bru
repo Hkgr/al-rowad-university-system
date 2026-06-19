@@ -1,0 +1,23 @@
+meta {
+  name: PUT Grading Policies By Grading Policy
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{base_url}}/v1/grading-policies/{{grading_policy}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

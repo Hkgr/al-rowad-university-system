@@ -1,0 +1,16 @@
+meta {
+  name: GET Students By Student Registration Summary
+  type: http
+  seq: 17
+}
+
+get {
+  url: {{base_url}}/v1/students/{{student_id}}/registration-summary
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

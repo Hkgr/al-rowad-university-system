@@ -1,0 +1,23 @@
+meta {
+  name: PUT Academic Years By Academic Year
+  type: http
+  seq: 5
+}
+
+put {
+  url: {{base_url}}/v1/academic-years/{{academic_year}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

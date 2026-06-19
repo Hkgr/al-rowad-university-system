@@ -1,0 +1,16 @@
+meta {
+  name: GET Applicants
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/v1/applicants
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

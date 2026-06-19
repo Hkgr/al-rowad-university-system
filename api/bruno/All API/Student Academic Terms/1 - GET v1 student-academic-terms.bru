@@ -1,0 +1,16 @@
+meta {
+  name: GET Student Academic Terms
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/v1/student-academic-terms
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

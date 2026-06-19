@@ -1,0 +1,16 @@
+meta {
+  name: GET Students By Student Profile
+  type: http
+  seq: 15
+}
+
+get {
+  url: {{base_url}}/v1/students/{{student_id}}/profile
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

@@ -1,0 +1,16 @@
+meta {
+  name: DELETE Board Members By Board Member
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{base_url}}/v1/board-members/{{board_member}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

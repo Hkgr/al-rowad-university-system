@@ -1,0 +1,16 @@
+meta {
+  name: DELETE Board Decision Attachments By Board Decision Attachment
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{base_url}}/v1/board-decision-attachments/{{board_decision_attachment}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}
