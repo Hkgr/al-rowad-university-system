@@ -77,6 +77,15 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\UserActivityLogController;
 use App\Http\Controllers\Api\UserRoleController;
 
+/*
+|--------------------------------------------------------------------------
+| Public Authentication Routes
+|--------------------------------------------------------------------------
+| هذه الراوتات لا تحتاج Token.
+| تستخدم من الفرونت لتسجيل الدخول والحصول على Bearer Token.
+|--------------------------------------------------------------------------
+*/
+
 Route::post('login', function (Request $request) {
     $validated = $request->validate([
         'email' => ['required', 'email'],
@@ -106,6 +115,15 @@ Route::post('login', function (Request $request) {
     ]);
 });
 
+/*
+|--------------------------------------------------------------------------
+| Authenticated User Routes
+|--------------------------------------------------------------------------
+| هذه الراوتات تحتاج Token عبر Laravel Sanctum.
+| تستخدم لمعرفة المستخدم الحالي وتسجيل الخروج.
+|--------------------------------------------------------------------------
+*/
+
 Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('user', function (Request $request) {
         return response()->json([
@@ -126,9 +144,35 @@ Route::middleware('auth:sanctum')->group(function (): void {
     });
 });
 
+/*
+|--------------------------------------------------------------------------
+| API Version 1 Routes
+|--------------------------------------------------------------------------
+| كل الراوتات التالية محمية بـ auth:sanctum.
+| المسار الكامل يبدأ بـ /api/v1/...
+|--------------------------------------------------------------------------
+*/
+
 Route::middleware('auth:sanctum')->prefix('v1')->group(function (): void {
+
+    /*
+    |--------------------------------------------------------------------------
+    | Academic Calendar / Current Context
+    |--------------------------------------------------------------------------
+    | السنة الحالية والفصل الفعال.
+    |--------------------------------------------------------------------------
+    */
+
     Route::get('academic-years/current', [AcademicYearController::class, 'current']);
     Route::get('semesters/active', [SemesterController::class, 'active']);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Student Profile / Student Dashboard
+    |--------------------------------------------------------------------------
+    | راوتات مهمة للوحة الطالب أو البحث عن الطلاب.
+    |--------------------------------------------------------------------------
+    */
 
     Route::get('students/search', [StudentController::class, 'search']);
     Route::get('students/{student}/available-courses', [StudentController::class, 'availableCourses']);
@@ -144,6 +188,14 @@ Route::middleware('auth:sanctum')->prefix('v1')->group(function (): void {
     Route::get('students/{student}/attendance', [StudentController::class, 'attendance']);
     Route::get('students/{student}/absence-percentage', [StudentController::class, 'absencePercentage']);
 
+    /*
+    |--------------------------------------------------------------------------
+    | Academic Structure Relations
+    |--------------------------------------------------------------------------
+    | علاقات الكليات، الأقسام، البرامج، والخطط الدراسية.
+    |--------------------------------------------------------------------------
+    */
+
     Route::get('colleges/{college}/departments', [CollegeController::class, 'departments']);
     Route::get('departments/{department}/programs', [DepartmentController::class, 'programs']);
     Route::get('programs/{academic_program}/students', [AcademicProgramController::class, 'students']);
@@ -152,10 +204,26 @@ Route::middleware('auth:sanctum')->prefix('v1')->group(function (): void {
     Route::get('programs/{id}/elective-courses', [AcademicProgramController::class, 'electiveCourses']);
     Route::get('programs/{id}/study-plan', [AcademicProgramController::class, 'studyPlan']);
 
+    /*
+    |--------------------------------------------------------------------------
+    | Course Relations
+    |--------------------------------------------------------------------------
+    | علاقات المقررات مع الأقسام، البرامج، المتطلبات، والمدرسين.
+    |--------------------------------------------------------------------------
+    */
+
     Route::get('courses/{id}/departments', [CourseController::class, 'departments']);
     Route::get('courses/{id}/programs', [CourseController::class, 'programs']);
     Route::get('courses/{id}/prerequisites', [CourseController::class, 'prerequisites']);
     Route::get('courses/{id}/instructors', [CourseController::class, 'instructors']);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Course Offerings / Sections / Attendance
+    |--------------------------------------------------------------------------
+    | الشعب المفتوحة، السعة، الطلاب، الحضور، والحرمان.
+    |--------------------------------------------------------------------------
+    */
 
     Route::get('course-offerings/open', [CourseOfferingController::class, 'open']);
     Route::get('course-offerings/{id}/details', [CourseOfferingController::class, 'details']);
@@ -170,71 +238,83 @@ Route::middleware('auth:sanctum')->prefix('v1')->group(function (): void {
     Route::post('course-offerings/{id}/apply-deprivation', [CourseOfferingController::class, 'applyDeprivation']);
     Route::get('course-offerings/by-program/{program_id}', [CourseOfferingController::class, 'byProgram']);
 
+    /*
+    |--------------------------------------------------------------------------
+    | Attendance Operations
+    |--------------------------------------------------------------------------
+    | تسجيل حضور الطلاب ضمن جلسات الحضور.
+    |--------------------------------------------------------------------------
+    */
+
     Route::get('attendance-sessions/{id}/students', [AttendanceController::class, 'sessionStudents']);
     Route::post('attendance-sessions/{id}/record', [AttendanceController::class, 'record']);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Grades / Results Operations
+    |--------------------------------------------------------------------------
+    | إدخال العلامات، تعديلها، وحساب النتيجة.
+    |--------------------------------------------------------------------------
+    */
 
     Route::get('registrations/{id}/grades', [GradeController::class, 'show']);
     Route::post('registrations/{id}/grades', [GradeController::class, 'store']);
     Route::put('registrations/{id}/grades', [GradeController::class, 'update']);
     Route::post('registrations/{id}/calculate-result', [GradeController::class, 'calculateResult']);
 
+    /*
+    |--------------------------------------------------------------------------
+    | Course Registration Operations
+    |--------------------------------------------------------------------------
+    | تسجيل، إسقاط، وانسحاب الطالب من المقررات.
+    |--------------------------------------------------------------------------
+    */
+
     Route::post('registrations/register-student', [RegistrationController::class, 'registerStudent']);
     Route::post('registrations/{id}/drop', [RegistrationController::class, 'drop']);
     Route::post('registrations/{id}/withdraw', [RegistrationController::class, 'withdraw']);
 
+    /*
+    |--------------------------------------------------------------------------
+    | Academic Setup Resources
+    |--------------------------------------------------------------------------
+    | موارد الإعداد الأكاديمي الأساسية.
+    |--------------------------------------------------------------------------
+    */
+
     Route::apiResource('academic-levels', AcademicLevelController::class);
     Route::apiResource('academic-programs', AcademicProgramController::class);
     Route::apiResource('academic-years', AcademicYearController::class);
-    Route::apiResource('account-statuses', AccountStatusController::class);
-    Route::apiResource('admission-applications', AdmissionApplicationController::class);
-    Route::apiResource('appeal-statuses', AppealStatusController::class);
-    Route::apiResource('applicants', ApplicantController::class);
-    Route::apiResource('approval-statuses', ApprovalStatusController::class);
-    Route::apiResource('attendance-sessions', AttendanceSessionController::class);
-    Route::apiResource('attendance-statuses', AttendanceStatusController::class);
-    Route::apiResource('boards', BoardController::class);
-    Route::apiResource('board-decisions', BoardDecisionController::class);
-    Route::apiResource('board-decision-attachments', BoardDecisionAttachmentController::class);
-    Route::apiResource('board-meetings', BoardMeetingController::class);
-    Route::apiResource('board-members', BoardMemberController::class);
+    Route::apiResource('semesters', SemesterController::class);
     Route::apiResource('colleges', CollegeController::class);
+    Route::apiResource('departments', DepartmentController::class);
     Route::apiResource('courses', CourseController::class);
     Route::apiResource('course-departments', CourseDepartmentController::class);
     Route::apiResource('course-instructors', CourseInstructorController::class);
     Route::apiResource('course-offerings', CourseOfferingController::class);
     Route::apiResource('course-prerequisites', CoursePrerequisiteController::class);
-    Route::apiResource('departments', DepartmentController::class);
-    Route::apiResource('document-types', DocumentTypeController::class);
-    Route::apiResource('employees', EmployeeController::class);
-    Route::apiResource('employee-positions', EmployeePositionController::class);
-    Route::apiResource('employee-statuses', EmployeeStatusController::class);
-    Route::apiResource('employee-types', EmployeeTypeController::class);
-    Route::apiResource('employee-unit-assignments', EmployeeUnitAssignmentController::class);
-    Route::apiResource('faculty-members', FacultyMemberController::class);
-    Route::apiResource('grade-appeals', GradeAppealController::class);
-    Route::apiResource('grade-approvals', GradeApprovalController::class);
-    Route::apiResource('grade-audit-logs', GradeAuditLogController::class);
-    Route::apiResource('grade-components', GradeComponentController::class);
-    Route::apiResource('grading-policies', GradingPolicyController::class);
-    Route::apiResource('library-authors', LibraryAuthorController::class);
-    Route::apiResource('library-books', LibraryBookController::class);
-    Route::apiResource('library-book-authors', LibraryBookAuthorController::class);
-    Route::apiResource('library-book-copies', LibraryBookCopyController::class);
-    Route::apiResource('library-borrowings', LibraryBorrowingController::class);
-    Route::apiResource('library-categories', LibraryCategoryController::class);
-    Route::apiResource('login-audit-logs', LoginAuditLogController::class);
-    Route::apiResource('meeting-attendees', MeetingAttendeeController::class);
-    Route::apiResource('organizational-units', OrganizationalUnitController::class);
-    Route::apiResource('organizational-unit-types', OrganizationalUnitTypeController::class);
-    Route::apiResource('password-reset-tokens', PasswordResetTokenController::class);
-    Route::apiResource('permissions', PermissionController::class);
-    Route::apiResource('positions', PositionController::class);
     Route::apiResource('program-courses', ProgramCourseController::class);
-    Route::apiResource('registration-statuses', RegistrationStatusController::class);
-    Route::apiResource('result-statuses', ResultStatusController::class);
-    Route::apiResource('roles', RoleController::class);
-    Route::apiResource('role-permissions', RolePermissionController::class);
-    Route::apiResource('semesters', SemesterController::class);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Admission / Applicants Resources
+    |--------------------------------------------------------------------------
+    | طلبات القبول والمتقدمين وحالاتهم.
+    |--------------------------------------------------------------------------
+    */
+
+    Route::apiResource('admission-applications', AdmissionApplicationController::class);
+    Route::apiResource('applicants', ApplicantController::class);
+    Route::apiResource('document-types', DocumentTypeController::class);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Student Resources
+    |--------------------------------------------------------------------------
+    | كل الموارد المباشرة المتعلقة بالطالب.
+    |--------------------------------------------------------------------------
+    */
+
     Route::apiResource('students', StudentController::class);
     Route::apiResource('student-academic-terms', StudentAcademicTermController::class);
     Route::apiResource('student-attendance', StudentAttendanceController::class);
@@ -244,11 +324,119 @@ Route::middleware('auth:sanctum')->prefix('v1')->group(function (): void {
     Route::apiResource('student-documents', StudentDocumentController::class);
     Route::apiResource('student-grade-components', StudentGradeComponentController::class);
     Route::apiResource('student-statuses', StudentStatusController::class);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Registration / Status Lookup Resources
+    |--------------------------------------------------------------------------
+    | حالات التسجيل، النتائج، القبول، الاعتراض، الموافقة، والحسابات.
+    |--------------------------------------------------------------------------
+    */
+
+    Route::apiResource('registration-statuses', RegistrationStatusController::class);
+    Route::apiResource('result-statuses', ResultStatusController::class);
+    Route::apiResource('account-statuses', AccountStatusController::class);
+    Route::apiResource('appeal-statuses', AppealStatusController::class);
+    Route::apiResource('approval-statuses', ApprovalStatusController::class);
+    Route::apiResource('attendance-statuses', AttendanceStatusController::class);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Grades / Appeals / Policies Resources
+    |--------------------------------------------------------------------------
+    | العلامات، مكونات العلامة، الاعتراضات، الاعتمادات، وسياسات العلامات.
+    |--------------------------------------------------------------------------
+    */
+
+    Route::apiResource('grade-appeals', GradeAppealController::class);
+    Route::apiResource('grade-approvals', GradeApprovalController::class);
+    Route::apiResource('grade-audit-logs', GradeAuditLogController::class);
+    Route::apiResource('grade-components', GradeComponentController::class);
+    Route::apiResource('grading-policies', GradingPolicyController::class);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Supplementary Exams Resources
+    |--------------------------------------------------------------------------
+    | الدورات التكميلية ونتائجها.
+    |--------------------------------------------------------------------------
+    */
+
     Route::apiResource('supplementary-exam-periods', SupplementaryExamPeriodController::class);
     Route::apiResource('supplementary-exam-results', SupplementaryExamResultController::class);
-    Route::apiResource('system-modules', SystemModuleController::class);
-    Route::apiResource('users', UserController::class);
-    Route::apiResource('user-activity-logs', UserActivityLogController::class);
-    Route::apiResource('user-roles', UserRoleController::class);
-});
 
+    /*
+    |--------------------------------------------------------------------------
+    | Employees / Faculty / Organizational Structure Resources
+    |--------------------------------------------------------------------------
+    | الموظفون، أعضاء الهيئة، المناصب، والوحدات التنظيمية.
+    |--------------------------------------------------------------------------
+    */
+
+    Route::apiResource('employees', EmployeeController::class);
+    Route::apiResource('employee-positions', EmployeePositionController::class);
+    Route::apiResource('employee-statuses', EmployeeStatusController::class);
+    Route::apiResource('employee-types', EmployeeTypeController::class);
+    Route::apiResource('employee-unit-assignments', EmployeeUnitAssignmentController::class);
+    Route::apiResource('faculty-members', FacultyMemberController::class);
+    Route::apiResource('organizational-units', OrganizationalUnitController::class);
+    Route::apiResource('organizational-unit-types', OrganizationalUnitTypeController::class);
+    Route::apiResource('positions', PositionController::class);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Board / Meetings Resources
+    |--------------------------------------------------------------------------
+    | المجالس، الاجتماعات، القرارات، الأعضاء، والمرفقات.
+    |--------------------------------------------------------------------------
+    */
+
+    Route::apiResource('boards', BoardController::class);
+    Route::apiResource('board-decisions', BoardDecisionController::class);
+    Route::apiResource('board-decision-attachments', BoardDecisionAttachmentController::class);
+    Route::apiResource('board-meetings', BoardMeetingController::class);
+    Route::apiResource('board-members', BoardMemberController::class);
+    Route::apiResource('meeting-attendees', MeetingAttendeeController::class);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Library Resources
+    |--------------------------------------------------------------------------
+    | المكتبة، الكتب، النسخ، المؤلفون، التصنيفات، والاستعارات.
+    |--------------------------------------------------------------------------
+    */
+
+    Route::apiResource('library-authors', LibraryAuthorController::class);
+    Route::apiResource('library-books', LibraryBookController::class);
+    Route::apiResource('library-book-authors', LibraryBookAuthorController::class);
+    Route::apiResource('library-book-copies', LibraryBookCopyController::class);
+    Route::apiResource('library-borrowings', LibraryBorrowingController::class);
+    Route::apiResource('library-categories', LibraryCategoryController::class);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Users / Roles / Permissions Resources
+    |--------------------------------------------------------------------------
+    | المستخدمون، الأدوار، الصلاحيات، وربطها.
+    |--------------------------------------------------------------------------
+    */
+
+    Route::apiResource('users', UserController::class);
+    Route::apiResource('roles', RoleController::class);
+    Route::apiResource('permissions', PermissionController::class);
+    Route::apiResource('user-roles', UserRoleController::class);
+    Route::apiResource('role-permissions', RolePermissionController::class);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Security / Audit / System Resources
+    |--------------------------------------------------------------------------
+    | السجلات، الموديولات، وتوكنات إعادة التعيين.
+    |--------------------------------------------------------------------------
+    */
+
+    Route::apiResource('login-audit-logs', LoginAuditLogController::class);
+    Route::apiResource('user-activity-logs', UserActivityLogController::class);
+    Route::apiResource('system-modules', SystemModuleController::class);
+    Route::apiResource('password-reset-tokens', PasswordResetTokenController::class);
+});
