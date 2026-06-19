@@ -1,0 +1,16 @@
+meta {
+  name: GET Students By Student Absence Percentage
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{base_url}}/v1/students/{{student_id}}/absence-percentage
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

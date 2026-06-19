@@ -1,0 +1,16 @@
+meta {
+  name: GET Result Statuses By Result Status
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/v1/result-statuses/{{result_status}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "Al Rowad University API",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

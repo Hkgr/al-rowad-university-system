@@ -1,0 +1,16 @@
+meta {
+  name: DELETE Employee Types By Employee Type
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{base_url}}/v1/employee-types/{{employee_type}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

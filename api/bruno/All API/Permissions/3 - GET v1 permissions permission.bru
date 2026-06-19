@@ -1,0 +1,16 @@
+meta {
+  name: GET Permissions By Permission
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/v1/permissions/{{permission}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

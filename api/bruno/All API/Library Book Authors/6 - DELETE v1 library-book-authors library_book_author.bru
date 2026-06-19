@@ -1,0 +1,16 @@
+meta {
+  name: DELETE Library Book Authors By Library Book Author
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{base_url}}/v1/library-book-authors/{{library_book_author}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

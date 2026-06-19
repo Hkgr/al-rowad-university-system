@@ -1,0 +1,23 @@
+meta {
+  name: POST Registrations By Id Drop
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/v1/registrations/{{id}}/drop
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

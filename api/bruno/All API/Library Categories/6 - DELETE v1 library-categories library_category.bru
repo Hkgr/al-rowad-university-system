@@ -1,0 +1,16 @@
+meta {
+  name: DELETE Library Categories By Library Category
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{base_url}}/v1/library-categories/{{library_category}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

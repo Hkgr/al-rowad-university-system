@@ -1,0 +1,16 @@
+meta {
+  name: DELETE Academic Years By Academic Year
+  type: http
+  seq: 7
+}
+
+delete {
+  url: {{base_url}}/v1/academic-years/{{academic_year}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

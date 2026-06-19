@@ -1,0 +1,23 @@
+meta {
+  name: PUT Course Departments By Course Department
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{base_url}}/v1/course-departments/{{course_department}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

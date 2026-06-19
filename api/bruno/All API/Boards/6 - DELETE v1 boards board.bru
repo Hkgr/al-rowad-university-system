@@ -1,0 +1,16 @@
+meta {
+  name: DELETE Boards By Board
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{base_url}}/v1/boards/{{board}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

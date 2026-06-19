@@ -1,0 +1,23 @@
+meta {
+  name: POST Course Offerings By Id Attendance Sessions
+  type: http
+  seq: 12
+}
+
+post {
+  url: {{base_url}}/v1/course-offerings/{{id}}/attendance-sessions
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

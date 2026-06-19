@@ -1,0 +1,16 @@
+meta {
+  name: GET Academic Levels By Academic Level
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/v1/academic-levels/{{academic_level}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

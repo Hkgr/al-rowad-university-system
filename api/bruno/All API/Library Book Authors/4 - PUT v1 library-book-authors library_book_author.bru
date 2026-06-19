@@ -1,0 +1,23 @@
+meta {
+  name: PUT Library Book Authors By Library Book Author
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{base_url}}/v1/library-book-authors/{{library_book_author}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

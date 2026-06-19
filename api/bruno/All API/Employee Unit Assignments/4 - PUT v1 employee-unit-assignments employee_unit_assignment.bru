@@ -1,0 +1,23 @@
+meta {
+  name: PUT Employee Unit Assignments By Employee Unit Assignment
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{base_url}}/v1/employee-unit-assignments/{{employee_unit_assignment}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

@@ -1,0 +1,16 @@
+meta {
+  name: GET Organizational Units By Organizational Unit
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/v1/organizational-units/{{organizational_unit}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

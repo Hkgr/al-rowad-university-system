@@ -1,0 +1,16 @@
+meta {
+  name: DELETE System Modules By System Module
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{base_url}}/v1/system-modules/{{system_module}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

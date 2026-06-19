@@ -1,0 +1,38 @@
+meta {
+  name: POST Students
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/v1/students
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+    "student_number": "2026-0001",
+    "admission_application_id": null,
+    "first_name": "Ahmad",
+    "last_name": "Ali",
+    "father_name": "Mohammad",
+    "mother_name": "Fatima",
+    "date_of_birth": "2005-05-10",
+    "gender": "male",
+    "phone_number": "0999999999",
+    "email": "student@example.com",
+    "address": "Aleppo",
+    "nationality": "Syrian",
+    "academic_program_id": 1,
+    "current_academic_level_id": 1,
+    "enrollment_date": "2026-09-01",
+    "student_status_id": 1
+  }
+}

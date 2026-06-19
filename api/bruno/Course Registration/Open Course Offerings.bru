@@ -1,0 +1,16 @@
+meta {
+  name: Open Course Offerings
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/v1/course-offerings/open
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

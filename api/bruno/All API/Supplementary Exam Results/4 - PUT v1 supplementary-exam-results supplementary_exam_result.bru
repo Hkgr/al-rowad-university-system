@@ -1,0 +1,23 @@
+meta {
+  name: PUT Supplementary Exam Results By Supplementary Exam Result
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{base_url}}/v1/supplementary-exam-results/{{supplementary_exam_result}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

@@ -1,0 +1,16 @@
+meta {
+  name: DELETE Supplementary Exam Results By Supplementary Exam Result
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{base_url}}/v1/supplementary-exam-results/{{supplementary_exam_result}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

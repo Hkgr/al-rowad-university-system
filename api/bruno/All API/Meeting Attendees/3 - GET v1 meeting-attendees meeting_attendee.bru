@@ -1,0 +1,16 @@
+meta {
+  name: GET Meeting Attendees By Meeting Attendee
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/v1/meeting-attendees/{{meeting_attendee}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

@@ -1,0 +1,16 @@
+meta {
+  name: GET User Activity Logs By User Activity Log
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/v1/user-activity-logs/{{user_activity_log}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

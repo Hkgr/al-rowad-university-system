@@ -1,0 +1,16 @@
+meta {
+  name: GET Course Offerings By Id Deprived Students
+  type: http
+  seq: 14
+}
+
+get {
+  url: {{base_url}}/v1/course-offerings/{{id}}/deprived-students
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

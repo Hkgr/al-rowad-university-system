@@ -1,0 +1,23 @@
+meta {
+  name: PUT Library Book Copies By Library Book Copy
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{base_url}}/v1/library-book-copies/{{library_book_copy}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

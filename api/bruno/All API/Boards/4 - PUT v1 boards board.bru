@@ -1,0 +1,23 @@
+meta {
+  name: PUT Boards By Board
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{base_url}}/v1/boards/{{board}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}
