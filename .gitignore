@@ -1,7 +1,15 @@
+
+# Environment files
+.env
+.env.*
+!.env.example
+
 # Backend Laravel
 /backend/vendor/
 /backend/node_modules/
 /backend/.env
+/backend/.env.*
+!/backend/.env.example
 /backend/storage/logs/*.log
 
 # Frontend React
@@ -9,6 +17,11 @@
 /frontend/dist/
 /frontend/.env
 /frontend/.env.local
+
+# Archives / secrets
+*.rar
+*.zip
+*.7z
 
 # System / IDE
 .DS_Store
