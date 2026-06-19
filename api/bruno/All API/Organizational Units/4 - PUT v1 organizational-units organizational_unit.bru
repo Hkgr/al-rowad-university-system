@@ -1,0 +1,23 @@
+meta {
+  name: PUT Organizational Units By Organizational Unit
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{base_url}}/v1/organizational-units/{{organizational_unit}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

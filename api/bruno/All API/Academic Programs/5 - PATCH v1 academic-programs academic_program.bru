@@ -1,0 +1,23 @@
+meta {
+  name: PATCH Academic Programs By Academic Program
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{base_url}}/v1/academic-programs/{{academic_program}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

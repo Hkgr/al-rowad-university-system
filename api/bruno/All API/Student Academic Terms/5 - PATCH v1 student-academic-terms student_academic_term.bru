@@ -1,0 +1,23 @@
+meta {
+  name: PATCH Student Academic Terms By Student Academic Term
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{base_url}}/v1/student-academic-terms/{{student_academic_term}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

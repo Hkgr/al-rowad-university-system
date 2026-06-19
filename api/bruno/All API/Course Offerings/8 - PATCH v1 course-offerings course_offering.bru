@@ -1,0 +1,23 @@
+meta {
+  name: PATCH Course Offerings By Course Offering
+  type: http
+  seq: 8
+}
+
+patch {
+  url: {{base_url}}/v1/course-offerings/{{course_offering_id}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

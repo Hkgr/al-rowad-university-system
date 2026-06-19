@@ -1,0 +1,23 @@
+meta {
+  name: PUT Student Grade Components By Student Grade Component
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{base_url}}/v1/student-grade-components/{{student_grade_component}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

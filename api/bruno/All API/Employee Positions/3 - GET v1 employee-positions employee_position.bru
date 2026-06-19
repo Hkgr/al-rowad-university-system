@@ -1,0 +1,16 @@
+meta {
+  name: GET Employee Positions By Employee Position
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/v1/employee-positions/{{employee_position}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

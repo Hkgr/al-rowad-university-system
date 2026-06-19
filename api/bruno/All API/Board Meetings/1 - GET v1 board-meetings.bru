@@ -1,0 +1,16 @@
+meta {
+  name: GET Board Meetings
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/v1/board-meetings
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

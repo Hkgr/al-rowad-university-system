@@ -1,0 +1,16 @@
+meta {
+  name: GET Library Borrowings
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/v1/library-borrowings
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

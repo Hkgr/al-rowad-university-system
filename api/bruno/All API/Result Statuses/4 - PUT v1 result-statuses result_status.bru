@@ -1,0 +1,23 @@
+meta {
+  name: PUT Result Statuses By Result Status
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{base_url}}/v1/result-statuses/{{result_status}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

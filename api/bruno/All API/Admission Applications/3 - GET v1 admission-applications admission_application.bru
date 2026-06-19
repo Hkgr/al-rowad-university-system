@@ -1,0 +1,16 @@
+meta {
+  name: GET Admission Applications By Admission Application
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/v1/admission-applications/{{admission_application}}
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

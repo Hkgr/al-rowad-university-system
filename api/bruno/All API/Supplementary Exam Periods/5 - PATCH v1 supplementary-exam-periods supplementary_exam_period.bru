@@ -1,0 +1,23 @@
+meta {
+  name: PATCH Supplementary Exam Periods By Supplementary Exam Period
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{base_url}}/v1/supplementary-exam-periods/{{supplementary_exam_period}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

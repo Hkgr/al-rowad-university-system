@@ -1,0 +1,23 @@
+meta {
+  name: POST Grade Audit Logs
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/v1/grade-audit-logs
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

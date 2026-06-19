@@ -1,0 +1,23 @@
+meta {
+  name: PATCH Organizational Unit Types By Organizational Unit Type
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{base_url}}/v1/organizational-unit-types/{{organizational_unit_type}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

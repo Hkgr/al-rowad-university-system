@@ -1,0 +1,16 @@
+meta {
+  name: GET Course Offerings By Id Students
+  type: http
+  seq: 18
+}
+
+get {
+  url: {{base_url}}/v1/course-offerings/{{id}}/students
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

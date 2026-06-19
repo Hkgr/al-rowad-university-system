@@ -1,0 +1,23 @@
+meta {
+  name: PUT Course Offerings By Course Offering
+  type: http
+  seq: 7
+}
+
+put {
+  url: {{base_url}}/v1/course-offerings/{{course_offering_id}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

@@ -1,0 +1,23 @@
+meta {
+  name: PATCH Library Books By Library Book
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{base_url}}/v1/library-books/{{library_book}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

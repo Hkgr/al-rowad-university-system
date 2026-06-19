@@ -1,0 +1,16 @@
+meta {
+  name: GET Students By Student Registered Hours
+  type: http
+  seq: 16
+}
+
+get {
+  url: {{base_url}}/v1/students/{{student_id}}/registered-hours
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

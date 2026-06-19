@@ -1,0 +1,16 @@
+meta {
+  name: GET Students By Student Cgpa
+  type: http
+  seq: 12
+}
+
+get {
+  url: {{base_url}}/v1/students/{{student_id}}/cgpa
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

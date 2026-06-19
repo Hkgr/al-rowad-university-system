@@ -1,0 +1,16 @@
+meta {
+  name: GET Programs By Academic Program Courses
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/v1/programs/{{academic_program}}/courses
+  body: none
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Authorization: Bearer {{token}}
+}

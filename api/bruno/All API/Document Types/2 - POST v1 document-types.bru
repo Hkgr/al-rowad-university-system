@@ -1,0 +1,23 @@
+meta {
+  name: POST Document Types
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/v1/document-types
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}

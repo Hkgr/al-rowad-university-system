@@ -1,0 +1,23 @@
+meta {
+  name: PUT Document Types By Document Type
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{base_url}}/v1/document-types/{{document_type}}
+  body: json
+  auth: none
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body:json {
+  {
+
+  }
+}
