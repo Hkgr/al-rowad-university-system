@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import LoginPage from './pages/login/LoginPage'
-import DashboardPage from './pages/dashboard/DashboardPage'
+import LoginPage from '../features/auth/pages/LoginPage'
+import DashboardPage from '../features/dashboard/pages/DashboardPage'
 
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem('token')
@@ -18,3 +18,6 @@ export default function App() {
     </BrowserRouter>
   )
 }
+
+
+

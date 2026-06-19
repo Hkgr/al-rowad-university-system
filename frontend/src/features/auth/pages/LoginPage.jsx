@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
-import AnimatedBackground from './AnimatedBackground'
-import FloatingIcons from './FloatingIcons'
-import LoginCard from './LoginCard'
+import AnimatedBackground from '../components/AnimatedBackground'
+import FloatingIcons from '../components/FloatingIcons'
+import LoginCard from '../components/LoginCard'
 import './LoginPage.css'
 
 export default function LoginPage() {
@@ -24,3 +24,4 @@ export default function LoginPage() {
     </div>
   )
 }
+
