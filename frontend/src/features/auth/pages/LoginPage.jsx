@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react'
 import AnimatedBackground from '../components/AnimatedBackground'
 import FloatingIcons from '../components/FloatingIcons'
 import LoginCard from '../components/LoginCard'
-import './LoginPage.css'
 
 export default function LoginPage() {
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
@@ -15,13 +14,15 @@ export default function LoginPage() {
   }, [])
 
   return (
-    <div className="login-page" onMouseMove={handleMouseMove}>
+    <div
+      className="w-screen h-screen relative overflow-hidden flex items-center justify-center"
+      onMouseMove={handleMouseMove}
+    >
       <AnimatedBackground mousePos={mousePos} />
       <FloatingIcons mousePos={mousePos} />
-<div className="login-center">
+      <div className="relative z-10 flex items-center justify-center w-full p-5">
         <LoginCard />
       </div>
     </div>
   )
 }
-
