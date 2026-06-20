@@ -90,6 +90,24 @@ body {
   50%       { transform: scale(1.15); opacity: 0.7; }
 }
 
+/* DashboardLayout — active nav link pulsing dot */
+@keyframes dotPulse {
+  0%, 100% { box-shadow: 0 0 5px rgba(122, 179, 86, 0.7); }
+  50%       { box-shadow: 0 0 14px rgba(122, 179, 86, 1.0); }
+}
+
+/* DashboardLayout — online status dot */
+@keyframes onlinePulse {
+  0%, 100% { box-shadow: 0 0 0 0   rgba(34, 197, 94, 0.55); }
+  50%       { box-shadow: 0 0 0 5px rgba(34, 197, 94, 0);    }
+}
+
+/* DashboardLayout — notification bell badge */
+@keyframes badgePulse {
+  0%, 100% { box-shadow: 0 0 0 0   rgba(239, 68, 68, 0.55); }
+  50%       { box-shadow: 0 0 0 5px rgba(239, 68, 68, 0);    }
+}
+
 /* SyrianFlag — flag wave */
 @keyframes wave {
   0%   { transform: perspective(800px) rotateY(0deg)   skewY(0deg);   }
