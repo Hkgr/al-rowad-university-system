@@ -15,10 +15,11 @@ function authHeaders() {
 }
 
 const INITIAL = {
+  student_number: '',
   first_name: '', last_name: '', father_name: '', mother_name: '',
-  national_id: '', birth_date: '', gender: '', address: '',
+  national_id: '', date_of_birth: '', gender: '', nationality: '', address: '',
   phone_number: '', email: '', emergency_contact: '',
-  academic_program_id: '', academic_level_id: '', student_status_id: '',
+  academic_program_id: '', current_academic_level_id: '', student_status_id: '',
   enrollment_date: '', notes: '',
 }
 
@@ -90,14 +91,15 @@ export default function AddStudentPage() {
 
   const validate = () => {
     const e = {}
-    if (!form.first_name.trim())   e.first_name           = 'الاسم الأول مطلوب'
-    if (!form.last_name.trim())    e.last_name            = 'الاسم الأخير مطلوب'
-    if (!form.father_name.trim())  e.father_name          = 'اسم الأب مطلوب'
-    if (!form.national_id.trim())  e.national_id          = 'رقم الهوية مطلوب'
-    if (!form.academic_program_id) e.academic_program_id  = 'اختر البرنامج الأكاديمي'
-    if (!form.academic_level_id)   e.academic_level_id    = 'اختر المرحلة الدراسية'
-    if (!form.student_status_id)   e.student_status_id    = 'اختر الحالة'
-    if (!form.enrollment_date)     e.enrollment_date      = 'تاريخ الالتحاق مطلوب'
+    if (!form.student_number.trim())         e.student_number          = 'رقم القيد مطلوب'
+    if (!form.first_name.trim())            e.first_name              = 'الاسم الأول مطلوب'
+    if (!form.last_name.trim())             e.last_name               = 'الاسم الأخير مطلوب'
+    if (!form.father_name.trim())           e.father_name             = 'اسم الأب مطلوب'
+    if (!form.national_id.trim())           e.national_id             = 'رقم الهوية مطلوب'
+    if (!form.academic_program_id)          e.academic_program_id     = 'اختر البرنامج الأكاديمي'
+    if (!form.current_academic_level_id)    e.current_academic_level_id = 'اختر المرحلة الدراسية'
+    if (!form.student_status_id)            e.student_status_id       = 'اختر الحالة'
+    if (!form.enrollment_date)              e.enrollment_date         = 'تاريخ الالتحاق مطلوب'
     return e
   }
 
@@ -196,6 +198,9 @@ export default function AddStudentPage() {
 
             <Section title="المعلومات الأساسية • Required" />
             <div className="grid grid-cols-3 max-[720px]:grid-cols-2 max-[480px]:grid-cols-1 gap-4 mb-5">
+              <Field label="رقم القيد" id="student_number" req err={errors.student_number}>
+                <input id="student_number" className={inputCls(errors.student_number)} value={form.student_number} onChange={set('student_number')} placeholder="2026-0001" dir="ltr" />
+              </Field>
               <Field label="الاسم الأول" id="first_name" req err={errors.first_name}>
                 <input id="first_name" className={inputCls(errors.first_name)} value={form.first_name} onChange={set('first_name')} placeholder="الاسم الأول" dir="rtl" />
               </Field>
@@ -228,8 +233,8 @@ export default function AddStudentPage() {
                   {programs.map(p => <option key={p.id} value={p.id}>{p.name_ar ?? p.name}</option>)}
                 </select>
               </Field>
-              <Field label="المرحلة الدراسية" id="academic_level_id" req err={errors.academic_level_id}>
-                <select id="academic_level_id" className={inputCls(errors.academic_level_id)} value={form.academic_level_id} onChange={set('academic_level_id')} dir="rtl">
+              <Field label="المرحلة الدراسية" id="current_academic_level_id" req err={errors.current_academic_level_id}>
+                <select id="current_academic_level_id" className={inputCls(errors.current_academic_level_id)} value={form.current_academic_level_id} onChange={set('current_academic_level_id')} dir="rtl">
                   <option value="">اختر المرحلة</option>
                   {levels.map(l => <option key={l.id} value={l.id}>{l.name_ar ?? l.name}</option>)}
                 </select>
@@ -247,8 +252,11 @@ export default function AddStudentPage() {
               <Field label="اسم الأم" id="mother_name" err={errors.mother_name}>
                 <input id="mother_name" className={inputCls(errors.mother_name)} value={form.mother_name} onChange={set('mother_name')} placeholder="اسم الأم" dir="rtl" />
               </Field>
-              <Field label="تاريخ الميلاد" id="birth_date" err={errors.birth_date}>
-                <input id="birth_date" type="date" className={inputCls(errors.birth_date)} value={form.birth_date} onChange={set('birth_date')} dir="ltr" />
+              <Field label="تاريخ الميلاد" id="date_of_birth" err={errors.date_of_birth}>
+                <input id="date_of_birth" type="date" className={inputCls(errors.date_of_birth)} value={form.date_of_birth} onChange={set('date_of_birth')} dir="ltr" />
+              </Field>
+              <Field label="الجنسية" id="nationality" err={errors.nationality}>
+                <input id="nationality" className={inputCls(errors.nationality)} value={form.nationality} onChange={set('nationality')} placeholder="سورية" dir="rtl" />
               </Field>
               <Field label="العنوان" id="address" err={errors.address}>
                 <input id="address" className={inputCls(errors.address)} value={form.address} onChange={set('address')} placeholder="العنوان الكامل" dir="rtl" />
