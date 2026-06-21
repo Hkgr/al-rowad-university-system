@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FaSpinner, FaCheckCircle, FaUserPlus } from 'react-icons/fa'
-import DashboardLayout from '../../../components/layout/DashboardLayout'
 
 const API = 'http://127.0.0.1:8000/api/v1'
 
@@ -135,8 +134,7 @@ export default function AddStudentPage() {
   // ── Success screen ───────────────────────────────────────────────────────────
   if (success) {
     return (
-      <DashboardLayout pageTitle="إضافة طالب · Add Student">
-        <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="min-h-[60vh] flex items-center justify-center">
           <motion.div
             className="flex flex-col items-center gap-4 text-center px-8 py-12 bg-white rounded-[20px] border border-primary/15 shadow-[0_8px_40px_rgba(86,153,51,0.12)] max-w-md"
             initial={{ scale: 0.85, opacity: 0 }}
@@ -158,14 +156,11 @@ export default function AddStudentPage() {
             <p className="text-[12px] text-text-light" dir="rtl">جاري التحويل إلى قائمة الطلاب…</p>
           </motion.div>
         </div>
-      </DashboardLayout>
     )
   }
 
   // ── Main form ────────────────────────────────────────────────────────────────
   return (
-    <DashboardLayout pageTitle="إضافة طالب · Add Student">
-
       <div className="max-w-[860px] mx-auto">
 
         <div className="flex items-center gap-3 mb-6" dir="rtl">
@@ -318,7 +313,5 @@ export default function AddStudentPage() {
           </div>
         </form>
       </div>
-
-    </DashboardLayout>
   )
 }

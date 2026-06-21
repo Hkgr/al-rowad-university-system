@@ -4,7 +4,6 @@ import {
   FaGraduationCap, FaUsers, FaBook, FaCalendarAlt,
   FaUserPlus, FaSearch, FaChartLine, FaClipboardList,
 } from 'react-icons/fa'
-import DashboardLayout from '../../../components/layout/DashboardLayout'
 
 const STATS = [
   { Icon: FaGraduationCap, labelAr: 'إجمالي الطلاب',     labelEn: 'Total Students',     value: '—', color: '#569933', bg: 'rgba(86,153,51,0.1)'   },
@@ -27,7 +26,7 @@ export default function DashboardPage() {
   })
 
   return (
-    <DashboardLayout pageTitle="لوحة التحكم · Dashboard">
+    <>
 
       {/* Welcome banner */}
       <motion.div
@@ -126,6 +125,6 @@ export default function DashboardPage() {
         <span className="w-1 h-1 rounded-full bg-primary/40 inline-block flex-shrink-0" />
       </motion.div>
 
-    </DashboardLayout>
+    </>
   )
 }

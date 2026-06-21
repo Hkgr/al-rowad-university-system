@@ -5,7 +5,6 @@ import {
   FaUserPlus, FaSearch, FaEye, FaEdit, FaTrash,
   FaChevronLeft, FaChevronRight, FaSpinner, FaGraduationCap,
 } from 'react-icons/fa'
-import DashboardLayout from '../../../components/layout/DashboardLayout'
 
 const API = 'http://127.0.0.1:8000/api/v1'
 
@@ -92,7 +91,7 @@ export default function StudentsPage() {
   const totalPages = meta.last_page || 1
 
   return (
-    <DashboardLayout pageTitle="إدارة الطلاب · Students">
+    <>
 
       {/* Page header */}
       <div className="flex items-center justify-between mb-5 gap-4 flex-wrap">
@@ -270,6 +269,6 @@ export default function StudentsPage() {
         </div>
       )}
 
-    </DashboardLayout>
+    </>
   )
 }
