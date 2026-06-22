@@ -40,11 +40,11 @@ export default function DashboardLayout({ nav = [], appTitle = 'جامعة ال�
           {section.label}
         </span>
       )}
-      {section.items.map(({ to, Icon, ar, en }) => (
+      {section.items.map(({ to, Icon, ar, en, end }) => (
         <NavLink
           key={to}
           to={to}
-          end={to === location.pathname}
+          end={end ?? false}
           title={collapsed ? ar : undefined}
           className={({ isActive }) => [
             'flex items-center gap-3 px-3.5 py-[11px] rounded-[10px] no-underline overflow-hidden whitespace-nowrap relative transition-all duration-200 border-r-[3px]',

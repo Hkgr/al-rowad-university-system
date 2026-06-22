@@ -73,15 +73,24 @@ export default function AddStudentPage() {
       fetch(`${API}/academic-levels`,   { headers: h }),
       fetch(`${API}/student-statuses`,  { headers: h }),
     ])
-      .then(([r1, r2, r3]) => Promise.all([r1.json(), r2.json(), r3.json()]))
+      .then(([r1, r2, r3]) => {
+        if (r1.status === 401 || r2.status === 401 || r3.status === 401) {
+          navigate('/login')
+          return Promise.reject('401')
+        }
+        return Promise.all([r1.json(), r2.json(), r3.json()])
+      })
       .then(([p, l, s]) => {
         const toArr = (d) => Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : [])
         setPrograms(toArr(p.data))
         setLevels(toArr(l.data))
         setStatuses(toArr(s.data))
       })
-      .catch(() => {})
-  }, [])
+      .catch((err) => {
+        if (err !== '401')
+          setErrors(prev => ({ ...prev, _load: 'تعذّر تحميل البيانات. تأكد أن php artisan serve يعمل ثم أعد تحميل الصفحة.' }))
+      })
+  }, [navigate])
 
   const set = (field) => (e) => {
     setForm(prev => ({ ...prev, [field]: e.target.value }))
@@ -119,7 +128,7 @@ export default function AddStudentPage() {
       const json = await res.json()
       if (json.success) {
         setSuccess(json.data)
-        setTimeout(() => navigate('/students'), 1800)
+        setTimeout(() => navigate('/student-affairs/students'), 1800)
       } else {
         if (json.errors) setErrors(json.errors)
         else setErrors({ _global: json.message || 'حدث خطأ غير متوقع' })
@@ -162,6 +171,12 @@ export default function AddStudentPage() {
   // ── Main form ────────────────────────────────────────────────────────────────
   return (
       <div className="max-w-[860px] mx-auto">
+
+        {errors._load && (
+          <div className="flex items-center gap-3 bg-red-500/6 border border-red-500/25 rounded-[12px] px-5 py-3.5 mb-5 text-[13.5px] text-red-600" dir="rtl">
+            ⚠ {errors._load}
+          </div>
+        )}
 
         <div className="flex items-center gap-3 mb-6" dir="rtl">
           <div className="w-11 h-11 rounded-[13px] bg-primary/10 border border-primary/20 flex items-center justify-center text-[19px] text-primary flex-shrink-0">
@@ -225,19 +240,19 @@ export default function AddStudentPage() {
               <Field label="البرنامج الأكاديمي" id="academic_program_id" req err={errors.academic_program_id}>
                 <select id="academic_program_id" className={inputCls(errors.academic_program_id)} value={form.academic_program_id} onChange={set('academic_program_id')} dir="rtl">
                   <option value="">اختر البرنامج</option>
-                  {programs.map(p => <option key={p.id} value={p.id}>{p.name_ar ?? p.name}</option>)}
+                  {programs.map(p => <option key={p.academic_program_id} value={p.academic_program_id}>{p.program_name}</option>)}
                 </select>
               </Field>
               <Field label="المرحلة الدراسية" id="current_academic_level_id" req err={errors.current_academic_level_id}>
                 <select id="current_academic_level_id" className={inputCls(errors.current_academic_level_id)} value={form.current_academic_level_id} onChange={set('current_academic_level_id')} dir="rtl">
                   <option value="">اختر المرحلة</option>
-                  {levels.map(l => <option key={l.id} value={l.id}>{l.name_ar ?? l.name}</option>)}
+                  {levels.map(l => <option key={l.academic_level_id} value={l.academic_level_id}>{l.level_name}</option>)}
                 </select>
               </Field>
               <Field label="الحالة الدراسية" id="student_status_id" req err={errors.student_status_id}>
                 <select id="student_status_id" className={inputCls(errors.student_status_id)} value={form.student_status_id} onChange={set('student_status_id')} dir="rtl">
                   <option value="">اختر الحالة</option>
-                  {statuses.map(s => <option key={s.id} value={s.id}>{s.name_ar ?? s.name}</option>)}
+                  {statuses.map(s => <option key={s.student_status_id} value={s.student_status_id}>{s.status_name}</option>)}
                 </select>
               </Field>
             </div>
