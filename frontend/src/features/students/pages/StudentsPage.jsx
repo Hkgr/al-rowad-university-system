@@ -5,7 +5,6 @@ import {
   FaUserPlus, FaSearch, FaEye, FaEdit, FaTrash,
   FaChevronLeft, FaChevronRight, FaSpinner, FaGraduationCap,
 } from 'react-icons/fa'
-import DashboardLayout from '../../../components/layout/DashboardLayout'
 
 const API = 'http://127.0.0.1:8000/api/v1'
 
@@ -92,7 +91,7 @@ export default function StudentsPage() {
   const totalPages = meta.last_page || 1
 
   return (
-    <DashboardLayout pageTitle="إدارة الطلاب · Students">
+    <>
 
       {/* Page header */}
       <div className="flex items-center justify-between mb-5 gap-4 flex-wrap">
@@ -103,7 +102,7 @@ export default function StudentsPage() {
           </p>
         </div>
         <Link
-          to="/students/add"
+          to="/student-affairs/students/add"
           className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-br from-primary to-primary-dark text-white rounded-[12px] no-underline text-[14px] font-bold whitespace-nowrap shadow-[0_4px_16px_rgba(86,153,51,0.35)] transition-all duration-[220ms] hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(86,153,51,0.45)]"
           dir="rtl"
         >
@@ -211,14 +210,14 @@ export default function StudentsPage() {
                         <button
                           className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-blue-500 border-blue-500/20 bg-blue-500/6 hover:bg-blue-500/14 hover:border-blue-500/35"
                           title="عرض"
-                          onClick={() => navigate(`/students/${s.student_id}`)}
+                          onClick={() => navigate(`/student-affairs/students/${s.student_id}`)}
                         >
                           <FaEye />
                         </button>
                         <button
                           className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-amber-500 border-amber-500/20 bg-amber-500/6 hover:bg-amber-500/14 hover:border-amber-500/35"
                           title="تعديل"
-                          onClick={() => navigate(`/students/${s.student_id}/edit`)}
+                          onClick={() => navigate(`/student-affairs/students/${s.student_id}/edit`)}
                         >
                           <FaEdit />
                         </button>
@@ -270,6 +269,6 @@ export default function StudentsPage() {
         </div>
       )}
 
-    </DashboardLayout>
+    </>
   )
 }

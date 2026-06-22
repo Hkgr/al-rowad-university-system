@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FaSpinner, FaCheckCircle, FaUserPlus } from 'react-icons/fa'
-import DashboardLayout from '../../../components/layout/DashboardLayout'
 
 const API = 'http://127.0.0.1:8000/api/v1'
 
@@ -15,10 +14,11 @@ function authHeaders() {
 }
 
 const INITIAL = {
+  student_number: '',
   first_name: '', last_name: '', father_name: '', mother_name: '',
-  national_id: '', birth_date: '', gender: '', address: '',
+  national_id: '', date_of_birth: '', gender: '', nationality: '', address: '',
   phone_number: '', email: '', emergency_contact: '',
-  academic_program_id: '', academic_level_id: '', student_status_id: '',
+  academic_program_id: '', current_academic_level_id: '', student_status_id: '',
   enrollment_date: '', notes: '',
 }
 
@@ -73,15 +73,24 @@ export default function AddStudentPage() {
       fetch(`${API}/academic-levels`,   { headers: h }),
       fetch(`${API}/student-statuses`,  { headers: h }),
     ])
-      .then(([r1, r2, r3]) => Promise.all([r1.json(), r2.json(), r3.json()]))
+      .then(([r1, r2, r3]) => {
+        if (r1.status === 401 || r2.status === 401 || r3.status === 401) {
+          navigate('/login')
+          return Promise.reject('401')
+        }
+        return Promise.all([r1.json(), r2.json(), r3.json()])
+      })
       .then(([p, l, s]) => {
         const toArr = (d) => Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : [])
         setPrograms(toArr(p.data))
         setLevels(toArr(l.data))
         setStatuses(toArr(s.data))
       })
-      .catch(() => {})
-  }, [])
+      .catch((err) => {
+        if (err !== '401')
+          setErrors(prev => ({ ...prev, _load: 'تعذّر تحميل البيانات. تأكد أن php artisan serve يعمل ثم أعد تحميل الصفحة.' }))
+      })
+  }, [navigate])
 
   const set = (field) => (e) => {
     setForm(prev => ({ ...prev, [field]: e.target.value }))
@@ -90,14 +99,15 @@ export default function AddStudentPage() {
 
   const validate = () => {
     const e = {}
-    if (!form.first_name.trim())   e.first_name           = 'الاسم الأول مطلوب'
-    if (!form.last_name.trim())    e.last_name            = 'الاسم الأخير مطلوب'
-    if (!form.father_name.trim())  e.father_name          = 'اسم الأب مطلوب'
-    if (!form.national_id.trim())  e.national_id          = 'رقم الهوية مطلوب'
-    if (!form.academic_program_id) e.academic_program_id  = 'اختر البرنامج الأكاديمي'
-    if (!form.academic_level_id)   e.academic_level_id    = 'اختر المرحلة الدراسية'
-    if (!form.student_status_id)   e.student_status_id    = 'اختر الحالة'
-    if (!form.enrollment_date)     e.enrollment_date      = 'تاريخ الالتحاق مطلوب'
+    if (!form.student_number.trim())         e.student_number          = 'رقم القيد مطلوب'
+    if (!form.first_name.trim())            e.first_name              = 'الاسم الأول مطلوب'
+    if (!form.last_name.trim())             e.last_name               = 'الاسم الأخير مطلوب'
+    if (!form.father_name.trim())           e.father_name             = 'اسم الأب مطلوب'
+    if (!form.national_id.trim())           e.national_id             = 'رقم الهوية مطلوب'
+    if (!form.academic_program_id)          e.academic_program_id     = 'اختر البرنامج الأكاديمي'
+    if (!form.current_academic_level_id)    e.current_academic_level_id = 'اختر المرحلة الدراسية'
+    if (!form.student_status_id)            e.student_status_id       = 'اختر الحالة'
+    if (!form.enrollment_date)              e.enrollment_date         = 'تاريخ الالتحاق مطلوب'
     return e
   }
 
@@ -118,7 +128,7 @@ export default function AddStudentPage() {
       const json = await res.json()
       if (json.success) {
         setSuccess(json.data)
-        setTimeout(() => navigate('/students'), 1800)
+        setTimeout(() => navigate('/student-affairs/students'), 1800)
       } else {
         if (json.errors) setErrors(json.errors)
         else setErrors({ _global: json.message || 'حدث خطأ غير متوقع' })
@@ -133,8 +143,7 @@ export default function AddStudentPage() {
   // ── Success screen ───────────────────────────────────────────────────────────
   if (success) {
     return (
-      <DashboardLayout pageTitle="إضافة طالب · Add Student">
-        <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="min-h-[60vh] flex items-center justify-center">
           <motion.div
             className="flex flex-col items-center gap-4 text-center px-8 py-12 bg-white rounded-[20px] border border-primary/15 shadow-[0_8px_40px_rgba(86,153,51,0.12)] max-w-md"
             initial={{ scale: 0.85, opacity: 0 }}
@@ -156,15 +165,18 @@ export default function AddStudentPage() {
             <p className="text-[12px] text-text-light" dir="rtl">جاري التحويل إلى قائمة الطلاب…</p>
           </motion.div>
         </div>
-      </DashboardLayout>
     )
   }
 
   // ── Main form ────────────────────────────────────────────────────────────────
   return (
-    <DashboardLayout pageTitle="إضافة طالب · Add Student">
-
       <div className="max-w-[860px] mx-auto">
+
+        {errors._load && (
+          <div className="flex items-center gap-3 bg-red-500/6 border border-red-500/25 rounded-[12px] px-5 py-3.5 mb-5 text-[13.5px] text-red-600" dir="rtl">
+            ⚠ {errors._load}
+          </div>
+        )}
 
         <div className="flex items-center gap-3 mb-6" dir="rtl">
           <div className="w-11 h-11 rounded-[13px] bg-primary/10 border border-primary/20 flex items-center justify-center text-[19px] text-primary flex-shrink-0">
@@ -196,6 +208,9 @@ export default function AddStudentPage() {
 
             <Section title="المعلومات الأساسية • Required" />
             <div className="grid grid-cols-3 max-[720px]:grid-cols-2 max-[480px]:grid-cols-1 gap-4 mb-5">
+              <Field label="رقم القيد" id="student_number" req err={errors.student_number}>
+                <input id="student_number" className={inputCls(errors.student_number)} value={form.student_number} onChange={set('student_number')} placeholder="2026-0001" dir="ltr" />
+              </Field>
               <Field label="الاسم الأول" id="first_name" req err={errors.first_name}>
                 <input id="first_name" className={inputCls(errors.first_name)} value={form.first_name} onChange={set('first_name')} placeholder="الاسم الأول" dir="rtl" />
               </Field>
@@ -225,19 +240,19 @@ export default function AddStudentPage() {
               <Field label="البرنامج الأكاديمي" id="academic_program_id" req err={errors.academic_program_id}>
                 <select id="academic_program_id" className={inputCls(errors.academic_program_id)} value={form.academic_program_id} onChange={set('academic_program_id')} dir="rtl">
                   <option value="">اختر البرنامج</option>
-                  {programs.map(p => <option key={p.id} value={p.id}>{p.name_ar ?? p.name}</option>)}
+                  {programs.map(p => <option key={p.academic_program_id} value={p.academic_program_id}>{p.program_name}</option>)}
                 </select>
               </Field>
-              <Field label="المرحلة الدراسية" id="academic_level_id" req err={errors.academic_level_id}>
-                <select id="academic_level_id" className={inputCls(errors.academic_level_id)} value={form.academic_level_id} onChange={set('academic_level_id')} dir="rtl">
+              <Field label="المرحلة الدراسية" id="current_academic_level_id" req err={errors.current_academic_level_id}>
+                <select id="current_academic_level_id" className={inputCls(errors.current_academic_level_id)} value={form.current_academic_level_id} onChange={set('current_academic_level_id')} dir="rtl">
                   <option value="">اختر المرحلة</option>
-                  {levels.map(l => <option key={l.id} value={l.id}>{l.name_ar ?? l.name}</option>)}
+                  {levels.map(l => <option key={l.academic_level_id} value={l.academic_level_id}>{l.level_name}</option>)}
                 </select>
               </Field>
               <Field label="الحالة الدراسية" id="student_status_id" req err={errors.student_status_id}>
                 <select id="student_status_id" className={inputCls(errors.student_status_id)} value={form.student_status_id} onChange={set('student_status_id')} dir="rtl">
                   <option value="">اختر الحالة</option>
-                  {statuses.map(s => <option key={s.id} value={s.id}>{s.name_ar ?? s.name}</option>)}
+                  {statuses.map(s => <option key={s.student_status_id} value={s.student_status_id}>{s.status_name}</option>)}
                 </select>
               </Field>
             </div>
@@ -247,8 +262,11 @@ export default function AddStudentPage() {
               <Field label="اسم الأم" id="mother_name" err={errors.mother_name}>
                 <input id="mother_name" className={inputCls(errors.mother_name)} value={form.mother_name} onChange={set('mother_name')} placeholder="اسم الأم" dir="rtl" />
               </Field>
-              <Field label="تاريخ الميلاد" id="birth_date" err={errors.birth_date}>
-                <input id="birth_date" type="date" className={inputCls(errors.birth_date)} value={form.birth_date} onChange={set('birth_date')} dir="ltr" />
+              <Field label="تاريخ الميلاد" id="date_of_birth" err={errors.date_of_birth}>
+                <input id="date_of_birth" type="date" className={inputCls(errors.date_of_birth)} value={form.date_of_birth} onChange={set('date_of_birth')} dir="ltr" />
+              </Field>
+              <Field label="الجنسية" id="nationality" err={errors.nationality}>
+                <input id="nationality" className={inputCls(errors.nationality)} value={form.nationality} onChange={set('nationality')} placeholder="سورية" dir="rtl" />
               </Field>
               <Field label="العنوان" id="address" err={errors.address}>
                 <input id="address" className={inputCls(errors.address)} value={form.address} onChange={set('address')} placeholder="العنوان الكامل" dir="rtl" />
@@ -310,7 +328,5 @@ export default function AddStudentPage() {
           </div>
         </form>
       </div>
-
-    </DashboardLayout>
   )
 }

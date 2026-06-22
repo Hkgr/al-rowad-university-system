@@ -53,7 +53,7 @@ export default function LoginCard() {
       if (data.success) {
         localStorage.setItem('token', data.data.token)
         localStorage.setItem('user', JSON.stringify(data.data.user))
-        navigate('/dashboard')
+        navigate('/student-affairs')
       } else {
         setError(data.message || 'Invalid email or password')
       }
