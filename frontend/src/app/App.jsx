@@ -7,6 +7,7 @@ import LoginPage            from '../features/auth/pages/LoginPage'
 import StudentAffairsHome   from '../features/student-affairs/pages/StudentAffairsHome'
 import StudentsPage         from '../features/students/pages/StudentsPage'
 import AddStudentPage       from '../features/students/pages/AddStudentPage'
+import EditStudentPage      from '../features/students/pages/EditStudentPage'
 
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem('token')
@@ -31,7 +32,8 @@ export default function App() {
         >
           <Route path="/student-affairs"              element={<StudentAffairsHome />} />
           <Route path="/student-affairs/students"     element={<StudentsPage />}       />
-          <Route path="/student-affairs/students/add" element={<AddStudentPage />}     />
+          <Route path="/student-affairs/students/add"      element={<AddStudentPage />}  />
+          <Route path="/student-affairs/students/:id/edit" element={<EditStudentPage />} />
         </Route>
 
         {/* Default redirect */}

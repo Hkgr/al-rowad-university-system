@@ -13,7 +13,7 @@ const studentAffairsNav = [
     label: 'شؤون الطلاب',
     items: [
       { to: '/student-affairs',              Icon: FaHome,          ar: 'الرئيسية',     en: 'Home',        end: true },
-      { to: '/student-affairs/students',     Icon: FaGraduationCap, ar: 'قائمة الطلاب', en: 'Students'             },
+      { to: '/student-affairs/students',     Icon: FaGraduationCap, ar: 'قائمة الطلاب', en: 'Students', end: true  },
       { to: '/student-affairs/students/add', Icon: FaUserPlus,      ar: 'إضافة طالب',   en: 'Add Student', end: true },
     ],
   },
