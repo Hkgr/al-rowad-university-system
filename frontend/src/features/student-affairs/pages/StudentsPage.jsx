@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  FaUserPlus, FaSearch, FaEye, FaEdit, FaTrash,
+  FaUserPlus, FaSearch, FaEye, FaEdit, FaArchive,
   FaChevronLeft, FaChevronRight, FaSpinner, FaGraduationCap,
 } from 'react-icons/fa'
 
@@ -22,7 +22,6 @@ export default function StudentsPage() {
   const [search, setSearch]     = useState('')
   const [page, setPage]         = useState(1)
   const [meta, setMeta]         = useState({ total: 0, last_page: 1, per_page: 15 })
-  const [deleteId, setDeleteId] = useState(null)
   const debounceRef             = useRef(null)
   const navigate                = useNavigate()
 
@@ -35,9 +34,7 @@ export default function StudentsPage() {
         : `${API}/students?page=${p}&per_page=15`
 
       const res = await fetch(url, { headers: authHeaders() })
-
       if (res.status === 401) { navigate('/login'); return }
-
       const json = await res.json()
 
       if (json.success) {
@@ -72,27 +69,26 @@ export default function StudentsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page])
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('هل أنت متأكد من حذف هذا الطالب؟\nAre you sure you want to delete this student?')) return
+  const handleArchive = async (id) => {
+    if (!window.confirm('سيتم أرشفة هذا الطالب وإخفاؤه من القائمة.\nهل أنت متأكد؟')) return
     try {
       const res  = await fetch(`${API}/students/${id}`, { method: 'DELETE', headers: authHeaders() })
       const json = await res.json()
       if (json.success) {
         setStudents(prev => prev.filter(s => s.student_id !== id))
+        setMeta(prev => ({ ...prev, total: Math.max(0, prev.total - 1) }))
       } else {
-        alert(json.message || 'فشل الحذف')
+        alert(json.message || 'فشلت الأرشفة')
       }
     } catch {
       alert('تعذّر الاتصال بالخادم')
     }
-    setDeleteId(null)
   }
 
   const totalPages = meta.last_page || 1
 
   return (
     <>
-
       {/* Page header */}
       <div className="flex items-center justify-between mb-5 gap-4 flex-wrap">
         <div dir="rtl">
@@ -209,7 +205,7 @@ export default function StudentsPage() {
                       <div className="flex items-center gap-1.5">
                         <button
                           className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-blue-500 border-blue-500/20 bg-blue-500/6 hover:bg-blue-500/14 hover:border-blue-500/35"
-                          title="عرض"
+                          title="عرض الملف"
                           onClick={() => navigate(`/student-affairs/students/${s.student_id}`)}
                         >
                           <FaEye />
@@ -222,11 +218,11 @@ export default function StudentsPage() {
                           <FaEdit />
                         </button>
                         <button
-                          className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-red-600 border-red-600/20 bg-red-600/6 hover:bg-red-600/14 hover:border-red-600/35"
-                          title="حذف"
-                          onClick={() => handleDelete(s.student_id)}
+                          className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-slate-500 border-slate-400/20 bg-slate-400/6 hover:bg-slate-400/14 hover:border-slate-400/35"
+                          title="أرشفة"
+                          onClick={() => handleArchive(s.student_id)}
                         >
-                          <FaTrash />
+                          <FaArchive />
                         </button>
                       </div>
                     </td>
