@@ -174,6 +174,9 @@ Route::middleware('auth:sanctum')->prefix('v1')->group(function (): void {
     |--------------------------------------------------------------------------
     */
 
+    Route::get('students/deleted', [StudentController::class, 'deleted']);
+    Route::post('students/{id}/restore', [StudentController::class, 'restore']);
+    Route::delete('students/{id}/force', [StudentController::class, 'forceDestroy']);
     Route::get('students/search', [StudentController::class, 'search']);
     Route::get('students/{student}/available-courses', [StudentController::class, 'availableCourses']);
     Route::get('students/{student}/registered-hours', [StudentController::class, 'registeredHours']);

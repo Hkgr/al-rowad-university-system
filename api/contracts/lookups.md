@@ -28,7 +28,9 @@ Every lookup resource supports:
 | POST | `/api/v1/{resource}` | Create |
 | GET | `/api/v1/{resource}/{id}` | Show one |
 | PUT/PATCH | `/api/v1/{resource}/{id}` | Update |
-| DELETE | `/api/v1/{resource}/{id}` | Delete |
+| DELETE | `/api/v1/{resource}/{id}` | Delete (**existing** — currently hard delete) |
+
+> **Note:** Soft delete, restore, and force-delete routes are **not yet implemented**. See [Deletion Policy](#deletion-policy) for the recommended future contract.
 
 **Query:** `?per_page=15` (default)
 
@@ -304,3 +306,131 @@ These are not status tables but commonly used alongside lookups:
 | GET | `/api/v1/semesters` | All semesters |
 
 See **Academic Structure** contract for details.
+
+---
+
+## Deletion Policy
+
+Documents **Soft Delete** and **Permanent Delete** for lookup/status tables. Lookups are referenced by foreign keys across the system — **permanent delete is rarely appropriate**.
+
+### Soft Delete vs Permanent Delete
+
+| Action | Meaning |
+|--------|---------|
+| **Soft Delete** | Archive lookup row (`deleted_at`) or set `is_active = 0` |
+| **Permanent Delete** | Remove row — **Super Admin only**; blocked when referenced by live records |
+
+> **Implementation status:** Existing `DELETE` on lookup resources (**existing**, hard delete). Most lookups already have `is_active` — **deactivating** is the preferred current approach. Full soft-delete with `deleted_at` is a **proposed future enhancement**.
+
+### Who may perform each action
+
+| Action | Recommended role |
+|--------|------------------|
+| Deactivate / Soft Delete | Admin |
+| Restore | Admin |
+| Permanent Delete | **Super Admin only** (almost never for lookups) |
+
+### Business rules before deletion
+
+**Permanent delete blocked when lookup is referenced by:**
+
+| Lookup | Referenced by |
+|--------|---------------|
+| `registration-statuses` | `student_course_registrations` |
+| `result-statuses` | `student_course_results`, grades, prerequisites |
+| `student-statuses` | `students` |
+| `account-statuses` | `users` |
+| `attendance-statuses` | `student_attendance` |
+| `appeal-statuses` | `grade-appeals` |
+| `approval-statuses` | `grade-approvals` |
+
+**Recommended approach:** Set `is_active = 0` (or soft delete) instead of permanent delete. Historical records keep valid FK references.
+
+### Proposed endpoints (example: student-statuses)
+
+| Method | URL | Status |
+|--------|-----|--------|
+| DELETE | `/api/v1/student-statuses/{id}` | **Existing** — recommend deactivate or soft delete |
+| GET | `/api/v1/student-statuses/deleted` | **Proposed endpoint** |
+| POST | `/api/v1/student-statuses/{id}/restore` | **Proposed endpoint** |
+| DELETE | `/api/v1/student-statuses/{id}/force` | **Proposed endpoint** |
+
+Apply the same pattern to all lookup resources in this module.
+
+**Optional request body:**
+
+```json
+{
+  "delete_reason": "Status code replaced by new workflow",
+  "deleted_by_user_id": 1
+}
+```
+
+**Validation rules:**
+
+| Field | Rules |
+|-------|-------|
+| Resource ID (URL) | `required\|integer\|exists:{table},{primary_key}` |
+| `delete_reason` | `nullable\|string\|max:1000` |
+| `deleted_by_user_id` | `nullable\|integer\|exists:users,user_id` |
+
+### Standard responses
+
+**Soft delete / deactivate:**
+
+```json
+{
+  "success": true,
+  "message": "Record archived successfully.",
+  "data": null
+}
+```
+
+**Restore:**
+
+```json
+{
+  "success": true,
+  "message": "Record restored successfully.",
+  "data": {
+    "student_status_id": 1,
+    "status_code": "active",
+    "is_active": true,
+    "deleted_at": null
+  }
+}
+```
+
+**Permanent delete:**
+
+```json
+{
+  "success": true,
+  "message": "Record permanently deleted successfully.",
+  "data": null
+}
+```
+
+**Blocked permanent delete (422):**
+
+```json
+{
+  "success": false,
+  "message": "Record cannot be permanently deleted because related records exist.",
+  "errors": {
+    "related_records": [
+      "students",
+      "course_registrations"
+    ]
+  }
+}
+```
+
+### Frontend behavior
+
+- Show only `is_active = 1` (and non-deleted) lookups in dropdowns.
+- Admin screens may show inactive/archived lookups with a badge.
+- Use **Deactivate** or **Archive** instead of **Delete** in lookup management UI.
+- **Permanent Delete** — Super Admin only, confirmation modal; almost never used for lookups.
+- Warn admin if lookup is still referenced before any delete action.
+- Never permanently delete status codes that appear in historical grades, registrations, or attendance.

@@ -26,9 +26,11 @@ Content-Type: application/json
 | POST | `/api/v1/{resource}` | Create |
 | GET | `/api/v1/{resource}/{id}` | Show |
 | PUT/PATCH | `/api/v1/{resource}/{id}` | Update |
-| DELETE | `/api/v1/{resource}/{id}` | Delete |
+| DELETE | `/api/v1/{resource}/{id}` | Delete (**existing** — currently hard delete) |
 
 Query: `?per_page=15`
+
+> **Note:** Soft delete, restore, and force-delete routes are **not yet implemented**. See [Deletion Policy](#deletion-policy) for the recommended future contract.
 
 ---
 
@@ -226,3 +228,124 @@ Links meetings to board members or attendees (see backend FormRequest).
 - Use date pickers validated as ISO dates (`YYYY-MM-DD`).
 - Minutes can be updated via PUT after the meeting.
 - `is_active` fields use integer 0/1 throughout.
+
+---
+
+## Deletion Policy
+
+Documents **Soft Delete** and **Permanent Delete** for governance boards, meetings, decisions, and related records.
+
+### Soft Delete vs Permanent Delete
+
+| Action | Meaning |
+|--------|---------|
+| **Soft Delete** | Archive board governance record — preserve legal/historical trail |
+| **Permanent Delete** | Remove record — **Super Admin only**; strongly discouraged for decisions and minutes |
+
+> **Implementation status:** Existing `DELETE` on board resources (**existing**, hard delete). Proposed archive/restore/force routes are **recommended future endpoints**.
+
+### Who may perform each action
+
+| Action | Recommended role |
+|--------|------------------|
+| Soft Delete | Admin, Secretary |
+| Restore | Admin |
+| Permanent Delete | **Super Admin only** (rare) |
+
+### Business rules before deletion
+
+| Resource | Permanent delete blocked when |
+|----------|--------------------------------|
+| `boards` | Has `board-meetings`, `board-members` |
+| `board-meetings` | Has `board-decisions`, `meeting-attendees` |
+| `board-decisions` | Has `board-decision-attachments` |
+| `board-members` | Referenced in active governance period (recommended soft delete only) |
+
+**Strong recommendation:** Board decisions and meeting minutes should **never** be permanently deleted once published — archive only.
+
+### Proposed endpoints (boards)
+
+| Method | URL | Status |
+|--------|-----|--------|
+| DELETE | `/api/v1/boards/{board_id}` | **Existing** — recommend soft delete |
+| GET | `/api/v1/boards/deleted` | **Proposed endpoint** |
+| POST | `/api/v1/boards/{board_id}/restore` | **Proposed endpoint** |
+| DELETE | `/api/v1/boards/{board_id}/force` | **Proposed endpoint** |
+
+Apply the same pattern to `board-meetings`, `board-decisions`, `board-members`, `board-decision-attachments`, `meeting-attendees`.
+
+**Optional request body:**
+
+```json
+{
+  "delete_reason": "Board restructured",
+  "deleted_by_user_id": 1
+}
+```
+
+**Validation rules:**
+
+| Field | Rules |
+|-------|-------|
+| Resource ID (URL) | `required\|integer\|exists:{table},{primary_key}` |
+| `delete_reason` | `nullable\|string\|max:1000` |
+| `deleted_by_user_id` | `nullable\|integer\|exists:users,user_id` |
+
+### Standard responses
+
+**Soft delete:**
+
+```json
+{
+  "success": true,
+  "message": "Record archived successfully.",
+  "data": null
+}
+```
+
+**Restore:**
+
+```json
+{
+  "success": true,
+  "message": "Record restored successfully.",
+  "data": {
+    "board_id": 1,
+    "board_name": "Academic Council",
+    "deleted_at": null
+  }
+}
+```
+
+**Permanent delete:**
+
+```json
+{
+  "success": true,
+  "message": "Record permanently deleted successfully.",
+  "data": null
+}
+```
+
+**Blocked permanent delete (422):**
+
+```json
+{
+  "success": false,
+  "message": "Record cannot be permanently deleted because related records exist.",
+  "errors": {
+    "related_records": [
+      "board_meetings",
+      "board_decisions",
+      "board_members"
+    ]
+  }
+}
+```
+
+### Frontend behavior
+
+- Hide archived boards/meetings from default views.
+- Use **Archive** for boards; do not offer permanent delete on decisions with attachments.
+- **Permanent Delete** — Super Admin only, confirmation modal, irreversible warning.
+- Prefer `is_active = 0` on `board-members` when membership ends instead of permanent delete.

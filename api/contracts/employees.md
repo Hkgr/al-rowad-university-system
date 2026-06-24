@@ -28,12 +28,14 @@ All resources below support:
 | POST | `/api/v1/{resource}` | Create |
 | GET | `/api/v1/{resource}/{id}` | Show |
 | PUT/PATCH | `/api/v1/{resource}/{id}` | Update |
-| DELETE | `/api/v1/{resource}/{id}` | Delete |
+| DELETE | `/api/v1/{resource}/{id}` | Delete (**existing** — currently hard delete) |
 
 **Success (store):** HTTP 201  
 **Success (update/show):** HTTP 200  
 **Success (destroy):** HTTP 200, `"data": []`  
 **Validation error:** HTTP 422 with `{ success: false, message: "Validation failed", errors: {} }`
+
+> **Note:** Soft delete, restore, and force-delete routes are **not yet implemented**. See [Deletion Policy](#deletion-policy) for the recommended future contract.
 
 ---
 
@@ -289,3 +291,129 @@ Links employees to organizational units (see store validation in backend FormReq
 - Paginate list endpoints with `?per_page=N`.
 - Updates support partial payloads (`sometimes|nullable` on all fields).
 - Use `faculty-members` ID when assigning instructors to course offerings.
+
+---
+
+## Deletion Policy
+
+Documents **Soft Delete** (archive) and **Permanent Delete** for employee-related resources. Applies primarily to `/api/v1/employees`; the same pattern is **recommended** for `faculty-members`, `employee-positions`, and `employee-unit-assignments`.
+
+### Soft Delete vs Permanent Delete
+
+| Action | Meaning | Field |
+|--------|---------|-------|
+| **Soft Delete** | Archive record | Set `deleted_at` timestamp |
+| **Permanent Delete** | Remove row from database | Super Admin only; blocked if related data exists |
+
+> **Implementation status:** No `deleted_at` / `SoftDeletes` in the current backend. Existing `DELETE /api/v1/employees/{id}` (**existing**) performs **hard delete**. Proposed routes below are **recommended future endpoints**.
+
+### Who may perform each action
+
+| Action | Recommended role |
+|--------|------------------|
+| Soft Delete | HR Admin, Admin |
+| Restore | HR Admin, Admin |
+| Permanent Delete | **Super Admin only** |
+| View deleted list | HR Admin, Admin, Super Admin |
+
+### Business rules before deletion
+
+**Permanent delete blocked when employee has:**
+
+- Faculty member record linked to course offerings or attendance sessions
+- Active employee position or unit assignments
+- Linked user account (`users.employee_id`)
+- Library borrowings (active or historical)
+- Board member records
+- Course instructor assignments
+
+**Recommended:** Soft delete when employee leaves the university; preserve history for audits and past course assignments.
+
+### Proposed endpoints (employees)
+
+| Method | URL | Status |
+|--------|-----|--------|
+| DELETE | `/api/v1/employees/{employee_id}` | **Existing** — recommend changing to soft delete |
+| GET | `/api/v1/employees/deleted` | **Proposed endpoint** |
+| POST | `/api/v1/employees/{employee_id}/restore` | **Proposed endpoint** |
+| DELETE | `/api/v1/employees/{employee_id}/force` | **Proposed endpoint** |
+
+**Optional request body (soft delete / force delete):**
+
+```json
+{
+  "delete_reason": "Employee resigned",
+  "deleted_by_user_id": 1
+}
+```
+
+**Validation rules:**
+
+| Field | Rules |
+|-------|-------|
+| `employee_id` (URL) | `required\|integer\|exists:employees,employee_id` |
+| `delete_reason` | `nullable\|string\|max:1000` |
+| `deleted_by_user_id` | `nullable\|integer\|exists:users,user_id` |
+
+### Standard responses
+
+**Soft delete success:**
+
+```json
+{
+  "success": true,
+  "message": "Record archived successfully.",
+  "data": null
+}
+```
+
+**Restore success:**
+
+```json
+{
+  "success": true,
+  "message": "Record restored successfully.",
+  "data": {
+    "employee_id": 1,
+    "employee_number": "EMP-2026-001",
+    "deleted_at": null
+  }
+}
+```
+
+**Permanent delete success:**
+
+```json
+{
+  "success": true,
+  "message": "Record permanently deleted successfully.",
+  "data": null
+}
+```
+
+**Blocked permanent delete (422):**
+
+```json
+{
+  "success": false,
+  "message": "Record cannot be permanently deleted because related records exist.",
+  "errors": {
+    "related_records": [
+      "faculty_members",
+      "course_offerings",
+      "user_accounts",
+      "library_borrowings"
+    ]
+  }
+}
+```
+
+### Frontend behavior
+
+- Show active employees by default; hide archived from normal HR lists.
+- Use **Archive** label instead of **Delete** for employees.
+- Provide **Deleted Employees** admin view (proposed `GET /employees/deleted`).
+- **Restore** from archived view.
+- **Permanent Delete** — Super Admin only, confirmation modal, warn that action is irreversible.
+- Disable permanent delete when related records exist; display blocking reasons from `errors.related_records`.
+- Prefer deactivating `employee_status_id` or soft delete over permanent delete for staff with employment history.

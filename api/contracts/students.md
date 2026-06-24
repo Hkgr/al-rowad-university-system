@@ -64,7 +64,10 @@ Content-Type: application/json
 | POST | `/api/v1/students` | Create student |
 | GET | `/api/v1/students/{id}` | Show student |
 | PUT/PATCH | `/api/v1/students/{id}` | Update student |
-| DELETE | `/api/v1/students/{id}` | Delete student |
+| DELETE | `/api/v1/students/{id}` | Delete student (**existing** — currently hard delete; **recommended:** soft delete / archive) |
+| GET | `/api/v1/students/deleted` | List soft-deleted students (**proposed endpoint**) |
+| POST | `/api/v1/students/{student_id}/restore` | Restore soft-deleted student (**proposed endpoint**) |
+| DELETE | `/api/v1/students/{student_id}/force` | Permanent delete (**proposed endpoint**) |
 | GET | `/api/v1/student-academic-terms` | CRUD — academic term records |
 | GET | `/api/v1/student-documents` | CRUD — uploaded documents |
 | GET | `/api/v1/student-credit-limits` | CRUD — per-term credit limits |
@@ -450,3 +453,276 @@ Array of offerings with `eligibility_status` and `eligibility_reasons` (e.g. pre
 | `is_excellent_student` | `required\|integer` |
 
 **Frontend notes:** Default max credit hours is 18 when no custom limit exists (registration service).
+
+---
+
+## Deletion Policy
+
+This section documents **Soft Delete** (archive) and **Permanent Delete** for student records. Soft delete is the **recommended** behavior for students with academic history. Permanent delete must be restricted and blocked when related academic data exists.
+
+### Soft Delete vs Permanent Delete
+
+| Action | Meaning | Database effect |
+|--------|---------|-----------------|
+| **Soft Delete** | Archive / deactivate the record | Row remains; `deleted_at` is set to a timestamp |
+| **Permanent Delete** | Physically remove the record | Row is removed from the database |
+
+When `deleted_at` is **null**, the student is **active**. When `deleted_at` has a **timestamp**, the student is **soft deleted / archived**.
+
+> **Implementation status:** The backend currently has **no** `deleted_at` column and **no** Laravel `SoftDeletes` trait. The existing `DELETE /api/v1/students/{id}` route performs a **hard delete** via standard CRUD. The endpoints below marked **proposed** describe the **recommended future contract** once soft delete is implemented.
+
+### Who may perform each action
+
+| Action | Recommended role |
+|--------|------------------|
+| Soft Delete (archive) | Admin, Registrar |
+| Restore | Admin, Registrar |
+| Permanent Delete | **Super Admin only** |
+| View deleted list | Admin, Registrar, Super Admin |
+
+### Business rules before deletion
+
+**Soft Delete — allowed when:**
+
+- Student should be hidden from normal lists but academic history must be preserved.
+- Student was created in error before any academic activity (archive still preferred over permanent delete).
+
+**Soft Delete — not a substitute for:**
+
+- Dropping or withdrawing course registrations (use Course Registration module).
+- Removing grades or attendance (those remain linked to the archived student).
+
+**Permanent Delete — blocked when the student has any of:**
+
+- Course registrations (`student_course_registrations`)
+- Grades / course results (`student_course_results`, grade records via registrations)
+- Attendance records (`student_attendance`)
+- Transcript-related data (results linked to registrations)
+- Documents (`student_documents`)
+- Academic terms (`student_academic_terms`)
+- Grade components (`student_grade_components`)
+- Credit limits (`student_credit_limits`)
+- Linked user account with audit history (recommended block)
+
+**Permanent Delete — allowed only when:**
+
+- Super Admin confirms action.
+- No related academic records exist (typically draft/test students only).
+
+### Related data checks (permanent delete)
+
+Before `DELETE .../force`, the API should verify absence of:
+
+```json
+{
+  "related_records": [
+    "course_registrations",
+    "grades",
+    "attendance",
+    "transcript",
+    "documents",
+    "academic_terms",
+    "course_results"
+  ]
+}
+```
+
+---
+
+### DELETE /api/v1/students/{id} — **Existing endpoint**
+
+**Current behavior:** Hard delete via standard REST `destroy` — record is physically removed if no database foreign-key constraint blocks it.
+
+**Recommended future behavior:** Treat as **Soft Delete / Archive Student** — set `deleted_at`, optionally record `deleted_by_user_id` and `delete_reason`.
+
+**Auth:** Required (Admin / Registrar recommended)
+
+**URL parameter:** `{id}` = `student_id`
+
+**Optional request body (proposed):**
+
+```json
+{
+  "delete_reason": "Duplicate record created during data migration",
+  "deleted_by_user_id": 1
+}
+```
+
+**Validation rules (proposed):**
+
+| Field | Rules |
+|-------|-------|
+| `student_id` (URL) | `required\|integer\|exists:students,student_id` |
+| `delete_reason` | `nullable\|string\|max:1000` |
+| `deleted_by_user_id` | `nullable\|integer\|exists:users,user_id` |
+
+**Success response — current (200):**
+
+```json
+{
+  "success": true,
+  "message": "Operation completed successfully",
+  "data": []
+}
+```
+
+**Success response — recommended soft delete (200):**
+
+```json
+{
+  "success": true,
+  "message": "Record archived successfully.",
+  "data": null
+}
+```
+
+---
+
+### GET /api/v1/students/deleted — **Proposed endpoint**
+
+**Purpose:** List soft-deleted (archived) students for admin review and restore.
+
+**Auth:** Required (Admin / Registrar / Super Admin)
+
+**Query:** `per_page` (optional), `q` (optional search)
+
+**Success response (200):**
+
+```json
+{
+  "success": true,
+  "message": "Operation completed successfully",
+  "data": {
+    "data": [
+      {
+        "student_id": 1,
+        "student_number": "2026-0001",
+        "first_name": "Ahmad",
+        "last_name": "Ali",
+        "deleted_at": "2026-06-20T14:30:00.000000Z",
+        "deleted_by_user_id": 1
+      }
+    ],
+    "links": {},
+    "meta": {}
+  }
+}
+```
+
+---
+
+### POST /api/v1/students/{student_id}/restore — **Proposed endpoint**
+
+**Purpose:** Restore a soft-deleted student (`deleted_at` → `null`).
+
+**Auth:** Required (Admin / Registrar)
+
+**Optional request body:**
+
+```json
+{
+  "restored_by_user_id": 1
+}
+```
+
+**Validation rules:**
+
+| Field | Rules |
+|-------|-------|
+| `student_id` (URL) | `required\|integer\|exists:students,student_id` |
+
+**Success response (200):**
+
+```json
+{
+  "success": true,
+  "message": "Record restored successfully.",
+  "data": {
+    "student_id": 1,
+    "student_number": "2026-0001",
+    "first_name": "Ahmad",
+    "last_name": "Ali",
+    "deleted_at": null
+  }
+}
+```
+
+**Error response (422 — not soft deleted):**
+
+```json
+{
+  "success": false,
+  "message": "Student is not archived and cannot be restored.",
+  "errors": {}
+}
+```
+
+---
+
+### DELETE /api/v1/students/{student_id}/force — **Proposed endpoint**
+
+**Purpose:** Permanently remove a student from the database. **Super Admin only.**
+
+**Auth:** Required (Super Admin)
+
+**Optional request body:**
+
+```json
+{
+  "delete_reason": "Test record with no academic history",
+  "deleted_by_user_id": 1
+}
+```
+
+**Validation rules:**
+
+| Field | Rules |
+|-------|-------|
+| `student_id` (URL) | `required\|integer\|exists:students,student_id` |
+| `delete_reason` | `nullable\|string\|max:1000` |
+| `deleted_by_user_id` | `nullable\|integer\|exists:users,user_id` |
+
+**Success response (200):**
+
+```json
+{
+  "success": true,
+  "message": "Record permanently deleted successfully.",
+  "data": null
+}
+```
+
+**Blocked permanent delete error (422):**
+
+```json
+{
+  "success": false,
+  "message": "Record cannot be permanently deleted because related records exist.",
+  "errors": {
+    "related_records": [
+      "course_registrations",
+      "grades",
+      "attendance"
+    ]
+  }
+}
+```
+
+---
+
+### Frontend behavior
+
+- Show **active** students in normal lists (`deleted_at` is null).
+- **Hide** soft-deleted students from default list and search results.
+- Label the primary action **Archive** (not "Delete") for students — calls soft delete.
+- Provide a **Deleted / Archived Students** view using `GET /students/deleted` (when implemented).
+- Show **Restore** on archived records.
+- Show **Permanent Delete** only to **Super Admin** users, with a confirmation modal.
+- Warn: *"Permanent delete cannot be undone."*
+- **Never** offer permanent delete for students with academic history — disable the button and show which related records block deletion.
+- Prefer **archive/restore** for all students who have ever been registered, graded, or attended a course.
+- Do not use permanent delete to "clean up" registrations or grades — use drop/withdraw and grade workflows instead.
+
+### Sub-resources
+
+Student sub-resources (`student-documents`, `student-academic-terms`, etc.) currently expose standard `DELETE` via REST (**existing**, hard delete). The same soft-delete pattern is **recommended** for documents; academic sub-records with historical value should generally **not** be permanently deleted.
