@@ -1,6 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 
-import DashboardLayout   from '../components/layout/DashboardLayout'
+import DashboardLayout from '../components/layout/DashboardLayout'
+
+// ── Auth ────────────────────────────────────────────────────────────────────
+import LoginPage from '../features/auth/pages/LoginPage'
 
 // ── شؤون الطلاب (Student Affairs) ──────────────────────────────────────────
 import studentAffairsNav    from '../features/student-affairs/nav'
@@ -8,11 +11,15 @@ import StudentAffairsHome   from '../features/student-affairs/pages/StudentAffai
 import StudentsPage         from '../features/student-affairs/pages/StudentsPage'
 import AddStudentPage       from '../features/student-affairs/pages/AddStudentPage'
 import EditStudentPage      from '../features/student-affairs/pages/EditStudentPage'
-import StudentProfilePage      from '../features/student-affairs/pages/StudentProfilePage'
-import ArchivedStudentsPage   from '../features/student-affairs/pages/ArchivedStudentsPage'
+import StudentProfilePage   from '../features/student-affairs/pages/StudentProfilePage'
+import ArchivedStudentsPage from '../features/student-affairs/pages/ArchivedStudentsPage'
 
-// ── Auth ────────────────────────────────────────────────────────────────────
-import LoginPage from '../features/auth/pages/LoginPage'
+// ── بوابة الطالب (Student Dashboard) ────────────────────────────────────────
+import studentNav        from '../features/student-dashboard/nav'
+import StudentHome       from '../features/student-dashboard/pages/StudentHome'
+import StudentTranscript from '../features/student-dashboard/pages/StudentTranscript'
+import StudentGPA        from '../features/student-dashboard/pages/StudentGPA'
+import StudentAttendance from '../features/student-dashboard/pages/StudentAttendance'
 
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem('token')
@@ -41,6 +48,20 @@ export default function App() {
           <Route path="/student-affairs/students/archived" element={<ArchivedStudentsPage />}  />
           <Route path="/student-affairs/students/:id"      element={<StudentProfilePage />}    />
           <Route path="/student-affairs/students/:id/edit" element={<EditStudentPage />}       />
+        </Route>
+
+        {/* ── بوابة الطالب dashboard ── */}
+        <Route
+          element={
+            <ProtectedRoute>
+              <DashboardLayout nav={studentNav} appTitle="بوابة الطالب" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/student"            element={<StudentHome />}       />
+          <Route path="/student/transcript" element={<StudentTranscript />} />
+          <Route path="/student/gpa"        element={<StudentGPA />}        />
+          <Route path="/student/attendance" element={<StudentAttendance />} />
         </Route>
 
         {/* Default redirect */}
