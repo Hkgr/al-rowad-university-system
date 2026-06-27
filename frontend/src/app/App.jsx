@@ -21,6 +21,15 @@ import StudentTranscript from '../features/student-dashboard/pages/StudentTransc
 import StudentGPA        from '../features/student-dashboard/pages/StudentGPA'
 import StudentAttendance from '../features/student-dashboard/pages/StudentAttendance'
 
+// ── هيئة الامتحانات (Exam Board) ────────────────────────────────────────────
+import examBoardNav      from '../features/exam-board/nav'
+import ExamBoardHome     from '../features/exam-board/pages/ExamBoardHome'
+import GradeSheetPage    from '../features/exam-board/pages/GradeSheetPage'
+import GradeEntryPage    from '../features/exam-board/pages/GradeEntryPage'
+import ApprovalsPage     from '../features/exam-board/pages/ApprovalsPage'
+import DeprivationPage   from '../features/exam-board/pages/DeprivationPage'
+import ExamPlaceholder   from '../features/exam-board/pages/ExamPlaceholder'
+
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem('token')
   return token ? children : <Navigate to="/login" replace />
@@ -62,6 +71,25 @@ export default function App() {
           <Route path="/student/transcript" element={<StudentTranscript />} />
           <Route path="/student/gpa"        element={<StudentGPA />}        />
           <Route path="/student/attendance" element={<StudentAttendance />} />
+        </Route>
+
+        {/* ── هيئة الامتحانات dashboard ── */}
+        <Route
+          element={
+            <ProtectedRoute>
+              <DashboardLayout nav={examBoardNav} appTitle="هيئة الامتحانات" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/exam-board"                element={<ExamBoardHome />} />
+          <Route path="/exam-board/grade-entry"   element={<GradeEntryPage />} />
+          <Route path="/exam-board/grade-sheet"   element={<GradeSheetPage />} />
+          <Route path="/exam-board/approvals"     element={<ApprovalsPage />} />
+          <Route path="/exam-board/deprivation"   element={<DeprivationPage />} />
+          <Route path="/exam-board/supplementary" element={<ExamPlaceholder title="الامتحانات التكميلية" en="Supplementary Exams" />} />
+          <Route path="/exam-board/results"       element={<ExamPlaceholder title="النتائج والتقارير"    en="Results" />} />
+          <Route path="/exam-board/appeals"       element={<ExamPlaceholder title="التظلمات"             en="Appeals" />} />
+          <Route path="/exam-board/settings"      element={<ExamPlaceholder title="الإعدادات"            en="Settings" />} />
         </Route>
 
         {/* Default redirect */}
