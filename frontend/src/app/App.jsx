@@ -24,6 +24,10 @@ import StudentAttendance from '../features/student-dashboard/pages/StudentAttend
 // ── هيئة الامتحانات (Exam Board) ────────────────────────────────────────────
 import examBoardNav      from '../features/exam-board/nav'
 import ExamBoardHome     from '../features/exam-board/pages/ExamBoardHome'
+import GradeSheetPage    from '../features/exam-board/pages/GradeSheetPage'
+import GradeEntryPage    from '../features/exam-board/pages/GradeEntryPage'
+import ApprovalsPage     from '../features/exam-board/pages/ApprovalsPage'
+import DeprivationPage   from '../features/exam-board/pages/DeprivationPage'
 import ExamPlaceholder   from '../features/exam-board/pages/ExamPlaceholder'
 
 function ProtectedRoute({ children }) {
@@ -78,9 +82,10 @@ export default function App() {
           }
         >
           <Route path="/exam-board"                element={<ExamBoardHome />} />
-          <Route path="/exam-board/grade-sheet"   element={<ExamPlaceholder title="كشوف الدرجات"         en="Grade Sheets" />} />
-          <Route path="/exam-board/approvals"     element={<ExamPlaceholder title="اعتماد الدرجات"       en="Grade Approvals" />} />
-          <Route path="/exam-board/deprivation"   element={<ExamPlaceholder title="الحضور والحرمان"      en="Deprivation" />} />
+          <Route path="/exam-board/grade-entry"   element={<GradeEntryPage />} />
+          <Route path="/exam-board/grade-sheet"   element={<GradeSheetPage />} />
+          <Route path="/exam-board/approvals"     element={<ApprovalsPage />} />
+          <Route path="/exam-board/deprivation"   element={<DeprivationPage />} />
           <Route path="/exam-board/supplementary" element={<ExamPlaceholder title="الامتحانات التكميلية" en="Supplementary Exams" />} />
           <Route path="/exam-board/results"       element={<ExamPlaceholder title="النتائج والتقارير"    en="Results" />} />
           <Route path="/exam-board/appeals"       element={<ExamPlaceholder title="التظلمات"             en="Appeals" />} />

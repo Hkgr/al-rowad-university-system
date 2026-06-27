@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { FaSpinner, FaClipboardList, FaCheckDouble, FaExclamationTriangle, FaCalendarAlt } from 'react-icons/fa'
+import { Link } from 'react-router-dom'
+import { FaClipboardList, FaCheckDouble, FaExclamationTriangle, FaCalendarAlt } from 'react-icons/fa'
 
 const API = 'http://127.0.0.1:8000/api/v1'
 
@@ -44,10 +44,11 @@ export default function ExamBoardHome() {
           { Icon: FaCheckDouble,         color: '#3b82f6', ar: 'اعتماد الدرجات',       en: 'Grade Approvals',    to: '/exam-board/approvals'      },
           { Icon: FaExclamationTriangle, color: '#f59e0b', ar: 'الحضور والحرمان',       en: 'Deprivation',        to: '/exam-board/deprivation'    },
           { Icon: FaCalendarAlt,         color: '#8b5cf6', ar: 'الامتحانات التكميلية', en: 'Supplementary Exams', to: '/exam-board/supplementary'  },
-        ].map(({ Icon, color, ar, en }) => (
-          <div
+        ].map(({ Icon, color, ar, en, to }) => (
+          <Link
             key={ar}
-            className="bg-white border border-primary/12 rounded-[16px] px-5 py-5 flex items-center gap-4 shadow-[0_2px_12px_rgba(26,46,16,0.05)]"
+            to={to}
+            className="bg-white border border-primary/12 rounded-[16px] px-5 py-5 flex items-center gap-4 shadow-[0_2px_12px_rgba(26,46,16,0.05)] no-underline transition-all duration-200 hover:-translate-y-[3px] hover:shadow-[0_6px_20px_rgba(26,46,16,0.1)] group"
             dir="rtl"
           >
             <div
@@ -56,11 +57,12 @@ export default function ExamBoardHome() {
             >
               <Icon />
             </div>
-            <div>
+            <div className="flex-1">
               <div className="text-[15px] font-bold text-text-dark">{ar}</div>
               <div className="text-[11px] text-text-light">{en}</div>
             </div>
-          </div>
+            <span className="text-[14px] text-gray-300 transition-all duration-200 group-hover:-translate-x-1" style={{ color }}>←</span>
+          </Link>
         ))}
       </div>
     </>
