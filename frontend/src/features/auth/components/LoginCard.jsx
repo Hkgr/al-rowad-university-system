@@ -53,7 +53,10 @@ export default function LoginCard() {
       if (data.success) {
         localStorage.setItem('token', data.data.token)
         localStorage.setItem('user', JSON.stringify(data.data.user))
-        navigate(data.data.user.student_id ? '/student' : '/student-affairs')
+        const u = data.data.user
+        if (u.student_id)      navigate('/student')
+        else if (u.board_member_id) navigate('/exam-board')
+        else                   navigate('/student-affairs')
       } else {
         setError(data.message || 'Invalid email or password')
       }
