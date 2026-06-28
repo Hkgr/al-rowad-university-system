@@ -1,6 +1,6 @@
 import {
   FaHome, FaClipboardList, FaCheckDouble, FaExclamationTriangle,
-  FaCalendarAlt, FaChartBar, FaUsers, FaCog, FaEdit,
+  FaCalendarAlt, FaChartBar, FaUsers, FaCog, FaEdit, FaLayerGroup,
 } from 'react-icons/fa'
 
 const examBoardNav = [
@@ -19,8 +19,9 @@ const examBoardNav = [
   {
     label: 'الإدارة',
     items: [
-      { to: '/exam-board/appeals',          Icon: FaUsers,              ar: 'التظلمات',             en: 'Appeals'              },
-      { to: '/exam-board/settings',         Icon: FaCog,                ar: 'الإعدادات',            en: 'Settings'             },
+      { to: '/exam-board/courses-departments', Icon: FaLayerGroup,         ar: 'مواد الأقسام',         en: 'Courses & Depts'      },
+      { to: '/exam-board/appeals',             Icon: FaUsers,              ar: 'التظلمات',             en: 'Appeals'              },
+      { to: '/exam-board/settings',            Icon: FaCog,                ar: 'الإعدادات',            en: 'Settings'             },
     ],
   },
 ]
