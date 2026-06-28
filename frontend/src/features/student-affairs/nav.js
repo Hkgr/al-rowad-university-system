@@ -1,5 +1,5 @@
 import {
-  FaHome, FaGraduationCap, FaUserPlus,
+  FaHome, FaGraduationCap, FaUserPlus, FaArchive,
   FaChartBar, FaCog,
 } from 'react-icons/fa'
 
@@ -14,7 +14,8 @@ const studentAffairsNav = [
     items: [
       { to: '/student-affairs',              Icon: FaHome,          ar: 'الرئيسية',     en: 'Home',        end: true },
       { to: '/student-affairs/students',     Icon: FaGraduationCap, ar: 'قائمة الطلاب', en: 'Students'              },
-      { to: '/student-affairs/students/add', Icon: FaUserPlus,      ar: 'إضافة طالب',   en: 'Add Student', end: true },
+      { to: '/student-affairs/students/add',      Icon: FaUserPlus, ar: 'إضافة طالب',       en: 'Add Student', end: true },
+      { to: '/student-affairs/students/archived', Icon: FaArchive,  ar: 'الطلاب المؤرشفون', en: 'Archived',    end: true },
     ],
   },
   {
