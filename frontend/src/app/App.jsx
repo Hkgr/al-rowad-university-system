@@ -16,10 +16,11 @@ import ArchivedStudentsPage from '../features/student-affairs/pages/ArchivedStud
 
 // ── بوابة الطالب (Student Dashboard) ────────────────────────────────────────
 import studentNav        from '../features/student-dashboard/nav'
-import StudentHome       from '../features/student-dashboard/pages/StudentHome'
-import StudentTranscript from '../features/student-dashboard/pages/StudentTranscript'
-import StudentGPA        from '../features/student-dashboard/pages/StudentGPA'
-import StudentAttendance from '../features/student-dashboard/pages/StudentAttendance'
+import StudentHome         from '../features/student-dashboard/pages/StudentHome'
+import StudentTranscript  from '../features/student-dashboard/pages/StudentTranscript'
+import StudentGPA         from '../features/student-dashboard/pages/StudentGPA'
+import StudentAttendance  from '../features/student-dashboard/pages/StudentAttendance'
+import StudentRegistration from '../features/student-dashboard/pages/StudentRegistration'
 
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem('token')
@@ -61,7 +62,8 @@ export default function App() {
           <Route path="/student"            element={<StudentHome />}       />
           <Route path="/student/transcript" element={<StudentTranscript />} />
           <Route path="/student/gpa"        element={<StudentGPA />}        />
-          <Route path="/student/attendance" element={<StudentAttendance />} />
+          <Route path="/student/attendance"    element={<StudentAttendance />} />
+          <Route path="/student/registration" element={<StudentRegistration />} />
         </Route>
 
         {/* Default redirect */}
