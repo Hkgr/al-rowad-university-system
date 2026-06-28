@@ -121,16 +121,18 @@ function BulkRow({ row }) {
 // ── MODE 1: Bulk (course → students table) ───────────────────────────────────
 
 function BulkMode() {
-  const [years,       setYears]       = useState([])
-  const [semesters,   setSemesters]   = useState([])
-  const [yearId,      setYearId]      = useState('')
-  const [semId,       setSemId]       = useState('')
-  const [offerings,   setOfferings]   = useState([])
-  const [offeringId,  setOfferingId]  = useState('')
-  const [gradeSheet,  setGradeSheet]  = useState(null)
-  const [loadingInit, setLoadingInit] = useState(true)
-  const [loadingOff,  setLoadingOff]  = useState(false)
-  const [loadingGs,   setLoadingGs]   = useState(false)
+  const [years,             setYears]             = useState([])
+  const [semesters,         setSemesters]         = useState([])
+  const [filteredSemesters, setFilteredSemesters] = useState([])
+  const [yearId,            setYearId]            = useState('')
+  const [semId,             setSemId]             = useState('')
+  const [offerings,         setOfferings]         = useState([])
+  const [offeringId,        setOfferingId]        = useState('')
+  const [gradeSheet,        setGradeSheet]        = useState(null)
+  const [loadingInit,       setLoadingInit]       = useState(true)
+  const [loadingFilter,     setLoadingFilter]     = useState(false)
+  const [loadingOff,        setLoadingOff]        = useState(false)
+  const [loadingGs,         setLoadingGs]         = useState(false)
 
   useEffect(() => {
     Promise.all([
@@ -138,9 +140,34 @@ function BulkMode() {
       fetch(`${API}/semesters?per_page=20`,      { headers: authHeaders() }).then(r => r.json()),
     ]).then(([y, s]) => {
       setYears(y.success     ? (y.data?.data ?? y.data ?? []) : [])
-      setSemesters(s.success ? (s.data?.data ?? s.data ?? []) : [])
+      const allSems = s.success ? (s.data?.data ?? s.data ?? []) : []
+      setSemesters(allSems)
+      setFilteredSemesters(allSems)
     }).finally(() => setLoadingInit(false))
   }, [])
+
+  function handleYearChange(yId, allSems) {
+    setYearId(yId); setSemId(''); setOfferings([]); setOfferingId(''); setGradeSheet(null)
+    if (!yId) { setFilteredSemesters(allSems); return }
+    setLoadingFilter(true)
+    Promise.all(
+      allSems.map(s =>
+        fetch(`${API}/course-offerings/by-semester?academic_year_id=${yId}&semester_id=${s.semester_id}&per_page=1`, { headers: authHeaders() })
+          .then(r => r.json())
+          .then(json => ({ sem: s, has: json.success && (json.data?.data?.length ?? 0) > 0 }))
+          .catch(() => ({ sem: s, has: false }))
+      )
+    ).then(results => {
+      const valid = results.filter(r => r.has).map(r => r.sem)
+      const list  = valid.length > 0 ? valid : allSems
+      setFilteredSemesters(list)
+      if (valid.length === 1) {
+        const sId = String(valid[0].semester_id)
+        setSemId(sId)
+        loadOfferings(yId, sId)
+      }
+    }).finally(() => setLoadingFilter(false))
+  }
 
   function loadOfferings(yId, sId) {
     if (!yId || !sId) return
@@ -174,7 +201,7 @@ function BulkMode() {
             <select
               className="px-3 py-2.5 border border-primary/20 rounded-[10px] text-[13.5px] text-text-dark outline-none focus:border-primary"
               value={yearId}
-              onChange={e => { setYearId(e.target.value); loadOfferings(e.target.value, semId) }}
+              onChange={e => handleYearChange(e.target.value, semesters)}
               dir="rtl"
             >
               <option value="">اختر السنة</option>
@@ -183,15 +210,19 @@ function BulkMode() {
           </div>
           {/* Semester */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-[12px] font-bold text-text-dark">الفصل الدراسي</label>
+            <label className="text-[12px] font-bold text-text-dark">
+              الفصل الدراسي
+              {loadingFilter && <FaSpinner className="inline mr-2 animate-spin text-[11px] text-primary" />}
+            </label>
             <select
-              className="px-3 py-2.5 border border-primary/20 rounded-[10px] text-[13.5px] text-text-dark outline-none focus:border-primary"
+              className="px-3 py-2.5 border border-primary/20 rounded-[10px] text-[13.5px] text-text-dark outline-none focus:border-primary disabled:opacity-50"
               value={semId}
               onChange={e => { setSemId(e.target.value); loadOfferings(yearId, e.target.value) }}
+              disabled={!yearId || loadingFilter}
               dir="rtl"
             >
               <option value="">اختر الفصل</option>
-              {semesters.map(s => <option key={s.semester_id} value={s.semester_id}>{s.semester_name}</option>)}
+              {filteredSemesters.map(s => <option key={s.semester_id} value={s.semester_id}>{s.semester_name}</option>)}
             </select>
           </div>
           {/* Course offering */}
@@ -285,7 +316,7 @@ function IndividualMode() {
     setSelected(student); setRegs([]); setRegId(''); setCurrent(null)
     setTheory(''); setPrac(''); setSaved(false); setErr('')
     setLoadRegs(true)
-    fetch(`${API}/student-course-registrations?student_id=${student.student_id}&per_page=100`, { headers: authHeaders() })
+    fetch(`${API}/students/${student.student_id}/registrations?per_page=100`, { headers: authHeaders() })
       .then(r => r.json())
       .then(json => setRegs(json.success ? (json.data?.data ?? json.data ?? []) : []))
       .finally(() => setLoadRegs(false))
@@ -341,8 +372,8 @@ function IndividualMode() {
             <option value="">— اختر مادة —</option>
             {regs.map(r => (
               <option key={r.student_course_registration_id} value={r.student_course_registration_id}>
-                {r.course?.course_name || `Registration #${r.student_course_registration_id}`}
-                {r.course?.course_code ? ` (${r.course.course_code})` : ''}
+                {r.course_offering?.course?.course_name || `Registration #${r.student_course_registration_id}`}
+                {r.course_offering?.course?.course_code ? ` (${r.course_offering.course.course_code})` : ''}
               </option>
             ))}
           </select>
