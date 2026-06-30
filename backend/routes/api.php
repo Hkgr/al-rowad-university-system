@@ -184,6 +184,7 @@ Route::middleware('auth:sanctum')->prefix('v1')->group(function (): void {
     Route::get('students/{student}/profile', [StudentController::class, 'profile']);
     Route::get('students/{student}/academic-info', [StudentController::class, 'academicInfo']);
     Route::get('students/{student}/documents', [StudentController::class, 'documents']);
+    Route::post('students/{student}/documents', [StudentDocumentController::class, 'upload']);
     Route::get('students/{student}/registrations', [StudentController::class, 'registrations']);
     Route::get('students/{student}/transcript', [StudentController::class, 'transcript']);
     Route::get('students/{student}/gpa', [StudentController::class, 'gpa']);
@@ -324,6 +325,7 @@ Route::middleware('auth:sanctum')->prefix('v1')->group(function (): void {
     Route::apiResource('student-course-registrations', StudentCourseRegistrationController::class);
     Route::apiResource('student-course-results', StudentCourseResultController::class);
     Route::apiResource('student-credit-limits', StudentCreditLimitController::class);
+    Route::get('student-documents/{studentDocument}/download', [StudentDocumentController::class, 'download']);
     Route::apiResource('student-documents', StudentDocumentController::class);
     Route::apiResource('student-grade-components', StudentGradeComponentController::class);
     Route::apiResource('student-statuses', StudentStatusController::class);
