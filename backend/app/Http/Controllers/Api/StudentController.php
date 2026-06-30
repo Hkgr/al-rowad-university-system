@@ -42,6 +42,55 @@ class StudentController extends ApiController
         return UpdateStudentRequest::class;
     }
 
+    public function index(): JsonResponse
+    {   $request = request();
+        $validated = $request->validate([
+            'student_status_id' => ['sometimes', 'integer', 'exists:student_statuses,student_status_id'],
+            'academic_program_id' => ['sometimes', 'integer', 'exists:academic_programs,academic_program_id'],
+            'current_academic_level_id' => ['sometimes', 'integer', 'exists:academic_levels,academic_level_id'],
+            'q' => ['sometimes', 'string', 'min:1', 'max:150'],
+            'search' => ['sometimes', 'string', 'min:1', 'max:150'],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+            'page' => ['sometimes', 'integer', 'min:1'],
+        ]);
+
+        $query = Student::query();
+
+        if (isset($validated['student_status_id'])) {
+            $query->where('student_status_id', $validated['student_status_id']);
+        }
+
+        if (isset($validated['academic_program_id'])) {
+            $query->where('academic_program_id', $validated['academic_program_id']);
+        }
+
+        if (isset($validated['current_academic_level_id'])) {
+            $query->where('current_academic_level_id', $validated['current_academic_level_id']);
+        }
+
+        $searchTerm = $validated['q'] ?? $validated['search'] ?? null;
+
+        if ($searchTerm !== null) {
+            $query->where(function ($builder) use ($searchTerm): void {
+                $builder->where('student_number', 'like', "%{$searchTerm}%")
+                    ->orWhere('first_name', 'like', "%{$searchTerm}%")
+                    ->orWhere('last_name', 'like', "%{$searchTerm}%")
+                    ->orWhere('email', 'like', "%{$searchTerm}%")
+                    ->orWhere('phone_number', 'like', "%{$searchTerm}%");
+            });
+        }
+
+        $students = $query
+            ->orderBy('student_number')
+            ->paginate($request->integer('per_page', 15));
+
+        $payload = StudentResource::collection($students)
+            ->response($request)
+            ->getData(true);
+
+        return $this->successResponse($payload);
+    }
+
     public function destroy($id): JsonResponse
     {
         $student = Student::query()->findOrFail($id);
