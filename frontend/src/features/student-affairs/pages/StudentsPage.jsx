@@ -45,6 +45,20 @@ async function fetchAll(url) {
   return json.success ? (json.data?.data ?? json.data ?? []) : []
 }
 
+async function fetchAllPages(baseUrl) {
+  const first   = await fetch(`${baseUrl}&per_page=100&page=1`, { headers: authHeaders() })
+  const firstJson = await first.json()
+  if (!firstJson.success) return []
+  const rows      = [...(firstJson.data?.data ?? [])]
+  const lastPage  = firstJson.data?.meta?.last_page ?? 1
+  for (let p = 2; p <= lastPage; p++) {
+    const r = await fetch(`${baseUrl}&per_page=100&page=${p}`, { headers: authHeaders() })
+    const j = await r.json()
+    if (j.success) rows.push(...(j.data?.data ?? []))
+  }
+  return rows
+}
+
 export default function StudentsPage() {
   const [allStudents, setAllStudents]   = useState([])
   const [programMap, setProgramMap]     = useState({})   // id -> { name, dept_id }
@@ -69,7 +83,7 @@ export default function StudentsPage() {
       setError('')
       try {
         const [studs, progs, depts, cols] = await Promise.all([
-          fetchAll(`${API}/students?per_page=500`),
+          fetchAllPages(`${API}/students?`),
           fetchAll(`${API}/academic-programs?per_page=100`),
           fetchAll(`${API}/departments?per_page=100`),
           fetchAll(`${API}/colleges?per_page=50`),
