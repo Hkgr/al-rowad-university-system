@@ -16,6 +16,9 @@ class StudentDocumentResource extends JsonResource
             'document_type_id' => $this->document_type_id,
             'file_name' => $this->file_name,
             'file_url' => $this->file_url,
+            'download_url' => $this->student_document_id
+                ? url('/api/v1/student-documents/'.$this->student_document_id.'/download')
+                : null,
             'verification_status' => $this->verification_status,
             'verified_by_user_id' => $this->verified_by_user_id,
             'verified_at' => $this->verified_at,
