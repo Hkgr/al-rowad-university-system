@@ -1,40 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  FaUserPlus, FaSearch, FaEye, FaEdit, FaArchive,
-  FaChevronLeft, FaChevronRight, FaSpinner, FaGraduationCap,
+  FaSearch, FaEye, FaSpinner, FaGraduationCap,
+  FaChevronLeft, FaChevronRight,
 } from 'react-icons/fa'
 
 const API = 'http://127.0.0.1:8000/api/v1'
-
-const STATUS_MAP = {
-  1: { ar: 'مقيّد',  color: '#22c55e', bg: 'rgba(34,197,94,0.1)'  },
-  2: { ar: 'منقطع',  color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
-  3: { ar: 'خريج',   color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
-  4: { ar: 'مسحوب',  color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
-  5: { ar: 'مفصول',  color: '#ef4444', bg: 'rgba(239,68,68,0.1)'  },
-  6: { ar: 'موقوف',  color: '#f97316', bg: 'rgba(249,115,22,0.1)' },
-}
-
-function StatusBadge({ student }) {
-  const code = student.student_status?.status_code
-  const id   = student.student_status_id
-  const cfg  = code
-    ? Object.values(STATUS_MAP).find((_, i) => Object.keys(STATUS_MAP)[i] == id) ?? STATUS_MAP[id]
-    : STATUS_MAP[id]
-  if (!cfg) return <span className="text-[11px] text-text-light">—</span>
-  return (
-    <span
-      className="inline-block px-2 py-[3px] rounded-full text-[11px] font-bold whitespace-nowrap"
-      style={{ color: cfg.color, background: cfg.bg }}
-    >
-      {student.student_status?.status_name
-        ? (STATUS_MAP[id]?.ar ?? student.student_status.status_name)
-        : cfg.ar}
-    </span>
-  )
-}
 
 function authHeaders() {
   return {
@@ -43,31 +15,31 @@ function authHeaders() {
   }
 }
 
-export default function StudentsPage() {
-  const [students, setStudents] = useState([])
-  const [loading, setLoading]   = useState(true)
-  const [error, setError]       = useState('')
-  const [search, setSearch]     = useState('')
-  const [page, setPage]         = useState(1)
-  const [meta, setMeta]         = useState({ total: 0, last_page: 1, per_page: 15 })
-  const debounceRef             = useRef(null)
-  const navigate                = useNavigate()
+export default function GraduatesPage() {
+  const [graduates, setGraduates] = useState([])
+  const [loading,   setLoading]   = useState(true)
+  const [error,     setError]     = useState('')
+  const [search,    setSearch]    = useState('')
+  const [page,      setPage]      = useState(1)
+  const [meta,      setMeta]      = useState({ total: 0, last_page: 1, per_page: 15 })
+  const debounceRef               = useRef(null)
+  const navigate                  = useNavigate()
 
-  const fetchStudents = useCallback(async (q, p) => {
+  const fetchGraduates = useCallback(async (q, p) => {
     setLoading(true)
     setError('')
     try {
       const url = q
-        ? `${API}/students/search?q=${encodeURIComponent(q)}&per_page=15&page=${p}`
-        : `${API}/students?page=${p}&per_page=15`
+        ? `${API}/students/search?q=${encodeURIComponent(q)}&student_status_id=3&per_page=15&page=${p}`
+        : `${API}/students?student_status_id=3&page=${p}&per_page=15`
 
-      const res = await fetch(url, { headers: authHeaders() })
+      const res  = await fetch(url, { headers: authHeaders() })
       if (res.status === 401) { navigate('/login'); return }
       const json = await res.json()
 
       if (json.success) {
         const payload = json.data
-        setStudents(payload.data ?? [])
+        setGraduates(payload.data ?? [])
         setMeta({
           total:     payload.meta?.total     ?? payload.total     ?? 0,
           last_page: payload.meta?.last_page ?? payload.last_page ?? 1,
@@ -87,52 +59,32 @@ export default function StudentsPage() {
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       setPage(1)
-      fetchStudents(search, 1)
+      fetchGraduates(search, 1)
     }, 380)
     return () => clearTimeout(debounceRef.current)
-  }, [search, fetchStudents])
+  }, [search, fetchGraduates])
 
   useEffect(() => {
-    fetchStudents(search, page)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchGraduates(search, page)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page])
-
-  const handleArchive = async (id) => {
-    if (!window.confirm('سيتم أرشفة هذا الطالب وإخفاؤه من القائمة.\nهل أنت متأكد؟')) return
-    try {
-      const res  = await fetch(`${API}/students/${id}`, { method: 'DELETE', headers: authHeaders() })
-      const json = await res.json()
-      if (json.success) {
-        setStudents(prev => prev.filter(s => s.student_id !== id))
-        setMeta(prev => ({ ...prev, total: Math.max(0, prev.total - 1) }))
-      } else {
-        alert(json.message || 'فشلت الأرشفة')
-      }
-    } catch {
-      alert('تعذّر الاتصال بالخادم')
-    }
-  }
 
   const totalPages = meta.last_page || 1
 
   return (
     <>
-      {/* Page header */}
+      {/* Header */}
       <div className="flex items-center justify-between mb-5 gap-4 flex-wrap">
         <div dir="rtl">
-          <h2 className="text-[20px] font-black text-text-dark mb-[3px]">قائمة الطلاب</h2>
+          <h2 className="text-[20px] font-black text-text-dark mb-[3px]">قائمة الخريجين</h2>
           <p className="text-[12.5px] text-text-light">
-            {meta.total > 0 ? `${meta.total} طالب مسجّل` : 'عرض جميع الطلاب المسجّلين'}
+            {meta.total > 0 ? `${meta.total} خريج مسجّل` : 'لا يوجد خريجون بعد'}
           </p>
         </div>
-        <Link
-          to="/student-affairs/students/add"
-          className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-br from-primary to-primary-dark text-white rounded-[12px] no-underline text-[14px] font-bold whitespace-nowrap shadow-[0_4px_16px_rgba(86,153,51,0.35)] transition-all duration-[220ms] hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(86,153,51,0.45)]"
-          dir="rtl"
-        >
-          <FaUserPlus />
-          <span>إضافة طالب</span>
-        </Link>
+        <div className="flex items-center gap-2 px-4 py-2 bg-purple-50 border border-purple-200 rounded-[12px]" dir="rtl">
+          <FaGraduationCap className="text-purple-500 text-[15px]" />
+          <span className="text-[13px] font-bold text-purple-700">Graduates</span>
+        </div>
       </div>
 
       {/* Search */}
@@ -141,14 +93,14 @@ export default function StudentsPage() {
         <input
           className="w-full py-[13px] pr-4 pl-[42px] border-[1.5px] border-primary/20 rounded-[13px] bg-white text-[14px] font-medium text-text-dark outline-none transition-all duration-[220ms] placeholder:text-text-light focus:border-primary focus:shadow-[0_0_0_4px_rgba(86,153,51,0.1)]"
           type="text"
-          placeholder="ابحث باسم الطالب، رقم القيد، البريد الإلكتروني…"
+          placeholder="ابحث باسم الخريج، رقم القيد، البريد الإلكتروني…"
           value={search}
           onChange={e => setSearch(e.target.value)}
           dir="rtl"
         />
         {search && (
           <button
-            className="absolute right-3.5 top-1/2 -translate-y-1/2 bg-transparent border-none text-[18px] text-text-light cursor-pointer leading-none w-6 h-6 flex items-center justify-center rounded-full transition-all duration-200 hover:bg-red-500/8 hover:text-red-500"
+            className="absolute right-3.5 top-1/2 -translate-y-1/2 bg-transparent border-none text-[18px] text-text-light cursor-pointer w-6 h-6 flex items-center justify-center rounded-full transition-all duration-200 hover:bg-red-500/8 hover:text-red-500"
             onClick={() => setSearch('')}
           >
             ×
@@ -161,8 +113,8 @@ export default function StudentsPage() {
         <div className="flex items-center justify-between gap-3 bg-red-500/6 border border-red-500/25 rounded-[12px] px-[18px] py-3 mb-4 text-[13.5px] text-red-600" dir="rtl">
           <span>⚠ {error}</span>
           <button
-            className="px-3.5 py-1 bg-transparent border border-red-500/35 rounded-[8px] text-red-600 text-[12px] cursor-pointer whitespace-nowrap transition-all duration-200 hover:bg-red-500/8"
-            onClick={() => fetchStudents(search, page)}
+            className="px-3.5 py-1 border border-red-500/35 rounded-[8px] text-red-600 text-[12px] cursor-pointer transition-all duration-200 hover:bg-red-500/8"
+            onClick={() => fetchGraduates(search, page)}
           >
             إعادة المحاولة
           </button>
@@ -176,11 +128,11 @@ export default function StudentsPage() {
             <FaSpinner className="text-[28px] animate-[spin_0.7s_linear_infinite]" />
             <span>جاري التحميل…</span>
           </div>
-        ) : students.length === 0 ? (
+        ) : graduates.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-[60px]">
-            <FaGraduationCap className="text-[48px] text-[#d1eab8] mb-2" />
-            <p className="text-[16px] font-bold text-text-gray" dir="rtl">لا يوجد طلاب</p>
-            <p className="text-[12.5px] text-text-light">No students found</p>
+            <FaGraduationCap className="text-[48px] text-purple-200 mb-2" />
+            <p className="text-[16px] font-bold text-text-gray" dir="rtl">لا يوجد خريجون</p>
+            <p className="text-[12.5px] text-text-light">No graduates found</p>
             {search && (
               <button
                 className="mt-2.5 px-5 py-2 bg-primary/8 border border-primary/20 rounded-[10px] text-primary-dark text-[13px] font-semibold cursor-pointer transition-all duration-200 hover:bg-primary/15"
@@ -200,7 +152,6 @@ export default function StudentsPage() {
                 <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">البريد الإلكتروني</th>
                 <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">رقم الهاتف</th>
                 <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">تاريخ القبول</th>
-                <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">الحالة</th>
                 <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">الإجراءات</th>
               </tr>
             </thead>
@@ -212,51 +163,37 @@ export default function StudentsPage() {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.18 }}
               >
-                {students.map((s, idx) => (
-                  <tr key={s.student_id} className="border-b border-primary/7 last:border-b-0 transition-colors duration-150 hover:bg-primary/[0.035]">
+                {graduates.map((s, idx) => (
+                  <tr key={s.student_id} className="border-b border-primary/7 last:border-b-0 transition-colors duration-150 hover:bg-purple-50/40">
                     <td className="px-4 py-[13px] text-[12px] text-text-light font-semibold w-10">
                       {(page - 1) * meta.per_page + idx + 1}
                     </td>
-                    <td className="px-4 py-[13px] text-[13.5px] text-text-dark align-middle">
+                    <td className="px-4 py-[13px] align-middle">
                       <span className="inline-block px-2.5 py-[3px] bg-primary/8 border border-primary/15 rounded-[8px] text-[12px] font-bold text-primary-dark font-mono">
                         {s.student_number}
                       </span>
                     </td>
-                    <td className="px-4 py-[13px] text-[13.5px] font-semibold text-text-dark align-middle" dir="rtl">
-                      {s.first_name} {s.last_name}
+                    <td className="px-4 py-[13px] align-middle" dir="rtl">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 text-[11px] font-black flex-shrink-0">
+                          {s.first_name?.[0]?.toUpperCase() ?? '?'}
+                        </div>
+                        <span className="text-[13.5px] font-semibold text-text-dark">{s.first_name} {s.last_name}</span>
+                      </div>
                     </td>
                     <td className="px-4 py-[13px] text-[12.5px] text-text-gray align-middle">{s.email || '—'}</td>
-                    <td className="px-4 py-[13px] text-[13.5px] text-text-dark align-middle">{s.phone_number || '—'}</td>
-                    <td className="px-4 py-[13px] text-[13.5px] text-text-dark align-middle">
+                    <td className="px-4 py-[13px] text-[13px] text-text-dark align-middle">{s.phone_number || '—'}</td>
+                    <td className="px-4 py-[13px] text-[13px] text-text-dark align-middle">
                       {s.enrollment_date ? new Date(s.enrollment_date).toLocaleDateString('ar-SY') : '—'}
                     </td>
                     <td className="px-4 py-[13px] align-middle">
-                      <StatusBadge student={s} />
-                    </td>
-                    <td className="px-4 py-[13px] align-middle">
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-blue-500 border-blue-500/20 bg-blue-500/6 hover:bg-blue-500/14 hover:border-blue-500/35"
-                          title="عرض الملف"
-                          onClick={() => navigate(`/student-affairs/students/${s.student_id}`)}
-                        >
-                          <FaEye />
-                        </button>
-                        <button
-                          className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-amber-500 border-amber-500/20 bg-amber-500/6 hover:bg-amber-500/14 hover:border-amber-500/35"
-                          title="تعديل"
-                          onClick={() => navigate(`/student-affairs/students/${s.student_id}/edit`)}
-                        >
-                          <FaEdit />
-                        </button>
-                        <button
-                          className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-slate-500 border-slate-400/20 bg-slate-400/6 hover:bg-slate-400/14 hover:border-slate-400/35"
-                          title="أرشفة"
-                          onClick={() => handleArchive(s.student_id)}
-                        >
-                          <FaArchive />
-                        </button>
-                      </div>
+                      <button
+                        className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-blue-500 border-blue-500/20 bg-blue-500/6 hover:bg-blue-500/14 hover:border-blue-500/35"
+                        title="عرض الملف"
+                        onClick={() => navigate(`/student-affairs/students/${s.student_id}`)}
+                      >
+                        <FaEye />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -278,13 +215,11 @@ export default function StudentsPage() {
             <FaChevronRight />
             <span>السابق</span>
           </button>
-
           <div className="flex items-center gap-1.5 text-[13px] text-text-gray" dir="rtl">
             <span className="text-[17px] font-extrabold text-primary">{page}</span>
             <span className="text-text-light">من</span>
             <span className="font-semibold text-text-dark">{totalPages}</span>
           </div>
-
           <button
             className="flex items-center gap-1.5 px-4 py-2 border-[1.5px] border-primary/20 rounded-[10px] bg-white text-primary-dark text-[13px] font-semibold cursor-pointer transition-all duration-200 disabled:opacity-[0.38] disabled:cursor-not-allowed hover:not-disabled:bg-primary/8 hover:not-disabled:border-primary/40"
             disabled={page >= totalPages}
@@ -296,7 +231,6 @@ export default function StudentsPage() {
           </button>
         </div>
       )}
-
     </>
   )
 }

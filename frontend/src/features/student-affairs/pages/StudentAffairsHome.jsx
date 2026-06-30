@@ -5,6 +5,7 @@ import {
   FaGraduationCap, FaUniversity, FaBook,
   FaUserPlus, FaUsers, FaSpinner,
   FaCheckCircle, FaSnowflake, FaBan, FaUserTimes, FaPauseCircle,
+  FaUserGraduate,
 } from 'react-icons/fa'
 
 const API = 'http://127.0.0.1:8000/api/v1'
@@ -33,7 +34,7 @@ export default function StudentAffairsHome() {
   const navigate = useNavigate()
   const user     = JSON.parse(localStorage.getItem('user') || '{}')
 
-  const [stats,    setStats]    = useState({ total: 0, programs: 0, colleges: 0 })
+  const [stats,    setStats]    = useState({ total: 0, programs: 0, colleges: 0, graduates: 0 })
   const [colleges, setColleges] = useState([])
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState('')
@@ -43,11 +44,12 @@ export default function StudentAffairsHome() {
 
     async function load() {
       try {
-        const [studentsRes, collegesRes, departmentsRes, programsRes] = await Promise.all([
-          fetch(`${API}/students?per_page=1`,              { headers: authHeaders() }),
-          fetch(`${API}/colleges?per_page=100`,            { headers: authHeaders() }),
-          fetch(`${API}/departments?per_page=100`,         { headers: authHeaders() }),
-          fetch(`${API}/academic-programs?per_page=100`,   { headers: authHeaders() }),
+        const [studentsRes, graduatesRes, collegesRes, departmentsRes, programsRes] = await Promise.all([
+          fetch(`${API}/students?per_page=1`,                          { headers: authHeaders() }),
+          fetch(`${API}/students?per_page=1&student_status_id=3`,      { headers: authHeaders() }),
+          fetch(`${API}/colleges?per_page=100`,                        { headers: authHeaders() }),
+          fetch(`${API}/departments?per_page=100`,                     { headers: authHeaders() }),
+          fetch(`${API}/academic-programs?per_page=100`,               { headers: authHeaders() }),
         ])
 
         if ([studentsRes, collegesRes, departmentsRes, programsRes].some(r => r.status === 401)) {
@@ -55,8 +57,8 @@ export default function StudentAffairsHome() {
           return
         }
 
-        const [sJson, cJson, dJson, pJson] = await Promise.all([
-          studentsRes.json(), collegesRes.json(), departmentsRes.json(), programsRes.json(),
+        const [sJson, gJson, cJson, dJson, pJson] = await Promise.all([
+          studentsRes.json(), graduatesRes.json(), collegesRes.json(), departmentsRes.json(), programsRes.json(),
         ])
 
         if (cancelled) return
@@ -65,6 +67,7 @@ export default function StudentAffairsHome() {
         const departmentList  = toArr(dJson.data)
         const programList     = toArr(pJson.data)
         const totalStudents   = toMeta(sJson.data).total ?? 0
+        const totalGraduates  = toMeta(gJson.data).total ?? 0
 
         // Build map: college_id → { college, programs[] }
         const deptToCollege = {}
@@ -85,7 +88,7 @@ export default function StudentAffairsHome() {
           programs: collegePrograms[c.college_id] ?? [],
         }))
 
-        setStats({ total: totalStudents, programs: programList.length, colleges: collegeList.length })
+        setStats({ total: totalStudents, graduates: totalGraduates, programs: programList.length, colleges: collegeList.length })
         setColleges(enriched)
         setError('')
       } catch {
@@ -104,9 +107,10 @@ export default function StudentAffairsHome() {
   })
 
   const TOP_STATS = [
-    { Icon: FaGraduationCap, ar: 'إجمالي الطلاب', en: 'Total Students',     value: stats.total,    color: '#569933', bg: 'rgba(86,153,51,0.1)'  },
-    { Icon: FaBook,          ar: 'البرامج الأكاديمية', en: 'Academic Programs', value: stats.programs, color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
-    { Icon: FaUniversity,    ar: 'الكليات',        en: 'Colleges',          value: stats.colleges, color: '#3b82f6', bg: 'rgba(59,130,246,0.1)'  },
+    { Icon: FaUsers,         ar: 'إجمالي الطلاب',     en: 'Total Students',    value: stats.total,     color: '#569933', bg: 'rgba(86,153,51,0.1)'  },
+    { Icon: FaUserGraduate,  ar: 'الخريجون',           en: 'Graduates',         value: stats.graduates, color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
+    { Icon: FaBook,          ar: 'البرامج الأكاديمية', en: 'Academic Programs', value: stats.programs,  color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
+    { Icon: FaUniversity,    ar: 'الكليات',             en: 'Colleges',          value: stats.colleges,  color: '#3b82f6', bg: 'rgba(59,130,246,0.1)'  },
   ]
 
   return (
@@ -147,7 +151,7 @@ export default function StudentAffairsHome() {
       )}
 
       {/* Top stats */}
-      <div className="grid grid-cols-3 max-[820px]:grid-cols-2 max-[500px]:grid-cols-1 gap-5 mb-8">
+      <div className="grid grid-cols-4 max-[900px]:grid-cols-2 max-[500px]:grid-cols-1 gap-5 mb-8">
         {TOP_STATS.map(({ Icon, ar, en, value, color, bg }, i) => (
           <motion.div
             key={i}
@@ -293,8 +297,9 @@ export default function StudentAffairsHome() {
         </div>
         <div className="grid grid-cols-2 max-[500px]:grid-cols-1 gap-3.5">
           {[
-            { Icon: FaUserPlus, ar: 'إضافة طالب جديد', en: 'Add New Student', to: '/student-affairs/students/add', color: '#569933' },
-            { Icon: FaUsers,    ar: 'قائمة الطلاب',    en: 'Students List',   to: '/student-affairs/students',     color: '#3b82f6' },
+            { Icon: FaUserPlus,      ar: 'إضافة طالب جديد', en: 'Add New Student', to: '/student-affairs/students/add',  color: '#569933' },
+            { Icon: FaUsers,         ar: 'قائمة الطلاب',    en: 'Students List',   to: '/student-affairs/students',      color: '#3b82f6' },
+            { Icon: FaUserGraduate,  ar: 'الخريجون',        en: 'Graduates',       to: '/student-affairs/graduates',     color: '#8b5cf6' },
           ].map(({ Icon, ar, en, to, color }, i) => (
             <Link
               key={i}

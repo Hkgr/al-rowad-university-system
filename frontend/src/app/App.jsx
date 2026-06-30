@@ -13,6 +13,7 @@ import AddStudentPage       from '../features/student-affairs/pages/AddStudentPa
 import EditStudentPage      from '../features/student-affairs/pages/EditStudentPage'
 import StudentProfilePage   from '../features/student-affairs/pages/StudentProfilePage'
 import ArchivedStudentsPage from '../features/student-affairs/pages/ArchivedStudentsPage'
+import GraduatesPage       from '../features/student-affairs/pages/GraduatesPage'
 
 // ── بوابة الطالب (Student Dashboard) ────────────────────────────────────────
 import studentNav        from '../features/student-dashboard/nav'
@@ -67,6 +68,7 @@ export default function App() {
           <Route path="/student-affairs/students"          element={<StudentsPage />}          />
           <Route path="/student-affairs/students/add"      element={<AddStudentPage />}        />
           <Route path="/student-affairs/students/archived" element={<ArchivedStudentsPage />}  />
+          <Route path="/student-affairs/graduates"         element={<GraduatesPage />}         />
           <Route path="/student-affairs/students/:id"      element={<StudentProfilePage />}    />
           <Route path="/student-affairs/students/:id/edit" element={<EditStudentPage />}       />
         </Route>

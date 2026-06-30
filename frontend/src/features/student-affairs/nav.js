@@ -1,28 +1,26 @@
 import {
-  FaHome, FaGraduationCap, FaUserPlus, FaArchive,
-  FaChartBar, FaCog,
+  FaHome, FaGraduationCap, FaUserPlus, FaArchive, FaUsers,
 } from 'react-icons/fa'
 
-/**
- * Nav config for شؤون الطلاب (Student Affairs) dashboard.
- * To add more links: add an object to the items array.
- * 'end: true' means the link only highlights on that exact URL (not sub-pages).
- */
 const studentAffairsNav = [
   {
-    label: 'شؤون الطلاب',
+    label: 'الرئيسية',
     items: [
-      { to: '/student-affairs',              Icon: FaHome,          ar: 'الرئيسية',     en: 'Home',        end: true },
-      { to: '/student-affairs/students',     Icon: FaGraduationCap, ar: 'قائمة الطلاب', en: 'Students'              },
-      { to: '/student-affairs/students/add',      Icon: FaUserPlus, ar: 'إضافة طالب',       en: 'Add Student', end: true },
-      { to: '/student-affairs/students/archived', Icon: FaArchive,  ar: 'الطلاب المؤرشفون', en: 'Archived',    end: true },
+      { to: '/student-affairs', Icon: FaHome, ar: 'الرئيسية', en: 'Home', end: true },
     ],
   },
   {
-    label: 'أخرى',
+    label: 'الطلاب',
     items: [
-      { to: '/student-affairs/reports',  Icon: FaChartBar, ar: 'التقارير',  en: 'Reports'  },
-      { to: '/student-affairs/settings', Icon: FaCog,      ar: 'الإعدادات', en: 'Settings' },
+      { to: '/student-affairs/students',          Icon: FaUsers,         ar: 'قائمة الطلاب',      en: 'Students'     },
+      { to: '/student-affairs/students/add',      Icon: FaUserPlus,      ar: 'إضافة طالب',        en: 'Add Student', end: true },
+      { to: '/student-affairs/students/archived', Icon: FaArchive,       ar: 'الطلاب المؤرشفون',  en: 'Archived',    end: true },
+    ],
+  },
+  {
+    label: 'الخريجون',
+    items: [
+      { to: '/student-affairs/graduates', Icon: FaGraduationCap, ar: 'قائمة الخريجين', en: 'Graduates', end: true },
     ],
   },
 ]

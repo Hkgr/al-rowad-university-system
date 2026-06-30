@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   FaArrowRight, FaEdit, FaSpinner, FaUser,
-  FaGraduationCap, FaChartBar, FaCalendarCheck,
+  FaGraduationCap, FaChartBar, FaCalendarCheck, FaCheckCircle,
 } from 'react-icons/fa'
 
 const API = 'http://127.0.0.1:8000/api/v1'
@@ -357,15 +357,17 @@ export default function StudentProfilePage() {
   const { id }   = useParams()
   const navigate = useNavigate()
 
-  const [loading,      setLoading]      = useState(true)
-  const [error,        setError]        = useState('')
-  const [profile,      setProfile]      = useState(null)
-  const [transcript,   setTranscript]   = useState(null)
-  const [cgpa,         setCgpa]         = useState(null)
-  const [attendance,   setAttendance]   = useState(null)
-  const [academicYears, setAcademicYears] = useState([])
-  const [semesters,    setSemesters]    = useState([])
-  const [activeTab,    setActiveTab]    = useState('info')
+  const [loading,        setLoading]        = useState(true)
+  const [error,          setError]          = useState('')
+  const [profile,        setProfile]        = useState(null)
+  const [transcript,     setTranscript]     = useState(null)
+  const [cgpa,           setCgpa]           = useState(null)
+  const [attendance,     setAttendance]     = useState(null)
+  const [academicYears,  setAcademicYears]  = useState([])
+  const [semesters,      setSemesters]      = useState([])
+  const [activeTab,      setActiveTab]      = useState('info')
+  const [graduating,     setGraduating]     = useState(false)
+  const [graduateError,  setGraduateError]  = useState('')
 
   useEffect(() => {
     async function load() {
@@ -395,6 +397,32 @@ export default function StudentProfilePage() {
     }
     load()
   }, [id])
+
+  async function handleGraduate() {
+    if (!window.confirm(`هل تريد تخريج الطالب "${profile?.full_name}"؟\nسيتم تغيير حالته إلى "خريج".`)) return
+    setGraduating(true)
+    setGraduateError('')
+    try {
+      const res  = await fetch(`${API}/students/${id}`, {
+        method:  'PUT',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ student_status_id: 3 }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        setProfile(prev => ({
+          ...prev,
+          student_status: { status_code: 'graduated', status_name: 'Graduated' },
+        }))
+      } else {
+        setGraduateError(json.message || 'فشلت العملية')
+      }
+    } catch {
+      setGraduateError('تعذّر الاتصال بالخادم')
+    } finally {
+      setGraduating(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -428,8 +456,8 @@ export default function StudentProfilePage() {
 
   return (
     <>
-      {/* Top bar: back + edit */}
-      <div className="flex items-center justify-between mb-5 gap-4">
+      {/* Top bar: back + actions */}
+      <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
         <button
           className="flex items-center gap-2 text-[13.5px] font-semibold text-text-gray hover:text-primary transition-colors"
           onClick={() => navigate('/student-affairs/students')}
@@ -438,15 +466,39 @@ export default function StudentProfilePage() {
           <FaArrowRight />
           <span>قائمة الطلاب</span>
         </button>
-        <button
-          className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 border border-amber-500/25 text-amber-700 rounded-[10px] text-[13px] font-bold hover:bg-amber-500/18 transition-colors"
-          onClick={() => navigate(`/student-affairs/students/${id}/edit`)}
-          dir="rtl"
-        >
-          <FaEdit />
-          <span>تعديل البيانات</span>
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {sc.ar !== 'خريج' && (
+            <button
+              className="flex items-center gap-2 px-4 py-2 bg-purple-500/10 border border-purple-500/25 text-purple-700 rounded-[10px] text-[13px] font-bold hover:bg-purple-500/18 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={handleGraduate}
+              disabled={graduating}
+              dir="rtl"
+            >
+              {graduating ? <FaSpinner className="animate-spin text-[12px]" /> : <FaGraduationCap className="text-[12px]" />}
+              <span>تخريج الطالب</span>
+            </button>
+          )}
+          {sc.ar === 'خريج' && (
+            <span className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 border border-purple-200 text-purple-700 rounded-[10px] text-[12px] font-bold" dir="rtl">
+              <FaCheckCircle className="text-[11px]" /> تم التخريج
+            </span>
+          )}
+          <button
+            className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 border border-amber-500/25 text-amber-700 rounded-[10px] text-[13px] font-bold hover:bg-amber-500/18 transition-colors"
+            onClick={() => navigate(`/student-affairs/students/${id}/edit`)}
+            dir="rtl"
+          >
+            <FaEdit />
+            <span>تعديل البيانات</span>
+          </button>
+        </div>
       </div>
+
+      {graduateError && (
+        <div className="bg-red-50 border border-red-200 rounded-[12px] px-5 py-3 mb-4 text-[13px] text-red-600" dir="rtl">
+          ⚠ {graduateError}
+        </div>
+      )}
 
       {/* Student header card */}
       <motion.div
