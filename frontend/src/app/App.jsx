@@ -22,6 +22,15 @@ import StudentGPA         from '../features/student-dashboard/pages/StudentGPA'
 import StudentAttendance  from '../features/student-dashboard/pages/StudentAttendance'
 import StudentRegistration from '../features/student-dashboard/pages/StudentRegistration'
 
+// ── الموارد البشرية (HR) ────────────────────────────────────────────────────
+import hrNav                from '../features/hr-dashboard/nav'
+import HRHome               from '../features/hr-dashboard/pages/HRHome'
+import EmployeesPage        from '../features/hr-dashboard/pages/EmployeesPage'
+import AddEmployeePage      from '../features/hr-dashboard/pages/AddEmployeePage'
+import EmployeeProfilePage  from '../features/hr-dashboard/pages/EmployeeProfilePage'
+import FacultyPage          from '../features/hr-dashboard/pages/FacultyPage'
+import PositionsPage        from '../features/hr-dashboard/pages/PositionsPage'
+
 // ── هيئة الامتحانات (Exam Board) ────────────────────────────────────────────
 import examBoardNav      from '../features/exam-board/nav'
 import ExamBoardHome     from '../features/exam-board/pages/ExamBoardHome'
@@ -96,6 +105,22 @@ export default function App() {
           <Route path="/exam-board/courses-departments" element={<CourseDepartmentPage />} />
           <Route path="/exam-board/appeals"          element={<ExamPlaceholder title="التظلمات"             en="Appeals" />} />
           <Route path="/exam-board/settings"         element={<ExamPlaceholder title="الإعدادات"            en="Settings" />} />
+        </Route>
+
+        {/* ── الموارد البشرية dashboard ── */}
+        <Route
+          element={
+            <ProtectedRoute>
+              <DashboardLayout nav={hrNav} appTitle="الموارد البشرية" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/hr"                    element={<HRHome />}              />
+          <Route path="/hr/employees"          element={<EmployeesPage />}       />
+          <Route path="/hr/employees/add"      element={<AddEmployeePage />}     />
+          <Route path="/hr/employees/:id"      element={<EmployeeProfilePage />} />
+          <Route path="/hr/faculty"            element={<FacultyPage />}         />
+          <Route path="/hr/positions"          element={<PositionsPage />}       />
         </Route>
 
         {/* Default redirect */}
