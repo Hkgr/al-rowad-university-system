@@ -101,6 +101,88 @@ function PersonalInfoTab({ profile }) {
   )
 }
 
+const SEMESTER_ORDER = [
+  { code: 'first',  ar: 'الفصل الأول',   accent: 'primary' },
+  { code: 'second', ar: 'الفصل الثاني',  accent: 'blue'    },
+  { code: 'summer', ar: 'الفصل الصيفي',  accent: 'amber'   },
+]
+
+const ACCENT = {
+  primary: { header: 'bg-primary/[0.07] border-primary/15', label: 'text-primary-dark', badge: 'bg-primary/8 text-primary-dark border-primary/20' },
+  blue:    { header: 'bg-blue-500/[0.06] border-blue-200',  label: 'text-blue-700',     badge: 'bg-blue-50 text-blue-700 border-blue-200'         },
+  amber:   { header: 'bg-amber-500/[0.06] border-amber-200',label: 'text-amber-700',    badge: 'bg-amber-50 text-amber-700 border-amber-200'       },
+}
+
+function SemesterTable({ courses, accentKey }) {
+  const ac = ACCENT[accentKey]
+  if (!courses.length) {
+    return (
+      <p className="text-[12px] text-text-light italic px-5 py-4" dir="rtl">
+        لا يوجد مقررات مسجّلة في هذا الفصل
+      </p>
+    )
+  }
+  const totalHours = courses.reduce((s, c) => s + (c.credit_hours || 0), 0)
+  return (
+    <div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-[13px]">
+          <thead>
+            <tr className="bg-[#fafaf9]">
+              <th className="px-4 py-2.5 text-right  text-[11px] font-bold text-text-light" dir="rtl">المقرر</th>
+              <th className="px-4 py-2.5 text-center text-[11px] font-bold text-text-light">الساعات</th>
+              <th className="px-4 py-2.5 text-center text-[11px] font-bold text-text-light">نظري</th>
+              <th className="px-4 py-2.5 text-center text-[11px] font-bold text-text-light">عملي</th>
+              <th className="px-4 py-2.5 text-center text-[11px] font-bold text-text-light">المجموع</th>
+              <th className="px-4 py-2.5 text-center text-[11px] font-bold text-text-light">التقدير</th>
+              <th className="px-4 py-2.5 text-center text-[11px] font-bold text-text-light">الحالة</th>
+            </tr>
+          </thead>
+          <tbody>
+            {courses.map((c, ci) => (
+              <tr key={ci} className="border-t border-primary/6 hover:bg-primary/[0.02] transition-colors">
+                <td className="px-4 py-3" dir="rtl">
+                  <div className="font-semibold text-text-dark text-[13.5px]">{c.course_name}</div>
+                  <div className="text-[11px] text-text-light font-mono mt-0.5">{c.course_code}</div>
+                </td>
+                <td className="px-4 py-3 text-center font-bold text-text-dark">{c.credit_hours}</td>
+                <td className="px-4 py-3 text-center text-text-gray">{c.theoretical_mark ?? '—'}</td>
+                <td className="px-4 py-3 text-center text-text-gray">{c.practical_mark ?? '—'}</td>
+                <td className="px-4 py-3 text-center font-bold text-text-dark">{c.final_mark ?? '—'}</td>
+                <td className={`px-4 py-3 text-center text-[16px] font-black ${gradeColor(c.letter_grade)}`}>
+                  {c.letter_grade || '—'}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+                    c.result_status?.status_code === 'passed'
+                      ? 'bg-green-500/10 text-green-700 border-green-500/25'
+                      : c.result_status?.status_code
+                        ? 'bg-red-500/10 text-red-600 border-red-500/25'
+                        : 'bg-gray-100 text-text-light border-gray-200'
+                  }`} dir="rtl">
+                    {c.result_status?.status_code === 'passed'
+                      ? 'ناجح'
+                      : c.result_status?.status_name || 'قيد التسجيل'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-primary/10 bg-[#fafaf9]">
+              <td className="px-4 py-2.5 text-[11.5px] font-bold text-text-gray" dir="rtl">
+                الإجمالي — {courses.length} مقرر
+              </td>
+              <td className="px-4 py-2.5 text-center text-[12px] font-extrabold text-primary-dark">{totalHours}</td>
+              <td colSpan={5} />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function TranscriptTab({ transcript }) {
   if (!transcript?.terms?.length) {
     return (
@@ -110,63 +192,68 @@ function TranscriptTab({ transcript }) {
       </div>
     )
   }
+
+  // Group terms by academic year, sorted chronologically
+  const byYear = {}
+  transcript.terms.forEach(term => {
+    const yr = term.academic_year?.year_name ?? '—'
+    if (!byYear[yr]) byYear[yr] = { year: term.academic_year, semesters: {} }
+    const code = term.semester?.semester_code ?? 'unknown'
+    byYear[yr].semesters[code] = term.courses
+  })
+
+  const sortedYears = Object.keys(byYear).sort()
+
   return (
-    <div className="space-y-5">
-      {transcript.terms.map((term, ti) => (
-        <div key={ti} className="border border-primary/12 rounded-[14px] overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-3 bg-primary/[0.05] border-b border-primary/10" dir="rtl">
-            <div className="flex items-center gap-2">
-              <span className="text-[14px] font-extrabold text-primary-dark">{term.academic_year?.year_name}</span>
-              <span className="text-text-light text-[12px]">•</span>
-              <span className="text-[13px] font-semibold text-text-dark">{term.semester?.semester_name}</span>
+    <div className="space-y-6">
+      {sortedYears.map(yearName => {
+        const { year, semesters } = byYear[yearName]
+        const yearTotal = SEMESTER_ORDER.reduce((sum, s) => {
+          const courses = semesters[s.code] ?? []
+          return sum + courses.reduce((h, c) => h + (c.credit_hours || 0), 0)
+        }, 0)
+        const yearCourseCount = SEMESTER_ORDER.reduce((sum, s) => sum + (semesters[s.code]?.length ?? 0), 0)
+
+        return (
+          <div key={yearName} className="border border-primary/15 rounded-[16px] overflow-hidden shadow-[0_1px_8px_rgba(26,46,16,0.05)]">
+            {/* Year header */}
+            <div className="flex items-center justify-between px-5 py-3.5 bg-text-dark" dir="rtl">
+              <div className="flex items-center gap-3">
+                <FaGraduationCap className="text-white/60 text-[14px]" />
+                <span className="text-[15px] font-extrabold text-white">
+                  العام الدراسي {yearName}
+                </span>
+              </div>
+              <span className="text-[12px] text-white/60">
+                {yearCourseCount} مقرر • {yearTotal} ساعة
+              </span>
             </div>
-            <span className="text-[11.5px] text-text-light">
-              {term.courses.reduce((s, c) => s + (c.credit_hours || 0), 0)} ساعة معتمدة
-            </span>
+
+            {/* 3 semester sections */}
+            <div className="divide-y divide-primary/8">
+              {SEMESTER_ORDER.map(sem => {
+                const courses = semesters[sem.code] ?? []
+                const ac = ACCENT[sem.accent]
+                const semHours = courses.reduce((h, c) => h + (c.credit_hours || 0), 0)
+                return (
+                  <div key={sem.code}>
+                    {/* Semester sub-header */}
+                    <div className={`flex items-center justify-between px-5 py-2.5 border-b ${ac.header}`} dir="rtl">
+                      <span className={`text-[13px] font-extrabold ${ac.label}`}>{sem.ar}</span>
+                      {courses.length > 0 && (
+                        <span className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${ac.badge}`}>
+                          {courses.length} مقرر • {semHours} ساعة
+                        </span>
+                      )}
+                    </div>
+                    <SemesterTable courses={courses} accentKey={sem.accent} />
+                  </div>
+                )
+              })}
+            </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[13px]">
-              <thead>
-                <tr className="bg-[#fafaf8]">
-                  <th className="px-4 py-2.5 text-right text-[11px] font-bold text-text-light" dir="rtl">المقرر</th>
-                  <th className="px-4 py-2.5 text-center text-[11px] font-bold text-text-light">الساعات</th>
-                  <th className="px-4 py-2.5 text-center text-[11px] font-bold text-text-light">نظري</th>
-                  <th className="px-4 py-2.5 text-center text-[11px] font-bold text-text-light">عملي</th>
-                  <th className="px-4 py-2.5 text-center text-[11px] font-bold text-text-light">المجموع</th>
-                  <th className="px-4 py-2.5 text-center text-[11px] font-bold text-text-light">التقدير</th>
-                  <th className="px-4 py-2.5 text-center text-[11px] font-bold text-text-light">الحالة</th>
-                </tr>
-              </thead>
-              <tbody>
-                {term.courses.map((c, ci) => (
-                  <tr key={ci} className="border-t border-primary/6 hover:bg-primary/[0.025] transition-colors">
-                    <td className="px-4 py-3" dir="rtl">
-                      <div className="font-semibold text-text-dark text-[13.5px]">{c.course_name}</div>
-                      <div className="text-[11px] text-text-light font-mono mt-0.5">{c.course_code}</div>
-                    </td>
-                    <td className="px-4 py-3 text-center font-bold text-text-dark">{c.credit_hours}</td>
-                    <td className="px-4 py-3 text-center text-text-gray">{c.theoretical_mark ?? '—'}</td>
-                    <td className="px-4 py-3 text-center text-text-gray">{c.practical_mark ?? '—'}</td>
-                    <td className="px-4 py-3 text-center font-bold text-text-dark">{c.final_mark ?? '—'}</td>
-                    <td className={`px-4 py-3 text-center text-[16px] font-black ${gradeColor(c.letter_grade)}`}>
-                      {c.letter_grade || '—'}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
-                        c.result_status?.status_code === 'passed'
-                          ? 'bg-green-500/10 text-green-700 border-green-500/25'
-                          : 'bg-red-500/10 text-red-600 border-red-500/25'
-                      }`} dir="rtl">
-                        {c.result_status?.status_code === 'passed' ? 'ناجح' : (c.result_status?.status_name || '—')}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
