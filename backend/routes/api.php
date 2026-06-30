@@ -67,6 +67,7 @@ use App\Http\Controllers\Api\StudentAttendanceController;
 use App\Http\Controllers\Api\StudentCourseRegistrationController;
 use App\Http\Controllers\Api\StudentCourseResultController;
 use App\Http\Controllers\Api\StudentCreditLimitController;
+use App\Http\Controllers\Api\StudentAffairsDashboardController;
 use App\Http\Controllers\Api\StudentDocumentController;
 use App\Http\Controllers\Api\StudentGradeComponentController;
 use App\Http\Controllers\Api\StudentStatusController;
@@ -165,6 +166,14 @@ Route::middleware('auth:sanctum')->prefix('v1')->group(function (): void {
 
     Route::get('academic-years/current', [AcademicYearController::class, 'current']);
     Route::get('semesters/active', [SemesterController::class, 'active']);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Student Affairs Dashboard
+    |--------------------------------------------------------------------------
+    */
+
+    Route::get('student-affairs/dashboard-stats', [StudentAffairsDashboardController::class, 'dashboardStats']);
 
     /*
     |--------------------------------------------------------------------------
