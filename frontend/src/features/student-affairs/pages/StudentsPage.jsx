@@ -41,12 +41,14 @@ function authHeaders() {
 
 async function fetchAll(url) {
   const res  = await fetch(url, { headers: authHeaders() })
+  if (res.status === 401) return { _unauthorized: true }
   const json = await res.json()
   return json.success ? (json.data?.data ?? json.data ?? []) : []
 }
 
 async function fetchAllPages(baseUrl) {
-  const first   = await fetch(`${baseUrl}&per_page=100&page=1`, { headers: authHeaders() })
+  const first     = await fetch(`${baseUrl}&per_page=100&page=1`, { headers: authHeaders() })
+  if (first.status === 401) return { _unauthorized: true }
   const firstJson = await first.json()
   if (!firstJson.success) return []
   const rows      = [...(firstJson.data?.data ?? [])]
@@ -57,6 +59,26 @@ async function fetchAllPages(baseUrl) {
     if (j.success) rows.push(...(j.data?.data ?? []))
   }
   return rows
+}
+
+// Module-level cache — fetched once per session, not on every page visit
+const _cache = { programMap: null, deptMap: null, colleges: null }
+
+async function loadLookups() {
+  if (_cache.programMap) return _cache   // already loaded
+  const [progs, depts, cols] = await Promise.all([
+    fetchAll(`${API}/academic-programs?per_page=100`),
+    fetchAll(`${API}/departments?per_page=100`),
+    fetchAll(`${API}/colleges?per_page=50`),
+  ])
+  const pm = {}
+  if (Array.isArray(progs)) progs.forEach(p => { pm[p.academic_program_id] = { name: p.program_name, dept_id: p.department_id } })
+  const dm = {}
+  if (Array.isArray(depts)) depts.forEach(d => { dm[d.department_id] = { college_id: d.college_id } })
+  _cache.programMap = pm
+  _cache.deptMap    = dm
+  _cache.colleges   = Array.isArray(cols) ? cols : []
+  return _cache
 }
 
 export default function StudentsPage() {
@@ -76,32 +98,26 @@ export default function StudentsPage() {
   const debounceRef = useRef(null)
   const navigate    = useNavigate()
 
-  // Load all data once
+  // Load all data — lookups cached at module level, students always fresh
   useEffect(() => {
     async function load() {
       setLoading(true)
       setError('')
       try {
-        const [studs, progs, depts, cols] = await Promise.all([
+        const [studs, lookups] = await Promise.all([
           fetchAllPages(`${API}/students?`),
-          fetchAll(`${API}/academic-programs?per_page=100`),
-          fetchAll(`${API}/departments?per_page=100`),
-          fetchAll(`${API}/colleges?per_page=50`),
+          loadLookups(),
         ])
 
-        if (!studs.length && !progs.length) {
-          setError('فشل تحميل البيانات')
+        if (studs?._unauthorized) { navigate('/login'); return }
+        if (!Array.isArray(studs) || studs.length === 0) {
+          setError('فشل تحميل بيانات الطلاب')
         }
 
-        const pm = {}
-        progs.forEach(p => { pm[p.academic_program_id] = { name: p.program_name, dept_id: p.department_id } })
-        const dm = {}
-        depts.forEach(d => { dm[d.department_id] = { name: d.department_name, college_id: d.college_id } })
-
-        setAllStudents(studs)
-        setProgramMap(pm)
-        setDeptMap(dm)
-        setColleges(cols)
+        setAllStudents(Array.isArray(studs) ? studs : [])
+        setProgramMap(lookups.programMap ?? {})
+        setDeptMap(lookups.deptMap ?? {})
+        setColleges(lookups.colleges ?? [])
       } catch {
         setError('تعذّر الاتصال بالخادم. تأكد أن php artisan serve يعمل.')
       } finally {
@@ -109,7 +125,7 @@ export default function StudentsPage() {
       }
     }
     load()
-  }, [])
+  }, [navigate])
 
   // Derive college for a student
   function getCollegeName(student) {
