@@ -60,7 +60,7 @@ Content-Type: application/json
 
 | Method | URL | Purpose |
 |--------|-----|---------|
-| GET | `/api/v1/students` | List students (paginated) |
+| GET | `/api/v1/students` | List students (paginated, supports query filters — see below) |
 | POST | `/api/v1/students` | Create student |
 | GET | `/api/v1/students/{id}` | Show student |
 | PUT/PATCH | `/api/v1/students/{id}` | Update student |
@@ -69,7 +69,7 @@ Content-Type: application/json
 | POST | `/api/v1/students/{student_id}/restore` | Restore soft-deleted student (**proposed endpoint**) |
 | DELETE | `/api/v1/students/{student_id}/force` | Permanent delete (**proposed endpoint**) |
 | GET | `/api/v1/student-academic-terms` | CRUD — academic term records |
-| GET | `/api/v1/student-documents` | CRUD — uploaded documents |
+| GET | `/api/v1/student-documents` | CRUD — student documents (see [student-documents.md](./student-documents.md)) |
 | GET | `/api/v1/student-credit-limits` | CRUD — per-term credit limits |
 | GET | `/api/v1/student-course-registrations` | CRUD — raw registration records |
 | GET | `/api/v1/student-course-results` | CRUD — course result records |
@@ -86,7 +86,7 @@ Each sub-resource above also supports POST, GET/{id}, PUT/PATCH/{id}, DELETE/{id
 | GET | `/api/v1/students/search` | Search students |
 | GET | `/api/v1/students/{student}/profile` | Full profile |
 | GET | `/api/v1/students/{student}/academic-info` | Academic summary |
-| GET | `/api/v1/students/{student}/documents` | Student documents |
+| GET | `/api/v1/students/{student}/documents` | Student documents (see [student-documents.md](./student-documents.md)) |
 | GET | `/api/v1/students/{student}/registrations` | Course registrations |
 | GET | `/api/v1/students/{student}/transcript` | Academic transcript |
 | GET | `/api/v1/students/{student}/gpa` | Term GPA |
@@ -96,6 +96,79 @@ Each sub-resource above also supports POST, GET/{id}, PUT/PATCH/{id}, DELETE/{id
 | GET | `/api/v1/students/{student}/available-courses` | Eligible open offerings |
 | GET | `/api/v1/students/{student}/registered-hours` | Credit hours snapshot |
 | GET | `/api/v1/students/{student}/registration-summary` | Registration overview |
+
+---
+
+## GET /api/v1/students
+
+**Purpose:** List students with optional filters and pagination.
+
+### Query parameters
+
+| Param | Rules | Description |
+|-------|-------|-------------|
+| `student_status_id` | optional integer, `exists:student_statuses,student_status_id` | Filters `students.student_status_id` |
+| `academic_program_id` | optional integer, `exists:academic_programs,academic_program_id` | Filters `students.academic_program_id` |
+| `current_academic_level_id` | optional integer, `exists:academic_levels,academic_level_id` | Filters `students.current_academic_level_id` |
+| `q` | optional string, max 150 | Search across `student_number`, `first_name`, `last_name`, `email`, `phone_number` |
+| `search` | optional string, max 150 | Same behavior as `q` |
+| `per_page` | optional integer, min 1, max 100, default 15 | Page size |
+| `page` | optional integer, min 1 | Page number |
+
+### Notes
+
+- **Soft-deleted students are excluded by default.** Do not use `withTrashed()` for the normal index.
+- Filters can be combined (e.g. status + program + search).
+- In this credit-hour system, students **are allowed** to retake previously passed courses in later semesters/offerings to improve their grade. This is expected business behavior — **not** a backend bug and **not** a listing restriction.
+
+### Example requests
+
+```http
+GET /api/v1/students?per_page=100
+GET /api/v1/students?student_status_id=3&per_page=100
+GET /api/v1/students?academic_program_id=8&per_page=100
+GET /api/v1/students?q=2026-DEMO&per_page=100
+```
+
+### Success response (200)
+
+Standard paginated envelope:
+
+```json
+{
+  "success": true,
+  "message": "Operation completed successfully",
+  "data": {
+    "data": [
+      {
+        "student_id": 1,
+        "student_number": "2026-DEMO-001",
+        "first_name": "Ahmad",
+        "last_name": "Ali",
+        "academic_program_id": 8,
+        "current_academic_level_id": 2,
+        "student_status_id": 1
+      }
+    ],
+    "links": {
+      "first": "http://127.0.0.1:8000/api/v1/students?page=1",
+      "last": "http://127.0.0.1:8000/api/v1/students?page=5",
+      "prev": null,
+      "next": "http://127.0.0.1:8000/api/v1/students?page=2"
+    },
+    "meta": {
+      "current_page": 1,
+      "per_page": 100,
+      "total": 60
+    }
+  }
+}
+```
+
+### Frontend notes
+
+- Use `meta.total` for counts when listing is required; for dashboard aggregate counts prefer `GET /api/v1/student-affairs/dashboard-stats` (see [student-affairs-dashboard.md](./student-affairs-dashboard.md)).
+- Archived (soft-deleted) students appear only via `GET /api/v1/students/deleted`, not in this index.
 
 ---
 
@@ -400,29 +473,9 @@ Array of offerings with `eligibility_status` and `eligibility_reasons` (e.g. pre
 
 ---
 
-## POST /api/v1/student-documents
+## Student documents
 
-### Request body
-
-```json
-{
-  "student_id": 1,
-  "document_type_id": 1,
-  "file_name": "national_id.pdf",
-  "file_url": "https://storage.example.com/docs/national_id.pdf",
-  "verification_status": "pending"
-}
-```
-
-### Validation rules
-
-| Field | Rules |
-|-------|-------|
-| `student_id` | `required\|integer\|exists:students,student_id` |
-| `document_type_id` | `required\|integer\|exists:document_types,document_type_id` |
-| `file_name` | `required\|string\|max:255` |
-| `file_url` | `required\|string\|max:500` |
-| `verification_status` | `nullable\|string\|max:50` |
+Student document metadata CRUD, protected multipart upload, and authenticated download are documented in **[student-documents.md](./student-documents.md)**.
 
 ---
 
@@ -725,4 +778,4 @@ Before `DELETE .../force`, the API should verify absence of:
 
 ### Sub-resources
 
-Student sub-resources (`student-documents`, `student-academic-terms`, etc.) currently expose standard `DELETE` via REST (**existing**, hard delete). The same soft-delete pattern is **recommended** for documents; academic sub-records with historical value should generally **not** be permanently deleted.
+Student sub-resources (`student-documents`, `student-academic-terms`, etc.) expose standard REST CRUD. For **student documents**, see [student-documents.md](./student-documents.md) — `DELETE` removes the physical file from private storage when present, then deletes the database record. Academic sub-records with historical value should generally **not** be permanently deleted without business review.
