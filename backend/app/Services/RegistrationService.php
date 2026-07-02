@@ -24,6 +24,8 @@ class RegistrationService
 
     private const SEAT_OCCUPYING_STATUS = 'registered';
 
+    private const REACTIVATABLE_REGISTRATION_STATUSES = ['dropped', 'withdrawn'];
+
     public function paginate(int $perPage = 15): LengthAwarePaginator
     {
         return StudentCourseRegistration::query()
@@ -127,16 +129,34 @@ class RegistrationService
             throw new ModelNotFoundException('Registration status "registered" was not found.');
         }
 
-        $registration = StudentCourseRegistration::query()->create([
-            'student_id' => $student->student_id,
-            'course_offering_id' => $courseOffering->course_offering_id,
-            'registration_date' => $data['registration_date'] ?? now()->toDateString(),
-            'registered_by_user_id' => $registeredByUserId,
-            'advisor_user_id' => $data['advisor_user_id'] ?? null,
-            'registration_status_id' => $registeredStatusId,
-            'result_status_id' => null,
-            'notes' => $data['notes'] ?? null,
-        ]);
+        $registrationDate = $data['registration_date'] ?? now()->toDateString();
+        $reactivatable = $this->findReactivatableRegistration(
+            $student->student_id,
+            $courseOffering->course_offering_id
+        );
+
+        if ($reactivatable !== null) {
+            $reactivatable->update([
+                'registration_date' => $registrationDate,
+                'registered_by_user_id' => $registeredByUserId,
+                'advisor_user_id' => $data['advisor_user_id'] ?? null,
+                'registration_status_id' => $registeredStatusId,
+                'result_status_id' => null,
+                'notes' => $data['notes'] ?? null,
+            ]);
+            $registration = $reactivatable->fresh();
+        } else {
+            $registration = StudentCourseRegistration::query()->create([
+                'student_id' => $student->student_id,
+                'course_offering_id' => $courseOffering->course_offering_id,
+                'registration_date' => $registrationDate,
+                'registered_by_user_id' => $registeredByUserId,
+                'advisor_user_id' => $data['advisor_user_id'] ?? null,
+                'registration_status_id' => $registeredStatusId,
+                'result_status_id' => null,
+                'notes' => $data['notes'] ?? null,
+            ]);
+        }
 
         $courseOffering->decrement('available_seats');
         $courseOffering->refresh();
@@ -169,7 +189,23 @@ class RegistrationService
         return StudentCourseRegistration::query()
             ->where('student_id', $studentId)
             ->where('course_offering_id', $courseOfferingId)
+            ->whereHas(
+                'registrationStatus',
+                fn (Builder $query) => $query->where('status_code', self::SEAT_OCCUPYING_STATUS)
+            )
             ->exists();
+    }
+
+    private function findReactivatableRegistration(int $studentId, int $courseOfferingId): ?StudentCourseRegistration
+    {
+        return StudentCourseRegistration::query()
+            ->where('student_id', $studentId)
+            ->where('course_offering_id', $courseOfferingId)
+            ->whereHas(
+                'registrationStatus',
+                fn (Builder $query) => $query->whereIn('status_code', self::REACTIVATABLE_REGISTRATION_STATUSES)
+            )
+            ->first();
     }
 
     private function isDuplicateRegistrationQueryException(QueryException $exception): bool

@@ -28,7 +28,9 @@ All library resources support full CRUD:
 | POST | `/api/v1/{resource}` | Create |
 | GET | `/api/v1/{resource}/{id}` | Show |
 | PUT/PATCH | `/api/v1/{resource}/{id}` | Update |
-| DELETE | `/api/v1/{resource}/{id}` | Delete |
+| DELETE | `/api/v1/{resource}/{id}` | Delete (**existing** — currently hard delete) |
+
+> **Note:** Soft delete, restore, and force-delete routes are **not yet implemented**. See [Deletion Policy](#deletion-policy) for the recommended future contract.
 
 ---
 
@@ -290,3 +292,123 @@ All library resources support full CRUD:
 
 - Typical flow: create category → create author(s) → create book → add copies → link authors → create borrowing.
 - Filter available copies by `copy_status` before loan creation.
+
+---
+
+## Deletion Policy
+
+Documents **Soft Delete** and **Permanent Delete** for library catalog and circulation records.
+
+### Soft Delete vs Permanent Delete
+
+| Action | Meaning |
+|--------|---------|
+| **Soft Delete** | Archive book, author, category, or copy — preserve borrowing history |
+| **Permanent Delete** | Remove record — **Super Admin only**; blocked when circulation history exists |
+
+> **Implementation status:** Existing `DELETE` on library resources (**existing**, hard delete). No soft-delete fields in current schema. Proposed routes are **recommended future endpoints**.
+
+### Who may perform each action
+
+| Action | Recommended role |
+|--------|------------------|
+| Soft Delete | Librarian, Admin |
+| Restore | Librarian, Admin |
+| Permanent Delete | **Super Admin only** |
+
+### Business rules before deletion
+
+| Resource | Permanent delete blocked when |
+|----------|--------------------------------|
+| `library-books` | Active copies exist, or borrowings reference copies of this book |
+| `library-book-copies` | Active or historical `library_borrowings` exist |
+| `library-borrowings` | Generally **never** permanently delete — archive only (audit trail) |
+| `library-authors` | Linked via `library-book-authors` |
+| `library-categories` | Books still reference `category_id` |
+
+### Proposed endpoints (per resource)
+
+Pattern for books (same for authors, categories, copies):
+
+| Method | URL | Status |
+|--------|-----|--------|
+| DELETE | `/api/v1/library-books/{id}` | **Existing** — recommend soft delete |
+| GET | `/api/v1/library-books/deleted` | **Proposed endpoint** |
+| POST | `/api/v1/library-books/{id}/restore` | **Proposed endpoint** |
+| DELETE | `/api/v1/library-books/{id}/force` | **Proposed endpoint** |
+
+**Optional request body:**
+
+```json
+{
+  "delete_reason": "Duplicate catalog entry",
+  "deleted_by_user_id": 1
+}
+```
+
+**Validation rules:**
+
+| Field | Rules |
+|-------|-------|
+| Resource ID (URL) | `required\|integer\|exists:{table},{primary_key}` |
+| `delete_reason` | `nullable\|string\|max:1000` |
+| `deleted_by_user_id` | `nullable\|integer\|exists:users,user_id` |
+
+### Standard responses
+
+**Soft delete:**
+
+```json
+{
+  "success": true,
+  "message": "Record archived successfully.",
+  "data": null
+}
+```
+
+**Restore:**
+
+```json
+{
+  "success": true,
+  "message": "Record restored successfully.",
+  "data": {
+    "library_book_id": 1,
+    "title": "Effective Java",
+    "deleted_at": null
+  }
+}
+```
+
+**Permanent delete:**
+
+```json
+{
+  "success": true,
+  "message": "Record permanently deleted successfully.",
+  "data": null
+}
+```
+
+**Blocked permanent delete (422):**
+
+```json
+{
+  "success": false,
+  "message": "Record cannot be permanently deleted because related records exist.",
+  "errors": {
+    "related_records": [
+      "library_book_copies",
+      "library_borrowings"
+    ]
+  }
+}
+```
+
+### Frontend behavior
+
+- Show active catalog items by default; hide archived books/authors/categories.
+- Use **Archive** for books/copies; never offer permanent delete on borrowings with history.
+- **Permanent Delete** — Super Admin only, confirmation modal, irreversible warning.
+- Before archiving a book, warn if active copies or loans exist.
+- Prefer setting `copy_status` to retired instead of delete for copies with loan history.

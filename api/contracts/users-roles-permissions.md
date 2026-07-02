@@ -26,9 +26,11 @@ Content-Type: application/json
 | POST | `/api/v1/{resource}` | Create |
 | GET | `/api/v1/{resource}/{id}` | Show |
 | PUT/PATCH | `/api/v1/{resource}/{id}` | Update |
-| DELETE | `/api/v1/{resource}/{id}` | Delete |
+| DELETE | `/api/v1/{resource}/{id}` | Delete (**existing** — currently hard delete) |
 
 Query: `?per_page=15` (default 15)
+
+> **Note:** Soft delete, restore, and force-delete routes are **not yet implemented**. See [Deletion Policy](#deletion-policy) for the recommended future contract.
 
 ---
 
@@ -292,3 +294,135 @@ Paginated user resources in standard envelope.
 - Build RBAC UI: list roles → assign permissions → assign roles to users.
 - Deactivate via `is_active` on user-role records rather than deleting historical assignments.
 - Audit tables (`login-audit-logs`, `user-activity-logs`) are read-mostly for security dashboards.
+
+---
+
+## Deletion Policy
+
+Documents **Soft Delete** and **Permanent Delete** for users and related RBAC resources. User accounts require extra care because of security audit trails.
+
+### Soft Delete vs Permanent Delete
+
+| Action | Meaning |
+|--------|---------|
+| **Soft Delete** | Archive user — set `deleted_at`; revoke active sessions |
+| **Permanent Delete** | Remove user row — **Super Admin only**; blocked when audit/assignment data exists |
+
+> **Implementation status:** Existing `DELETE /api/v1/users/{id}` (**existing**) is hard delete via standard CRUD. No `deleted_at` column exists today. Proposed archive/restore/force routes are **recommended future endpoints**.
+
+### Who may perform each action
+
+| Action | Recommended role |
+|--------|------------------|
+| Soft Delete (deactivate/archive user) | Admin |
+| Restore | Admin |
+| Permanent Delete | **Super Admin only** |
+| Delete roles/permissions | Admin (soft delete recommended for system roles) |
+
+### Business rules before deletion
+
+**Permanent delete blocked when user has:**
+
+- Active or historical `user_roles` assignments
+- `login_audit_logs` entries
+- `user_activity_logs` entries
+- Linked `student_id`, `employee_id`, or `board_member_id` pointing to active profiles
+- Records they created as `created_by_user_id`, `registered_by_user_id`, etc. (recommended block)
+
+**Recommended:** Prefer setting `account_status_id` to inactive **or** soft delete instead of permanent delete.
+
+### Proposed endpoints (users)
+
+| Method | URL | Status |
+|--------|-----|--------|
+| DELETE | `/api/v1/users/{user_id}` | **Existing** — recommend changing to soft delete |
+| GET | `/api/v1/users/deleted` | **Proposed endpoint** |
+| POST | `/api/v1/users/{user_id}/restore` | **Proposed endpoint** |
+| DELETE | `/api/v1/users/{user_id}/force` | **Proposed endpoint** |
+
+Same pattern **recommended** for `roles` and `permissions` (proposed: `GET /roles/deleted`, restore, force).
+
+**Optional request body:**
+
+```json
+{
+  "delete_reason": "Account no longer needed",
+  "deleted_by_user_id": 1
+}
+```
+
+**Validation rules:**
+
+| Field | Rules |
+|-------|-------|
+| `user_id` (URL) | `required\|integer\|exists:users,user_id` |
+| `delete_reason` | `nullable\|string\|max:1000` |
+| `deleted_by_user_id` | `nullable\|integer\|exists:users,user_id` |
+
+### Standard responses
+
+**Soft delete:**
+
+```json
+{
+  "success": true,
+  "message": "Record archived successfully.",
+  "data": null
+}
+```
+
+**Restore:**
+
+```json
+{
+  "success": true,
+  "message": "Record restored successfully.",
+  "data": {
+    "user_id": 2,
+    "username": "jdoe",
+    "email": "jdoe@university.edu",
+    "deleted_at": null
+  }
+}
+```
+
+**Permanent delete:**
+
+```json
+{
+  "success": true,
+  "message": "Record permanently deleted successfully.",
+  "data": null
+}
+```
+
+**Blocked permanent delete (422):**
+
+```json
+{
+  "success": false,
+  "message": "Record cannot be permanently deleted because related records exist.",
+  "errors": {
+    "related_records": [
+      "user_roles",
+      "login_audit_logs",
+      "user_activity_logs"
+    ]
+  }
+}
+```
+
+### Existing DELETE on other resources
+
+These standard REST destroy routes **exist today** (hard delete): `roles`, `permissions`, `user-roles`, `role-permissions`, `system-modules`, `login-audit-logs`, `user-activity-logs`, `password-reset-tokens`, `account-statuses`.
+
+**Recommendation:** Do **not** permanently delete audit logs (`login-audit-logs`, `user-activity-logs`). Lookup tables like `account-statuses` should use `is_active = 0` instead of delete when referenced.
+
+### Frontend behavior
+
+- Hide soft-deleted users from normal admin lists.
+- Show **Archive User** instead of **Delete** for standard admins.
+- **Permanent Delete** — Super Admin only, confirmation modal, irreversible warning.
+- After archive, force logout if user had active sessions.
+- Never permanently delete users with login/activity audit history.
+- For roles: prevent permanent delete of `is_system_role = 1` records.

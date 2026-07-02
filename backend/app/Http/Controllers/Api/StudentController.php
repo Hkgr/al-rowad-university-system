@@ -18,6 +18,7 @@ use App\Services\GradeService;
 use App\Services\RegistrationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class StudentController extends ApiController
 {
@@ -39,6 +40,144 @@ class StudentController extends ApiController
     protected function updateRequestClass(): string
     {
         return UpdateStudentRequest::class;
+    }
+
+    public function index(): JsonResponse
+    {   $request = request();
+        $validated = $request->validate([
+            'student_status_id' => ['sometimes', 'integer', 'exists:student_statuses,student_status_id'],
+            'academic_program_id' => ['sometimes', 'integer', 'exists:academic_programs,academic_program_id'],
+            'current_academic_level_id' => ['sometimes', 'integer', 'exists:academic_levels,academic_level_id'],
+            'q' => ['sometimes', 'string', 'min:1', 'max:150'],
+            'search' => ['sometimes', 'string', 'min:1', 'max:150'],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+            'page' => ['sometimes', 'integer', 'min:1'],
+        ]);
+
+        $query = Student::query();
+
+        if (isset($validated['student_status_id'])) {
+            $query->where('student_status_id', $validated['student_status_id']);
+        }
+
+        if (isset($validated['academic_program_id'])) {
+            $query->where('academic_program_id', $validated['academic_program_id']);
+        }
+
+        if (isset($validated['current_academic_level_id'])) {
+            $query->where('current_academic_level_id', $validated['current_academic_level_id']);
+        }
+
+        $searchTerm = $validated['q'] ?? $validated['search'] ?? null;
+
+        if ($searchTerm !== null) {
+            $query->where(function ($builder) use ($searchTerm): void {
+                $builder->where('student_number', 'like', "%{$searchTerm}%")
+                    ->orWhere('first_name', 'like', "%{$searchTerm}%")
+                    ->orWhere('last_name', 'like', "%{$searchTerm}%")
+                    ->orWhere('email', 'like', "%{$searchTerm}%")
+                    ->orWhere('phone_number', 'like', "%{$searchTerm}%");
+            });
+        }
+
+        $students = $query
+            ->orderBy('student_number')
+            ->paginate($request->integer('per_page', 15));
+
+        $payload = StudentResource::collection($students)
+            ->response($request)
+            ->getData(true);
+
+        return $this->successResponse($payload);
+    }
+
+    public function destroy($id): JsonResponse
+    {
+        $student = Student::query()->findOrFail($id);
+        $student->delete();
+
+        return $this->successResponse(null, 'Student archived successfully.');
+    }
+
+    public function deleted(Request $request): JsonResponse
+    {
+        $students = Student::onlyTrashed()
+            ->orderBy('student_number')
+            ->paginate($request->integer('per_page', 15));
+
+        return $this->successResponse(
+            StudentResource::collection($students)->resolve($request),
+            'Deleted students retrieved successfully.'
+        );
+    }
+
+    public function restore(int $id): JsonResponse
+    {
+        $student = Student::withTrashed()->findOrFail($id);
+
+        if (! $student->trashed()) {
+            return $this->errorResponse('Student is not archived.', [], 400);
+        }
+
+        $student->restore();
+
+        return $this->successResponse(new \stdClass, 'Student restored successfully.');
+    }
+
+    public function forceDestroy(int $id): JsonResponse
+    {
+        $student = Student::withTrashed()->findOrFail($id);
+        $relatedRecords = $this->getBlockingRelatedRecords($student);
+
+        if ($relatedRecords !== []) {
+            return $this->errorResponse(
+                'Student cannot be permanently deleted because academic records exist.',
+                ['related_records' => $relatedRecords],
+                409
+            );
+        }
+
+        $student->forceDelete();
+
+        return $this->successResponse(null, 'Student permanently deleted successfully.');
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function getBlockingRelatedRecords(Student $student): array
+    {
+        $related = [];
+
+        if ($student->studentCourseRegistrations()->exists()) {
+            $related[] = 'student_course_registrations';
+        }
+
+        if ($student->studentAttendances()->exists()) {
+            $related[] = 'student_attendance';
+        }
+
+        if ($student->studentDocuments()->exists()) {
+            $related[] = 'student_documents';
+        }
+
+        if ($student->studentAcademicTerms()->exists()) {
+            $related[] = 'student_academic_terms';
+        }
+
+        $registrationIds = $student->studentCourseRegistrations()->pluck('student_course_registration_id');
+
+        if ($registrationIds->isNotEmpty()) {
+            if (DB::table('student_course_results')->whereIn('student_course_registration_id', $registrationIds)->exists()) {
+                $related[] = 'student_course_results';
+            }
+
+            if (DB::table('student_grade_components')->whereIn('student_course_registration_id', $registrationIds)->exists()) {
+                $related[] = 'student_grade_components';
+            }
+        }
+
+        return array_values(array_unique($related));
     }
 
     public function search(Request $request): JsonResponse

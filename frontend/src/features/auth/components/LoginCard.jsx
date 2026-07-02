@@ -58,7 +58,10 @@ const response = await fetch(`${API_BASE_URL}/login`, {
       if (data.success) {
         localStorage.setItem('token', data.data.token)
         localStorage.setItem('user', JSON.stringify(data.data.user))
-        navigate('/student-affairs')
+        const u = data.data.user
+        if (u.student_id)      navigate('/student')
+        else if (u.board_member_id) navigate('/exam-board')
+        else                   navigate('/student-affairs')
       } else {
         setError(data.message || 'Invalid email or password')
       }

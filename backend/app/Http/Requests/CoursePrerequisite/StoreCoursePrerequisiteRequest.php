@@ -26,6 +26,4 @@ class StoreCoursePrerequisiteRequest extends FormRequest
         ];
     }
 }
-        ];
-    }
-}
+        

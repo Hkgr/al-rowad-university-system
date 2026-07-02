@@ -61,10 +61,10 @@ export default function AddStudentPage() {
   const [errors, setErrors]         = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess]       = useState(null)
-  const [programs, setPrograms]     = useState([])
-  const [levels, setLevels]         = useState([])
-  const [statuses, setStatuses]     = useState([])
-  const navigate                    = useNavigate()
+  const [programs, setPrograms] = useState([])
+  const [levels, setLevels]     = useState([])
+  const [statuses, setStatuses] = useState([])
+  const navigate                = useNavigate()
 
   useEffect(() => {
     const h = { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }

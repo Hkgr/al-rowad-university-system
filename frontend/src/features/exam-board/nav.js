@@ -1,0 +1,30 @@
+import {
+  FaHome, FaClipboardList, FaCheckDouble, FaExclamationTriangle,
+  FaCalendarAlt, FaChartBar, FaUsers, FaCog, FaEdit, FaLayerGroup, FaBook,
+} from 'react-icons/fa'
+
+const examBoardNav = [
+  {
+    label: 'هيئة الامتحانات',
+    items: [
+      { to: '/exam-board',                  Icon: FaHome,                ar: 'الرئيسية',             en: 'Home',          end: true },
+      { to: '/exam-board/grade-entry',      Icon: FaEdit,                ar: 'إدخال الدرجات',        en: 'Grade Entry'          },
+      { to: '/exam-board/grade-sheet',      Icon: FaClipboardList,       ar: 'كشوف الدرجات',         en: 'Grade Sheets'         },
+      { to: '/exam-board/approvals',        Icon: FaCheckDouble,         ar: 'اعتماد الدرجات',       en: 'Approvals'            },
+      { to: '/exam-board/deprivation',      Icon: FaExclamationTriangle, ar: 'الحضور والحرمان',      en: 'Deprivation'          },
+      { to: '/exam-board/supplementary',    Icon: FaCalendarAlt,         ar: 'الامتحانات التكميلية', en: 'Supplementary'        },
+      { to: '/exam-board/results',          Icon: FaChartBar,            ar: 'النتائج والتقارير',    en: 'Results'              },
+    ],
+  },
+  {
+    label: 'الإدارة',
+    items: [
+      { to: '/exam-board/courses',             Icon: FaBook,               ar: 'المواد الدراسية',      en: 'Courses'              },
+      { to: '/exam-board/courses-departments', Icon: FaLayerGroup,         ar: 'مواد الأقسام',         en: 'Courses & Depts'      },
+      { to: '/exam-board/appeals',             Icon: FaUsers,              ar: 'التظلمات',             en: 'Appeals'              },
+      { to: '/exam-board/settings',            Icon: FaCog,                ar: 'الإعدادات',            en: 'Settings'             },
+    ],
+  },
+]
+
+export default examBoardNav
