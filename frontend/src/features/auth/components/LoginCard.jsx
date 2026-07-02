@@ -42,7 +42,7 @@ export default function LoginCard() {
     setError('')
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/login', {
+      const response = await fetch('https://rust.alrowaduni.edu.sy/api', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({ email, password }),
