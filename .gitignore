@@ -28,3 +28,6 @@
 Thumbs.db
 .idea/
 .vscode/
+
+# Project notes (local only)
+PROJECT_PROGRESS.md
