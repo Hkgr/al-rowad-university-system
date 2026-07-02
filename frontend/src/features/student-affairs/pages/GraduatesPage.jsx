@@ -6,7 +6,7 @@ import {
   FaChevronLeft, FaChevronRight,
 } from 'react-icons/fa'
 
-const API = 'http://127.0.0.1:8000/api/v1'
+const API = `${import.meta.env.VITE_API_BASE_URL || 'https://rust.alrowaduni.edu.sy/api'}/v1`
 
 function authHeaders() {
   return {
@@ -49,7 +49,7 @@ export default function GraduatesPage() {
         setError(json.message || 'فشل تحميل البيانات')
       }
     } catch {
-      setError('تعذّر الاتصال بالخادم. تأكد أن php artisan serve يعمل.')
+setError('تعذّر الاتصال بالخادم. تحقق من رابط الـ API أو صلاحية الاتصال بالسيرفر.')
     } finally {
       setLoading(false)
     }
