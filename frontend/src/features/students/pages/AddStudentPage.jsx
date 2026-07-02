@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FaSpinner, FaCheckCircle, FaUserPlus } from 'react-icons/fa'
 
-const API = 'http://127.0.0.1:8000/api/v1'
+const API = `${import.meta.env.VITE_API_BASE_URL || 'https://rust.alrowaduni.edu.sy/api'}/v1`
 
 function authHeaders() {
   return {
@@ -88,8 +88,8 @@ export default function AddStudentPage() {
       })
       .catch((err) => {
         if (err !== '401')
-          setErrors(prev => ({ ...prev, _load: 'تعذّر تحميل البيانات. تأكد أن php artisan serve يعمل ثم أعد تحميل الصفحة.' }))
-      })
+setErrors(prev => ({ ...prev, _load: 'تعذّر تحميل البيانات. تحقق من رابط الـ API أو صلاحية الاتصال بالسيرفر.' }))
+            })
   }, [navigate])
 
   const set = (field) => (e) => {

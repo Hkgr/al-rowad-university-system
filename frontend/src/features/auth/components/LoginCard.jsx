@@ -42,11 +42,16 @@ export default function LoginCard() {
     setError('')
 
     try {
-      const response = await fetch('https://rust.alrowaduni.edu.sy/api', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://rust.alrowaduni.edu.sy/api'
+
+const response = await fetch(`${API_BASE_URL}/login`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  },
+  body: JSON.stringify({ email, password }),
+})
 
       const data = await response.json()
 
@@ -57,9 +62,9 @@ export default function LoginCard() {
       } else {
         setError(data.message || 'Invalid email or password')
       }
-    } catch {
-      setError('Could not connect to the server. Make sure php artisan serve is running.')
-    } finally {
+} catch {
+  setError('تعذّر الاتصال بالخادم. تحقق من رابط الـ API أو إعدادات السيرفر.')
+} finally {
       setLoading(false)
     }
   }
