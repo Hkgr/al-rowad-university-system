@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { FaSpinner, FaCheckCircle, FaEdit } from 'react-icons/fa'
 
-const API = 'http://127.0.0.1:8000/api/v1'
+const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
 function authHeaders() {
   return {
@@ -13,10 +13,10 @@ function authHeaders() {
   }
 }
 
-// Convert ISO date string → YYYY-MM-DD for <input type="date">
+// Convert ISO date string â†’ YYYY-MM-DD for <input type="date">
 const toDateInput = (iso) => (iso ? iso.slice(0, 10) : '')
 
-// ── Sub-components (outside function to avoid React 19 crash) ─────────────────
+// â”€â”€ Sub-components (outside function to avoid React 19 crash) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const inputCls = (err) => [
   'w-full py-[11px] px-3.5 border-[1.5px] rounded-[11px] text-[13.5px] font-medium bg-white text-text-dark outline-none transition-all duration-[220ms]',
@@ -47,7 +47,7 @@ function Section({ title }) {
   )
 }
 
-// ── EditStudentPage ───────────────────────────────────────────────────────────
+// â”€â”€ EditStudentPage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const EMPTY = {
   student_number: '', first_name: '', last_name: '', father_name: '', mother_name: '',
@@ -88,7 +88,7 @@ export default function EditStudentPage() {
       })
       .then(([student, prog, lvl, stat]) => {
         if (!student.success) {
-          setErrors({ _global: 'الطالب غير موجود.' })
+          setErrors({ _global: 'Ø§Ù„Ø·Ø§Ù„Ø¨ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯.' })
           setLoadingStudent(false)
           return
         }
@@ -122,7 +122,7 @@ export default function EditStudentPage() {
       })
       .catch((err) => {
         if (err !== '401') {
-          setErrors({ _global: 'تعذّر تحميل البيانات. تأكد أن php artisan serve يعمل.' })
+          setErrors({ _global: 'ØªØ¹Ø°Ù‘Ø± ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª. ØªØ£ÙƒØ¯ Ø£Ù† php artisan serve ÙŠØ¹Ù…Ù„.' })
           setLoadingStudent(false)
         }
       })
@@ -151,26 +151,26 @@ export default function EditStudentPage() {
         setTimeout(() => navigate('/student-affairs/students'), 1800)
       } else {
         if (json.errors) setErrors(json.errors)
-        else setErrors({ _global: json.message || 'حدث خطأ غير متوقع' })
+        else setErrors({ _global: json.message || 'Ø­Ø¯Ø« Ø®Ø·Ø£ ØºÙŠØ± Ù…ØªÙˆÙ‚Ø¹' })
       }
     } catch {
-      setErrors({ _global: 'تعذّر الاتصال بالخادم' })
+      setErrors({ _global: 'ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…' })
     } finally {
       setSubmitting(false)
     }
   }
 
-  // ── Loading ────────────────────────────────────────────────────────────────
+  // â”€â”€ Loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (loadingStudent) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center gap-3 text-primary-light text-[15px] font-medium">
         <FaSpinner className="text-[24px] animate-[spin_0.7s_linear_infinite]" />
-        <span dir="rtl">جاري تحميل بيانات الطالب…</span>
+        <span dir="rtl">Ø¬Ø§Ø±ÙŠ ØªØ­Ù…ÙŠÙ„ Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø·Ø§Ù„Ø¨â€¦</span>
       </div>
     )
   }
 
-  // ── Success ────────────────────────────────────────────────────────────────
+  // â”€â”€ Success â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (success) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
@@ -183,23 +183,23 @@ export default function EditStudentPage() {
           <div className="w-[72px] h-[72px] rounded-full bg-primary/10 flex items-center justify-center text-[32px] text-primary shadow-[0_4px_20px_rgba(86,153,51,0.25)]">
             <FaCheckCircle />
           </div>
-          <h2 className="text-[20px] font-black text-text-dark" dir="rtl">تمّ التعديل بنجاح!</h2>
+          <h2 className="text-[20px] font-black text-text-dark" dir="rtl">ØªÙ…Ù‘ Ø§Ù„ØªØ¹Ø¯ÙŠÙ„ Ø¨Ù†Ø¬Ø§Ø­!</h2>
           <p className="text-[14px] text-text-gray" dir="rtl">
-            تمّ تحديث بيانات الطالب <strong>{success.first_name} {success.last_name}</strong>
+            ØªÙ…Ù‘ ØªØ­Ø¯ÙŠØ« Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø·Ø§Ù„Ø¨ <strong>{success.first_name} {success.last_name}</strong>
           </p>
-          <p className="text-[12px] text-text-light" dir="rtl">جاري التحويل إلى قائمة الطلاب…</p>
+          <p className="text-[12px] text-text-light" dir="rtl">Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªØ­ÙˆÙŠÙ„ Ø¥Ù„Ù‰ Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø·Ù„Ø§Ø¨â€¦</p>
         </motion.div>
       </div>
     )
   }
 
-  // ── Form ───────────────────────────────────────────────────────────────────
+  // â”€â”€ Form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return (
     <div className="max-w-[860px] mx-auto">
 
       {errors._global && (
         <div className="flex items-center gap-3 bg-red-500/6 border border-red-500/25 rounded-[12px] px-5 py-3.5 mb-5 text-[13.5px] text-red-600" dir="rtl">
-          ⚠ {errors._global}
+          âš  {errors._global}
         </div>
       )}
 
@@ -209,8 +209,8 @@ export default function EditStudentPage() {
           <FaEdit />
         </div>
         <div>
-          <h2 className="text-[19px] font-black text-text-dark leading-tight">تعديل بيانات الطالب</h2>
-          <p className="text-[12px] text-text-light mt-0.5">{studentName} · Edit Student</p>
+          <h2 className="text-[19px] font-black text-text-dark leading-tight">ØªØ¹Ø¯ÙŠÙ„ Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø·Ø§Ù„Ø¨</h2>
+          <p className="text-[12px] text-text-light mt-0.5">{studentName} Â· Edit Student</p>
         </div>
       </div>
 
@@ -218,75 +218,75 @@ export default function EditStudentPage() {
         <div className="bg-white border border-primary/12 rounded-[18px] p-6 shadow-[0_2px_16px_rgba(26,46,16,0.06)]">
 
           {/* Required */}
-          <Section title="المعلومات الأساسية • Required" />
+          <Section title="Ø§Ù„Ù…Ø¹Ù„ÙˆÙ…Ø§Øª Ø§Ù„Ø£Ø³Ø§Ø³ÙŠØ© â€¢ Required" />
           <div className="grid grid-cols-3 max-[720px]:grid-cols-2 max-[480px]:grid-cols-1 gap-4 mb-5">
-            <Field label="رقم القيد" id="student_number" req err={errors.student_number}>
+            <Field label="Ø±Ù‚Ù… Ø§Ù„Ù‚ÙŠØ¯" id="student_number" req err={errors.student_number}>
               <input id="student_number" className={inputCls(errors.student_number)} value={form.student_number} onChange={set('student_number')} dir="rtl" />
             </Field>
-            <Field label="الاسم الأول" id="first_name" req err={errors.first_name}>
-              <input id="first_name" className={inputCls(errors.first_name)} value={form.first_name} onChange={set('first_name')} dir="rtl" placeholder="الاسم الأول" />
+            <Field label="Ø§Ù„Ø§Ø³Ù… Ø§Ù„Ø£ÙˆÙ„" id="first_name" req err={errors.first_name}>
+              <input id="first_name" className={inputCls(errors.first_name)} value={form.first_name} onChange={set('first_name')} dir="rtl" placeholder="Ø§Ù„Ø§Ø³Ù… Ø§Ù„Ø£ÙˆÙ„" />
             </Field>
-            <Field label="اسم الأب" id="father_name" req err={errors.father_name}>
-              <input id="father_name" className={inputCls(errors.father_name)} value={form.father_name} onChange={set('father_name')} dir="rtl" placeholder="اسم الأب" />
+            <Field label="Ø§Ø³Ù… Ø§Ù„Ø£Ø¨" id="father_name" req err={errors.father_name}>
+              <input id="father_name" className={inputCls(errors.father_name)} value={form.father_name} onChange={set('father_name')} dir="rtl" placeholder="Ø§Ø³Ù… Ø§Ù„Ø£Ø¨" />
             </Field>
-            <Field label="الاسم الأخير" id="last_name" req err={errors.last_name}>
-              <input id="last_name" className={inputCls(errors.last_name)} value={form.last_name} onChange={set('last_name')} dir="rtl" placeholder="الاسم الأخير" />
+            <Field label="Ø§Ù„Ø§Ø³Ù… Ø§Ù„Ø£Ø®ÙŠØ±" id="last_name" req err={errors.last_name}>
+              <input id="last_name" className={inputCls(errors.last_name)} value={form.last_name} onChange={set('last_name')} dir="rtl" placeholder="Ø§Ù„Ø§Ø³Ù… Ø§Ù„Ø£Ø®ÙŠØ±" />
             </Field>
-            <Field label="تاريخ الالتحاق" id="enrollment_date" req err={errors.enrollment_date}>
+            <Field label="ØªØ§Ø±ÙŠØ® Ø§Ù„Ø§Ù„ØªØ­Ø§Ù‚" id="enrollment_date" req err={errors.enrollment_date}>
               <input id="enrollment_date" type="date" className={inputCls(errors.enrollment_date)} value={form.enrollment_date} onChange={set('enrollment_date')} />
             </Field>
           </div>
 
           {/* Academic */}
-          <Section title="المعلومات الأكاديمية • Academic" />
+          <Section title="Ø§Ù„Ù…Ø¹Ù„ÙˆÙ…Ø§Øª Ø§Ù„Ø£ÙƒØ§Ø¯ÙŠÙ…ÙŠØ© â€¢ Academic" />
           <div className="grid grid-cols-3 max-[720px]:grid-cols-2 max-[480px]:grid-cols-1 gap-4 mb-5">
-            <Field label="البرنامج الأكاديمي" id="academic_program_id" req err={errors.academic_program_id}>
+            <Field label="Ø§Ù„Ø¨Ø±Ù†Ø§Ù…Ø¬ Ø§Ù„Ø£ÙƒØ§Ø¯ÙŠÙ…ÙŠ" id="academic_program_id" req err={errors.academic_program_id}>
               <select id="academic_program_id" className={inputCls(errors.academic_program_id)} value={form.academic_program_id} onChange={set('academic_program_id')} dir="rtl">
-                <option value="">اختر البرنامج</option>
+                <option value="">Ø§Ø®ØªØ± Ø§Ù„Ø¨Ø±Ù†Ø§Ù…Ø¬</option>
                 {programs.map(p => <option key={p.academic_program_id} value={p.academic_program_id}>{p.program_name}</option>)}
               </select>
             </Field>
-            <Field label="المرحلة الدراسية" id="current_academic_level_id" req err={errors.current_academic_level_id}>
+            <Field label="Ø§Ù„Ù…Ø±Ø­Ù„Ø© Ø§Ù„Ø¯Ø±Ø§Ø³ÙŠØ©" id="current_academic_level_id" req err={errors.current_academic_level_id}>
               <select id="current_academic_level_id" className={inputCls(errors.current_academic_level_id)} value={form.current_academic_level_id} onChange={set('current_academic_level_id')} dir="rtl">
-                <option value="">اختر المرحلة</option>
+                <option value="">Ø§Ø®ØªØ± Ø§Ù„Ù…Ø±Ø­Ù„Ø©</option>
                 {levels.map(l => <option key={l.academic_level_id} value={l.academic_level_id}>{l.level_name}</option>)}
               </select>
             </Field>
-            <Field label="الحالة الدراسية" id="student_status_id" req err={errors.student_status_id}>
+            <Field label="Ø§Ù„Ø­Ø§Ù„Ø© Ø§Ù„Ø¯Ø±Ø§Ø³ÙŠØ©" id="student_status_id" req err={errors.student_status_id}>
               <select id="student_status_id" className={inputCls(errors.student_status_id)} value={form.student_status_id} onChange={set('student_status_id')} dir="rtl">
-                <option value="">اختر الحالة</option>
+                <option value="">Ø§Ø®ØªØ± Ø§Ù„Ø­Ø§Ù„Ø©</option>
                 {statuses.map(s => <option key={s.student_status_id} value={s.student_status_id}>{s.status_name}</option>)}
               </select>
             </Field>
           </div>
 
           {/* Personal (optional) */}
-          <Section title="التفاصيل الشخصية • Personal (اختياري)" />
+          <Section title="Ø§Ù„ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ø´Ø®ØµÙŠØ© â€¢ Personal (Ø§Ø®ØªÙŠØ§Ø±ÙŠ)" />
           <div className="grid grid-cols-3 max-[720px]:grid-cols-2 max-[480px]:grid-cols-1 gap-4 mb-5">
-            <Field label="اسم الأم" id="mother_name" err={errors.mother_name}>
-              <input id="mother_name" className={inputCls(errors.mother_name)} value={form.mother_name} onChange={set('mother_name')} dir="rtl" placeholder="اسم الأم" />
+            <Field label="Ø§Ø³Ù… Ø§Ù„Ø£Ù…" id="mother_name" err={errors.mother_name}>
+              <input id="mother_name" className={inputCls(errors.mother_name)} value={form.mother_name} onChange={set('mother_name')} dir="rtl" placeholder="Ø§Ø³Ù… Ø§Ù„Ø£Ù…" />
             </Field>
-            <Field label="تاريخ الميلاد" id="date_of_birth" err={errors.date_of_birth}>
+            <Field label="ØªØ§Ø±ÙŠØ® Ø§Ù„Ù…ÙŠÙ„Ø§Ø¯" id="date_of_birth" err={errors.date_of_birth}>
               <input id="date_of_birth" type="date" className={inputCls(errors.date_of_birth)} value={form.date_of_birth} onChange={set('date_of_birth')} />
             </Field>
-            <Field label="الجنسية" id="nationality" err={errors.nationality}>
-              <input id="nationality" className={inputCls(errors.nationality)} value={form.nationality} onChange={set('nationality')} dir="rtl" placeholder="سورية" />
+            <Field label="Ø§Ù„Ø¬Ù†Ø³ÙŠØ©" id="nationality" err={errors.nationality}>
+              <input id="nationality" className={inputCls(errors.nationality)} value={form.nationality} onChange={set('nationality')} dir="rtl" placeholder="Ø³ÙˆØ±ÙŠØ©" />
             </Field>
-            <Field label="الجنس" id="gender" err={errors.gender}>
+            <Field label="Ø§Ù„Ø¬Ù†Ø³" id="gender" err={errors.gender}>
               <select id="gender" className={inputCls(errors.gender)} value={form.gender} onChange={set('gender')} dir="rtl">
-                <option value="">اختر الجنس</option>
-                <option value="male">ذكر · Male</option>
-                <option value="female">أنثى · Female</option>
+                <option value="">Ø§Ø®ØªØ± Ø§Ù„Ø¬Ù†Ø³</option>
+                <option value="male">Ø°ÙƒØ± Â· Male</option>
+                <option value="female">Ø£Ù†Ø«Ù‰ Â· Female</option>
               </select>
             </Field>
-            <Field label="رقم الهاتف" id="phone_number" err={errors.phone_number}>
+            <Field label="Ø±Ù‚Ù… Ø§Ù„Ù‡Ø§ØªÙ" id="phone_number" err={errors.phone_number}>
               <input id="phone_number" className={inputCls(errors.phone_number)} value={form.phone_number} onChange={set('phone_number')} dir="rtl" placeholder="+963..." />
             </Field>
-            <Field label="البريد الإلكتروني" id="email" err={errors.email}>
+            <Field label="Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø§Ù„Ø¥Ù„ÙƒØªØ±ÙˆÙ†ÙŠ" id="email" err={errors.email}>
               <input id="email" type="email" className={inputCls(errors.email)} value={form.email} onChange={set('email')} placeholder="example@email.com" />
             </Field>
-            <Field label="العنوان" id="address" err={errors.address}>
-              <input id="address" className={inputCls(errors.address)} value={form.address} onChange={set('address')} dir="rtl" placeholder="المدينة، الحي…" />
+            <Field label="Ø§Ù„Ø¹Ù†ÙˆØ§Ù†" id="address" err={errors.address}>
+              <input id="address" className={inputCls(errors.address)} value={form.address} onChange={set('address')} dir="rtl" placeholder="Ø§Ù„Ù…Ø¯ÙŠÙ†Ø©ØŒ Ø§Ù„Ø­ÙŠâ€¦" />
             </Field>
           </div>
 
@@ -299,7 +299,7 @@ export default function EditStudentPage() {
             onClick={() => navigate('/student-affairs/students')}
             className="px-6 py-[11px] border-[1.5px] border-primary/25 rounded-[12px] text-[14px] font-bold text-text-gray bg-white cursor-pointer transition-all duration-[220ms] hover:border-primary/50 hover:text-text-dark"
           >
-            إلغاء
+            Ø¥Ù„ØºØ§Ø¡
           </button>
           <button
             type="submit"
@@ -310,12 +310,12 @@ export default function EditStudentPage() {
             {submitting ? (
               <>
                 <FaSpinner className="animate-[spin_0.7s_linear_infinite]" />
-                <span>جاري الحفظ…</span>
+                <span>Ø¬Ø§Ø±ÙŠ Ø§Ù„Ø­ÙØ¸â€¦</span>
               </>
             ) : (
               <>
                 <FaEdit />
-                <span>حفظ التعديلات</span>
+                <span>Ø­ÙØ¸ Ø§Ù„ØªØ¹Ø¯ÙŠÙ„Ø§Øª</span>
               </>
             )}
           </button>
@@ -324,3 +324,4 @@ export default function EditStudentPage() {
     </div>
   )
 }
+

@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
+﻿import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   FaArchive, FaBoxOpen, FaSpinner,
 } from 'react-icons/fa'
 
-const API = 'http://127.0.0.1:8000/api/v1'
+const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
 function authHeaders() {
   return {
@@ -30,10 +30,10 @@ export default function ArchivedStudentsPage() {
       if (json.success) {
         setStudents(Array.isArray(json.data) ? json.data : [])
       } else {
-        setError(json.message || 'فشل تحميل البيانات')
+        setError(json.message || 'ÙØ´Ù„ ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª')
       }
     } catch {
-      setError('تعذّر الاتصال بالخادم. تأكد أن php artisan serve يعمل.')
+      setError('ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…. ØªØ£ÙƒØ¯ Ø£Ù† php artisan serve ÙŠØ¹Ù…Ù„.')
     } finally {
       setLoading(false)
     }
@@ -42,17 +42,17 @@ export default function ArchivedStudentsPage() {
   useEffect(() => { fetchArchived() }, [fetchArchived])
 
   const handleRestore = async (id) => {
-    if (!window.confirm('هل تريد استعادة هذا الطالب وإعادته للقائمة النشطة؟')) return
+    if (!window.confirm('Ù‡Ù„ ØªØ±ÙŠØ¯ Ø§Ø³ØªØ¹Ø§Ø¯Ø© Ù‡Ø°Ø§ Ø§Ù„Ø·Ø§Ù„Ø¨ ÙˆØ¥Ø¹Ø§Ø¯ØªÙ‡ Ù„Ù„Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ù†Ø´Ø·Ø©ØŸ')) return
     try {
       const res  = await fetch(`${API}/students/${id}/restore`, { method: 'POST', headers: authHeaders() })
       const json = await res.json()
       if (json.success) {
         setStudents(prev => prev.filter(s => s.student_id !== id))
       } else {
-        alert(json.message || 'فشلت الاستعادة')
+        alert(json.message || 'ÙØ´Ù„Øª Ø§Ù„Ø§Ø³ØªØ¹Ø§Ø¯Ø©')
       }
     } catch {
-      alert('تعذّر الاتصال بالخادم')
+      alert('ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…')
     }
   }
 
@@ -61,9 +61,9 @@ export default function ArchivedStudentsPage() {
       {/* Page header */}
       <div className="flex items-center justify-between mb-5 gap-4 flex-wrap">
         <div dir="rtl">
-          <h2 className="text-[20px] font-black text-text-dark mb-[3px]">الطلاب المؤرشفون</h2>
+          <h2 className="text-[20px] font-black text-text-dark mb-[3px]">Ø§Ù„Ø·Ù„Ø§Ø¨ Ø§Ù„Ù…Ø¤Ø±Ø´ÙÙˆÙ†</h2>
           <p className="text-[12.5px] text-text-light">
-            {loading ? 'جاري التحميل…' : `${students.length} طالب مؤرشف`}
+            {loading ? 'Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªØ­Ù…ÙŠÙ„â€¦' : `${students.length} Ø·Ø§Ù„Ø¨ Ù…Ø¤Ø±Ø´Ù`}
           </p>
         </div>
       </div>
@@ -71,18 +71,18 @@ export default function ArchivedStudentsPage() {
       {/* Info banner */}
       <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-200 rounded-[12px] px-4 py-3 mb-5 text-[13px] text-slate-600" dir="rtl">
         <FaArchive className="text-slate-400 flex-shrink-0" />
-        <span>الطلاب المؤرشفون محفوظون في قاعدة البيانات ولم يُحذفوا. يمكنك استعادة أي طالب لإعادته للقائمة النشطة.</span>
+        <span>Ø§Ù„Ø·Ù„Ø§Ø¨ Ø§Ù„Ù…Ø¤Ø±Ø´ÙÙˆÙ† Ù…Ø­ÙÙˆØ¸ÙˆÙ† ÙÙŠ Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª ÙˆÙ„Ù… ÙŠÙØ­Ø°ÙÙˆØ§. ÙŠÙ…ÙƒÙ†Ùƒ Ø§Ø³ØªØ¹Ø§Ø¯Ø© Ø£ÙŠ Ø·Ø§Ù„Ø¨ Ù„Ø¥Ø¹Ø§Ø¯ØªÙ‡ Ù„Ù„Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ù†Ø´Ø·Ø©.</span>
       </div>
 
       {/* Error */}
       {error && (
         <div className="flex items-center justify-between gap-3 bg-red-500/6 border border-red-500/25 rounded-[12px] px-[18px] py-3 mb-4 text-[13.5px] text-red-600" dir="rtl">
-          <span>⚠ {error}</span>
+          <span>âš  {error}</span>
           <button
             className="px-3.5 py-1 bg-transparent border border-red-500/35 rounded-[8px] text-red-600 text-[12px] cursor-pointer whitespace-nowrap transition-all duration-200 hover:bg-red-500/8"
             onClick={fetchArchived}
           >
-            إعادة المحاولة
+            Ø¥Ø¹Ø§Ø¯Ø© Ø§Ù„Ù…Ø­Ø§ÙˆÙ„Ø©
           </button>
         </div>
       )}
@@ -92,12 +92,12 @@ export default function ArchivedStudentsPage() {
         {loading ? (
           <div className="flex flex-col items-center justify-center gap-3.5 py-[60px] text-slate-400 text-[14px] font-medium">
             <FaSpinner className="text-[28px] animate-[spin_0.7s_linear_infinite]" />
-            <span>جاري التحميل…</span>
+            <span>Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªØ­Ù…ÙŠÙ„â€¦</span>
           </div>
         ) : students.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-[60px]">
             <FaArchive className="text-[48px] text-slate-200 mb-2" />
-            <p className="text-[16px] font-bold text-text-gray" dir="rtl">لا يوجد طلاب مؤرشفون</p>
+            <p className="text-[16px] font-bold text-text-gray" dir="rtl">Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ø·Ù„Ø§Ø¨ Ù…Ø¤Ø±Ø´ÙÙˆÙ†</p>
             <p className="text-[12.5px] text-text-light">No archived students</p>
           </div>
         ) : (
@@ -105,12 +105,12 @@ export default function ArchivedStudentsPage() {
             <thead>
               <tr>
                 <th className="px-4 py-3.5 text-left text-[12px] font-bold text-white/90 bg-slate-600 whitespace-nowrap">#</th>
-                <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-slate-600 whitespace-nowrap" dir="rtl">رقم القيد</th>
-                <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-slate-600 whitespace-nowrap" dir="rtl">الاسم الكامل</th>
-                <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-slate-600 whitespace-nowrap" dir="rtl">البريد الإلكتروني</th>
-                <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-slate-600 whitespace-nowrap" dir="rtl">رقم الهاتف</th>
-                <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-slate-600 whitespace-nowrap" dir="rtl">تاريخ القبول</th>
-                <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-slate-600 whitespace-nowrap" dir="rtl">الإجراءات</th>
+                <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-slate-600 whitespace-nowrap" dir="rtl">Ø±Ù‚Ù… Ø§Ù„Ù‚ÙŠØ¯</th>
+                <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-slate-600 whitespace-nowrap" dir="rtl">Ø§Ù„Ø§Ø³Ù… Ø§Ù„ÙƒØ§Ù…Ù„</th>
+                <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-slate-600 whitespace-nowrap" dir="rtl">Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø§Ù„Ø¥Ù„ÙƒØªØ±ÙˆÙ†ÙŠ</th>
+                <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-slate-600 whitespace-nowrap" dir="rtl">Ø±Ù‚Ù… Ø§Ù„Ù‡Ø§ØªÙ</th>
+                <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-slate-600 whitespace-nowrap" dir="rtl">ØªØ§Ø±ÙŠØ® Ø§Ù„Ù‚Ø¨ÙˆÙ„</th>
+                <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-slate-600 whitespace-nowrap" dir="rtl">Ø§Ù„Ø¥Ø¬Ø±Ø§Ø¡Ø§Øª</th>
               </tr>
             </thead>
             <AnimatePresence mode="wait">
@@ -132,10 +132,10 @@ export default function ArchivedStudentsPage() {
                     <td className="px-4 py-[13px] text-[13.5px] font-semibold text-text-gray align-middle" dir="rtl">
                       {s.first_name} {s.last_name}
                     </td>
-                    <td className="px-4 py-[13px] text-[12.5px] text-text-gray align-middle">{s.email || '—'}</td>
-                    <td className="px-4 py-[13px] text-[13.5px] text-text-gray align-middle">{s.phone_number || '—'}</td>
+                    <td className="px-4 py-[13px] text-[12.5px] text-text-gray align-middle">{s.email || 'â€”'}</td>
+                    <td className="px-4 py-[13px] text-[13.5px] text-text-gray align-middle">{s.phone_number || 'â€”'}</td>
                     <td className="px-4 py-[13px] text-[13.5px] text-text-gray align-middle">
-                      {s.enrollment_date ? new Date(s.enrollment_date).toLocaleDateString('ar-SY') : '—'}
+                      {s.enrollment_date ? new Date(s.enrollment_date).toLocaleDateString('ar-SY') : 'â€”'}
                     </td>
                     <td className="px-4 py-[13px] align-middle">
                       <button
@@ -144,7 +144,7 @@ export default function ArchivedStudentsPage() {
                         dir="rtl"
                       >
                         <FaBoxOpen className="text-[12px]" />
-                        استعادة
+                        Ø§Ø³ØªØ¹Ø§Ø¯Ø©
                       </button>
                     </td>
                   </tr>
@@ -157,3 +157,4 @@ export default function ArchivedStudentsPage() {
     </>
   )
 }
+

@@ -1,7 +1,7 @@
-import { Link } from 'react-router-dom'
+﻿import { Link } from 'react-router-dom'
 import { FaClipboardList, FaCheckDouble, FaExclamationTriangle, FaCalendarAlt } from 'react-icons/fa'
 
-const API = 'http://127.0.0.1:8000/api/v1'
+const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
 function authHeaders() {
   return { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }
@@ -22,16 +22,16 @@ export default function ExamBoardHome() {
         <div className="flex items-center justify-between gap-4 flex-wrap" dir="rtl">
           <div>
             <h2 className="text-[22px] font-black text-text-dark mb-1">
-              مرحباً، {user.username} 👋
+              Ù…Ø±Ø­Ø¨Ø§Ù‹ØŒ {user.username} ðŸ‘‹
             </h2>
             <p className="text-[13px] text-text-gray">{dateStr}</p>
             <span className="inline-block mt-2 text-[12px] text-primary-dark bg-primary/6 border border-primary/15 px-3 py-1 rounded-full font-bold">
-              هيئة الامتحانات
+              Ù‡ÙŠØ¦Ø© Ø§Ù„Ø§Ù…ØªØ­Ø§Ù†Ø§Øª
             </span>
           </div>
           <div className="flex flex-col items-center px-5 py-3.5 rounded-[14px] bg-primary/[0.05] border border-primary/15 flex-shrink-0">
             <FaClipboardList className="text-[22px] text-primary mb-1" />
-            <span className="text-[11.5px] font-bold text-primary-dark">جامعة الرواد</span>
+            <span className="text-[11.5px] font-bold text-primary-dark">Ø¬Ø§Ù…Ø¹Ø© Ø§Ù„Ø±ÙˆØ§Ø¯</span>
             <span className="text-[10px] text-text-light">Al-Rowad University</span>
           </div>
         </div>
@@ -40,10 +40,10 @@ export default function ExamBoardHome() {
       {/* Quick access cards */}
       <div className="grid grid-cols-2 max-[600px]:grid-cols-1 gap-4 mb-6">
         {[
-          { Icon: FaClipboardList,       color: '#569933', ar: 'كشوف الدرجات',         en: 'Grade Sheets',       to: '/exam-board/grade-sheet'   },
-          { Icon: FaCheckDouble,         color: '#3b82f6', ar: 'اعتماد الدرجات',       en: 'Grade Approvals',    to: '/exam-board/approvals'      },
-          { Icon: FaExclamationTriangle, color: '#f59e0b', ar: 'الحضور والحرمان',       en: 'Deprivation',        to: '/exam-board/deprivation'    },
-          { Icon: FaCalendarAlt,         color: '#8b5cf6', ar: 'الامتحانات التكميلية', en: 'Supplementary Exams', to: '/exam-board/supplementary'  },
+          { Icon: FaClipboardList,       color: '#569933', ar: 'ÙƒØ´ÙˆÙ Ø§Ù„Ø¯Ø±Ø¬Ø§Øª',         en: 'Grade Sheets',       to: '/exam-board/grade-sheet'   },
+          { Icon: FaCheckDouble,         color: '#3b82f6', ar: 'Ø§Ø¹ØªÙ…Ø§Ø¯ Ø§Ù„Ø¯Ø±Ø¬Ø§Øª',       en: 'Grade Approvals',    to: '/exam-board/approvals'      },
+          { Icon: FaExclamationTriangle, color: '#f59e0b', ar: 'Ø§Ù„Ø­Ø¶ÙˆØ± ÙˆØ§Ù„Ø­Ø±Ù…Ø§Ù†',       en: 'Deprivation',        to: '/exam-board/deprivation'    },
+          { Icon: FaCalendarAlt,         color: '#8b5cf6', ar: 'Ø§Ù„Ø§Ù…ØªØ­Ø§Ù†Ø§Øª Ø§Ù„ØªÙƒÙ…ÙŠÙ„ÙŠØ©', en: 'Supplementary Exams', to: '/exam-board/supplementary'  },
         ].map(({ Icon, color, ar, en, to }) => (
           <Link
             key={ar}
@@ -61,10 +61,11 @@ export default function ExamBoardHome() {
               <div className="text-[15px] font-bold text-text-dark">{ar}</div>
               <div className="text-[11px] text-text-light">{en}</div>
             </div>
-            <span className="text-[14px] text-gray-300 transition-all duration-200 group-hover:-translate-x-1" style={{ color }}>←</span>
+            <span className="text-[14px] text-gray-300 transition-all duration-200 group-hover:-translate-x-1" style={{ color }}>â†</span>
           </Link>
         ))}
       </div>
     </>
   )
 }
+

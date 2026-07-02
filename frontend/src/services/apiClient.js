@@ -1,5 +1,5 @@
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api';
+﻿const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || 'https://rust.alrowaduni.edu.sy/api';
 
 export async function apiRequest(path, options = {}) {
   const token = localStorage.getItem('auth_token');
@@ -17,8 +17,9 @@ export async function apiRequest(path, options = {}) {
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
-    throw new Error(data?.message || '??? ??? ????? ??????? ???????');
+    throw new Error(data?.message || 'api error');
   }
 
   return data;
 }
+

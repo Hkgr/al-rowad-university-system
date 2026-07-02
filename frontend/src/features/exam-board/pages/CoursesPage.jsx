@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from 'react'
+﻿import { useState, useEffect, useMemo } from 'react'
 import { FaSpinner, FaPlus, FaEdit, FaTrash, FaCheck, FaTimes, FaBook } from 'react-icons/fa'
 
-const API = 'http://127.0.0.1:8000/api/v1'
+const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 function authHeaders() {
   return { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }
 }
@@ -18,11 +18,11 @@ function CourseForm({ initial, onSave, onCancel, saving }) {
   return (
     <div className="bg-white border border-primary/20 rounded-[16px] p-5 mb-5 shadow-[0_2px_12px_rgba(26,46,16,0.08)]">
       <h3 className="text-[14px] font-extrabold text-text-dark mb-4" dir="rtl">
-        {isEdit ? 'تعديل المادة' : 'إضافة مادة جديدة'}
+        {isEdit ? 'ØªØ¹Ø¯ÙŠÙ„ Ø§Ù„Ù…Ø§Ø¯Ø©' : 'Ø¥Ø¶Ø§ÙØ© Ù…Ø§Ø¯Ø© Ø¬Ø¯ÙŠØ¯Ø©'}
       </h3>
       <div className="grid grid-cols-2 max-[640px]:grid-cols-1 gap-4 mb-4" dir="rtl">
         <div className="flex flex-col gap-1.5">
-          <label className="text-[11.5px] font-bold text-text-dark">رمز المادة <span className="text-red-500">*</span></label>
+          <label className="text-[11.5px] font-bold text-text-dark">Ø±Ù…Ø² Ø§Ù„Ù…Ø§Ø¯Ø© <span className="text-red-500">*</span></label>
           <input
             type="text" placeholder="e.g. STAT101"
             value={form.course_code}
@@ -32,9 +32,9 @@ function CourseForm({ initial, onSave, onCancel, saving }) {
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-[11.5px] font-bold text-text-dark">اسم المادة <span className="text-red-500">*</span></label>
+          <label className="text-[11.5px] font-bold text-text-dark">Ø§Ø³Ù… Ø§Ù„Ù…Ø§Ø¯Ø© <span className="text-red-500">*</span></label>
           <input
-            type="text" placeholder="اسم المادة"
+            type="text" placeholder="Ø§Ø³Ù… Ø§Ù„Ù…Ø§Ø¯Ø©"
             value={form.course_name}
             onChange={e => set('course_name', e.target.value)}
             className="px-3 py-2.5 border border-primary/20 rounded-[10px] text-[13.5px] outline-none focus:border-primary"
@@ -42,7 +42,7 @@ function CourseForm({ initial, onSave, onCancel, saving }) {
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-[11.5px] font-bold text-text-dark">الساعات المعتمدة <span className="text-red-500">*</span></label>
+          <label className="text-[11.5px] font-bold text-text-dark">Ø§Ù„Ø³Ø§Ø¹Ø§Øª Ø§Ù„Ù…Ø¹ØªÙ…Ø¯Ø© <span className="text-red-500">*</span></label>
           <input
             type="number" min="1" max="12" placeholder="3"
             value={form.credit_hours}
@@ -52,7 +52,7 @@ function CourseForm({ initial, onSave, onCancel, saving }) {
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-[11.5px] font-bold text-text-dark">الساعات النظرية</label>
+          <label className="text-[11.5px] font-bold text-text-dark">Ø§Ù„Ø³Ø§Ø¹Ø§Øª Ø§Ù„Ù†Ø¸Ø±ÙŠØ©</label>
           <input
             type="number" min="0" max="12" placeholder="2"
             value={form.theoretical_hours}
@@ -62,7 +62,7 @@ function CourseForm({ initial, onSave, onCancel, saving }) {
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-[11.5px] font-bold text-text-dark">الساعات العملية</label>
+          <label className="text-[11.5px] font-bold text-text-dark">Ø§Ù„Ø³Ø§Ø¹Ø§Øª Ø§Ù„Ø¹Ù…Ù„ÙŠØ©</label>
           <input
             type="number" min="0" max="12" placeholder="1"
             value={form.practical_hours}
@@ -72,23 +72,23 @@ function CourseForm({ initial, onSave, onCancel, saving }) {
           />
         </div>
         <div className="flex flex-col gap-1.5 justify-end">
-          <label className="text-[11.5px] font-bold text-text-dark">الحالة</label>
+          <label className="text-[11.5px] font-bold text-text-dark">Ø§Ù„Ø­Ø§Ù„Ø©</label>
           <div className="flex gap-4" dir="rtl">
             <label className="flex items-center gap-2 cursor-pointer text-[13px]">
               <input type="radio" name="is_active" checked={form.is_active === true} onChange={() => set('is_active', true)} />
-              <span className="text-green-700 font-semibold">فعّال</span>
+              <span className="text-green-700 font-semibold">ÙØ¹Ù‘Ø§Ù„</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer text-[13px]">
               <input type="radio" name="is_active" checked={form.is_active === false} onChange={() => set('is_active', false)} />
-              <span className="text-text-light font-semibold">غير فعّال</span>
+              <span className="text-text-light font-semibold">ØºÙŠØ± ÙØ¹Ù‘Ø§Ù„</span>
             </label>
           </div>
         </div>
       </div>
       <div className="flex flex-col gap-1.5 mb-5" dir="rtl">
-        <label className="text-[11.5px] font-bold text-text-dark">الوصف</label>
+        <label className="text-[11.5px] font-bold text-text-dark">Ø§Ù„ÙˆØµÙ</label>
         <textarea
-          rows={2} placeholder="وصف اختياري للمادة"
+          rows={2} placeholder="ÙˆØµÙ Ø§Ø®ØªÙŠØ§Ø±ÙŠ Ù„Ù„Ù…Ø§Ø¯Ø©"
           value={form.description || ''}
           onChange={e => set('description', e.target.value)}
           className="px-3 py-2.5 border border-primary/20 rounded-[10px] text-[13.5px] outline-none focus:border-primary resize-none"
@@ -102,13 +102,13 @@ function CourseForm({ initial, onSave, onCancel, saving }) {
           className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-[10px] text-[13px] font-bold disabled:opacity-40 hover:enabled:bg-primary-dark transition-colors"
         >
           {saving ? <FaSpinner className="animate-spin text-[11px]" /> : <FaCheck className="text-[11px]" />}
-          {isEdit ? 'حفظ التعديلات' : 'إضافة المادة'}
+          {isEdit ? 'Ø­ÙØ¸ Ø§Ù„ØªØ¹Ø¯ÙŠÙ„Ø§Øª' : 'Ø¥Ø¶Ø§ÙØ© Ø§Ù„Ù…Ø§Ø¯Ø©'}
         </button>
         <button
           onClick={onCancel}
           className="flex items-center gap-2 px-5 py-2.5 border border-primary/20 text-text-gray rounded-[10px] text-[13px] font-bold hover:bg-gray-50 transition-colors"
         >
-          <FaTimes className="text-[11px]" /> إلغاء
+          <FaTimes className="text-[11px]" /> Ø¥Ù„ØºØ§Ø¡
         </button>
       </div>
     </div>
@@ -145,7 +145,7 @@ export default function CoursesPage() {
 
   useEffect(() => { loadAll() }, [])
 
-  // Map: course_id → Set of college_ids
+  // Map: course_id â†’ Set of college_ids
   const courseCollegeMap = useMemo(() => {
     const deptToCollege = {}
     departments.forEach(d => { deptToCollege[d.department_id] = d.college_id })
@@ -195,23 +195,23 @@ export default function CoursesPage() {
       if (json.success) {
         setMode(null)
         loadAll()
-        flash(isEdit ? 'تم تعديل المادة بنجاح' : 'تمت إضافة المادة بنجاح')
+        flash(isEdit ? 'ØªÙ… ØªØ¹Ø¯ÙŠÙ„ Ø§Ù„Ù…Ø§Ø¯Ø© Ø¨Ù†Ø¬Ø§Ø­' : 'ØªÙ…Øª Ø¥Ø¶Ø§ÙØ© Ø§Ù„Ù…Ø§Ø¯Ø© Ø¨Ù†Ø¬Ø§Ø­')
       } else {
-        setErr(json.message || (json.errors ? Object.values(json.errors).flat().join(' | ') : 'فشلت العملية'))
+        setErr(json.message || (json.errors ? Object.values(json.errors).flat().join(' | ') : 'ÙØ´Ù„Øª Ø§Ù„Ø¹Ù…Ù„ÙŠØ©'))
       }
-    } catch { setErr('تعذّر الاتصال بالخادم') }
+    } catch { setErr('ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…') }
     finally { setSaving(false) }
   }
 
   async function handleDelete(course) {
-    if (!window.confirm(`حذف المادة "${course.course_name}"؟`)) return
+    if (!window.confirm(`Ø­Ø°Ù Ø§Ù„Ù…Ø§Ø¯Ø© "${course.course_name}"ØŸ`)) return
     setDeleting(p => ({ ...p, [course.course_id]: true })); setErr('')
     try {
       const res  = await fetch(`${API}/courses/${course.course_id}`, { method: 'DELETE', headers: authHeaders() })
       const json = await res.json()
-      if (json.success) { setCourses(p => p.filter(c => c.course_id !== course.course_id)); flash('تم حذف المادة') }
-      else setErr(json.message || 'فشل الحذف')
-    } catch { setErr('تعذّر الاتصال بالخادم') }
+      if (json.success) { setCourses(p => p.filter(c => c.course_id !== course.course_id)); flash('ØªÙ… Ø­Ø°Ù Ø§Ù„Ù…Ø§Ø¯Ø©') }
+      else setErr(json.message || 'ÙØ´Ù„ Ø§Ù„Ø­Ø°Ù')
+    } catch { setErr('ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…') }
     finally { setDeleting(p => ({ ...p, [course.course_id]: false })) }
   }
 
@@ -219,7 +219,7 @@ export default function CoursesPage() {
     <>
       <div className="flex items-start justify-between mb-5" dir="rtl">
         <div>
-          <h2 className="text-[20px] font-black text-text-dark mb-[3px]">إدارة المواد الدراسية</h2>
+          <h2 className="text-[20px] font-black text-text-dark mb-[3px]">Ø¥Ø¯Ø§Ø±Ø© Ø§Ù„Ù…ÙˆØ§Ø¯ Ø§Ù„Ø¯Ø±Ø§Ø³ÙŠØ©</h2>
           <p className="text-[12.5px] text-text-light">Courses Management</p>
         </div>
         {mode === null && (
@@ -227,16 +227,16 @@ export default function CoursesPage() {
             onClick={() => { setMode('add'); setErr(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
             className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-[10px] text-[13px] font-bold hover:bg-primary-dark transition-colors"
           >
-            <FaPlus className="text-[11px]" /> إضافة مادة
+            <FaPlus className="text-[11px]" /> Ø¥Ø¶Ø§ÙØ© Ù…Ø§Ø¯Ø©
           </button>
         )}
       </div>
 
       {err && (
-        <p className="mb-4 px-4 py-2.5 text-[12.5px] text-red-600 bg-red-50 border border-red-200 rounded-[10px]" dir="rtl">⚠ {err}</p>
+        <p className="mb-4 px-4 py-2.5 text-[12.5px] text-red-600 bg-red-50 border border-red-200 rounded-[10px]" dir="rtl">âš  {err}</p>
       )}
       {success && (
-        <p className="mb-4 px-4 py-2.5 text-[12.5px] text-green-700 bg-green-50 border border-green-200 rounded-[10px]" dir="rtl">✓ {success}</p>
+        <p className="mb-4 px-4 py-2.5 text-[12.5px] text-green-700 bg-green-50 border border-green-200 rounded-[10px]" dir="rtl">âœ“ {success}</p>
       )}
 
       {/* Add / Edit form */}
@@ -258,7 +258,7 @@ export default function CoursesPage() {
         <>
           {/* College filter tabs */}
           <div className="flex gap-1.5 flex-wrap mb-4 p-1.5 bg-gray-100 rounded-[12px] w-fit" dir="rtl">
-            <TabBtn label="الكل" count={courses.length}   active={activeTab === 'all'}    onClick={() => setActiveTab('all')} />
+            <TabBtn label="Ø§Ù„ÙƒÙ„" count={courses.length}   active={activeTab === 'all'}    onClick={() => setActiveTab('all')} />
             {colleges.map(col => {
               const cnt = courses.filter(c => courseCollegeMap[c.course_id]?.has(String(col.college_id))).length
               return (
@@ -271,14 +271,14 @@ export default function CoursesPage() {
                 />
               )
             })}
-            <TabBtn label="مشتركة" count={sharedCount} active={activeTab === 'shared'} onClick={() => setActiveTab('shared')} />
+            <TabBtn label="Ù…Ø´ØªØ±ÙƒØ©" count={sharedCount} active={activeTab === 'shared'} onClick={() => setActiveTab('shared')} />
           </div>
 
           {/* Shared courses note */}
           {activeTab === 'shared' && sharedCount > 0 && (
             <div className="mb-4 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-[10px] text-[12px] text-amber-800" dir="rtl">
-              هذه المواد غير مرتبطة بأي قسم — يمكن اعتبارها مواد مشتركة لجميع الكليات.
-              يمكنك ربطها بالأقسام من صفحة <strong>مواد الأقسام</strong>.
+              Ù‡Ø°Ù‡ Ø§Ù„Ù…ÙˆØ§Ø¯ ØºÙŠØ± Ù…Ø±ØªØ¨Ø·Ø© Ø¨Ø£ÙŠ Ù‚Ø³Ù… â€” ÙŠÙ…ÙƒÙ† Ø§Ø¹ØªØ¨Ø§Ø±Ù‡Ø§ Ù…ÙˆØ§Ø¯ Ù…Ø´ØªØ±ÙƒØ© Ù„Ø¬Ù…ÙŠØ¹ Ø§Ù„ÙƒÙ„ÙŠØ§Øª.
+              ÙŠÙ…ÙƒÙ†Ùƒ Ø±Ø¨Ø·Ù‡Ø§ Ø¨Ø§Ù„Ø£Ù‚Ø³Ø§Ù… Ù…Ù† ØµÙØ­Ø© <strong>Ù…ÙˆØ§Ø¯ Ø§Ù„Ø£Ù‚Ø³Ø§Ù…</strong>.
             </div>
           )}
 
@@ -286,25 +286,25 @@ export default function CoursesPage() {
             <div className="flex flex-col items-center py-20 gap-3">
               <FaBook className="text-[48px] text-primary/15" />
               <p className="text-[13px] text-text-light" dir="rtl">
-                {activeTab === 'all' ? 'لا توجد مواد دراسية.' : 'لا توجد مواد في هذا التصنيف.'}
+                {activeTab === 'all' ? 'Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…ÙˆØ§Ø¯ Ø¯Ø±Ø§Ø³ÙŠØ©.' : 'Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…ÙˆØ§Ø¯ ÙÙŠ Ù‡Ø°Ø§ Ø§Ù„ØªØµÙ†ÙŠÙ.'}
               </p>
             </div>
           ) : (
             <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
               <div className="px-5 py-3 bg-primary/[0.05] border-b border-primary/10" dir="rtl">
-                <span className="text-[13px] font-extrabold text-text-dark">{filteredCourses.length} مادة</span>
+                <span className="text-[13px] font-extrabold text-text-dark">{filteredCourses.length} Ù…Ø§Ø¯Ø©</span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-[13px]">
                   <thead>
                     <tr className="bg-[#fafaf8]">
-                      <th className="px-4 py-2.5 text-right text-[11px] font-bold text-text-light" dir="rtl">المادة</th>
-                      <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">معتمدة</th>
-                      <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">نظري</th>
-                      <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">عملي</th>
-                      <th className="px-3 py-2.5 text-right text-[11px] font-bold text-text-light" dir="rtl">الكليات</th>
-                      <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">الحالة</th>
-                      <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">إجراءات</th>
+                      <th className="px-4 py-2.5 text-right text-[11px] font-bold text-text-light" dir="rtl">Ø§Ù„Ù…Ø§Ø¯Ø©</th>
+                      <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">Ù…Ø¹ØªÙ…Ø¯Ø©</th>
+                      <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">Ù†Ø¸Ø±ÙŠ</th>
+                      <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">Ø¹Ù…Ù„ÙŠ</th>
+                      <th className="px-3 py-2.5 text-right text-[11px] font-bold text-text-light" dir="rtl">Ø§Ù„ÙƒÙ„ÙŠØ§Øª</th>
+                      <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">Ø§Ù„Ø­Ø§Ù„Ø©</th>
+                      <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">Ø¥Ø¬Ø±Ø§Ø¡Ø§Øª</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -320,11 +320,11 @@ export default function CoursesPage() {
                             <div className="text-[11px] text-text-light font-mono mt-0.5">{c.course_code}</div>
                           </td>
                           <td className="px-3 py-3 text-center font-bold text-text-dark">{c.credit_hours}</td>
-                          <td className="px-3 py-3 text-center text-text-dark">{c.theoretical_hours ?? '—'}</td>
-                          <td className="px-3 py-3 text-center text-text-dark">{c.practical_hours ?? '—'}</td>
+                          <td className="px-3 py-3 text-center text-text-dark">{c.theoretical_hours ?? 'â€”'}</td>
+                          <td className="px-3 py-3 text-center text-text-dark">{c.practical_hours ?? 'â€”'}</td>
                           <td className="px-3 py-3" dir="rtl">
                             {courseColleges.length === 0 ? (
-                              <span className="inline-block px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-full">مشتركة</span>
+                              <span className="inline-block px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-full">Ù…Ø´ØªØ±ÙƒØ©</span>
                             ) : (
                               <div className="flex flex-wrap gap-1">
                                 {courseColleges.map(col => (
@@ -337,8 +337,8 @@ export default function CoursesPage() {
                           </td>
                           <td className="px-3 py-3 text-center">
                             {c.is_active
-                              ? <span className="inline-block px-2 py-0.5 bg-green-100 text-green-700 text-[10.5px] font-bold rounded-full">فعّال</span>
-                              : <span className="inline-block px-2 py-0.5 bg-gray-100 text-text-light text-[10.5px] font-bold rounded-full">غير فعّال</span>
+                              ? <span className="inline-block px-2 py-0.5 bg-green-100 text-green-700 text-[10.5px] font-bold rounded-full">ÙØ¹Ù‘Ø§Ù„</span>
+                              : <span className="inline-block px-2 py-0.5 bg-gray-100 text-text-light text-[10.5px] font-bold rounded-full">ØºÙŠØ± ÙØ¹Ù‘Ø§Ù„</span>
                             }
                           </td>
                           <td className="px-3 py-3 text-center">
@@ -347,7 +347,7 @@ export default function CoursesPage() {
                                 onClick={() => { setMode(c); setErr(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
                                 className="flex items-center gap-1 px-2.5 py-1.5 border border-primary/25 text-primary rounded-[7px] text-[11px] font-bold hover:bg-primary/[0.05] transition-colors"
                               >
-                                <FaEdit className="text-[10px]" /> تعديل
+                                <FaEdit className="text-[10px]" /> ØªØ¹Ø¯ÙŠÙ„
                               </button>
                               <button
                                 onClick={() => handleDelete(c)}
@@ -355,7 +355,7 @@ export default function CoursesPage() {
                                 className="flex items-center gap-1 px-2.5 py-1.5 border border-red-300 text-red-600 rounded-[7px] text-[11px] font-bold hover:bg-red-50 disabled:opacity-40 transition-colors"
                               >
                                 {deleting[c.course_id] ? <FaSpinner className="animate-spin text-[10px]" /> : <FaTrash className="text-[10px]" />}
-                                حذف
+                                Ø­Ø°Ù
                               </button>
                             </div>
                           </td>
@@ -388,3 +388,4 @@ function TabBtn({ label, count, active, onClick }) {
     </button>
   )
 }
+
