@@ -8,7 +8,7 @@ import {
   FaUserGraduate,
 } from 'react-icons/fa'
 
-const API = 'http://127.0.0.1:8000/api/v1'
+const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
 function authHeaders() {
   return {

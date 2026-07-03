@@ -1,23 +1,24 @@
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api';
+  import.meta.env.VITE_API_BASE_URL || 'https://rust.alrowaduni.edu.sy/api';
 
 export async function apiRequest(path, options = {}) {
-  const token = localStorage.getItem('auth_token');
+  const token = localStorage.getItem('token') || localStorage.getItem('auth_token');
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
 
-  const response = await fetch(${API_BASE_URL}, {
+  const response = await fetch(`${API_BASE_URL}${normalizedPath}`, {
+    ...options,
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: Bearer  } : {}),
-      ...options.headers,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
     },
-    ...options,
   });
 
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
-    throw new Error(data?.message || '??? ??? ????? ??????? ???????');
+    throw new Error(data?.message || 'تعذّر الاتصال بالخادم');
   }
 
   return data;

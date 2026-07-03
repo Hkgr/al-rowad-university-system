@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { FaSpinner, FaGraduationCap } from 'react-icons/fa'
 import StudentPicker from '../components/StudentPicker'
 
-const API = 'http://127.0.0.1:8000/api/v1'
+const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 function authHeaders() {
   return { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }
 }
