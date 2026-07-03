@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
@@ -12,14 +12,14 @@ function authHeaders() {
 }
 
 const TYPE_AR = {
-  academic: 'Ø£ÙƒØ§Ø¯ÙŠÙ…ÙŠ', administrative: 'Ø¥Ø¯Ø§Ø±ÙŠ', technical: 'ØªÙ‚Ù†ÙŠ',
-  service: 'Ø®Ø¯Ù…Ø§Øª', board_member: 'Ø¹Ø¶Ùˆ Ù…Ø¬Ù„Ø³',
+  academic: 'أكاديمي', administrative: 'إداري', technical: 'تقني',
+  service: 'خدمات', board_member: 'عضو مجلس',
 }
 const STATUS_CONFIG = {
-  active:     { ar: 'Ù†Ø´Ø·',            color: '#22c55e', bg: 'rgba(34,197,94,0.1)',   Icon: FaCheckCircle  },
-  inactive:   { ar: 'ØºÙŠØ± Ù†Ø´Ø·',        color: '#94a3b8', bg: 'rgba(148,163,184,0.1)', Icon: FaMoon         },
-  on_leave:   { ar: 'ÙÙŠ Ø¥Ø¬Ø§Ø²Ø©',       color: '#f59e0b', bg: 'rgba(245,158,11,0.1)',  Icon: FaPauseCircle  },
-  terminated: { ar: 'Ù…Ù†ØªÙ‡ÙŠ Ø§Ù„Ø®Ø¯Ù…Ø©',   color: '#ef4444', bg: 'rgba(239,68,68,0.1)',   Icon: FaBan          },
+  active:     { ar: 'نشط',            color: '#22c55e', bg: 'rgba(34,197,94,0.1)',   Icon: FaCheckCircle  },
+  inactive:   { ar: 'غير نشط',        color: '#94a3b8', bg: 'rgba(148,163,184,0.1)', Icon: FaMoon         },
+  on_leave:   { ar: 'في إجازة',       color: '#f59e0b', bg: 'rgba(245,158,11,0.1)',  Icon: FaPauseCircle  },
+  terminated: { ar: 'منتهي الخدمة',   color: '#ef4444', bg: 'rgba(239,68,68,0.1)',   Icon: FaBan          },
 }
 
 export default function HRHome() {
@@ -41,7 +41,7 @@ export default function HRHome() {
         faculty:   f.data?.meta?.total ?? f.data?.total ?? 0,
         positions: p.data?.meta?.total ?? p.data?.total ?? 0,
       })
-    }).catch(() => setError('ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…'))
+    }).catch(() => setError('تعذّر الاتصال بالخادم'))
     .finally(() => setLoading(false))
   }, [navigate])
 
@@ -50,9 +50,9 @@ export default function HRHome() {
   })
 
   const TOP_STATS = [
-    { Icon: FaUsers,             ar: 'Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…ÙˆØ¸ÙÙŠÙ†',   en: 'Total Employees',  value: stats.employees, color: '#569933', bg: 'rgba(86,153,51,0.1)'   },
-    { Icon: FaChalkboardTeacher, ar: 'Ù‡ÙŠØ¦Ø© Ø§Ù„ØªØ¯Ø±ÙŠØ³',       en: 'Faculty Members',  value: stats.faculty,   color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)'  },
-    { Icon: FaBriefcase,         ar: 'Ø§Ù„Ù…Ù†Ø§ØµØ¨ Ø§Ù„ÙˆØ¸ÙŠÙÙŠØ©',  en: 'Positions',         value: stats.positions, color: '#3b82f6', bg: 'rgba(59,130,246,0.1)'  },
+    { Icon: FaUsers,             ar: 'إجمالي الموظفين',   en: 'Total Employees',  value: stats.employees, color: '#569933', bg: 'rgba(86,153,51,0.1)'   },
+    { Icon: FaChalkboardTeacher, ar: 'هيئة التدريس',       en: 'Faculty Members',  value: stats.faculty,   color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)'  },
+    { Icon: FaBriefcase,         ar: 'المناصب الوظيفية',  en: 'Positions',         value: stats.positions, color: '#3b82f6', bg: 'rgba(59,130,246,0.1)'  },
   ]
 
   return (
@@ -65,7 +65,7 @@ export default function HRHome() {
           style={{ background: 'linear-gradient(90deg,#569933,#7ab356,#a8d68a,#7ab356,#417327,#569933)', backgroundSize: '250% 100%' }} />
         <div dir="rtl">
           <h2 className="text-[21px] font-black text-text-dark mb-1">
-            Ø§Ù„Ù…ÙˆØ§Ø±Ø¯ Ø§Ù„Ø¨Ø´Ø±ÙŠØ©
+            الموارد البشرية
             <span className="text-[14px] font-medium text-text-light mr-2">Human Resources</span>
           </h2>
           <p className="text-[12.5px] text-text-light">{dateStr}</p>
@@ -76,13 +76,13 @@ export default function HRHome() {
           </div>
           <div className="flex flex-col">
             <span className="text-[12px] font-bold text-primary-dark">{user.username}</span>
-            <span className="text-[9px] text-text-light">Ù…ÙˆØ¸Ù Ø§Ù„Ù…ÙˆØ§Ø±Ø¯ Ø§Ù„Ø¨Ø´Ø±ÙŠØ©</span>
+            <span className="text-[9px] text-text-light">موظف الموارد البشرية</span>
           </div>
         </div>
       </motion.div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-[12px] px-5 py-3 mb-6 text-[13px] text-red-600" dir="rtl">âš  {error}</div>
+        <div className="bg-red-50 border border-red-200 rounded-[12px] px-5 py-3 mb-6 text-[13px] text-red-600" dir="rtl">⚠ {error}</div>
       )}
 
       <div className="grid grid-cols-3 max-[820px]:grid-cols-2 max-[500px]:grid-cols-1 gap-5 mb-8">
@@ -96,7 +96,7 @@ export default function HRHome() {
               {loading ? <FaSpinner className="animate-spin" /> : <Icon />}
             </div>
             <div className="flex flex-col" dir="rtl">
-              <span className="text-[28px] font-black text-text-dark leading-[1.1] mb-[3px]">{loading ? 'â€¦' : value}</span>
+              <span className="text-[28px] font-black text-text-dark leading-[1.1] mb-[3px]">{loading ? '…' : value}</span>
               <span className="text-[13px] font-bold text-text-dark">{ar}</span>
               <span className="text-[10px] text-text-light mt-px">{en}</span>
             </div>
@@ -106,7 +106,7 @@ export default function HRHome() {
 
       <motion.section className="mb-8" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, delay: 0.3 }}>
         <div className="flex items-baseline gap-2.5 mb-4" dir="rtl">
-          <h3 className="text-[16.5px] font-extrabold text-text-dark">Ø­Ø§Ù„Ø§Øª Ø§Ù„Ù…ÙˆØ¸ÙÙŠÙ†</h3>
+          <h3 className="text-[16.5px] font-extrabold text-text-dark">حالات الموظفين</h3>
           <span className="text-[11.5px] text-text-light">Employee Statuses</span>
         </div>
         <div className="grid grid-cols-4 max-[700px]:grid-cols-2 max-[430px]:grid-cols-1 gap-3">
@@ -130,15 +130,15 @@ export default function HRHome() {
 
       <motion.section initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, delay: 0.45 }}>
         <div className="flex items-baseline gap-2.5 mb-4" dir="rtl">
-          <h3 className="text-[16.5px] font-extrabold text-text-dark">Ø§Ù„Ø¥Ø¬Ø±Ø§Ø¡Ø§Øª Ø§Ù„Ø³Ø±ÙŠØ¹Ø©</h3>
+          <h3 className="text-[16.5px] font-extrabold text-text-dark">الإجراءات السريعة</h3>
           <span className="text-[11.5px] text-text-light">Quick Actions</span>
         </div>
         <div className="grid grid-cols-2 max-[500px]:grid-cols-1 gap-3.5">
           {[
-            { Icon: FaUserPlus,          ar: 'Ø¥Ø¶Ø§ÙØ© Ù…ÙˆØ¸Ù Ø¬Ø¯ÙŠØ¯',  en: 'Add New Employee', to: '/hr/employees/add', color: '#569933' },
-            { Icon: FaUsers,             ar: 'Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ù…ÙˆØ¸ÙÙŠÙ†',   en: 'Employees List',   to: '/hr/employees',     color: '#3b82f6' },
-            { Icon: FaChalkboardTeacher, ar: 'Ù‡ÙŠØ¦Ø© Ø§Ù„ØªØ¯Ø±ÙŠØ³',      en: 'Faculty Members',  to: '/hr/faculty',       color: '#8b5cf6' },
-            { Icon: FaBriefcase,         ar: 'Ø§Ù„Ù…Ù†Ø§ØµØ¨ Ø§Ù„ÙˆØ¸ÙŠÙÙŠØ©', en: 'Positions',         to: '/hr/positions',     color: '#f59e0b' },
+            { Icon: FaUserPlus,          ar: 'إضافة موظف جديد',  en: 'Add New Employee', to: '/hr/employees/add', color: '#569933' },
+            { Icon: FaUsers,             ar: 'قائمة الموظفين',   en: 'Employees List',   to: '/hr/employees',     color: '#3b82f6' },
+            { Icon: FaChalkboardTeacher, ar: 'هيئة التدريس',      en: 'Faculty Members',  to: '/hr/faculty',       color: '#8b5cf6' },
+            { Icon: FaBriefcase,         ar: 'المناصب الوظيفية', en: 'Positions',         to: '/hr/positions',     color: '#f59e0b' },
           ].map(({ Icon, ar, en, to, color }, i) => (
             <Link key={i} to={to}
               className="bg-white border border-primary/12 rounded-[14px] px-5 py-4 flex items-center gap-3.5 no-underline relative overflow-hidden shadow-[0_2px_8px_rgba(26,46,16,0.04)] transition-all duration-[220ms] group hover:border-[var(--ac)] hover:-translate-y-[3px] hover:shadow-[0_6px_20px_rgba(26,46,16,0.1)]"
@@ -152,7 +152,7 @@ export default function HRHome() {
                 <span className="text-[14px] font-bold text-text-dark">{ar}</span>
                 <span className="text-[10.5px] text-text-light">{en}</span>
               </div>
-              <span className="mr-auto text-[16px] text-[#c8dabb] transition-all duration-200 group-hover:text-[var(--ac)] group-hover:-translate-x-1">â†</span>
+              <span className="mr-auto text-[16px] text-[#c8dabb] transition-all duration-200 group-hover:text-[var(--ac)] group-hover:-translate-x-1">←</span>
             </Link>
           ))}
         </div>
@@ -160,4 +160,3 @@ export default function HRHome() {
     </>
   )
 }
-

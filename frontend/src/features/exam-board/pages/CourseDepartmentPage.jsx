@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { FaSpinner, FaPlus, FaTimes, FaStar, FaRegStar, FaBook } from 'react-icons/fa'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
@@ -63,8 +63,8 @@ export default function CourseDepartmentPage() {
       })
       const json = await res.json()
       if (json.success) await reloadAssignments()
-      else setErr(json.message || 'ÙØ´Ù„Øª Ø§Ù„Ø¥Ø¶Ø§ÙØ©')
-    } catch { setErr('ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…') }
+      else setErr(json.message || 'فشلت الإضافة')
+    } catch { setErr('تعذّر الاتصال بالخادم') }
     finally { setSaving(p => ({ ...p, [courseId]: false })) }
   }
 
@@ -77,8 +77,8 @@ export default function CourseDepartmentPage() {
       })
       const json = await res.json()
       if (json.success) setAssignments(p => p.filter(a => a.course_department_id !== assignmentId))
-      else setErr(json.message || 'ÙØ´Ù„ Ø§Ù„Ø­Ø°Ù')
-    } catch { setErr('ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…') }
+      else setErr(json.message || 'فشل الحذف')
+    } catch { setErr('تعذّر الاتصال بالخادم') }
     finally { setRemoving(p => ({ ...p, [assignmentId]: false })) }
   }
 
@@ -91,29 +91,29 @@ export default function CourseDepartmentPage() {
   return (
     <>
       <div className="mb-5" dir="rtl">
-        <h2 className="text-[20px] font-black text-text-dark mb-[3px]">Ù…ÙˆØ§Ø¯ Ø§Ù„Ø£Ù‚Ø³Ø§Ù…</h2>
-        <p className="text-[12.5px] text-text-light">Course â€” Department Assignments</p>
+        <h2 className="text-[20px] font-black text-text-dark mb-[3px]">مواد الأقسام</h2>
+        <p className="text-[12.5px] text-text-light">Course — Department Assignments</p>
       </div>
 
       {/* College + Department selectors */}
       <div className="bg-white border border-primary/12 rounded-[16px] p-5 mb-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
         <div className="grid grid-cols-2 max-[600px]:grid-cols-1 gap-4" dir="rtl">
           <div className="flex flex-col gap-1.5">
-            <label className="text-[12px] font-bold text-text-dark">Ø§Ù„ÙƒÙ„ÙŠØ©</label>
+            <label className="text-[12px] font-bold text-text-dark">الكلية</label>
             <select
               className="px-3 py-2.5 border border-primary/20 rounded-[10px] text-[13.5px] text-text-dark outline-none focus:border-primary"
               value={collegeId}
               onChange={e => handleCollegeChange(e.target.value)}
               dir="rtl"
             >
-              <option value="">Ø§Ø®ØªØ± Ø§Ù„ÙƒÙ„ÙŠØ©</option>
+              <option value="">اختر الكلية</option>
               {colleges.map(c => <option key={c.college_id} value={c.college_id}>{c.college_name}</option>)}
             </select>
           </div>
 
           <div className="flex flex-col gap-1.5">
             <label className="text-[12px] font-bold text-text-dark">
-              Ø§Ù„Ù‚Ø³Ù…
+              القسم
               {loadingDepts && <FaSpinner className="inline mr-2 animate-spin text-[11px] text-primary" />}
             </label>
             <select
@@ -123,7 +123,7 @@ export default function CourseDepartmentPage() {
               disabled={!collegeId || loadingDepts}
               dir="rtl"
             >
-              <option value="">Ø§Ø®ØªØ± Ø§Ù„Ù‚Ø³Ù…</option>
+              <option value="">اختر القسم</option>
               {departments.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
             </select>
           </div>
@@ -132,7 +132,7 @@ export default function CourseDepartmentPage() {
 
       {err && (
         <p className="mb-4 px-4 py-2.5 text-[12.5px] text-red-600 bg-red-50 border border-red-200 rounded-[10px]" dir="rtl">
-          âš  {err}
+          ⚠ {err}
         </p>
       )}
 
@@ -142,14 +142,14 @@ export default function CourseDepartmentPage() {
           {/* Left: assigned courses */}
           <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
             <div className="px-5 py-3 bg-primary/[0.05] border-b border-primary/10 flex items-center gap-2" dir="rtl">
-              <span className="text-[13px] font-extrabold text-text-dark">Ø§Ù„Ù…ÙˆØ§Ø¯ Ø§Ù„Ù…Ø¶Ø§ÙØ©</span>
+              <span className="text-[13px] font-extrabold text-text-dark">المواد المضافة</span>
               <span className="text-[11px] text-text-light bg-primary/10 px-2 py-0.5 rounded-full font-bold">{assigned.length}</span>
             </div>
 
             {assigned.length === 0 ? (
               <div className="flex flex-col items-center py-14 gap-3">
                 <FaBook className="text-[36px] text-primary/15" />
-                <p className="text-[12px] text-text-light" dir="rtl">Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…ÙˆØ§Ø¯ Ù…Ø¶Ø§ÙØ© Ù„Ù‡Ø°Ø§ Ø§Ù„Ù‚Ø³Ù…</p>
+                <p className="text-[12px] text-text-light" dir="rtl">لا توجد مواد مضافة لهذا القسم</p>
               </div>
             ) : (
               <div className="divide-y divide-primary/6">
@@ -159,13 +159,13 @@ export default function CourseDepartmentPage() {
                     <div key={a.course_department_id} className="flex items-center justify-between gap-3 px-5 py-3.5" dir="rtl">
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-[13px] text-text-dark truncate">
-                          {course?.course_name || `Ù…Ø§Ø¯Ø© #${a.course_id}`}
+                          {course?.course_name || `مادة #${a.course_id}`}
                         </div>
                         <div className="flex items-center gap-2 mt-0.5">
                           <span className="text-[11px] text-text-light font-mono">{course?.course_code}</span>
                           {a.is_primary
-                            ? <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 font-bold"><FaStar className="text-[9px]" /> Ø±Ø¦ÙŠØ³ÙŠ</span>
-                            : <span className="inline-flex items-center gap-1 text-[10px] text-text-light"><FaRegStar className="text-[9px]" /> Ø«Ø§Ù†ÙˆÙŠ</span>
+                            ? <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 font-bold"><FaStar className="text-[9px]" /> رئيسي</span>
+                            : <span className="inline-flex items-center gap-1 text-[10px] text-text-light"><FaRegStar className="text-[9px]" /> ثانوي</span>
                           }
                         </div>
                       </div>
@@ -177,7 +177,7 @@ export default function CourseDepartmentPage() {
                         {removing[a.course_department_id]
                           ? <FaSpinner className="animate-spin text-[10px]" />
                           : <FaTimes className="text-[10px]" />}
-                        Ø­Ø°Ù
+                        حذف
                       </button>
                     </div>
                   )
@@ -189,12 +189,12 @@ export default function CourseDepartmentPage() {
           {/* Right: available courses to add */}
           <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
             <div className="px-5 py-3 bg-primary/[0.05] border-b border-primary/10 flex items-center gap-2" dir="rtl">
-              <span className="text-[13px] font-extrabold text-text-dark">Ù…ÙˆØ§Ø¯ Ù…ØªØ§Ø­Ø© Ù„Ù„Ø¥Ø¶Ø§ÙØ©</span>
+              <span className="text-[13px] font-extrabold text-text-dark">مواد متاحة للإضافة</span>
               <span className="text-[11px] text-text-light bg-primary/10 px-2 py-0.5 rounded-full font-bold">{unassigned.length}</span>
             </div>
 
             {unassigned.length === 0 ? (
-              <p className="text-center text-[12px] text-text-light py-14" dir="rtl">Ø¬Ù…ÙŠØ¹ Ø§Ù„Ù…ÙˆØ§Ø¯ Ù…Ø¶Ø§ÙØ© Ù„Ù‡Ø°Ø§ Ø§Ù„Ù‚Ø³Ù…</p>
+              <p className="text-center text-[12px] text-text-light py-14" dir="rtl">جميع المواد مضافة لهذا القسم</p>
             ) : (
               <div className="divide-y divide-primary/6 max-h-[520px] overflow-y-auto">
                 {unassigned.map(c => (
@@ -211,7 +211,7 @@ export default function CourseDepartmentPage() {
                       {saving[c.course_id]
                         ? <FaSpinner className="animate-spin text-[10px]" />
                         : <FaPlus className="text-[10px]" />}
-                      Ø¥Ø¶Ø§ÙØ©
+                      إضافة
                     </button>
                   </div>
                 ))}
@@ -224,4 +224,3 @@ export default function CourseDepartmentPage() {
     </>
   )
 }
-

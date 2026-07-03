@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { FaSpinner, FaCheckCircle, FaTimesCircle, FaPlus, FaMinus, FaBookOpen, FaClock } from 'react-icons/fa'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
@@ -12,49 +12,49 @@ function getUser() {
 }
 
 const REASON_LABELS = {
-  already_registered:   { ar: 'Ù…Ø³Ø¬Ù„ Ù…Ø³Ø¨Ù‚Ø§Ù‹',        color: 'bg-blue-100 text-blue-700'   },
-  missing_prerequisites:{ ar: 'Ù…ØªØ·Ù„Ø¨Ø§Øª Ø³Ø§Ø¨Ù‚Ø© Ù†Ø§Ù‚ØµØ©', color: 'bg-red-100 text-red-700'    },
-  no_available_seats:   { ar: 'Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…Ù‚Ø§Ø¹Ø¯',        color: 'bg-orange-100 text-orange-700'},
-  credit_limit_exceeded:{ ar: 'ØªØ¬Ø§ÙˆØ² Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ù‚ØµÙ‰',   color: 'bg-yellow-100 text-yellow-700'},
+  already_registered:   { ar: 'مسجل مسبقاً',        color: 'bg-blue-100 text-blue-700'   },
+  missing_prerequisites:{ ar: 'متطلبات سابقة ناقصة', color: 'bg-red-100 text-red-700'    },
+  no_available_seats:   { ar: 'لا توجد مقاعد',        color: 'bg-orange-100 text-orange-700'},
+  credit_limit_exceeded:{ ar: 'تجاوز الحد الأقصى',   color: 'bg-yellow-100 text-yellow-700'},
 }
 
-// â”€â”€ Hours progress bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Hours progress bar ────────────────────────────────────────────────────────
 function HoursBar({ registered, max, remaining }) {
   const pct = max > 0 ? Math.min((registered / max) * 100, 100) : 0
   const color = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-primary'
   return (
     <div className="bg-white border border-primary/12 rounded-[14px] p-4 mb-5 shadow-[0_2px_8px_rgba(26,46,16,0.05)]">
       <div className="flex items-center justify-between mb-2" dir="rtl">
-        <span className="text-[12.5px] font-bold text-text-dark">Ø§Ù„Ø³Ø§Ø¹Ø§Øª Ø§Ù„Ù…Ø¹ØªÙ…Ø¯Ø© Ø§Ù„Ù…Ø³Ø¬Ù„Ø©</span>
+        <span className="text-[12.5px] font-bold text-text-dark">الساعات المعتمدة المسجلة</span>
         <span className="text-[13px] font-extrabold text-text-dark">
-          <span className="text-primary">{registered}</span> / {max} Ø³Ø§Ø¹Ø©
+          <span className="text-primary">{registered}</span> / {max} ساعة
         </span>
       </div>
       <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
         <div className={`h-full rounded-full transition-all duration-500 ${color}`} style={{ width: `${pct}%` }} />
       </div>
       <p className="text-[11px] text-text-light mt-1.5 text-left" dir="rtl">
-        Ù…ØªØ¨Ù‚ÙŠ: <strong className="text-text-dark">{remaining} Ø³Ø§Ø¹Ø©</strong>
+        متبقي: <strong className="text-text-dark">{remaining} ساعة</strong>
       </p>
     </div>
   )
 }
 
-// â”€â”€ Registered courses panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Registered courses panel ──────────────────────────────────────────────────
 function RegisteredPanel({ registrations, onDrop, dropping }) {
   if (registrations.length === 0) return (
     <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
-      <PanelHeader title="Ø§Ù„Ù…ÙˆØ§Ø¯ Ø§Ù„Ù…Ø³Ø¬Ù„Ø©" count={0} />
+      <PanelHeader title="المواد المسجلة" count={0} />
       <div className="flex flex-col items-center py-12 gap-2">
         <FaBookOpen className="text-[36px] text-primary/15" />
-        <p className="text-[12px] text-text-light" dir="rtl">Ù„Ù… ØªØ³Ø¬Ù„ Ø£ÙŠ Ù…Ø§Ø¯Ø© Ø¨Ø¹Ø¯</p>
+        <p className="text-[12px] text-text-light" dir="rtl">لم تسجل أي مادة بعد</p>
       </div>
     </div>
   )
 
   return (
     <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
-      <PanelHeader title="Ø§Ù„Ù…ÙˆØ§Ø¯ Ø§Ù„Ù…Ø³Ø¬Ù„Ø©" count={registrations.length} />
+      <PanelHeader title="المواد المسجلة" count={registrations.length} />
       <div className="divide-y divide-primary/6">
         {registrations.map(r => (
           <div key={r.registration_id} className="flex items-center justify-between gap-3 px-5 py-3.5" dir="rtl">
@@ -62,9 +62,9 @@ function RegisteredPanel({ registrations, onDrop, dropping }) {
               <div className="font-semibold text-[13px] text-text-dark truncate">{r.course_name}</div>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-[11px] text-text-light font-mono">{r.course_code}</span>
-                <span className="text-[10.5px] text-primary font-bold">{r.credit_hours} Ø³Ø§Ø¹Ø§Øª</span>
+                <span className="text-[10.5px] text-primary font-bold">{r.credit_hours} ساعات</span>
                 <span className="inline-block px-1.5 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold rounded-full">
-                  {r.registration_status?.status_name || 'Ù…Ø³Ø¬Ù„'}
+                  {r.registration_status?.status_name || 'مسجل'}
                 </span>
               </div>
             </div>
@@ -76,7 +76,7 @@ function RegisteredPanel({ registrations, onDrop, dropping }) {
               {dropping[r.registration_id]
                 ? <FaSpinner className="animate-spin text-[10px]" />
                 : <FaMinus className="text-[10px]" />}
-              Ø­Ø°Ù
+              حذف
             </button>
           </div>
         ))}
@@ -85,24 +85,24 @@ function RegisteredPanel({ registrations, onDrop, dropping }) {
   )
 }
 
-// â”€â”€ Available courses panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Available courses panel ───────────────────────────────────────────────────
 function AvailablePanel({ courses, onRegister, registering }) {
   const eligible   = courses.filter(c => c.eligibility_status === 'eligible')
   const ineligible = courses.filter(c => c.eligibility_status !== 'eligible')
 
   if (courses.length === 0) return (
     <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
-      <PanelHeader title="Ø§Ù„Ù…ÙˆØ§Ø¯ Ø§Ù„Ù…ØªØ§Ø­Ø© Ù„Ù„ØªØ³Ø¬ÙŠÙ„" count={0} />
+      <PanelHeader title="المواد المتاحة للتسجيل" count={0} />
       <div className="flex flex-col items-center py-12 gap-2">
         <FaBookOpen className="text-[36px] text-primary/15" />
-        <p className="text-[12px] text-text-light" dir="rtl">Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…ÙˆØ§Ø¯ Ù…ØªØ§Ø­Ø© Ù„Ù„ØªØ³Ø¬ÙŠÙ„ ÙÙŠ Ù‡Ø°Ø§ Ø§Ù„ÙØµÙ„</p>
+        <p className="text-[12px] text-text-light" dir="rtl">لا توجد مواد متاحة للتسجيل في هذا الفصل</p>
       </div>
     </div>
   )
 
   return (
     <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
-      <PanelHeader title="Ø§Ù„Ù…ÙˆØ§Ø¯ Ø§Ù„Ù…ØªØ§Ø­Ø© Ù„Ù„ØªØ³Ø¬ÙŠÙ„" count={courses.length} />
+      <PanelHeader title="المواد المتاحة للتسجيل" count={courses.length} />
       <div className="divide-y divide-primary/6 max-h-[600px] overflow-y-auto">
         {/* Eligible first */}
         {eligible.map(c => (
@@ -111,7 +111,7 @@ function AvailablePanel({ courses, onRegister, registering }) {
         {/* Separator */}
         {eligible.length > 0 && ineligible.length > 0 && (
           <div className="px-5 py-2 bg-gray-50 text-[11px] text-text-light font-bold" dir="rtl">
-            â€” Ù…ÙˆØ§Ø¯ ØºÙŠØ± Ù…Ø¤Ù‡Ù„Ø© Ù„Ù„ØªØ³Ø¬ÙŠÙ„ Ø­Ø§Ù„ÙŠØ§Ù‹ â€”
+            — مواد غير مؤهلة للتسجيل حالياً —
           </div>
         )}
         {ineligible.map(c => (
@@ -140,21 +140,21 @@ function CourseRow({ course, onRegister, registering }) {
         </div>
         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
           <span className="text-[11px] text-text-light font-mono">{course.course_code}</span>
-          <span className="text-[10.5px] text-primary font-bold">{course.credit_hours} Ø³Ø§Ø¹Ø§Øª</span>
+          <span className="text-[10.5px] text-primary font-bold">{course.credit_hours} ساعات</span>
           {course.faculty_member && (
             <span className="text-[10.5px] text-text-light">
-              Ø¯. {course.faculty_member.first_name} {course.faculty_member.last_name}
+              د. {course.faculty_member.first_name} {course.faculty_member.last_name}
             </span>
           )}
         </div>
         <div className="flex items-center gap-2 mt-1 flex-wrap">
           {/* Seat count */}
           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${seats > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
-            {seats}/{capacity} Ù…Ù‚Ø¹Ø¯
+            {seats}/{capacity} مقعد
           </span>
           {/* Schedule placeholder */}
           <span className="inline-flex items-center gap-1 text-[10px] text-text-light bg-gray-100 px-1.5 py-0.5 rounded-full">
-            <FaClock className="text-[9px]" /> Ø§Ù„Ø¬Ø¯ÙˆÙ„ ØºÙŠØ± Ù…Ø­Ø¯Ø¯ Ø¨Ø¹Ø¯
+            <FaClock className="text-[9px]" /> الجدول غير محدد بعد
           </span>
           {/* Ineligibility reasons */}
           {reasons.map(r => {
@@ -175,7 +175,7 @@ function CourseRow({ course, onRegister, registering }) {
         {registering[course.course_offering_id]
           ? <FaSpinner className="animate-spin text-[10px]" />
           : <FaPlus className="text-[10px]" />}
-        ØªØ³Ø¬ÙŠÙ„
+        تسجيل
       </button>
     </div>
   )
@@ -190,7 +190,7 @@ function PanelHeader({ title, count }) {
   )
 }
 
-// â”€â”€ Main page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function StudentRegistration() {
   const user       = getUser()
   const studentId  = user.student_id
@@ -254,8 +254,8 @@ export default function StudentRegistration() {
     ]).then(([av, sm]) => {
       if (av.success) setAvailable(Array.isArray(av.data) ? av.data : [])
       if (sm.success) setSummary(sm.data)
-      if (!av.success) setErr(av.message || 'ÙØ´Ù„ ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ù…ÙˆØ§Ø¯ Ø§Ù„Ù…ØªØ§Ø­Ø©')
-    }).catch(() => setErr('ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…'))
+      if (!av.success) setErr(av.message || 'فشل تحميل المواد المتاحة')
+    }).catch(() => setErr('تعذّر الاتصال بالخادم'))
     .finally(() => setLoadingData(false))
   }
 
@@ -273,14 +273,14 @@ export default function StudentRegistration() {
         body:    JSON.stringify({ student_id: studentId, course_offering_id: offeringId }),
       })
       const json = await res.json()
-      if (json.success) { showToast(`ØªÙ… ØªØ³Ø¬ÙŠÙ„ "${name}" Ø¨Ù†Ø¬Ø§Ø­`); loadData(yearId, semId) }
-      else setErr(json.message || 'ÙØ´Ù„ Ø§Ù„ØªØ³Ø¬ÙŠÙ„')
-    } catch { setErr('ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…') }
+      if (json.success) { showToast(`تم تسجيل "${name}" بنجاح`); loadData(yearId, semId) }
+      else setErr(json.message || 'فشل التسجيل')
+    } catch { setErr('تعذّر الاتصال بالخادم') }
     finally { setRegistering(p => ({ ...p, [offeringId]: false })) }
   }
 
   async function handleDrop(registrationId, name) {
-    if (!window.confirm(`Ù‡Ù„ ØªØ±ÙŠØ¯ Ø­Ø°Ù ØªØ³Ø¬ÙŠÙ„ Ù…Ø§Ø¯Ø© "${name}"ØŸ`)) return
+    if (!window.confirm(`هل تريد حذف تسجيل مادة "${name}"؟`)) return
     setDropping(p => ({ ...p, [registrationId]: true })); setErr('')
     try {
       const res  = await fetch(`${API}/registrations/${registrationId}/drop`, {
@@ -288,9 +288,9 @@ export default function StudentRegistration() {
         headers: authHeaders(),
       })
       const json = await res.json()
-      if (json.success) { showToast(`ØªÙ… Ø­Ø°Ù "${name}" Ù…Ù† Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„ØªØ³Ø¬ÙŠÙ„`); loadData(yearId, semId) }
-      else setErr(json.message || 'ÙØ´Ù„ Ø§Ù„Ø­Ø°Ù')
-    } catch { setErr('ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…') }
+      if (json.success) { showToast(`تم حذف "${name}" من قائمة التسجيل`); loadData(yearId, semId) }
+      else setErr(json.message || 'فشل الحذف')
+    } catch { setErr('تعذّر الاتصال بالخادم') }
     finally { setDropping(p => ({ ...p, [registrationId]: false })) }
   }
 
@@ -304,7 +304,7 @@ export default function StudentRegistration() {
     <>
       {/* Header */}
       <div className="mb-5" dir="rtl">
-        <h2 className="text-[20px] font-black text-text-dark mb-[3px]">ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ù…ÙˆØ§Ø¯</h2>
+        <h2 className="text-[20px] font-black text-text-dark mb-[3px]">تسجيل المواد</h2>
         <p className="text-[12.5px] text-text-light">Course Registration</p>
       </div>
 
@@ -312,20 +312,20 @@ export default function StudentRegistration() {
       <div className="bg-white border border-primary/12 rounded-[16px] p-5 mb-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
         <div className="grid grid-cols-2 max-[580px]:grid-cols-1 gap-4" dir="rtl">
           <div className="flex flex-col gap-1.5">
-            <label className="text-[12px] font-bold text-text-dark">Ø§Ù„Ø³Ù†Ø© Ø§Ù„Ø¯Ø±Ø§Ø³ÙŠØ©</label>
+            <label className="text-[12px] font-bold text-text-dark">السنة الدراسية</label>
             <select
               className="px-3 py-2.5 border border-primary/20 rounded-[10px] text-[13.5px] text-text-dark outline-none focus:border-primary"
               value={yearId}
               onChange={e => handleYearChange(e.target.value, semesters)}
               dir="rtl"
             >
-              <option value="">Ø§Ø®ØªØ± Ø§Ù„Ø³Ù†Ø©</option>
+              <option value="">اختر السنة</option>
               {years.map(y => <option key={y.academic_year_id} value={y.academic_year_id}>{y.year_name}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-[12px] font-bold text-text-dark">
-              Ø§Ù„ÙØµÙ„ Ø§Ù„Ø¯Ø±Ø§Ø³ÙŠ
+              الفصل الدراسي
               {loadingFilter && <FaSpinner className="inline mr-2 animate-spin text-[11px] text-primary" />}
             </label>
             <select
@@ -335,7 +335,7 @@ export default function StudentRegistration() {
               disabled={!yearId || loadingFilter}
               dir="rtl"
             >
-              <option value="">Ø§Ø®ØªØ± Ø§Ù„ÙØµÙ„</option>
+              <option value="">اختر الفصل</option>
               {filteredSemesters.map(s => <option key={s.semester_id} value={s.semester_id}>{s.semester_name}</option>)}
             </select>
           </div>
@@ -349,7 +349,7 @@ export default function StudentRegistration() {
         </div>
       )}
       {err && (
-        <p className="mb-4 px-4 py-2.5 text-[12.5px] text-red-600 bg-red-50 border border-red-200 rounded-[10px]" dir="rtl">âš  {err}</p>
+        <p className="mb-4 px-4 py-2.5 text-[12.5px] text-red-600 bg-red-50 border border-red-200 rounded-[10px]" dir="rtl">⚠ {err}</p>
       )}
 
       {loadingData && (
@@ -368,7 +368,7 @@ export default function StudentRegistration() {
           {/* Schedule notice */}
           <div className="mb-5 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-[10px] flex items-center gap-2 text-[12px] text-amber-800" dir="rtl">
             <FaClock className="flex-shrink-0" />
-            Ø§Ù„Ø¬Ø¯ÙˆÙ„ Ø§Ù„Ø²Ù…Ù†ÙŠ Ù„Ù„Ù…ÙˆØ§Ø¯ ØºÙŠØ± Ù…ØªØ§Ø­ Ø­Ø§Ù„ÙŠØ§Ù‹ â€” Ø³ÙŠØªÙ… Ø¥Ø¶Ø§ÙØ© Ø£ÙˆÙ‚Ø§Øª Ø§Ù„Ù…Ø­Ø§Ø¶Ø±Ø§Øª Ø¹Ù†Ø¯ ØªÙˆÙØ± Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ù…Ù† Ø§Ù„Ø¥Ø¯Ø§Ø±Ø©.
+            الجدول الزمني للمواد غير متاح حالياً — سيتم إضافة أوقات المحاضرات عند توفر البيانات من الإدارة.
           </div>
 
           {/* Two panels */}
@@ -389,4 +389,3 @@ export default function StudentRegistration() {
     </>
   )
 }
-

@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
@@ -22,12 +22,12 @@ const toArr  = (d) => Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : 
 const toMeta = (d) => d?.meta ?? d ?? {}
 
 const STATUS_CONFIG = {
-  active:     { ar: 'Ù…Ù‚ÙŠÙ‘Ø¯',      color: '#22c55e', bg: 'rgba(34,197,94,0.1)',    Icon: FaCheckCircle  },
-  frozen:     { ar: 'Ù…Ù†Ù‚Ø·Ø¹',      color: '#3b82f6', bg: 'rgba(59,130,246,0.1)',   Icon: FaSnowflake    },
-  graduated:  { ar: 'Ø®Ø±Ù‘ÙŠØ¬',      color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)',   Icon: FaGraduationCap},
-  withdrawn:  { ar: 'Ù…Ø³Ø­ÙˆØ¨',      color: '#f59e0b', bg: 'rgba(245,158,11,0.1)',   Icon: FaUserTimes    },
-  dismissed:  { ar: 'Ù…ÙØµÙˆÙ„',      color: '#ef4444', bg: 'rgba(239,68,68,0.1)',    Icon: FaBan          },
-  suspended:  { ar: 'Ù…ÙˆÙ‚ÙˆÙ',      color: '#f97316', bg: 'rgba(249,115,22,0.1)',   Icon: FaPauseCircle  },
+  active:     { ar: 'مقيّد',      color: '#22c55e', bg: 'rgba(34,197,94,0.1)',    Icon: FaCheckCircle  },
+  frozen:     { ar: 'منقطع',      color: '#3b82f6', bg: 'rgba(59,130,246,0.1)',   Icon: FaSnowflake    },
+  graduated:  { ar: 'خرّيج',      color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)',   Icon: FaGraduationCap},
+  withdrawn:  { ar: 'مسحوب',      color: '#f59e0b', bg: 'rgba(245,158,11,0.1)',   Icon: FaUserTimes    },
+  dismissed:  { ar: 'مفصول',      color: '#ef4444', bg: 'rgba(239,68,68,0.1)',    Icon: FaBan          },
+  suspended:  { ar: 'موقوف',      color: '#f97316', bg: 'rgba(249,115,22,0.1)',   Icon: FaPauseCircle  },
 }
 
 export default function StudentAffairsHome() {
@@ -69,7 +69,7 @@ export default function StudentAffairsHome() {
         const totalStudents   = toMeta(sJson.data).total ?? 0
         const totalGraduates  = toMeta(gJson.data).total ?? 0
 
-        // Build map: college_id â†’ { college, programs[] }
+        // Build map: college_id → { college, programs[] }
         const deptToCollege = {}
         departmentList.forEach(d => { deptToCollege[d.department_id] = d.college_id })
 
@@ -92,7 +92,7 @@ export default function StudentAffairsHome() {
         setColleges(enriched)
         setError('')
       } catch {
-        if (!cancelled) setError('ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…. ØªØ£ÙƒØ¯ Ø£Ù† php artisan serve ÙŠØ¹Ù…Ù„.')
+        if (!cancelled) setError('تعذّر الاتصال بالخادم. تأكد أن php artisan serve يعمل.')
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -107,10 +107,10 @@ export default function StudentAffairsHome() {
   })
 
   const TOP_STATS = [
-    { Icon: FaUsers,         ar: 'Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø·Ù„Ø§Ø¨',     en: 'Total Students',    value: stats.total,     color: '#569933', bg: 'rgba(86,153,51,0.1)'  },
-    { Icon: FaUserGraduate,  ar: 'Ø§Ù„Ø®Ø±ÙŠØ¬ÙˆÙ†',           en: 'Graduates',         value: stats.graduates, color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
-    { Icon: FaBook,          ar: 'Ø§Ù„Ø¨Ø±Ø§Ù…Ø¬ Ø§Ù„Ø£ÙƒØ§Ø¯ÙŠÙ…ÙŠØ©', en: 'Academic Programs', value: stats.programs,  color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
-    { Icon: FaUniversity,    ar: 'Ø§Ù„ÙƒÙ„ÙŠØ§Øª',             en: 'Colleges',          value: stats.colleges,  color: '#3b82f6', bg: 'rgba(59,130,246,0.1)'  },
+    { Icon: FaUsers,         ar: 'إجمالي الطلاب',     en: 'Total Students',    value: stats.total,     color: '#569933', bg: 'rgba(86,153,51,0.1)'  },
+    { Icon: FaUserGraduate,  ar: 'الخريجون',           en: 'Graduates',         value: stats.graduates, color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
+    { Icon: FaBook,          ar: 'البرامج الأكاديمية', en: 'Academic Programs', value: stats.programs,  color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
+    { Icon: FaUniversity,    ar: 'الكليات',             en: 'Colleges',          value: stats.colleges,  color: '#3b82f6', bg: 'rgba(59,130,246,0.1)'  },
   ]
 
   return (
@@ -127,7 +127,7 @@ export default function StudentAffairsHome() {
         />
         <div dir="rtl">
           <h2 className="text-[21px] font-black text-text-dark mb-1">
-            Ø´Ø¤ÙˆÙ† Ø§Ù„Ø·Ù„Ø§Ø¨
+            شؤون الطلاب
             <span className="text-[14px] font-medium text-text-light mr-2">Student Affairs</span>
           </h2>
           <p className="text-[12.5px] text-text-light">{dateStr}</p>
@@ -138,7 +138,7 @@ export default function StudentAffairsHome() {
           </div>
           <div className="flex flex-col">
             <span className="text-[12px] font-bold text-primary-dark">{user.username}</span>
-            <span className="text-[9px] text-text-light">Ù…ÙˆØ¸Ù Ø´Ø¤ÙˆÙ† Ø§Ù„Ø·Ù„Ø§Ø¨</span>
+            <span className="text-[9px] text-text-light">موظف شؤون الطلاب</span>
           </div>
         </div>
       </motion.div>
@@ -146,7 +146,7 @@ export default function StudentAffairsHome() {
       {/* Error */}
       {error && (
         <div className="flex items-center gap-3 bg-red-500/6 border border-red-500/25 rounded-[12px] px-5 py-3.5 mb-6 text-[13.5px] text-red-600" dir="rtl">
-          <span>âš  {error}</span>
+          <span>⚠ {error}</span>
         </div>
       )}
 
@@ -166,7 +166,7 @@ export default function StudentAffairsHome() {
             </div>
             <div className="flex flex-col" dir="rtl">
               <span className="text-[28px] font-black text-text-dark leading-[1.1] mb-[3px]">
-                {loading ? 'â€¦' : value}
+                {loading ? '…' : value}
               </span>
               <span className="text-[13px] font-bold text-text-dark">{ar}</span>
               <span className="text-[10px] text-text-light mt-px">{en}</span>
@@ -183,19 +183,19 @@ export default function StudentAffairsHome() {
         transition={{ duration: 0.45, delay: 0.3 }}
       >
         <div className="flex items-baseline gap-2.5 mb-4" dir="rtl">
-          <h3 className="text-[16.5px] font-extrabold text-text-dark">Ø§Ù„ÙƒÙ„ÙŠØ§Øª ÙˆØ§Ù„Ø¨Ø±Ø§Ù…Ø¬</h3>
+          <h3 className="text-[16.5px] font-extrabold text-text-dark">الكليات والبرامج</h3>
           <span className="text-[11.5px] text-text-light">Colleges &amp; Programs</span>
         </div>
 
         {loading ? (
           <div className="flex items-center justify-center gap-3 py-14 text-primary-light text-[14px] font-medium">
             <FaSpinner className="text-[24px] animate-[spin_0.7s_linear_infinite]" />
-            <span>Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªØ­Ù…ÙŠÙ„â€¦</span>
+            <span>جاري التحميل…</span>
           </div>
         ) : colleges.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-14 gap-2 text-text-light bg-white rounded-[16px] border border-dashed border-primary/20">
             <FaUniversity className="text-[40px] text-[#c8dab8]" />
-            <p className="text-[14px] font-semibold text-text-gray" dir="rtl">Ù„Ù… ÙŠØªÙ… Ø¥Ø¶Ø§ÙØ© ÙƒÙ„ÙŠØ§Øª Ø¨Ø¹Ø¯</p>
+            <p className="text-[14px] font-semibold text-text-gray" dir="rtl">لم يتم إضافة كليات بعد</p>
             <p className="text-[11.5px]">No colleges added yet</p>
           </div>
         ) : (
@@ -219,13 +219,13 @@ export default function StudentAffairsHome() {
                   </div>
                   <div className="text-right flex-shrink-0" dir="rtl">
                     <span className="text-[20px] font-black text-primary">{college.programs.length}</span>
-                    <span className="block text-[9.5px] text-text-light">Ø¨Ø±Ù†Ø§Ù…Ø¬</span>
+                    <span className="block text-[9.5px] text-text-light">برنامج</span>
                   </div>
                 </div>
 
                 {/* Programs list */}
                 {college.programs.length === 0 ? (
-                  <p className="text-[12px] text-text-light text-center py-3" dir="rtl">Ù„Ø§ ØªÙˆØ¬Ø¯ Ø¨Ø±Ø§Ù…Ø¬ Ù…Ø¶Ø§ÙØ© Ø¨Ø¹Ø¯</p>
+                  <p className="text-[12px] text-text-light text-center py-3" dir="rtl">لا توجد برامج مضافة بعد</p>
                 ) : (
                   <div className="flex flex-col gap-2">
                     {college.programs.map(prog => (
@@ -238,7 +238,7 @@ export default function StudentAffairsHome() {
                           <FaBook className="text-primary-light text-[13px] flex-shrink-0" />
                           <div className="min-w-0">
                             <p className="text-[13px] font-semibold text-text-dark truncate">{prog.program_name}</p>
-                            <p className="text-[10px] text-text-light">{prog.degree_level} Â· {prog.duration_years} Ø³Ù†ÙˆØ§Øª</p>
+                            <p className="text-[10px] text-text-light">{prog.degree_level} · {prog.duration_years} سنوات</p>
                           </div>
                         </div>
                         <span className="text-[10px] font-mono text-text-light bg-white border border-primary/15 rounded-[5px] px-1.5 py-[2px] flex-shrink-0">{prog.program_code}</span>
@@ -260,7 +260,7 @@ export default function StudentAffairsHome() {
         transition={{ duration: 0.45, delay: 0.45 }}
       >
         <div className="flex items-baseline gap-2.5 mb-4" dir="rtl">
-          <h3 className="text-[16.5px] font-extrabold text-text-dark">Ø­Ø§Ù„Ø§Øª Ø§Ù„Ø·Ù„Ø§Ø¨</h3>
+          <h3 className="text-[16.5px] font-extrabold text-text-dark">حالات الطلاب</h3>
           <span className="text-[11.5px] text-text-light">Student Statuses</span>
         </div>
         <div className="grid grid-cols-3 max-[700px]:grid-cols-2 max-[430px]:grid-cols-1 gap-3">
@@ -292,14 +292,14 @@ export default function StudentAffairsHome() {
         transition={{ duration: 0.45, delay: 0.55 }}
       >
         <div className="flex items-baseline gap-2.5 mb-4" dir="rtl">
-          <h3 className="text-[16.5px] font-extrabold text-text-dark">Ø§Ù„Ø¥Ø¬Ø±Ø§Ø¡Ø§Øª Ø§Ù„Ø³Ø±ÙŠØ¹Ø©</h3>
+          <h3 className="text-[16.5px] font-extrabold text-text-dark">الإجراءات السريعة</h3>
           <span className="text-[11.5px] text-text-light">Quick Actions</span>
         </div>
         <div className="grid grid-cols-2 max-[500px]:grid-cols-1 gap-3.5">
           {[
-            { Icon: FaUserPlus,      ar: 'Ø¥Ø¶Ø§ÙØ© Ø·Ø§Ù„Ø¨ Ø¬Ø¯ÙŠØ¯', en: 'Add New Student', to: '/student-affairs/students/add',  color: '#569933' },
-            { Icon: FaUsers,         ar: 'Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø·Ù„Ø§Ø¨',    en: 'Students List',   to: '/student-affairs/students',      color: '#3b82f6' },
-            { Icon: FaUserGraduate,  ar: 'Ø§Ù„Ø®Ø±ÙŠØ¬ÙˆÙ†',        en: 'Graduates',       to: '/student-affairs/graduates',     color: '#8b5cf6' },
+            { Icon: FaUserPlus,      ar: 'إضافة طالب جديد', en: 'Add New Student', to: '/student-affairs/students/add',  color: '#569933' },
+            { Icon: FaUsers,         ar: 'قائمة الطلاب',    en: 'Students List',   to: '/student-affairs/students',      color: '#3b82f6' },
+            { Icon: FaUserGraduate,  ar: 'الخريجون',        en: 'Graduates',       to: '/student-affairs/graduates',     color: '#8b5cf6' },
           ].map(({ Icon, ar, en, to, color }, i) => (
             <Link
               key={i}
@@ -315,7 +315,7 @@ export default function StudentAffairsHome() {
                 <span className="text-[14px] font-bold text-text-dark">{ar}</span>
                 <span className="text-[10.5px] text-text-light">{en}</span>
               </div>
-              <span className="mr-auto text-[16px] text-[#c8dabb] transition-all duration-200 group-hover:text-[var(--ac)] group-hover:-translate-x-1">â†</span>
+              <span className="mr-auto text-[16px] text-[#c8dabb] transition-all duration-200 group-hover:text-[var(--ac)] group-hover:-translate-x-1">←</span>
             </Link>
           ))}
         </div>
@@ -323,4 +323,3 @@ export default function StudentAffairsHome() {
     </>
   )
 }
-

@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { FaSpinner, FaCheckDouble, FaCheck } from 'react-icons/fa'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
@@ -26,7 +26,7 @@ function GradeRow({ row }) {
   const t = row.theoretical_mark
   const p = row.practical_mark
   const f = t != null && p != null ? t + p : null
-  const { letter, color } = f !== null ? calcLetter(t, p) : { letter: 'â€”', color: 'text-text-light' }
+  const { letter, color } = f !== null ? calcLetter(t, p) : { letter: '—', color: 'text-text-light' }
 
   return (
     <tr className="border-t border-primary/6 hover:bg-primary/[0.02]">
@@ -34,9 +34,9 @@ function GradeRow({ row }) {
         <div className="font-semibold text-[13px] text-text-dark">{row.student?.first_name} {row.student?.last_name}</div>
         <div className="text-[11px] text-text-light font-mono">{row.student?.student_number}</div>
       </td>
-      <td className="px-3 py-3 text-center text-text-dark">{t ?? 'â€”'}</td>
-      <td className="px-3 py-3 text-center text-text-dark">{p ?? 'â€”'}</td>
-      <td className="px-3 py-3 text-center font-bold text-text-dark">{f ?? 'â€”'}</td>
+      <td className="px-3 py-3 text-center text-text-dark">{t ?? '—'}</td>
+      <td className="px-3 py-3 text-center text-text-dark">{p ?? '—'}</td>
+      <td className="px-3 py-3 text-center font-bold text-text-dark">{f ?? '—'}</td>
       <td className={`px-3 py-3 text-center text-[15px] font-black ${color}`}>{letter}</td>
     </tr>
   )
@@ -130,8 +130,8 @@ export default function ApprovalsPage() {
       })
       const json = await res.json()
       if (json.success) setApproved(true)
-      else setApproveErr(json.message || 'ÙØ´Ù„ Ø§Ù„Ø§Ø¹ØªÙ…Ø§Ø¯')
-    } catch { setApproveErr('ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…') }
+      else setApproveErr(json.message || 'فشل الاعتماد')
+    } catch { setApproveErr('تعذّر الاتصال بالخادم') }
     finally { setApproving(false) }
   }
 
@@ -140,7 +140,7 @@ export default function ApprovalsPage() {
   return (
     <>
       <div className="mb-5" dir="rtl">
-        <h2 className="text-[20px] font-black text-text-dark mb-[3px]">Ø§Ø¹ØªÙ…Ø§Ø¯ Ø§Ù„Ø¯Ø±Ø¬Ø§Øª</h2>
+        <h2 className="text-[20px] font-black text-text-dark mb-[3px]">اعتماد الدرجات</h2>
         <p className="text-[12.5px] text-text-light">Grade Approvals</p>
       </div>
 
@@ -149,21 +149,21 @@ export default function ApprovalsPage() {
         <div className="grid grid-cols-3 max-[700px]:grid-cols-1 gap-4" dir="rtl">
           {/* Year */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-[12px] font-bold text-text-dark">Ø§Ù„Ø³Ù†Ø© Ø§Ù„Ø¯Ø±Ø§Ø³ÙŠØ©</label>
+            <label className="text-[12px] font-bold text-text-dark">السنة الدراسية</label>
             <select
               className="px-3 py-2.5 border border-primary/20 rounded-[10px] text-[13.5px] text-text-dark outline-none focus:border-primary"
               value={yearId}
               onChange={e => handleYearChange(e.target.value, semesters)}
               dir="rtl"
             >
-              <option value="">Ø§Ø®ØªØ± Ø§Ù„Ø³Ù†Ø©</option>
+              <option value="">اختر السنة</option>
               {years.map(y => <option key={y.academic_year_id} value={y.academic_year_id}>{y.year_name}</option>)}
             </select>
           </div>
           {/* Semester */}
           <div className="flex flex-col gap-1.5">
             <label className="text-[12px] font-bold text-text-dark">
-              Ø§Ù„ÙØµÙ„ Ø§Ù„Ø¯Ø±Ø§Ø³ÙŠ
+              الفصل الدراسي
               {loadingFilter && <FaSpinner className="inline mr-2 animate-spin text-[11px] text-primary" />}
             </label>
             <select
@@ -173,14 +173,14 @@ export default function ApprovalsPage() {
               disabled={!yearId || loadingFilter}
               dir="rtl"
             >
-              <option value="">Ø§Ø®ØªØ± Ø§Ù„ÙØµÙ„</option>
+              <option value="">اختر الفصل</option>
               {filteredSemesters.map(s => <option key={s.semester_id} value={s.semester_id}>{s.semester_name}</option>)}
             </select>
           </div>
           {/* Course offering */}
           <div className="flex flex-col gap-1.5">
             <label className="text-[12px] font-bold text-text-dark">
-              Ø§Ù„Ù…Ø§Ø¯Ø©
+              المادة
               {loadingOff && <FaSpinner className="inline mr-2 animate-spin text-[11px] text-primary" />}
             </label>
             <select
@@ -190,11 +190,11 @@ export default function ApprovalsPage() {
               disabled={offerings.length === 0}
               dir="rtl"
             >
-              <option value="">Ø§Ø®ØªØ± Ø§Ù„Ù…Ø§Ø¯Ø©</option>
+              <option value="">اختر المادة</option>
               {offerings.map(o => (
                 <option key={o.course_offering_id} value={o.course_offering_id}>
                   {o.course?.course_name || o.course_name || `Offering #${o.course_offering_id}`}
-                  {o.section_number ? ` â€” Ø´Ø¹Ø¨Ø© ${o.section_number}` : ''}
+                  {o.section_number ? ` — شعبة ${o.section_number}` : ''}
                 </option>
               ))}
             </select>
@@ -206,15 +206,15 @@ export default function ApprovalsPage() {
 
       {gradeSheet && !loadingGs && (
         gradeSheet.length === 0
-          ? <p className="text-center text-[13px] text-text-light py-10" dir="rtl">Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ø·Ù„Ø§Ø¨ Ù…Ø³Ø¬Ù„ÙˆÙ† ÙÙŠ Ù‡Ø°Ù‡ Ø§Ù„Ù…Ø§Ø¯Ø©</p>
+          ? <p className="text-center text-[13px] text-text-light py-10" dir="rtl">لا يوجد طلاب مسجلون في هذه المادة</p>
           : (
             <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
               {/* Table header with approve button */}
               <div className="flex items-center justify-between px-5 py-3 bg-primary/[0.05] border-b border-primary/10" dir="rtl">
-                <span className="text-[13px] font-extrabold text-text-dark">{gradeSheet.length} Ø·Ø§Ù„Ø¨</span>
+                <span className="text-[13px] font-extrabold text-text-dark">{gradeSheet.length} طالب</span>
                 {approved ? (
                   <span className="inline-flex items-center gap-2 px-4 py-1.5 bg-green-500/10 text-green-700 border border-green-500/25 rounded-[8px] text-[13px] font-bold">
-                    <FaCheckDouble className="text-[12px]" /> ØªÙ… Ø§Ø¹ØªÙ…Ø§Ø¯ Ø§Ù„Ù…Ø§Ø¯Ø©
+                    <FaCheckDouble className="text-[12px]" /> تم اعتماد المادة
                   </span>
                 ) : (
                   <button
@@ -223,24 +223,24 @@ export default function ApprovalsPage() {
                     className="flex items-center gap-2 px-4 py-1.5 bg-primary text-white rounded-[8px] text-[13px] font-bold disabled:opacity-50 hover:enabled:bg-primary-dark transition-colors"
                   >
                     {approving ? <FaSpinner className="animate-spin text-[11px]" /> : <FaCheck className="text-[11px]" />}
-                    Ø§Ø¹ØªÙ…Ø§Ø¯ Ø§Ù„Ù…Ø§Ø¯Ø©
+                    اعتماد المادة
                   </button>
                 )}
               </div>
 
               {approveErr && (
-                <p className="px-5 py-2 text-[12px] text-red-600 bg-red-50 border-b border-red-100" dir="rtl">âš  {approveErr}</p>
+                <p className="px-5 py-2 text-[12px] text-red-600 bg-red-50 border-b border-red-100" dir="rtl">⚠ {approveErr}</p>
               )}
 
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-[13px]">
                   <thead>
                     <tr className="bg-[#fafaf8]">
-                      <th className="px-4 py-2.5 text-right text-[11px] font-bold text-text-light" dir="rtl">Ø§Ù„Ø·Ø§Ù„Ø¨</th>
-                      <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">Ù†Ø¸Ø±ÙŠ / 60</th>
-                      <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">Ø¹Ù…Ù„ÙŠ / 40</th>
-                      <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">Ø§Ù„Ù…Ø¬Ù…ÙˆØ¹</th>
-                      <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">Ø§Ù„ØªÙ‚Ø¯ÙŠØ±</th>
+                      <th className="px-4 py-2.5 text-right text-[11px] font-bold text-text-light" dir="rtl">الطالب</th>
+                      <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">نظري / 60</th>
+                      <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">عملي / 40</th>
+                      <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">المجموع</th>
+                      <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">التقدير</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -256,4 +256,3 @@ export default function ApprovalsPage() {
     </>
   )
 }
-

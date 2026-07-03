@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { FaSpinner } from 'react-icons/fa'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
@@ -47,8 +47,8 @@ export default function StudentGPA() {
       const res  = await fetch(`${API}/students/${id}/gpa?academic_year_id=${yearId}&semester_id=${semId}`, { headers: authHeaders() })
       const json = await res.json()
       if (json.success) setTermGPA(json.data)
-      else setGpaError(json.message || 'ÙØ´Ù„ Ø§Ø­ØªØ³Ø§Ø¨ Ø§Ù„Ù…Ø¹Ø¯Ù„')
-    } catch { setGpaError('ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„') }
+      else setGpaError(json.message || 'فشل احتساب المعدل')
+    } catch { setGpaError('تعذّر الاتصال') }
     finally { setGpaLoading(false) }
   }
 
@@ -64,31 +64,31 @@ export default function StudentGPA() {
   return (
     <>
       <div className="mb-6" dir="rtl">
-        <h2 className="text-[20px] font-black text-text-dark mb-[3px]">Ø§Ù„Ù…Ø¹Ø¯Ù„ Ø§Ù„Ø¯Ø±Ø§Ø³ÙŠ</h2>
+        <h2 className="text-[20px] font-black text-text-dark mb-[3px]">المعدل الدراسي</h2>
         <p className="text-[12.5px] text-text-light">GPA / CGPA</p>
       </div>
 
       {/* CGPA card */}
       <div className="bg-white border border-primary/12 rounded-[18px] p-6 mb-6 shadow-[0_2px_16px_rgba(26,46,16,0.06)]">
         <div className="flex items-center gap-2 mb-5 pb-3 border-b border-primary/10" dir="rtl">
-          <h3 className="text-[15px] font-extrabold text-text-dark">Ø§Ù„Ù…Ø¹Ø¯Ù„ Ø§Ù„ØªØ±Ø§ÙƒÙ…ÙŠ</h3>
+          <h3 className="text-[15px] font-extrabold text-text-dark">المعدل التراكمي</h3>
           <span className="text-[11px] text-text-light">Cumulative GPA</span>
         </div>
         <div className="flex items-center gap-6 flex-wrap" dir="rtl">
           <div className="text-[64px] font-black leading-none" style={{ color: cgpaColor }}>
-            {cgpaVal !== null ? Number(cgpaVal).toFixed(2) : 'â€”'}
+            {cgpaVal !== null ? Number(cgpaVal).toFixed(2) : '—'}
           </div>
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2 text-[13px]" dir="rtl">
-              <span className="text-text-light">Ù…Ù†</span>
+              <span className="text-text-light">من</span>
               <span className="font-bold text-text-dark">4.0</span>
             </div>
             <div className="flex items-center gap-2 text-[13px]" dir="rtl">
-              <span className="text-text-light">Ø§Ù„Ø³Ø§Ø¹Ø§Øª Ø§Ù„Ù…Ø­ØªØ³Ø¨Ø©:</span>
+              <span className="text-text-light">الساعات المحتسبة:</span>
               <span className="font-bold text-text-dark">{cgpa?.total_included_credit_hours ?? 0}</span>
             </div>
             <div className="flex items-center gap-2 text-[13px]" dir="rtl">
-              <span className="text-text-light">Ø§Ù„Ù…Ù‚Ø±Ø±Ø§Øª:</span>
+              <span className="text-text-light">المقررات:</span>
               <span className="font-bold text-text-dark">{cgpa?.included_courses_count ?? 0}</span>
             </div>
           </div>
@@ -110,31 +110,31 @@ export default function StudentGPA() {
       {/* Term GPA calculator */}
       <div className="bg-white border border-primary/12 rounded-[18px] p-6 shadow-[0_2px_16px_rgba(26,46,16,0.06)]">
         <div className="flex items-center gap-2 mb-5 pb-3 border-b border-primary/10" dir="rtl">
-          <h3 className="text-[15px] font-extrabold text-text-dark">Ù…Ø¹Ø¯Ù„ Ø§Ù„ÙØµÙ„ Ø§Ù„Ø¯Ø±Ø§Ø³ÙŠ</h3>
+          <h3 className="text-[15px] font-extrabold text-text-dark">معدل الفصل الدراسي</h3>
           <span className="text-[11px] text-text-light">Term GPA</span>
         </div>
         <div className="flex items-end gap-3 flex-wrap" dir="rtl">
           <div className="flex flex-col gap-1.5">
-            <label className="text-[12px] font-bold text-text-dark">Ø§Ù„Ø¹Ø§Ù… Ø§Ù„Ø¯Ø±Ø§Ø³ÙŠ</label>
+            <label className="text-[12px] font-bold text-text-dark">العام الدراسي</label>
             <select
               className="px-3 py-2 border border-primary/20 rounded-[10px] bg-white text-[13.5px] text-text-dark outline-none focus:border-primary focus:shadow-[0_0_0_3px_rgba(86,153,51,0.1)] min-w-[170px]"
               value={yearId}
               onChange={e => { setYearId(e.target.value); setTermGPA(null) }}
               dir="rtl"
             >
-              <option value="">Ø§Ø®ØªØ± Ø§Ù„Ø¹Ø§Ù…</option>
+              <option value="">اختر العام</option>
               {academicYears.map(y => <option key={y.academic_year_id} value={y.academic_year_id}>{y.year_name}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-[12px] font-bold text-text-dark">Ø§Ù„ÙØµÙ„ Ø§Ù„Ø¯Ø±Ø§Ø³ÙŠ</label>
+            <label className="text-[12px] font-bold text-text-dark">الفصل الدراسي</label>
             <select
               className="px-3 py-2 border border-primary/20 rounded-[10px] bg-white text-[13.5px] text-text-dark outline-none focus:border-primary focus:shadow-[0_0_0_3px_rgba(86,153,51,0.1)] min-w-[170px]"
               value={semId}
               onChange={e => { setSemId(e.target.value); setTermGPA(null) }}
               dir="rtl"
             >
-              <option value="">Ø§Ø®ØªØ± Ø§Ù„ÙØµÙ„</option>
+              <option value="">اختر الفصل</option>
               {semesters.map(s => <option key={s.semester_id} value={s.semester_id}>{s.semester_name}</option>)}
             </select>
           </div>
@@ -144,16 +144,16 @@ export default function StudentGPA() {
             onClick={calcGPA}
           >
             {gpaLoading && <FaSpinner className="animate-spin" />}
-            Ø§Ø­ØªØ³Ø§Ø¨
+            احتساب
           </button>
         </div>
-        {gpaError && <p className="mt-3 text-[12.5px] text-red-600" dir="rtl">âš  {gpaError}</p>}
+        {gpaError && <p className="mt-3 text-[12.5px] text-red-600" dir="rtl">⚠ {gpaError}</p>}
         {termGPA && (
           <div className="mt-5 flex items-center gap-5 bg-blue-50 border border-blue-500/20 rounded-[14px] px-6 py-4" dir="rtl">
             <div className="text-[48px] font-black text-blue-600 leading-none">{Number(termGPA.gpa).toFixed(2)}</div>
             <div>
-              <p className="text-[13px] font-extrabold text-text-dark">Ù…Ø¹Ø¯Ù„ Ø§Ù„ÙØµÙ„</p>
-              <p className="text-[12px] text-text-light mt-0.5">{termGPA.total_credit_hours} Ø³Ø§Ø¹Ø© Ù…Ø¹ØªÙ…Ø¯Ø©</p>
+              <p className="text-[13px] font-extrabold text-text-dark">معدل الفصل</p>
+              <p className="text-[12px] text-text-light mt-0.5">{termGPA.total_credit_hours} ساعة معتمدة</p>
             </div>
           </div>
         )}
@@ -161,4 +161,3 @@ export default function StudentGPA() {
     </>
   )
 }
-

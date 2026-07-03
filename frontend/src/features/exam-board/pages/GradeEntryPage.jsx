@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { FaSpinner, FaCheck, FaSave, FaUsers, FaUserEdit } from 'react-icons/fa'
 import StudentPicker from '../components/StudentPicker'
 
@@ -7,7 +7,7 @@ function authHeaders() {
   return { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }
 }
 
-// â”€â”€ shared helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── shared helpers ───────────────────────────────────────────────────────────
 
 function calcLetter(t, p) {
   const f = (t || 0) + (p || 0)
@@ -37,7 +37,7 @@ async function saveGrade(registrationId, theory, prac) {
   return json
 }
 
-// â”€â”€ Grade row used in the bulk table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Grade row used in the bulk table ─────────────────────────────────────────
 
 function BulkRow({ row }) {
   const [theory,  setTheory]  = useState(row.theoretical_mark ?? '')
@@ -49,7 +49,7 @@ function BulkRow({ row }) {
   const t   = parseFloat(theory) || 0
   const p   = parseFloat(prac)   || 0
   const fin = theory !== '' && prac !== '' ? t + p : null
-  const { letter, color } = fin !== null ? calcLetter(t, p) : { letter: 'â€”', color: 'text-text-light' }
+  const { letter, color } = fin !== null ? calcLetter(t, p) : { letter: '—', color: 'text-text-light' }
   const tWarn = theory !== '' && t < 15
   const pWarn = prac   !== '' && p < 10
 
@@ -59,8 +59,8 @@ function BulkRow({ row }) {
     try {
       const json = await saveGrade(row.student_course_registration_id, t, p)
       if (json.success) setSaved(true)
-      else setErr(json.message || 'ÙØ´Ù„')
-    } catch { setErr('Ø®Ø·Ø£') }
+      else setErr(json.message || 'فشل')
+    } catch { setErr('خطأ') }
     finally { setSaving(false) }
   }
 
@@ -94,13 +94,13 @@ function BulkRow({ row }) {
         {pWarn && <div className="text-[10px] text-red-500 text-center mt-0.5">min 10</div>}
       </td>
       {/* Final preview */}
-      <td className="px-3 py-3 text-center font-bold text-text-dark">{fin ?? 'â€”'}</td>
+      <td className="px-3 py-3 text-center font-bold text-text-dark">{fin ?? '—'}</td>
       {/* Letter */}
       <td className={`px-3 py-3 text-center text-[15px] font-black ${color}`}>{letter}</td>
       {/* Save */}
       <td className="px-3 py-3 text-center">
         {saved
-          ? <span className="inline-flex items-center gap-1 text-[11.5px] text-green-700 font-bold"><FaCheck className="text-[10px]" /> ØªÙ…</span>
+          ? <span className="inline-flex items-center gap-1 text-[11.5px] text-green-700 font-bold"><FaCheck className="text-[10px]" /> تم</span>
           : (
             <button
               onClick={handleSave}
@@ -108,7 +108,7 @@ function BulkRow({ row }) {
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-[7px] text-[12px] font-bold disabled:opacity-40 hover:enabled:bg-primary-dark transition-colors"
             >
               {saving ? <FaSpinner className="animate-spin text-[10px]" /> : <FaSave className="text-[10px]" />}
-              Ø­ÙØ¸
+              حفظ
             </button>
           )
         }
@@ -118,7 +118,7 @@ function BulkRow({ row }) {
   )
 }
 
-// â”€â”€ MODE 1: Bulk (course â†’ students table) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── MODE 1: Bulk (course → students table) ───────────────────────────────────
 
 function BulkMode() {
   const [years,             setYears]             = useState([])
@@ -197,21 +197,21 @@ function BulkMode() {
         <div className="grid grid-cols-3 max-[700px]:grid-cols-1 gap-4" dir="rtl">
           {/* Year */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-[12px] font-bold text-text-dark">Ø§Ù„Ø³Ù†Ø© Ø§Ù„Ø¯Ø±Ø§Ø³ÙŠØ©</label>
+            <label className="text-[12px] font-bold text-text-dark">السنة الدراسية</label>
             <select
               className="px-3 py-2.5 border border-primary/20 rounded-[10px] text-[13.5px] text-text-dark outline-none focus:border-primary"
               value={yearId}
               onChange={e => handleYearChange(e.target.value, semesters)}
               dir="rtl"
             >
-              <option value="">Ø§Ø®ØªØ± Ø§Ù„Ø³Ù†Ø©</option>
+              <option value="">اختر السنة</option>
               {years.map(y => <option key={y.academic_year_id} value={y.academic_year_id}>{y.year_name}</option>)}
             </select>
           </div>
           {/* Semester */}
           <div className="flex flex-col gap-1.5">
             <label className="text-[12px] font-bold text-text-dark">
-              Ø§Ù„ÙØµÙ„ Ø§Ù„Ø¯Ø±Ø§Ø³ÙŠ
+              الفصل الدراسي
               {loadingFilter && <FaSpinner className="inline mr-2 animate-spin text-[11px] text-primary" />}
             </label>
             <select
@@ -221,14 +221,14 @@ function BulkMode() {
               disabled={!yearId || loadingFilter}
               dir="rtl"
             >
-              <option value="">Ø§Ø®ØªØ± Ø§Ù„ÙØµÙ„</option>
+              <option value="">اختر الفصل</option>
               {filteredSemesters.map(s => <option key={s.semester_id} value={s.semester_id}>{s.semester_name}</option>)}
             </select>
           </div>
           {/* Course offering */}
           <div className="flex flex-col gap-1.5">
             <label className="text-[12px] font-bold text-text-dark">
-              Ø§Ù„Ù…Ø§Ø¯Ø©
+              المادة
               {loadingOff && <FaSpinner className="inline mr-2 animate-spin text-[11px] text-primary" />}
             </label>
             <select
@@ -238,11 +238,11 @@ function BulkMode() {
               disabled={offerings.length === 0}
               dir="rtl"
             >
-              <option value="">Ø§Ø®ØªØ± Ø§Ù„Ù…Ø§Ø¯Ø©</option>
+              <option value="">اختر المادة</option>
               {offerings.map(o => (
                 <option key={o.course_offering_id} value={o.course_offering_id}>
                   {o.course?.course_name || o.course_name || `Offering #${o.course_offering_id}`}
-                  {o.section_number ? ` â€” Ø´Ø¹Ø¨Ø© ${o.section_number}` : ''}
+                  {o.section_number ? ` — شعبة ${o.section_number}` : ''}
                 </option>
               ))}
             </select>
@@ -257,28 +257,28 @@ function BulkMode() {
         <>
           {/* Rules reminder */}
           <div className="flex gap-4 flex-wrap mb-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-[12px] text-[12px] text-amber-800" dir="rtl">
-            <span>âœ¦ Ù†Ø¸Ø±ÙŠ: Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ø¯Ù†Ù‰ <strong>15 / 60</strong></span>
-            <span>âœ¦ Ø¹Ù…Ù„ÙŠ: Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ø¯Ù†Ù‰ <strong>10 / 40</strong></span>
-            <span>âœ¦ Ø§Ù„Ù…Ø¬Ù…ÙˆØ¹: Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ø¯Ù†Ù‰ <strong>50 / 100</strong></span>
+            <span>✦ نظري: الحد الأدنى <strong>15 / 60</strong></span>
+            <span>✦ عملي: الحد الأدنى <strong>10 / 40</strong></span>
+            <span>✦ المجموع: الحد الأدنى <strong>50 / 100</strong></span>
           </div>
 
           {gradeSheet.length === 0
-            ? <p className="text-center text-[13px] text-text-light py-10" dir="rtl">Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ø·Ù„Ø§Ø¨ Ù…Ø³Ø¬Ù„ÙˆÙ† ÙÙŠ Ù‡Ø°Ù‡ Ø§Ù„Ù…Ø§Ø¯Ø©</p>
+            ? <p className="text-center text-[13px] text-text-light py-10" dir="rtl">لا يوجد طلاب مسجلون في هذه المادة</p>
             : (
               <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
                 <div className="px-5 py-3 bg-primary/[0.05] border-b border-primary/10 flex items-center gap-2" dir="rtl">
-                  <span className="text-[13px] font-extrabold text-text-dark">{gradeSheet.length} Ø·Ø§Ù„Ø¨</span>
+                  <span className="text-[13px] font-extrabold text-text-dark">{gradeSheet.length} طالب</span>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse text-[13px]">
                     <thead>
                       <tr className="bg-[#fafaf8]">
-                        <th className="px-4 py-2.5 text-right text-[11px] font-bold text-text-light" dir="rtl">Ø§Ù„Ø·Ø§Ù„Ø¨</th>
-                        <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">Ù†Ø¸Ø±ÙŠ / 60</th>
-                        <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">Ø¹Ù…Ù„ÙŠ / 40</th>
-                        <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">Ø§Ù„Ù…Ø¬Ù…ÙˆØ¹</th>
-                        <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">Ø§Ù„ØªÙ‚Ø¯ÙŠØ±</th>
-                        <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">Ø­ÙØ¸</th>
+                        <th className="px-4 py-2.5 text-right text-[11px] font-bold text-text-light" dir="rtl">الطالب</th>
+                        <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">نظري / 60</th>
+                        <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">عملي / 40</th>
+                        <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">المجموع</th>
+                        <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">التقدير</th>
+                        <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">حفظ</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -297,7 +297,7 @@ function BulkMode() {
   )
 }
 
-// â”€â”€ MODE 2: Individual (student â†’ course â†’ grade) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── MODE 2: Individual (student → course → grade) ────────────────────────────
 
 function IndividualMode() {
   const [selected, setSelected] = useState(null)
@@ -341,7 +341,7 @@ function IndividualMode() {
   const t   = parseFloat(theory) || 0
   const p   = parseFloat(prac)   || 0
   const fin = theory !== '' && prac !== '' ? t + p : null
-  const { letter, color } = fin !== null ? calcLetter(t, p) : { letter: 'â€”', color: 'text-text-light' }
+  const { letter, color } = fin !== null ? calcLetter(t, p) : { letter: '—', color: 'text-text-light' }
 
   async function handleSave() {
     if (!regId || theory === '' || prac === '') return
@@ -349,8 +349,8 @@ function IndividualMode() {
     try {
       const json = await saveGrade(regId, t, p)
       if (json.success) setSaved(true)
-      else setErr(json.message || 'ÙØ´Ù„ Ø§Ù„Ø­ÙØ¸')
-    } catch { setErr('ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„') }
+      else setErr(json.message || 'فشل الحفظ')
+    } catch { setErr('تعذّر الاتصال') }
     finally { setSaving(false) }
   }
 
@@ -362,14 +362,14 @@ function IndividualMode() {
 
       {regs.length > 0 && (
         <div className="bg-white border border-primary/12 rounded-[16px] p-5 mb-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
-          <label className="text-[12px] font-bold text-text-dark block mb-2" dir="rtl">Ø§Ø®ØªØ± Ø§Ù„Ù…Ø§Ø¯Ø©</label>
+          <label className="text-[12px] font-bold text-text-dark block mb-2" dir="rtl">اختر المادة</label>
           <select
             className="w-full px-3 py-2.5 border border-primary/20 rounded-[10px] text-[13.5px] text-text-dark outline-none focus:border-primary"
             value={regId}
             onChange={e => handlePickReg(e.target.value)}
             dir="rtl"
           >
-            <option value="">â€” Ø§Ø®ØªØ± Ù…Ø§Ø¯Ø© â€”</option>
+            <option value="">— اختر مادة —</option>
             {regs.map(r => (
               <option key={r.student_course_registration_id} value={r.student_course_registration_id}>
                 {r.course_offering?.course?.course_name || `Registration #${r.student_course_registration_id}`}
@@ -386,17 +386,17 @@ function IndividualMode() {
         <div className="bg-white border border-primary/12 rounded-[18px] p-6 shadow-[0_2px_12px_rgba(26,46,16,0.06)]">
           {current && (
             <div className="flex items-center gap-2 mb-5 pb-3 border-b border-primary/10" dir="rtl">
-              <span className="text-[13px] text-text-light">Ø§Ù„Ø¯Ø±Ø¬Ø© Ø§Ù„Ø­Ø§Ù„ÙŠØ©:</span>
-              <span className="font-bold text-text-dark">{current.final_mark ?? 'â€”'} / 100</span>
+              <span className="text-[13px] text-text-light">الدرجة الحالية:</span>
+              <span className="font-bold text-text-dark">{current.final_mark ?? '—'} / 100</span>
               <span className={`text-[15px] font-black mr-2 ${current.letter_grade?.startsWith('A') ? 'text-green-600' : current.letter_grade?.startsWith('B') ? 'text-blue-600' : 'text-red-600'}`}>
-                {current.letter_grade || 'â€”'}
+                {current.letter_grade || '—'}
               </span>
             </div>
           )}
 
           <div className="flex items-end gap-4 flex-wrap" dir="rtl">
             <div className="flex flex-col gap-1.5">
-              <label className="text-[12px] font-bold text-text-dark">Ù†Ø¸Ø±ÙŠ (0 â€“ 60)</label>
+              <label className="text-[12px] font-bold text-text-dark">نظري (0 – 60)</label>
               <input
                 type="number" min="0" max="60" step="0.5"
                 value={theory}
@@ -406,7 +406,7 @@ function IndividualMode() {
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-[12px] font-bold text-text-dark">Ø¹Ù…Ù„ÙŠ (0 â€“ 40)</label>
+              <label className="text-[12px] font-bold text-text-dark">عملي (0 – 40)</label>
               <input
                 type="number" min="0" max="40" step="0.5"
                 value={prac}
@@ -419,13 +419,13 @@ function IndividualMode() {
             {/* Preview */}
             <div className="flex items-center gap-4 px-5 py-3 bg-gray-50 border border-gray-200 rounded-[12px]" dir="rtl">
               <div className="text-center">
-                <div className="text-[28px] font-black text-text-dark leading-none">{fin ?? 'â€”'}</div>
-                <div className="text-[10px] text-text-light mt-1">Ø§Ù„Ù…Ø¬Ù…ÙˆØ¹</div>
+                <div className="text-[28px] font-black text-text-dark leading-none">{fin ?? '—'}</div>
+                <div className="text-[10px] text-text-light mt-1">المجموع</div>
               </div>
               <div className="w-px h-10 bg-gray-200" />
               <div className="text-center">
                 <div className={`text-[28px] font-black leading-none ${color}`}>{letter}</div>
-                <div className="text-[10px] text-text-light mt-1">Ø§Ù„ØªÙ‚Ø¯ÙŠØ±</div>
+                <div className="text-[10px] text-text-light mt-1">التقدير</div>
               </div>
             </div>
 
@@ -435,17 +435,17 @@ function IndividualMode() {
               className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-[10px] text-[13.5px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-primary-dark transition-colors"
             >
               {saving ? <FaSpinner className="animate-spin" /> : saved ? <FaCheck /> : <FaSave />}
-              {saved ? 'ØªÙ… Ø§Ù„Ø­ÙØ¸' : 'Ø­ÙØ¸'}
+              {saved ? 'تم الحفظ' : 'حفظ'}
             </button>
           </div>
-          {err && <p className="mt-3 text-[12.5px] text-red-600" dir="rtl">âš  {err}</p>}
+          {err && <p className="mt-3 text-[12.5px] text-red-600" dir="rtl">⚠ {err}</p>}
         </div>
       )}
     </>
   )
 }
 
-// â”€â”€ Main page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function GradeEntryPage() {
   const [mode, setMode] = useState('bulk')
@@ -453,7 +453,7 @@ export default function GradeEntryPage() {
   return (
     <>
       <div className="mb-5" dir="rtl">
-        <h2 className="text-[20px] font-black text-text-dark mb-[3px]">Ø¥Ø¯Ø®Ø§Ù„ Ø§Ù„Ø¯Ø±Ø¬Ø§Øª</h2>
+        <h2 className="text-[20px] font-black text-text-dark mb-[3px]">إدخال الدرجات</h2>
         <p className="text-[12.5px] text-text-light">Grade Entry</p>
       </div>
 
@@ -464,14 +464,14 @@ export default function GradeEntryPage() {
           className={`flex items-center gap-2 px-4 py-2 rounded-[9px] text-[13px] font-bold transition-all ${mode === 'bulk' ? 'bg-white text-primary shadow-sm' : 'text-text-gray hover:text-text-dark'}`}
         >
           <FaUsers className="text-[12px]" />
-          Ø¥Ø¯Ø®Ø§Ù„ Ø¬Ù…Ø§Ø¹ÙŠ
+          إدخال جماعي
         </button>
         <button
           onClick={() => setMode('individual')}
           className={`flex items-center gap-2 px-4 py-2 rounded-[9px] text-[13px] font-bold transition-all ${mode === 'individual' ? 'bg-white text-primary shadow-sm' : 'text-text-gray hover:text-text-dark'}`}
         >
           <FaUserEdit className="text-[12px]" />
-          ØªØ¹Ø¯ÙŠÙ„ Ø·Ø§Ù„Ø¨
+          تعديل طالب
         </button>
       </div>
 
@@ -479,4 +479,3 @@ export default function GradeEntryPage() {
     </>
   )
 }
-

@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -11,17 +11,17 @@ const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 const PAGE_SIZE = 15
 
 const STATUS_MAP = {
-  1: { ar: 'Ù…Ù‚ÙŠÙ‘Ø¯',  color: '#22c55e', bg: 'rgba(34,197,94,0.1)'  },
-  2: { ar: 'Ù…Ù†Ù‚Ø·Ø¹',  color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
-  3: { ar: 'Ø®Ø±ÙŠØ¬',   color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
-  4: { ar: 'Ù…Ø³Ø­ÙˆØ¨',  color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
-  5: { ar: 'Ù…ÙØµÙˆÙ„',  color: '#ef4444', bg: 'rgba(239,68,68,0.1)'  },
-  6: { ar: 'Ù…ÙˆÙ‚ÙˆÙ',  color: '#f97316', bg: 'rgba(249,115,22,0.1)' },
+  1: { ar: 'مقيّد',  color: '#22c55e', bg: 'rgba(34,197,94,0.1)'  },
+  2: { ar: 'منقطع',  color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
+  3: { ar: 'خريج',   color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
+  4: { ar: 'مسحوب',  color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
+  5: { ar: 'مفصول',  color: '#ef4444', bg: 'rgba(239,68,68,0.1)'  },
+  6: { ar: 'موقوف',  color: '#f97316', bg: 'rgba(249,115,22,0.1)' },
 }
 
 function StatusBadge({ statusId }) {
   const cfg = STATUS_MAP[statusId]
-  if (!cfg) return <span className="text-[11px] text-text-light">â€”</span>
+  if (!cfg) return <span className="text-[11px] text-text-light">—</span>
   return (
     <span
       className="inline-block px-2 py-[3px] rounded-full text-[11px] font-bold whitespace-nowrap"
@@ -61,7 +61,7 @@ async function fetchAllPages(baseUrl) {
   return rows
 }
 
-// Module-level cache â€” fetched once per session, not on every page visit
+// Module-level cache — fetched once per session, not on every page visit
 const _cache = { programMap: null, deptMap: null, colleges: null }
 
 async function loadLookups() {
@@ -98,7 +98,7 @@ export default function StudentsPage() {
   const debounceRef = useRef(null)
   const navigate    = useNavigate()
 
-  // Load all data â€” lookups cached at module level, students always fresh
+  // Load all data — lookups cached at module level, students always fresh
   useEffect(() => {
     async function load() {
       setLoading(true)
@@ -111,7 +111,7 @@ export default function StudentsPage() {
 
         if (studs?._unauthorized) { navigate('/login'); return }
         if (!Array.isArray(studs) || studs.length === 0) {
-          setError('ÙØ´Ù„ ØªØ­Ù…ÙŠÙ„ Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø·Ù„Ø§Ø¨')
+          setError('فشل تحميل بيانات الطلاب')
         }
 
         setAllStudents(Array.isArray(studs) ? studs : [])
@@ -119,7 +119,7 @@ export default function StudentsPage() {
         setDeptMap(lookups.deptMap ?? {})
         setColleges(lookups.colleges ?? [])
       } catch {
-        setError('ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…. ØªØ£ÙƒØ¯ Ø£Ù† php artisan serve ÙŠØ¹Ù…Ù„.')
+        setError('تعذّر الاتصال بالخادم. تأكد أن php artisan serve يعمل.')
       } finally {
         setLoading(false)
       }
@@ -143,7 +143,7 @@ export default function StudentsPage() {
     return deptMap[prog.dept_id]?.college_id ?? null
   }
 
-  // Debounced search â€” just resets page
+  // Debounced search — just resets page
   useEffect(() => {
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => setPage(1), 300)
@@ -174,17 +174,17 @@ export default function StudentsPage() {
   const hasFilters = search || filterCollege || filterStatus
 
   const handleArchive = async (id) => {
-    if (!window.confirm('Ø³ÙŠØªÙ… Ø£Ø±Ø´ÙØ© Ù‡Ø°Ø§ Ø§Ù„Ø·Ø§Ù„Ø¨ ÙˆØ¥Ø®ÙØ§Ø¤Ù‡ Ù…Ù† Ø§Ù„Ù‚Ø§Ø¦Ù…Ø©.\nÙ‡Ù„ Ø£Ù†Øª Ù…ØªØ£ÙƒØ¯ØŸ')) return
+    if (!window.confirm('سيتم أرشفة هذا الطالب وإخفاؤه من القائمة.\nهل أنت متأكد؟')) return
     try {
       const res  = await fetch(`${API}/students/${id}`, { method: 'DELETE', headers: authHeaders() })
       const json = await res.json()
       if (json.success) {
         setAllStudents(prev => prev.filter(s => s.student_id !== id))
       } else {
-        alert(json.message || 'ÙØ´Ù„Øª Ø§Ù„Ø£Ø±Ø´ÙØ©')
+        alert(json.message || 'فشلت الأرشفة')
       }
     } catch {
-      alert('ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…')
+      alert('تعذّر الاتصال بالخادم')
     }
   }
 
@@ -195,12 +195,12 @@ export default function StudentsPage() {
       {/* Page header */}
       <div className="flex items-center justify-between mb-5 gap-4 flex-wrap">
         <div dir="rtl">
-          <h2 className="text-[20px] font-black text-text-dark mb-[3px]">Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø·Ù„Ø§Ø¨</h2>
+          <h2 className="text-[20px] font-black text-text-dark mb-[3px]">قائمة الطلاب</h2>
           <p className="text-[12.5px] text-text-light">
-            {loading ? 'Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªØ­Ù…ÙŠÙ„â€¦' : (
+            {loading ? 'جاري التحميل…' : (
               hasFilters
-                ? `${filtered.length} Ù†ØªÙŠØ¬Ø© Ù…Ù† Ø£ØµÙ„ ${allStudents.length} Ø·Ø§Ù„Ø¨`
-                : `${allStudents.length} Ø·Ø§Ù„Ø¨ Ù…Ø³Ø¬Ù‘Ù„`
+                ? `${filtered.length} نتيجة من أصل ${allStudents.length} طالب`
+                : `${allStudents.length} طالب مسجّل`
             )}
           </p>
         </div>
@@ -210,7 +210,7 @@ export default function StudentsPage() {
           dir="rtl"
         >
           <FaUserPlus />
-          <span>Ø¥Ø¶Ø§ÙØ© Ø·Ø§Ù„Ø¨</span>
+          <span>إضافة طالب</span>
         </Link>
       </div>
 
@@ -222,7 +222,7 @@ export default function StudentsPage() {
           <input
             className="w-full py-[13px] pr-4 pl-[42px] border-[1.5px] border-primary/20 rounded-[13px] bg-white text-[14px] font-medium text-text-dark outline-none transition-all duration-[220ms] placeholder:text-text-light focus:border-primary focus:shadow-[0_0_0_4px_rgba(86,153,51,0.1)]"
             type="text"
-            placeholder="Ø§Ø¨Ø­Ø« Ø¨Ø§Ø³Ù… Ø§Ù„Ø·Ø§Ù„Ø¨ØŒ Ø±Ù‚Ù… Ø§Ù„Ù‚ÙŠØ¯ØŒ Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø§Ù„Ø¥Ù„ÙƒØªØ±ÙˆÙ†ÙŠâ€¦"
+            placeholder="ابحث باسم الطالب، رقم القيد، البريد الإلكتروني…"
             value={search}
             onChange={e => setSearch(e.target.value)}
             dir="rtl"
@@ -231,7 +231,7 @@ export default function StudentsPage() {
             <button
               className="absolute right-3.5 top-1/2 -translate-y-1/2 bg-transparent border-none text-[18px] text-text-light cursor-pointer leading-none w-6 h-6 flex items-center justify-center rounded-full transition-all duration-200 hover:bg-red-500/8 hover:text-red-500"
               onClick={() => setSearch('')}
-            >Ã—</button>
+            >×</button>
           )}
         </div>
 
@@ -239,7 +239,7 @@ export default function StudentsPage() {
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-1.5 text-[12.5px] text-text-light font-semibold" dir="rtl">
             <FaFilter className="text-primary-light text-[11px]" />
-            <span>ØªØµÙÙŠØ©:</span>
+            <span>تصفية:</span>
           </div>
 
           {/* College filter */}
@@ -250,7 +250,7 @@ export default function StudentsPage() {
             dir="rtl"
             disabled={loading}
           >
-            <option value="">Ø¬Ù…ÙŠØ¹ Ø§Ù„ÙƒÙ„ÙŠØ§Øª</option>
+            <option value="">جميع الكليات</option>
             {colleges.map(c => (
               <option key={c.college_id} value={String(c.college_id)}>
                 {c.college_name}
@@ -266,7 +266,7 @@ export default function StudentsPage() {
             dir="rtl"
             disabled={loading}
           >
-            <option value="">Ø¬Ù…ÙŠØ¹ Ø§Ù„Ø­Ø§Ù„Ø§Øª</option>
+            <option value="">جميع الحالات</option>
             {Object.entries(STATUS_MAP).map(([id, { ar }]) => (
               <option key={id} value={id}>{ar}</option>
             ))}
@@ -280,7 +280,7 @@ export default function StudentsPage() {
               dir="rtl"
             >
               <FaTimes className="text-[10px]" />
-              <span>Ù…Ø³Ø­ Ø§Ù„ÙÙ„Ø§ØªØ±</span>
+              <span>مسح الفلاتر</span>
             </button>
           )}
         </div>
@@ -289,7 +289,7 @@ export default function StudentsPage() {
       {/* Error */}
       {error && (
         <div className="flex items-center justify-between gap-3 bg-red-500/6 border border-red-500/25 rounded-[12px] px-[18px] py-3 mb-4 text-[13.5px] text-red-600" dir="rtl">
-          <span>âš  {error}</span>
+          <span>⚠ {error}</span>
         </div>
       )}
 
@@ -298,12 +298,12 @@ export default function StudentsPage() {
         {loading ? (
           <div className="flex flex-col items-center justify-center gap-3.5 py-[60px] text-primary-light text-[14px] font-medium">
             <FaSpinner className="text-[28px] animate-[spin_0.7s_linear_infinite]" />
-            <span>Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªØ­Ù…ÙŠÙ„â€¦</span>
+            <span>جاري التحميل…</span>
           </div>
         ) : pageStudents.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-[60px]">
             <FaGraduationCap className="text-[48px] text-[#d1eab8] mb-2" />
-            <p className="text-[16px] font-bold text-text-gray" dir="rtl">Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ø·Ù„Ø§Ø¨</p>
+            <p className="text-[16px] font-bold text-text-gray" dir="rtl">لا يوجد طلاب</p>
             <p className="text-[12.5px] text-text-light">No students found</p>
             {hasFilters && (
               <button
@@ -311,7 +311,7 @@ export default function StudentsPage() {
                 onClick={clearFilters}
                 dir="rtl"
               >
-                Ù…Ø³Ø­ Ø§Ù„ÙÙ„Ø§ØªØ±
+                مسح الفلاتر
               </button>
             )}
           </div>
@@ -321,14 +321,14 @@ export default function StudentsPage() {
               <thead>
                 <tr>
                   <th className="px-4 py-3.5 text-left   text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap">#</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">Ø±Ù‚Ù… Ø§Ù„Ù‚ÙŠØ¯</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">Ø§Ù„Ø§Ø³Ù… Ø§Ù„ÙƒØ§Ù…Ù„</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">Ø§Ù„ÙƒÙ„ÙŠØ©</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø§Ù„Ø¥Ù„ÙƒØªØ±ÙˆÙ†ÙŠ</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">Ø±Ù‚Ù… Ø§Ù„Ù‡Ø§ØªÙ</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">ØªØ§Ø±ÙŠØ® Ø§Ù„Ù‚Ø¨ÙˆÙ„</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">Ø§Ù„Ø­Ø§Ù„Ø©</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">Ø§Ù„Ø¥Ø¬Ø±Ø§Ø¡Ø§Øª</th>
+                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">رقم القيد</th>
+                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">الاسم الكامل</th>
+                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">الكلية</th>
+                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">البريد الإلكتروني</th>
+                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">رقم الهاتف</th>
+                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">تاريخ القبول</th>
+                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">الحالة</th>
+                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">الإجراءات</th>
                 </tr>
               </thead>
               <AnimatePresence mode="wait">
@@ -357,13 +357,13 @@ export default function StudentsPage() {
                         <td className="px-4 py-[13px] align-middle" dir="rtl">
                           {collegeName
                             ? <span className="text-[12px] font-medium text-text-gray whitespace-nowrap">{collegeName}</span>
-                            : <span className="text-[11px] text-text-light">â€”</span>
+                            : <span className="text-[11px] text-text-light">—</span>
                           }
                         </td>
-                        <td className="px-4 py-[13px] text-[12.5px] text-text-gray align-middle">{s.email || 'â€”'}</td>
-                        <td className="px-4 py-[13px] text-[13.5px] text-text-dark align-middle whitespace-nowrap">{s.phone_number || 'â€”'}</td>
+                        <td className="px-4 py-[13px] text-[12.5px] text-text-gray align-middle">{s.email || '—'}</td>
+                        <td className="px-4 py-[13px] text-[13.5px] text-text-dark align-middle whitespace-nowrap">{s.phone_number || '—'}</td>
                         <td className="px-4 py-[13px] text-[13.5px] text-text-dark align-middle whitespace-nowrap">
-                          {s.enrollment_date ? new Date(s.enrollment_date).toLocaleDateString('ar-SY') : 'â€”'}
+                          {s.enrollment_date ? new Date(s.enrollment_date).toLocaleDateString('ar-SY') : '—'}
                         </td>
                         <td className="px-4 py-[13px] align-middle">
                           <StatusBadge statusId={s.student_status_id} />
@@ -372,21 +372,21 @@ export default function StudentsPage() {
                           <div className="flex items-center gap-1.5">
                             <button
                               className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-blue-500 border-blue-500/20 bg-blue-500/6 hover:bg-blue-500/14 hover:border-blue-500/35"
-                              title="Ø¹Ø±Ø¶ Ø§Ù„Ù…Ù„Ù"
+                              title="عرض الملف"
                               onClick={() => navigate(`/student-affairs/students/${s.student_id}`)}
                             >
                               <FaEye />
                             </button>
                             <button
                               className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-amber-500 border-amber-500/20 bg-amber-500/6 hover:bg-amber-500/14 hover:border-amber-500/35"
-                              title="ØªØ¹Ø¯ÙŠÙ„"
+                              title="تعديل"
                               onClick={() => navigate(`/student-affairs/students/${s.student_id}/edit`)}
                             >
                               <FaEdit />
                             </button>
                             <button
                               className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-slate-500 border-slate-400/20 bg-slate-400/6 hover:bg-slate-400/14 hover:border-slate-400/35"
-                              title="Ø£Ø±Ø´ÙØ©"
+                              title="أرشفة"
                               onClick={() => handleArchive(s.student_id)}
                             >
                               <FaArchive />
@@ -413,12 +413,12 @@ export default function StudentsPage() {
             dir="rtl"
           >
             <FaChevronRight />
-            <span>Ø§Ù„Ø³Ø§Ø¨Ù‚</span>
+            <span>السابق</span>
           </button>
 
           <div className="flex items-center gap-1.5 text-[13px] text-text-gray" dir="rtl">
             <span className="text-[17px] font-extrabold text-primary">{safePage}</span>
-            <span className="text-text-light">Ù…Ù†</span>
+            <span className="text-text-light">من</span>
             <span className="font-semibold text-text-dark">{totalPages}</span>
           </div>
 
@@ -428,7 +428,7 @@ export default function StudentsPage() {
             onClick={() => setPage(p => p + 1)}
             dir="rtl"
           >
-            <span>Ø§Ù„ØªØ§Ù„ÙŠ</span>
+            <span>التالي</span>
             <FaChevronLeft />
           </button>
         </div>
@@ -436,4 +436,3 @@ export default function StudentsPage() {
     </>
   )
 }
-

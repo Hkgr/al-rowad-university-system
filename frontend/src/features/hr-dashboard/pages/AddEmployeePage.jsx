@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FaSpinner, FaSave, FaArrowRight } from 'react-icons/fa'
 
@@ -7,8 +7,8 @@ function authHeaders() {
   return { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }
 }
 
-const TYPE_AR   = { academic: 'Ø£ÙƒØ§Ø¯ÙŠÙ…ÙŠ', administrative: 'Ø¥Ø¯Ø§Ø±ÙŠ', technical: 'ØªÙ‚Ù†ÙŠ', service: 'Ø®Ø¯Ù…Ø§Øª', board_member: 'Ø¹Ø¶Ùˆ Ù…Ø¬Ù„Ø³' }
-const STATUS_AR = { active: 'Ù†Ø´Ø·', inactive: 'ØºÙŠØ± Ù†Ø´Ø·', on_leave: 'ÙÙŠ Ø¥Ø¬Ø§Ø²Ø©', terminated: 'Ù…Ù†ØªÙ‡ÙŠ Ø§Ù„Ø®Ø¯Ù…Ø©' }
+const TYPE_AR   = { academic: 'أكاديمي', administrative: 'إداري', technical: 'تقني', service: 'خدمات', board_member: 'عضو مجلس' }
+const STATUS_AR = { active: 'نشط', inactive: 'غير نشط', on_leave: 'في إجازة', terminated: 'منتهي الخدمة' }
 
 export default function AddEmployeePage() {
   const navigate = useNavigate()
@@ -45,10 +45,10 @@ export default function AddEmployeePage() {
       const json = await res.json()
       if (json.success) navigate('/hr/employees')
       else {
-        setErr(json.message || 'ÙØ´Ù„Øª Ø§Ù„Ø¹Ù…Ù„ÙŠØ©')
+        setErr(json.message || 'فشلت العملية')
         if (json.errors) setFieldErr(json.errors)
       }
-    } catch { setErr('ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…') }
+    } catch { setErr('تعذّر الاتصال بالخادم') }
     finally   { setSaving(false) }
   }
 
@@ -70,57 +70,56 @@ export default function AddEmployeePage() {
           <FaArrowRight />
         </button>
         <div>
-          <h2 className="text-[20px] font-black text-text-dark">Ø¥Ø¶Ø§ÙØ© Ù…ÙˆØ¸Ù Ø¬Ø¯ÙŠØ¯</h2>
+          <h2 className="text-[20px] font-black text-text-dark">إضافة موظف جديد</h2>
           <p className="text-[12px] text-text-light">Add New Employee</p>
         </div>
       </div>
 
       <div className="bg-white border border-primary/12 rounded-[18px] p-6 shadow-[0_2px_16px_rgba(26,46,16,0.06)] max-w-[700px]">
         <div className="grid grid-cols-2 max-[560px]:grid-cols-1 gap-5" dir="rtl">
-          <Field label="Ø±Ù‚Ù… Ø§Ù„Ù…ÙˆØ¸Ù"      k="employee_number" required />
-          <Field label="ØªØ§Ø±ÙŠØ® Ø§Ù„ØªØ¹ÙŠÙŠÙ†"   k="hire_date" type="date" />
-          <Field label="Ø§Ù„Ø§Ø³Ù… Ø§Ù„Ø£ÙˆÙ„"     k="first_name"  required />
-          <Field label="Ø§Ø³Ù… Ø§Ù„Ø¹Ø§Ø¦Ù„Ø©"     k="last_name"   required />
-          <Field label="Ø§Ø³Ù… Ø§Ù„Ø£Ø¨"        k="father_name" />
-          <Field label="Ø§Ø³Ù… Ø§Ù„Ø£Ù…"        k="mother_name" />
-          <Field label="Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø§Ù„Ø¥Ù„ÙƒØªØ±ÙˆÙ†ÙŠ" k="email" type="email" />
-          <Field label="Ø±Ù‚Ù… Ø§Ù„Ù‡Ø§ØªÙ"      k="phone_number" />
+          <Field label="رقم الموظف"      k="employee_number" required />
+          <Field label="تاريخ التعيين"   k="hire_date" type="date" />
+          <Field label="الاسم الأول"     k="first_name"  required />
+          <Field label="اسم العائلة"     k="last_name"   required />
+          <Field label="اسم الأب"        k="father_name" />
+          <Field label="اسم الأم"        k="mother_name" />
+          <Field label="البريد الإلكتروني" k="email" type="email" />
+          <Field label="رقم الهاتف"      k="phone_number" />
 
           <div>
-            <label className="block text-[11.5px] font-bold text-text-dark mb-1.5" dir="rtl">Ù†ÙˆØ¹ Ø§Ù„Ù…ÙˆØ¸Ù <span className="text-red-500">*</span></label>
+            <label className="block text-[11.5px] font-bold text-text-dark mb-1.5" dir="rtl">نوع الموظف <span className="text-red-500">*</span></label>
             <select value={form.employee_type_id} onChange={e => set('employee_type_id', e.target.value)}
               className={`w-full px-3 py-2.5 border rounded-[9px] text-[13.5px] outline-none focus:border-primary transition-colors ${fieldErr.employee_type_id ? 'border-red-400 bg-red-50' : 'border-primary/20'}`} dir="rtl">
-              <option value="">Ø§Ø®ØªØ± Ø§Ù„Ù†ÙˆØ¹</option>
+              <option value="">اختر النوع</option>
               {types.map(t => <option key={t.employee_type_id} value={t.employee_type_id}>{TYPE_AR[t.type_code] ?? t.type_name}</option>)}
             </select>
             {fieldErr.employee_type_id && <p className="text-[11px] text-red-500 mt-1" dir="rtl">{fieldErr.employee_type_id[0]}</p>}
           </div>
 
           <div>
-            <label className="block text-[11.5px] font-bold text-text-dark mb-1.5" dir="rtl">Ø§Ù„Ø­Ø§Ù„Ø© <span className="text-red-500">*</span></label>
+            <label className="block text-[11.5px] font-bold text-text-dark mb-1.5" dir="rtl">الحالة <span className="text-red-500">*</span></label>
             <select value={form.employee_status_id} onChange={e => set('employee_status_id', e.target.value)}
               className={`w-full px-3 py-2.5 border rounded-[9px] text-[13.5px] outline-none focus:border-primary transition-colors ${fieldErr.employee_status_id ? 'border-red-400 bg-red-50' : 'border-primary/20'}`} dir="rtl">
-              <option value="">Ø§Ø®ØªØ± Ø§Ù„Ø­Ø§Ù„Ø©</option>
+              <option value="">اختر الحالة</option>
               {statuses.map(s => <option key={s.employee_status_id} value={s.employee_status_id}>{STATUS_AR[s.status_code] ?? s.status_name}</option>)}
             </select>
             {fieldErr.employee_status_id && <p className="text-[11px] text-red-500 mt-1" dir="rtl">{fieldErr.employee_status_id[0]}</p>}
           </div>
         </div>
 
-        {err && <p className="mt-5 text-[12.5px] text-red-600 bg-red-50 border border-red-200 rounded-[9px] px-4 py-2.5" dir="rtl">âš  {err}</p>}
+        {err && <p className="mt-5 text-[12.5px] text-red-600 bg-red-50 border border-red-200 rounded-[9px] px-4 py-2.5" dir="rtl">⚠ {err}</p>}
 
         <div className="flex items-center gap-3 mt-6 pt-5 border-t border-primary/10" dir="rtl">
           <button onClick={handleSave} disabled={saving}
             className="flex items-center gap-2 px-6 py-2.5 bg-primary text-white rounded-[10px] text-[14px] font-bold hover:bg-primary-dark disabled:opacity-50 transition-colors shadow-[0_4px_14px_rgba(86,153,51,0.3)]">
-            {saving ? <FaSpinner className="animate-spin" /> : <FaSave />} Ø­ÙØ¸ Ø§Ù„Ù…ÙˆØ¸Ù
+            {saving ? <FaSpinner className="animate-spin" /> : <FaSave />} حفظ الموظف
           </button>
           <button onClick={() => navigate('/hr/employees')}
             className="px-5 py-2.5 border border-primary/20 rounded-[10px] text-[14px] text-text-dark hover:bg-gray-50 transition-colors">
-            Ø¥Ù„ØºØ§Ø¡
+            إلغاء
           </button>
         </div>
       </div>
     </>
   )
 }
-

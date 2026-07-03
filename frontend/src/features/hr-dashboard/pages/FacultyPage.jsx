@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FaSpinner, FaChalkboardTeacher, FaEye, FaSearch } from 'react-icons/fa'
 
@@ -8,8 +8,8 @@ function authHeaders() {
 }
 
 const RANK_AR = {
-  'Professor': 'Ø£Ø³ØªØ§Ø°', 'Associate Professor': 'Ø£Ø³ØªØ§Ø° Ù…Ø´Ø§Ø±Ùƒ',
-  'Assistant Professor': 'Ø£Ø³ØªØ§Ø° Ù…Ø³Ø§Ø¹Ø¯', 'Lecturer': 'Ù…Ø­Ø§Ø¶Ø±', 'Instructor': 'Ù…Ø¯Ø±Ø³',
+  'Professor': 'أستاذ', 'Associate Professor': 'أستاذ مشارك',
+  'Assistant Professor': 'أستاذ مساعد', 'Lecturer': 'محاضر', 'Instructor': 'مدرس',
 }
 
 export default function FacultyPage() {
@@ -24,9 +24,9 @@ export default function FacultyPage() {
       .then(r => r.json())
       .then(json => {
         if (json.success) setFaculty(json.data?.data ?? json.data ?? [])
-        else setError(json.message || 'ÙØ´Ù„ Ø§Ù„ØªØ­Ù…ÙŠÙ„')
+        else setError(json.message || 'فشل التحميل')
       })
-      .catch(() => setError('ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…'))
+      .catch(() => setError('تعذّر الاتصال بالخادم'))
       .finally(() => setLoading(false))
   }, [])
 
@@ -43,40 +43,40 @@ export default function FacultyPage() {
   return (
     <>
       <div className="mb-5" dir="rtl">
-        <h2 className="text-[20px] font-black text-text-dark mb-[3px]">Ù‡ÙŠØ¦Ø© Ø§Ù„ØªØ¯Ø±ÙŠØ³</h2>
-        <p className="text-[12.5px] text-text-light">{faculty.length} Ø¹Ø¶Ùˆ Ù…Ø³Ø¬Ù„</p>
+        <h2 className="text-[20px] font-black text-text-dark mb-[3px]">هيئة التدريس</h2>
+        <p className="text-[12.5px] text-text-light">{faculty.length} عضو مسجل</p>
       </div>
 
       <div className="relative mb-5">
         <FaSearch className="absolute left-[15px] top-1/2 -translate-y-1/2 text-primary-light text-[14px] pointer-events-none" />
         <input
           className="w-full py-[13px] pr-4 pl-[42px] border-[1.5px] border-primary/20 rounded-[13px] bg-white text-[14px] text-text-dark outline-none focus:border-primary focus:shadow-[0_0_0_4px_rgba(86,153,51,0.1)] placeholder:text-text-light"
-          placeholder="Ø§Ø¨Ø­Ø« Ø¨Ø§Ù„Ø§Ø³Ù… Ø£Ùˆ Ø§Ù„ØªØ®ØµØµ Ø£Ùˆ Ø§Ù„Ø±ØªØ¨Ø©â€¦"
+          placeholder="ابحث بالاسم أو التخصص أو الرتبة…"
           value={search} onChange={e => setSearch(e.target.value)} dir="rtl"
         />
         {search && (
           <button onClick={() => setSearch('')}
-            className="absolute right-3.5 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded-full text-[18px] text-text-light hover:text-red-500 hover:bg-red-50 transition-colors">Ã—</button>
+            className="absolute right-3.5 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded-full text-[18px] text-text-light hover:text-red-500 hover:bg-red-50 transition-colors">×</button>
         )}
       </div>
 
-      {error && <div className="bg-red-50 border border-red-200 rounded-[12px] px-5 py-3 mb-4 text-[13px] text-red-600" dir="rtl">âš  {error}</div>}
+      {error && <div className="bg-red-50 border border-red-200 rounded-[12px] px-5 py-3 mb-4 text-[13px] text-red-600" dir="rtl">⚠ {error}</div>}
 
       {loading ? (
         <div className="flex flex-col items-center justify-center gap-3 py-20 text-primary">
           <FaSpinner className="text-[32px] animate-spin" />
-          <span className="text-[14px] text-text-light">Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªØ­Ù…ÙŠÙ„â€¦</span>
+          <span className="text-[14px] text-text-light">جاري التحميل…</span>
         </div>
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 py-20">
           <FaChalkboardTeacher className="text-[48px] text-[#d1eab8] mb-2" />
-          <p className="text-[16px] font-bold text-text-gray" dir="rtl">Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ø£Ø¹Ø¶Ø§Ø¡ ØªØ¯Ø±ÙŠØ³</p>
+          <p className="text-[16px] font-bold text-text-gray" dir="rtl">لا يوجد أعضاء تدريس</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 max-[700px]:grid-cols-1 gap-4">
           {filtered.map(f => {
             const emp  = f.employee ?? {}
-            const rank = RANK_AR[f.academic_rank] ?? f.academic_rank ?? 'â€”'
+            const rank = RANK_AR[f.academic_rank] ?? f.academic_rank ?? '—'
             return (
               <div key={f.faculty_member_id}
                 className="bg-white border border-primary/12 rounded-[16px] p-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)] hover:-translate-y-[2px] hover:shadow-[0_6px_20px_rgba(86,153,51,0.1)] transition-all duration-[220ms]"
@@ -89,13 +89,13 @@ export default function FacultyPage() {
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-extrabold text-[14px] text-text-dark truncate">{emp.first_name} {emp.last_name}</p>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${f.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
-                        {f.is_active ? 'Ù†Ø´Ø·' : 'ØºÙŠØ± Ù†Ø´Ø·'}
+                        {f.is_active ? 'نشط' : 'غير نشط'}
                       </span>
                     </div>
                     <p className="text-[12px] text-primary font-semibold mt-0.5">{rank}</p>
                     {f.specialization && <p className="text-[11.5px] text-text-light mt-0.5 truncate">{f.specialization}</p>}
-                    {f.office_location && <p className="text-[11px] text-text-light mt-0.5">ðŸ“ {f.office_location}</p>}
-                    {emp.email && <p className="text-[11px] text-text-light mt-0.5">âœ‰ {emp.email}</p>}
+                    {f.office_location && <p className="text-[11px] text-text-light mt-0.5">📍 {f.office_location}</p>}
+                    {emp.email && <p className="text-[11px] text-text-light mt-0.5">✉ {emp.email}</p>}
                   </div>
                 </div>
                 <div className="mt-3 pt-3 border-t border-primary/8 flex justify-end">
@@ -103,7 +103,7 @@ export default function FacultyPage() {
                     onClick={() => navigate(`/hr/employees/${f.employee_id}`)}
                     className="flex items-center gap-1.5 px-3.5 py-1.5 text-[12px] font-bold text-blue-600 border border-blue-200 bg-blue-50 rounded-[8px] hover:bg-blue-100 transition-colors"
                   >
-                    <FaEye className="text-[11px]" /> Ø¹Ø±Ø¶ Ø§Ù„Ù…Ù„Ù
+                    <FaEye className="text-[11px]" /> عرض الملف
                   </button>
                 </div>
               </div>
@@ -114,4 +114,3 @@ export default function FacultyPage() {
     </>
   )
 }
-

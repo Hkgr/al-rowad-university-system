@@ -1,4 +1,4 @@
-﻿import { useState } from 'react'
+import { useState } from 'react'
 import { FaSpinner, FaCalendarCheck } from 'react-icons/fa'
 import StudentPicker from '../components/StudentPicker'
 
@@ -22,9 +22,9 @@ export default function DeprivationPage() {
       .then(r => r.json())
       .then(json => {
         if (json.success) setAttendance(json.data)
-        else setError(json.message || 'ÙØ´Ù„ ØªØ­Ù…ÙŠÙ„ Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø­Ø¶ÙˆØ±')
+        else setError(json.message || 'فشل تحميل بيانات الحضور')
       })
-      .catch(() => setError('ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…'))
+      .catch(() => setError('تعذّر الاتصال بالخادم'))
       .finally(() => setLoading(false))
   }
 
@@ -33,7 +33,7 @@ export default function DeprivationPage() {
   return (
     <>
       <div className="mb-5" dir="rtl">
-        <h2 className="text-[20px] font-black text-text-dark mb-[3px]">Ø§Ù„Ø­Ø¶ÙˆØ± ÙˆØ§Ù„Ø­Ø±Ù…Ø§Ù†</h2>
+        <h2 className="text-[20px] font-black text-text-dark mb-[3px]">الحضور والحرمان</h2>
         <p className="text-[12.5px] text-text-light">Attendance & Deprivation</p>
       </div>
 
@@ -45,7 +45,7 @@ export default function DeprivationPage() {
         </div>
       )}
 
-      {error && <p className="text-center text-red-600 text-[13px] py-8" dir="rtl">âš  {error}</p>}
+      {error && <p className="text-center text-red-600 text-[13px] py-8" dir="rtl">⚠ {error}</p>}
 
       {attendance && !loading && (
         <>
@@ -56,7 +56,7 @@ export default function DeprivationPage() {
             </div>
             {courses.some(c => c.deprivation_status === 'deprived') && (
               <div className="flex items-center gap-2 bg-red-500/8 border border-red-500/25 rounded-[10px] px-3.5 py-2 text-[12.5px] text-red-600 font-bold" dir="rtl">
-                âš  Ù„Ø¯ÙŠÙ‡ Ù…Ù‚Ø±Ø±Ø§Øª Ù…Ø­Ø±ÙˆÙ…Ø©
+                ⚠ لديه مقررات محرومة
               </div>
             )}
           </div>
@@ -64,7 +64,7 @@ export default function DeprivationPage() {
           {courses.length === 0 ? (
             <div className="flex flex-col items-center py-16 gap-2">
               <FaCalendarCheck className="text-[42px] text-primary/15" />
-              <p className="text-[13px] text-text-light" dir="rtl">Ù„Ø§ ØªÙˆØ¬Ø¯ Ø¨ÙŠØ§Ù†Ø§Øª Ø­Ø¶ÙˆØ±</p>
+              <p className="text-[13px] text-text-light" dir="rtl">لا توجد بيانات حضور</p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -83,16 +83,16 @@ export default function DeprivationPage() {
                       <div>
                         <div className="font-bold text-[14.5px] text-text-dark">{c.course_name}</div>
                         <div className="text-[11.5px] text-text-light font-mono mt-0.5">
-                          {c.course_code} â€” {c.academic_year?.year_name} / {c.semester?.semester_name}
+                          {c.course_code} — {c.academic_year?.year_name} / {c.semester?.semester_name}
                         </div>
                       </div>
-                      {deprived && <span className="flex-shrink-0 px-2.5 py-1 bg-red-500/10 border border-red-500/25 text-red-600 text-[11.5px] font-bold rounded-full">Ù…Ø­Ø±ÙˆÙ…</span>}
-                      {warning  && <span className="flex-shrink-0 px-2.5 py-1 bg-amber-500/10 border border-amber-500/25 text-amber-700 text-[11.5px] font-bold rounded-full">ØªØ­Ø°ÙŠØ± ØºÙŠØ§Ø¨</span>}
+                      {deprived && <span className="flex-shrink-0 px-2.5 py-1 bg-red-500/10 border border-red-500/25 text-red-600 text-[11.5px] font-bold rounded-full">محروم</span>}
+                      {warning  && <span className="flex-shrink-0 px-2.5 py-1 bg-amber-500/10 border border-amber-500/25 text-amber-700 text-[11.5px] font-bold rounded-full">تحذير غياب</span>}
                     </div>
 
                     <div className="mb-3">
                       <div className="flex items-center justify-between text-[12px] mb-1.5" dir="rtl">
-                        <span className="text-text-gray">Ù†Ø³Ø¨Ø© Ø§Ù„Ø­Ø¶ÙˆØ±</span>
+                        <span className="text-text-gray">نسبة الحضور</span>
                         <span className={`font-bold ${deprived ? 'text-red-600' : warning ? 'text-amber-600' : 'text-primary'}`}>
                           {presentPct.toFixed(1)}%
                         </span>
@@ -107,10 +107,10 @@ export default function DeprivationPage() {
 
                     <div className="grid grid-cols-4 max-[500px]:grid-cols-2 gap-3">
                       {[
-                        { label: 'Ø¥Ø¬Ù…Ø§Ù„ÙŠ',     value: c.total_sessions,            color: 'text-text-dark'   },
-                        { label: 'Ø­Ø¶ÙˆØ±',       value: c.present_count,             color: 'text-green-600'   },
-                        { label: 'ØºÙŠØ§Ø¨',       value: c.absent_count,              color: 'text-red-500'     },
-                        { label: '% Ø§Ù„ØºÙŠØ§Ø¨',   value: `${Number(pct).toFixed(1)}%`, color: deprived ? 'text-red-600' : warning ? 'text-amber-600' : 'text-text-dark' },
+                        { label: 'إجمالي',     value: c.total_sessions,            color: 'text-text-dark'   },
+                        { label: 'حضور',       value: c.present_count,             color: 'text-green-600'   },
+                        { label: 'غياب',       value: c.absent_count,              color: 'text-red-500'     },
+                        { label: '% الغياب',   value: `${Number(pct).toFixed(1)}%`, color: deprived ? 'text-red-600' : warning ? 'text-amber-600' : 'text-text-dark' },
                       ].map(stat => (
                         <div key={stat.label} className="flex flex-col items-center bg-gray-50 border border-gray-100 rounded-[10px] py-2.5" dir="rtl">
                           <span className={`text-[18px] font-black ${stat.color}`}>{stat.value}</span>
@@ -128,4 +128,3 @@ export default function DeprivationPage() {
     </>
   )
 }
-

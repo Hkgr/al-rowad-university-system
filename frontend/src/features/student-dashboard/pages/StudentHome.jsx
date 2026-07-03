@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
@@ -17,9 +17,9 @@ function getStudentId() {
 }
 
 const QUICK_LINKS = [
-  { to: '/student/transcript', Icon: FaClipboardList, ar: 'ÙƒØ´Ù Ø§Ù„Ø¯Ø±Ø¬Ø§Øª',    en: 'Transcript',  color: '#569933' },
-  { to: '/student/gpa',        Icon: FaChartBar,      ar: 'Ø§Ù„Ù…Ø¹Ø¯Ù„',          en: 'GPA',         color: '#3b82f6' },
-  { to: '/student/attendance', Icon: FaCalendarCheck, ar: 'Ø§Ù„Ø­Ø¶ÙˆØ± ÙˆØ§Ù„ØºÙŠØ§Ø¨', en: 'Attendance',  color: '#f59e0b' },
+  { to: '/student/transcript', Icon: FaClipboardList, ar: 'كشف الدرجات',    en: 'Transcript',  color: '#569933' },
+  { to: '/student/gpa',        Icon: FaChartBar,      ar: 'المعدل',          en: 'GPA',         color: '#3b82f6' },
+  { to: '/student/attendance', Icon: FaCalendarCheck, ar: 'الحضور والغياب', en: 'Attendance',  color: '#f59e0b' },
 ]
 
 export default function StudentHome() {
@@ -54,7 +54,7 @@ export default function StudentHome() {
     return (
       <div className="flex items-center justify-center py-24 gap-3 text-primary-light">
         <FaSpinner className="text-[26px] animate-[spin_0.7s_linear_infinite]" />
-        <span className="text-[14px] font-medium">Ø¬Ø§Ø±ÙŠ ØªØ­Ù…ÙŠÙ„ Ø¨ÙŠØ§Ù†Ø§ØªÙƒâ€¦</span>
+        <span className="text-[14px] font-medium">جاري تحميل بياناتك…</span>
       </div>
     )
   }
@@ -73,7 +73,7 @@ export default function StudentHome() {
         <div className="flex items-center justify-between gap-4 flex-wrap" dir="rtl">
           <div>
             <h2 className="text-[22px] font-black text-text-dark mb-1">
-              Ù…Ø±Ø­Ø¨Ø§Ù‹ØŒ {profile?.first_name || user.username} ðŸ‘‹
+              مرحباً، {profile?.first_name || user.username} 👋
             </h2>
             <p className="text-[13px] text-text-gray">{dateStr}</p>
             {profile && (
@@ -82,14 +82,14 @@ export default function StudentHome() {
                   {profile.student_number}
                 </span>
                 <span className="text-[12px] text-text-gray">{profile.program?.program_name}</span>
-                <span className="text-primary/30">â€¢</span>
+                <span className="text-primary/30">•</span>
                 <span className="text-[12px] text-text-gray">{profile.academic_level?.level_name}</span>
               </div>
             )}
           </div>
           <div className="flex flex-col items-center px-5 py-3.5 rounded-[14px] bg-primary/[0.05] border border-primary/15 flex-shrink-0">
             <FaUniversity className="text-[22px] text-primary mb-1" />
-            <span className="text-[11.5px] font-bold text-primary-dark">Ø¬Ø§Ù…Ø¹Ø© Ø§Ù„Ø±ÙˆØ§Ø¯</span>
+            <span className="text-[11.5px] font-bold text-primary-dark">جامعة الرواد</span>
             <span className="text-[10px] text-text-light">Al-Rowad University</span>
           </div>
         </div>
@@ -108,9 +108,9 @@ export default function StudentHome() {
           </div>
           <div dir="rtl">
             <div className="text-[26px] font-black leading-none mb-0.5" style={{ color: cgpaColor }}>
-              {cgpaVal !== null ? Number(cgpaVal).toFixed(2) : 'â€”'}
+              {cgpaVal !== null ? Number(cgpaVal).toFixed(2) : '—'}
             </div>
-            <div className="text-[12.5px] font-bold text-text-dark">Ø§Ù„Ù…Ø¹Ø¯Ù„ Ø§Ù„ØªØ±Ø§ÙƒÙ…ÙŠ</div>
+            <div className="text-[12.5px] font-bold text-text-dark">المعدل التراكمي</div>
             <div className="text-[10.5px] text-text-light">Cumulative GPA / 4.0</div>
           </div>
         </motion.div>
@@ -126,7 +126,7 @@ export default function StudentHome() {
           </div>
           <div dir="rtl">
             <div className="text-[26px] font-black text-blue-600 leading-none mb-0.5">{totalCourses}</div>
-            <div className="text-[12.5px] font-bold text-text-dark">Ø§Ù„Ù…Ù‚Ø±Ø±Ø§Øª Ø§Ù„Ù…Ø³Ø¬Ù‘Ù„Ø©</div>
+            <div className="text-[12.5px] font-bold text-text-dark">المقررات المسجّلة</div>
             <div className="text-[10.5px] text-text-light">Registered Courses</div>
           </div>
         </motion.div>
@@ -144,7 +144,7 @@ export default function StudentHome() {
             <div className={`text-[26px] font-black leading-none mb-0.5 ${deprivedCount > 0 ? 'text-red-500' : 'text-amber-500'}`}>
               {deprivedCount}
             </div>
-            <div className="text-[12.5px] font-bold text-text-dark">Ù…Ù‚Ø±Ø±Ø§Øª Ù…Ø­Ø±ÙˆÙ…Ø©</div>
+            <div className="text-[12.5px] font-bold text-text-dark">مقررات محرومة</div>
             <div className="text-[10.5px] text-text-light">Deprived Courses</div>
           </div>
         </motion.div>
@@ -155,7 +155,7 @@ export default function StudentHome() {
         initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.3 }}
       >
         <div className="flex items-baseline gap-2 mb-3.5" dir="rtl">
-          <h3 className="text-[16px] font-extrabold text-text-dark">Ø§Ù„ÙˆØµÙˆÙ„ Ø§Ù„Ø³Ø±ÙŠØ¹</h3>
+          <h3 className="text-[16px] font-extrabold text-text-dark">الوصول السريع</h3>
           <span className="text-[11px] text-text-light">Quick Access</span>
         </div>
         <div className="grid grid-cols-3 max-[600px]:grid-cols-1 gap-3.5">
@@ -174,7 +174,7 @@ export default function StudentHome() {
                 <div className="text-[13.5px] font-bold text-text-dark">{ar}</div>
                 <div className="text-[10.5px] text-text-light">{en}</div>
               </div>
-              <span className="mr-auto text-[14px] text-[#c8dabb] transition-all duration-200 group-hover:text-[var(--ac)] group-hover:-translate-x-1">â†</span>
+              <span className="mr-auto text-[14px] text-[#c8dabb] transition-all duration-200 group-hover:text-[var(--ac)] group-hover:-translate-x-1">←</span>
             </Link>
           ))}
         </div>
@@ -182,4 +182,3 @@ export default function StudentHome() {
     </>
   )
 }
-
