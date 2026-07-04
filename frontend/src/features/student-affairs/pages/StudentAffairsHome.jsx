@@ -18,8 +18,7 @@ function authHeaders() {
 }
 
 // Paginated response helper: { success, data: { data: [], meta: {} } }
-const toArr  = (d) => Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : [])
-const toMeta = (d) => d?.meta ?? d ?? {}
+const toArr = (d) => Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : [])
 
 const STATUS_CONFIG = {
   active:     { ar: 'مقيّد',      color: '#22c55e', bg: 'rgba(34,197,94,0.1)',    Icon: FaCheckCircle  },
@@ -44,21 +43,20 @@ export default function StudentAffairsHome() {
 
     async function load() {
       try {
-        const [studentsRes, graduatesRes, collegesRes, departmentsRes, programsRes] = await Promise.all([
-          fetch(`${API}/students?per_page=1`,                          { headers: authHeaders() }),
-          fetch(`${API}/students?per_page=1&student_status_id=3`,      { headers: authHeaders() }),
+        const [statsRes, collegesRes, departmentsRes, programsRes] = await Promise.all([
+          fetch(`${API}/student-affairs/dashboard-stats`,              { headers: authHeaders() }),
           fetch(`${API}/colleges?per_page=100`,                        { headers: authHeaders() }),
           fetch(`${API}/departments?per_page=100`,                     { headers: authHeaders() }),
           fetch(`${API}/academic-programs?per_page=100`,               { headers: authHeaders() }),
         ])
 
-        if ([studentsRes, collegesRes, departmentsRes, programsRes].some(r => r.status === 401)) {
+        if ([statsRes, collegesRes, departmentsRes, programsRes].some(r => r.status === 401)) {
           navigate('/login')
           return
         }
 
-        const [sJson, gJson, cJson, dJson, pJson] = await Promise.all([
-          studentsRes.json(), graduatesRes.json(), collegesRes.json(), departmentsRes.json(), programsRes.json(),
+        const [statsJson, cJson, dJson, pJson] = await Promise.all([
+          statsRes.json(), collegesRes.json(), departmentsRes.json(), programsRes.json(),
         ])
 
         if (cancelled) return
@@ -66,8 +64,8 @@ export default function StudentAffairsHome() {
         const collegeList     = toArr(cJson.data)
         const departmentList  = toArr(dJson.data)
         const programList     = toArr(pJson.data)
-        const totalStudents   = toMeta(sJson.data).total ?? 0
-        const totalGraduates  = toMeta(gJson.data).total ?? 0
+        const totalStudents   = statsJson.data?.total_students ?? 0
+        const totalGraduates  = statsJson.data?.graduates_count ?? 0
 
         // Build map: college_id → { college, programs[] }
         const deptToCollege = {}
