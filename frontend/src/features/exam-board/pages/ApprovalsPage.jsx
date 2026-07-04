@@ -31,8 +31,8 @@ function GradeRow({ row }) {
   return (
     <tr className="border-t border-primary/6 hover:bg-primary/[0.02]">
       <td className="px-4 py-3" dir="rtl">
-        <div className="font-semibold text-[13px] text-text-dark">{row.student?.first_name} {row.student?.last_name}</div>
-        <div className="text-[11px] text-text-light font-mono">{row.student?.student_number}</div>
+        <div className="font-semibold text-[13px] text-text-dark">{row.full_name}</div>
+        <div className="text-[11px] text-text-light font-mono">{row.student_number}</div>
       </td>
       <td className="px-3 py-3 text-center text-text-dark">{t ?? '—'}</td>
       <td className="px-3 py-3 text-center text-text-dark">{p ?? '—'}</td>
@@ -111,7 +111,7 @@ export default function ApprovalsPage() {
     setGradeSheet(null); setApproved(false); setApproveErr(''); setLoadingGs(true)
     fetch(`${API}/course-offerings/${offId}/grade-sheet`, { headers: authHeaders() })
       .then(r => r.json())
-      .then(json => setGradeSheet(json.success ? (json.data?.data ?? json.data ?? []) : []))
+      .then(json => setGradeSheet(json.success ? (json.data?.students ?? []) : []))
       .finally(() => setLoadingGs(false))
   }
 

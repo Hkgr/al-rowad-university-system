@@ -12,7 +12,7 @@ export default function StudentPicker({ onSelect, selected }) {
   const [loading,  setLoading]  = useState(true)
 
   useEffect(() => {
-    fetch(`${API}/students?per_page=200`, { headers: authHeaders() })
+    fetch(`${API}/students?per_page=100`, { headers: authHeaders() })
       .then(r => r.json())
       .then(json => {
         if (json.success) setStudents(json.data?.data ?? json.data ?? [])
