@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   FaArrowRight, FaEdit, FaSpinner, FaUser,
-  FaGraduationCap, FaChartBar, FaCalendarCheck, FaCheckCircle,
+  FaGraduationCap, FaChartBar, FaCalendarCheck, FaCheckCircle, FaFolderOpen, FaCamera,
 } from 'react-icons/fa'
+import StudentDocuments from '../components/StudentDocuments'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
@@ -40,6 +41,7 @@ const TABS = [
   { id: 'transcript', ar: 'كشف الدرجات',        Icon: FaGraduationCap },
   { id: 'gpa',        ar: 'المعدل',              Icon: FaChartBar      },
   { id: 'attendance', ar: 'الحضور والغياب',      Icon: FaCalendarCheck },
+  { id: 'documents',  ar: 'ملفات الطالب',        Icon: FaFolderOpen    },
 ]
 
 // ── All sub-components defined OUTSIDE the main component ─────────────────────
@@ -443,6 +445,7 @@ const STATUS_STYLES = {
 export default function StudentProfilePage() {
   const { id }   = useParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
 
   const [loading,        setLoading]        = useState(true)
   const [error,          setError]          = useState('')
@@ -452,9 +455,81 @@ export default function StudentProfilePage() {
   const [attendance,     setAttendance]     = useState(null)
   const [academicYears,  setAcademicYears]  = useState([])
   const [semesters,      setSemesters]      = useState([])
-  const [activeTab,      setActiveTab]      = useState('info')
+  const initialTab = TABS.some(t => t.id === searchParams.get('tab')) ? searchParams.get('tab') : 'info'
+  const [activeTab,      setActiveTab]      = useState(initialTab)
   const [graduating,     setGraduating]     = useState(false)
   const [graduateError,  setGraduateError]  = useState('')
+  const [photoUrl,       setPhotoUrl]       = useState(null)
+  const [photoTypeId,    setPhotoTypeId]    = useState(null)
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const [avatarError,    setAvatarError]    = useState('')
+  const avatarInputRef = useRef(null)
+
+  useEffect(() => {
+    let objectUrl = null
+    async function loadPhoto() {
+      try {
+        const [docsRes, typesRes] = await Promise.all([
+          get(`${API}/students/${id}/documents?per_page=100`),
+          get(`${API}/document-types?per_page=100`),
+        ])
+        if (typesRes.success) {
+          const types = typesRes.data?.data ?? []
+          const photoType = types.find(t => t.type_code === 'personal_photo')
+          if (photoType) setPhotoTypeId(photoType.document_type_id)
+        }
+        if (!docsRes.success) return
+        const docs = docsRes.data?.data ?? []
+        const photoDoc = docs.find(d => d.document_type?.type_code === 'personal_photo')
+        if (!photoDoc) return
+        const res = await fetch(photoDoc.download_url, { headers: authHeaders() })
+        if (!res.ok) return
+        const blob = await res.blob()
+        if (!blob.type.startsWith('image/')) return
+        objectUrl = URL.createObjectURL(blob)
+        setPhotoUrl(objectUrl)
+      } catch {
+        // silently keep the fallback avatar icon
+      }
+    }
+    loadPhoto()
+    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl) }
+  }, [id])
+
+  async function handleAvatarFileChange(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setAvatarError('')
+    if (!photoTypeId) { setAvatarError('نوع الملف "صورة شخصية" غير متوفر'); return }
+    if (!file.type.startsWith('image/')) { setAvatarError('يرجى اختيار صورة (jpg أو png)'); return }
+    if (file.size > 5 * 1024 * 1024) { setAvatarError('حجم الصورة يتجاوز 5 ميغابايت'); return }
+
+    setAvatarUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('document_type_id', photoTypeId)
+      formData.append('file', file)
+      const res = await fetch(`${API}/students/${id}/documents`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: formData,
+      })
+      const json = await res.json()
+      if (json.success) {
+        setPhotoUrl(prev => {
+          if (prev) URL.revokeObjectURL(prev)
+          return URL.createObjectURL(file)
+        })
+      } else {
+        setAvatarError(json.message || 'فشل رفع الصورة')
+      }
+    } catch {
+      setAvatarError('تعذّر الاتصال بالخادم')
+    } finally {
+      setAvatarUploading(false)
+    }
+  }
 
   useEffect(() => {
     async function load() {
@@ -587,6 +662,12 @@ export default function StudentProfilePage() {
         </div>
       )}
 
+      {avatarError && (
+        <div className="bg-red-50 border border-red-200 rounded-[12px] px-5 py-3 mb-4 text-[13px] text-red-600" dir="rtl">
+          ⚠ {avatarError}
+        </div>
+      )}
+
       {/* Student header card */}
       <motion.div
         className="bg-white border border-primary/12 rounded-[18px] px-6 py-5 mb-5 shadow-[0_2px_16px_rgba(26,46,16,0.06)]"
@@ -595,8 +676,28 @@ export default function StudentProfilePage() {
         transition={{ duration: 0.35 }}
       >
         <div className="flex items-center gap-5 flex-wrap" dir="rtl">
-          <div className="w-[68px] h-[68px] rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center text-[28px] text-primary flex-shrink-0">
-            <FaUser />
+          <div className="relative w-[68px] h-[68px] flex-shrink-0">
+            <div className="w-full h-full rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center text-[28px] text-primary overflow-hidden">
+              {photoUrl
+                ? <img src={photoUrl} alt={profile.full_name} className="w-full h-full object-cover" />
+                : <FaUser />}
+            </div>
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/jpg"
+              className="hidden"
+              onChange={handleAvatarFileChange}
+            />
+            <button
+              type="button"
+              title="تغيير الصورة الشخصية"
+              onClick={() => avatarInputRef.current?.click()}
+              disabled={avatarUploading}
+              className="absolute -bottom-1 -left-1 w-[26px] h-[26px] rounded-full bg-primary text-white flex items-center justify-center text-[11px] border-2 border-white shadow-[0_1px_6px_rgba(0,0,0,0.25)] hover:bg-primary-dark transition-colors disabled:opacity-60"
+            >
+              {avatarUploading ? <FaSpinner className="animate-spin text-[10px]" /> : <FaCamera />}
+            </button>
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 flex-wrap mb-1">
@@ -658,6 +759,7 @@ export default function StudentProfilePage() {
           {activeTab === 'transcript' && <TranscriptTab transcript={transcript} />}
           {activeTab === 'gpa'        && <GPATab studentId={id} cgpa={cgpa} academicYears={academicYears} semesters={semesters} />}
           {activeTab === 'attendance' && <AttendanceTab attendance={attendance} />}
+          {activeTab === 'documents'  && <StudentDocuments studentId={id} />}
         </motion.div>
       </div>
     </>

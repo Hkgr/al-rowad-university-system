@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { FaSpinner, FaCheckCircle, FaUserPlus } from 'react-icons/fa'
+import { FaSpinner, FaCheckCircle, FaUserPlus, FaFolderOpen, FaListUl } from 'react-icons/fa'
 
 const API = `${import.meta.env.VITE_API_BASE_URL || 'https://rust.alrowaduni.edu.sy/api'}/v1`
 
@@ -128,7 +128,6 @@ setErrors(prev => ({ ...prev, _load: 'تعذّر تحميل البيانات. ت
       const json = await res.json()
       if (json.success) {
         setSuccess(json.data)
-        setTimeout(() => navigate('/student-affairs/students'), 1800)
       } else {
         if (json.errors) setErrors(json.errors)
         else setErrors({ _global: json.message || 'حدث خطأ غير متوقع' })
@@ -162,7 +161,22 @@ setErrors(prev => ({ ...prev, _load: 'تعذّر تحميل البيانات. ت
                 {success.student_number}
               </span>
             )}
-            <p className="text-[12px] text-text-light" dir="rtl">جاري التحويل إلى قائمة الطلاب…</p>
+            <div className="flex items-center gap-3 flex-wrap justify-center mt-2" dir="rtl">
+              <button
+                className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-[10px] text-[13.5px] font-bold hover:bg-primary-dark transition-colors"
+                onClick={() => navigate(`/student-affairs/students/${success.student_id}?tab=documents`)}
+              >
+                <FaFolderOpen className="text-[12px]" />
+                <span>رفع ملفات الطالب</span>
+              </button>
+              <button
+                className="flex items-center gap-2 px-5 py-2.5 border-[1.5px] border-primary/25 rounded-[10px] bg-white text-primary-dark text-[13.5px] font-bold hover:bg-primary/7 hover:border-primary/40 transition-all"
+                onClick={() => navigate('/student-affairs/students')}
+              >
+                <FaListUl className="text-[12px]" />
+                <span>قائمة الطلاب</span>
+              </button>
+            </div>
           </motion.div>
         </div>
     )
