@@ -34,6 +34,13 @@ import EmployeeProfilePage  from '../features/hr-dashboard/pages/EmployeeProfile
 import FacultyPage          from '../features/hr-dashboard/pages/FacultyPage'
 import PositionsPage        from '../features/hr-dashboard/pages/PositionsPage'
 
+// ── الهيكل الأكاديمي (Academic Structure) ───────────────────────────────────
+import academicStructureNav  from '../features/academic-structure/nav'
+import AcademicStructureHome from '../features/academic-structure/pages/AcademicStructureHome'
+import CollegesPage          from '../features/academic-structure/pages/CollegesPage'
+import DepartmentsPage       from '../features/academic-structure/pages/DepartmentsPage'
+import ProgramsPage          from '../features/academic-structure/pages/ProgramsPage'
+
 // ── هيئة الامتحانات (Exam Board) ────────────────────────────────────────────
 import examBoardNav      from '../features/exam-board/nav'
 import ExamBoardHome     from '../features/exam-board/pages/ExamBoardHome'
@@ -111,6 +118,20 @@ export default function App() {
           <Route path="/exam-board/courses-departments" element={<CourseDepartmentPage />} />
           <Route path="/exam-board/appeals"          element={<ExamPlaceholder title="التظلمات"             en="Appeals" />} />
           <Route path="/exam-board/settings"         element={<ExamPlaceholder title="الإعدادات"            en="Settings" />} />
+        </Route>
+
+        {/* ── الهيكل الأكاديمي dashboard ── */}
+        <Route
+          element={
+            <ProtectedRoute>
+              <DashboardLayout nav={academicStructureNav} appTitle="الهيكل الأكاديمي" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/academic-structure"              element={<AcademicStructureHome />} />
+          <Route path="/academic-structure/colleges"      element={<CollegesPage />}          />
+          <Route path="/academic-structure/departments"   element={<DepartmentsPage />}       />
+          <Route path="/academic-structure/programs"      element={<ProgramsPage />}          />
         </Route>
 
         {/* ── الموارد البشرية dashboard ── */}
