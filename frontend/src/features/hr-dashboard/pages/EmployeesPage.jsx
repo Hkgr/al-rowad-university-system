@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -173,8 +173,20 @@ export default function EmployeesPage() {
     } catch { alert('تعذّر الاتصال بالخادم') }
   }
 
-  const getStatusCode = (emp) => emp.employeeStatus?.status_code ?? emp.employee_status?.status_code ?? ''
-  const getTypeCode   = (emp) => emp.employeeType?.type_code     ?? emp.employee_type?.type_code     ?? ''
+  const typeCodeMap = useMemo(() => {
+    const m = new Map()
+    types.forEach(t => m.set(t.employee_type_id, t.type_code))
+    return m
+  }, [types])
+
+  const statusCodeMap = useMemo(() => {
+    const m = new Map()
+    statuses.forEach(s => m.set(s.employee_status_id, s.status_code))
+    return m
+  }, [statuses])
+
+  const getStatusCode = (emp) => emp.employeeStatus?.status_code ?? emp.employee_status?.status_code ?? statusCodeMap.get(emp.employee_status_id) ?? ''
+  const getTypeCode   = (emp) => emp.employeeType?.type_code     ?? emp.employee_type?.type_code     ?? typeCodeMap.get(emp.employee_type_id)     ?? ''
 
   return (
     <>
