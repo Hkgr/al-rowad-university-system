@@ -21,7 +21,32 @@ echo "Node environment:"
 echo "Node: $(node -v)"
 echo "npm:  $(npm -v)"
 
+# ==========================================================
+# PHP / phpenv environment
+# ==========================================================
 
+export PHPENV_ROOT="$HOME/.phpenv"
+
+if [ -d "$PHPENV_ROOT/bin" ]; then
+    export PATH="$PHPENV_ROOT/bin:$PHPENV_ROOT/shims:$PATH"
+fi
+
+# Fallback مباشر إلى PHP 8.4 الخاص بـ Plesk
+if ! command -v php >/dev/null 2>&1; then
+    export PATH="/opt/plesk/php/8.4/bin:$PATH"
+fi
+
+echo ""
+echo "PHP environment:"
+echo "PHP:      $(php -v | head -1)"
+echo "PHP path: $(command -v php)"
+
+if command -v composer >/dev/null 2>&1; then
+    echo "Composer: $(command -v composer)"
+else
+    echo "ERROR: Composer command not found."
+    exit 1
+fi
 # ==========================================================
 # Al-Rowad University System - Plesk Deployment Script
 # ==========================================================
