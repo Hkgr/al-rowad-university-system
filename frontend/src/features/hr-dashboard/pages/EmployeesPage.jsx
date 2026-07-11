@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import {
-  FaUserPlus, FaSearch, FaEye, FaEdit, FaTrash,
-  FaChevronLeft, FaChevronRight, FaSpinner, FaUsers, FaTimes, FaSave,
+  FaUserPlus, FaEye, FaEdit, FaTrash,
+  FaSpinner, FaUsers, FaTimes, FaSave,
 } from 'react-icons/fa'
+import DataTable from '../../../components/table/DataTable'
+import FilterBar from '../../../components/table/FilterBar'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 function authHeaders() {
@@ -188,6 +190,93 @@ export default function EmployeesPage() {
   const getStatusCode = (emp) => emp.employeeStatus?.status_code ?? emp.employee_status?.status_code ?? statusCodeMap.get(emp.employee_status_id) ?? ''
   const getTypeCode   = (emp) => emp.employeeType?.type_code     ?? emp.employee_type?.type_code     ?? typeCodeMap.get(emp.employee_type_id)     ?? ''
 
+  const columns = [
+    {
+      key: 'idx',
+      header: '#',
+      dir: 'rtl',
+      cellClassName: 'text-[12px] text-text-light font-semibold w-10',
+      render: (e, idx) => (page - 1) * meta.per_page + idx + 1,
+    },
+    {
+      key: 'employee_number',
+      header: 'رقم الموظف',
+      dir: 'rtl',
+      render: e => (
+        <span className="inline-block px-2.5 py-[3px] bg-primary/8 border border-primary/15 rounded-[8px] text-[12px] font-bold text-primary-dark font-mono">
+          {e.employee_number}
+        </span>
+      ),
+    },
+    {
+      key: 'name',
+      header: 'الاسم الكامل',
+      dir: 'rtl',
+      cellClassName: 'font-semibold text-[13.5px] text-text-dark',
+      render: e => `${e.first_name} ${e.last_name}`,
+    },
+    {
+      key: 'contact',
+      header: 'البريد / الهاتف',
+      dir: 'rtl',
+      cellClassName: 'text-[12px] text-text-gray',
+      render: e => (
+        <>
+          <div>{e.email || '—'}</div>
+          <div className="text-text-light">{e.phone_number || ''}</div>
+        </>
+      ),
+    },
+    {
+      key: 'type',
+      header: 'النوع',
+      dir: 'rtl',
+      cellClassName: 'text-[12px] text-text-gray',
+      render: e => TYPE_AR[getTypeCode(e)] ?? getTypeCode(e) ?? '—',
+    },
+    {
+      key: 'hire_date',
+      header: 'تاريخ التعيين',
+      dir: 'rtl',
+      cellClassName: 'text-[12.5px] text-text-dark',
+      render: e => e.hire_date ? new Date(e.hire_date).toLocaleDateString('ar-SY') : '—',
+    },
+    {
+      key: 'status',
+      header: 'الحالة',
+      dir: 'rtl',
+      render: e => {
+        const statusCode = getStatusCode(e)
+        return (
+          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${STATUS_COLOR[statusCode] ?? 'bg-gray-100 text-gray-600'}`}>
+            {STATUS_AR[statusCode] ?? statusCode ?? '—'}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'actions',
+      header: 'الإجراءات',
+      dir: 'rtl',
+      render: e => (
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => navigate(`/hr/employees/${e.employee_id}`)}
+            className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] text-blue-500 border-blue-500/20 bg-blue-50 hover:bg-blue-100 transition-colors" title="عرض الملف">
+            <FaEye />
+          </button>
+          <button onClick={() => setModal(e)}
+            className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] text-amber-500 border-amber-500/20 bg-amber-50 hover:bg-amber-100 transition-colors" title="تعديل">
+            <FaEdit />
+          </button>
+          <button onClick={() => handleDelete(e.employee_id, `${e.first_name} ${e.last_name}`)}
+            className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] text-red-500 border-red-200 bg-red-50 hover:bg-red-100 transition-colors" title="حذف">
+            <FaTrash />
+          </button>
+        </div>
+      ),
+    },
+  ]
+
   return (
     <>
       {modal && (
@@ -213,18 +302,9 @@ export default function EmployeesPage() {
         </button>
       </div>
 
-      <div className="relative mb-5">
-        <FaSearch className="absolute left-[15px] top-1/2 -translate-y-1/2 text-primary-light text-[14px] pointer-events-none" />
-        <input
-          className="w-full py-[13px] pr-4 pl-[42px] border-[1.5px] border-primary/20 rounded-[13px] bg-white text-[14px] text-text-dark outline-none transition-all focus:border-primary focus:shadow-[0_0_0_4px_rgba(86,153,51,0.1)] placeholder:text-text-light"
-          placeholder="ابحث بالاسم أو رقم الموظف أو البريد الإلكتروني…"
-          value={search} onChange={e => setSearch(e.target.value)} dir="rtl"
-        />
-        {search && (
-          <button onClick={() => setSearch('')}
-            className="absolute right-3.5 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded-full text-[18px] text-text-light hover:bg-red-50 hover:text-red-500 transition-colors">×</button>
-        )}
-      </div>
+      <FilterBar
+        search={{ value: search, onChange: setSearch, placeholder: 'ابحث بالاسم أو رقم الموظف أو البريد الإلكتروني…' }}
+      />
 
       {error && (
         <div className="flex items-center justify-between gap-3 bg-red-50 border border-red-200 rounded-[12px] px-5 py-3 mb-4 text-[13px] text-red-600" dir="rtl">
@@ -233,89 +313,20 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      <div className="bg-white rounded-[16px] border border-primary/12 overflow-hidden shadow-[0_2px_16px_rgba(26,46,16,0.06)] min-h-[240px]">
-        {loading ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-16 text-primary-light">
-            <FaSpinner className="text-[28px] animate-spin" /><span className="text-[14px]">جاري التحميل…</span>
-          </div>
-        ) : employees.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-16">
-            <FaUsers className="text-[48px] text-[#d1eab8] mb-2" />
-            <p className="text-[16px] font-bold text-text-gray" dir="rtl">لا يوجد موظفون</p>
-            {search && <button onClick={() => setSearch('')} className="mt-2 px-5 py-2 bg-primary/8 border border-primary/20 rounded-[10px] text-primary-dark text-[13px] font-semibold hover:bg-primary/15 transition-colors">مسح البحث</button>}
-          </div>
-        ) : (
-          <table className="w-full border-collapse">
-            <thead>
-              <tr>
-                {['#', 'رقم الموظف', 'الاسم الكامل', 'البريد / الهاتف', 'النوع', 'تاريخ التعيين', 'الحالة', 'الإجراءات'].map(h => (
-                  <th key={h} className="px-4 py-3.5 text-right text-[11.5px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <AnimatePresence mode="wait">
-              <motion.tbody key={`${search}-${page}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
-                {employees.map((e, idx) => {
-                  const statusCode = getStatusCode(e)
-                  const typeCode   = getTypeCode(e)
-                  return (
-                    <tr key={e.employee_id} className="border-b border-primary/7 last:border-b-0 hover:bg-primary/[0.025] transition-colors">
-                      <td className="px-4 py-[13px] text-[12px] text-text-light font-semibold w-10">{(page - 1) * meta.per_page + idx + 1}</td>
-                      <td className="px-4 py-[13px]">
-                        <span className="inline-block px-2.5 py-[3px] bg-primary/8 border border-primary/15 rounded-[8px] text-[12px] font-bold text-primary-dark font-mono">{e.employee_number}</span>
-                      </td>
-                      <td className="px-4 py-[13px] font-semibold text-[13.5px] text-text-dark" dir="rtl">{e.first_name} {e.last_name}</td>
-                      <td className="px-4 py-[13px] text-[12px] text-text-gray" dir="rtl">
-                        <div>{e.email || '—'}</div>
-                        <div className="text-text-light">{e.phone_number || ''}</div>
-                      </td>
-                      <td className="px-4 py-[13px] text-[12px] text-text-gray" dir="rtl">{TYPE_AR[typeCode] ?? typeCode ?? '—'}</td>
-                      <td className="px-4 py-[13px] text-[12.5px] text-text-dark">{e.hire_date ? new Date(e.hire_date).toLocaleDateString('ar-SY') : '—'}</td>
-                      <td className="px-4 py-[13px]">
-                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${STATUS_COLOR[statusCode] ?? 'bg-gray-100 text-gray-600'}`} dir="rtl">
-                          {STATUS_AR[statusCode] ?? statusCode ?? '—'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-[13px]">
-                        <div className="flex items-center gap-1.5">
-                          <button onClick={() => navigate(`/hr/employees/${e.employee_id}`)}
-                            className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] text-blue-500 border-blue-500/20 bg-blue-50 hover:bg-blue-100 transition-colors" title="عرض الملف">
-                            <FaEye />
-                          </button>
-                          <button onClick={() => setModal(e)}
-                            className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] text-amber-500 border-amber-500/20 bg-amber-50 hover:bg-amber-100 transition-colors" title="تعديل">
-                            <FaEdit />
-                          </button>
-                          <button onClick={() => handleDelete(e.employee_id, `${e.first_name} ${e.last_name}`)}
-                            className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] text-red-500 border-red-200 bg-red-50 hover:bg-red-100 transition-colors" title="حذف">
-                            <FaTrash />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </motion.tbody>
-            </AnimatePresence>
-          </table>
-        )}
-      </div>
-
-      {!loading && meta.last_page > 1 && (
-        <div className="flex items-center justify-center gap-4 mt-5">
-          <button disabled={page <= 1} onClick={() => setPage(p => p - 1)}
-            className="flex items-center gap-1.5 px-4 py-2 border-[1.5px] border-primary/20 rounded-[10px] bg-white text-primary-dark text-[13px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-primary/8 transition-colors" dir="rtl">
-            <FaChevronRight /><span>السابق</span>
-          </button>
-          <span className="text-[13px] text-text-gray" dir="rtl">
-            <span className="text-[17px] font-extrabold text-primary">{page}</span> من <span className="font-semibold">{meta.last_page}</span>
-          </span>
-          <button disabled={page >= meta.last_page} onClick={() => setPage(p => p + 1)}
-            className="flex items-center gap-1.5 px-4 py-2 border-[1.5px] border-primary/20 rounded-[10px] bg-white text-primary-dark text-[13px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-primary/8 transition-colors" dir="rtl">
-            <span>التالي</span><FaChevronLeft />
-          </button>
-        </div>
-      )}
+      <DataTable
+        columns={columns}
+        rows={employees}
+        rowKey={e => e.employee_id}
+        loading={loading}
+        animationKey={`${search}-${page}`}
+        emptyIcon={FaUsers}
+        emptyTitle="لا يوجد موظفون"
+        hasFilters={!!search}
+        onClearFilters={() => setSearch('')}
+        page={page}
+        totalPages={meta.last_page}
+        onPageChange={setPage}
+      />
     </>
   )
 }

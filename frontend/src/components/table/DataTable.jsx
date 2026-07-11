@@ -5,6 +5,8 @@ const ALIGN_CLASS = { right: 'text-right', center: 'text-center', left: 'text-le
 
 // Generic list table: pass `columns` (what to show) and `rows` (the current page's data).
 // columns: [{ key, header, align: 'right'|'center'|'left', dir, cellClassName, render(row, index) }]
+// Theming: containerBorderClass/headerBgClass/rowClassName default to the standard green look;
+// override them (e.g. for an "archived" table) without touching every other page using DataTable.
 export default function DataTable({
   columns,
   rows,
@@ -19,10 +21,14 @@ export default function DataTable({
   page,
   totalPages,
   onPageChange,
+  containerBorderClass = 'border-primary/12',
+  headerBgClass = 'bg-text-dark',
+  rowClassName = 'border-b border-primary/7 last:border-b-0 transition-colors duration-150 hover:bg-primary/[0.035]',
+  emptyIconClass = 'text-[#d1eab8]',
 }) {
   return (
     <>
-      <div className="bg-white rounded-[16px] border border-primary/12 overflow-hidden shadow-[0_2px_16px_rgba(26,46,16,0.06)] min-h-[240px]">
+      <div className={`bg-white rounded-[16px] border ${containerBorderClass} overflow-hidden shadow-[0_2px_16px_rgba(26,46,16,0.06)] min-h-[240px]`}>
         {loading ? (
           <div className="flex flex-col items-center justify-center gap-3.5 py-[60px] text-primary-light text-[14px] font-medium">
             <FaSpinner className="text-[28px] animate-[spin_0.7s_linear_infinite]" />
@@ -30,7 +36,7 @@ export default function DataTable({
           </div>
         ) : rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-[60px]">
-            {EmptyIcon && <EmptyIcon className="text-[48px] text-[#d1eab8] mb-2" />}
+            {EmptyIcon && <EmptyIcon className={`text-[48px] ${emptyIconClass} mb-2`} />}
             <p className="text-[16px] font-bold text-text-gray" dir="rtl">{emptyTitle}</p>
             {emptySubtitle && <p className="text-[12.5px] text-text-light">{emptySubtitle}</p>}
             {hasFilters && onClearFilters && (
@@ -51,7 +57,7 @@ export default function DataTable({
                   {columns.map(col => (
                     <th
                       key={col.key}
-                      className={`px-4 py-3.5 ${ALIGN_CLASS[col.align || 'right']} text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap`}
+                      className={`px-4 py-3.5 ${ALIGN_CLASS[col.align || 'right']} text-[12px] font-bold text-white/90 ${headerBgClass} whitespace-nowrap`}
                       dir={col.dir}
                     >
                       {col.header}
@@ -68,7 +74,7 @@ export default function DataTable({
                   transition={{ duration: 0.18 }}
                 >
                   {rows.map((row, idx) => (
-                    <tr key={rowKey(row)} className="border-b border-primary/7 last:border-b-0 transition-colors duration-150 hover:bg-primary/[0.035]">
+                    <tr key={rowKey(row)} className={rowClassName}>
                       {columns.map(col => (
                         <td
                           key={col.key}
