@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
-import {
-  FaArchive, FaBoxOpen, FaSpinner,
-} from 'react-icons/fa'
+import { FaArchive, FaBoxOpen } from 'react-icons/fa'
+import DataTable from '../../../components/table/DataTable'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
@@ -56,6 +54,64 @@ export default function ArchivedStudentsPage() {
     }
   }
 
+  const columns = [
+    {
+      key: 'idx',
+      header: '#',
+      align: 'left',
+      cellClassName: 'text-[12px] text-text-light font-semibold w-10',
+      render: (s, idx) => idx + 1,
+    },
+    {
+      key: 'student_number',
+      header: 'رقم القيد',
+      render: s => (
+        <span className="inline-block px-2.5 py-[3px] bg-slate-100 border border-slate-200 rounded-[8px] text-[12px] font-bold text-slate-500 font-mono">
+          {s.student_number}
+        </span>
+      ),
+    },
+    {
+      key: 'name',
+      header: 'الاسم الكامل',
+      dir: 'rtl',
+      cellClassName: 'text-[13.5px] font-semibold text-text-gray',
+      render: s => `${s.first_name} ${s.last_name}`,
+    },
+    {
+      key: 'email',
+      header: 'البريد الإلكتروني',
+      cellClassName: 'text-[12.5px] text-text-gray',
+      render: s => s.email || '—',
+    },
+    {
+      key: 'phone',
+      header: 'رقم الهاتف',
+      cellClassName: 'text-[13.5px] text-text-gray',
+      render: s => s.phone_number || '—',
+    },
+    {
+      key: 'enrollment_date',
+      header: 'تاريخ القبول',
+      cellClassName: 'text-[13.5px] text-text-gray',
+      render: s => s.enrollment_date ? new Date(s.enrollment_date).toLocaleDateString('ar-SY') : '—',
+    },
+    {
+      key: 'actions',
+      header: 'الإجراءات',
+      render: s => (
+        <button
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] border text-[12.5px] font-bold cursor-pointer transition-all duration-[180ms] text-green-600 border-green-500/25 bg-green-500/6 hover:bg-green-500/14 hover:border-green-500/40"
+          onClick={() => handleRestore(s.student_id)}
+          dir="rtl"
+        >
+          <FaBoxOpen className="text-[12px]" />
+          استعادة
+        </button>
+      ),
+    },
+  ]
+
   return (
     <>
       {/* Page header */}
@@ -87,73 +143,23 @@ export default function ArchivedStudentsPage() {
         </div>
       )}
 
-      {/* Table */}
-      <div className="bg-white rounded-[16px] border border-slate-200 overflow-hidden shadow-[0_2px_16px_rgba(26,46,16,0.06)] min-h-[240px]">
-        {loading ? (
-          <div className="flex flex-col items-center justify-center gap-3.5 py-[60px] text-slate-400 text-[14px] font-medium">
-            <FaSpinner className="text-[28px] animate-[spin_0.7s_linear_infinite]" />
-            <span>جاري التحميل…</span>
-          </div>
-        ) : students.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-[60px]">
-            <FaArchive className="text-[48px] text-slate-200 mb-2" />
-            <p className="text-[16px] font-bold text-text-gray" dir="rtl">لا يوجد طلاب مؤرشفون</p>
-            <p className="text-[12.5px] text-text-light">No archived students</p>
-          </div>
-        ) : (
-          <table className="w-full border-collapse">
-            <thead>
-              <tr>
-                <th className="px-4 py-3.5 text-left text-[12px] font-bold text-white/90 bg-slate-600 whitespace-nowrap">#</th>
-                <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-slate-600 whitespace-nowrap" dir="rtl">رقم القيد</th>
-                <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-slate-600 whitespace-nowrap" dir="rtl">الاسم الكامل</th>
-                <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-slate-600 whitespace-nowrap" dir="rtl">البريد الإلكتروني</th>
-                <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-slate-600 whitespace-nowrap" dir="rtl">رقم الهاتف</th>
-                <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-slate-600 whitespace-nowrap" dir="rtl">تاريخ القبول</th>
-                <th className="px-4 py-3.5 text-right text-[12px] font-bold text-white/90 bg-slate-600 whitespace-nowrap" dir="rtl">الإجراءات</th>
-              </tr>
-            </thead>
-            <AnimatePresence mode="wait">
-              <motion.tbody
-                key="archived"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.18 }}
-              >
-                {students.map((s, idx) => (
-                  <tr key={s.student_id} className="border-b border-slate-100 last:border-b-0 bg-slate-50/40 hover:bg-slate-100/60 transition-colors duration-150">
-                    <td className="px-4 py-[13px] text-[12px] text-text-light font-semibold w-10">{idx + 1}</td>
-                    <td className="px-4 py-[13px] align-middle">
-                      <span className="inline-block px-2.5 py-[3px] bg-slate-100 border border-slate-200 rounded-[8px] text-[12px] font-bold text-slate-500 font-mono">
-                        {s.student_number}
-                      </span>
-                    </td>
-                    <td className="px-4 py-[13px] text-[13.5px] font-semibold text-text-gray align-middle" dir="rtl">
-                      {s.first_name} {s.last_name}
-                    </td>
-                    <td className="px-4 py-[13px] text-[12.5px] text-text-gray align-middle">{s.email || '—'}</td>
-                    <td className="px-4 py-[13px] text-[13.5px] text-text-gray align-middle">{s.phone_number || '—'}</td>
-                    <td className="px-4 py-[13px] text-[13.5px] text-text-gray align-middle">
-                      {s.enrollment_date ? new Date(s.enrollment_date).toLocaleDateString('ar-SY') : '—'}
-                    </td>
-                    <td className="px-4 py-[13px] align-middle">
-                      <button
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] border text-[12.5px] font-bold cursor-pointer transition-all duration-[180ms] text-green-600 border-green-500/25 bg-green-500/6 hover:bg-green-500/14 hover:border-green-500/40"
-                        onClick={() => handleRestore(s.student_id)}
-                        dir="rtl"
-                      >
-                        <FaBoxOpen className="text-[12px]" />
-                        استعادة
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </motion.tbody>
-            </AnimatePresence>
-          </table>
-        )}
-      </div>
+      <DataTable
+        columns={columns}
+        rows={students}
+        rowKey={s => s.student_id}
+        loading={loading}
+        animationKey="archived"
+        emptyIcon={FaArchive}
+        emptyTitle="لا يوجد طلاب مؤرشفون"
+        emptySubtitle="No archived students"
+        page={1}
+        totalPages={1}
+        onPageChange={() => {}}
+        containerBorderClass="border-slate-200"
+        headerBgClass="bg-slate-600"
+        rowClassName="border-b border-slate-100 last:border-b-0 bg-slate-50/40 hover:bg-slate-100/60 transition-colors duration-150"
+        emptyIconClass="text-slate-200"
+      />
     </>
   )
 }
