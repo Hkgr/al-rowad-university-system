@@ -31,14 +31,9 @@ echo "[2/6] Installing frontend dependencies..."
 
 cd "$FRONTEND_DIR"
 
-# نستخدم npm ci عندما يكون lock file سليماً
-# وننتقل إلى npm install كاحتياط فقط
-if npm ci --no-audit --no-fund; then
-    echo "Frontend dependencies installed with npm ci."
-else
-    echo "npm ci failed. Falling back to npm install..."
-    npm install --no-audit --no-fund
-fi
+npm ci --no-audit --no-fund
+
+echo "Frontend dependencies installed successfully with npm ci."
 
 
 # ----------------------------------------------------------
