@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
+import html2canvas from 'html2canvas-pro'
+import jsPDF from 'jspdf'
 import {
   FaArrowRight, FaEdit, FaSpinner, FaUser,
   FaGraduationCap, FaChartBar, FaCalendarCheck, FaCheckCircle, FaFolderOpen, FaCamera,
+  FaDownload,
 } from 'react-icons/fa'
 import StudentDocuments from '../components/StudentDocuments'
 
@@ -164,7 +167,9 @@ function SemesterTable({ courses, accentKey }) {
                   }`} dir="rtl">
                     {c.result_status?.status_code === 'passed'
                       ? 'ناجح'
-                      : c.result_status?.status_name || 'قيد التسجيل'}
+                      : c.result_status?.status_code === 'failed'
+                        ? 'راسب'
+                        : c.result_status?.status_name || 'قيد التسجيل'}
                   </span>
                 </td>
               </tr>
@@ -185,7 +190,21 @@ function SemesterTable({ courses, accentKey }) {
   )
 }
 
-function TranscriptTab({ transcript }) {
+function SummaryStat({ label, value, accent = 'gray' }) {
+  const colors = {
+    gray:    'text-text-dark',
+    green:   'text-green-600',
+    primary: 'text-primary',
+  }
+  return (
+    <div className="flex flex-col items-center justify-center gap-1 py-4 px-3 bg-[#fafaf9] border border-primary/10 rounded-[14px]" dir="rtl">
+      <span className={`text-[22px] font-black leading-none ${colors[accent]}`}>{value}</span>
+      <span className="text-[11px] font-semibold text-text-light text-center">{label}</span>
+    </div>
+  )
+}
+
+function TranscriptTab({ transcript, cgpa }) {
   if (!transcript?.terms?.length) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-2" dir="rtl">
@@ -206,8 +225,37 @@ function TranscriptTab({ transcript }) {
 
   const sortedYears = Object.keys(byYear).sort()
 
+  // Overall totals across the full academic record
+  const allCourses    = transcript.terms.flatMap(t => t.courses)
+  const passedCourses = allCourses.filter(c => c.result_status?.status_code === 'passed')
+  const totalHours    = allCourses.reduce((s, c) => s + (c.credit_hours || 0), 0)
+  const passedHours   = passedCourses.reduce((s, c) => s + (c.credit_hours || 0), 0)
+  const cgpaVal       = cgpa?.cgpa ?? null
+
   return (
     <div className="space-y-6">
+      {/* Overall summary strip */}
+      <div>
+        <SectionTitle ar="ملخص السجل الأكاديمي" en="Academic Record Summary" />
+        <div className="grid grid-cols-4 max-[640px]:grid-cols-2 gap-3">
+          <SummaryStat label="الأعوام الدراسية"  value={sortedYears.length} />
+          <SummaryStat label="إجمالي المقررات"   value={allCourses.length} />
+          <SummaryStat label="المقررات الناجحة"  value={passedCourses.length} accent="green" />
+          <SummaryStat label="الساعات المكتسبة"  value={passedHours} accent="primary" />
+        </div>
+        {cgpaVal !== null && (
+          <div className="mt-3 flex items-center gap-4 bg-primary/[0.045] border border-primary/15 rounded-[14px] px-6 py-4" dir="rtl">
+            <span className="text-[34px] font-black text-primary leading-none">{Number(cgpaVal).toFixed(2)}</span>
+            <div>
+              <p className="text-[13px] font-extrabold text-text-dark">المعدل التراكمي</p>
+              <p className="text-[11.5px] text-text-light">
+                {cgpa?.total_included_credit_hours ?? passedHours} ساعة معتمدة محسوبة من أصل {totalHours} ساعة
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
       {sortedYears.map(yearName => {
         const { year, semesters } = byYear[yearName]
         const yearTotal = SEMESTER_ORDER.reduce((sum, s) => {
@@ -464,6 +512,9 @@ export default function StudentProfilePage() {
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [avatarError,    setAvatarError]    = useState('')
   const avatarInputRef = useRef(null)
+  const [pdfLoading,     setPdfLoading]     = useState(false)
+  const [pdfError,       setPdfError]       = useState('')
+  const pdfContentRef = useRef(null)
 
   useEffect(() => {
     let objectUrl = null
@@ -583,6 +634,40 @@ export default function StudentProfilePage() {
       setGraduateError('تعذّر الاتصال بالخادم')
     } finally {
       setGraduating(false)
+    }
+  }
+
+  async function handleDownloadTranscriptPdf() {
+    const el = pdfContentRef.current
+    if (!el) return
+    setPdfLoading(true)
+    setPdfError('')
+    try {
+      const canvas = await html2canvas(el, { scale: 1.5, backgroundColor: '#ffffff', useCORS: true })
+      const imgData = canvas.toDataURL('image/jpeg', 0.92)
+      const pdf = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4', compress: true })
+      const pageWidth  = pdf.internal.pageSize.getWidth()
+      const pageHeight = pdf.internal.pageSize.getHeight()
+      const imgWidth  = pageWidth
+      const imgHeight = (canvas.height * imgWidth) / canvas.width
+
+      let heightLeft = imgHeight
+      let position = 0
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight)
+      heightLeft -= pageHeight
+      while (heightLeft > 0) {
+        position -= pageHeight
+        pdf.addPage()
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight)
+        heightLeft -= pageHeight
+      }
+
+      pdf.save(`كشف_الدرجات_${profile?.student_number || id}.pdf`)
+    } catch (e) {
+      console.error('PDF export failed:', e)
+      setPdfError('تعذّر إنشاء ملف PDF. يرجى المحاولة مجددًا')
+    } finally {
+      setPdfLoading(false)
     }
   }
 
@@ -755,13 +840,55 @@ export default function StudentProfilePage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.2 }}
         >
-          {activeTab === 'info'       && <PersonalInfoTab profile={profile} />}
-          {activeTab === 'transcript' && <TranscriptTab transcript={transcript} />}
+          {activeTab === 'info' && <PersonalInfoTab profile={profile} />}
+          {activeTab === 'transcript' && (
+            <>
+              <div className="flex items-center justify-between mb-5 gap-3 flex-wrap" dir="rtl">
+                <p className="text-[12px] text-text-light">السجل الأكاديمي الكامل للطالب، مرتّب حسب السنة والفصل الدراسي</p>
+                <button
+                  className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-[10px] text-[13px] font-bold hover:enabled:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={handleDownloadTranscriptPdf}
+                  disabled={pdfLoading || !transcript?.terms?.length}
+                >
+                  {pdfLoading ? <FaSpinner className="animate-spin text-[12px]" /> : <FaDownload className="text-[12px]" />}
+                  <span>{pdfLoading ? 'جارٍ التجهيز…' : 'تحميل PDF'}</span>
+                </button>
+              </div>
+              {pdfError && (
+                <p className="mb-4 text-[12.5px] text-red-600" dir="rtl">⚠ {pdfError}</p>
+              )}
+              <TranscriptTab transcript={transcript} cgpa={cgpa} />
+            </>
+          )}
           {activeTab === 'gpa'        && <GPATab studentId={id} cgpa={cgpa} academicYears={academicYears} semesters={semesters} />}
           {activeTab === 'attendance' && <AttendanceTab attendance={attendance} />}
           {activeTab === 'documents'  && <StudentDocuments studentId={id} />}
         </motion.div>
       </div>
+
+      {/* Off-screen printable transcript document, captured for PDF export */}
+      {profile && (
+        <div style={{ position: 'fixed', left: '-10000px', top: 0, width: '794px', zIndex: -1 }} aria-hidden="true">
+          <div ref={pdfContentRef} className="bg-white p-10">
+            <div className="flex items-center justify-between border-b-2 border-primary pb-4 mb-6" dir="rtl">
+              <div>
+                <h1 className="text-[22px] font-black text-text-dark">كشف الدرجات الأكاديمي</h1>
+                <p className="text-[12px] text-text-light mt-1">Academic Transcript</p>
+              </div>
+              <p className="text-[11px] text-text-light">تاريخ الإصدار: {fmt(new Date().toISOString())}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-x-8 gap-y-3 mb-7 text-[12.5px]" dir="rtl">
+              <div><span className="font-bold text-text-dark">الاسم: </span>{profile.full_name}</div>
+              <div><span className="font-bold text-text-dark">الرقم الجامعي: </span>{profile.student_number}</div>
+              <div><span className="font-bold text-text-dark">البرنامج: </span>{profile.program?.program_name || '—'}</div>
+              <div><span className="font-bold text-text-dark">الكلية: </span>{profile.college?.college_name || '—'}</div>
+              <div><span className="font-bold text-text-dark">القسم: </span>{profile.department?.department_name || '—'}</div>
+              <div><span className="font-bold text-text-dark">المستوى الدراسي: </span>{profile.academic_level?.level_name || '—'}</div>
+            </div>
+            <TranscriptTab transcript={transcript} cgpa={cgpa} />
+          </div>
+        </div>
+      )}
     </>
   )
 }
