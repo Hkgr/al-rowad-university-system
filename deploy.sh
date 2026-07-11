@@ -3,6 +3,26 @@
 set -Eeuo pipefail
 
 # ==========================================================
+# Node.js / nodenv environment
+# ==========================================================
+
+export NODENV_VERSION=24
+
+if [ -d "$HOME/.nodenv/bin" ]; then
+    export PATH="$HOME/.nodenv/bin:$HOME/.nodenv/shims:$PATH"
+fi
+
+if command -v nodenv >/dev/null 2>&1; then
+    eval "$(nodenv init - bash)"
+    nodenv shell "$NODENV_VERSION"
+fi
+
+echo "Node environment:"
+echo "Node: $(node -v)"
+echo "npm:  $(npm -v)"
+
+
+# ==========================================================
 # Al-Rowad University System - Plesk Deployment Script
 # ==========================================================
 
