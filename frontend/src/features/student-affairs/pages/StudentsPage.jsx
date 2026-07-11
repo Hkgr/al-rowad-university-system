@@ -106,6 +106,9 @@ export default function StudentsPage() {
   const [search, setSearch]             = useState('')
   const [filterCollege, setFilterCollege] = useState('')
   const [filterStatus, setFilterStatus]   = useState('')
+  const [filterProgram, setFilterProgram] = useState('')
+  const [filterLevel, setFilterLevel]     = useState('')
+  const [filterGender, setFilterGender]   = useState('')
   const [page, setPage]                 = useState(1)
 
   const debounceRef = useRef(null)
@@ -181,7 +184,7 @@ export default function StudentsPage() {
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => setPage(1), 300)
     return () => clearTimeout(debounceRef.current)
-  }, [search, filterCollege, filterStatus])
+  }, [search, filterCollege, filterStatus, filterProgram, filterLevel, filterGender])
 
   // Client-side filtering
   const filtered = useMemo(() => {
@@ -189,6 +192,9 @@ export default function StudentsPage() {
     return allStudents.filter(s => {
       if (filterStatus && String(s.student_status_id) !== filterStatus) return false
       if (filterCollege && String(getCollegeId(s)) !== filterCollege) return false
+      if (filterProgram && String(s.academic_program_id) !== filterProgram) return false
+      if (filterLevel && String(s.current_academic_level_id) !== filterLevel) return false
+      if (filterGender && s.gender !== filterGender) return false
       if (q) {
         const name  = `${s.first_name} ${s.last_name}`.toLowerCase()
         const num   = (s.student_number ?? '').toLowerCase()
@@ -198,13 +204,26 @@ export default function StudentsPage() {
       return true
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allStudents, search, filterCollege, filterStatus, programMap, deptMap, colleges])
+  }, [allStudents, search, filterCollege, filterStatus, filterProgram, filterLevel, filterGender, programMap, deptMap, colleges])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const safePage   = Math.min(page, totalPages)
   const pageStudents = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
-  const hasFilters = search || filterCollege || filterStatus
+  const hasFilters = search || filterCollege || filterStatus || filterProgram || filterLevel || filterGender
+
+  // Dropdown option lists derived from the already-loaded lookups
+  const programOptions = useMemo(() => (
+    Object.entries(programMap)
+      .map(([id, p]) => ({ value: id, label: p.name }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'ar'))
+  ), [programMap])
+
+  const levelOptions = useMemo(() => (
+    Object.entries(levelMap)
+      .map(([id, l]) => ({ value: id, label: arabicYearLabel(l.order) ?? l.name, order: l.order ?? 0 }))
+      .sort((a, b) => a.order - b.order)
+  ), [levelMap])
 
   const handleArchive = async (id) => {
     if (!window.confirm('سيتم أرشفة هذا الطالب وإخفاؤه من القائمة.\nهل أنت متأكد؟')) return
@@ -221,7 +240,11 @@ export default function StudentsPage() {
     }
   }
 
-  const clearFilters = () => { setSearch(''); setFilterCollege(''); setFilterStatus(''); setPage(1) }
+  const clearFilters = () => {
+    setSearch(''); setFilterCollege(''); setFilterStatus('')
+    setFilterProgram(''); setFilterLevel(''); setFilterGender('')
+    setPage(1)
+  }
 
   // Column definitions for the shared DataTable — everything this page-specific
   // (rendering, alignment) lives here; DataTable only knows how to lay it out.
@@ -400,6 +423,33 @@ export default function StudentsPage() {
             minWidth: 140,
             options: Object.entries(STATUS_MAP).map(([id, { ar }]) => ({ value: id, label: ar })),
           },
+          {
+            key: 'program',
+            value: filterProgram,
+            onChange: v => { setFilterProgram(v); setPage(1) },
+            placeholder: 'جميع التخصصات',
+            minWidth: 170,
+            options: programOptions,
+          },
+          {
+            key: 'level',
+            value: filterLevel,
+            onChange: v => { setFilterLevel(v); setPage(1) },
+            placeholder: 'جميع السنوات',
+            minWidth: 150,
+            options: levelOptions,
+          },
+          {
+            key: 'gender',
+            value: filterGender,
+            onChange: v => { setFilterGender(v); setPage(1) },
+            placeholder: 'الجنس',
+            minWidth: 110,
+            options: [
+              { value: 'male', label: 'ذكر' },
+              { value: 'female', label: 'أنثى' },
+            ],
+          },
         ]}
         hasActiveFilters={!!hasFilters}
         onClear={clearFilters}
@@ -418,7 +468,7 @@ export default function StudentsPage() {
         rows={pageStudents}
         rowKey={s => s.student_id}
         loading={loading}
-        animationKey={`${search}-${filterCollege}-${filterStatus}-${safePage}`}
+        animationKey={`${search}-${filterCollege}-${filterStatus}-${filterProgram}-${filterLevel}-${filterGender}-${safePage}`}
         emptyIcon={FaGraduationCap}
         emptyTitle="لا يوجد طلاب"
         emptySubtitle="No students found"
