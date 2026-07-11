@@ -1,17 +1,24 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
-import {
-  FaUserPlus, FaSearch, FaEye, FaEdit, FaArchive,
-  FaChevronLeft, FaChevronRight, FaSpinner, FaGraduationCap,
-  FaFilter, FaTimes,
-} from 'react-icons/fa'
+import { FaUserPlus, FaEye, FaEdit, FaArchive, FaGraduationCap, FaPhone } from 'react-icons/fa'
+import DataTable from '../../../components/table/DataTable'
+import FilterBar from '../../../components/table/FilterBar'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 const PAGE_SIZE = 15
 
+// Arabic ordinal words keyed by the numeric level_order field (language-neutral,
+// unlike level_name which is hardcoded English in the DB seed data)
+const YEAR_ORDINALS_AR = ['الأولى', 'الثانية', 'الثالثة', 'الرابعة', 'الخامسة', 'السادسة', 'السابعة']
+
+function arabicYearLabel(order) {
+  if (!order || order < 1) return null
+  const word = YEAR_ORDINALS_AR[order - 1]
+  return word ? `السنة ${word}` : `السنة ${order}`
+}
+
 const STATUS_MAP = {
-  1: { ar: 'مقيّد',  color: '#22c55e', bg: 'rgba(34,197,94,0.1)'  },
+  1: { ar: 'يدرس حاليًا', color: '#22c55e', bg: 'rgba(34,197,94,0.1)'  },
   2: { ar: 'منقطع',  color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
   3: { ar: 'خريج',   color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
   4: { ar: 'مسحوب',  color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
@@ -62,22 +69,26 @@ async function fetchAllPages(baseUrl) {
 }
 
 // Module-level cache — fetched once per session, not on every page visit
-const _cache = { programMap: null, deptMap: null, colleges: null }
+const _cache = { programMap: null, deptMap: null, colleges: null, levelMap: null }
 
 async function loadLookups() {
   if (_cache.programMap) return _cache   // already loaded
-  const [progs, depts, cols] = await Promise.all([
+  const [progs, depts, cols, levels] = await Promise.all([
     fetchAll(`${API}/academic-programs?per_page=100`),
     fetchAll(`${API}/departments?per_page=100`),
     fetchAll(`${API}/colleges?per_page=50`),
+    fetchAll(`${API}/academic-levels?per_page=100`),
   ])
   const pm = {}
   if (Array.isArray(progs)) progs.forEach(p => { pm[p.academic_program_id] = { name: p.program_name, dept_id: p.department_id } })
   const dm = {}
   if (Array.isArray(depts)) depts.forEach(d => { dm[d.department_id] = { college_id: d.college_id } })
+  const lm = {}
+  if (Array.isArray(levels)) levels.forEach(l => { lm[l.academic_level_id] = { name: l.level_name, order: l.level_order } })
   _cache.programMap = pm
   _cache.deptMap    = dm
   _cache.colleges   = Array.isArray(cols) ? cols : []
+  _cache.levelMap   = lm
   return _cache
 }
 
@@ -86,13 +97,18 @@ export default function StudentsPage() {
   const [programMap, setProgramMap]     = useState({})   // id -> { name, dept_id }
   const [deptMap, setDeptMap]           = useState({})   // id -> { name, college_id }
   const [colleges, setColleges]         = useState([])   // [{college_id, college_name}]
+  const [levelMap, setLevelMap]         = useState({})   // id -> { name, order }
   const [loading, setLoading]           = useState(true)
   const [error, setError]               = useState('')
+  const [revealedPhones, setRevealedPhones] = useState(new Set())
 
   // Filters
   const [search, setSearch]             = useState('')
   const [filterCollege, setFilterCollege] = useState('')
   const [filterStatus, setFilterStatus]   = useState('')
+  const [filterProgram, setFilterProgram] = useState('')
+  const [filterLevel, setFilterLevel]     = useState('')
+  const [filterGender, setFilterGender]   = useState('')
   const [page, setPage]                 = useState(1)
 
   const debounceRef = useRef(null)
@@ -118,6 +134,7 @@ export default function StudentsPage() {
         setProgramMap(lookups.programMap ?? {})
         setDeptMap(lookups.deptMap ?? {})
         setColleges(lookups.colleges ?? [])
+        setLevelMap(lookups.levelMap ?? {})
       } catch {
         setError('تعذّر الاتصال بالخادم. تأكد أن php artisan serve يعمل.')
       } finally {
@@ -143,12 +160,31 @@ export default function StudentsPage() {
     return deptMap[prog.dept_id]?.college_id ?? null
   }
 
+  function getProgramName(student) {
+    return programMap[student.academic_program_id]?.name ?? null
+  }
+
+  function getLevelName(student) {
+    const lvl = levelMap[student.current_academic_level_id]
+    if (!lvl) return null
+    return arabicYearLabel(lvl.order) ?? lvl.name ?? null
+  }
+
+  function togglePhone(studentId) {
+    setRevealedPhones(prev => {
+      const next = new Set(prev)
+      if (next.has(studentId)) next.delete(studentId)
+      else next.add(studentId)
+      return next
+    })
+  }
+
   // Debounced search — just resets page
   useEffect(() => {
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => setPage(1), 300)
     return () => clearTimeout(debounceRef.current)
-  }, [search, filterCollege, filterStatus])
+  }, [search, filterCollege, filterStatus, filterProgram, filterLevel, filterGender])
 
   // Client-side filtering
   const filtered = useMemo(() => {
@@ -156,6 +192,9 @@ export default function StudentsPage() {
     return allStudents.filter(s => {
       if (filterStatus && String(s.student_status_id) !== filterStatus) return false
       if (filterCollege && String(getCollegeId(s)) !== filterCollege) return false
+      if (filterProgram && String(s.academic_program_id) !== filterProgram) return false
+      if (filterLevel && String(s.current_academic_level_id) !== filterLevel) return false
+      if (filterGender && s.gender !== filterGender) return false
       if (q) {
         const name  = `${s.first_name} ${s.last_name}`.toLowerCase()
         const num   = (s.student_number ?? '').toLowerCase()
@@ -165,13 +204,26 @@ export default function StudentsPage() {
       return true
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allStudents, search, filterCollege, filterStatus, programMap, deptMap, colleges])
+  }, [allStudents, search, filterCollege, filterStatus, filterProgram, filterLevel, filterGender, programMap, deptMap, colleges])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const safePage   = Math.min(page, totalPages)
   const pageStudents = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
-  const hasFilters = search || filterCollege || filterStatus
+  const hasFilters = search || filterCollege || filterStatus || filterProgram || filterLevel || filterGender
+
+  // Dropdown option lists derived from the already-loaded lookups
+  const programOptions = useMemo(() => (
+    Object.entries(programMap)
+      .map(([id, p]) => ({ value: id, label: p.name }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'ar'))
+  ), [programMap])
+
+  const levelOptions = useMemo(() => (
+    Object.entries(levelMap)
+      .map(([id, l]) => ({ value: id, label: arabicYearLabel(l.order) ?? l.name, order: l.order ?? 0 }))
+      .sort((a, b) => a.order - b.order)
+  ), [levelMap])
 
   const handleArchive = async (id) => {
     if (!window.confirm('سيتم أرشفة هذا الطالب وإخفاؤه من القائمة.\nهل أنت متأكد؟')) return
@@ -188,7 +240,145 @@ export default function StudentsPage() {
     }
   }
 
-  const clearFilters = () => { setSearch(''); setFilterCollege(''); setFilterStatus(''); setPage(1) }
+  const clearFilters = () => {
+    setSearch(''); setFilterCollege(''); setFilterStatus('')
+    setFilterProgram(''); setFilterLevel(''); setFilterGender('')
+    setPage(1)
+  }
+
+  // Column definitions for the shared DataTable — everything this page-specific
+  // (rendering, alignment) lives here; DataTable only knows how to lay it out.
+  const columns = [
+    {
+      key: 'idx',
+      header: '#',
+      align: 'center',
+      cellClassName: 'text-[12px] text-text-light font-semibold w-10',
+      render: (s, idx) => (safePage - 1) * PAGE_SIZE + idx + 1,
+    },
+    {
+      key: 'student_number',
+      header: 'رقم القيد',
+      align: 'center',
+      render: s => (
+        <span className="inline-block px-2.5 py-[3px] bg-primary/8 border border-primary/15 rounded-[8px] text-[12px] font-bold text-primary-dark font-mono">
+          {s.student_number}
+        </span>
+      ),
+    },
+    {
+      key: 'name',
+      header: 'الاسم الكامل',
+      align: 'right',
+      dir: 'rtl',
+      cellClassName: 'text-[13.5px] font-semibold text-text-dark whitespace-nowrap',
+      render: s => `${s.first_name} ${s.last_name}`,
+    },
+    {
+      key: 'college',
+      header: 'الكلية',
+      align: 'right',
+      dir: 'rtl',
+      render: s => {
+        const collegeName = getCollegeName(s)
+        return collegeName
+          ? <span className="text-[12px] font-medium text-text-gray whitespace-nowrap">{collegeName}</span>
+          : <span className="text-[11px] text-text-light">—</span>
+      },
+    },
+    {
+      key: 'program',
+      header: 'التخصص',
+      align: 'right',
+      dir: 'rtl',
+      render: s => {
+        const programName = getProgramName(s)
+        return programName
+          ? <span className="text-[12px] font-medium text-text-gray whitespace-nowrap">{programName}</span>
+          : <span className="inline-block px-2 py-[3px] rounded-full text-[11px] font-bold whitespace-nowrap text-amber-600" style={{ background: 'rgba(245,158,11,0.1)' }}>لم يتخصص بعد</span>
+      },
+    },
+    {
+      key: 'level',
+      header: 'السنة الدراسية',
+      align: 'center',
+      dir: 'rtl',
+      render: s => {
+        const levelName = getLevelName(s)
+        return levelName
+          ? <span className="inline-block px-2.5 py-[3px] bg-slate-500/8 rounded-full text-[11.5px] font-semibold text-slate-600 whitespace-nowrap">{levelName}</span>
+          : <span className="text-[11px] text-text-light">—</span>
+      },
+    },
+    {
+      key: 'phone',
+      header: 'الهاتف',
+      align: 'center',
+      render: s => (
+        revealedPhones.has(s.student_id) ? (
+          <button
+            className="text-[12px] font-mono text-text-dark whitespace-nowrap cursor-pointer hover:text-primary transition-colors"
+            title="إخفاء الرقم"
+            onClick={() => togglePhone(s.student_id)}
+          >
+            {s.phone_number || '—'}
+          </button>
+        ) : (
+          <button
+            className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[12px] mx-auto cursor-pointer transition-all duration-[180ms] text-green-600 border-green-600/20 bg-green-600/6 hover:bg-green-600/14 hover:border-green-600/35 disabled:opacity-40 disabled:cursor-not-allowed"
+            title={s.phone_number ? 'إظهار رقم الهاتف' : 'لا يوجد رقم هاتف'}
+            onClick={() => togglePhone(s.student_id)}
+            disabled={!s.phone_number}
+          >
+            <FaPhone />
+          </button>
+        )
+      ),
+    },
+    {
+      key: 'enrollment_date',
+      header: 'تاريخ القبول',
+      align: 'center',
+      cellClassName: 'text-[13.5px] text-text-dark whitespace-nowrap',
+      render: s => s.enrollment_date ? new Date(s.enrollment_date).toLocaleDateString('ar-SY') : '—',
+    },
+    {
+      key: 'status',
+      header: 'الحالة',
+      align: 'center',
+      render: s => <StatusBadge statusId={s.student_status_id} />,
+    },
+    {
+      key: 'actions',
+      header: 'الإجراءات',
+      align: 'center',
+      render: s => (
+        <div className="flex items-center justify-center gap-1.5">
+          <button
+            className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-blue-500 border-blue-500/20 bg-blue-500/6 hover:bg-blue-500/14 hover:border-blue-500/35"
+            title="عرض الملف"
+            onClick={() => navigate(`/student-affairs/students/${s.student_id}`)}
+          >
+            <FaEye />
+          </button>
+          <button
+            className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-amber-500 border-amber-500/20 bg-amber-500/6 hover:bg-amber-500/14 hover:border-amber-500/35"
+            title="تعديل"
+            onClick={() => navigate(`/student-affairs/students/${s.student_id}/edit`)}
+          >
+            <FaEdit />
+          </button>
+          <button
+            className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-slate-500 border-slate-400/20 bg-slate-400/6 hover:bg-slate-400/14 hover:border-slate-400/35"
+            title="أرشفة"
+            onClick={() => handleArchive(s.student_id)}
+          >
+            <FaArchive />
+          </button>
+        </div>
+      ),
+    },
+  ]
 
   return (
     <>
@@ -214,77 +404,57 @@ export default function StudentsPage() {
         </Link>
       </div>
 
-      {/* Search + Filters */}
-      <div className="flex flex-col gap-3 mb-5">
-        {/* Search bar */}
-        <div className="relative">
-          <FaSearch className="absolute left-[15px] top-1/2 -translate-y-1/2 text-primary-light text-[14px] pointer-events-none" />
-          <input
-            className="w-full py-[13px] pr-4 pl-[42px] border-[1.5px] border-primary/20 rounded-[13px] bg-white text-[14px] font-medium text-text-dark outline-none transition-all duration-[220ms] placeholder:text-text-light focus:border-primary focus:shadow-[0_0_0_4px_rgba(86,153,51,0.1)]"
-            type="text"
-            placeholder="ابحث باسم الطالب، رقم القيد، البريد الإلكتروني…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            dir="rtl"
-          />
-          {search && (
-            <button
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 bg-transparent border-none text-[18px] text-text-light cursor-pointer leading-none w-6 h-6 flex items-center justify-center rounded-full transition-all duration-200 hover:bg-red-500/8 hover:text-red-500"
-              onClick={() => setSearch('')}
-            >×</button>
-          )}
-        </div>
-
-        {/* Filter row */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-1.5 text-[12.5px] text-text-light font-semibold" dir="rtl">
-            <FaFilter className="text-primary-light text-[11px]" />
-            <span>تصفية:</span>
-          </div>
-
-          {/* College filter */}
-          <select
-            className="py-2 px-3 border-[1.5px] border-primary/20 rounded-[10px] bg-white text-[13px] text-text-dark outline-none cursor-pointer transition-all duration-200 focus:border-primary min-w-[160px]"
-            value={filterCollege}
-            onChange={e => { setFilterCollege(e.target.value); setPage(1) }}
-            dir="rtl"
-            disabled={loading}
-          >
-            <option value="">جميع الكليات</option>
-            {colleges.map(c => (
-              <option key={c.college_id} value={String(c.college_id)}>
-                {c.college_name}
-              </option>
-            ))}
-          </select>
-
-          {/* Status filter */}
-          <select
-            className="py-2 px-3 border-[1.5px] border-primary/20 rounded-[10px] bg-white text-[13px] text-text-dark outline-none cursor-pointer transition-all duration-200 focus:border-primary min-w-[140px]"
-            value={filterStatus}
-            onChange={e => { setFilterStatus(e.target.value); setPage(1) }}
-            dir="rtl"
-            disabled={loading}
-          >
-            <option value="">جميع الحالات</option>
-            {Object.entries(STATUS_MAP).map(([id, { ar }]) => (
-              <option key={id} value={id}>{ar}</option>
-            ))}
-          </select>
-
-          {/* Clear filters */}
-          {hasFilters && (
-            <button
-              className="flex items-center gap-1.5 py-2 px-3 border-[1.5px] border-red-400/30 rounded-[10px] bg-red-50 text-red-500 text-[12.5px] font-semibold cursor-pointer transition-all duration-200 hover:bg-red-100"
-              onClick={clearFilters}
-              dir="rtl"
-            >
-              <FaTimes className="text-[10px]" />
-              <span>مسح الفلاتر</span>
-            </button>
-          )}
-        </div>
-      </div>
+      <FilterBar
+        search={{ value: search, onChange: setSearch, placeholder: 'ابحث باسم الطالب، رقم القيد، البريد الإلكتروني…' }}
+        filters={[
+          {
+            key: 'college',
+            value: filterCollege,
+            onChange: v => { setFilterCollege(v); setPage(1) },
+            placeholder: 'جميع الكليات',
+            minWidth: 160,
+            options: colleges.map(c => ({ value: String(c.college_id), label: c.college_name })),
+          },
+          {
+            key: 'status',
+            value: filterStatus,
+            onChange: v => { setFilterStatus(v); setPage(1) },
+            placeholder: 'جميع الحالات',
+            minWidth: 140,
+            options: Object.entries(STATUS_MAP).map(([id, { ar }]) => ({ value: id, label: ar })),
+          },
+          {
+            key: 'program',
+            value: filterProgram,
+            onChange: v => { setFilterProgram(v); setPage(1) },
+            placeholder: 'جميع التخصصات',
+            minWidth: 170,
+            options: programOptions,
+          },
+          {
+            key: 'level',
+            value: filterLevel,
+            onChange: v => { setFilterLevel(v); setPage(1) },
+            placeholder: 'جميع السنوات',
+            minWidth: 150,
+            options: levelOptions,
+          },
+          {
+            key: 'gender',
+            value: filterGender,
+            onChange: v => { setFilterGender(v); setPage(1) },
+            placeholder: 'الجنس',
+            minWidth: 110,
+            options: [
+              { value: 'male', label: 'ذكر' },
+              { value: 'female', label: 'أنثى' },
+            ],
+          },
+        ]}
+        hasActiveFilters={!!hasFilters}
+        onClear={clearFilters}
+        disabled={loading}
+      />
 
       {/* Error */}
       {error && (
@@ -293,146 +463,21 @@ export default function StudentsPage() {
         </div>
       )}
 
-      {/* Table */}
-      <div className="bg-white rounded-[16px] border border-primary/12 overflow-hidden shadow-[0_2px_16px_rgba(26,46,16,0.06)] min-h-[240px]">
-        {loading ? (
-          <div className="flex flex-col items-center justify-center gap-3.5 py-[60px] text-primary-light text-[14px] font-medium">
-            <FaSpinner className="text-[28px] animate-[spin_0.7s_linear_infinite]" />
-            <span>جاري التحميل…</span>
-          </div>
-        ) : pageStudents.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-[60px]">
-            <FaGraduationCap className="text-[48px] text-[#d1eab8] mb-2" />
-            <p className="text-[16px] font-bold text-text-gray" dir="rtl">لا يوجد طلاب</p>
-            <p className="text-[12.5px] text-text-light">No students found</p>
-            {hasFilters && (
-              <button
-                className="mt-2.5 px-5 py-2 bg-primary/8 border border-primary/20 rounded-[10px] text-primary-dark text-[13px] font-semibold cursor-pointer transition-all duration-200 hover:bg-primary/15"
-                onClick={clearFilters}
-                dir="rtl"
-              >
-                مسح الفلاتر
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr>
-                  <th className="px-4 py-3.5 text-left   text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap">#</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">رقم القيد</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">الاسم الكامل</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">الكلية</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">البريد الإلكتروني</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">رقم الهاتف</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">تاريخ القبول</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">الحالة</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">الإجراءات</th>
-                </tr>
-              </thead>
-              <AnimatePresence mode="wait">
-                <motion.tbody
-                  key={`${search}-${filterCollege}-${filterStatus}-${safePage}`}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.18 }}
-                >
-                  {pageStudents.map((s, idx) => {
-                    const collegeName = getCollegeName(s)
-                    return (
-                      <tr key={s.student_id} className="border-b border-primary/7 last:border-b-0 transition-colors duration-150 hover:bg-primary/[0.035]">
-                        <td className="px-4 py-[13px] text-[12px] text-text-light font-semibold w-10">
-                          {(safePage - 1) * PAGE_SIZE + idx + 1}
-                        </td>
-                        <td className="px-4 py-[13px] align-middle">
-                          <span className="inline-block px-2.5 py-[3px] bg-primary/8 border border-primary/15 rounded-[8px] text-[12px] font-bold text-primary-dark font-mono">
-                            {s.student_number}
-                          </span>
-                        </td>
-                        <td className="px-4 py-[13px] text-[13.5px] font-semibold text-text-dark align-middle whitespace-nowrap" dir="rtl">
-                          {s.first_name} {s.last_name}
-                        </td>
-                        <td className="px-4 py-[13px] align-middle" dir="rtl">
-                          {collegeName
-                            ? <span className="text-[12px] font-medium text-text-gray whitespace-nowrap">{collegeName}</span>
-                            : <span className="text-[11px] text-text-light">—</span>
-                          }
-                        </td>
-                        <td className="px-4 py-[13px] text-[12.5px] text-text-gray align-middle">{s.email || '—'}</td>
-                        <td className="px-4 py-[13px] text-[13.5px] text-text-dark align-middle whitespace-nowrap">{s.phone_number || '—'}</td>
-                        <td className="px-4 py-[13px] text-[13.5px] text-text-dark align-middle whitespace-nowrap">
-                          {s.enrollment_date ? new Date(s.enrollment_date).toLocaleDateString('ar-SY') : '—'}
-                        </td>
-                        <td className="px-4 py-[13px] align-middle">
-                          <StatusBadge statusId={s.student_status_id} />
-                        </td>
-                        <td className="px-4 py-[13px] align-middle">
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-blue-500 border-blue-500/20 bg-blue-500/6 hover:bg-blue-500/14 hover:border-blue-500/35"
-                              title="عرض الملف"
-                              onClick={() => navigate(`/student-affairs/students/${s.student_id}`)}
-                            >
-                              <FaEye />
-                            </button>
-                            <button
-                              className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-amber-500 border-amber-500/20 bg-amber-500/6 hover:bg-amber-500/14 hover:border-amber-500/35"
-                              title="تعديل"
-                              onClick={() => navigate(`/student-affairs/students/${s.student_id}/edit`)}
-                            >
-                              <FaEdit />
-                            </button>
-                            <button
-                              className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-slate-500 border-slate-400/20 bg-slate-400/6 hover:bg-slate-400/14 hover:border-slate-400/35"
-                              title="أرشفة"
-                              onClick={() => handleArchive(s.student_id)}
-                            >
-                              <FaArchive />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </motion.tbody>
-              </AnimatePresence>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Pagination */}
-      {!loading && totalPages > 1 && (
-        <div className="flex items-center justify-center gap-4 mt-5 py-1">
-          <button
-            className="flex items-center gap-1.5 px-4 py-2 border-[1.5px] border-primary/20 rounded-[10px] bg-white text-primary-dark text-[13px] font-semibold cursor-pointer transition-all duration-200 disabled:opacity-[0.38] disabled:cursor-not-allowed hover:not-disabled:bg-primary/8 hover:not-disabled:border-primary/40"
-            disabled={safePage <= 1}
-            onClick={() => setPage(p => p - 1)}
-            dir="rtl"
-          >
-            <FaChevronRight />
-            <span>السابق</span>
-          </button>
-
-          <div className="flex items-center gap-1.5 text-[13px] text-text-gray" dir="rtl">
-            <span className="text-[17px] font-extrabold text-primary">{safePage}</span>
-            <span className="text-text-light">من</span>
-            <span className="font-semibold text-text-dark">{totalPages}</span>
-          </div>
-
-          <button
-            className="flex items-center gap-1.5 px-4 py-2 border-[1.5px] border-primary/20 rounded-[10px] bg-white text-primary-dark text-[13px] font-semibold cursor-pointer transition-all duration-200 disabled:opacity-[0.38] disabled:cursor-not-allowed hover:not-disabled:bg-primary/8 hover:not-disabled:border-primary/40"
-            disabled={safePage >= totalPages}
-            onClick={() => setPage(p => p + 1)}
-            dir="rtl"
-          >
-            <span>التالي</span>
-            <FaChevronLeft />
-          </button>
-        </div>
-      )}
+      <DataTable
+        columns={columns}
+        rows={pageStudents}
+        rowKey={s => s.student_id}
+        loading={loading}
+        animationKey={`${search}-${filterCollege}-${filterStatus}-${filterProgram}-${filterLevel}-${filterGender}-${safePage}`}
+        emptyIcon={FaGraduationCap}
+        emptyTitle="لا يوجد طلاب"
+        emptySubtitle="No students found"
+        hasFilters={!!hasFilters}
+        onClearFilters={clearFilters}
+        page={safePage}
+        totalPages={totalPages}
+        onPageChange={setPage}
+      />
     </>
   )
 }
