@@ -4,14 +4,24 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   FaUserPlus, FaSearch, FaEye, FaEdit, FaArchive,
   FaChevronLeft, FaChevronRight, FaSpinner, FaGraduationCap,
-  FaFilter, FaTimes,
+  FaFilter, FaTimes, FaPhone,
 } from 'react-icons/fa'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 const PAGE_SIZE = 15
 
+// Arabic ordinal words keyed by the numeric level_order field (language-neutral,
+// unlike level_name which is hardcoded English in the DB seed data)
+const YEAR_ORDINALS_AR = ['الأولى', 'الثانية', 'الثالثة', 'الرابعة', 'الخامسة', 'السادسة', 'السابعة']
+
+function arabicYearLabel(order) {
+  if (!order || order < 1) return null
+  const word = YEAR_ORDINALS_AR[order - 1]
+  return word ? `السنة ${word}` : `السنة ${order}`
+}
+
 const STATUS_MAP = {
-  1: { ar: 'مقيّد',  color: '#22c55e', bg: 'rgba(34,197,94,0.1)'  },
+  1: { ar: 'يدرس حاليًا', color: '#22c55e', bg: 'rgba(34,197,94,0.1)'  },
   2: { ar: 'منقطع',  color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
   3: { ar: 'خريج',   color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
   4: { ar: 'مسحوب',  color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
@@ -62,22 +72,26 @@ async function fetchAllPages(baseUrl) {
 }
 
 // Module-level cache — fetched once per session, not on every page visit
-const _cache = { programMap: null, deptMap: null, colleges: null }
+const _cache = { programMap: null, deptMap: null, colleges: null, levelMap: null }
 
 async function loadLookups() {
   if (_cache.programMap) return _cache   // already loaded
-  const [progs, depts, cols] = await Promise.all([
+  const [progs, depts, cols, levels] = await Promise.all([
     fetchAll(`${API}/academic-programs?per_page=100`),
     fetchAll(`${API}/departments?per_page=100`),
     fetchAll(`${API}/colleges?per_page=50`),
+    fetchAll(`${API}/academic-levels?per_page=100`),
   ])
   const pm = {}
   if (Array.isArray(progs)) progs.forEach(p => { pm[p.academic_program_id] = { name: p.program_name, dept_id: p.department_id } })
   const dm = {}
   if (Array.isArray(depts)) depts.forEach(d => { dm[d.department_id] = { college_id: d.college_id } })
+  const lm = {}
+  if (Array.isArray(levels)) levels.forEach(l => { lm[l.academic_level_id] = { name: l.level_name, order: l.level_order } })
   _cache.programMap = pm
   _cache.deptMap    = dm
   _cache.colleges   = Array.isArray(cols) ? cols : []
+  _cache.levelMap   = lm
   return _cache
 }
 
@@ -86,8 +100,10 @@ export default function StudentsPage() {
   const [programMap, setProgramMap]     = useState({})   // id -> { name, dept_id }
   const [deptMap, setDeptMap]           = useState({})   // id -> { name, college_id }
   const [colleges, setColleges]         = useState([])   // [{college_id, college_name}]
+  const [levelMap, setLevelMap]         = useState({})   // id -> { name, order }
   const [loading, setLoading]           = useState(true)
   const [error, setError]               = useState('')
+  const [revealedPhones, setRevealedPhones] = useState(new Set())
 
   // Filters
   const [search, setSearch]             = useState('')
@@ -118,6 +134,7 @@ export default function StudentsPage() {
         setProgramMap(lookups.programMap ?? {})
         setDeptMap(lookups.deptMap ?? {})
         setColleges(lookups.colleges ?? [])
+        setLevelMap(lookups.levelMap ?? {})
       } catch {
         setError('تعذّر الاتصال بالخادم. تأكد أن php artisan serve يعمل.')
       } finally {
@@ -141,6 +158,25 @@ export default function StudentsPage() {
     const prog = programMap[student.academic_program_id]
     if (!prog) return null
     return deptMap[prog.dept_id]?.college_id ?? null
+  }
+
+  function getProgramName(student) {
+    return programMap[student.academic_program_id]?.name ?? null
+  }
+
+  function getLevelName(student) {
+    const lvl = levelMap[student.current_academic_level_id]
+    if (!lvl) return null
+    return arabicYearLabel(lvl.order) ?? lvl.name ?? null
+  }
+
+  function togglePhone(studentId) {
+    setRevealedPhones(prev => {
+      const next = new Set(prev)
+      if (next.has(studentId)) next.delete(studentId)
+      else next.add(studentId)
+      return next
+    })
   }
 
   // Debounced search — just resets page
@@ -320,15 +356,16 @@ export default function StudentsPage() {
             <table className="w-full border-collapse">
               <thead>
                 <tr>
-                  <th className="px-4 py-3.5 text-left   text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap">#</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">رقم القيد</th>
+                  <th className="px-4 py-3.5 text-center text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap">#</th>
+                  <th className="px-4 py-3.5 text-center text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">رقم القيد</th>
                   <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">الاسم الكامل</th>
                   <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">الكلية</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">البريد الإلكتروني</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">رقم الهاتف</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">تاريخ القبول</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">الحالة</th>
-                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">الإجراءات</th>
+                  <th className="px-4 py-3.5 text-right  text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">التخصص</th>
+                  <th className="px-4 py-3.5 text-center text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">السنة الدراسية</th>
+                  <th className="px-4 py-3.5 text-center text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">الهاتف</th>
+                  <th className="px-4 py-3.5 text-center text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">تاريخ القبول</th>
+                  <th className="px-4 py-3.5 text-center text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">الحالة</th>
+                  <th className="px-4 py-3.5 text-center text-[12px] font-bold text-white/90 bg-text-dark whitespace-nowrap" dir="rtl">الإجراءات</th>
                 </tr>
               </thead>
               <AnimatePresence mode="wait">
@@ -341,35 +378,67 @@ export default function StudentsPage() {
                 >
                   {pageStudents.map((s, idx) => {
                     const collegeName = getCollegeName(s)
+                    const programName = getProgramName(s)
+                    const levelName   = getLevelName(s)
                     return (
                       <tr key={s.student_id} className="border-b border-primary/7 last:border-b-0 transition-colors duration-150 hover:bg-primary/[0.035]">
-                        <td className="px-4 py-[13px] text-[12px] text-text-light font-semibold w-10">
+                        <td className="px-4 py-[13px] text-[12px] text-text-light font-semibold text-center align-middle w-10">
                           {(safePage - 1) * PAGE_SIZE + idx + 1}
                         </td>
-                        <td className="px-4 py-[13px] align-middle">
+                        <td className="px-4 py-[13px] text-center align-middle">
                           <span className="inline-block px-2.5 py-[3px] bg-primary/8 border border-primary/15 rounded-[8px] text-[12px] font-bold text-primary-dark font-mono">
                             {s.student_number}
                           </span>
                         </td>
-                        <td className="px-4 py-[13px] text-[13.5px] font-semibold text-text-dark align-middle whitespace-nowrap" dir="rtl">
+                        <td className="px-4 py-[13px] text-[13.5px] font-semibold text-text-dark text-right align-middle whitespace-nowrap" dir="rtl">
                           {s.first_name} {s.last_name}
                         </td>
-                        <td className="px-4 py-[13px] align-middle" dir="rtl">
+                        <td className="px-4 py-[13px] text-right align-middle" dir="rtl">
                           {collegeName
                             ? <span className="text-[12px] font-medium text-text-gray whitespace-nowrap">{collegeName}</span>
                             : <span className="text-[11px] text-text-light">—</span>
                           }
                         </td>
-                        <td className="px-4 py-[13px] text-[12.5px] text-text-gray align-middle">{s.email || '—'}</td>
-                        <td className="px-4 py-[13px] text-[13.5px] text-text-dark align-middle whitespace-nowrap">{s.phone_number || '—'}</td>
-                        <td className="px-4 py-[13px] text-[13.5px] text-text-dark align-middle whitespace-nowrap">
+                        <td className="px-4 py-[13px] text-right align-middle" dir="rtl">
+                          {programName
+                            ? <span className="text-[12px] font-medium text-text-gray whitespace-nowrap">{programName}</span>
+                            : <span className="inline-block px-2 py-[3px] rounded-full text-[11px] font-bold whitespace-nowrap text-amber-600" style={{ background: 'rgba(245,158,11,0.1)' }}>لم يتخصص بعد</span>
+                          }
+                        </td>
+                        <td className="px-4 py-[13px] text-center align-middle" dir="rtl">
+                          {levelName
+                            ? <span className="inline-block px-2.5 py-[3px] bg-slate-500/8 rounded-full text-[11.5px] font-semibold text-slate-600 whitespace-nowrap">{levelName}</span>
+                            : <span className="text-[11px] text-text-light">—</span>
+                          }
+                        </td>
+                        <td className="px-4 py-[13px] text-center align-middle">
+                          {revealedPhones.has(s.student_id) ? (
+                            <button
+                              className="text-[12px] font-mono text-text-dark whitespace-nowrap cursor-pointer hover:text-primary transition-colors"
+                              title="إخفاء الرقم"
+                              onClick={() => togglePhone(s.student_id)}
+                            >
+                              {s.phone_number || '—'}
+                            </button>
+                          ) : (
+                            <button
+                              className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[12px] mx-auto cursor-pointer transition-all duration-[180ms] text-green-600 border-green-600/20 bg-green-600/6 hover:bg-green-600/14 hover:border-green-600/35 disabled:opacity-40 disabled:cursor-not-allowed"
+                              title={s.phone_number ? 'إظهار رقم الهاتف' : 'لا يوجد رقم هاتف'}
+                              onClick={() => togglePhone(s.student_id)}
+                              disabled={!s.phone_number}
+                            >
+                              <FaPhone />
+                            </button>
+                          )}
+                        </td>
+                        <td className="px-4 py-[13px] text-[13.5px] text-text-dark text-center align-middle whitespace-nowrap">
                           {s.enrollment_date ? new Date(s.enrollment_date).toLocaleDateString('ar-SY') : '—'}
                         </td>
-                        <td className="px-4 py-[13px] align-middle">
+                        <td className="px-4 py-[13px] text-center align-middle">
                           <StatusBadge statusId={s.student_status_id} />
                         </td>
-                        <td className="px-4 py-[13px] align-middle">
-                          <div className="flex items-center gap-1.5">
+                        <td className="px-4 py-[13px] text-center align-middle">
+                          <div className="flex items-center justify-center gap-1.5">
                             <button
                               className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-blue-500 border-blue-500/20 bg-blue-500/6 hover:bg-blue-500/14 hover:border-blue-500/35"
                               title="عرض الملف"
