@@ -1,5 +1,5 @@
 import {
-  FaHome, FaGraduationCap, FaUserPlus, FaArchive, FaUsers, FaBookOpen, FaLockOpen,
+  FaHome, FaGraduationCap, FaUserPlus, FaArchive, FaUsers, FaBookOpen, FaLockOpen, FaTable,
 } from 'react-icons/fa'
 
 const studentAffairsNav = [
@@ -22,6 +22,7 @@ const studentAffairsNav = [
     items: [
       { to: '/student-affairs/course-offerings',     Icon: FaLockOpen, ar: 'فتح المواد',   en: 'Course Offerings',     end: true },
       { to: '/student-affairs/course-registration', Icon: FaBookOpen, ar: 'تسجيل المواد', en: 'Course Registration', end: true },
+      { to: '/student-affairs/course-table',        Icon: FaTable,    ar: 'جدول المواد',  en: 'Course Table',        end: true },
     ],
   },
   {

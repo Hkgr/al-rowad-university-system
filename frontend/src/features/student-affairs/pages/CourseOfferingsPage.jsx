@@ -108,28 +108,19 @@ function CourseCombobox({ courses, excludeIds, value, onChange, placeholder, cou
   )
 }
 
-// ── One row inside a level column: a curriculum course + its term status ────
+// ── One card: a curriculum course + its details + its term status ───────────
 function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen, onToggle, busy, readOnly, courseDepartmentIdMap, departments }) {
   const [capacity, setCapacity] = useState('40')
   const scope = course ? courseScopeInfo(course.course_id, courseDepartmentIdMap, departments) : null
 
   return (
-    <div className="border border-primary/10 rounded-[10px] px-3 py-2.5" dir="rtl">
-      <div className="flex items-center justify-between gap-2">
+    <div className="border border-primary/12 rounded-[12px] px-4 py-3.5 bg-white hover:shadow-[0_2px_10px_rgba(26,46,16,0.06)] transition-shadow" dir="rtl">
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-[12.5px] font-bold text-text-dark truncate">
-            <span className="font-mono text-primary-dark">{course?.course_code ?? '—'}</span> {course?.course_name}
+          <div className="text-[14px] font-extrabold text-text-dark">
+            <span className="font-mono text-primary-dark">{course?.course_code ?? '—'}</span>
           </div>
-          <div className="flex items-center gap-1.5 mt-1">
-            <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full ${programCourse.course_type === 'mandatory' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
-              {programCourse.course_type === 'mandatory' ? 'إجباري' : 'اختياري'}
-            </span>
-            {scope && (
-              <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full ${scope.className}`}>
-                {scope.label}
-              </span>
-            )}
-          </div>
+          <div className="text-[13px] text-text-dark mt-0.5">{course?.course_name ?? '—'}</div>
         </div>
         {!readOnly && (
           <button
@@ -144,7 +135,32 @@ function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen
         )}
       </div>
 
-      <div className="mt-2">
+      <div className="flex items-center flex-wrap gap-1.5 mt-2.5">
+        <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full ${programCourse.course_type === 'mandatory' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+          {programCourse.course_type === 'mandatory' ? 'إجباري' : 'اختياري'}
+        </span>
+        {scope && (
+          <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full ${scope.className}`}>
+            {scope.label}
+          </span>
+        )}
+      </div>
+
+      {course && (
+        <div className="flex items-center gap-3 mt-2.5 py-2 border-y border-primary/8 text-[11px] text-text-light">
+          <span><b className="text-text-dark">{course.credit_hours ?? '—'}</b> ساعة معتمدة</span>
+          <span className="text-primary/20">|</span>
+          <span>نظري <b className="text-text-dark">{course.theoretical_hours ?? '—'}</b></span>
+          <span className="text-primary/20">|</span>
+          <span>عملي <b className="text-text-dark">{course.practical_hours ?? '—'}</b></span>
+        </div>
+      )}
+
+      {course?.description && (
+        <p className="text-[11px] text-text-light mt-2 line-clamp-2" title={course.description}>{course.description}</p>
+      )}
+
+      <div className="mt-3">
         {offering ? (
           <div className="flex items-center justify-between gap-2">
             <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${offering.status === 'open' ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
@@ -189,7 +205,7 @@ function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen
   )
 }
 
-// ── One column = one academic level (year 1..5) ──────────────────────────────
+// ── One section = one academic level (year 1..5), full-width with a rich grid of course cards ──
 function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove, onOpen, onToggle, busyIds, readOnly, courseDepartmentIdMap, departments }) {
   const [adding, setAdding]   = useState(false)
   const [courseId, setCourseId] = useState('')
@@ -214,92 +230,96 @@ function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove,
   }
 
   return (
-    <div className="bg-white border border-primary/12 rounded-[14px] overflow-hidden flex flex-col shadow-[0_2px_8px_rgba(26,46,16,0.05)]">
-      <div className="px-3.5 py-2.5 bg-primary/[0.06] border-b border-primary/10 flex items-center justify-between" dir="rtl">
-        <span className="text-[12.5px] font-extrabold text-text-dark">{level.level_name}</span>
-        <span className="text-[10.5px] text-text-light bg-white px-1.5 py-0.5 rounded-full font-bold">{rows.length}</span>
+    <div className="bg-white border border-primary/12 rounded-[14px] overflow-hidden shadow-[0_2px_8px_rgba(26,46,16,0.05)] mb-4">
+      <div className="px-4 py-3 bg-primary/[0.06] border-b border-primary/10 flex items-center justify-between" dir="rtl">
+        <span className="text-[14px] font-extrabold text-text-dark">{level.level_name}</span>
+        <span className="text-[11px] text-text-light bg-white px-2 py-0.5 rounded-full font-bold">{rows.length} مادة</span>
       </div>
-      <div className="p-3 space-y-2.5 flex-1 min-h-[80px]">
-        {rows.map(({ programCourse, course, offering }) => (
-          <CurriculumCourseRow
-            key={programCourse.program_course_id}
-            course={course}
-            programCourse={programCourse}
-            offering={offering}
-            onRemove={onRemove}
-            onOpen={onOpen}
-            onToggle={onToggle}
-            busy={!!busyIds[programCourse.program_course_id] || (offering && !!busyIds[offering.course_offering_id])}
-            readOnly={readOnly}
-            courseDepartmentIdMap={courseDepartmentIdMap}
-            departments={departments}
-          />
-        ))}
+      <div className="p-4">
+        {rows.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+            {rows.map(({ programCourse, course, offering }) => (
+              <CurriculumCourseRow
+                key={programCourse.program_course_id}
+                course={course}
+                programCourse={programCourse}
+                offering={offering}
+                onRemove={onRemove}
+                onOpen={onOpen}
+                onToggle={onToggle}
+                busy={!!busyIds[programCourse.program_course_id] || (offering && !!busyIds[offering.course_offering_id])}
+                readOnly={readOnly}
+                courseDepartmentIdMap={courseDepartmentIdMap}
+                departments={departments}
+              />
+            ))}
+          </div>
+        )}
         {rows.length === 0 && !adding && (
           <p className="text-center text-[11.5px] text-text-light py-3" dir="rtl">لا توجد مواد بعد</p>
         )}
-      </div>
-      {!readOnly && (
-      <div className="p-3 border-t border-primary/8">
-        {adding ? (
-          <div className="space-y-2" dir="rtl">
-            <CourseCombobox
-              courses={courses}
-              excludeIds={assignedCourseIds}
-              value={courseId}
-              onChange={setCourseId}
-              courseDepartmentIdMap={courseDepartmentIdMap}
-              departments={departments}
-            />
-            <div className="flex items-center gap-2">
-              <select
-                value={courseType}
-                onChange={e => setCourseType(e.target.value)}
-                className="flex-1 px-2 py-1.5 border border-primary/20 rounded-[7px] text-[11.5px] outline-none focus:border-primary"
-              >
-                <option value="mandatory">إجباري</option>
-                <option value="elective">اختياري</option>
-              </select>
-              <input
-                type="number"
-                min="1"
-                value={capacity}
-                onChange={e => setCapacity(e.target.value)}
-                className="w-16 px-2 py-1.5 border border-primary/20 rounded-[7px] text-[11.5px] text-center outline-none focus:border-primary"
-                placeholder="مقاعد"
+        {!readOnly && (
+        <div className={rows.length > 0 ? 'mt-3.5 pt-3.5 border-t border-primary/8' : ''}>
+          {adding ? (
+            <div className="max-w-md space-y-2" dir="rtl">
+              <CourseCombobox
+                courses={courses}
+                excludeIds={assignedCourseIds}
+                value={courseId}
+                onChange={setCourseId}
+                courseDepartmentIdMap={courseDepartmentIdMap}
+                departments={departments}
               />
+              <div className="flex items-center gap-2">
+                <select
+                  value={courseType}
+                  onChange={e => setCourseType(e.target.value)}
+                  className="flex-1 px-2 py-1.5 border border-primary/20 rounded-[7px] text-[11.5px] outline-none focus:border-primary"
+                >
+                  <option value="mandatory">إجباري</option>
+                  <option value="elective">اختياري</option>
+                </select>
+                <input
+                  type="number"
+                  min="1"
+                  value={capacity}
+                  onChange={e => setCapacity(e.target.value)}
+                  className="w-16 px-2 py-1.5 border border-primary/20 rounded-[7px] text-[11.5px] text-center outline-none focus:border-primary"
+                  placeholder="مقاعد"
+                />
+              </div>
+              {err && <p className="text-[11px] text-red-600">⚠ {err}</p>}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={submit}
+                  disabled={submitting}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 bg-primary text-white rounded-[7px] text-[11.5px] font-bold hover:enabled:bg-primary-dark disabled:opacity-50 transition-colors"
+                >
+                  {submitting ? <FaSpinner className="animate-spin text-[10px]" /> : <FaPlus className="text-[10px]" />}
+                  إضافة
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setAdding(false); setErr('') }}
+                  className="px-2 py-1.5 border border-primary/20 rounded-[7px] text-[11.5px] text-text-light hover:bg-primary/5 transition-colors"
+                >
+                  إلغاء
+                </button>
+              </div>
             </div>
-            {err && <p className="text-[11px] text-red-600">⚠ {err}</p>}
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={submit}
-                disabled={submitting}
-                className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 bg-primary text-white rounded-[7px] text-[11.5px] font-bold hover:enabled:bg-primary-dark disabled:opacity-50 transition-colors"
-              >
-                {submitting ? <FaSpinner className="animate-spin text-[10px]" /> : <FaPlus className="text-[10px]" />}
-                إضافة
-              </button>
-              <button
-                type="button"
-                onClick={() => { setAdding(false); setErr('') }}
-                className="px-2 py-1.5 border border-primary/20 rounded-[7px] text-[11.5px] text-text-light hover:bg-primary/5 transition-colors"
-              >
-                إلغاء
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setAdding(true)}
-            className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 border border-dashed border-primary/30 rounded-[7px] text-[11.5px] font-bold text-primary-dark hover:bg-primary/5 transition-colors"
-          >
-            <FaPlus className="text-[10px]" /> إضافة مادة
-          </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAdding(true)}
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 border border-dashed border-primary/30 rounded-[7px] text-[11.5px] font-bold text-primary-dark hover:bg-primary/5 transition-colors"
+            >
+              <FaPlus className="text-[10px]" /> إضافة مادة
+            </button>
+          )}
+        </div>
         )}
       </div>
-      )}
     </div>
   )
 }
@@ -747,7 +767,7 @@ export default function CourseOfferingsPage() {
                   {previewMode ? 'رجوع للتحرير' : 'معاينة ما تم إدخاله'}
                 </button>
               </div>
-              <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${Math.min(curriculumLevels.length, 5)}, minmax(200px, 1fr))` }}>
+              <div>
                 {curriculumLevels.map(level => {
                   const rows = programCoursesForProgram
                     .filter(pc => pc.academic_level_id === level.academic_level_id && String(pc.recommended_semester_id) === String(semId))
