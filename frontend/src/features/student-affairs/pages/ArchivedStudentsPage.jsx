@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FaArchive, FaBoxOpen } from 'react-icons/fa'
+import { FaArchive, FaBoxOpen, FaEye, FaEdit } from 'react-icons/fa'
 import DataTable from '../../../components/table/DataTable'
 import FilterBar from '../../../components/table/FilterBar'
 
@@ -176,15 +176,32 @@ export default function ArchivedStudentsPage() {
     {
       key: 'actions',
       header: 'الإجراءات',
+      align: 'center',
       render: s => (
-        <button
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] border text-[12.5px] font-bold cursor-pointer transition-all duration-[180ms] text-green-600 border-green-500/25 bg-green-500/6 hover:bg-green-500/14 hover:border-green-500/40"
-          onClick={() => handleRestore(s.student_id)}
-          dir="rtl"
-        >
-          <FaBoxOpen className="text-[12px]" />
-          استعادة
-        </button>
+        <div className="flex items-center justify-center gap-1.5">
+          <button
+            className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-blue-500 border-blue-500/20 bg-blue-500/6 hover:bg-blue-500/14 hover:border-blue-500/35"
+            title="عرض الملف"
+            onClick={() => navigate(`/student-affairs/students/${s.student_id}`)}
+          >
+            <FaEye />
+          </button>
+          <button
+            className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-amber-500 border-amber-500/20 bg-amber-500/6 hover:bg-amber-500/14 hover:border-amber-500/35"
+            title="تعديل"
+            onClick={() => navigate(`/student-affairs/students/${s.student_id}/edit`)}
+          >
+            <FaEdit />
+          </button>
+          <button
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] border text-[12.5px] font-bold cursor-pointer transition-all duration-[180ms] text-green-600 border-green-500/25 bg-green-500/6 hover:bg-green-500/14 hover:border-green-500/40"
+            onClick={() => handleRestore(s.student_id)}
+            dir="rtl"
+          >
+            <FaBoxOpen className="text-[12px]" />
+            استعادة
+          </button>
+        </div>
       ),
     },
   ]
