@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FaEye, FaGraduationCap } from 'react-icons/fa'
+import { FaEye, FaGraduationCap, FaDownload, FaSpinner } from 'react-icons/fa'
 import DataTable from '../../../components/table/DataTable'
 import FilterBar from '../../../components/table/FilterBar'
+import { exportRowsToPdf } from '../../../utils/pdfExport'
 
 const API = `${import.meta.env.VITE_API_BASE_URL || 'https://rust.alrowaduni.edu.sy/api'}/v1`
 const PAGE_SIZE = 15
@@ -63,6 +64,7 @@ export default function GraduatesPage() {
   const [colleges, setColleges]         = useState([])
   const [loading,   setLoading]         = useState(true)
   const [error,     setError]           = useState('')
+  const [pdfLoading, setPdfLoading]     = useState(false)
 
   const [search,        setSearch]        = useState('')
   const [filterCollege, setFilterCollege] = useState('')
@@ -109,6 +111,15 @@ export default function GraduatesPage() {
     return deptMap[prog.dept_id]?.college_id ?? null
   }
 
+  function getCollegeName(student) {
+    const id = getCollegeId(student)
+    return colleges.find(c => c.college_id === id)?.college_name ?? null
+  }
+
+  function getProgramName(student) {
+    return programMap[student.academic_program_id]?.name ?? null
+  }
+
   // Debounced filters — just resets page
   useEffect(() => {
     clearTimeout(debounceRef.current)
@@ -149,6 +160,29 @@ export default function GraduatesPage() {
   const clearFilters = () => {
     setSearch(''); setFilterCollege(''); setFilterProgram(''); setFilterGender('')
     setPage(1)
+  }
+
+  const handleDownloadPdf = async () => {
+    setPdfLoading(true)
+    try {
+      await exportRowsToPdf({
+        title: 'قائمة الخريجين',
+        subtitle: `${filtered.length} خريج${hasFilters ? ' (بعد تطبيق الفلاتر)' : ''}`,
+        columns: [
+          { header: 'رقم القيد', value: s => s.student_number },
+          { header: 'الاسم الكامل', value: s => `${s.first_name} ${s.last_name}` },
+          { header: 'الكلية', value: s => getCollegeName(s) },
+          { header: 'التخصص', value: s => getProgramName(s) },
+          { header: 'البريد الإلكتروني', value: s => s.email },
+          { header: 'الهاتف', value: s => s.phone_number },
+          { header: 'تاريخ القبول', value: s => s.enrollment_date ? new Date(s.enrollment_date).toLocaleDateString('ar-SY') : null },
+        ],
+        rows: filtered,
+        filename: 'قائمة_الخريجين.pdf',
+      })
+    } finally {
+      setPdfLoading(false)
+    }
   }
 
   const columns = [
@@ -228,9 +262,20 @@ export default function GraduatesPage() {
             )}
           </p>
         </div>
-        <div className="flex items-center gap-2 px-4 py-2 bg-purple-50 border border-purple-200 rounded-[12px]" dir="rtl">
-          <FaGraduationCap className="text-purple-500 text-[15px]" />
-          <span className="text-[13px] font-bold text-purple-700">Graduates</span>
+        <div className="flex items-center gap-2.5">
+          <button
+            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-primary/25 text-primary-dark rounded-[12px] text-[13.5px] font-bold whitespace-nowrap transition-all duration-[220ms] hover:bg-primary/6 disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={handleDownloadPdf}
+            disabled={pdfLoading || loading || filtered.length === 0}
+            dir="rtl"
+          >
+            {pdfLoading ? <FaSpinner className="animate-spin text-[12px]" /> : <FaDownload className="text-[12px]" />}
+            <span>{pdfLoading ? 'جارٍ التجهيز…' : 'تنزيل'}</span>
+          </button>
+          <div className="flex items-center gap-2 px-4 py-2 bg-purple-50 border border-purple-200 rounded-[12px]" dir="rtl">
+            <FaGraduationCap className="text-purple-500 text-[15px]" />
+            <span className="text-[13px] font-bold text-purple-700">Graduates</span>
+          </div>
         </div>
       </div>
 

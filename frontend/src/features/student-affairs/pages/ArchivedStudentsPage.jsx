@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FaArchive, FaBoxOpen, FaEye, FaEdit } from 'react-icons/fa'
+import { FaArchive, FaBoxOpen, FaEye, FaEdit, FaDownload, FaSpinner } from 'react-icons/fa'
 import DataTable from '../../../components/table/DataTable'
 import FilterBar from '../../../components/table/FilterBar'
+import { exportRowsToPdf } from '../../../utils/pdfExport'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
@@ -47,6 +48,7 @@ export default function ArchivedStudentsPage() {
   const [colleges, setColleges]     = useState([])
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState('')
+  const [pdfLoading, setPdfLoading] = useState(false)
   const navigate                    = useNavigate()
 
   const [search,        setSearch]        = useState('')
@@ -87,6 +89,15 @@ export default function ArchivedStudentsPage() {
     return deptMap[prog.dept_id]?.college_id ?? null
   }
 
+  function getCollegeName(student) {
+    const id = getCollegeId(student)
+    return colleges.find(c => c.college_id === id)?.college_name ?? null
+  }
+
+  function getProgramName(student) {
+    return programMap[student.academic_program_id]?.name ?? null
+  }
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return students.filter(s => {
@@ -114,6 +125,29 @@ export default function ArchivedStudentsPage() {
 
   const clearFilters = () => {
     setSearch(''); setFilterCollege(''); setFilterProgram(''); setFilterGender('')
+  }
+
+  const handleDownloadPdf = async () => {
+    setPdfLoading(true)
+    try {
+      await exportRowsToPdf({
+        title: 'الطلاب المؤرشفون',
+        subtitle: `${filtered.length} طالب مؤرشف${hasFilters ? ' (بعد تطبيق الفلاتر)' : ''}`,
+        columns: [
+          { header: 'رقم القيد', value: s => s.student_number },
+          { header: 'الاسم الكامل', value: s => `${s.first_name} ${s.last_name}` },
+          { header: 'الكلية', value: s => getCollegeName(s) },
+          { header: 'التخصص', value: s => getProgramName(s) },
+          { header: 'البريد الإلكتروني', value: s => s.email },
+          { header: 'الهاتف', value: s => s.phone_number },
+          { header: 'تاريخ القبول', value: s => s.enrollment_date ? new Date(s.enrollment_date).toLocaleDateString('ar-SY') : null },
+        ],
+        rows: filtered,
+        filename: 'الطلاب_المؤرشفون.pdf',
+      })
+    } finally {
+      setPdfLoading(false)
+    }
   }
 
   const handleRestore = async (id) => {
@@ -220,6 +254,15 @@ export default function ArchivedStudentsPage() {
             )}
           </p>
         </div>
+        <button
+          className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-300 text-slate-600 rounded-[12px] text-[13.5px] font-bold whitespace-nowrap transition-all duration-[220ms] hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          onClick={handleDownloadPdf}
+          disabled={pdfLoading || loading || filtered.length === 0}
+          dir="rtl"
+        >
+          {pdfLoading ? <FaSpinner className="animate-spin text-[12px]" /> : <FaDownload className="text-[12px]" />}
+          <span>{pdfLoading ? 'جارٍ التجهيز…' : 'تنزيل'}</span>
+        </button>
       </div>
 
       {/* Info banner */}

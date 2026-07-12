@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { FaUserPlus, FaEye, FaEdit, FaArchive, FaGraduationCap, FaPhone } from 'react-icons/fa'
+import { FaUserPlus, FaEye, FaEdit, FaArchive, FaGraduationCap, FaPhone, FaDownload, FaSpinner } from 'react-icons/fa'
 import DataTable from '../../../components/table/DataTable'
 import FilterBar from '../../../components/table/FilterBar'
+import { exportRowsToPdf } from '../../../utils/pdfExport'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 const PAGE_SIZE = 15
@@ -101,6 +102,7 @@ export default function StudentsPage() {
   const [loading, setLoading]           = useState(true)
   const [error, setError]               = useState('')
   const [revealedPhones, setRevealedPhones] = useState(new Set())
+  const [pdfLoading, setPdfLoading]     = useState(false)
 
   // Filters
   const [search, setSearch]             = useState('')
@@ -244,6 +246,30 @@ export default function StudentsPage() {
     setSearch(''); setFilterCollege(''); setFilterStatus('')
     setFilterProgram(''); setFilterLevel(''); setFilterGender('')
     setPage(1)
+  }
+
+  const handleDownloadPdf = async () => {
+    setPdfLoading(true)
+    try {
+      await exportRowsToPdf({
+        title: 'قائمة الطلاب',
+        subtitle: `${filtered.length} طالب${hasFilters ? ' (بعد تطبيق الفلاتر)' : ''}`,
+        columns: [
+          { header: 'رقم القيد', value: s => s.student_number },
+          { header: 'الاسم الكامل', value: s => `${s.first_name} ${s.last_name}` },
+          { header: 'الكلية', value: s => getCollegeName(s) },
+          { header: 'التخصص', value: s => getProgramName(s) ?? 'لم يتخصص بعد' },
+          { header: 'السنة الدراسية', value: s => getLevelName(s) },
+          { header: 'الهاتف', value: s => s.phone_number },
+          { header: 'تاريخ القبول', value: s => s.enrollment_date ? new Date(s.enrollment_date).toLocaleDateString('ar-SY') : null },
+          { header: 'الحالة', value: s => STATUS_MAP[s.student_status_id]?.ar },
+        ],
+        rows: filtered,
+        filename: 'قائمة_الطلاب.pdf',
+      })
+    } finally {
+      setPdfLoading(false)
+    }
   }
 
   // Column definitions for the shared DataTable — everything this page-specific
@@ -394,14 +420,25 @@ export default function StudentsPage() {
             )}
           </p>
         </div>
-        <Link
-          to="/student-affairs/students/add"
-          className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-br from-primary to-primary-dark text-white rounded-[12px] no-underline text-[14px] font-bold whitespace-nowrap shadow-[0_4px_16px_rgba(86,153,51,0.35)] transition-all duration-[220ms] hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(86,153,51,0.45)]"
-          dir="rtl"
-        >
-          <FaUserPlus />
-          <span>إضافة طالب</span>
-        </Link>
+        <div className="flex items-center gap-2.5">
+          <button
+            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-primary/25 text-primary-dark rounded-[12px] text-[13.5px] font-bold whitespace-nowrap transition-all duration-[220ms] hover:bg-primary/6 disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={handleDownloadPdf}
+            disabled={pdfLoading || loading || filtered.length === 0}
+            dir="rtl"
+          >
+            {pdfLoading ? <FaSpinner className="animate-spin text-[12px]" /> : <FaDownload className="text-[12px]" />}
+            <span>{pdfLoading ? 'جارٍ التجهيز…' : 'تنزيل'}</span>
+          </button>
+          <Link
+            to="/student-affairs/students/add"
+            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-br from-primary to-primary-dark text-white rounded-[12px] no-underline text-[14px] font-bold whitespace-nowrap shadow-[0_4px_16px_rgba(86,153,51,0.35)] transition-all duration-[220ms] hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(86,153,51,0.45)]"
+            dir="rtl"
+          >
+            <FaUserPlus />
+            <span>إضافة طالب</span>
+          </Link>
+        </div>
       </div>
 
       <FilterBar
