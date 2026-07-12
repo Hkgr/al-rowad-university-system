@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { FaSpinner, FaPlus, FaEdit, FaTrash, FaCheck, FaTimes, FaBook } from 'react-icons/fa'
+import { FaSpinner, FaPlus, FaEdit, FaTrash, FaCheck, FaTimes, FaBook, FaStar, FaRegStar, FaLayerGroup } from 'react-icons/fa'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 function authHeaders() {
@@ -193,6 +193,13 @@ export default function CoursesPage() {
   const [err,         setErr]         = useState('')
   const [success,     setSuccess]     = useState('')
 
+  const [viewTab,     setViewTab]     = useState('courses') // 'courses' | 'byDepartment'
+  const [dvCollegeId, setDvCollegeId] = useState('')
+  const [dvDeptId,    setDvDeptId]    = useState('')
+  const [dvSaving,    setDvSaving]    = useState({})
+  const [dvRemoving,  setDvRemoving]  = useState({})
+  const [dvErr,       setDvErr]       = useState('')
+
   function loadAll() {
     setLoading(true)
     Promise.all([
@@ -258,6 +265,53 @@ export default function CoursesPage() {
     ])
   }
 
+  // ── Department-centric bulk assignment view ──────────────────────────────
+  const dvDepartments = useMemo(
+    () => departments.filter(d => String(d.college_id) === String(dvCollegeId)),
+    [departments, dvCollegeId]
+  )
+  const dvAssigned          = assignments.filter(a => String(a.department_id) === String(dvDeptId))
+  const dvAssignedCourseIds = new Set(dvAssigned.map(a => a.course_id))
+  const dvUnassigned        = courses.filter(c => !dvAssignedCourseIds.has(c.course_id))
+
+  function handleDvCollegeChange(cId) {
+    setDvCollegeId(cId); setDvDeptId(''); setDvErr('')
+  }
+
+  async function reloadAssignments() {
+    const json = await fetch(`${API}/course-departments?per_page=500`, { headers: authHeaders() }).then(r => r.json())
+    if (json.success) setAssignments(json.data?.data ?? json.data ?? [])
+  }
+
+  async function handleDvAdd(courseId) {
+    setDvSaving(p => ({ ...p, [courseId]: true })); setDvErr('')
+    try {
+      const res  = await fetch(`${API}/course-departments`, {
+        method:  'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ course_id: courseId, department_id: parseInt(dvDeptId), is_primary: true }),
+      })
+      const json = await res.json()
+      if (json.success) await reloadAssignments()
+      else setDvErr(json.message || 'فشلت الإضافة')
+    } catch { setDvErr('تعذّر الاتصال بالخادم') }
+    finally { setDvSaving(p => ({ ...p, [courseId]: false })) }
+  }
+
+  async function handleDvRemove(assignmentId) {
+    setDvRemoving(p => ({ ...p, [assignmentId]: true })); setDvErr('')
+    try {
+      const res  = await fetch(`${API}/course-departments/${assignmentId}`, {
+        method:  'DELETE',
+        headers: authHeaders(),
+      })
+      const json = await res.json()
+      if (json.success) setAssignments(p => p.filter(a => a.course_department_id !== assignmentId))
+      else setDvErr(json.message || 'فشل الحذف')
+    } catch { setDvErr('تعذّر الاتصال بالخادم') }
+    finally { setDvRemoving(p => ({ ...p, [assignmentId]: false })) }
+  }
+
   async function handleSave(form, deptSelection) {
     setSaving(true); setErr('')
     const isEdit = mode !== 'add'
@@ -310,7 +364,7 @@ export default function CoursesPage() {
           <h2 className="text-[20px] font-black text-text-dark mb-[3px]">إدارة المواد الدراسية</h2>
           <p className="text-[12.5px] text-text-light">Courses Management</p>
         </div>
-        {mode === null && (
+        {viewTab === 'courses' && mode === null && (
           <button
             onClick={() => { setMode('add'); setErr(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
             className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-[10px] text-[13px] font-bold hover:bg-primary-dark transition-colors"
@@ -318,6 +372,26 @@ export default function CoursesPage() {
             <FaPlus className="text-[11px]" /> إضافة مادة
           </button>
         )}
+      </div>
+
+      {/* Page-level view switch: course-centric list/edit vs. department-centric bulk assignment */}
+      <div className="flex gap-1.5 mb-5 p-1.5 bg-gray-100 rounded-[12px] w-fit" dir="rtl">
+        <button
+          onClick={() => setViewTab('courses')}
+          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-[9px] text-[12.5px] font-bold transition-all whitespace-nowrap ${
+            viewTab === 'courses' ? 'bg-white text-primary shadow-sm' : 'text-text-gray hover:text-text-dark'
+          }`}
+        >
+          <FaBook className="text-[11px]" /> المواد الدراسية
+        </button>
+        <button
+          onClick={() => setViewTab('byDepartment')}
+          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-[9px] text-[12.5px] font-bold transition-all whitespace-nowrap ${
+            viewTab === 'byDepartment' ? 'bg-white text-primary shadow-sm' : 'text-text-gray hover:text-text-dark'
+          }`}
+        >
+          <FaLayerGroup className="text-[11px]" /> عرض حسب القسم
+        </button>
       </div>
 
       {err && (
@@ -328,7 +402,7 @@ export default function CoursesPage() {
       )}
 
       {/* Add / Edit form */}
-      {mode === 'add' && (
+      {viewTab === 'courses' && mode === 'add' && (
         <CourseForm
           onSave={handleSave}
           onCancel={() => { setMode(null); setErr('') }}
@@ -337,7 +411,7 @@ export default function CoursesPage() {
           departments={departments}
         />
       )}
-      {mode !== null && mode !== 'add' && (
+      {viewTab === 'courses' && mode !== null && mode !== 'add' && (
         <CourseForm
           initial={mode}
           onSave={handleSave}
@@ -351,7 +425,7 @@ export default function CoursesPage() {
 
       {loading ? (
         <div className="flex justify-center py-16 text-primary"><FaSpinner className="animate-spin text-[28px]" /></div>
-      ) : (
+      ) : viewTab === 'courses' ? (
         <>
           {/* College filter tabs */}
           <div className="flex gap-1.5 flex-wrap mb-4 p-1.5 bg-gray-100 rounded-[12px] w-fit" dir="rtl">
@@ -375,7 +449,7 @@ export default function CoursesPage() {
           {activeTab === 'shared' && sharedCount > 0 && (
             <div className="mb-4 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-[10px] text-[12px] text-amber-800" dir="rtl">
               هذه المواد غير مرتبطة بأي قسم — يمكن اعتبارها مواد مشتركة لجميع الكليات.
-              يمكنك ربطها بالأقسام من صفحة <strong>مواد الأقسام</strong>.
+              يمكنك ربطها بالأقسام من تبويب <strong>عرض حسب القسم</strong> أعلاه.
             </div>
           )}
 
@@ -462,6 +536,129 @@ export default function CoursesPage() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          {/* Department-centric bulk assignment view */}
+          <div className="bg-white border border-primary/12 rounded-[16px] p-5 mb-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
+            <div className="grid grid-cols-2 max-[600px]:grid-cols-1 gap-4" dir="rtl">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[12px] font-bold text-text-dark">الكلية</label>
+                <select
+                  className="px-3 py-2.5 border border-primary/20 rounded-[10px] text-[13.5px] text-text-dark outline-none focus:border-primary"
+                  value={dvCollegeId}
+                  onChange={e => handleDvCollegeChange(e.target.value)}
+                  dir="rtl"
+                >
+                  <option value="">اختر الكلية</option>
+                  {colleges.map(c => <option key={c.college_id} value={c.college_id}>{c.college_name}</option>)}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[12px] font-bold text-text-dark">القسم</label>
+                <select
+                  className="px-3 py-2.5 border border-primary/20 rounded-[10px] text-[13.5px] text-text-dark outline-none focus:border-primary disabled:opacity-50"
+                  value={dvDeptId}
+                  onChange={e => { setDvDeptId(e.target.value); setDvErr('') }}
+                  disabled={!dvCollegeId}
+                  dir="rtl"
+                >
+                  <option value="">اختر القسم</option>
+                  {dvDepartments.map(d => <option key={d.department_id} value={d.department_id}>{d.department_name}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {dvErr && (
+            <p className="mb-4 px-4 py-2.5 text-[12.5px] text-red-600 bg-red-50 border border-red-200 rounded-[10px]" dir="rtl">⚠ {dvErr}</p>
+          )}
+
+          {dvDeptId && (
+            <div className="grid grid-cols-2 max-[800px]:grid-cols-1 gap-5">
+
+              {/* Left: assigned courses */}
+              <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
+                <div className="px-5 py-3 bg-primary/[0.05] border-b border-primary/10 flex items-center gap-2" dir="rtl">
+                  <span className="text-[13px] font-extrabold text-text-dark">المواد المضافة</span>
+                  <span className="text-[11px] text-text-light bg-primary/10 px-2 py-0.5 rounded-full font-bold">{dvAssigned.length}</span>
+                </div>
+
+                {dvAssigned.length === 0 ? (
+                  <div className="flex flex-col items-center py-14 gap-3">
+                    <FaBook className="text-[36px] text-primary/15" />
+                    <p className="text-[12px] text-text-light" dir="rtl">لا توجد مواد مضافة لهذا القسم</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-primary/6">
+                    {dvAssigned.map(a => {
+                      const course = courses.find(c => c.course_id === a.course_id)
+                      return (
+                        <div key={a.course_department_id} className="flex items-center justify-between gap-3 px-5 py-3.5" dir="rtl">
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-[13px] text-text-dark truncate">
+                              {course?.course_name || `مادة #${a.course_id}`}
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[11px] text-text-light font-mono">{course?.course_code}</span>
+                              {a.is_primary
+                                ? <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 font-bold"><FaStar className="text-[9px]" /> رئيسي</span>
+                                : <span className="inline-flex items-center gap-1 text-[10px] text-text-light"><FaRegStar className="text-[9px]" /> ثانوي</span>
+                              }
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleDvRemove(a.course_department_id)}
+                            disabled={!!dvRemoving[a.course_department_id]}
+                            className="flex items-center gap-1.5 px-3 py-1.5 border border-red-300 text-red-600 rounded-[7px] text-[11.5px] font-bold hover:bg-red-50 disabled:opacity-40 transition-colors flex-shrink-0"
+                          >
+                            {dvRemoving[a.course_department_id]
+                              ? <FaSpinner className="animate-spin text-[10px]" />
+                              : <FaTimes className="text-[10px]" />}
+                            حذف
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Right: available courses to add */}
+              <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
+                <div className="px-5 py-3 bg-primary/[0.05] border-b border-primary/10 flex items-center gap-2" dir="rtl">
+                  <span className="text-[13px] font-extrabold text-text-dark">مواد متاحة للإضافة</span>
+                  <span className="text-[11px] text-text-light bg-primary/10 px-2 py-0.5 rounded-full font-bold">{dvUnassigned.length}</span>
+                </div>
+
+                {dvUnassigned.length === 0 ? (
+                  <p className="text-center text-[12px] text-text-light py-14" dir="rtl">جميع المواد مضافة لهذا القسم</p>
+                ) : (
+                  <div className="divide-y divide-primary/6 max-h-[520px] overflow-y-auto">
+                    {dvUnassigned.map(c => (
+                      <div key={c.course_id} className="flex items-center justify-between gap-3 px-5 py-3.5" dir="rtl">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-[13px] text-text-dark truncate">{c.course_name}</div>
+                          <div className="text-[11px] text-text-light font-mono">{c.course_code}</div>
+                        </div>
+                        <button
+                          onClick={() => handleDvAdd(c.course_id)}
+                          disabled={!!dvSaving[c.course_id]}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-[7px] text-[11.5px] font-bold hover:bg-primary-dark disabled:opacity-40 transition-colors flex-shrink-0"
+                        >
+                          {dvSaving[c.course_id]
+                            ? <FaSpinner className="animate-spin text-[10px]" />
+                            : <FaPlus className="text-[10px]" />}
+                          إضافة
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
             </div>
           )}
         </>
