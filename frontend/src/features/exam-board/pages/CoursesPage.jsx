@@ -10,10 +10,30 @@ const EMPTY_FORM = {
   course_code: '', course_name: '', credit_hours: '', theoretical_hours: '', practical_hours: '', description: '', is_active: true,
 }
 
-function CourseForm({ initial, onSave, onCancel, saving }) {
+function CourseForm({ initial, onSave, onCancel, saving, colleges, departments, initialDepartmentIds }) {
   const [form, setForm] = useState(initial ?? EMPTY_FORM)
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }))
   const isEdit = !!initial
+
+  const [scope, setScope] = useState((initialDepartmentIds?.length ?? 0) > 0 ? 'specific' : 'shared')
+  const [selectedDeptIds, setSelectedDeptIds] = useState(new Set((initialDepartmentIds ?? []).map(String)))
+  function toggleDept(id) {
+    setSelectedDeptIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  const departmentsByCollege = useMemo(() => {
+    const map = {}
+    departments.forEach(d => {
+      const key = String(d.college_id)
+      if (!map[key]) map[key] = []
+      map[key].push(d)
+    })
+    return map
+  }, [departments])
 
   return (
     <div className="bg-white border border-primary/20 rounded-[16px] p-5 mb-5 shadow-[0_2px_12px_rgba(26,46,16,0.08)]">
@@ -95,10 +115,55 @@ function CourseForm({ initial, onSave, onCancel, saving }) {
           dir="rtl"
         />
       </div>
+      <div className="flex flex-col gap-1.5 mb-5" dir="rtl">
+        <label className="text-[11.5px] font-bold text-text-dark">نطاق المادة</label>
+        <div className="flex gap-4 mb-2">
+          <label className="flex items-center gap-2 cursor-pointer text-[13px]">
+            <input type="radio" name="scope" checked={scope === 'shared'} onChange={() => setScope('shared')} />
+            <span className="font-semibold text-text-dark">مشتركة لكل الكليات</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer text-[13px]">
+            <input type="radio" name="scope" checked={scope === 'specific'} onChange={() => setScope('specific')} />
+            <span className="font-semibold text-text-dark">خاصة بأقسام محددة</span>
+          </label>
+        </div>
+        {scope === 'specific' && (
+          <div className="border border-primary/15 rounded-[10px] p-3 max-h-[220px] overflow-y-auto bg-[#fafaf8]">
+            {colleges.length === 0 ? (
+              <p className="text-[12px] text-text-light">لا توجد كليات</p>
+            ) : (
+              colleges.map(col => {
+                const depts = departmentsByCollege[String(col.college_id)] || []
+                if (depts.length === 0) return null
+                return (
+                  <div key={col.college_id} className="mb-2.5 last:mb-0">
+                    <div className="text-[11.5px] font-bold text-primary-dark mb-1">{col.college_name}</div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1.5 pr-2">
+                      {depts.map(d => (
+                        <label key={d.department_id} className="flex items-center gap-1.5 cursor-pointer text-[12.5px]">
+                          <input
+                            type="checkbox"
+                            checked={selectedDeptIds.has(String(d.department_id))}
+                            onChange={() => toggleDept(String(d.department_id))}
+                          />
+                          <span className="text-text-dark">{d.department_name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })
+            )}
+            {selectedDeptIds.size === 0 && (
+              <p className="text-[11.5px] text-amber-600 mt-1">اختر قسمًا واحدًا على الأقل</p>
+            )}
+          </div>
+        )}
+      </div>
       <div className="flex gap-3" dir="rtl">
         <button
-          onClick={() => onSave(form)}
-          disabled={saving || !form.course_code.trim() || !form.course_name.trim() || !form.credit_hours}
+          onClick={() => onSave(form, { scope, departmentIds: [...selectedDeptIds] })}
+          disabled={saving || !form.course_code.trim() || !form.course_name.trim() || !form.credit_hours || (scope === 'specific' && selectedDeptIds.size === 0)}
           className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-[10px] text-[13px] font-bold disabled:opacity-40 hover:enabled:bg-primary-dark transition-colors"
         >
           {saving ? <FaSpinner className="animate-spin text-[11px]" /> : <FaCheck className="text-[11px]" />}
@@ -172,7 +237,28 @@ export default function CoursesPage() {
     setTimeout(() => setSuccess(''), 3000)
   }
 
-  async function handleSave(form) {
+  async function syncDepartmentLinks(courseId, { scope, departmentIds }) {
+    const current    = assignments.filter(a => a.course_id === courseId)
+    const currentIds = new Set(current.map(a => String(a.department_id)))
+    const desiredIds = scope === 'specific' ? new Set(departmentIds.map(String)) : new Set()
+
+    const toAdd    = [...desiredIds].filter(id => !currentIds.has(id))
+    const toRemove = current.filter(a => !desiredIds.has(String(a.department_id)))
+
+    await Promise.all([
+      ...toAdd.map(id => fetch(`${API}/course-departments`, {
+        method:  'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ course_id: courseId, department_id: parseInt(id), is_primary: true }),
+      })),
+      ...toRemove.map(a => fetch(`${API}/course-departments/${a.course_department_id}`, {
+        method:  'DELETE',
+        headers: authHeaders(),
+      })),
+    ])
+  }
+
+  async function handleSave(form, deptSelection) {
     setSaving(true); setErr('')
     const isEdit = mode !== 'add'
     const url    = isEdit ? `${API}/courses/${mode.course_id}` : `${API}/courses`
@@ -193,6 +279,8 @@ export default function CoursesPage() {
       })
       const json = await res.json()
       if (json.success) {
+        const courseId = isEdit ? mode.course_id : json.data.course_id
+        await syncDepartmentLinks(courseId, deptSelection)
         setMode(null)
         loadAll()
         flash(isEdit ? 'تم تعديل المادة بنجاح' : 'تمت إضافة المادة بنجاح')
@@ -241,7 +329,13 @@ export default function CoursesPage() {
 
       {/* Add / Edit form */}
       {mode === 'add' && (
-        <CourseForm onSave={handleSave} onCancel={() => { setMode(null); setErr('') }} saving={saving} />
+        <CourseForm
+          onSave={handleSave}
+          onCancel={() => { setMode(null); setErr('') }}
+          saving={saving}
+          colleges={colleges}
+          departments={departments}
+        />
       )}
       {mode !== null && mode !== 'add' && (
         <CourseForm
@@ -249,6 +343,9 @@ export default function CoursesPage() {
           onSave={handleSave}
           onCancel={() => { setMode(null); setErr('') }}
           saving={saving}
+          colleges={colleges}
+          departments={departments}
+          initialDepartmentIds={assignments.filter(a => a.course_id === mode.course_id).map(a => a.department_id)}
         />
       )}
 
