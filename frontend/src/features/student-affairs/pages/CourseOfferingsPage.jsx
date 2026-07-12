@@ -23,8 +23,18 @@ async function post(url, body) {
   return r.json()
 }
 
+// Same "shared vs. college-specific" logic as CoursesPage — a course counts as shared
+// when it has zero rows in course_departments.
+function courseScopeInfo(courseId, courseCollegeMap, colleges) {
+  const ids = courseCollegeMap[courseId]
+  if (!ids || ids.size === 0) return { label: 'مشتركة', className: 'bg-amber-100 text-amber-700' }
+  const names = colleges.filter(c => ids.has(String(c.college_id))).map(c => c.college_name)
+  const label = names.length <= 1 ? (names[0] || 'خاصة') : `${names.length} كليات`
+  return { label, className: 'bg-primary/10 text-primary-dark' }
+}
+
 // ── Searchable course picker ──────────────────────────────────────────────────
-function CourseCombobox({ courses, excludeIds, value, onChange, placeholder }) {
+function CourseCombobox({ courses, excludeIds, value, onChange, placeholder, courseCollegeMap, colleges }) {
   const [query, setQuery] = useState('')
   const [open, setOpen]   = useState(false)
   const boxRef = useRef(null)
@@ -68,18 +78,28 @@ function CourseCombobox({ courses, excludeIds, value, onChange, placeholder }) {
         <div className="absolute z-20 mt-1 w-full max-h-[220px] overflow-y-auto bg-white border border-primary/15 rounded-[10px] shadow-lg divide-y divide-primary/6">
           {filtered.length === 0 ? (
             <p className="text-center text-[12px] text-text-light py-3" dir="rtl">لا توجد نتائج</p>
-          ) : filtered.map(c => (
-            <button
-              key={c.course_id}
-              type="button"
-              className="w-full text-right px-3 py-1.5 text-[12.5px] hover:bg-primary/[0.05] transition-colors"
-              onClick={() => { onChange(c.course_id); setOpen(false); setQuery('') }}
-              dir="rtl"
-            >
-              <span className="font-mono text-primary-dark font-bold">{c.course_code}</span>
-              <span className="text-text-dark"> — {c.course_name}</span>
-            </button>
-          ))}
+          ) : filtered.map(c => {
+            const scope = courseCollegeMap && colleges ? courseScopeInfo(c.course_id, courseCollegeMap, colleges) : null
+            return (
+              <button
+                key={c.course_id}
+                type="button"
+                className="w-full flex items-center justify-between gap-2 text-right px-3 py-1.5 text-[12.5px] hover:bg-primary/[0.05] transition-colors"
+                onClick={() => { onChange(c.course_id); setOpen(false); setQuery('') }}
+                dir="rtl"
+              >
+                <span className="min-w-0 truncate">
+                  <span className="font-mono text-primary-dark font-bold">{c.course_code}</span>
+                  <span className="text-text-dark"> — {c.course_name}</span>
+                </span>
+                {scope && (
+                  <span className={`flex-shrink-0 text-[9.5px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${scope.className}`}>
+                    {scope.label}
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
       )}
     </div>
@@ -87,8 +107,9 @@ function CourseCombobox({ courses, excludeIds, value, onChange, placeholder }) {
 }
 
 // ── One row inside a level column: a curriculum course + its term status ────
-function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen, onToggle, busy, readOnly }) {
+function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen, onToggle, busy, readOnly, courseCollegeMap, colleges }) {
   const [capacity, setCapacity] = useState('40')
+  const scope = course ? courseScopeInfo(course.course_id, courseCollegeMap, colleges) : null
 
   return (
     <div className="border border-primary/10 rounded-[10px] px-3 py-2.5" dir="rtl">
@@ -97,9 +118,16 @@ function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen
           <div className="text-[12.5px] font-bold text-text-dark truncate">
             <span className="font-mono text-primary-dark">{course?.course_code ?? '—'}</span> {course?.course_name}
           </div>
-          <span className={`inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${programCourse.course_type === 'mandatory' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
-            {programCourse.course_type === 'mandatory' ? 'إجباري' : 'اختياري'}
-          </span>
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full ${programCourse.course_type === 'mandatory' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+              {programCourse.course_type === 'mandatory' ? 'إجباري' : 'اختياري'}
+            </span>
+            {scope && (
+              <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full ${scope.className}`}>
+                {scope.label}
+              </span>
+            )}
+          </div>
         </div>
         {!readOnly && (
           <button
@@ -160,7 +188,7 @@ function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen
 }
 
 // ── One column = one academic level (year 1..5) ──────────────────────────────
-function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove, onOpen, onToggle, busyIds, readOnly }) {
+function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove, onOpen, onToggle, busyIds, readOnly, courseCollegeMap, colleges }) {
   const [adding, setAdding]   = useState(false)
   const [courseId, setCourseId] = useState('')
   const [courseType, setCourseType] = useState('mandatory')
@@ -201,6 +229,8 @@ function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove,
             onToggle={onToggle}
             busy={!!busyIds[programCourse.program_course_id] || (offering && !!busyIds[offering.course_offering_id])}
             readOnly={readOnly}
+            courseCollegeMap={courseCollegeMap}
+            colleges={colleges}
           />
         ))}
         {rows.length === 0 && !adding && (
@@ -211,7 +241,14 @@ function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove,
       <div className="p-3 border-t border-primary/8">
         {adding ? (
           <div className="space-y-2" dir="rtl">
-            <CourseCombobox courses={courses} excludeIds={assignedCourseIds} value={courseId} onChange={setCourseId} />
+            <CourseCombobox
+              courses={courses}
+              excludeIds={assignedCourseIds}
+              value={courseId}
+              onChange={setCourseId}
+              courseCollegeMap={courseCollegeMap}
+              colleges={colleges}
+            />
             <div className="flex items-center gap-2">
               <select
                 value={courseType}
@@ -388,6 +425,7 @@ export default function CourseOfferingsPage() {
   const [levels, setLevels]         = useState([])
   const [programCourses, setProgramCourses] = useState([])
   const [offerings, setOfferings]   = useState([])
+  const [courseDepartments, setCourseDepartments] = useState([])
   const [loading, setLoading]       = useState(true)
 
   const [yearId, setYearId]       = useState('')
@@ -410,7 +448,8 @@ export default function CourseOfferingsPage() {
       get(`${API}/academic-levels?per_page=20`),
       get(`${API}/program-courses?per_page=200`),
       get(`${API}/course-offerings?per_page=200`),
-    ]).then(([y, s, col, dep, prog, crs, lvl, pc, off]) => {
+      get(`${API}/course-departments?per_page=500`),
+    ]).then(([y, s, col, dep, prog, crs, lvl, pc, off, cd]) => {
       setYears(y.success ? (y.data?.data ?? []) : [])
       setSemesters(s.success ? (s.data?.data ?? []) : [])
       setColleges(col.success ? (col.data?.data ?? []) : [])
@@ -420,10 +459,24 @@ export default function CourseOfferingsPage() {
       setLevels(lvl.success ? (lvl.data?.data ?? []) : [])
       setProgramCourses(pc.success ? (pc.data?.data ?? []) : [])
       setOfferings(off.success ? (off.data?.data ?? []) : [])
+      setCourseDepartments(cd.success ? (cd.data?.data ?? []) : [])
     }).finally(() => setLoading(false))
   }, [])
 
   const courseMap = useMemo(() => Object.fromEntries(courses.map(c => [c.course_id, c])), [courses])
+
+  // course_id → Set<college_id>, mirrors the same "shared vs. college-specific" logic used in CoursesPage
+  const courseCollegeMap = useMemo(() => {
+    const deptToCollege = {}
+    departments.forEach(d => { deptToCollege[d.department_id] = d.college_id })
+    const map = {}
+    courseDepartments.forEach(a => {
+      const colId = deptToCollege[a.department_id]
+      if (!map[a.course_id]) map[a.course_id] = new Set()
+      if (colId) map[a.course_id].add(String(colId))
+    })
+    return map
+  }, [courseDepartments, departments])
 
   const departmentsInCollege = useMemo(
     () => departments.filter(d => String(d.college_id) === String(collegeId)),
@@ -692,6 +745,8 @@ export default function CourseOfferingsPage() {
                       onToggle={handleToggleStatus}
                       busyIds={busyIds}
                       readOnly={previewMode}
+                      courseCollegeMap={courseCollegeMap}
+                      colleges={colleges}
                     />
                   )
                 })}
