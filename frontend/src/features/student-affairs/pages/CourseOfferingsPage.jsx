@@ -23,18 +23,20 @@ async function post(url, body) {
   return r.json()
 }
 
-// Same "shared vs. college-specific" logic as CoursesPage — a course counts as shared
-// when it has zero rows in course_departments.
-function courseScopeInfo(courseId, courseCollegeMap, colleges) {
-  const ids = courseCollegeMap[courseId]
+// Same "shared vs. department-specific" logic as CoursesPage — a course counts as shared
+// when it has zero rows in course_departments. Department granularity matches the
+// business rule that a course can be restricted to specific departments within a college
+// (e.g. مادة خاصة بهندسة المعلوماتية والكهرباء فقط، وليس العمارة).
+function courseScopeInfo(courseId, courseDepartmentIdMap, departments) {
+  const ids = courseDepartmentIdMap[courseId]
   if (!ids || ids.size === 0) return { label: 'مشتركة', className: 'bg-amber-100 text-amber-700' }
-  const names = colleges.filter(c => ids.has(String(c.college_id))).map(c => c.college_name)
-  const label = names.length <= 1 ? (names[0] || 'خاصة') : `${names.length} كليات`
+  const names = departments.filter(d => ids.has(String(d.department_id))).map(d => d.department_name)
+  const label = names.length <= 1 ? (names[0] || 'خاصة') : `${names.length} أقسام`
   return { label, className: 'bg-primary/10 text-primary-dark' }
 }
 
 // ── Searchable course picker ──────────────────────────────────────────────────
-function CourseCombobox({ courses, excludeIds, value, onChange, placeholder, courseCollegeMap, colleges }) {
+function CourseCombobox({ courses, excludeIds, value, onChange, placeholder, courseDepartmentIdMap, departments }) {
   const [query, setQuery] = useState('')
   const [open, setOpen]   = useState(false)
   const boxRef = useRef(null)
@@ -79,7 +81,7 @@ function CourseCombobox({ courses, excludeIds, value, onChange, placeholder, cou
           {filtered.length === 0 ? (
             <p className="text-center text-[12px] text-text-light py-3" dir="rtl">لا توجد نتائج</p>
           ) : filtered.map(c => {
-            const scope = courseCollegeMap && colleges ? courseScopeInfo(c.course_id, courseCollegeMap, colleges) : null
+            const scope = courseDepartmentIdMap && departments ? courseScopeInfo(c.course_id, courseDepartmentIdMap, departments) : null
             return (
               <button
                 key={c.course_id}
@@ -107,9 +109,9 @@ function CourseCombobox({ courses, excludeIds, value, onChange, placeholder, cou
 }
 
 // ── One row inside a level column: a curriculum course + its term status ────
-function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen, onToggle, busy, readOnly, courseCollegeMap, colleges }) {
+function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen, onToggle, busy, readOnly, courseDepartmentIdMap, departments }) {
   const [capacity, setCapacity] = useState('40')
-  const scope = course ? courseScopeInfo(course.course_id, courseCollegeMap, colleges) : null
+  const scope = course ? courseScopeInfo(course.course_id, courseDepartmentIdMap, departments) : null
 
   return (
     <div className="border border-primary/10 rounded-[10px] px-3 py-2.5" dir="rtl">
@@ -188,7 +190,7 @@ function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen
 }
 
 // ── One column = one academic level (year 1..5) ──────────────────────────────
-function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove, onOpen, onToggle, busyIds, readOnly, courseCollegeMap, colleges }) {
+function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove, onOpen, onToggle, busyIds, readOnly, courseDepartmentIdMap, departments }) {
   const [adding, setAdding]   = useState(false)
   const [courseId, setCourseId] = useState('')
   const [courseType, setCourseType] = useState('mandatory')
@@ -229,8 +231,8 @@ function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove,
             onToggle={onToggle}
             busy={!!busyIds[programCourse.program_course_id] || (offering && !!busyIds[offering.course_offering_id])}
             readOnly={readOnly}
-            courseCollegeMap={courseCollegeMap}
-            colleges={colleges}
+            courseDepartmentIdMap={courseDepartmentIdMap}
+            departments={departments}
           />
         ))}
         {rows.length === 0 && !adding && (
@@ -246,8 +248,8 @@ function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove,
               excludeIds={assignedCourseIds}
               value={courseId}
               onChange={setCourseId}
-              courseCollegeMap={courseCollegeMap}
-              colleges={colleges}
+              courseDepartmentIdMap={courseDepartmentIdMap}
+              departments={departments}
             />
             <div className="flex items-center gap-2">
               <select
@@ -465,18 +467,18 @@ export default function CourseOfferingsPage() {
 
   const courseMap = useMemo(() => Object.fromEntries(courses.map(c => [c.course_id, c])), [courses])
 
-  // course_id → Set<college_id>, mirrors the same "shared vs. college-specific" logic used in CoursesPage
-  const courseCollegeMap = useMemo(() => {
-    const deptToCollege = {}
-    departments.forEach(d => { deptToCollege[d.department_id] = d.college_id })
+  // course_id → Set<department_id>, mirrors the same "shared vs. department-specific" logic
+  // used in CoursesPage — department granularity (not college) so that e.g. a course linked
+  // only to هندسة المعلوماتية + هندسة الكهرباء correctly excludes العمارة, even though all
+  // three departments belong to the same college.
+  const courseDepartmentIdMap = useMemo(() => {
     const map = {}
     courseDepartments.forEach(a => {
-      const colId = deptToCollege[a.department_id]
       if (!map[a.course_id]) map[a.course_id] = new Set()
-      if (colId) map[a.course_id].add(String(colId))
+      map[a.course_id].add(String(a.department_id))
     })
     return map
-  }, [courseDepartments, departments])
+  }, [courseDepartments])
 
   const departmentsInCollege = useMemo(
     () => departments.filter(d => String(d.college_id) === String(collegeId)),
@@ -500,6 +502,24 @@ export default function CourseOfferingsPage() {
     () => new Set(programCoursesForProgram.map(pc => pc.course_id)),
     [programCoursesForProgram]
   )
+
+  // Department that the selected program belongs to — used to filter the course picker
+  // down to shared courses + courses specifically linked to this department.
+  const selectedProgramDepartmentId = useMemo(() => {
+    const program = programs.find(p => String(p.academic_program_id) === String(programId))
+    return program ? String(program.department_id) : null
+  }, [programs, programId])
+
+  // Only courses that are shared (no course_departments rows) or specifically linked to the
+  // selected program's department may be added to its curriculum — mirrors the البرمجة 1
+  // example: available to هندسة المعلوماتية/الكهرباء but not العمارة, even within the same كلية.
+  const eligibleCourses = useMemo(() => {
+    if (!selectedProgramDepartmentId) return courses
+    return courses.filter(c => {
+      const ids = courseDepartmentIdMap[c.course_id]
+      return !ids || ids.size === 0 || ids.has(selectedProgramDepartmentId)
+    })
+  }, [courses, courseDepartmentIdMap, selectedProgramDepartmentId])
 
   function offeringFor(courseId) {
     return offerings.find(o =>
@@ -737,7 +757,7 @@ export default function CourseOfferingsPage() {
                       key={level.academic_level_id}
                       level={level}
                       rows={rows}
-                      courses={courses}
+                      courses={eligibleCourses}
                       assignedCourseIds={assignedCourseIds}
                       onAdd={handleAddCurriculumCourse}
                       onRemove={handleRemoveCurriculumCourse}
@@ -745,8 +765,8 @@ export default function CourseOfferingsPage() {
                       onToggle={handleToggleStatus}
                       busyIds={busyIds}
                       readOnly={previewMode}
-                      courseCollegeMap={courseCollegeMap}
-                      colleges={colleges}
+                      courseDepartmentIdMap={courseDepartmentIdMap}
+                      departments={departments}
                     />
                   )
                 })}
