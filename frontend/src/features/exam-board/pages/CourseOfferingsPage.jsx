@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import {
-  FaSpinner, FaPlus, FaSearch, FaLockOpen, FaLock, FaCheckCircle, FaTimes, FaLayerGroup, FaEye, FaPen, FaChalkboardTeacher,
+  FaSpinner, FaPlus, FaSearch, FaLockOpen, FaLock, FaCheckCircle, FaTimes, FaLayerGroup, FaEye, FaPen,
 } from 'react-icons/fa'
+import InstructorAssignment from '../components/InstructorAssignment'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
@@ -108,42 +109,8 @@ function CourseCombobox({ courses, excludeIds, value, onChange, placeholder, cou
   )
 }
 
-// ── Instructor assignment dropdown for one offering ──────────────────────────
-function InstructorSelect({ offering, facultyMembers, onAssign, busy, readOnly }) {
-  const value = offering.faculty_member_id ?? ''
-
-  if (readOnly) {
-    const current = facultyMembers.find(f => f.faculty_member_id === offering.faculty_member_id)
-    return (
-      <p className="text-[11px] text-text-light mt-2 flex items-center gap-1.5" dir="rtl">
-        <FaChalkboardTeacher className="text-[10px] flex-shrink-0" />
-        {current ? `${current.employee?.first_name ?? ''} ${current.employee?.last_name ?? ''}`.trim() : 'بدون أستاذ'}
-      </p>
-    )
-  }
-
-  return (
-    <div className="flex items-center gap-1.5 mt-2" dir="rtl">
-      <FaChalkboardTeacher className="text-[11px] text-text-light flex-shrink-0" />
-      <select
-        value={value}
-        onChange={e => onAssign(offering, e.target.value ? Number(e.target.value) : null)}
-        disabled={busy}
-        className="flex-1 min-w-0 px-2 py-1 border border-primary/20 rounded-[7px] text-[11px] text-text-dark outline-none focus:border-primary disabled:opacity-50"
-      >
-        <option value="">بدون أستاذ</option>
-        {facultyMembers.map(f => (
-          <option key={f.faculty_member_id} value={f.faculty_member_id}>
-            {f.employee?.first_name} {f.employee?.last_name}
-          </option>
-        ))}
-      </select>
-    </div>
-  )
-}
-
 // ── One card: a curriculum course + its details + its term status ───────────
-function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen, onToggle, onAssignInstructor, busy, instructorBusy, readOnly, courseDepartmentIdMap, departments, facultyMembers }) {
+function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen, onToggle, onInstructorUpdated, busy, readOnly, courseDepartmentIdMap, departments, facultyMembers }) {
   const [capacity, setCapacity] = useState('40')
   const scope = course ? courseScopeInfo(course.course_id, courseDepartmentIdMap, departments) : null
 
@@ -216,11 +183,10 @@ function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen
           <span className="inline-block text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-text-light">لم تُفتح لهذا الفصل بعد</span>
         ) : null}
         {offering && (
-          <InstructorSelect
+          <InstructorAssignment
             offering={offering}
-            facultyMembers={facultyMembers}
-            onAssign={onAssignInstructor}
-            busy={instructorBusy}
+            facultyOptions={facultyMembers}
+            onUpdated={onInstructorUpdated}
             readOnly={readOnly}
           />
         )}
@@ -250,7 +216,7 @@ function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen
 }
 
 // ── One section = one academic level (year 1..5), full-width with a rich grid of course cards ──
-function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove, onOpen, onToggle, onAssignInstructor, busyIds, readOnly, courseDepartmentIdMap, departments, facultyMembers }) {
+function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove, onOpen, onToggle, onInstructorUpdated, busyIds, readOnly, courseDepartmentIdMap, departments, facultyMembers }) {
   const [adding, setAdding]   = useState(false)
   const [courseId, setCourseId] = useState('')
   const [courseType, setCourseType] = useState('mandatory')
@@ -291,9 +257,8 @@ function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove,
                 onRemove={onRemove}
                 onOpen={onOpen}
                 onToggle={onToggle}
-                onAssignInstructor={onAssignInstructor}
+                onInstructorUpdated={onInstructorUpdated}
                 busy={!!busyIds[programCourse.program_course_id] || (offering && !!busyIds[offering.course_offering_id])}
-                instructorBusy={offering && !!busyIds[`instr-${offering.course_offering_id}`]}
                 readOnly={readOnly}
                 courseDepartmentIdMap={courseDepartmentIdMap}
                 departments={departments}
@@ -372,7 +337,7 @@ function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove,
 }
 
 // ── Shared / common courses (open to every college) ──────────────────────────
-function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onToggle, onAssignInstructor, busyIds, facultyMembers }) {
+function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onToggle, onInstructorUpdated, busyIds, facultyMembers }) {
   const [adding, setAdding] = useState(false)
   const [courseId, setCourseId] = useState('')
   const [capacity, setCapacity] = useState('40')
@@ -433,11 +398,10 @@ function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onTogg
                   </button>
                 </div>
               </div>
-              <InstructorSelect
+              <InstructorAssignment
                 offering={o}
-                facultyMembers={facultyMembers}
-                onAssign={onAssignInstructor}
-                busy={!!busyIds[`instr-${o.course_offering_id}`]}
+                facultyOptions={facultyMembers}
+                onUpdated={onInstructorUpdated}
                 readOnly={false}
               />
             </div>
@@ -712,22 +676,9 @@ export default function CourseOfferingsPage() {
     }
   }
 
-  async function handleAssignInstructor(offering, facultyMemberId) {
-    setBusyIds(p => ({ ...p, [`instr-${offering.course_offering_id}`]: true }))
-    try {
-      const res = await fetch(`${API}/course-offerings/${offering.course_offering_id}`, {
-        method: 'PUT',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ faculty_member_id: facultyMemberId }),
-      })
-      const json = await res.json()
-      if (json.success) {
-        setOfferings(prev => prev.map(o => o.course_offering_id === offering.course_offering_id ? { ...o, faculty_member_id: facultyMemberId } : o))
-        showToast(facultyMemberId ? 'تم تعيين الأستاذ' : 'تم إلغاء تعيين الأستاذ')
-      }
-    } finally {
-      setBusyIds(p => ({ ...p, [`instr-${offering.course_offering_id}`]: false }))
-    }
+  function handleInstructorUpdated(offering, { faculty_member_id, faculty_member }) {
+    setOfferings(prev => prev.map(o => o.course_offering_id === offering.course_offering_id ? { ...o, faculty_member_id, faculty_member } : o))
+    showToast('تم تحديث تعيين الأساتذة')
   }
 
   async function handleAddSharedCourse(courseId, capacity) {
@@ -805,7 +756,7 @@ export default function CourseOfferingsPage() {
             semId={semId}
             onAdd={handleAddSharedCourse}
             onToggle={handleToggleStatus}
-            onAssignInstructor={handleAssignInstructor}
+            onInstructorUpdated={handleInstructorUpdated}
             busyIds={busyIds}
             facultyMembers={facultyOptions}
           />
@@ -874,7 +825,7 @@ export default function CourseOfferingsPage() {
                       onRemove={handleRemoveCurriculumCourse}
                       onOpen={handleOpenOffering}
                       onToggle={handleToggleStatus}
-                      onAssignInstructor={handleAssignInstructor}
+                      onInstructorUpdated={handleInstructorUpdated}
                       busyIds={busyIds}
                       readOnly={previewMode}
                       courseDepartmentIdMap={courseDepartmentIdMap}

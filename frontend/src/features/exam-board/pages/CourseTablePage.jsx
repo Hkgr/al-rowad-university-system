@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
-import { FaSpinner, FaDownload, FaTable, FaChalkboardTeacher } from 'react-icons/fa'
+import { FaSpinner, FaDownload, FaTable } from 'react-icons/fa'
 import DataTable from '../../../components/table/DataTable'
 import FilterBar from '../../../components/table/FilterBar'
 import { exportRowsToPdf } from '../../../utils/pdfExport'
+import InstructorAssignment from '../components/InstructorAssignment'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
@@ -16,34 +17,6 @@ async function get(url) {
 }
 
 const TYPE_LABEL = { mandatory: 'إجباري', elective: 'اختياري' }
-
-// Compact inline reassign control for the "الأستاذ" column — lets management
-// change the instructor directly from the course table, same PUT the
-// exam-board Course Offerings page uses.
-function InstructorCell({ offering, facultyOptions, onAssign, busy }) {
-  if (!offering) return <span className="text-text-light">—</span>
-
-  const value = offering.faculty_member_id ?? ''
-  return (
-    <div className="flex items-center gap-1.5 justify-center" dir="rtl">
-      <FaChalkboardTeacher className="text-[10px] text-text-light flex-shrink-0" />
-      <select
-        value={value}
-        onChange={e => onAssign(offering, e.target.value ? Number(e.target.value) : null)}
-        disabled={busy}
-        onClick={e => e.stopPropagation()}
-        className="min-w-[120px] px-2 py-1 border border-primary/20 rounded-[7px] text-[11px] text-text-dark outline-none focus:border-primary disabled:opacity-50"
-      >
-        <option value="">بدون أستاذ</option>
-        {facultyOptions.map(f => (
-          <option key={f.faculty_member_id} value={f.faculty_member_id}>
-            {f.employee?.first_name} {f.employee?.last_name}
-          </option>
-        ))}
-      </select>
-    </div>
-  )
-}
 
 export default function CourseTablePage() {
   const [years, setYears]             = useState([])
@@ -70,8 +43,6 @@ export default function CourseTablePage() {
   const [levelFilter, setLevelFilter] = useState('')
   const [typeFilter, setTypeFilter]   = useState('')
 
-  const [busyIds, setBusyIds]         = useState({})
-  const [assignErr, setAssignErr]     = useState('')
 
   useEffect(() => {
     Promise.all([
@@ -113,26 +84,8 @@ export default function CourseTablePage() {
       .map(f => ({ ...f, employee: employeeMap[f.employee_id] }))
   }, [facultyMembers, employees])
 
-  async function handleAssignInstructor(offering, facultyMemberId) {
-    setAssignErr('')
-    setBusyIds(p => ({ ...p, [offering.course_offering_id]: true }))
-    try {
-      const res = await fetch(`${API}/course-offerings/${offering.course_offering_id}`, {
-        method: 'PUT',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ faculty_member_id: facultyMemberId }),
-      })
-      const json = await res.json()
-      if (json.success) {
-        setOfferings(prev => prev.map(o => o.course_offering_id === offering.course_offering_id ? { ...o, faculty_member_id: facultyMemberId } : o))
-      } else {
-        setAssignErr(json.message || 'فشل تعيين الأستاذ')
-      }
-    } catch {
-      setAssignErr('تعذّر الاتصال بالخادم')
-    } finally {
-      setBusyIds(p => ({ ...p, [offering.course_offering_id]: false }))
-    }
+  function handleInstructorUpdated(offering, { faculty_member_id, faculty_member }) {
+    setOfferings(prev => prev.map(o => o.course_offering_id === offering.course_offering_id ? { ...o, faculty_member_id, faculty_member } : o))
   }
 
   const activeLevels = useMemo(
@@ -351,9 +304,6 @@ export default function CourseTablePage() {
             <p className="text-center text-[13px] text-text-light py-8" dir="rtl">اختر الكلية على الأقل لعرض جدول المواد</p>
           ) : (
             <>
-              {assignErr && (
-                <div className="mb-3 px-4 py-2.5 text-[12.5px] text-red-600 bg-red-50 border border-red-200 rounded-[10px]" dir="rtl">⚠ {assignErr}</div>
-              )}
               <div className="flex items-center justify-between gap-3 flex-wrap mb-3" dir="rtl">
                 <div className="flex-1 min-w-[240px]">
                   <FilterBar
@@ -405,12 +355,14 @@ export default function CourseTablePage() {
                   },
                   {
                     key: 'instructor', header: 'الأستاذ', align: 'center', render: r => (
-                      <InstructorCell
-                        offering={r.offering}
-                        facultyOptions={facultyOptions}
-                        onAssign={handleAssignInstructor}
-                        busy={!!(r.offering && busyIds[r.offering.course_offering_id])}
-                      />
+                      r.offering ? (
+                        <InstructorAssignment
+                          offering={r.offering}
+                          facultyOptions={facultyOptions}
+                          onUpdated={handleInstructorUpdated}
+                          readOnly={false}
+                        />
+                      ) : <span className="text-text-light">—</span>
                     ),
                   },
                 ]}
