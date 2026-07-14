@@ -52,6 +52,12 @@ import CourseOfferingsPage    from '../features/exam-board/pages/CourseOfferings
 import CourseTablePage        from '../features/exam-board/pages/CourseTablePage'
 import ExamPlaceholder        from '../features/exam-board/pages/ExamPlaceholder'
 
+// ── بوابة الأستاذ (Professor Dashboard) ─────────────────────────────────────
+import professorNav             from '../features/professor-dashboard/nav'
+import ProfessorHome            from '../features/professor-dashboard/pages/ProfessorHome'
+import MySubjectsGradeEntry     from '../features/professor-dashboard/pages/MySubjectsGradeEntry'
+import AttendanceDeprivationPage from '../features/professor-dashboard/pages/AttendanceDeprivationPage'
+
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem('token')
   return token ? children : <Navigate to="/login" replace />
@@ -148,6 +154,19 @@ export default function App() {
           <Route path="/hr/employees/:id"      element={<EmployeeProfilePage />} />
           <Route path="/hr/faculty"            element={<FacultyPage />}         />
           <Route path="/hr/positions"          element={<PositionsPage />}       />
+        </Route>
+
+        {/* ── بوابة الأستاذ dashboard ── */}
+        <Route
+          element={
+            <ProtectedRoute>
+              <DashboardLayout nav={professorNav} appTitle="بوابة الأستاذ" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/professor"             element={<ProfessorHome />}             />
+          <Route path="/professor/grade-entry" element={<MySubjectsGradeEntry />}       />
+          <Route path="/professor/attendance"  element={<AttendanceDeprivationPage />}  />
         </Route>
 
         {/* Default redirect */}
