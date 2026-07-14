@@ -55,7 +55,6 @@ import ExamPlaceholder        from '../features/exam-board/pages/ExamPlaceholder
 // ── بوابة الأستاذ (Professor Dashboard) ─────────────────────────────────────
 import professorNav             from '../features/professor-dashboard/nav'
 import ProfessorHome            from '../features/professor-dashboard/pages/ProfessorHome'
-import MySubjectsGradeEntry     from '../features/professor-dashboard/pages/MySubjectsGradeEntry'
 import AttendanceDeprivationPage from '../features/professor-dashboard/pages/AttendanceDeprivationPage'
 
 function ProtectedRoute({ children }) {
@@ -165,7 +164,6 @@ export default function App() {
           }
         >
           <Route path="/professor"             element={<ProfessorHome />}             />
-          <Route path="/professor/grade-entry" element={<MySubjectsGradeEntry />}       />
           <Route path="/professor/attendance"  element={<AttendanceDeprivationPage />}  />
         </Route>
 

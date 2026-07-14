@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useLocation } from 'react-router-dom'
 import {
   FaSpinner, FaBook, FaChevronDown, FaPlus, FaCalendarCheck,
   FaExclamationTriangle, FaCheck, FaSave,
@@ -384,14 +385,19 @@ function DeprivationPanel({ offeringId }) {
 // ── Main page ─────────────────────────────────────────────────────────────
 
 export default function AttendanceDeprivationPage() {
-  const { facultyMember, semester, offerings, loading, error } = useMyOfferings()
-  const [selectedId, setSelectedId] = useState(null)
+  const { facultyMember, offerings, loading, error } = useMyOfferings()
+  const location = useLocation()
+  const [selectedId, setSelectedId] = useState(location.state?.offeringId ?? null)
+
+  useEffect(() => {
+    if (location.state?.offeringId) setSelectedId(location.state.offeringId)
+  }, [location.state])
 
   return (
     <>
       <div className="mb-5" dir="rtl">
         <h2 className="text-[20px] font-black text-text-dark mb-[3px]">الحضور والحرمان</h2>
-        <p className="text-[12.5px] text-text-light">Attendance & Deprivation {semester ? `— ${semester.semester_name}` : ''}</p>
+        <p className="text-[12.5px] text-text-light">Attendance & Deprivation</p>
       </div>
 
       {loading && <div className="flex justify-center py-12 text-primary"><FaSpinner className="animate-spin text-[24px]" /></div>}
@@ -405,7 +411,7 @@ export default function AttendanceDeprivationPage() {
       )}
 
       {!loading && facultyMember && offerings.length === 0 && (
-        <p className="text-center text-[13px] text-text-light py-16" dir="rtl">لا توجد مواد مسندة إليك هذا الفصل</p>
+        <p className="text-center text-[13px] text-text-light py-16" dir="rtl">لا توجد مواد مسندة إليك حالياً</p>
       )}
 
       {!loading && facultyMember && offerings.length > 0 && (
@@ -426,6 +432,9 @@ export default function AttendanceDeprivationPage() {
                   <div className="font-bold text-[13.5px] text-text-dark truncate">{o.course?.course_name || o.course_name || `مادة #${o.course_offering_id}`}</div>
                   <div className="text-[11px] text-text-light font-mono mt-0.5">
                     {o.course?.course_code}{o.section_number ? ` — شعبة ${o.section_number}` : ''}
+                  </div>
+                  <div className="text-[10.5px] text-text-light mt-0.5 truncate">
+                    {o.academic_year?.year_name} {o.semester?.semester_name ? `— ${o.semester.semester_name}` : ''}
                   </div>
                 </div>
                 <FaChevronDown className={`text-[12px] text-primary/50 flex-shrink-0 transition-transform duration-200 ${active ? 'rotate-180' : ''}`} />

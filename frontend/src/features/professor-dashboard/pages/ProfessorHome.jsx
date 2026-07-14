@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { FaSpinner, FaChalkboardTeacher, FaEdit, FaCalendarCheck, FaExclamationCircle } from 'react-icons/fa'
+import { FaSpinner, FaChalkboardTeacher, FaCalendarCheck, FaExclamationCircle, FaBook } from 'react-icons/fa'
 import useMyOfferings from '../hooks/useMyOfferings'
 
 const RANK_AR = {
@@ -10,7 +10,7 @@ const RANK_AR = {
 export default function ProfessorHome() {
   const user    = JSON.parse(localStorage.getItem('user') || '{}')
   const dateStr = new Date().toLocaleDateString('ar-SY', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-  const { facultyMember, semester, offerings, loading, error } = useMyOfferings()
+  const { facultyMember, offerings, loading, error } = useMyOfferings()
 
   return (
     <>
@@ -59,12 +59,46 @@ export default function ProfessorHome() {
           <div className="bg-white border border-primary/12 rounded-[16px] px-5 py-4 mb-6 flex items-center gap-3" dir="rtl">
             <span className="text-[13px] text-text-light">أنت أستاذ</span>
             <span className="text-[18px] font-black text-primary">{offerings.length}</span>
-            <span className="text-[13px] text-text-light">مادة {semester ? `— ${semester.semester_name}` : 'هذا الفصل'}</span>
+            <span className="text-[13px] text-text-light">مادة مفتوحة حالياً</span>
           </div>
+
+          <div className="flex items-center gap-2 mb-3 text-[13px] font-bold text-text-dark" dir="rtl">
+            <FaBook className="text-primary text-[13px]" /> موادي
+          </div>
+
+          {offerings.length === 0 && (
+            <div className="bg-white border border-primary/12 rounded-[16px] px-5 py-10 mb-6 text-center" dir="rtl">
+              <p className="text-[13px] text-text-light">لا توجد مواد مسندة إليك حالياً</p>
+            </div>
+          )}
+
+          {offerings.length > 0 && (
+            <div className="grid grid-cols-3 max-[900px]:grid-cols-2 max-[600px]:grid-cols-1 gap-4 mb-6">
+              {offerings.map(o => (
+                <Link
+                  key={o.course_offering_id}
+                  to="/professor/attendance"
+                  state={{ offeringId: o.course_offering_id }}
+                  className="text-right bg-white border border-primary/12 rounded-[16px] px-5 py-4 flex items-center gap-3 shadow-[0_2px_10px_rgba(26,46,16,0.05)] no-underline transition-all duration-200 hover:-translate-y-[2px] hover:shadow-[0_6px_20px_rgba(26,46,16,0.1)]"
+                  dir="rtl"
+                >
+                  <div className="w-11 h-11 rounded-[11px] bg-primary/10 flex items-center justify-center text-[18px] text-primary flex-shrink-0">
+                    <FaBook />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-[13.5px] text-text-dark truncate">{o.course?.course_name || `مادة #${o.course_offering_id}`}</div>
+                    <div className="text-[11px] text-text-light font-mono mt-0.5">{o.course?.course_code}</div>
+                    <div className="text-[10.5px] text-text-light mt-0.5">
+                      {o.academic_year?.year_name} {o.semester?.semester_name ? `— ${o.semester.semester_name}` : ''}
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
 
           <div className="grid grid-cols-2 max-[600px]:grid-cols-1 gap-4 mb-6">
             {[
-              { Icon: FaEdit,          color: '#569933', ar: 'إدخال الدرجات',    en: 'Grade Entry', to: '/professor/grade-entry' },
               { Icon: FaCalendarCheck, color: '#f59e0b', ar: 'الحضور والحرمان',  en: 'Attendance',   to: '/professor/attendance'  },
             ].map(({ Icon, color, ar, en, to }) => (
               <Link

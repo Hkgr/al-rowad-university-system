@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import {
-  FaSpinner, FaPlus, FaSearch, FaLockOpen, FaLock, FaCheckCircle, FaTimes, FaLayerGroup, FaEye, FaPen,
+  FaSpinner, FaPlus, FaSearch, FaLockOpen, FaLock, FaCheckCircle, FaTimes, FaLayerGroup, FaEye, FaPen, FaChalkboardTeacher,
 } from 'react-icons/fa'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
@@ -108,8 +108,42 @@ function CourseCombobox({ courses, excludeIds, value, onChange, placeholder, cou
   )
 }
 
+// ── Instructor assignment dropdown for one offering ──────────────────────────
+function InstructorSelect({ offering, facultyMembers, onAssign, busy, readOnly }) {
+  const value = offering.faculty_member_id ?? ''
+
+  if (readOnly) {
+    const current = facultyMembers.find(f => f.faculty_member_id === offering.faculty_member_id)
+    return (
+      <p className="text-[11px] text-text-light mt-2 flex items-center gap-1.5" dir="rtl">
+        <FaChalkboardTeacher className="text-[10px] flex-shrink-0" />
+        {current ? `${current.employee?.first_name ?? ''} ${current.employee?.last_name ?? ''}`.trim() : 'بدون أستاذ'}
+      </p>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 mt-2" dir="rtl">
+      <FaChalkboardTeacher className="text-[11px] text-text-light flex-shrink-0" />
+      <select
+        value={value}
+        onChange={e => onAssign(offering, e.target.value ? Number(e.target.value) : null)}
+        disabled={busy}
+        className="flex-1 min-w-0 px-2 py-1 border border-primary/20 rounded-[7px] text-[11px] text-text-dark outline-none focus:border-primary disabled:opacity-50"
+      >
+        <option value="">بدون أستاذ</option>
+        {facultyMembers.map(f => (
+          <option key={f.faculty_member_id} value={f.faculty_member_id}>
+            {f.employee?.first_name} {f.employee?.last_name}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
 // ── One card: a curriculum course + its details + its term status ───────────
-function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen, onToggle, busy, readOnly, courseDepartmentIdMap, departments }) {
+function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen, onToggle, onAssignInstructor, busy, instructorBusy, readOnly, courseDepartmentIdMap, departments, facultyMembers }) {
   const [capacity, setCapacity] = useState('40')
   const scope = course ? courseScopeInfo(course.course_id, courseDepartmentIdMap, departments) : null
 
@@ -180,7 +214,17 @@ function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen
           </div>
         ) : readOnly ? (
           <span className="inline-block text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-text-light">لم تُفتح لهذا الفصل بعد</span>
-        ) : (
+        ) : null}
+        {offering && (
+          <InstructorSelect
+            offering={offering}
+            facultyMembers={facultyMembers}
+            onAssign={onAssignInstructor}
+            busy={instructorBusy}
+            readOnly={readOnly}
+          />
+        )}
+        {!offering && !readOnly && (
           <div className="flex items-center gap-1.5">
             <input
               type="number"
@@ -206,7 +250,7 @@ function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen
 }
 
 // ── One section = one academic level (year 1..5), full-width with a rich grid of course cards ──
-function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove, onOpen, onToggle, busyIds, readOnly, courseDepartmentIdMap, departments }) {
+function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove, onOpen, onToggle, onAssignInstructor, busyIds, readOnly, courseDepartmentIdMap, departments, facultyMembers }) {
   const [adding, setAdding]   = useState(false)
   const [courseId, setCourseId] = useState('')
   const [courseType, setCourseType] = useState('mandatory')
@@ -247,10 +291,13 @@ function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove,
                 onRemove={onRemove}
                 onOpen={onOpen}
                 onToggle={onToggle}
+                onAssignInstructor={onAssignInstructor}
                 busy={!!busyIds[programCourse.program_course_id] || (offering && !!busyIds[offering.course_offering_id])}
+                instructorBusy={offering && !!busyIds[`instr-${offering.course_offering_id}`]}
                 readOnly={readOnly}
                 courseDepartmentIdMap={courseDepartmentIdMap}
                 departments={departments}
+                facultyMembers={facultyMembers}
               />
             ))}
           </div>
@@ -325,7 +372,7 @@ function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove,
 }
 
 // ── Shared / common courses (open to every college) ──────────────────────────
-function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onToggle, busyIds }) {
+function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onToggle, onAssignInstructor, busyIds, facultyMembers }) {
   const [adding, setAdding] = useState(false)
   const [courseId, setCourseId] = useState('')
   const [capacity, setCapacity] = useState('40')
@@ -365,25 +412,34 @@ function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onTogg
           const course = courseMap[o.course_id]
           const isOpen = o.status === 'open'
           return (
-            <div key={o.course_offering_id} className="flex items-center justify-between gap-3 border border-primary/10 rounded-[10px] px-3.5 py-2" dir="rtl">
-              <div className="text-[12.5px] font-bold text-text-dark">
-                <span className="font-mono text-primary-dark">{course?.course_code ?? '—'}</span> — {course?.course_name ?? '—'}
-                <span className="text-[11px] text-text-light font-normal"> ({o.available_seats}/{o.capacity})</span>
+            <div key={o.course_offering_id} className="border border-primary/10 rounded-[10px] px-3.5 py-2" dir="rtl">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[12.5px] font-bold text-text-dark">
+                  <span className="font-mono text-primary-dark">{course?.course_code ?? '—'}</span> — {course?.course_name ?? '—'}
+                  <span className="text-[11px] text-text-light font-normal"> ({o.available_seats}/{o.capacity})</span>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className={`px-2 py-0.5 rounded-full text-[10.5px] font-bold ${isOpen ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
+                    {isOpen ? 'مفتوحة' : 'مغلقة'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onToggle(o)}
+                    disabled={!!busyIds[o.course_offering_id]}
+                    className="flex items-center gap-1 px-2 py-1 border border-primary/25 rounded-[7px] text-[10.5px] font-bold text-primary-dark hover:bg-primary/7 disabled:opacity-40 transition-colors"
+                  >
+                    {isOpen ? <FaLock className="text-[9px]" /> : <FaLockOpen className="text-[9px]" />}
+                    {isOpen ? 'إغلاق' : 'فتح'}
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <span className={`px-2 py-0.5 rounded-full text-[10.5px] font-bold ${isOpen ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
-                  {isOpen ? 'مفتوحة' : 'مغلقة'}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => onToggle(o)}
-                  disabled={!!busyIds[o.course_offering_id]}
-                  className="flex items-center gap-1 px-2 py-1 border border-primary/25 rounded-[7px] text-[10.5px] font-bold text-primary-dark hover:bg-primary/7 disabled:opacity-40 transition-colors"
-                >
-                  {isOpen ? <FaLock className="text-[9px]" /> : <FaLockOpen className="text-[9px]" />}
-                  {isOpen ? 'إغلاق' : 'فتح'}
-                </button>
-              </div>
+              <InstructorSelect
+                offering={o}
+                facultyMembers={facultyMembers}
+                onAssign={onAssignInstructor}
+                busy={!!busyIds[`instr-${o.course_offering_id}`]}
+                readOnly={false}
+              />
             </div>
           )
         })}
@@ -448,6 +504,8 @@ export default function CourseOfferingsPage() {
   const [programCourses, setProgramCourses] = useState([])
   const [offerings, setOfferings]   = useState([])
   const [courseDepartments, setCourseDepartments] = useState([])
+  const [facultyMembers, setFacultyMembers] = useState([])
+  const [employees, setEmployees]   = useState([])
   const [loading, setLoading]       = useState(true)
 
   const [yearId, setYearId]       = useState('')
@@ -471,7 +529,9 @@ export default function CourseOfferingsPage() {
       get(`${API}/program-courses?per_page=200`),
       get(`${API}/course-offerings?per_page=200`),
       get(`${API}/course-departments?per_page=500`),
-    ]).then(([y, s, col, dep, prog, crs, lvl, pc, off, cd]) => {
+      get(`${API}/faculty-members?per_page=100`),
+      get(`${API}/employees?per_page=500`),
+    ]).then(([y, s, col, dep, prog, crs, lvl, pc, off, cd, fac, emp]) => {
       setYears(y.success ? (y.data?.data ?? []) : [])
       setSemesters(s.success ? (s.data?.data ?? []) : [])
       setColleges(col.success ? (col.data?.data ?? []) : [])
@@ -482,10 +542,21 @@ export default function CourseOfferingsPage() {
       setProgramCourses(pc.success ? (pc.data?.data ?? []) : [])
       setOfferings(off.success ? (off.data?.data ?? []) : [])
       setCourseDepartments(cd.success ? (cd.data?.data ?? []) : [])
+      setFacultyMembers(fac.success ? (fac.data?.data ?? fac.data ?? []) : [])
+      setEmployees(emp.success ? (emp.data?.data ?? emp.data ?? []) : [])
     }).finally(() => setLoading(false))
   }, [])
 
   const courseMap = useMemo(() => Object.fromEntries(courses.map(c => [c.course_id, c])), [courses])
+
+  // FacultyMemberResource doesn't embed the employee relation, so names are joined
+  // client-side against /employees by employee_id.
+  const facultyOptions = useMemo(() => {
+    const employeeMap = Object.fromEntries(employees.map(e => [e.employee_id, e]))
+    return facultyMembers
+      .filter(f => f.is_active)
+      .map(f => ({ ...f, employee: employeeMap[f.employee_id] }))
+  }, [facultyMembers, employees])
 
   // course_id → Set<department_id>, mirrors the same "shared vs. department-specific" logic
   // used in CoursesPage — department granularity (not college) so that e.g. a course linked
@@ -641,6 +712,24 @@ export default function CourseOfferingsPage() {
     }
   }
 
+  async function handleAssignInstructor(offering, facultyMemberId) {
+    setBusyIds(p => ({ ...p, [`instr-${offering.course_offering_id}`]: true }))
+    try {
+      const res = await fetch(`${API}/course-offerings/${offering.course_offering_id}`, {
+        method: 'PUT',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ faculty_member_id: facultyMemberId }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        setOfferings(prev => prev.map(o => o.course_offering_id === offering.course_offering_id ? { ...o, faculty_member_id: facultyMemberId } : o))
+        showToast(facultyMemberId ? 'تم تعيين الأستاذ' : 'تم إلغاء تعيين الأستاذ')
+      }
+    } finally {
+      setBusyIds(p => ({ ...p, [`instr-${offering.course_offering_id}`]: false }))
+    }
+  }
+
   async function handleAddSharedCourse(courseId, capacity) {
     const json = await post(`${API}/course-offerings`, {
       course_id: courseId,
@@ -716,7 +805,9 @@ export default function CourseOfferingsPage() {
             semId={semId}
             onAdd={handleAddSharedCourse}
             onToggle={handleToggleStatus}
+            onAssignInstructor={handleAssignInstructor}
             busyIds={busyIds}
+            facultyMembers={facultyOptions}
           />
 
           {/* College + Program selector */}
@@ -783,10 +874,12 @@ export default function CourseOfferingsPage() {
                       onRemove={handleRemoveCurriculumCourse}
                       onOpen={handleOpenOffering}
                       onToggle={handleToggleStatus}
+                      onAssignInstructor={handleAssignInstructor}
                       busyIds={busyIds}
                       readOnly={previewMode}
                       courseDepartmentIdMap={courseDepartmentIdMap}
                       departments={departments}
+                      facultyMembers={facultyOptions}
                     />
                   )
                 })}

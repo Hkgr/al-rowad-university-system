@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { FaSpinner, FaDownload, FaTable } from 'react-icons/fa'
+import { FaSpinner, FaDownload, FaTable, FaChalkboardTeacher } from 'react-icons/fa'
 import DataTable from '../../../components/table/DataTable'
 import FilterBar from '../../../components/table/FilterBar'
 import { exportRowsToPdf } from '../../../utils/pdfExport'
@@ -17,6 +17,34 @@ async function get(url) {
 
 const TYPE_LABEL = { mandatory: 'إجباري', elective: 'اختياري' }
 
+// Compact inline reassign control for the "الأستاذ" column — lets management
+// change the instructor directly from the course table, same PUT the
+// exam-board Course Offerings page uses.
+function InstructorCell({ offering, facultyOptions, onAssign, busy }) {
+  if (!offering) return <span className="text-text-light">—</span>
+
+  const value = offering.faculty_member_id ?? ''
+  return (
+    <div className="flex items-center gap-1.5 justify-center" dir="rtl">
+      <FaChalkboardTeacher className="text-[10px] text-text-light flex-shrink-0" />
+      <select
+        value={value}
+        onChange={e => onAssign(offering, e.target.value ? Number(e.target.value) : null)}
+        disabled={busy}
+        onClick={e => e.stopPropagation()}
+        className="min-w-[120px] px-2 py-1 border border-primary/20 rounded-[7px] text-[11px] text-text-dark outline-none focus:border-primary disabled:opacity-50"
+      >
+        <option value="">بدون أستاذ</option>
+        {facultyOptions.map(f => (
+          <option key={f.faculty_member_id} value={f.faculty_member_id}>
+            {f.employee?.first_name} {f.employee?.last_name}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
 export default function CourseTablePage() {
   const [years, setYears]             = useState([])
   const [semesters, setSemesters]     = useState([])
@@ -27,6 +55,8 @@ export default function CourseTablePage() {
   const [levels, setLevels]           = useState([])
   const [programCourses, setProgramCourses] = useState([])
   const [offerings, setOfferings]     = useState([])
+  const [facultyMembers, setFacultyMembers] = useState([])
+  const [employees, setEmployees]     = useState([])
   const [loading, setLoading]         = useState(true)
   const [pdfLoading, setPdfLoading]   = useState(false)
 
@@ -40,6 +70,9 @@ export default function CourseTablePage() {
   const [levelFilter, setLevelFilter] = useState('')
   const [typeFilter, setTypeFilter]   = useState('')
 
+  const [busyIds, setBusyIds]         = useState({})
+  const [assignErr, setAssignErr]     = useState('')
+
   useEffect(() => {
     Promise.all([
       get(`${API}/academic-years?per_page=50`),
@@ -51,7 +84,9 @@ export default function CourseTablePage() {
       get(`${API}/academic-levels?per_page=20`),
       get(`${API}/program-courses?per_page=500`),
       get(`${API}/course-offerings?per_page=500`),
-    ]).then(([y, s, col, dep, prog, crs, lvl, pc, off]) => {
+      get(`${API}/faculty-members?per_page=100`),
+      get(`${API}/employees?per_page=500`),
+    ]).then(([y, s, col, dep, prog, crs, lvl, pc, off, fac, emp]) => {
       setYears(y.success ? (y.data?.data ?? []) : [])
       setSemesters(s.success ? (s.data?.data ?? []) : [])
       setColleges(col.success ? (col.data?.data ?? []) : [])
@@ -61,11 +96,44 @@ export default function CourseTablePage() {
       setLevels(lvl.success ? (lvl.data?.data ?? []) : [])
       setProgramCourses(pc.success ? (pc.data?.data ?? []) : [])
       setOfferings(off.success ? (off.data?.data ?? []) : [])
+      setFacultyMembers(fac.success ? (fac.data?.data ?? fac.data ?? []) : [])
+      setEmployees(emp.success ? (emp.data?.data ?? emp.data ?? []) : [])
     }).finally(() => setLoading(false))
   }, [])
 
   const courseMap = useMemo(() => Object.fromEntries(courses.map(c => [c.course_id, c])), [courses])
   const programMap = useMemo(() => Object.fromEntries(programs.map(p => [p.academic_program_id, p])), [programs])
+
+  // FacultyMemberResource doesn't embed the employee relation, so names are joined
+  // client-side against /employees by employee_id — same join used in Course Offerings.
+  const facultyOptions = useMemo(() => {
+    const employeeMap = Object.fromEntries(employees.map(e => [e.employee_id, e]))
+    return facultyMembers
+      .filter(f => f.is_active)
+      .map(f => ({ ...f, employee: employeeMap[f.employee_id] }))
+  }, [facultyMembers, employees])
+
+  async function handleAssignInstructor(offering, facultyMemberId) {
+    setAssignErr('')
+    setBusyIds(p => ({ ...p, [offering.course_offering_id]: true }))
+    try {
+      const res = await fetch(`${API}/course-offerings/${offering.course_offering_id}`, {
+        method: 'PUT',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ faculty_member_id: facultyMemberId }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        setOfferings(prev => prev.map(o => o.course_offering_id === offering.course_offering_id ? { ...o, faculty_member_id: facultyMemberId } : o))
+      } else {
+        setAssignErr(json.message || 'فشل تعيين الأستاذ')
+      }
+    } catch {
+      setAssignErr('تعذّر الاتصال بالخادم')
+    } finally {
+      setBusyIds(p => ({ ...p, [offering.course_offering_id]: false }))
+    }
+  }
 
   const activeLevels = useMemo(
     () => [...levels].filter(l => l.is_active).sort((a, b) => a.level_order - b.level_order),
@@ -155,6 +223,13 @@ export default function CourseTablePage() {
     return { label: 'مغلقة', className: 'bg-gray-200 text-gray-600' }
   }
 
+  function instructorNameFor(offering) {
+    if (!offering?.faculty_member_id) return '—'
+    const f = facultyOptions.find(fm => fm.faculty_member_id === offering.faculty_member_id)
+    if (!f) return '—'
+    return `${f.employee?.first_name ?? ''} ${f.employee?.last_name ?? ''}`.trim() || '—'
+  }
+
   async function handleDownloadPdf() {
     setPdfLoading(true)
     try {
@@ -174,6 +249,7 @@ export default function CourseTablePage() {
           { header: 'الساعات المعتمدة', value: r => r.creditHours },
           { header: 'النوع', value: r => TYPE_LABEL[r.courseType] ?? r.courseType },
           { header: 'حالة الفتح', value: r => offeringStatusLabel(r.offering).label },
+          { header: 'الأستاذ', value: r => instructorNameFor(r.offering) },
         ],
         rows: filteredRows,
         filename: 'جدول_المواد.pdf',
@@ -275,6 +351,9 @@ export default function CourseTablePage() {
             <p className="text-center text-[13px] text-text-light py-8" dir="rtl">اختر الكلية على الأقل لعرض جدول المواد</p>
           ) : (
             <>
+              {assignErr && (
+                <div className="mb-3 px-4 py-2.5 text-[12.5px] text-red-600 bg-red-50 border border-red-200 rounded-[10px]" dir="rtl">⚠ {assignErr}</div>
+              )}
               <div className="flex items-center justify-between gap-3 flex-wrap mb-3" dir="rtl">
                 <div className="flex-1 min-w-[240px]">
                   <FilterBar
@@ -323,6 +402,16 @@ export default function CourseTablePage() {
                       const s = offeringStatusLabel(r.offering)
                       return <span className={`inline-block text-[10.5px] font-bold px-2 py-0.5 rounded-full ${s.className}`}>{s.label}</span>
                     },
+                  },
+                  {
+                    key: 'instructor', header: 'الأستاذ', align: 'center', render: r => (
+                      <InstructorCell
+                        offering={r.offering}
+                        facultyOptions={facultyOptions}
+                        onAssign={handleAssignInstructor}
+                        busy={!!(r.offering && busyIds[r.offering.course_offering_id])}
+                      />
+                    ),
                   },
                 ]}
                 rows={filteredRows}

@@ -19,47 +19,16 @@ async function findMyFacultyMember(employeeId) {
   }
 }
 
-// Finds "the currently open term" by probing every (year × semester) combo
-// for offerings, same pattern GradeEntryPage.jsx uses within one selected
-// year — here probed across all years since there's no manual year picker.
-async function getOpenTermOfferings() {
-  const [y, s] = await Promise.all([
-    fetch(`${API}/academic-years?per_page=50`, { headers: authHeaders() }).then(r => r.json()),
-    fetch(`${API}/semesters?per_page=20`,      { headers: authHeaders() }).then(r => r.json()),
-  ])
-  const years   = y.success ? (y.data?.data ?? y.data ?? []) : []
-  const allSems = s.success ? (s.data?.data ?? s.data ?? []) : []
-
-  const probes = []
-  for (const yr of years) {
-    for (const sem of allSems) {
-      probes.push(
-        fetch(`${API}/course-offerings/by-semester?academic_year_id=${yr.academic_year_id}&semester_id=${sem.semester_id}&per_page=1`, { headers: authHeaders() })
-          .then(r => r.json())
-          .then(json => ({ yr, sem, has: json.success && (json.data?.data?.length ?? 0) > 0 }))
-          .catch(() => ({ yr, sem, has: false }))
-      )
-    }
-  }
-  const results = await Promise.all(probes)
-  const match = results.find(r => r.has)
-  if (!match) return { academicYear: null, semester: null, offerings: [] }
-
-  const offRes  = await fetch(`${API}/course-offerings/by-semester?academic_year_id=${match.yr.academic_year_id}&semester_id=${match.sem.semester_id}&per_page=100`, { headers: authHeaders() })
-  const offJson = await offRes.json()
-  return {
-    academicYear: match.yr,
-    semester: match.sem,
-    offerings: offJson.success ? (offJson.data?.data ?? offJson.data ?? []) : [],
-  }
+// Every currently-open offering, across every academic year/semester —
+// eager-loads course/academicYear/semester/facultyMember server-side
+// (CourseOfferingController::open). A professor's subjects aren't
+// guaranteed to sit in a single "current" term, so this fetches all open
+// offerings rather than guessing at one term and filters client-side.
+async function getMyOpenOfferings(facultyMemberId) {
+  const res  = await fetch(`${API}/course-offerings/open?per_page=200`, { headers: authHeaders() })
+  const json = await res.json()
+  const all  = json.success ? (json.data?.data ?? json.data ?? []) : []
+  return all.filter(o => Number(o.faculty_member_id) === Number(facultyMemberId))
 }
 
-async function getMyOpenTermOfferings(facultyMemberId) {
-  const { academicYear, semester, offerings } = await getOpenTermOfferings()
-  return {
-    academicYear, semester,
-    offerings: offerings.filter(o => o.faculty_member_id === facultyMemberId),
-  }
-}
-
-export { API, authHeaders, findMyFacultyMember, getOpenTermOfferings, getMyOpenTermOfferings }
+export { API, authHeaders, findMyFacultyMember, getMyOpenOfferings }
