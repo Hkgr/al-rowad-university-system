@@ -14,9 +14,6 @@ import EditStudentPage      from '../features/student-affairs/pages/EditStudentP
 import StudentProfilePage   from '../features/student-affairs/pages/StudentProfilePage'
 import ArchivedStudentsPage from '../features/student-affairs/pages/ArchivedStudentsPage'
 import GraduatesPage       from '../features/student-affairs/pages/GraduatesPage'
-import CourseRegistrationPage from '../features/student-affairs/pages/CourseRegistrationPage'
-import CourseOfferingsPage    from '../features/student-affairs/pages/CourseOfferingsPage'
-import CourseTablePage        from '../features/student-affairs/pages/CourseTablePage'
 
 // ── بوابة الطالب (Student Dashboard) ────────────────────────────────────────
 import studentNav        from '../features/student-dashboard/nav'
@@ -50,6 +47,9 @@ import GradeEntryPage    from '../features/exam-board/pages/GradeEntryPage'
 import ApprovalsPage     from '../features/exam-board/pages/ApprovalsPage'
 import DeprivationPage        from '../features/exam-board/pages/DeprivationPage'
 import CoursesPage            from '../features/exam-board/pages/CoursesPage'
+import CourseRegistrationPage from '../features/exam-board/pages/CourseRegistrationPage'
+import CourseOfferingsPage    from '../features/exam-board/pages/CourseOfferingsPage'
+import CourseTablePage        from '../features/exam-board/pages/CourseTablePage'
 import ExamPlaceholder        from '../features/exam-board/pages/ExamPlaceholder'
 
 function ProtectedRoute({ children }) {
@@ -78,9 +78,6 @@ export default function App() {
           <Route path="/student-affairs/students/add"      element={<AddStudentPage />}        />
           <Route path="/student-affairs/students/archived" element={<ArchivedStudentsPage />}  />
           <Route path="/student-affairs/graduates"         element={<GraduatesPage />}         />
-          <Route path="/student-affairs/course-registration" element={<CourseRegistrationPage />} />
-          <Route path="/student-affairs/course-offerings"    element={<CourseOfferingsPage />}    />
-          <Route path="/student-affairs/course-table"        element={<CourseTablePage />}        />
           <Route path="/student-affairs/students/:id"      element={<StudentProfilePage />}    />
           <Route path="/student-affairs/students/:id/edit" element={<EditStudentPage />}       />
         </Route>
@@ -116,6 +113,9 @@ export default function App() {
           <Route path="/exam-board/supplementary" element={<ExamPlaceholder title="الامتحانات التكميلية" en="Supplementary Exams" />} />
           <Route path="/exam-board/results"       element={<ExamPlaceholder title="النتائج والتقارير"    en="Results" />} />
           <Route path="/exam-board/courses"             element={<CoursesPage />} />
+          <Route path="/exam-board/course-registration" element={<CourseRegistrationPage />} />
+          <Route path="/exam-board/course-offerings"    element={<CourseOfferingsPage />}    />
+          <Route path="/exam-board/course-table"        element={<CourseTablePage />}        />
           <Route path="/exam-board/appeals"          element={<ExamPlaceholder title="التظلمات"             en="Appeals" />} />
           <Route path="/exam-board/settings"         element={<ExamPlaceholder title="الإعدادات"            en="Settings" />} />
         </Route>
