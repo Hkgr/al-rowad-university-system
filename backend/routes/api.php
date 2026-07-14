@@ -26,6 +26,7 @@ use App\Http\Controllers\Api\CourseController;
 use App\Http\Controllers\Api\CourseDepartmentController;
 use App\Http\Controllers\Api\CourseInstructorController;
 use App\Http\Controllers\Api\CourseOfferingController;
+use App\Http\Controllers\Api\CourseOfferingInstructorController;
 use App\Http\Controllers\Api\CoursePrerequisiteController;
 use App\Http\Controllers\Api\DepartmentController;
 use App\Http\Controllers\Api\DocumentTypeController;
@@ -250,6 +251,10 @@ Route::middleware('auth:sanctum')->prefix('v1')->group(function (): void {
     Route::get('course-offerings/{id}/deprived-students', [CourseOfferingController::class, 'deprivedStudents']);
     Route::post('course-offerings/{id}/apply-deprivation', [CourseOfferingController::class, 'applyDeprivation']);
     Route::get('course-offerings/by-program/{program_id}', [CourseOfferingController::class, 'byProgram']);
+    Route::get('course-offerings/{courseOffering}/instructors', [CourseOfferingInstructorController::class, 'index']);
+    Route::post('course-offerings/{courseOffering}/instructors', [CourseOfferingInstructorController::class, 'store']);
+    Route::patch('course-offering-instructors/{courseOfferingInstructor}', [CourseOfferingInstructorController::class, 'update']);
+    Route::delete('course-offering-instructors/{courseOfferingInstructor}', [CourseOfferingInstructorController::class, 'destroy']);
 
     /*
     |--------------------------------------------------------------------------

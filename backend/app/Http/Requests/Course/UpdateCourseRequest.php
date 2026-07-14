@@ -20,7 +20,8 @@ class UpdateCourseRequest extends FormRequest
                 'nullable',
                 'string',
                 'max:50',
-                Rule::unique('courses', 'course_code')->ignoreModel($this->route('course'), 'course_id'),
+                Rule::unique('courses', 'course_code')
+                    ->ignore($this->route('course'), 'course_id'),
             ],
             'course_name' => 'sometimes|nullable|string|max:200',
             'credit_hours' => 'sometimes|nullable|integer|min:1',
