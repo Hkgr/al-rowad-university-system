@@ -373,15 +373,19 @@ export default function CourseRegistrationPage() {
     return map
   }, [programCourses, selectedStudent])
 
-  // The term (year+semester) staff should register into is whatever they already
-  // opened via "فتح المواد الدراسية" — only one term is ever open at a time,
-  // so there's no need to make them pick it again here.
-  const openTerm = useMemo(() => {
-    const first = offerings.find(o => o.status === 'open')
-    if (!first) return null
-    const yearName = years.find(y => String(y.academic_year_id) === String(first.academic_year_id))?.year_name ?? '—'
-    const semName  = semesters.find(s => String(s.semester_id) === String(first.semester_id))?.semester_name ?? '—'
-    return { academic_year_id: first.academic_year_id, semester_id: first.semester_id, label: `${yearName} — ${semName}` }
+  // Every distinct (year, semester) that currently has open offerings — more
+  // than one term can be open at once, so staff must be able to pick which
+  // one to register the student into instead of guessing at "the" term.
+  const openTerms = useMemo(() => {
+    const seen = new Map()
+    offerings.filter(o => o.status === 'open').forEach(o => {
+      const key = `${o.academic_year_id}-${o.semester_id}`
+      if (seen.has(key)) return
+      const yearName = years.find(y => String(y.academic_year_id) === String(o.academic_year_id))?.year_name ?? '—'
+      const semName  = semesters.find(s => String(s.semester_id) === String(o.semester_id))?.semester_name ?? '—'
+      seen.set(key, { academic_year_id: o.academic_year_id, semester_id: o.semester_id, label: `${yearName} — ${semName}` })
+    })
+    return [...seen.values()]
   }, [offerings, years, semesters])
 
   function loadData(studentId, yId, sId) {
@@ -406,9 +410,10 @@ export default function CourseRegistrationPage() {
   function handleSelectStudent(student) {
     setSelectedStudent(student)
     setAvailable([]); setSummary(null); setErr('')
-    if (openTerm) {
-      setYearId(String(openTerm.academic_year_id)); setSemId(String(openTerm.semester_id))
-      loadData(student.student_id, openTerm.academic_year_id, openTerm.semester_id)
+    if (openTerms.length > 0) {
+      const t = openTerms[0]
+      setYearId(String(t.academic_year_id)); setSemId(String(t.semester_id))
+      loadData(student.student_id, t.academic_year_id, t.semester_id)
     } else {
       setYearId(''); setSemId('')
     }
@@ -417,6 +422,13 @@ export default function CourseRegistrationPage() {
   function handleChangeStudent() {
     setSelectedStudent(null)
     setYearId(''); setSemId(''); setAvailable([]); setSummary(null); setErr('')
+  }
+
+  function handleChangeTerm(key) {
+    const t = openTerms.find(t => `${t.academic_year_id}-${t.semester_id}` === key)
+    if (!t || !selectedStudent) return
+    setYearId(String(t.academic_year_id)); setSemId(String(t.semester_id))
+    loadData(selectedStudent.student_id, t.academic_year_id, t.semester_id)
   }
 
   async function handleRegister(offeringId, name) {
@@ -497,15 +509,32 @@ export default function CourseRegistrationPage() {
           </div>
 
           {/* Term (year + semester) — inferred from what's already open in "فتح المواد الدراسية" */}
-          {!openTerm ? (
+          {openTerms.length === 0 ? (
             <div className="bg-amber-50 border border-amber-200 rounded-[14px] px-5 py-4 mb-5" dir="rtl">
               <p className="text-[12.5px] text-amber-800 font-bold">لم يتم فتح أي مواد دراسية بعد</p>
               <p className="text-[11.5px] text-amber-700 mt-1">يرجى فتح المواد أولاً من صفحة "فتح المواد الدراسية" قبل تسجيل الطلاب.</p>
             </div>
-          ) : (
+          ) : openTerms.length === 1 ? (
             <div className="flex items-center gap-2 bg-white border border-primary/12 rounded-[14px] px-5 py-3 mb-5 shadow-[0_2px_8px_rgba(26,46,16,0.05)]" dir="rtl">
               <span className="text-[12px] font-bold text-text-light">الفصل الدراسي الحالي:</span>
-              <span className="text-[13px] font-extrabold text-primary-dark">{openTerm.label}</span>
+              <span className="text-[13px] font-extrabold text-primary-dark">{openTerms[0].label}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 bg-white border border-primary/12 rounded-[14px] px-5 py-3 mb-5 shadow-[0_2px_8px_rgba(26,46,16,0.05)]" dir="rtl">
+              <span className="text-[12px] font-bold text-text-light">الفصل الدراسي:</span>
+              <select
+                value={`${yearId}-${semId}`}
+                onChange={e => handleChangeTerm(e.target.value)}
+                className="px-3 py-1.5 border border-primary/20 rounded-[9px] text-[13px] font-bold text-primary-dark outline-none focus:border-primary"
+                dir="rtl"
+              >
+                {openTerms.map(t => (
+                  <option key={`${t.academic_year_id}-${t.semester_id}`} value={`${t.academic_year_id}-${t.semester_id}`}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+              <span className="text-[11px] text-text-light">— أكثر من فصل مفتوح حالياً</span>
             </div>
           )}
 
