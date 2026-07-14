@@ -1,6 +1,7 @@
 import {
   FaHome, FaClipboardList, FaCheckDouble, FaExclamationTriangle,
   FaCalendarAlt, FaChartBar, FaUsers, FaCog, FaEdit, FaBook,
+  FaLockOpen, FaBookOpen, FaTable,
 } from 'react-icons/fa'
 
 const examBoardNav = [
@@ -17,9 +18,17 @@ const examBoardNav = [
     ],
   },
   {
+    label: 'المواد',
+    items: [
+      { to: '/exam-board/course-offerings',     Icon: FaLockOpen, ar: 'فتح المواد',      en: 'Course Offerings',     end: true },
+      { to: '/exam-board/course-registration', Icon: FaBookOpen, ar: 'تسجيل المواد',    en: 'Course Registration', end: true },
+      { to: '/exam-board/course-table',        Icon: FaTable,    ar: 'جدول المواد',     en: 'Course Table',        end: true },
+      { to: '/exam-board/courses',             Icon: FaBook,     ar: 'المواد الدراسية', en: 'Courses',             end: true },
+    ],
+  },
+  {
     label: 'الإدارة',
     items: [
-      { to: '/exam-board/courses',             Icon: FaBook,               ar: 'المواد الدراسية',      en: 'Courses'              },
       { to: '/exam-board/appeals',             Icon: FaUsers,              ar: 'التظلمات',             en: 'Appeals'              },
       { to: '/exam-board/settings',            Icon: FaCog,                ar: 'الإعدادات',            en: 'Settings'             },
     ],

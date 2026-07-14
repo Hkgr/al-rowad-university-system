@@ -1,5 +1,5 @@
 import {
-  FaHome, FaGraduationCap, FaUserPlus, FaArchive, FaUsers, FaBookOpen, FaLockOpen, FaTable,
+  FaHome, FaGraduationCap, FaUserPlus, FaArchive, FaUsers,
 } from 'react-icons/fa'
 
 const studentAffairsNav = [
@@ -14,15 +14,7 @@ const studentAffairsNav = [
     items: [
       { to: '/student-affairs/students',          Icon: FaUsers,         ar: 'قائمة الطلاب',      en: 'Students'     },
       { to: '/student-affairs/students/add',      Icon: FaUserPlus,      ar: 'إضافة طالب',        en: 'Add Student', end: true },
-      { to: '/student-affairs/students/archived', Icon: FaArchive,       ar: 'الطلاب المؤرشفون',  en: 'Archived',    end: true },
-    ],
-  },
-  {
-    label: 'التسجيل',
-    items: [
-      { to: '/student-affairs/course-offerings',     Icon: FaLockOpen, ar: 'فتح المواد',   en: 'Course Offerings',     end: true },
-      { to: '/student-affairs/course-registration', Icon: FaBookOpen, ar: 'تسجيل المواد', en: 'Course Registration', end: true },
-      { to: '/student-affairs/course-table',        Icon: FaTable,    ar: 'جدول المواد',  en: 'Course Table',        end: true },
+      { to: '/student-affairs/students/archived', Icon: FaArchive,       ar: 'الطلاب الموقوفون',  en: 'Suspended',   end: true },
     ],
   },
   {
