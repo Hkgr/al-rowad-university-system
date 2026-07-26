@@ -1,23 +1,28 @@
-# Authentication API Contract
+# Authentication and Identity API Contract
 
 ## Base URL
 
 - Application: `http://127.0.0.1:8000`
-- Login and session routes: `http://127.0.0.1:8000/api`
+- Authentication routes: `http://127.0.0.1:8000/api`
+- Versioned API: `http://127.0.0.1:8000/api/v1`
 
-## Introduction
+## Security model
 
-This module handles user authentication for the Al Rowad University System. It provides login to obtain a Bearer token (Laravel Sanctum), retrieval of the current authenticated user, and logout. All `/api/v1/*` endpoints require a valid token obtained from this module.
+Laravel Sanctum authenticates the request. Active RBAC roles and permissions
+authorize each API operation. A valid token alone is not sufficient.
 
-## Authentication Requirements
+All authenticated routes also verify that the linked account status is the
+active status. Disabling or locking an account invalidates the token on its
+next request.
 
-| Endpoint | Auth required |
-|----------|---------------|
-| `POST /api/login` | No |
-| `GET /api/user` | Yes — Bearer token |
-| `POST /api/logout` | Yes — Bearer token |
+| Endpoint | Authentication | Additional rule |
+|---|---|---|
+| `POST /api/login` | Public | Throttled to 5 attempts per minute |
+| `GET /api/user` | Bearer token | Account must be active |
+| `POST /api/logout` | Bearer token | Account must be active |
+| `/api/v1/*` | Bearer token | Account active and route permission required |
 
-### Required headers (authenticated routes)
+Authenticated requests use:
 
 ```http
 Authorization: Bearer {token}
@@ -25,9 +30,7 @@ Accept: application/json
 Content-Type: application/json
 ```
 
-## Standard Response Envelope
-
-**Success:**
+## Standard response envelope
 
 ```json
 {
@@ -37,8 +40,6 @@ Content-Type: application/json
 }
 ```
 
-**Error:**
-
 ```json
 {
   "success": false,
@@ -47,41 +48,18 @@ Content-Type: application/json
 }
 ```
 
----
-
-## Endpoint List
-
-| Method | URL | Purpose |
-|--------|-----|---------|
-| POST | `/api/login` | Authenticate and receive Bearer token |
-| GET | `/api/user` | Get current authenticated user |
-| POST | `/api/logout` | Revoke current access token |
-
----
-
 ## POST /api/login
 
-**Purpose:** Authenticate a user with email and password and return a Sanctum Bearer token.
-
-**Auth:** Not required
-
-### Request body
+Request:
 
 ```json
 {
-  "email": "admin@university.edu",
+  "email": "exam.board@university.edu",
   "password": "secret-password"
 }
 ```
 
-### Validation rules
-
-| Field | Rules |
-|-------|-------|
-| `email` | `required\|email\|max:255` |
-| `password` | `required\|string` |
-
-### Success response (200)
+Successful response:
 
 ```json
 {
@@ -89,13 +67,40 @@ Content-Type: application/json
   "message": "Login successful",
   "data": {
     "user": {
-      "user_id": 1,
-      "username": "admin",
-      "email": "admin@university.edu",
-      "account_status_id": 1,
+      "user_id": 4,
+      "username": "exam.board",
+      "email": "exam.board@university.edu",
+      "account_status": {
+        "code": "active",
+        "name": "Active"
+      },
       "student_id": null,
-      "employee_id": 1,
-      "board_member_id": null
+      "employee_id": 7,
+      "faculty_member_id": null,
+      "board_member_id": null,
+      "last_login_at": "2026-07-26T10:00:00.000000Z",
+      "roles": [
+        {
+          "code": "exam_officer",
+          "name": "Exam Officer"
+        }
+      ],
+      "role_codes": ["exam_officer"],
+      "permissions": [
+        "courses.view",
+        "exams.manage",
+        "exams.view",
+        "grades.manage",
+        "grades.view",
+        "students.view"
+      ],
+      "dashboards": [
+        {
+          "code": "exam-board",
+          "path": "/exam-board"
+        }
+      ],
+      "default_dashboard": "/exam-board"
     },
     "token": "1|plainTextTokenValue",
     "token_type": "Bearer"
@@ -103,95 +108,31 @@ Content-Type: application/json
 }
 ```
 
-### Error response (422 — invalid credentials)
+Invalid credentials return `422`. An inactive, disabled, locked, or pending
+account returns `403`:
 
 ```json
 {
   "success": false,
-  "message": "Invalid email or password",
+  "message": "This account is not active.",
   "errors": {
-    "email": ["The provided credentials are incorrect."]
+    "account": ["Contact the system administrator to restore access."]
   }
 }
 ```
-
-### Error response (422 — validation)
-
-```json
-{
-  "success": false,
-  "message": "Validation failed",
-  "errors": {
-    "email": ["The email field is required."],
-    "password": ["The password field is required."]
-  }
-}
-```
-
-### Frontend notes
-
-- Store `data.token` and send it as `Authorization: Bearer {token}` on all subsequent API calls.
-- The backend validates against `password_hash`, not `password`.
-- On 422 with invalid credentials, display `message` or `errors.email[0]` to the user.
-- Do not persist the password; only persist the token (secure storage recommended).
-
----
 
 ## GET /api/user
 
-**Purpose:** Return the currently authenticated user record.
+Returns the same identity object shown under `data.user` in the login response,
+but directly under `data`.
 
-**Auth:** Required
-
-### Request body
-
-None
-
-### Success response (200)
-
-```json
-{
-  "success": true,
-  "message": "Operation completed successfully",
-  "data": {
-    "user_id": 1,
-    "username": "admin",
-    "email": "admin@university.edu",
-    "account_status_id": 1,
-    "student_id": null,
-    "employee_id": 1,
-    "board_member_id": null,
-    "last_login_at": "2026-06-20T10:00:00.000000Z"
-  }
-}
-```
-
-### Error response (401 — unauthenticated)
-
-```json
-{
-  "message": "Unauthenticated."
-}
-```
-
-### Frontend notes
-
-- Call on app startup or after login to hydrate user context (linked `student_id`, `employee_id`, etc.).
-- If this returns 401, clear stored token and redirect to login.
-
----
+The frontend must hydrate its authorization context from this response. It must
+use `default_dashboard`, `dashboards`, and `permissions`; it must not infer a
+role from `student_id`, `employee_id`, or `board_member_id`.
 
 ## POST /api/logout
 
-**Purpose:** Delete the current access token (logout from this device/session).
-
-**Auth:** Required
-
-### Request body
-
-None (empty JSON `{}` is acceptable)
-
-### Success response (200)
+Revokes the current Sanctum token:
 
 ```json
 {
@@ -201,15 +142,21 @@ None (empty JSON `{}` is acceptable)
 }
 ```
 
-### Error response (401 — unauthenticated)
+## Authorization failures
+
+A signed-in user who lacks the route permission receives `403`:
 
 ```json
 {
-  "message": "Unauthenticated."
+  "success": false,
+  "message": "You do not have permission to perform this action.",
+  "errors": {
+    "required_permissions": ["grades.manage"]
+  }
 }
 ```
 
-### Frontend notes
-
-- After success, remove the stored token locally.
-- Only the current token is revoked; other sessions remain valid.
+Student-owned endpoints permit the linked student to access only their own
+record. Staff access requires the corresponding permission. Faculty grade and
+attendance operations are additionally restricted to course offerings assigned
+to that faculty member.

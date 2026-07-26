@@ -5,8 +5,10 @@ import {
   FaGraduationCap, FaUniversity, FaBook,
   FaUserPlus, FaUsers, FaSpinner,
   FaCheckCircle, FaSnowflake, FaBan, FaUserTimes, FaPauseCircle,
-  FaUserGraduate,
+  FaUserGraduate, FaBookOpen,
 } from 'react-icons/fa'
+import useAuth from '../../auth/useAuth'
+import { hasPermission } from '../../auth/authStorage'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
@@ -31,7 +33,7 @@ const STATUS_CONFIG = {
 
 export default function StudentAffairsHome() {
   const navigate = useNavigate()
-  const user     = JSON.parse(localStorage.getItem('user') || '{}')
+  const { user = {} } = useAuth()
 
   const [stats,    setStats]    = useState({ total: 0, programs: 0, colleges: 0, graduates: 0 })
   const [colleges, setColleges] = useState([])
@@ -295,10 +297,12 @@ export default function StudentAffairsHome() {
         </div>
         <div className="grid grid-cols-2 max-[500px]:grid-cols-1 gap-3.5">
           {[
-            { Icon: FaUserPlus,      ar: 'إضافة طالب جديد', en: 'Add New Student', to: '/student-affairs/students/add',  color: '#569933' },
-            { Icon: FaUsers,         ar: 'قائمة الطلاب',    en: 'Students List',   to: '/student-affairs/students',      color: '#3b82f6' },
-            { Icon: FaUserGraduate,  ar: 'الخريجون',        en: 'Graduates',       to: '/student-affairs/graduates',     color: '#8b5cf6' },
-          ].map(({ Icon, ar, en, to, color }, i) => (
+            { Icon: FaUserPlus,     ar: 'إضافة طالب جديد', en: 'Add New Student',     to: '/student-affairs/students/add',        color: '#569933', permission: 'students.manage' },
+            { Icon: FaUsers,        ar: 'قائمة الطلاب',    en: 'Students List',       to: '/student-affairs/students',            color: '#3b82f6', permission: 'students.view' },
+            { Icon: FaBookOpen,     ar: 'تسجيل المواد',    en: 'Course Registration', to: '/student-affairs/course-registration', color: '#ec4899', permission: 'registration.manage' },
+            { Icon: FaUserGraduate, ar: 'الخريجون',        en: 'Graduates',           to: '/student-affairs/graduates',           color: '#8b5cf6', permission: 'students.view' },
+          ].filter(({ permission }) => hasPermission(user, permission))
+            .map(({ Icon, ar, en, to, color }, i) => (
             <Link
               key={i}
               to={to}

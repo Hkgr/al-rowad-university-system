@@ -3,6 +3,11 @@
 use App\Exceptions\AttendanceException;
 use App\Exceptions\GradeException;
 use App\Exceptions\RegistrationException;
+use App\Http\Middleware\EnsureAccountIsActive;
+use App\Http\Middleware\EnsureStudentAccess;
+use App\Http\Middleware\EnforceFacultyOfferingScope;
+use App\Http\Middleware\RequirePermission;
+use App\Http\Middleware\RequireStaffPermission;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -18,7 +23,13 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $middleware->alias([
+            'account.active' => EnsureAccountIsActive::class,
+            'faculty.offering' => EnforceFacultyOfferingScope::class,
+            'permission' => RequirePermission::class,
+            'staff.permission' => RequireStaffPermission::class,
+            'student.access' => EnsureStudentAccess::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

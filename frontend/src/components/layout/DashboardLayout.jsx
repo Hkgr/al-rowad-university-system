@@ -1,8 +1,13 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   FaSignOutAlt, FaBars, FaChevronRight, FaBell,
 } from 'react-icons/fa'
+import useAuth from '../../features/auth/useAuth'
+import {
+  hasAnyPermission,
+  hasPermission,
+} from '../../features/auth/authStorage'
 
 /**
  * nav prop shape:
@@ -16,18 +21,29 @@ export default function DashboardLayout({ nav = [], appTitle = 'جامعة ال�
   const [mobileOpen, setMobileOpen] = useState(false)
   const navigate  = useNavigate()
   const location  = useLocation()
-  const user      = JSON.parse(localStorage.getItem('user') || '{}')
+  const { user = {}, logout: logoutSession } = useAuth()
+
+  const visibleNav = nav
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => {
+        if (item.permission && !hasPermission(user, item.permission)) return false
+        if (item.anyPermissions?.length && !hasAnyPermission(user, item.anyPermissions)) return false
+        return true
+      }),
+    }))
+    .filter((section) => section.items.length > 0)
 
   // Auto-derive page title from nav items based on current URL
-  const allItems   = nav.flatMap(s => s.items)
+  const allItems   = visibleNav.flatMap(s => s.items)
   const activeItem = allItems.find(item => location.pathname === item.to)
     ?? allItems.find(item => location.pathname.startsWith(item.to + '/'))
   const pageTitle  = activeItem ? `${activeItem.ar} · ${activeItem.en}` : appTitle
+  const roleName   = user.roles?.[0]?.name ?? 'System User'
 
-  const logout = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
-    navigate('/login')
+  const logout = async () => {
+    await logoutSession()
+    navigate('/login', { replace: true })
   }
 
   const sidebarWidth    = collapsed ? 'w-[76px]'              : 'w-[272px]'
@@ -135,11 +151,11 @@ export default function DashboardLayout({ nav = [], appTitle = 'جامعة ال�
             className="flex-1 px-[10px] pt-2 flex flex-col gap-2 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-thumb]:bg-white/7 [&::-webkit-scrollbar-thumb]:rounded-[3px]"
             dir="rtl"
           >
-            {nav.map((section, idx) => (
-              <>
+            {visibleNav.map((section, idx) => (
+              <Fragment key={section.label}>
                 {idx > 0 && <div key={`divider-${idx}`} className="h-px bg-white/6 mx-3" />}
                 {renderSection(section, idx)}
-              </>
+              </Fragment>
             ))}
           </nav>
 
@@ -158,7 +174,7 @@ export default function DashboardLayout({ nav = [], appTitle = 'جامعة ال�
               {!collapsed && (
                 <div className="flex flex-col min-w-0 overflow-hidden">
                   <span className="text-[12.5px] font-bold text-white whitespace-nowrap overflow-hidden text-ellipsis">{user.username}</span>
-                  <span className="text-[9.5px] text-white/40 whitespace-nowrap overflow-hidden text-ellipsis mt-0.5">موظف · Employee</span>
+                  <span className="text-[9.5px] text-white/40 whitespace-nowrap overflow-hidden text-ellipsis mt-0.5">{roleName}</span>
                 </div>
               )}
             </div>

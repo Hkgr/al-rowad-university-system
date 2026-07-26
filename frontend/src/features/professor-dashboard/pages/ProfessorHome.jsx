@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { FaSpinner, FaChalkboardTeacher, FaCalendarCheck, FaExclamationCircle, FaBook } from 'react-icons/fa'
+import useAuth from '../../auth/useAuth'
 import useMyOfferings from '../hooks/useMyOfferings'
 
 const RANK_AR = {
@@ -8,7 +9,7 @@ const RANK_AR = {
 }
 
 export default function ProfessorHome() {
-  const user    = JSON.parse(localStorage.getItem('user') || '{}')
+  const { user = {} } = useAuth()
   const dateStr = new Date().toLocaleDateString('ar-SY', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
   const { facultyMember, offerings, loading, error } = useMyOfferings()
 
@@ -99,7 +100,7 @@ export default function ProfessorHome() {
 
           <div className="grid grid-cols-2 max-[600px]:grid-cols-1 gap-4 mb-6">
             {[
-              { Icon: FaCalendarCheck, color: '#f59e0b', ar: 'الحضور والحرمان',  en: 'Attendance',   to: '/professor/attendance'  },
+              { Icon: FaCalendarCheck, color: '#f59e0b', ar: 'الحضور ومتابعة الحرمان', en: 'Attendance', to: '/professor/attendance' },
             ].map(({ Icon, color, ar, en, to }) => (
               <Link
                 key={ar}

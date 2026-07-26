@@ -1,8 +1,10 @@
 <?php
 
 namespace App\Models;
+
 use Laravel\Sanctum\HasApiTokens;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -75,6 +77,21 @@ class User extends Authenticatable implements MustVerifyEmail
     public function accountStatus(): BelongsTo
     {
         return $this->belongsTo(AccountStatus::class, 'account_status_id', 'account_status_id');
+    }
+
+    public function roles(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            Role::class,
+            'user_roles',
+            'user_id',
+            'role_id',
+            'user_id',
+            'role_id'
+        )
+            ->withPivot(['user_role_id', 'assigned_by_user_id', 'assigned_at', 'is_active'])
+            ->wherePivot('is_active', true)
+            ->where('roles.is_active', true);
     }
 
     public function student(): BelongsTo
@@ -190,6 +207,138 @@ class User extends Authenticatable implements MustVerifyEmail
     public function userRoleRecords(): HasMany
     {
         return $this->hasMany(UserRole::class, 'user_id', 'user_id');
+    }
+
+    public function isAccountActive(): bool
+    {
+        $this->loadMissing('accountStatus');
+
+        return $this->accountStatus !== null
+            && $this->accountStatus->is_active
+            && $this->accountStatus->status_code === config('authorization.active_account_status', 'active');
+    }
+
+    public function roleCodes(): array
+    {
+        $this->loadMissing('roles');
+
+        return $this->roles
+            ->pluck('role_code')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    public function permissionCodes(): array
+    {
+        $this->loadMissing('roles.permissions');
+
+        return $this->roles
+            ->flatMap(fn (Role $role) => $role->permissions->pluck('permission_code'))
+            ->filter()
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+    }
+
+    public function hasRole(string|array $roles): bool
+    {
+        $requiredRoles = is_array($roles) ? $roles : [$roles];
+
+        return count(array_intersect($requiredRoles, $this->roleCodes())) > 0;
+    }
+
+    public function isSuperAdmin(): bool
+    {
+        return $this->hasRole(config('authorization.super_admin_role', 'super_admin'));
+    }
+
+    public function isStudentOnly(): bool
+    {
+        $roleCodes = $this->roleCodes();
+        $studentRole = config('authorization.student_role', 'student');
+
+        return in_array($studentRole, $roleCodes, true)
+            && count(array_diff($roleCodes, [$studentRole])) === 0;
+    }
+
+    public function hasPermission(string $permission): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
+        $permissionCodes = $this->permissionCodes();
+
+        if (in_array($permission, $permissionCodes, true)) {
+            return true;
+        }
+
+        if (
+            config('authorization.manage_implies_view', true)
+            && str_ends_with($permission, '.view')
+        ) {
+            $managePermission = substr($permission, 0, -strlen('.view')).'.manage';
+
+            return in_array($managePermission, $permissionCodes, true);
+        }
+
+        return false;
+    }
+
+    public function hasAnyPermission(array $permissions): bool
+    {
+        foreach ($permissions as $permission) {
+            if ($this->hasPermission($permission)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function accessibleDashboards(): array
+    {
+        $dashboards = config('authorization.dashboards', []);
+
+        return collect($dashboards)
+            ->filter(function (array $rules): bool {
+                $requiredProfile = $rules['required_profile'] ?? null;
+
+                if ($requiredProfile && empty($this->getAttribute($requiredProfile))) {
+                    return false;
+                }
+
+                if ($this->isSuperAdmin()) {
+                    return true;
+                }
+
+                $hasRole = $this->hasRole($rules['roles'] ?? []);
+                $hasPermission = $this->hasAnyPermission($rules['permissions'] ?? []);
+
+                return $hasRole || $hasPermission;
+            })
+            ->map(fn (array $rules, string $code): array => [
+                'code' => $code,
+                'path' => $rules['path'],
+            ])
+            ->values()
+            ->all();
+    }
+
+    public function defaultDashboardPath(): ?string
+    {
+        $dashboards = collect($this->accessibleDashboards())->keyBy('code');
+
+        foreach (config('authorization.dashboard_priority', []) as $dashboardCode) {
+            if ($dashboards->has($dashboardCode)) {
+                return $dashboards->get($dashboardCode)['path'];
+            }
+        }
+
+        return null;
     }
 
 }

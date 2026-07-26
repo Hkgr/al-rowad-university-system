@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import {
   FaSpinner, FaBook, FaChevronDown, FaPlus, FaCalendarCheck,
@@ -109,15 +109,25 @@ function RecordingPanel({ session }) {
   const [saveErr,  setSaveErr]  = useState('')
 
   useEffect(() => {
-    setStudents(null); setError(''); setLoading(true); setEdits({}); setSaved(false); setSaveErr('')
+    let active = true
+
     fetch(`${API}/attendance-sessions/${session.attendance_session_id}/students`, { headers: authHeaders() })
       .then(r => r.json())
       .then(json => {
+        if (!active) return
         if (json.success) setStudents(json.data?.students ?? [])
         else setError(json.message || 'فشل تحميل قائمة الطلاب')
       })
-      .catch(() => setError('تعذّر الاتصال بالخادم'))
-      .finally(() => setLoading(false))
+      .catch(() => {
+        if (active) setError('تعذّر الاتصال بالخادم')
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
   }, [session.attendance_session_id])
 
   function setStatus(regId, code) {
@@ -216,19 +226,27 @@ function SessionsPanel({ offeringId }) {
   const [error,       setError]       = useState('')
   const [selectedId,  setSelectedId]  = useState(null)
 
-  const loadSessions = useCallback(() => {
-    setLoading(true); setError('')
+  useEffect(() => {
+    let active = true
+
     fetch(`${API}/course-offerings/${offeringId}/attendance-sessions`, { headers: authHeaders() })
       .then(r => r.json())
       .then(json => {
+        if (!active) return
         if (json.success) setSessions(json.data?.sessions ?? [])
         else setError(json.message || 'فشل تحميل الجلسات')
       })
-      .catch(() => setError('تعذّر الاتصال بالخادم'))
-      .finally(() => setLoading(false))
-  }, [offeringId])
+      .catch(() => {
+        if (active) setError('تعذّر الاتصال بالخادم')
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
 
-  useEffect(() => { setSelectedId(null); loadSessions() }, [offeringId, loadSessions])
+    return () => {
+      active = false
+    }
+  }, [offeringId])
 
   function handleCreated(session) {
     setSessions(s => [session, ...s])
@@ -266,7 +284,12 @@ function SessionsPanel({ offeringId }) {
         </div>
       )}
 
-      {selected && <RecordingPanel session={selected} />}
+      {selected && (
+        <RecordingPanel
+          key={selected.attendance_session_id}
+          session={selected}
+        />
+      )}
     </>
   )
 }
@@ -277,45 +300,33 @@ function DeprivationPanel({ offeringId }) {
   const [data,     setData]     = useState(null)
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState('')
-  const [applying, setApplying] = useState(false)
-  const [result,   setResult]   = useState(null)
 
-  const load = useCallback(() => {
-    setLoading(true); setError('')
+  useEffect(() => {
+    let active = true
+
     fetch(`${API}/course-offerings/${offeringId}/deprived-students`, { headers: authHeaders() })
       .then(r => r.json())
       .then(json => {
+        if (!active) return
         if (json.success) setData(json.data)
         else setError(json.message || 'فشل تحميل قائمة الحرمان')
       })
-      .catch(() => setError('تعذّر الاتصال بالخادم'))
-      .finally(() => setLoading(false))
-  }, [offeringId])
-
-  useEffect(() => { setResult(null); load() }, [offeringId, load])
-
-  async function handleApply() {
-    if (!window.confirm('هل أنت متأكد من تطبيق الحرمان على الطلاب المتجاوزين لنسبة الغياب المسموحة؟')) return
-    setApplying(true)
-    try {
-      const res = await fetch(`${API}/course-offerings/${offeringId}/apply-deprivation`, {
-        method: 'POST', headers: authHeaders(),
+      .catch(() => {
+        if (active) setError('تعذّر الاتصال بالخادم')
       })
-      const json = await res.json()
-      if (json.success) { setResult(json.data); load() }
-      else setError(json.message || 'فشل تطبيق الحرمان')
-    } catch {
-      setError('تعذّر الاتصال بالخادم')
-    } finally {
-      setApplying(false)
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+
+    return () => {
+      active = false
     }
-  }
+  }, [offeringId])
 
   if (loading) return <div className="flex justify-center py-10 text-primary"><FaSpinner className="animate-spin text-[22px]" /></div>
   if (error)   return <p className="text-center text-[13px] text-red-600 py-8" dir="rtl">⚠ {error}</p>
 
   const students = data?.students ?? []
-  const pending  = students.filter(s => !s.is_already_deprived)
 
   return (
     <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
@@ -324,23 +335,10 @@ function DeprivationPanel({ offeringId }) {
           <FaExclamationTriangle className="text-amber-500 text-[13px]" />
           مرشحون للحرمان (تجاوز {data?.deprivation_threshold ?? 15}%)
         </span>
-        {pending.length > 0 && (
-          <button
-            onClick={handleApply}
-            disabled={applying}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-[9px] text-[12.5px] font-bold disabled:opacity-40 hover:enabled:bg-red-700 transition-colors"
-          >
-            {applying ? <FaSpinner className="animate-spin text-[11px]" /> : <FaExclamationTriangle className="text-[11px]" />}
-            تطبيق الحرمان
-          </button>
-        )}
+        <span className="text-[11px] font-bold text-amber-700">
+          القرار النهائي لدى هيئة الامتحانات
+        </span>
       </div>
-
-      {result && (
-        <div className="px-5 py-2.5 bg-green-500/[0.05] border-b border-green-500/15 text-[12.5px] text-green-700 font-bold" dir="rtl">
-          تم تطبيق الحرمان على {result.applied_count} طالب ({result.skipped_count} تم تجاوزهم)
-        </div>
-      )}
 
       {students.length === 0 ? (
         <p className="text-center text-[13px] text-text-light py-8" dir="rtl">لا يوجد طلاب متجاوزون لنسبة الغياب المسموحة حالياً</p>
@@ -389,15 +387,11 @@ export default function AttendanceDeprivationPage() {
   const location = useLocation()
   const [selectedId, setSelectedId] = useState(location.state?.offeringId ?? null)
 
-  useEffect(() => {
-    if (location.state?.offeringId) setSelectedId(location.state.offeringId)
-  }, [location.state])
-
   return (
     <>
       <div className="mb-5" dir="rtl">
-        <h2 className="text-[20px] font-black text-text-dark mb-[3px]">الحضور والحرمان</h2>
-        <p className="text-[12.5px] text-text-light">Attendance & Deprivation</p>
+        <h2 className="text-[20px] font-black text-text-dark mb-[3px]">الحضور ومتابعة الحرمان</h2>
+        <p className="text-[12.5px] text-text-light">Attendance & Deprivation Follow-up</p>
       </div>
 
       {loading && <div className="flex justify-center py-12 text-primary"><FaSpinner className="animate-spin text-[24px]" /></div>}
@@ -449,11 +443,11 @@ export default function AttendanceDeprivationPage() {
           <div className="flex items-center gap-2 mb-3 text-[13px] font-bold text-text-dark" dir="rtl">
             <FaCalendarCheck className="text-primary text-[13px]" /> جلسات الحضور
           </div>
-          <SessionsPanel offeringId={selectedId} />
+          <SessionsPanel key={`sessions-${selectedId}`} offeringId={selectedId} />
           <div className="flex items-center gap-2 mb-3 mt-2 text-[13px] font-bold text-text-dark" dir="rtl">
             <FaExclamationTriangle className="text-amber-500 text-[13px]" /> الحرمان
           </div>
-          <DeprivationPanel offeringId={selectedId} />
+          <DeprivationPanel key={`deprivation-${selectedId}`} offeringId={selectedId} />
         </>
       )}
     </>

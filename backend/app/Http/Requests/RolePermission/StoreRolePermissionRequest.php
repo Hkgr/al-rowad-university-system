@@ -3,6 +3,7 @@
 namespace App\Http\Requests\RolePermission;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreRolePermissionRequest extends FormRequest
 {
@@ -15,8 +16,13 @@ class StoreRolePermissionRequest extends FormRequest
     {
         return [
             'role_id' => 'required|integer|exists:roles,role_id',
-            'permission_id' => 'required|integer|exists:permissions,permission_id',
-            'granted_at' => 'nullable|date',
+            'permission_id' => [
+                'required',
+                'integer',
+                'exists:permissions,permission_id',
+                Rule::unique('role_permissions', 'permission_id')
+                    ->where(fn ($query) => $query->where('role_id', $this->integer('role_id'))),
+            ],
         ];
     }
 }

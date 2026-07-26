@@ -13,6 +13,7 @@ use App\Services\AttendanceService;
 use App\Services\GradeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 
 class CourseOfferingController extends ApiController
 {
@@ -34,6 +35,54 @@ class CourseOfferingController extends ApiController
     protected function updateRequestClass(): string
     {
         return UpdateCourseOfferingRequest::class;
+    }
+
+    public function mine(Request $request): JsonResponse
+    {
+        $perPage = min(max($request->integer('per_page', 15), 1), 200);
+        $facultyMemberId = $request->user()
+            ->employee
+            ?->facultyMembers()
+            ->where('is_active', true)
+            ->value('faculty_member_id');
+
+        if (! $facultyMemberId) {
+            return $this->successResponse([
+                'data' => [],
+                'meta' => [
+                    'current_page' => 1,
+                    'last_page' => 1,
+                    'per_page' => $perPage,
+                    'total' => 0,
+                ],
+            ]);
+        }
+
+        $hasInstructorAssignments = Schema::hasTable('course_offering_instructors');
+        $offerings = CourseOffering::query()
+            ->with(['course', 'academicYear', 'semester', 'department', 'academicProgram', 'facultyMember'])
+            ->withCount('studentCourseRegistrations')
+            ->where('status', 'open')
+            ->where(function ($query) use ($facultyMemberId, $hasInstructorAssignments): void {
+                $query->where('faculty_member_id', $facultyMemberId);
+
+                if ($hasInstructorAssignments) {
+                    $query->orWhereHas(
+                        'offeringInstructors',
+                        fn ($instructors) => $instructors
+                            ->where('faculty_member_id', $facultyMemberId)
+                            ->where('is_active', true)
+                    );
+                }
+            })
+            ->orderBy('course_offering_id', 'desc')
+            ->paginate($perPage);
+
+        return $this->successResponse(
+            CourseOfferingResource::collection($offerings)
+                ->response($request)
+                ->getData(true)
+        );
     }
 
     public function open(): JsonResponse

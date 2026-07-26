@@ -16,9 +16,6 @@ class StoreUserRoleRequest extends FormRequest
         return [
             'user_id' => 'required|integer|exists:users,user_id',
             'role_id' => 'required|integer|exists:roles,role_id',
-            'assigned_by_user_id' => 'nullable|integer|exists:users,user_id',
-            'assigned_at' => 'nullable|date',
-            'is_active' => 'required|integer',
         ];
     }
 }

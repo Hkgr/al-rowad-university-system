@@ -9,7 +9,8 @@ Documentation for the React frontend developer consuming the Laravel REST API.
 - **Backend:** Laravel API for the Al Rowad University System
 - **Frontend:** React SPA will consume this API
 - **Authentication:** Laravel Sanctum (Bearer token)
-- **Protected routes:** All `/api/v1/*` endpoints require a valid Bearer token
+- **Protected routes:** All `/api/v1/*` endpoints require an active Bearer
+  session and the route's RBAC permission
 - **Public route:** `POST /api/login` only
 
 The API is organized in phases:
@@ -75,7 +76,9 @@ POST /api/login
 }
 ```
 
-Store `data.token` in the frontend (e.g. localStorage or secure storage).
+Store `data.token` for authenticated requests. Use the returned
+`permissions`, `dashboards`, and `default_dashboard` fields for navigation;
+do not infer authorization from profile IDs.
 
 ### Get current user (protected)
 
@@ -135,6 +138,7 @@ Common HTTP status codes:
 | 422 | Validation or business rule failure |
 | 404 | Resource not found |
 | 401 | Missing or invalid token |
+| 403 | Inactive account, insufficient permission, or out-of-scope record |
 | 500 | Unexpected server error |
 
 Business-rule errors (registration, grades, attendance) return clean messages in `message` — not raw SQL errors.
@@ -178,6 +182,8 @@ Example: `GET /students` → `GET http://127.0.0.1:8000/api/v1/students`
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/course-offerings/open` | Open offerings (paginated) |
+| GET | `/me/course-offerings/open` | Current faculty member's assigned open offerings |
+| GET | `/me/faculty-member` | Current user's active faculty profile |
 | GET | `/course-offerings/{id}/details` | Offering details |
 | GET | `/course-offerings/{id}/students` | Registered students |
 | GET | `/course-offerings/{id}/capacity` | Capacity and seat usage |

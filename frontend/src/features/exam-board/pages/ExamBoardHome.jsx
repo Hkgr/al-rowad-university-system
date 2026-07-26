@@ -1,15 +1,19 @@
 import { Link } from 'react-router-dom'
-import { FaClipboardList, FaCheckDouble, FaExclamationTriangle, FaCalendarAlt, FaLockOpen, FaBookOpen, FaTable } from 'react-icons/fa'
-
-const API = 'https://rust.alrowaduni.edu.sy/api/v1'
-
-function authHeaders() {
-  return { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }
-}
+import { FaClipboardList, FaCheckDouble, FaExclamationTriangle, FaCalendarAlt, FaLockOpen, FaTable } from 'react-icons/fa'
+import useAuth from '../../auth/useAuth'
+import { hasPermission } from '../../auth/authStorage'
 
 export default function ExamBoardHome() {
-  const user    = JSON.parse(localStorage.getItem('user') || '{}')
+  const { user = {} } = useAuth()
   const dateStr = new Date().toLocaleDateString('ar-SY', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+  const quickActions = [
+    { Icon: FaClipboardList,       color: '#569933', ar: 'كشوف الدرجات',         en: 'Grade Sheets',        to: '/exam-board/grade-sheet',       permission: 'grades.view' },
+    { Icon: FaCheckDouble,         color: '#3b82f6', ar: 'اعتماد الدرجات',       en: 'Grade Approvals',      to: '/exam-board/approvals',         permission: 'grades.manage' },
+    { Icon: FaExclamationTriangle, color: '#f59e0b', ar: 'الحضور والحرمان',      en: 'Deprivation',          to: '/exam-board/deprivation',       permission: 'exams.manage' },
+    { Icon: FaCalendarAlt,         color: '#8b5cf6', ar: 'الامتحانات التكميلية', en: 'Supplementary Exams',  to: '/exam-board/supplementary',     permission: 'exams.manage' },
+    { Icon: FaLockOpen,            color: '#22c55e', ar: 'فتح المواد',           en: 'Course Offerings',     to: '/exam-board/course-offerings', permission: 'courses.manage' },
+    { Icon: FaTable,               color: '#0ea5e9', ar: 'جدول المواد',          en: 'Course Table',         to: '/exam-board/course-table',     permission: 'courses.manage' },
+  ].filter(({ permission }) => hasPermission(user, permission))
 
   return (
     <>
@@ -39,15 +43,7 @@ export default function ExamBoardHome() {
 
       {/* Quick access cards */}
       <div className="grid grid-cols-2 max-[600px]:grid-cols-1 gap-4 mb-6">
-        {[
-          { Icon: FaClipboardList,       color: '#569933', ar: 'كشوف الدرجات',         en: 'Grade Sheets',       to: '/exam-board/grade-sheet'   },
-          { Icon: FaCheckDouble,         color: '#3b82f6', ar: 'اعتماد الدرجات',       en: 'Grade Approvals',    to: '/exam-board/approvals'      },
-          { Icon: FaExclamationTriangle, color: '#f59e0b', ar: 'الحضور والحرمان',       en: 'Deprivation',        to: '/exam-board/deprivation'    },
-          { Icon: FaCalendarAlt,         color: '#8b5cf6', ar: 'الامتحانات التكميلية', en: 'Supplementary Exams', to: '/exam-board/supplementary'  },
-          { Icon: FaLockOpen,            color: '#22c55e', ar: 'فتح المواد',           en: 'Course Offerings',   to: '/exam-board/course-offerings'    },
-          { Icon: FaBookOpen,            color: '#ec4899', ar: 'تسجيل المواد',         en: 'Course Registration', to: '/exam-board/course-registration' },
-          { Icon: FaTable,               color: '#0ea5e9', ar: 'جدول المواد',          en: 'Course Table',       to: '/exam-board/course-table'        },
-        ].map(({ Icon, color, ar, en, to }) => (
+        {quickActions.map(({ Icon, color, ar, en, to }) => (
           <Link
             key={ar}
             to={to}

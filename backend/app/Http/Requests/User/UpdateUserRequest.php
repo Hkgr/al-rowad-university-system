@@ -3,6 +3,8 @@
 namespace App\Http\Requests\User;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 
 class UpdateUserRequest extends FormRequest
 {
@@ -13,20 +15,51 @@ class UpdateUserRequest extends FormRequest
 
     public function rules(): array
     {
+        $userId = $this->route('user');
+
         return [
-            'username' => 'sometimes|nullable|string|max:80',
-            'email' => 'sometimes|nullable|string|max:150',
-            'password_hash' => 'sometimes|nullable|string|max:255',
-            'account_status_id' => 'sometimes|nullable|integer|exists:account_statuses,account_status_id',
-            'student_id' => 'sometimes|nullable|integer|exists:students,student_id',
-            'employee_id' => 'sometimes|nullable|integer|exists:employees,employee_id',
-            'board_member_id' => 'sometimes|nullable|integer|exists:board_members,board_member_id',
-            'last_login_at' => 'sometimes|nullable|date',
-            'email_verified_at' => 'sometimes|nullable|date',
-            'failed_login_attempts' => 'sometimes|nullable|integer',
-            'created_by_user_id' => 'sometimes|nullable|integer|exists:users,user_id',
-            'created_at' => 'sometimes|nullable|date',
-            'updated_at' => 'sometimes|nullable|date',
+            'username' => [
+                'sometimes',
+                'required',
+                'string',
+                'max:80',
+                Rule::unique('users', 'username')->ignore($userId, 'user_id'),
+            ],
+            'email' => [
+                'sometimes',
+                'required',
+                'email',
+                'max:150',
+                Rule::unique('users', 'email')->ignore($userId, 'user_id'),
+            ],
+            'password' => ['sometimes', 'nullable', 'confirmed', Password::min(12)],
+            'account_status_id' => [
+                'sometimes',
+                'required',
+                'integer',
+                'exists:account_statuses,account_status_id',
+            ],
+            'student_id' => [
+                'sometimes',
+                'nullable',
+                'integer',
+                'exists:students,student_id',
+                'prohibits:employee_id,board_member_id',
+            ],
+            'employee_id' => [
+                'sometimes',
+                'nullable',
+                'integer',
+                'exists:employees,employee_id',
+                'prohibits:student_id,board_member_id',
+            ],
+            'board_member_id' => [
+                'sometimes',
+                'nullable',
+                'integer',
+                'exists:board_members,board_member_id',
+                'prohibits:student_id,employee_id',
+            ],
         ];
     }
 }

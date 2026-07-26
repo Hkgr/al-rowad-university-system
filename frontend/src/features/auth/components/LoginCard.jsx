@@ -4,7 +4,7 @@ import { motion, useMotionValue, useTransform, useSpring } from 'framer-motion'
 import {
   FaEnvelope, FaLock, FaEye, FaEyeSlash, FaSignInAlt,
 } from 'react-icons/fa'
-import { findMyFacultyMember } from '../../professor-dashboard/lib/professorApi'
+import useAuth from '../useAuth'
 
 export default function LoginCard() {
   const [showPass, setShowPass]       = useState(false)
@@ -17,6 +17,7 @@ export default function LoginCard() {
   const [passFocus, setPassFocus]     = useState(false)
 
   const navigate = useNavigate()
+  const { login } = useAuth()
   const cardRef  = useRef(null)
   const mouseX   = useMotionValue(0)
   const mouseY   = useMotionValue(0)
@@ -43,40 +44,15 @@ export default function LoginCard() {
     setError('')
 
     try {
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://rust.alrowaduni.edu.sy/api'
-
-const response = await fetch(`${API_BASE_URL}/login`, {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-  },
-  body: JSON.stringify({ email, password }),
-})
-
-      const data = await response.json()
-
-      if (data.success) {
-        localStorage.setItem('token', data.data.token)
-        localStorage.setItem('user', JSON.stringify(data.data.user))
-        const u = data.data.user
-        if (u.student_id) {
-          navigate('/student')
-        } else if (u.board_member_id) {
-          navigate('/exam-board')
-        } else if (u.employee_id) {
-          let isProfessor = false
-          try { isProfessor = !!(await findMyFacultyMember(u.employee_id)) } catch { isProfessor = false }
-          navigate(isProfessor ? '/professor' : '/student-affairs')
-        } else {
-          navigate('/student-affairs')
-        }
-      } else {
-        setError(data.message || 'Invalid email or password')
-      }
-} catch {
-  setError('تعذّر الاتصال بالخادم. تحقق من رابط الـ API أو إعدادات السيرفر.')
-} finally {
+      const user = await login({ email, password })
+      navigate(user.default_dashboard || '/403', { replace: true })
+    } catch (requestError) {
+      setError(
+        requestError?.data?.errors?.email?.[0]
+        || requestError?.message
+        || 'تعذّر الاتصال بالخادم. تحقق من رابط الـ API أو إعدادات السيرفر.',
+      )
+    } finally {
       setLoading(false)
     }
   }

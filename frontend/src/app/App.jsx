@@ -1,9 +1,16 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
 
 import DashboardLayout from '../components/layout/DashboardLayout'
 
 // ── Auth ────────────────────────────────────────────────────────────────────
 import LoginPage from '../features/auth/pages/LoginPage'
+import AccessDeniedPage from '../features/auth/pages/AccessDeniedPage'
+import NotFoundPage from '../features/auth/pages/NotFoundPage'
+import {
+  HomeRedirect,
+  ProtectedRoute,
+  PublicOnlyRoute,
+} from '../features/auth/components/RouteGuards'
 
 // ── شؤون الطلاب (Student Affairs) ──────────────────────────────────────────
 import studentAffairsNav    from '../features/student-affairs/nav'
@@ -21,7 +28,6 @@ import StudentHome         from '../features/student-dashboard/pages/StudentHome
 import StudentTranscript  from '../features/student-dashboard/pages/StudentTranscript'
 import StudentGPA         from '../features/student-dashboard/pages/StudentGPA'
 import StudentAttendance  from '../features/student-dashboard/pages/StudentAttendance'
-import StudentRegistration from '../features/student-dashboard/pages/StudentRegistration'
 
 // ── الموارد البشرية (HR) ────────────────────────────────────────────────────
 import hrNav                from '../features/hr-dashboard/nav'
@@ -57,41 +63,104 @@ import professorNav             from '../features/professor-dashboard/nav'
 import ProfessorHome            from '../features/professor-dashboard/pages/ProfessorHome'
 import AttendanceDeprivationPage from '../features/professor-dashboard/pages/AttendanceDeprivationPage'
 
-function ProtectedRoute({ children }) {
-  const token = localStorage.getItem('token')
-  return token ? children : <Navigate to="/login" replace />
-}
-
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
 
         {/* Public */}
-        <Route path="/login" element={<LoginPage />} />
+        <Route
+          path="/login"
+          element={(
+            <PublicOnlyRoute>
+              <LoginPage />
+            </PublicOnlyRoute>
+          )}
+        />
 
         {/* ── شؤون الطلاب dashboard ── */}
         <Route
           element={
             <ProtectedRoute>
-              <DashboardLayout nav={studentAffairsNav} appTitle="شؤون الطلاب" />
+              <ProtectedRoute dashboard="student-affairs">
+                <DashboardLayout nav={studentAffairsNav} appTitle="شؤون الطلاب" />
+              </ProtectedRoute>
             </ProtectedRoute>
           }
         >
-          <Route path="/student-affairs"                   element={<StudentAffairsHome />}   />
-          <Route path="/student-affairs/students"          element={<StudentsPage />}          />
-          <Route path="/student-affairs/students/add"      element={<AddStudentPage />}        />
-          <Route path="/student-affairs/students/archived" element={<ArchivedStudentsPage />}  />
-          <Route path="/student-affairs/graduates"         element={<GraduatesPage />}         />
-          <Route path="/student-affairs/students/:id"      element={<StudentProfilePage />}    />
-          <Route path="/student-affairs/students/:id/edit" element={<EditStudentPage />}       />
+          <Route
+            path="/student-affairs"
+            element={(
+              <ProtectedRoute permission="students.view">
+                <StudentAffairsHome />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/student-affairs/students"
+            element={(
+              <ProtectedRoute permission="students.view">
+                <StudentsPage />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/student-affairs/students/add"
+            element={(
+              <ProtectedRoute permission="students.manage">
+                <AddStudentPage />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/student-affairs/students/archived"
+            element={(
+              <ProtectedRoute permission="students.manage">
+                <ArchivedStudentsPage />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/student-affairs/graduates"
+            element={(
+              <ProtectedRoute permission="students.view">
+                <GraduatesPage />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/student-affairs/students/:id"
+            element={(
+              <ProtectedRoute permission="students.view">
+                <StudentProfilePage />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/student-affairs/students/:id/edit"
+            element={(
+              <ProtectedRoute permission="students.manage">
+                <EditStudentPage />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/student-affairs/course-registration"
+            element={(
+              <ProtectedRoute permission="registration.manage">
+                <CourseRegistrationPage />
+              </ProtectedRoute>
+            )}
+          />
         </Route>
 
         {/* ── بوابة الطالب dashboard ── */}
         <Route
           element={
             <ProtectedRoute>
-              <DashboardLayout nav={studentNav} appTitle="بوابة الطالب" />
+              <ProtectedRoute dashboard="student">
+                <DashboardLayout nav={studentNav} appTitle="بوابة الطالب" />
+              </ProtectedRoute>
             </ProtectedRoute>
           }
         >
@@ -99,37 +168,123 @@ export default function App() {
           <Route path="/student/transcript" element={<StudentTranscript />} />
           <Route path="/student/gpa"        element={<StudentGPA />}        />
           <Route path="/student/attendance"    element={<StudentAttendance />} />
-          <Route path="/student/registration" element={<StudentRegistration />} />
         </Route>
 
         {/* ── هيئة الامتحانات dashboard ── */}
         <Route
           element={
             <ProtectedRoute>
-              <DashboardLayout nav={examBoardNav} appTitle="هيئة الامتحانات" />
+              <ProtectedRoute dashboard="exam-board">
+                <DashboardLayout nav={examBoardNav} appTitle="هيئة الامتحانات" />
+              </ProtectedRoute>
             </ProtectedRoute>
           }
         >
-          <Route path="/exam-board"                element={<ExamBoardHome />} />
-          <Route path="/exam-board/grade-entry"   element={<GradeEntryPage />} />
-          <Route path="/exam-board/grade-sheet"   element={<GradeSheetPage />} />
-          <Route path="/exam-board/approvals"     element={<ApprovalsPage />} />
-          <Route path="/exam-board/deprivation"   element={<DeprivationPage />} />
-          <Route path="/exam-board/supplementary" element={<ExamPlaceholder title="الامتحانات التكميلية" en="Supplementary Exams" />} />
-          <Route path="/exam-board/results"       element={<ExamPlaceholder title="النتائج والتقارير"    en="Results" />} />
-          <Route path="/exam-board/courses"             element={<CoursesPage />} />
-          <Route path="/exam-board/course-registration" element={<CourseRegistrationPage />} />
-          <Route path="/exam-board/course-offerings"    element={<CourseOfferingsPage />}    />
-          <Route path="/exam-board/course-table"        element={<CourseTablePage />}        />
-          <Route path="/exam-board/appeals"          element={<ExamPlaceholder title="التظلمات"             en="Appeals" />} />
-          <Route path="/exam-board/settings"         element={<ExamPlaceholder title="الإعدادات"            en="Settings" />} />
+          <Route
+            path="/exam-board"
+            element={(
+              <ProtectedRoute permission="exams.view">
+                <ExamBoardHome />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/exam-board/grade-entry"
+            element={(
+              <ProtectedRoute permission="grades.manage">
+                <GradeEntryPage />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/exam-board/grade-sheet"
+            element={(
+              <ProtectedRoute permission="grades.view">
+                <GradeSheetPage />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/exam-board/approvals"
+            element={(
+              <ProtectedRoute permission="grades.manage">
+                <ApprovalsPage />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/exam-board/deprivation"
+            element={(
+              <ProtectedRoute permission="exams.manage">
+                <DeprivationPage />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/exam-board/supplementary"
+            element={(
+              <ProtectedRoute permission="exams.manage">
+                <ExamPlaceholder title="الامتحانات التكميلية" en="Supplementary Exams" />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/exam-board/results"
+            element={(
+              <ProtectedRoute permission="grades.view">
+                <ExamPlaceholder title="النتائج والتقارير" en="Results" />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/exam-board/courses"
+            element={(
+              <ProtectedRoute permission="courses.manage">
+                <CoursesPage />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/exam-board/course-offerings"
+            element={(
+              <ProtectedRoute permission="courses.manage">
+                <CourseOfferingsPage />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/exam-board/course-table"
+            element={(
+              <ProtectedRoute permission="courses.manage">
+                <CourseTablePage />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/exam-board/appeals"
+            element={(
+              <ProtectedRoute permission="exams.manage">
+                <ExamPlaceholder title="التظلمات" en="Appeals" />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/exam-board/settings"
+            element={(
+              <ProtectedRoute permission="system_settings.manage">
+                <ExamPlaceholder title="الإعدادات" en="Settings" />
+              </ProtectedRoute>
+            )}
+          />
         </Route>
 
         {/* ── الهيكل الأكاديمي dashboard ── */}
         <Route
           element={
             <ProtectedRoute>
-              <DashboardLayout nav={academicStructureNav} appTitle="الهيكل الأكاديمي" />
+              <ProtectedRoute dashboard="academic-structure">
+                <DashboardLayout nav={academicStructureNav} appTitle="الهيكل الأكاديمي" />
+              </ProtectedRoute>
             </ProtectedRoute>
           }
         >
@@ -143,7 +298,9 @@ export default function App() {
         <Route
           element={
             <ProtectedRoute>
-              <DashboardLayout nav={hrNav} appTitle="الموارد البشرية" />
+              <ProtectedRoute dashboard="hr">
+                <DashboardLayout nav={hrNav} appTitle="الموارد البشرية" />
+              </ProtectedRoute>
             </ProtectedRoute>
           }
         >
@@ -159,17 +316,48 @@ export default function App() {
         <Route
           element={
             <ProtectedRoute>
-              <DashboardLayout nav={professorNav} appTitle="بوابة الأستاذ" />
+              <ProtectedRoute dashboard="professor">
+                <DashboardLayout nav={professorNav} appTitle="بوابة الأستاذ" />
+              </ProtectedRoute>
             </ProtectedRoute>
           }
         >
-          <Route path="/professor"             element={<ProfessorHome />}             />
-          <Route path="/professor/attendance"  element={<AttendanceDeprivationPage />}  />
+          <Route
+            path="/professor"
+            element={(
+              <ProtectedRoute permission="courses.view">
+                <ProfessorHome />
+              </ProtectedRoute>
+            )}
+          />
+          <Route
+            path="/professor/attendance"
+            element={(
+              <ProtectedRoute permission="attendance.manage">
+                <AttendanceDeprivationPage />
+              </ProtectedRoute>
+            )}
+          />
         </Route>
 
-        {/* Default redirect */}
-        <Route path="/"  element={<Navigate to="/student-affairs" replace />} />
-        <Route path="*"  element={<Navigate to="/student-affairs" replace />} />
+        <Route
+          path="/403"
+          element={(
+            <ProtectedRoute>
+              <AccessDeniedPage />
+            </ProtectedRoute>
+          )}
+        />
+
+        <Route path="/" element={<HomeRedirect />} />
+        <Route
+          path="*"
+          element={(
+            <ProtectedRoute>
+              <NotFoundPage />
+            </ProtectedRoute>
+          )}
+        />
 
       </Routes>
     </BrowserRouter>
