@@ -23,9 +23,15 @@ A missing result is not a failure and is excluded from transcript and GPA calcul
 
 `AttendanceService` uses the current-registration scope for rosters and deprivation candidates. Authorized historical attendance reads are unchanged, while attendance writes reject every non-current registration.
 
-Student list filtering now accepts `student_status_code`; the graduates UI and dashboard use `graduated`. Student updates accept `student_status_code`, safely resolve it to the environment's ID, and explicitly fail validation if the code is missing. Grade-approval creation similarly accepts `approval_status_code`; the Examination Committee UI sends `approved`. Numeric ID fields remain accepted for backward compatibility.
+Student list filtering now accepts `student_status_code`; the graduates UI and dashboard use `graduated`. Non-graduation student status updates may use `student_status_code`, safely resolve it to the environment's ID, and explicitly fail validation if the code is missing. Grade-approval creation similarly accepts `approval_status_code`; the Examination Committee UI sends `approved`. Numeric ID fields remain accepted for backward compatibility, but cannot bypass the graduation block.
+
+The generic student update endpoint explicitly rejects any transition whose resolved status code is `graduated` with HTTP `409` and error code `graduation_eligibility_not_implemented`. The frontend exposes no active graduation action. Graduate searches remain code-based. Graduation requires separately approved rules for program-credit completion, mandatory/elective requirements, successful result and repeat handling, outstanding academic/financial holds, and authorized final approval; none are guessed here.
 
 Existing route middleware, policies, assigned-section checks, student ownership checks, and Examination Committee deprivation/finalization boundaries were not widened. Visibility of a historical row does not confer write authority.
+
+Authenticated API requests now reject non-`active` accounts and revoke the presented token. Academic-record endpoints enforce student self-ownership or an authorized academic role. Grade and attendance section operations require the assigned instructor or Examination Committee role, while result calculation and final deprivation remain restricted to `exam_officer` (or system administration). Unauthorized operations return `403`.
+
+The OpenAPI contract documents grade-sheet eligibility fields, grade read/write authorization errors, code-based approval submission, and the disabled graduation response. Bruno examples use `approval_status_code` and a non-graduation `student_status_code`; they no longer direct clients to sensitive numeric transitions.
 
 ## Seat and credit behavior
 
@@ -48,4 +54,4 @@ No migration or data-correction command is required.
 
 ## Unresolved business rules
 
-This phase does not define graduation eligibility or rebuild result approval. The existing explicitly requested `graduated` transition and `approved` submission are code-based, but eligibility prerequisites and multi-stage approval policy require separate documented product rules.
+This phase does not define graduation eligibility or rebuild result approval. Graduation is therefore disabled, while graduate search remains available. The multi-stage approval policy still requires separate documented product rules.

@@ -155,7 +155,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
 |--------------------------------------------------------------------------
 */
 
-Route::middleware('auth:sanctum')->prefix('v1')->group(function (): void {
+Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::class])->prefix('v1')->group(function (): void {
 
     /*
     |--------------------------------------------------------------------------

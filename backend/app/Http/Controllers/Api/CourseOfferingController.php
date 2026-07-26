@@ -11,6 +11,7 @@ use App\Http\Resources\StudentCourseRegistrationResource;
 use App\Models\CourseOffering;
 use App\Services\AttendanceService;
 use App\Services\GradeService;
+use App\Services\AcademicAuthorizationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -75,7 +76,7 @@ class CourseOfferingController extends ApiController
     public function capacity(int $id): JsonResponse
     {
         $offering = CourseOffering::query()->findOrFail($id);
-        $registeredCount = $offering->studentCourseRegistrations()->count();
+        $registeredCount = $offering->studentCourseRegistrations()->current()->count();
         $capacity = (int) $offering->capacity;
         $availableSeats = (int) $offering->available_seats;
 
@@ -133,25 +134,29 @@ class CourseOfferingController extends ApiController
         return $this->successResponse(CourseOfferingResource::collection($offerings)->response($request)->getData(true));
     }
 
-    public function gradeSheet(int $id, GradeService $service): JsonResponse
+    public function gradeSheet(int $id, GradeService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
+        $authorization->assertCanAccessOffering(request()->user(), $id);
         $includeInactive = filter_var(request()->query('include_inactive', false), FILTER_VALIDATE_BOOLEAN);
 
         return $this->successResponse($service->getGradeSheet($id, $includeInactive));
     }
 
-    public function resultsSummary(int $id, GradeService $service): JsonResponse
+    public function resultsSummary(int $id, GradeService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
+        $authorization->assertCanAccessOffering(request()->user(), $id);
         return $this->successResponse($service->getResultsSummary($id));
     }
 
-    public function attendanceSessions(int $id, AttendanceService $service): JsonResponse
+    public function attendanceSessions(int $id, AttendanceService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
+        $authorization->assertCanAccessOffering(request()->user(), $id);
         return $this->successResponse($service->getCourseOfferingSessions($id));
     }
 
-    public function storeAttendanceSession(int $id, StoreCourseOfferingAttendanceSessionRequest $request, AttendanceService $service): JsonResponse
+    public function storeAttendanceSession(int $id, StoreCourseOfferingAttendanceSessionRequest $request, AttendanceService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
+        $authorization->assertCanAccessOffering($request->user(), $id);
         $session = $service->createCourseOfferingSession(
             $id,
             $request->validated(),
@@ -161,13 +166,15 @@ class CourseOfferingController extends ApiController
         return $this->successResponse($session, 'Attendance session created successfully', 201);
     }
 
-    public function deprivedStudents(int $id, AttendanceService $service): JsonResponse
+    public function deprivedStudents(int $id, AttendanceService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
+        $authorization->assertCanAccessOffering(request()->user(), $id);
         return $this->successResponse($service->getDeprivedStudents($id));
     }
 
-    public function applyDeprivation(int $id, AttendanceService $service): JsonResponse
+    public function applyDeprivation(int $id, AttendanceService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
+        $authorization->assertExaminationCommittee(request()->user());
         $result = $service->applyDeprivation($id, request()->user()?->user_id);
 
         return $this->successResponse($result, 'Deprivation applied successfully');

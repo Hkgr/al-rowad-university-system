@@ -460,6 +460,10 @@ class GradeService
                 'student_course_registration_id' => $registration->student_course_registration_id,
                 'registration_date' => $registration->registration_date,
                 'registration_status' => $this->compactRegistrationStatus($registration->registrationStatus?->status_code, $registration->registrationStatus?->status_name),
+                'grade_entry_allowed' => $registration->allowsGradeEntry(),
+                'grade_entry_blocked_reason' => $registration->allowsGradeEntry()
+                    ? null
+                    : 'Historical or inactive registrations are read-only.',
             ],
             'student' => $registration->student ? [
                 'student_id' => $registration->student->student_id,
@@ -499,6 +503,9 @@ class GradeService
             'result_status' => $grades['result_status'],
             'registration_status' => $grades['registration']['registration_status'],
             'grade_entry_allowed' => $registration->allowsGradeEntry(),
+            'grade_entry_blocked_reason' => $registration->allowsGradeEntry()
+                ? null
+                : 'Historical or inactive registrations are read-only.',
             'notes' => $grades['notes'],
         ];
     }

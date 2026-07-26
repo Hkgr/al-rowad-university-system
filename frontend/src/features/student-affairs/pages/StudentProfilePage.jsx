@@ -505,8 +505,6 @@ export default function StudentProfilePage() {
   const [semesters,      setSemesters]      = useState([])
   const initialTab = TABS.some(t => t.id === searchParams.get('tab')) ? searchParams.get('tab') : 'info'
   const [activeTab,      setActiveTab]      = useState(initialTab)
-  const [graduating,     setGraduating]     = useState(false)
-  const [graduateError,  setGraduateError]  = useState('')
   const [photoUrl,       setPhotoUrl]       = useState(null)
   const [photoTypeId,    setPhotoTypeId]    = useState(null)
   const [avatarUploading, setAvatarUploading] = useState(false)
@@ -611,32 +609,6 @@ export default function StudentProfilePage() {
     load()
   }, [id])
 
-  async function handleGraduate() {
-    if (!window.confirm(`هل تريد تخريج الطالب "${profile?.full_name}"؟\nسيتم تغيير حالته إلى "خريج".`)) return
-    setGraduating(true)
-    setGraduateError('')
-    try {
-      const res  = await fetch(`${API}/students/${id}`, {
-        method:  'PUT',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ student_status_code: 'graduated' }),
-      })
-      const json = await res.json()
-      if (json.success) {
-        setProfile(prev => ({
-          ...prev,
-          student_status: { status_code: 'graduated', status_name: 'Graduated' },
-        }))
-      } else {
-        setGraduateError(json.message || 'فشلت العملية')
-      }
-    } catch {
-      setGraduateError('تعذّر الاتصال بالخادم')
-    } finally {
-      setGraduating(false)
-    }
-  }
-
   async function handleDownloadTranscriptPdf() {
     const el = pdfContentRef.current
     if (!el) return
@@ -715,15 +687,14 @@ export default function StudentProfilePage() {
         </button>
         <div className="flex items-center gap-2 flex-wrap">
           {sc.ar !== 'خريج' && (
-            <button
+            <div
               className="flex items-center gap-2 px-4 py-2 bg-purple-500/10 border border-purple-500/25 text-purple-700 rounded-[10px] text-[13px] font-bold hover:bg-purple-500/18 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              onClick={handleGraduate}
-              disabled={graduating}
+              title="التخريج متوقف مؤقتاً حتى اعتماد قواعد الأهلية المؤسسية"
               dir="rtl"
             >
-              {graduating ? <FaSpinner className="animate-spin text-[12px]" /> : <FaGraduationCap className="text-[12px]" />}
-              <span>تخريج الطالب</span>
-            </button>
+              <FaGraduationCap className="text-[12px]" />
+              <span>التخريج متوقف مؤقتاً</span>
+            </div>
           )}
           {sc.ar === 'خريج' && (
             <span className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 border border-purple-200 text-purple-700 rounded-[10px] text-[12px] font-bold" dir="rtl">
@@ -740,12 +711,6 @@ export default function StudentProfilePage() {
           </button>
         </div>
       </div>
-
-      {graduateError && (
-        <div className="bg-red-50 border border-red-200 rounded-[12px] px-5 py-3 mb-4 text-[13px] text-red-600" dir="rtl">
-          ⚠ {graduateError}
-        </div>
-      )}
 
       {avatarError && (
         <div className="bg-red-50 border border-red-200 rounded-[12px] px-5 py-3 mb-4 text-[13px] text-red-600" dir="rtl">

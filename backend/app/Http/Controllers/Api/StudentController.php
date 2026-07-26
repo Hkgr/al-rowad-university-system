@@ -13,15 +13,40 @@ use App\Http\Resources\StudentResource;
 use App\Http\Resources\StudentRegistrationSummaryResource;
 use App\Http\Resources\StudentTranscriptResource;
 use App\Models\Student;
+use App\Models\StudentStatus;
 use App\Services\AttendanceService;
 use App\Services\GradeService;
 use App\Services\RegistrationService;
+use App\Services\AcademicAuthorizationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class StudentController extends ApiController
 {
+    public function update($id): JsonResponse
+    {
+        app(AcademicAuthorizationService::class)->assertStudentAffairs(request()->user());
+        $statusCode = request()->input('student_status_code');
+
+        if ($statusCode === null && request()->filled('student_status_id')) {
+            $statusCode = StudentStatus::query()
+                ->whereKey(request()->integer('student_status_id'))
+                ->value('status_code');
+        }
+
+        if ($statusCode === 'graduated') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Graduation is temporarily unavailable until institutional eligibility rules are implemented.',
+                'error_code' => 'graduation_eligibility_not_implemented',
+                'errors' => [],
+            ], 409);
+        }
+
+        return parent::update($id);
+    }
+
     protected function modelClass(): string
     {
         return Student::class;
@@ -43,7 +68,9 @@ class StudentController extends ApiController
     }
 
     public function index(): JsonResponse
-    {   $request = request();
+    {
+        app(AcademicAuthorizationService::class)->assertCanSearchStudents(request()->user());
+        $request = request();
         $validated = $request->validate([
             'student_status_id' => ['sometimes', 'integer', 'exists:student_statuses,student_status_id'],
             'student_status_code' => ['sometimes', 'string', 'exists:student_statuses,status_code'],
@@ -263,11 +290,13 @@ class StudentController extends ApiController
 
     public function transcript(Student $student, GradeService $gradeService): JsonResponse
     {
+        app(AcademicAuthorizationService::class)->assertStudentRecord(request()->user(), $student);
         return $this->successResponse($gradeService->getTranscript($student));
     }
 
     public function gpa(Student $student, Request $request, GradeService $gradeService): JsonResponse
     {
+        app(AcademicAuthorizationService::class)->assertStudentRecord($request->user(), $student);
         $validated = $request->validate([
             'academic_year_id' => ['required', 'integer', 'exists:academic_years,academic_year_id'],
             'semester_id' => ['required', 'integer', 'exists:semesters,semester_id'],
@@ -284,11 +313,13 @@ class StudentController extends ApiController
 
     public function cgpa(Student $student, GradeService $gradeService): JsonResponse
     {
+        app(AcademicAuthorizationService::class)->assertStudentRecord(request()->user(), $student);
         return $this->successResponse($gradeService->calculateCgpa($student));
     }
 
     public function attendance(Student $student, Request $request, AttendanceService $service): JsonResponse
     {
+        app(AcademicAuthorizationService::class)->assertStudentRecord($request->user(), $student);
         $validated = $request->validate([
             'academic_year_id' => ['sometimes', 'integer', 'exists:academic_years,academic_year_id'],
             'semester_id' => ['sometimes', 'integer', 'exists:semesters,semester_id'],
@@ -307,6 +338,7 @@ class StudentController extends ApiController
 
     public function absencePercentage(Student $student, Request $request, AttendanceService $service): JsonResponse
     {
+        app(AcademicAuthorizationService::class)->assertStudentRecord($request->user(), $student);
         $validated = $request->validate([
             'course_offering_id' => ['required', 'integer', 'exists:course_offerings,course_offering_id'],
         ]);

@@ -6,9 +6,25 @@ use App\Http\Requests\GradeApproval\StoreGradeApprovalRequest;
 use App\Http\Requests\GradeApproval\UpdateGradeApprovalRequest;
 use App\Http\Resources\GradeApprovalResource;
 use App\Models\GradeApproval;
+use App\Services\AcademicAuthorizationService;
+use Illuminate\Http\JsonResponse;
 
 class GradeApprovalController extends ApiController
 {
+    public function store(): JsonResponse
+    {
+        app(AcademicAuthorizationService::class)->assertExaminationCommittee(request()->user());
+
+        return parent::store();
+    }
+
+    public function update($id): JsonResponse
+    {
+        app(AcademicAuthorizationService::class)->assertExaminationCommittee(request()->user());
+
+        return parent::update($id);
+    }
+
     protected function modelClass(): string
     {
         return GradeApproval::class;
