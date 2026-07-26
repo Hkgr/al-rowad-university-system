@@ -3,6 +3,7 @@
 namespace App\Policies;
 
 use App\Models\StudentDocument;
+use App\Models\Student;
 use App\Models\User;
 
 class StudentDocumentPolicy
@@ -16,6 +17,12 @@ class StudentDocumentPolicy
         return $user->hasPermission('students.view');
     }
     public function create(User $user): bool { return $user->student_id !== null || $this->manage($user); }
+    public function createFor(User $user, Student $student): bool
+    {
+        return $this->manage($user)
+            || ($user->effectiveRoles()->contains('student')
+                && (int) $user->student_id === (int) $student->student_id);
+    }
     public function update(User $user, StudentDocument $document): bool { return $this->manage($user); }
     public function delete(User $user, StudentDocument $document): bool { return $this->manage($user); }
     private function manage(User $user): bool

@@ -4,12 +4,19 @@ namespace App\Http\Requests\StudentDocument;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use App\Models\StudentDocument;
+use Illuminate\Support\Facades\Gate;
 
 class UpdateStudentDocumentRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        $document = $this->route('student_document');
+        if (! $document instanceof StudentDocument) {
+            $document = StudentDocument::query()->find($document);
+        }
+
+        return $document !== null && Gate::allows('update', $document);
     }
 
     public function rules(): array

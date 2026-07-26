@@ -3,6 +3,7 @@ import {
   FaSpinner, FaPlus, FaSearch, FaLockOpen, FaLock, FaCheckCircle, FaTimes, FaLayerGroup, FaEye, FaPen,
 } from 'react-icons/fa'
 import InstructorAssignment from '../components/InstructorAssignment'
+import { hasPermission, PERMISSIONS } from '../../auth/auth'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
@@ -337,7 +338,7 @@ function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove,
 }
 
 // ── Shared / common courses (open to every college) ──────────────────────────
-function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onToggle, onInstructorUpdated, busyIds, facultyMembers }) {
+function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onToggle, onInstructorUpdated, busyIds, facultyMembers, readOnly }) {
   const [adding, setAdding] = useState(false)
   const [courseId, setCourseId] = useState('')
   const [capacity, setCapacity] = useState('40')
@@ -351,6 +352,7 @@ function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onTogg
   const courseMap = useMemo(() => Object.fromEntries(courses.map(c => [c.course_id, c])), [courses])
 
   async function submit() {
+    if (readOnly) { setErr('ليس لديك صلاحية إدارة المواد'); return }
     setErr('')
     if (!courseId) { setErr('اختر المادة'); return }
     if (!capacity || Number(capacity) < 1) { setErr('أدخل عدد المقاعد'); return }
@@ -387,7 +389,7 @@ function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onTogg
                   <span className={`px-2 py-0.5 rounded-full text-[10.5px] font-bold ${isOpen ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
                     {isOpen ? 'مفتوحة' : 'مغلقة'}
                   </span>
-                  <button
+                  {!readOnly && <button
                     type="button"
                     onClick={() => onToggle(o)}
                     disabled={!!busyIds[o.course_offering_id]}
@@ -395,14 +397,14 @@ function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onTogg
                   >
                     {isOpen ? <FaLock className="text-[9px]" /> : <FaLockOpen className="text-[9px]" />}
                     {isOpen ? 'إغلاق' : 'فتح'}
-                  </button>
+                  </button>}
                 </div>
               </div>
               <InstructorAssignment
                 offering={o}
                 facultyOptions={facultyMembers}
                 onUpdated={onInstructorUpdated}
-                readOnly={false}
+                readOnly={readOnly}
               />
             </div>
           )
@@ -411,7 +413,7 @@ function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onTogg
           <p className="text-center text-[12px] text-text-light py-2" dir="rtl">لا توجد مواد مشتركة مفتوحة لهذا الفصل</p>
         )}
 
-        {adding ? (
+        {!readOnly && (adding ? (
           <div className="border border-primary/15 rounded-[10px] p-3 space-y-2" dir="rtl">
             <CourseCombobox courses={courses} excludeIds={excludeIds} value={courseId} onChange={setCourseId} />
             <div className="flex items-center gap-2">
@@ -450,7 +452,7 @@ function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onTogg
           >
             <FaPlus className="text-[10px]" /> إضافة مادة مشتركة
           </button>
-        )}
+        ))}
       </div>
     </div>
   )
@@ -458,6 +460,7 @@ function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onTogg
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function CourseOfferingsPage() {
+  const canManage = hasPermission(PERMISSIONS.coursesManage)
   const [years, setYears]           = useState([])
   const [semesters, setSemesters]   = useState([])
   const [colleges, setColleges]     = useState([])
@@ -596,6 +599,7 @@ export default function CourseOfferingsPage() {
   }
 
   async function handleAddCurriculumCourse(levelId, courseId, courseType, capacity) {
+    if (!canManage) throw new Error('ليس لديك صلاحية إدارة المواد')
     const pcJson = await post(`${API}/program-courses`, {
       academic_program_id: Number(programId),
       course_id: courseId,
@@ -624,6 +628,7 @@ export default function CourseOfferingsPage() {
   }
 
   async function handleRemoveCurriculumCourse(programCourseId) {
+    if (!canManage) return
     if (!window.confirm('هل تريد إزالة هذه المادة من منهج هذا المستوى؟')) return
     setBusyIds(p => ({ ...p, [programCourseId]: true }))
     try {
@@ -636,6 +641,7 @@ export default function CourseOfferingsPage() {
   }
 
   async function handleOpenOffering(courseId, capacity) {
+    if (!canManage) return
     setBusyIds(p => ({ ...p, [`open-${courseId}`]: true }))
     try {
       const json = await post(`${API}/course-offerings`, {
@@ -658,6 +664,7 @@ export default function CourseOfferingsPage() {
   }
 
   async function handleToggleStatus(offering) {
+    if (!canManage) return
     const nextStatus = offering.status === 'open' ? 'closed' : 'open'
     setBusyIds(p => ({ ...p, [offering.course_offering_id]: true }))
     try {
@@ -682,6 +689,7 @@ export default function CourseOfferingsPage() {
   }
 
   async function handleAddSharedCourse(courseId, capacity) {
+    if (!canManage) throw new Error('ليس لديك صلاحية إدارة المواد')
     const json = await post(`${API}/course-offerings`, {
       course_id: courseId,
       academic_year_id: Number(yearId),
@@ -759,6 +767,7 @@ export default function CourseOfferingsPage() {
             onInstructorUpdated={handleInstructorUpdated}
             busyIds={busyIds}
             facultyMembers={facultyOptions}
+            readOnly={!canManage}
           />
 
           {/* College + Program selector */}
@@ -798,7 +807,7 @@ export default function CourseOfferingsPage() {
 
           {programId && (
             <>
-              <div className="flex justify-end mb-3">
+              {canManage && <div className="flex justify-end mb-3">
                 <button
                   type="button"
                   onClick={() => setPreviewMode(p => !p)}
@@ -808,7 +817,7 @@ export default function CourseOfferingsPage() {
                   {previewMode ? <FaPen className="text-[11px]" /> : <FaEye className="text-[11px]" />}
                   {previewMode ? 'رجوع للتحرير' : 'معاينة ما تم إدخاله'}
                 </button>
-              </div>
+              </div>}
               <div>
                 {curriculumLevels.map(level => {
                   const rows = programCoursesForProgram
@@ -827,7 +836,7 @@ export default function CourseOfferingsPage() {
                       onToggle={handleToggleStatus}
                       onInstructorUpdated={handleInstructorUpdated}
                       busyIds={busyIds}
-                      readOnly={previewMode}
+                      readOnly={previewMode || !canManage}
                       courseDepartmentIdMap={courseDepartmentIdMap}
                       departments={departments}
                       facultyMembers={facultyOptions}

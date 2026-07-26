@@ -6,7 +6,7 @@ import DashboardLayout from '../components/layout/DashboardLayout'
 // ── Auth ────────────────────────────────────────────────────────────────────
 import LoginPage from '../features/auth/pages/LoginPage'
 import ForbiddenPage from '../features/auth/pages/ForbiddenPage'
-import { canAccess, clearIdentity, getIdentity, landingRoute, storeIdentity } from '../features/auth/auth'
+import { ACCESS, canAccess, clearIdentity, getIdentity, landingRoute, storeIdentity } from '../features/auth/auth'
 
 // ── شؤون الطلاب (Student Affairs) ──────────────────────────────────────────
 import studentAffairsNav    from '../features/student-affairs/nav'
@@ -132,24 +132,24 @@ export default function App() {
         {/* ── هيئة الامتحانات dashboard ── */}
         <Route
           element={
-            <ProtectedRoute permissions={['exams.view', 'grades.view']}>
+            <ProtectedRoute permissions={['exams.view', 'grades.view', 'courses.view', 'registration.view']}>
               <DashboardLayout nav={examBoardNav} appTitle="هيئة الامتحانات" />
             </ProtectedRoute>
           }
         >
-          <Route path="/exam-board"                element={<ExamBoardHome />} />
+          <Route path="/exam-board"                element={protect(<ExamBoardHome />, { permissions: ['exams.view', 'grades.view'] })} />
           <Route path="/exam-board/grade-entry"   element={protect(<GradeEntryPage />, { permissions: ['grades.manage'] })} />
-          <Route path="/exam-board/grade-sheet"   element={<GradeSheetPage />} />
+          <Route path="/exam-board/grade-sheet"   element={protect(<GradeSheetPage />, { permissions: ['grades.view'] })} />
           <Route path="/exam-board/approvals"     element={protect(<ApprovalsPage />, { permissions: ['exams.manage'] })} />
           <Route path="/exam-board/deprivation"   element={protect(<DeprivationPage />, { permissions: ['exams.manage'] })} />
-          <Route path="/exam-board/supplementary" element={<ExamPlaceholder title="الامتحانات التكميلية" en="Supplementary Exams" />} />
-          <Route path="/exam-board/results"       element={<ExamPlaceholder title="النتائج والتقارير"    en="Results" />} />
-          <Route path="/exam-board/courses"             element={<CoursesPage />} />
-          <Route path="/exam-board/course-registration" element={<CourseRegistrationPage />} />
-          <Route path="/exam-board/course-offerings"    element={<CourseOfferingsPage />}    />
-          <Route path="/exam-board/course-table"        element={<CourseTablePage />}        />
-          <Route path="/exam-board/appeals"          element={<ExamPlaceholder title="التظلمات"             en="Appeals" />} />
-          <Route path="/exam-board/settings"         element={<ExamPlaceholder title="الإعدادات"            en="Settings" />} />
+          <Route path="/exam-board/supplementary" element={protect(<ExamPlaceholder title="الامتحانات التكميلية" en="Supplementary Exams" />, { permissions: ['exams.view'] })} />
+          <Route path="/exam-board/results"       element={protect(<ExamPlaceholder title="النتائج والتقارير" en="Results" />, { permissions: ['grades.view'] })} />
+          <Route path="/exam-board/courses"             element={protect(<CoursesPage />, ACCESS.courseManagement)} />
+          <Route path="/exam-board/course-registration" element={protect(<CourseRegistrationPage />, ACCESS.courseRegistration)} />
+          <Route path="/exam-board/course-offerings"    element={protect(<CourseOfferingsPage />, ACCESS.courseManagement)} />
+          <Route path="/exam-board/course-table"        element={protect(<CourseTablePage />, ACCESS.courseManagement)} />
+          <Route path="/exam-board/appeals"          element={protect(<ExamPlaceholder title="التظلمات" en="Appeals" />, { permissions: ['exams.view'] })} />
+          <Route path="/exam-board/settings"         element={protect(<ExamPlaceholder title="الإعدادات" en="Settings" />, { permissions: ['exams.view'] })} />
         </Route>
 
         {/* ── الهيكل الأكاديمي dashboard ── */}

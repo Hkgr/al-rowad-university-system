@@ -1,5 +1,17 @@
 const IDENTITY_KEY = 'user'
 
+export const PERMISSIONS = Object.freeze({
+  registrationView: 'registration.view',
+  registrationManage: 'registration.manage',
+  coursesView: 'courses.view',
+  coursesManage: 'courses.manage',
+})
+
+export const ACCESS = Object.freeze({
+  courseRegistration: { permissions: [PERMISSIONS.registrationView] },
+  courseManagement: { permissions: [PERMISSIONS.coursesView] },
+})
+
 export function getIdentity() {
   try { return JSON.parse(localStorage.getItem(IDENTITY_KEY) || 'null') } catch { return null }
 }

@@ -39,14 +39,16 @@ class StudentDocumentController extends ApiController
 
     public function upload(Student $student, Request $request): JsonResponse
     {
-        Gate::authorize('view', $student);
-        Gate::authorize('create', StudentDocument::class);
-        $validated = $request->validate([
+        Gate::authorize('createFor', [StudentDocument::class, $student]);
+        $rules = [
             'document_type_id' => ['required', 'integer', 'exists:document_types,document_type_id'],
             'file' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:5120'],
-            'verification_notes' => ['nullable', 'string', 'max:255'],
             'uploaded_at' => ['nullable', 'date'],
-        ]);
+        ];
+        if ($request->user()->student_id === null) {
+            $rules['verification_notes'] = ['nullable', 'string', 'max:255'];
+        }
+        $validated = $request->validate($rules);
 
         $file = $request->file('file');
         $originalFileName = $file->getClientOriginalName();
@@ -72,7 +74,9 @@ class StudentDocumentController extends ApiController
             'verification_status' => 'pending',
             'verified_by_user_id' => null,
             'verified_at' => null,
-            'verification_notes' => $validated['verification_notes'] ?? null,
+            'verification_notes' => $request->user()->student_id === null
+                ? ($validated['verification_notes'] ?? null)
+                : null,
             'uploaded_at' => $validated['uploaded_at'] ?? now(),
         ]);
 

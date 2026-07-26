@@ -3,6 +3,7 @@ import {
   FaSearch, FaSpinner, FaUserGraduate, FaCheckCircle, FaTimesCircle,
   FaPlus, FaMinus, FaBookOpen, FaExchangeAlt,
 } from 'react-icons/fa'
+import { hasPermission, PERMISSIONS } from '../../auth/auth'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
@@ -161,7 +162,7 @@ function PanelHeader({ title, count }) {
 }
 
 // ── Registered courses panel ──────────────────────────────────────────────────
-function RegisteredPanel({ registrations, onDrop, dropping }) {
+function RegisteredPanel({ registrations, onDrop, dropping, canManage }) {
   if (registrations.length === 0) return (
     <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
       <PanelHeader title="المواد المسجلة" count={0} />
@@ -188,7 +189,7 @@ function RegisteredPanel({ registrations, onDrop, dropping }) {
                 </span>
               </div>
             </div>
-            <button
+            {canManage && <button
               onClick={() => onDrop(r.registration_id, r.course_name)}
               disabled={!!dropping[r.registration_id]}
               className="flex items-center gap-1.5 px-3 py-1.5 border border-red-300 text-red-600 rounded-[8px] text-[11.5px] font-bold hover:bg-red-50 disabled:opacity-40 transition-colors flex-shrink-0"
@@ -197,7 +198,7 @@ function RegisteredPanel({ registrations, onDrop, dropping }) {
                 ? <FaSpinner className="animate-spin text-[10px]" />
                 : <FaMinus className="text-[10px]" />}
               حذف
-            </button>
+            </button>}
           </div>
         ))}
       </div>
@@ -210,7 +211,7 @@ function RegisteredPanel({ registrations, onDrop, dropping }) {
 // program_courses curriculum mapping) purely for organization — a course from
 // any year can be registered for any student as long as it has no missing
 // prerequisites. Courses with no curriculum mapping show under "مشتركة".
-function AvailablePanel({ courses, levels, programCourseMap, currentLevelId, onRegister, registering }) {
+function AvailablePanel({ courses, levels, programCourseMap, currentLevelId, onRegister, registering, canManage }) {
   const groups = useMemo(() => {
     const byLevel = new Map()
     const shared = []
@@ -253,7 +254,7 @@ function AvailablePanel({ courses, levels, programCourseMap, currentLevelId, onR
             </div>
             <div className="divide-y divide-primary/6">
               {groups.byLevel.get(level.academic_level_id).map(c => (
-                <CourseRow key={c.course_offering_id} course={c} onRegister={onRegister} registering={registering} />
+              <CourseRow key={c.course_offering_id} course={c} onRegister={onRegister} registering={registering} canManage={canManage} />
               ))}
             </div>
           </div>
@@ -265,7 +266,7 @@ function AvailablePanel({ courses, levels, programCourseMap, currentLevelId, onR
             </div>
             <div className="divide-y divide-primary/6">
               {groups.shared.map(c => (
-                <CourseRow key={c.course_offering_id} course={c} onRegister={onRegister} registering={registering} />
+            <CourseRow key={c.course_offering_id} course={c} onRegister={onRegister} registering={registering} canManage={canManage} />
               ))}
             </div>
           </div>
@@ -275,7 +276,7 @@ function AvailablePanel({ courses, levels, programCourseMap, currentLevelId, onR
   )
 }
 
-function CourseRow({ course, onRegister, registering }) {
+function CourseRow({ course, onRegister, registering, canManage }) {
   const eligible = course.eligibility_status === 'eligible'
   const reasons  = course.reasons ?? []
   const seats    = course.available_seats ?? 0
@@ -314,7 +315,7 @@ function CourseRow({ course, onRegister, registering }) {
           })}
         </div>
       </div>
-      <button
+      {canManage && <button
         onClick={() => onRegister(course.course_offering_id, course.course_name)}
         disabled={!eligible || !!registering[course.course_offering_id]}
         className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-[8px] text-[11.5px] font-bold hover:enabled:bg-primary-dark disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex-shrink-0 mt-0.5"
@@ -323,13 +324,14 @@ function CourseRow({ course, onRegister, registering }) {
           ? <FaSpinner className="animate-spin text-[10px]" />
           : <FaPlus className="text-[10px]" />}
         تسجيل
-      </button>
+      </button>}
     </div>
   )
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function CourseRegistrationPage() {
+  const canManage = hasPermission(PERMISSIONS.registrationManage)
   const [selectedStudent, setSelectedStudent] = useState(null)
 
   const [years,     setYears]     = useState([])
@@ -432,6 +434,7 @@ export default function CourseRegistrationPage() {
   }
 
   async function handleRegister(offeringId, name) {
+    if (!canManage) { setErr('ليس لديك صلاحية إدارة تسجيل المواد'); return }
     setRegistering(p => ({ ...p, [offeringId]: true })); setErr('')
     try {
       const res  = await fetch(`${API}/registrations/register-student`, {
@@ -454,6 +457,7 @@ export default function CourseRegistrationPage() {
   }
 
   async function handleDrop(registrationId, name) {
+    if (!canManage) { setErr('ليس لديك صلاحية إدارة تسجيل المواد'); return }
     if (!window.confirm(`هل تريد حذف تسجيل مادة "${name}"؟`)) return
     setDropping(p => ({ ...p, [registrationId]: true })); setErr('')
     try {
@@ -564,6 +568,7 @@ export default function CourseRegistrationPage() {
                   registrations={registrations}
                   onDrop={handleDrop}
                   dropping={dropping}
+                  canManage={canManage}
                 />
                 <AvailablePanel
                   courses={available}
@@ -572,6 +577,7 @@ export default function CourseRegistrationPage() {
                   currentLevelId={selectedStudent.current_academic_level_id}
                   onRegister={handleRegister}
                   registering={registering}
+                  canManage={canManage}
                 />
               </div>
             </>

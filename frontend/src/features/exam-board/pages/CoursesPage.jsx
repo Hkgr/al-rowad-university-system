@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { FaSpinner, FaPlus, FaEdit, FaTrash, FaCheck, FaTimes, FaBook, FaStar, FaRegStar, FaLayerGroup } from 'react-icons/fa'
+import { hasPermission, PERMISSIONS } from '../../auth/auth'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 function authHeaders() {
@@ -181,6 +182,7 @@ function CourseForm({ initial, onSave, onCancel, saving, colleges, departments, 
 }
 
 export default function CoursesPage() {
+  const canManage = hasPermission(PERMISSIONS.coursesManage)
   const [courses,     setCourses]     = useState([])
   const [colleges,    setColleges]    = useState([])
   const [departments, setDepartments] = useState([])
@@ -245,6 +247,7 @@ export default function CoursesPage() {
   }
 
   async function syncDepartmentLinks(courseId, { scope, departmentIds }) {
+    if (!canManage) return
     const current    = assignments.filter(a => a.course_id === courseId)
     const currentIds = new Set(current.map(a => String(a.department_id)))
     const desiredIds = scope === 'specific' ? new Set(departmentIds.map(String)) : new Set()
@@ -284,6 +287,7 @@ export default function CoursesPage() {
   }
 
   async function handleDvAdd(courseId) {
+    if (!canManage) return
     setDvSaving(p => ({ ...p, [courseId]: true })); setDvErr('')
     try {
       const res  = await fetch(`${API}/course-departments`, {
@@ -299,6 +303,7 @@ export default function CoursesPage() {
   }
 
   async function handleDvRemove(assignmentId) {
+    if (!canManage) return
     setDvRemoving(p => ({ ...p, [assignmentId]: true })); setDvErr('')
     try {
       const res  = await fetch(`${API}/course-departments/${assignmentId}`, {
@@ -313,6 +318,7 @@ export default function CoursesPage() {
   }
 
   async function handleSave(form, deptSelection) {
+    if (!canManage) { setErr('ليس لديك صلاحية إدارة المواد'); return }
     setSaving(true); setErr('')
     const isEdit = mode !== 'add'
     const url    = isEdit ? `${API}/courses/${mode.course_id}` : `${API}/courses`
@@ -346,6 +352,7 @@ export default function CoursesPage() {
   }
 
   async function handleDelete(course) {
+    if (!canManage) { setErr('ليس لديك صلاحية إدارة المواد'); return }
     if (!window.confirm(`حذف المادة "${course.course_name}"؟`)) return
     setDeleting(p => ({ ...p, [course.course_id]: true })); setErr('')
     try {
@@ -364,7 +371,7 @@ export default function CoursesPage() {
           <h2 className="text-[20px] font-black text-text-dark mb-[3px]">إدارة المواد الدراسية</h2>
           <p className="text-[12.5px] text-text-light">Courses Management</p>
         </div>
-        {viewTab === 'courses' && mode === null && (
+        {canManage && viewTab === 'courses' && mode === null && (
           <button
             onClick={() => { setMode('add'); setErr(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
             className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-[10px] text-[13px] font-bold hover:bg-primary-dark transition-colors"
@@ -402,7 +409,7 @@ export default function CoursesPage() {
       )}
 
       {/* Add / Edit form */}
-      {viewTab === 'courses' && mode === 'add' && (
+      {canManage && viewTab === 'courses' && mode === 'add' && (
         <CourseForm
           onSave={handleSave}
           onCancel={() => { setMode(null); setErr('') }}
@@ -411,7 +418,7 @@ export default function CoursesPage() {
           departments={departments}
         />
       )}
-      {viewTab === 'courses' && mode !== null && mode !== 'add' && (
+      {canManage && viewTab === 'courses' && mode !== null && mode !== 'add' && (
         <CourseForm
           initial={mode}
           onSave={handleSave}
@@ -513,7 +520,7 @@ export default function CoursesPage() {
                             }
                           </td>
                           <td className="px-3 py-3 text-center">
-                            <div className="flex items-center justify-center gap-2">
+                            {canManage && <div className="flex items-center justify-center gap-2">
                               <button
                                 onClick={() => { setMode(c); setErr(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
                                 className="flex items-center gap-1 px-2.5 py-1.5 border border-primary/25 text-primary rounded-[7px] text-[11px] font-bold hover:bg-primary/[0.05] transition-colors"
@@ -528,7 +535,7 @@ export default function CoursesPage() {
                                 {deleting[c.course_id] ? <FaSpinner className="animate-spin text-[10px]" /> : <FaTrash className="text-[10px]" />}
                                 حذف
                               </button>
-                            </div>
+                            </div>}
                           </td>
                         </tr>
                       )
@@ -609,7 +616,7 @@ export default function CoursesPage() {
                               }
                             </div>
                           </div>
-                          <button
+                          {canManage && <button
                             onClick={() => handleDvRemove(a.course_department_id)}
                             disabled={!!dvRemoving[a.course_department_id]}
                             className="flex items-center gap-1.5 px-3 py-1.5 border border-red-300 text-red-600 rounded-[7px] text-[11.5px] font-bold hover:bg-red-50 disabled:opacity-40 transition-colors flex-shrink-0"
@@ -618,7 +625,7 @@ export default function CoursesPage() {
                               ? <FaSpinner className="animate-spin text-[10px]" />
                               : <FaTimes className="text-[10px]" />}
                             حذف
-                          </button>
+                          </button>}
                         </div>
                       )
                     })}
@@ -643,7 +650,7 @@ export default function CoursesPage() {
                           <div className="font-semibold text-[13px] text-text-dark truncate">{c.course_name}</div>
                           <div className="text-[11px] text-text-light font-mono">{c.course_code}</div>
                         </div>
-                        <button
+                        {canManage && <button
                           onClick={() => handleDvAdd(c.course_id)}
                           disabled={!!dvSaving[c.course_id]}
                           className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-[7px] text-[11.5px] font-bold hover:bg-primary-dark disabled:opacity-40 transition-colors flex-shrink-0"
@@ -652,7 +659,7 @@ export default function CoursesPage() {
                             ? <FaSpinner className="animate-spin text-[10px]" />
                             : <FaPlus className="text-[10px]" />}
                           إضافة
-                        </button>
+                        </button>}
                       </div>
                     ))}
                   </div>

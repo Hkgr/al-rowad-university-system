@@ -4,6 +4,7 @@ import DataTable from '../../../components/table/DataTable'
 import FilterBar from '../../../components/table/FilterBar'
 import { exportRowsToPdf } from '../../../utils/pdfExport'
 import InstructorAssignment from '../components/InstructorAssignment'
+import { hasPermission, PERMISSIONS } from '../../auth/auth'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
@@ -19,6 +20,7 @@ async function get(url) {
 const TYPE_LABEL = { mandatory: 'إجباري', elective: 'اختياري' }
 
 export default function CourseTablePage() {
+  const canManage = hasPermission(PERMISSIONS.coursesManage)
   const [years, setYears]             = useState([])
   const [semesters, setSemesters]     = useState([])
   const [colleges, setColleges]       = useState([])
@@ -360,7 +362,7 @@ export default function CourseTablePage() {
                           offering={r.offering}
                           facultyOptions={facultyOptions}
                           onUpdated={handleInstructorUpdated}
-                          readOnly={false}
+                          readOnly={!canManage}
                         />
                       ) : <span className="text-text-light">—</span>
                     ),

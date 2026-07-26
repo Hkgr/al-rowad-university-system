@@ -25,6 +25,13 @@ class GradeApprovalController extends ApiController
         return parent::update($id);
     }
 
+    public function destroy($id): JsonResponse
+    {
+        app(AcademicAuthorizationService::class)->assertExaminationCommittee(request()->user());
+
+        return parent::destroy($id);
+    }
+
     protected function modelClass(): string
     {
         return GradeApproval::class;

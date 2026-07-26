@@ -14,6 +14,7 @@ use App\Services\GradeService;
 use App\Services\AcademicAuthorizationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 
 class CourseOfferingController extends ApiController
 {
@@ -39,6 +40,7 @@ class CourseOfferingController extends ApiController
 
     public function open(): JsonResponse
     {
+        Gate::authorize('viewAny', CourseOffering::class);
         $offerings = CourseOffering::query()
             ->with(['course', 'academicYear', 'semester', 'department', 'academicProgram', 'facultyMember'])
             ->withCount('studentCourseRegistrations')
@@ -55,6 +57,7 @@ class CourseOfferingController extends ApiController
             ->with(['course', 'academicYear', 'semester', 'department', 'academicProgram', 'facultyMember'])
             ->withCount('studentCourseRegistrations')
             ->findOrFail($id);
+        Gate::authorize('view', $offering);
 
         $payload = (new CourseOfferingResource($offering))->resolve(request());
         $payload['registered_students_count'] = $offering->student_course_registrations_count;
@@ -69,6 +72,7 @@ class CourseOfferingController extends ApiController
             'studentCourseRegistrations.registrationStatus',
             'studentCourseRegistrations.resultStatus',
         ])->findOrFail($id);
+        Gate::authorize('viewRoster', $offering);
 
         return $this->successResponse(CourseOfferingStudentResource::collection($offering->studentCourseRegistrations));
     }
@@ -76,6 +80,7 @@ class CourseOfferingController extends ApiController
     public function capacity(int $id): JsonResponse
     {
         $offering = CourseOffering::query()->findOrFail($id);
+        Gate::authorize('view', $offering);
         $registeredCount = $offering->studentCourseRegistrations()->current()->count();
         $capacity = (int) $offering->capacity;
         $availableSeats = (int) $offering->available_seats;
@@ -91,6 +96,7 @@ class CourseOfferingController extends ApiController
 
     public function bySemester(Request $request): JsonResponse
     {
+        Gate::authorize('viewAny', CourseOffering::class);
         $validated = $request->validate([
             'academic_year_id' => ['required', 'integer', 'exists:academic_years,academic_year_id'],
             'semester_id' => ['required', 'integer', 'exists:semesters,semester_id'],
@@ -115,6 +121,7 @@ class CourseOfferingController extends ApiController
 
     public function byProgram(Request $request, int $program_id): JsonResponse
     {
+        Gate::authorize('viewAny', CourseOffering::class);
         $validated = $request->validate([
             'academic_year_id' => ['sometimes', 'nullable', 'integer', 'exists:academic_years,academic_year_id'],
             'semester_id' => ['sometimes', 'nullable', 'integer', 'exists:semesters,semester_id'],

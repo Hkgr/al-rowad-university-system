@@ -10,11 +10,13 @@ use App\Models\CourseOffering;
 use App\Models\CourseOfferingInstructor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 
 class CourseOfferingInstructorController extends Controller
 {
     public function index(CourseOffering $courseOffering): JsonResponse
     {
+        Gate::authorize('view', $courseOffering);
         $instructors = $courseOffering->offeringInstructors()
             ->with('facultyMember')
             ->orderByDesc('is_primary')
@@ -30,6 +32,7 @@ class CourseOfferingInstructorController extends Controller
         StoreCourseOfferingInstructorRequest $request,
         CourseOffering $courseOffering
     ): JsonResponse {
+        Gate::authorize('update', $courseOffering);
         $validated = $request->validated();
         $courseOfferingId = $courseOffering->course_offering_id;
         $facultyMemberId = (int) $validated['faculty_member_id'];
@@ -74,6 +77,8 @@ class CourseOfferingInstructorController extends Controller
         UpdateCourseOfferingInstructorRequest $request,
         CourseOfferingInstructor $courseOfferingInstructor
     ): JsonResponse {
+        $courseOfferingInstructor->loadMissing('courseOffering');
+        Gate::authorize('update', $courseOfferingInstructor->courseOffering);
         $validated = $request->validated();
 
         $instructor = DB::transaction(function () use ($courseOfferingInstructor, $validated): CourseOfferingInstructor {
@@ -98,6 +103,8 @@ class CourseOfferingInstructorController extends Controller
 
     public function destroy(CourseOfferingInstructor $courseOfferingInstructor): JsonResponse
     {
+        $courseOfferingInstructor->loadMissing('courseOffering');
+        Gate::authorize('update', $courseOfferingInstructor->courseOffering);
         DB::transaction(function () use ($courseOfferingInstructor): void {
             $courseOffering = $courseOfferingInstructor->courseOffering;
             $wasPrimary = $courseOfferingInstructor->is_primary;
