@@ -46,6 +46,7 @@ class StudentController extends ApiController
     {   $request = request();
         $validated = $request->validate([
             'student_status_id' => ['sometimes', 'integer', 'exists:student_statuses,student_status_id'],
+            'student_status_code' => ['sometimes', 'string', 'exists:student_statuses,status_code'],
             'academic_program_id' => ['sometimes', 'integer', 'exists:academic_programs,academic_program_id'],
             'current_academic_level_id' => ['sometimes', 'integer', 'exists:academic_levels,academic_level_id'],
             'q' => ['sometimes', 'string', 'min:1', 'max:150'],
@@ -58,6 +59,8 @@ class StudentController extends ApiController
 
         if (isset($validated['student_status_id'])) {
             $query->where('student_status_id', $validated['student_status_id']);
+        } elseif (isset($validated['student_status_code'])) {
+            $query->whereHas('studentStatus', fn ($status) => $status->where('status_code', $validated['student_status_code']));
         }
 
         if (isset($validated['academic_program_id'])) {

@@ -619,7 +619,7 @@ export default function StudentProfilePage() {
       const res  = await fetch(`${API}/students/${id}`, {
         method:  'PUT',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ student_status_id: 3 }),
+        body:    JSON.stringify({ student_status_code: 'graduated' }),
       })
       const json = await res.json()
       if (json.success) {

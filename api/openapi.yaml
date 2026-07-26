@@ -78,6 +78,13 @@ paths:
       summary: List students
       security:
         - bearerAuth: []
+      parameters:
+        - name: student_status_code
+          in: query
+          required: false
+          description: Stable status-code filter (for example, `graduated`). Preferred over the legacy numeric ID filter.
+          schema:
+            type: string
       responses:
         "200":
           description: Students list

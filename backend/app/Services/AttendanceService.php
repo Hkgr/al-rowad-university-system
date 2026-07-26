@@ -19,10 +19,6 @@ class AttendanceService
 {
     public const DEPRIVATION_THRESHOLD = 15;
 
-    private const ACTIVE_REGISTRATION_STATUS = 'registered';
-
-    private const EXCLUDED_REGISTRATION_STATUSES = ['dropped', 'withdrawn'];
-
     public function getCourseOfferingSessions(int $courseOfferingId): array
     {
         $offering = CourseOffering::query()->findOrFail($courseOfferingId);
@@ -129,11 +125,7 @@ class AttendanceService
                     throw new AttendanceException('Registration does not belong to this attendance session course offering.');
                 }
 
-                if (in_array($registration->registrationStatus?->status_code, self::EXCLUDED_REGISTRATION_STATUSES, true)) {
-                    throw new AttendanceException('Attendance cannot be recorded for dropped or withdrawn registrations.');
-                }
-
-                if ($registration->registrationStatus?->status_code !== self::ACTIVE_REGISTRATION_STATUS) {
+                if (! $registration->allowsAttendanceEntry()) {
                     throw new AttendanceException('Attendance can only be recorded for actively registered students.');
                 }
 
@@ -477,10 +469,7 @@ class AttendanceService
     {
         return StudentCourseRegistration::query()
             ->where('course_offering_id', $courseOfferingId)
-            ->whereHas(
-                'registrationStatus',
-                fn (Builder $query) => $query->where('status_code', self::ACTIVE_REGISTRATION_STATUS)
-            );
+            ->current();
     }
 
     private function isDeprived(StudentCourseRegistration $registration): bool

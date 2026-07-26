@@ -21,10 +21,6 @@ use Illuminate\Support\Facades\DB;
 
 class GradeService
 {
-    private const ACTIVE_REGISTRATION_STATUS = 'registered';
-
-    private const EXCLUDED_REGISTRATION_STATUSES = ['dropped', 'withdrawn'];
-
     private const EXCLUDED_RESULT_STATUSES = ['incomplete', 'deprived', 'withdrawn'];
 
     private ?GradingPolicy $defaultPolicy = null;
@@ -43,10 +39,7 @@ class GradeService
             ]);
 
         if (! $includeInactive) {
-            $registrationsQuery->whereHas(
-                'registrationStatus',
-                fn (Builder $query) => $query->where('status_code', self::ACTIVE_REGISTRATION_STATUS)
-            );
+            $registrationsQuery->currentOrHistoricalWithResult();
         }
 
         $registrations = $registrationsQuery
@@ -69,10 +62,7 @@ class GradeService
 
         $registrations = $offering->studentCourseRegistrations()
             ->with(['studentCourseResult.resultStatus', 'registrationStatus'])
-            ->whereHas(
-                'registrationStatus',
-                fn (Builder $query) => $query->where('status_code', self::ACTIVE_REGISTRATION_STATUS)
-            )
+            ->currentOrHistoricalWithResult()
             ->get();
 
         $withResults = $registrations->filter(fn (StudentCourseRegistration $registration) => $registration->studentCourseResult !== null);
@@ -141,6 +131,7 @@ class GradeService
     {
         return DB::transaction(function () use ($registrationId, $data, $userId): array {
             $registration = $this->loadRegistration($registrationId, lock: true);
+            $this->assertRegistrationAllowsGrading($registration);
 
             if ($registration->studentCourseResult === null) {
                 throw new GradeException('No grades found for this registration. Use create endpoint first.');
@@ -169,6 +160,7 @@ class GradeService
     {
         return DB::transaction(function () use ($registrationId, $userId): array {
             $registration = $this->loadRegistration($registrationId, lock: true);
+            $this->assertRegistrationAllowsGrading($registration);
             $result = $registration->studentCourseResult;
 
             if ($result === null) {
@@ -220,7 +212,7 @@ class GradeService
                     'courseOffering.semester',
                     'studentCourseResult.resultStatus',
                     'registrationStatus',
-                ])->orderBy('student_course_registration_id');
+                ])->academicAttempts()->orderBy('student_course_registration_id');
             },
         ]);
 
@@ -506,6 +498,7 @@ class GradeService
             'grade_points' => $grades['grade_points'],
             'result_status' => $grades['result_status'],
             'registration_status' => $grades['registration']['registration_status'],
+            'grade_entry_allowed' => $registration->allowsGradeEntry(),
             'notes' => $grades['notes'],
         ];
     }
@@ -618,7 +611,7 @@ class GradeService
             'registration_id' => $registration->student_course_registration_id,
         ];
 
-        if (in_array($registrationStatus, self::EXCLUDED_REGISTRATION_STATUSES, true)) {
+        if (in_array($registrationStatus, StudentCourseRegistration::EXCLUDED_STATUSES, true)) {
             return [
                 'included' => false,
                 'course' => array_merge($base, ['exclusion_reason' => $registrationStatus]),
@@ -631,6 +624,15 @@ class GradeService
             return [
                 'included' => false,
                 'course' => array_merge($base, ['exclusion_reason' => 'no_result']),
+                'grade_points' => 0,
+                'credit_hours' => $creditHours,
+            ];
+        }
+
+        if ($result->theoretical_total === null || $result->practical_total === null) {
+            return [
+                'included' => false,
+                'course' => array_merge($base, ['exclusion_reason' => 'missing_marks']),
                 'grade_points' => 0,
                 'credit_hours' => $creditHours,
             ];
@@ -700,6 +702,7 @@ class GradeService
     {
         return StudentCourseRegistration::query()
             ->where('student_id', $student->student_id)
+            ->academicAttempts()
             ->with([
                 'courseOffering.course',
                 'courseOffering.academicYear',
@@ -734,10 +737,8 @@ class GradeService
 
     private function assertRegistrationAllowsGrading(StudentCourseRegistration $registration): void
     {
-        $statusCode = $registration->registrationStatus?->status_code;
-
-        if (in_array($statusCode, self::EXCLUDED_REGISTRATION_STATUSES, true)) {
-            throw new GradeException('Grades cannot be entered for dropped or withdrawn registrations.');
+        if (! $registration->allowsGradeEntry()) {
+            throw new GradeException('Grades can only be entered for a current registered registration. Historical, dropped, and withdrawn registrations are read-only.');
         }
     }
 

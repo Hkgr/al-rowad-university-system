@@ -22,10 +22,6 @@ class RegistrationService
 {
     private const DEFAULT_MAX_CREDIT_HOURS = 18;
 
-    private const SEAT_OCCUPYING_STATUS = 'registered';
-
-    private const REACTIVATABLE_REGISTRATION_STATUSES = ['dropped', 'withdrawn'];
-
     public function paginate(int $perPage = 15): LengthAwarePaginator
     {
         return StudentCourseRegistration::query()
@@ -191,7 +187,7 @@ class RegistrationService
             ->where('course_offering_id', $courseOfferingId)
             ->whereHas(
                 'registrationStatus',
-                fn (Builder $query) => $query->where('status_code', self::SEAT_OCCUPYING_STATUS)
+                fn (Builder $query) => $query->where('status_code', StudentCourseRegistration::CURRENT_STATUS)
             )
             ->exists();
     }
@@ -203,7 +199,7 @@ class RegistrationService
             ->where('course_offering_id', $courseOfferingId)
             ->whereHas(
                 'registrationStatus',
-                fn (Builder $query) => $query->whereIn('status_code', self::REACTIVATABLE_REGISTRATION_STATUSES)
+                fn (Builder $query) => $query->whereIn('status_code', StudentCourseRegistration::EXCLUDED_STATUSES)
             )
             ->first();
     }
@@ -245,7 +241,7 @@ class RegistrationService
                 throw new ModelNotFoundException('Registration status "dropped" was not found.');
             }
 
-            if ($statusCode === self::SEAT_OCCUPYING_STATUS) {
+            if ($statusCode === StudentCourseRegistration::CURRENT_STATUS) {
                 CourseOffering::query()
                     ->whereKey($registration->course_offering_id)
                     ->lockForUpdate()
@@ -289,7 +285,7 @@ class RegistrationService
                 throw new ModelNotFoundException('Registration status "withdrawn" was not found.');
             }
 
-            if ($statusCode === self::SEAT_OCCUPYING_STATUS) {
+            if ($statusCode === StudentCourseRegistration::CURRENT_STATUS) {
                 CourseOffering::query()
                     ->whereKey($registration->course_offering_id)
                     ->lockForUpdate()
@@ -335,7 +331,7 @@ class RegistrationService
                 'courseOffering.semester',
                 'registrationStatus',
             ])
-            ->whereHas('registrationStatus', fn (Builder $query) => $query->where('status_code', self::SEAT_OCCUPYING_STATUS));
+            ->current();
 
         if ($academicYearId !== null) {
             $registrationsQuery->whereHas(
@@ -417,7 +413,7 @@ class RegistrationService
 
         $registeredOfferingIds = StudentCourseRegistration::query()
             ->where('student_id', $student->student_id)
-            ->whereHas('registrationStatus', fn (Builder $query) => $query->where('status_code', self::SEAT_OCCUPYING_STATUS))
+            ->current()
             ->pluck('course_offering_id')
             ->all();
 
@@ -531,7 +527,7 @@ class RegistrationService
             ->where('student_course_registrations.student_id', $student->student_id)
             ->where('course_offerings.academic_year_id', $academicYearId)
             ->where('course_offerings.semester_id', $semesterId)
-            ->where('registration_statuses.status_code', self::SEAT_OCCUPYING_STATUS)
+            ->where('registration_statuses.status_code', StudentCourseRegistration::CURRENT_STATUS)
             ->sum('courses.credit_hours');
 
         $maxAllowedHours = (int) (StudentCreditLimit::query()

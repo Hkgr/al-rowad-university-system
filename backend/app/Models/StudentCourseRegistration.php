@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -9,6 +10,12 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class StudentCourseRegistration extends Model
 {
+    public const CURRENT_STATUS = 'registered';
+
+    public const HISTORICAL_ATTEMPT_STATUSES = ['registered', 'completed'];
+
+    public const EXCLUDED_STATUSES = ['dropped', 'withdrawn'];
+
     protected $table = 'student_course_registrations';
 
     protected $primaryKey = 'student_course_registration_id';
@@ -88,6 +95,43 @@ class StudentCourseRegistration extends Model
     public function supplementaryExamResults(): HasMany
     {
         return $this->hasMany(SupplementaryExamResult::class, 'student_course_registration_id', 'student_course_registration_id');
+    }
+
+    public function scopeCurrent(Builder $query): Builder
+    {
+        return $query->whereHas(
+            'registrationStatus',
+            fn (Builder $status) => $status->where('status_code', self::CURRENT_STATUS)
+        );
+    }
+
+    public function scopeAcademicAttempts(Builder $query, bool $requireResult = true): Builder
+    {
+        $query->whereHas(
+            'registrationStatus',
+            fn (Builder $status) => $status->whereIn('status_code', self::HISTORICAL_ATTEMPT_STATUSES)
+        );
+
+        return $requireResult ? $query->whereHas('studentCourseResult') : $query;
+    }
+
+    public function scopeCurrentOrHistoricalWithResult(Builder $query): Builder
+    {
+        return $query->where(function (Builder $registration): void {
+            $registration->current()->orWhere(
+                fn (Builder $historical) => $historical->academicAttempts()
+            );
+        });
+    }
+
+    public function allowsAttendanceEntry(): bool
+    {
+        return $this->registrationStatus?->status_code === self::CURRENT_STATUS;
+    }
+
+    public function allowsGradeEntry(): bool
+    {
+        return $this->registrationStatus?->status_code === self::CURRENT_STATUS;
     }
 
 }

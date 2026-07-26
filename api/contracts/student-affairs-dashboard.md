@@ -34,7 +34,7 @@ Accept: application/json
 | Old call | Replaced by field |
 |----------|-------------------|
 | `GET /api/v1/students?per_page=1` (read `meta.total`) | `total_students` |
-| `GET /api/v1/students?per_page=1&student_status_id=3` | `graduates_count` |
+| `GET /api/v1/students?per_page=1&student_status_code=graduated` | `graduates_count` |
 | `GET /api/v1/colleges?per_page=50` (count rows) | `colleges_count` |
 | `GET /api/v1/departments?per_page=100` | `departments_count` |
 | `GET /api/v1/academic-programs?per_page=100` | `programs_count` |
@@ -60,7 +60,7 @@ Accept: application/json
 | Field | Type | Counting rule |
 |-------|------|---------------|
 | `total_students` | integer | Non-soft-deleted students (`Student::query()` — archived students excluded) |
-| `graduates_count` | integer | Students where `student_status_id = 3` (current graduate status convention) |
+| `graduates_count` | integer | Students whose related status has stable code `graduated` |
 | `colleges_count` | integer | Active colleges (`is_active = true`) when `is_active` column exists; otherwise all colleges |
 | `departments_count` | integer | Active departments when `is_active` exists; otherwise all |
 | `programs_count` | integer | Active academic programs when `is_active` exists; otherwise all |
@@ -68,7 +68,7 @@ Accept: application/json
 ### Notes
 
 - Does **not** use `withTrashed()` for student counts.
-- `graduates_count` uses `student_status_id = 3` for now, matching the previous frontend filter convention.
+- `graduates_count` resolves the `graduated` status through its stable code; database IDs are not part of the domain contract.
 - Counts are exact — not limited by `per_page` pagination caps.
 
 ### Example request

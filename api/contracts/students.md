@@ -125,7 +125,7 @@ Each sub-resource above also supports POST, GET/{id}, PUT/PATCH/{id}, DELETE/{id
 
 ```http
 GET /api/v1/students?per_page=100
-GET /api/v1/students?student_status_id=3&per_page=100
+GET /api/v1/students?student_status_code=graduated&per_page=100
 GET /api/v1/students?academic_program_id=8&per_page=100
 GET /api/v1/students?q=2026-DEMO&per_page=100
 ```

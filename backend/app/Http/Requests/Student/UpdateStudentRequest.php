@@ -3,11 +3,24 @@
 namespace App\Http\Requests\Student;
 
 use App\Models\Student;
+use App\Models\StudentStatus;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class UpdateStudentRequest extends FormRequest
 {
+    protected function prepareForValidation(): void
+    {
+        if ($this->filled('student_status_code')) {
+            $statusId = StudentStatus::query()
+                ->where('status_code', $this->string('student_status_code')->toString())
+                ->value('student_status_id');
+
+            if ($statusId !== null) {
+                $this->merge(['student_status_id' => $statusId]);
+            }
+        }
+    }
     public function authorize(): bool
     {
         return true;
@@ -56,6 +69,7 @@ class UpdateStudentRequest extends FormRequest
             'current_academic_level_id' => ['sometimes', 'required', 'integer', 'exists:academic_levels,academic_level_id'],
             'enrollment_date' => ['sometimes', 'required', 'date'],
             'student_status_id' => ['sometimes', 'required', 'integer', 'exists:student_statuses,student_status_id'],
+            'student_status_code' => ['sometimes', 'required', 'string', 'exists:student_statuses,status_code'],
         ];
     }
 }
