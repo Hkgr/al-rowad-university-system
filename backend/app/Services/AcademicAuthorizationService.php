@@ -31,7 +31,7 @@ class AcademicAuthorizationService
             return;
         }
 
-        if ($this->hasRole($user, [...self::ADMIN_ROLES, 'exam_officer'])) {
+        if ($user->hasPermission('grades.view') && $this->hasRole($user, [...self::ADMIN_ROLES, 'exam_officer'])) {
             return;
         }
 
@@ -40,7 +40,7 @@ class AcademicAuthorizationService
 
     public function assertCanEnterGrades(User $user, StudentCourseRegistration $registration): void
     {
-        if ($this->hasRole($user, [...self::ADMIN_ROLES, 'exam_officer'])) {
+        if ($user->hasPermission('grades.manage') && $this->hasRole($user, [...self::ADMIN_ROLES, 'exam_officer'])) {
             return;
         }
 
@@ -49,7 +49,9 @@ class AcademicAuthorizationService
 
     public function assertExaminationCommittee(User $user): void
     {
-        $this->assertRole($user, [...self::ADMIN_ROLES, 'exam_officer']);
+        if (! $user->hasPermission('exams.manage') || ! $this->hasRole($user, [...self::ADMIN_ROLES, 'exam_officer'])) {
+            throw new AccessDeniedHttpException('This operation requires Examination Committee permission.');
+        }
     }
 
     public function assertStudentAffairs(User $user): void

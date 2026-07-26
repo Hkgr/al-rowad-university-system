@@ -1,0 +1,26 @@
+<?php
+
+namespace App\Policies;
+
+use App\Models\StudentDocument;
+use App\Models\User;
+
+class StudentDocumentPolicy
+{
+    public function view(User $user, StudentDocument $document): bool
+    {
+        if ($user->effectiveRoles()->contains('student')) {
+            return (int) $user->student_id === (int) $document->student_id;
+        }
+
+        return $user->hasPermission('students.view');
+    }
+    public function create(User $user): bool { return $user->student_id !== null || $this->manage($user); }
+    public function update(User $user, StudentDocument $document): bool { return $this->manage($user); }
+    public function delete(User $user, StudentDocument $document): bool { return $this->manage($user); }
+    private function manage(User $user): bool
+    {
+        return $user->hasPermission('students.manage')
+            || $user->effectiveRoles()->contains('registration_officer');
+    }
+}

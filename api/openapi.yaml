@@ -42,6 +42,12 @@ paths:
       responses:
         "200":
           description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        "403":
+          description: Account is disabled or inactive; no token is issued
         "422":
           description: Invalid credentials or validation error
 
@@ -55,8 +61,17 @@ paths:
       responses:
         "200":
           description: Authenticated user data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { $ref: '#/components/schemas/AuthenticatedIdentity' }
         "401":
           description: Unauthenticated
+        "403":
+          description: Account was disabled after authentication
 
   /logout:
     post:
@@ -514,6 +529,31 @@ components:
     Forbidden:
       description: Authenticated user lacks the required role, student ownership, or assigned-section ownership
   schemas:
+    AuthenticatedIdentity:
+      type: object
+      properties:
+        user_id: { type: integer }
+        username: { type: string }
+        email: { type: string, format: email }
+        student_id: { type: integer, nullable: true }
+        employee_id: { type: integer, nullable: true }
+        board_member_id: { type: integer, nullable: true }
+        roles:
+          type: array
+          items: { type: string }
+        permissions:
+          type: array
+          items: { type: string }
+    LoginResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          properties:
+            user: { $ref: '#/components/schemas/AuthenticatedIdentity' }
+            token: { type: string, description: Sanctum bearer token }
+            token_type: { type: string, example: Bearer }
     GradeWrite:
       type: object
       required: [theoretical_mark, practical_mark]

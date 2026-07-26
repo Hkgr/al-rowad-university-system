@@ -7,6 +7,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Collection;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
@@ -190,6 +191,37 @@ class User extends Authenticatable implements MustVerifyEmail
     public function userRoleRecords(): HasMany
     {
         return $this->hasMany(UserRole::class, 'user_id', 'user_id');
+    }
+
+    public function effectiveRoles(): Collection
+    {
+        return $this->userRoleRecords()
+            ->where('is_active', true)
+            ->whereHas('role', fn ($query) => $query->where('is_active', true))
+            ->with('role')
+            ->get()
+            ->pluck('role.role_code')
+            ->filter()
+            ->unique()
+            ->values();
+    }
+
+    public function effectivePermissions(): Collection
+    {
+        return \App\Models\Permission::query()
+            ->where('is_active', true)
+            ->whereHas('rolePermissions.role.userRoles', fn ($query) => $query
+                ->where('user_id', $this->user_id)
+                ->where('user_roles.is_active', true))
+            ->pluck('permission_code')
+            ->unique()
+            ->values();
+    }
+
+    public function hasPermission(string $permission): bool
+    {
+        return $this->effectivePermissions()->contains($permission)
+            || $this->effectiveRoles()->contains('super_admin');
     }
 
 }

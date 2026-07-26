@@ -9,6 +9,7 @@ import {
   FaDownload,
 } from 'react-icons/fa'
 import StudentDocuments from '../components/StudentDocuments'
+import { canAccess } from '../../auth/auth'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
@@ -701,14 +702,14 @@ export default function StudentProfilePage() {
               <FaCheckCircle className="text-[11px]" /> تم التخريج
             </span>
           )}
-          <button
+          {canAccess({ permissions: ['students.manage'], roles: ['registration_officer'] }) && <button
             className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 border border-amber-500/25 text-amber-700 rounded-[10px] text-[13px] font-bold hover:bg-amber-500/18 transition-colors"
             onClick={() => navigate(`/student-affairs/students/${id}/edit`)}
             dir="rtl"
           >
             <FaEdit />
             <span>تعديل البيانات</span>
-          </button>
+          </button>}
         </div>
       </div>
 

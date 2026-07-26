@@ -6,6 +6,7 @@ use App\Models\Student;
 use App\Models\StudentStatus;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Gate;
 
 class UpdateStudentRequest extends FormRequest
 {
@@ -23,7 +24,12 @@ class UpdateStudentRequest extends FormRequest
     }
     public function authorize(): bool
     {
-        return true;
+        $student = $this->route('student');
+        if (! $student instanceof Student) {
+            $student = Student::query()->find($student);
+        }
+
+        return $student !== null && Gate::allows('update', $student);
     }
 
     public function rules(): array

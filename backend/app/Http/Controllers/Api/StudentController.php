@@ -21,12 +21,14 @@ use App\Services\AcademicAuthorizationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 
 class StudentController extends ApiController
 {
     public function update($id): JsonResponse
     {
-        app(AcademicAuthorizationService::class)->assertStudentAffairs(request()->user());
+        $student = Student::query()->findOrFail($id);
+        Gate::authorize('update', $student);
         $statusCode = request()->input('student_status_code');
 
         if ($statusCode === null && request()->filled('student_status_id')) {
@@ -69,7 +71,7 @@ class StudentController extends ApiController
 
     public function index(): JsonResponse
     {
-        app(AcademicAuthorizationService::class)->assertCanSearchStudents(request()->user());
+        Gate::authorize('viewAny', Student::class);
         $request = request();
         $validated = $request->validate([
             'student_status_id' => ['sometimes', 'integer', 'exists:student_statuses,student_status_id'],
@@ -124,6 +126,7 @@ class StudentController extends ApiController
     public function destroy($id): JsonResponse
     {
         $student = Student::query()->findOrFail($id);
+        Gate::authorize('delete', $student);
         $student->delete();
 
         return $this->successResponse(null, 'Student archived successfully.');
@@ -131,6 +134,7 @@ class StudentController extends ApiController
 
     public function deleted(Request $request): JsonResponse
     {
+        Gate::authorize('viewAny', Student::class);
         $students = Student::onlyTrashed()
             ->orderBy('student_number')
             ->paginate($request->integer('per_page', 15));
@@ -144,6 +148,7 @@ class StudentController extends ApiController
     public function restore(int $id): JsonResponse
     {
         $student = Student::withTrashed()->findOrFail($id);
+        Gate::authorize('restore', $student);
 
         if (! $student->trashed()) {
             return $this->errorResponse('Student is not archived.', [], 400);
@@ -157,6 +162,7 @@ class StudentController extends ApiController
     public function forceDestroy(int $id): JsonResponse
     {
         $student = Student::withTrashed()->findOrFail($id);
+        Gate::authorize('forceDelete', $student);
         $relatedRecords = $this->getBlockingRelatedRecords($student);
 
         if ($relatedRecords !== []) {
@@ -212,6 +218,7 @@ class StudentController extends ApiController
 
     public function search(Request $request): JsonResponse
     {
+        Gate::authorize('viewAny', Student::class);
         $validated = $request->validate([
             'q' => ['required', 'string', 'min:1', 'max:150'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
@@ -237,6 +244,7 @@ class StudentController extends ApiController
 
     public function profile(Student $student): JsonResponse
     {
+        Gate::authorize('view', $student);
         $student->load([
             'currentAcademicLevel',
             'studentStatus',
@@ -250,6 +258,7 @@ class StudentController extends ApiController
 
     public function academicInfo(Student $student): JsonResponse
     {
+        Gate::authorize('view', $student);
         $student->load(['academicProgram.department.college', 'currentAcademicLevel', 'studentStatus']);
 
         return $this->successResponse(
@@ -259,6 +268,7 @@ class StudentController extends ApiController
 
     public function documents(Student $student): JsonResponse
     {
+        Gate::authorize('view', $student);
         $documents = $student->studentDocuments()
             ->with('documentType')
             ->latest('student_document_id')
@@ -271,6 +281,7 @@ class StudentController extends ApiController
 
     public function registrations(Student $student): JsonResponse
     {
+        Gate::authorize('view', $student);
         $registrations = $student->studentCourseRegistrations()
             ->with([
                 'courseOffering.course',
@@ -350,6 +361,7 @@ class StudentController extends ApiController
 
     public function availableCourses(Student $student, Request $request, RegistrationService $service): JsonResponse
     {
+        Gate::authorize('view', $student);
         $validated = $request->validate([
             'academic_year_id' => ['sometimes', 'integer', 'exists:academic_years,academic_year_id'],
             'semester_id' => ['sometimes', 'integer', 'exists:semesters,semester_id'],
@@ -368,6 +380,7 @@ class StudentController extends ApiController
 
     public function registeredHours(Student $student, Request $request, RegistrationService $service): JsonResponse
     {
+        Gate::authorize('view', $student);
         $validated = $request->validate([
             'academic_year_id' => ['required', 'integer', 'exists:academic_years,academic_year_id'],
             'semester_id' => ['required', 'integer', 'exists:semesters,semester_id'],
@@ -384,6 +397,7 @@ class StudentController extends ApiController
 
     public function registrationSummary(Student $student, Request $request, RegistrationService $service): JsonResponse
     {
+        Gate::authorize('view', $student);
         $validated = $request->validate([
             'academic_year_id' => ['sometimes', 'integer', 'exists:academic_years,academic_year_id'],
             'semester_id' => ['sometimes', 'integer', 'exists:semesters,semester_id'],

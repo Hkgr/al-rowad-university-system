@@ -4,7 +4,7 @@ import { motion, useMotionValue, useTransform, useSpring } from 'framer-motion'
 import {
   FaEnvelope, FaLock, FaEye, FaEyeSlash, FaSignInAlt,
 } from 'react-icons/fa'
-import { findMyFacultyMember } from '../../professor-dashboard/lib/professorApi'
+import { landingRoute, storeIdentity } from '../auth'
 
 export default function LoginCard() {
   const [showPass, setShowPass]       = useState(false)
@@ -57,20 +57,9 @@ const response = await fetch(`${API_BASE_URL}/login`, {
       const data = await response.json()
 
       if (data.success) {
-        localStorage.setItem('token', data.data.token)
-        localStorage.setItem('user', JSON.stringify(data.data.user))
+        storeIdentity(data.data.user, data.data.token)
         const u = data.data.user
-        if (u.student_id) {
-          navigate('/student')
-        } else if (u.board_member_id) {
-          navigate('/exam-board')
-        } else if (u.employee_id) {
-          let isProfessor = false
-          try { isProfessor = !!(await findMyFacultyMember(u.employee_id)) } catch { isProfessor = false }
-          navigate(isProfessor ? '/professor' : '/student-affairs')
-        } else {
-          navigate('/student-affairs')
-        }
+        navigate(landingRoute(u))
       } else {
         setError(data.message || 'Invalid email or password')
       }

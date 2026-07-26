@@ -10,6 +10,7 @@ use App\Models\StudentDocument;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Gate;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class StudentDocumentController extends ApiController
@@ -38,6 +39,8 @@ class StudentDocumentController extends ApiController
 
     public function upload(Student $student, Request $request): JsonResponse
     {
+        Gate::authorize('view', $student);
+        Gate::authorize('create', StudentDocument::class);
         $validated = $request->validate([
             'document_type_id' => ['required', 'integer', 'exists:document_types,document_type_id'],
             'file' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:5120'],
@@ -84,6 +87,7 @@ class StudentDocumentController extends ApiController
 
     public function download(StudentDocument $studentDocument): StreamedResponse|JsonResponse
     {
+        Gate::authorize('view', $studentDocument);
         $path = $studentDocument->file_url;
 
         if ($path === null || $path === '' || ! Storage::disk(self::STORAGE_DISK)->exists($path)) {
@@ -99,6 +103,7 @@ class StudentDocumentController extends ApiController
     public function destroy($id): JsonResponse
     {
         $document = StudentDocument::query()->findOrFail($id);
+        Gate::authorize('delete', $document);
 
         $this->deleteStoredFile($document);
         $document->delete();

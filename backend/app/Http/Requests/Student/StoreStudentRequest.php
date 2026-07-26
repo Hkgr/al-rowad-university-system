@@ -3,12 +3,14 @@
 namespace App\Http\Requests\Student;
 
 use Illuminate\Foundation\Http\FormRequest;
+use App\Models\Student;
+use Illuminate\Support\Facades\Gate;
 
 class StoreStudentRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        return Gate::allows('create', Student::class);
     }
 
     public function rules(): array
