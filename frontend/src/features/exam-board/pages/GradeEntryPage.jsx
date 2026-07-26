@@ -55,7 +55,7 @@ function BulkRow({ row }) {
   const pWarn = prac   !== '' && p < 10
 
   async function handleSave() {
-    if (theory === '' || prac === '') return
+    if (!canEdit || theory === '' || prac === '') return
     setSaving(true); setErr('')
     try {
       const json = await saveGrade(row.student_course_registration_id, t, p)
@@ -351,7 +351,7 @@ function IndividualMode() {
   const { letter, color } = fin !== null ? calcLetter(t, p) : { letter: '—', color: 'text-text-light' }
 
   async function handleSave() {
-    if (!regId || theory === '' || prac === '') return
+    if (!canEdit || !regId || theory === '' || prac === '') return
     setSaving(true); setErr(''); setSaved(false)
     try {
       const json = await saveGrade(regId, t, p)
@@ -446,7 +446,7 @@ function IndividualMode() {
 
             <button
               onClick={handleSave}
-              disabled={theory === '' || prac === '' || saving}
+              disabled={!canEdit || theory === '' || prac === '' || saving}
               className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-[10px] text-[13.5px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-primary-dark transition-colors"
             >
               {saving ? <FaSpinner className="animate-spin" /> : saved ? <FaCheck /> : <FaSave />}

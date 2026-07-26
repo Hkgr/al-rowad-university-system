@@ -64,16 +64,13 @@ use App\Http\Controllers\Api\RolePermissionController;
 use App\Http\Controllers\Api\SemesterController;
 use App\Http\Controllers\Api\StudentController;
 use App\Http\Controllers\Api\StudentAcademicTermController;
-use App\Http\Controllers\Api\StudentAttendanceController;
 use App\Http\Controllers\Api\StudentCourseRegistrationController;
 use App\Http\Controllers\Api\StudentCourseResultController;
 use App\Http\Controllers\Api\StudentCreditLimitController;
 use App\Http\Controllers\Api\StudentAffairsDashboardController;
 use App\Http\Controllers\Api\StudentDocumentController;
-use App\Http\Controllers\Api\StudentGradeComponentController;
 use App\Http\Controllers\Api\StudentStatusController;
 use App\Http\Controllers\Api\SupplementaryExamPeriodController;
-use App\Http\Controllers\Api\SupplementaryExamResultController;
 use App\Http\Controllers\Api\SystemModuleController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\UserActivityLogController;
@@ -335,13 +332,15 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
 
     Route::apiResource('students', StudentController::class);
     Route::apiResource('student-academic-terms', StudentAcademicTermController::class);
-    Route::apiResource('student-attendance', StudentAttendanceController::class);
-    Route::apiResource('student-course-registrations', StudentCourseRegistrationController::class);
-    Route::apiResource('student-course-results', StudentCourseResultController::class);
+    Route::apiResource('student-course-registrations', StudentCourseRegistrationController::class)
+        ->only(['index', 'show']);
+    // Result mutations must go through GradeController/GradeService so registration
+    // eligibility, section ownership, and result workflow rules cannot be bypassed.
+    Route::apiResource('student-course-results', StudentCourseResultController::class)
+        ->only(['index', 'show']);
     Route::apiResource('student-credit-limits', StudentCreditLimitController::class);
     Route::get('student-documents/{studentDocument}/download', [StudentDocumentController::class, 'download']);
     Route::apiResource('student-documents', StudentDocumentController::class);
-    Route::apiResource('student-grade-components', StudentGradeComponentController::class);
     Route::apiResource('student-statuses', StudentStatusController::class);
 
     /*
@@ -382,7 +381,6 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     */
 
     Route::apiResource('supplementary-exam-periods', SupplementaryExamPeriodController::class);
-    Route::apiResource('supplementary-exam-results', SupplementaryExamResultController::class);
 
     /*
     |--------------------------------------------------------------------------
@@ -454,8 +452,12 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     |--------------------------------------------------------------------------
     */
 
-    Route::apiResource('login-audit-logs', LoginAuditLogController::class);
+    Route::apiResource('login-audit-logs', LoginAuditLogController::class)
+        ->only(['index', 'show'])
+        ->middleware(\App\Http\Middleware\RequireSystemAdministrator::class);
     Route::apiResource('user-activity-logs', UserActivityLogController::class);
     Route::apiResource('system-modules', SystemModuleController::class);
-    Route::apiResource('password-reset-tokens', PasswordResetTokenController::class);
+    Route::apiResource('password-reset-tokens', PasswordResetTokenController::class)
+        ->only(['index', 'show'])
+        ->middleware(\App\Http\Middleware\RequireSystemAdministrator::class);
 });

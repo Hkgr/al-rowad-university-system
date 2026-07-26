@@ -71,13 +71,11 @@ Content-Type: application/json
 | GET | `/api/v1/student-academic-terms` | CRUD — academic term records |
 | GET | `/api/v1/student-documents` | CRUD — student documents (see [student-documents.md](./student-documents.md)) |
 | GET | `/api/v1/student-credit-limits` | CRUD — per-term credit limits |
-| GET | `/api/v1/student-course-registrations` | CRUD — raw registration records |
-| GET | `/api/v1/student-course-results` | CRUD — course result records |
-| GET | `/api/v1/student-attendance` | CRUD — individual attendance rows |
-| GET | `/api/v1/student-grade-components` | CRUD — grade component marks |
+| GET | `/api/v1/student-course-registrations` | Authorized read-only raw registration records; transitions use domain endpoints |
+| GET | `/api/v1/student-course-results` | Authorized read-only course result records; writes use `/registrations/{id}/grades` |
 | GET | `/api/v1/student-statuses` | CRUD — student status lookup |
 
-Each sub-resource above also supports POST, GET/{id}, PUT/PATCH/{id}, DELETE/{id} on its base path.
+Lookup and administrative resources retain their documented CRUD behavior. Raw grade-component and attendance resources are not exposed; authorized clients use the student attendance and registration grade operations so domain services cannot be bypassed.
 
 ### Student profile and dashboard
 

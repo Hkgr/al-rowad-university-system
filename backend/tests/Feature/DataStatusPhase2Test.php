@@ -206,6 +206,117 @@ class DataStatusPhase2Test extends TestCase
         app(AcademicAuthorizationService::class)->assertCanAccessOffering($instructor, $other->course_offering_id);
     }
 
+    public function test_instructor_cannot_record_attendance_outside_assigned_section(): void
+    {
+        $instructor = $this->userWithRole('doctor_instructor');
+        $instructor->update(['employee_id' => 88]);
+        FacultyMember::query()->create(['employee_id' => 88, 'is_active' => true]);
+        $session = AttendanceSession::query()->create([
+            'course_offering_id' => $this->offering->course_offering_id,
+            'session_type' => 'theoretical',
+            'session_date' => '2025-10-02',
+            'created_by_user_id' => $instructor->user_id,
+        ]);
+        $registration = $this->registration('registered', false);
+        AttendanceStatus::query()->create(['status_code' => 'present', 'status_name' => 'Present', 'counts_as_absent' => false, 'is_active' => true]);
+
+        $this->actingAs($instructor, 'sanctum')
+            ->postJson('/api/v1/attendance-sessions/'.$session->attendance_session_id.'/record', ['records' => [[
+                'student_course_registration_id' => $registration->student_course_registration_id,
+                'status_code' => 'present',
+            ]]])
+            ->assertForbidden();
+    }
+
+    public function test_raw_result_resource_is_read_only_and_historical_result_remains_authorized_to_read(): void
+    {
+        $completed = $this->registration('completed', true);
+        $result = $completed->studentCourseResult()->firstOrFail();
+        $exam = $this->userWithRole('exam_officer');
+
+        $this->actingAs($exam, 'sanctum')
+            ->getJson('/api/v1/student-course-results/'.$result->student_course_result_id)
+            ->assertOk()
+            ->assertJsonPath('data.student_course_result_id', $result->student_course_result_id);
+
+        $payload = [
+            'student_course_registration_id' => $completed->student_course_registration_id,
+            'theoretical_total' => 1,
+            'practical_total' => 1,
+            'result_status_id' => $this->passed->result_status_id,
+            'is_deprived' => false,
+        ];
+        $this->actingAs($exam, 'sanctum')->postJson('/api/v1/student-course-results', $payload)->assertMethodNotAllowed();
+        $this->actingAs($exam, 'sanctum')->putJson('/api/v1/student-course-results/'.$result->student_course_result_id, $payload)->assertMethodNotAllowed();
+        $this->actingAs($exam, 'sanctum')->patchJson('/api/v1/student-course-results/'.$result->student_course_result_id, $payload)->assertMethodNotAllowed();
+        $this->actingAs($exam, 'sanctum')->deleteJson('/api/v1/student-course-results/'.$result->student_course_result_id)->assertMethodNotAllowed();
+        $this->actingAs($exam, 'sanctum')->postJson('/api/v1/student-course-results/bulk', ['results' => [$payload]])->assertMethodNotAllowed();
+        $this->actingAs($exam, 'sanctum')->patchJson('/api/v1/student-course-registrations/'.$completed->student_course_registration_id, [
+            'registration_status_id' => $this->registrationStatuses['registered']->registration_status_id,
+        ])->assertMethodNotAllowed();
+
+        $this->assertDatabaseHas('student_course_results', [
+            'student_course_result_id' => $result->student_course_result_id,
+            'final_mark' => 80,
+        ]);
+    }
+
+    public function test_grade_endpoint_accepts_current_registration_but_rejects_historical_and_student_writes(): void
+    {
+        $exam = $this->userWithRole('exam_officer');
+        $current = $this->registration('registered', false);
+        $this->actingAs($exam, 'sanctum')->postJson('/api/v1/registrations/'.$current->student_course_registration_id.'/grades', [
+            'theoretical_mark' => 48,
+            'practical_mark' => 32,
+        ])->assertCreated();
+
+        $completed = $this->registration('completed', true);
+        $this->actingAs($exam, 'sanctum')->putJson('/api/v1/registrations/'.$completed->student_course_registration_id.'/grades', [
+            'theoretical_mark' => 50,
+            'practical_mark' => 35,
+        ])->assertUnprocessable();
+
+        foreach (['dropped', 'withdrawn'] as $statusCode) {
+            $ineligible = $this->registration($statusCode, false);
+            $this->actingAs($exam, 'sanctum')->postJson('/api/v1/registrations/'.$ineligible->student_course_registration_id.'/grades', [
+                'theoretical_mark' => 48,
+                'practical_mark' => 32,
+            ])->assertUnprocessable();
+        }
+
+        $studentUser = $this->userWithRole('student');
+        $studentUser->update(['student_id' => $this->student->student_id]);
+        $this->actingAs($studentUser, 'sanctum')->putJson('/api/v1/registrations/'.$current->student_course_registration_id.'/grades', [
+            'theoretical_mark' => 50,
+            'practical_mark' => 35,
+        ])->assertForbidden();
+    }
+
+    public function test_student_affairs_cannot_finalize_deprivation_but_exam_committee_can(): void
+    {
+        $registrar = $this->userWithRole('registration_officer');
+        $this->actingAs($registrar, 'sanctum')
+            ->postJson('/api/v1/course-offerings/'.$this->offering->course_offering_id.'/apply-deprivation')
+            ->assertForbidden();
+
+        $exam = $this->userWithRole('exam_officer');
+        $this->actingAs($exam, 'sanctum')
+            ->postJson('/api/v1/course-offerings/'.$this->offering->course_offering_id.'/apply-deprivation')
+            ->assertOk();
+    }
+
+    public function test_disabled_user_cannot_reuse_authenticated_access(): void
+    {
+        $disabled = AccountStatus::query()->create(['status_code' => 'disabled', 'status_name' => 'Disabled', 'is_active' => true]);
+        $role = Role::query()->create(['role_code' => 'exam_officer', 'role_name' => 'Exam Officer', 'is_system_role' => true, 'is_active' => true]);
+        $user = User::query()->create(['username' => 'disabled', 'email' => 'disabled@test.invalid', 'password_hash' => 'unused', 'account_status_id' => $disabled->account_status_id]);
+        UserRole::query()->create(['user_id' => $user->user_id, 'role_id' => $role->role_id, 'is_active' => true]);
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson('/api/v1/student-course-results')
+            ->assertForbidden();
+    }
+
     private function registration(string $statusCode, bool $withResult): StudentCourseRegistration
     {
         $registration = StudentCourseRegistration::query()->create([
@@ -245,6 +356,8 @@ class DataStatusPhase2Test extends TestCase
         Schema::create('course_offerings', function (Blueprint $t): void { $t->id('course_offering_id'); $t->unsignedBigInteger('course_id'); $t->unsignedBigInteger('academic_year_id'); $t->unsignedBigInteger('semester_id'); $t->unsignedBigInteger('faculty_member_id')->nullable(); $t->integer('capacity'); $t->integer('available_seats'); $t->string('status'); $t->timestamps(); });
         Schema::create('student_course_registrations', function (Blueprint $t): void { $t->id('student_course_registration_id'); $t->unsignedBigInteger('student_id'); $t->unsignedBigInteger('course_offering_id'); $t->date('registration_date'); $t->unsignedBigInteger('registered_by_user_id'); $t->unsignedBigInteger('registration_status_id'); $t->unsignedBigInteger('result_status_id')->nullable(); $t->text('notes')->nullable(); $t->timestamps(); });
         Schema::create('student_course_results', function (Blueprint $t): void { $t->id('student_course_result_id'); $t->unsignedBigInteger('student_course_registration_id'); $t->decimal('theoretical_total')->nullable(); $t->decimal('practical_total')->nullable(); $t->decimal('coursework_total')->nullable(); $t->decimal('final_mark')->nullable(); $t->unsignedBigInteger('result_status_id'); $t->boolean('is_deprived'); $t->timestamp('calculated_at')->nullable(); $t->unsignedBigInteger('calculated_by_user_id')->nullable(); $t->timestamps(); });
+        Schema::create('grade_components', function (Blueprint $t): void { $t->id('grade_component_id'); $t->unsignedBigInteger('course_offering_id'); $t->string('component_name'); $t->string('component_type'); $t->decimal('max_mark'); $t->timestamps(); });
+        Schema::create('student_grade_components', function (Blueprint $t): void { $t->id('student_grade_component_id'); $t->unsignedBigInteger('student_course_registration_id'); $t->unsignedBigInteger('grade_component_id'); $t->decimal('mark'); $t->string('grade_status'); $t->unsignedBigInteger('entered_by_user_id')->nullable(); $t->timestamp('entered_at')->nullable(); $t->timestamps(); });
         Schema::create('student_credit_limits', function (Blueprint $t): void { $t->id('credit_limit_id'); $t->unsignedBigInteger('student_id'); $t->unsignedBigInteger('academic_year_id'); $t->unsignedBigInteger('semester_id'); $t->integer('max_credit_hours'); $t->timestamps(); });
         Schema::create('attendance_statuses', fn (Blueprint $t) => $this->attendanceStatusTable($t));
         Schema::create('attendance_sessions', function (Blueprint $t): void { $t->id('attendance_session_id'); $t->unsignedBigInteger('course_offering_id'); $t->string('session_type'); $t->date('session_date'); $t->unsignedBigInteger('created_by_user_id'); $t->timestamps(); });

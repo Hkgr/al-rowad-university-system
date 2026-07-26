@@ -33,6 +33,12 @@ Authenticated API requests now reject non-`active` accounts and revoke the prese
 
 The OpenAPI contract documents grade-sheet eligibility fields, grade read/write authorization errors, code-based approval submission, and the disabled graduation response. Bruno examples use `approval_status_code` and a non-graduation `student_status_code`; they no longer direct clients to sensitive numeric transitions.
 
+### Direct result CRUD bypass
+
+The former `student-course-results` generic resource exposed POST, PUT/PATCH, and DELETE through the generic CRUD trait. Those operations wrote `student_course_results` without invoking `GradeService`, registration eligibility, or assigned-section authorization. The result and raw registration resources are now read-only (`index` and `show`), preventing a caller from either editing a result directly or first changing a historical registration back to `registered`. Raw result mutation routes, raw grade-component mutation routes, raw attendance mutation routes, and supplementary-result mutation routes are not registered. All ordinary grade writes must use `/registrations/{id}/grades`, whose form requests, controller authorization, and `GradeService` independently enforce role, section ownership, and current-registration eligibility. Historical completed results remain authorized to read but cannot be created, changed, or deleted through an alternate endpoint.
+
+Both bulk and individual React grade entry consume `grade_entry_allowed`; inputs and buttons are disabled for ineligible rows, and both save handlers have an early guard that prevents programmatic submission. The backend remains authoritative.
+
 ## Seat and credit behavior
 
 Only `registered` occupies a seat and contributes current-term registered credit hours. Completing, dropping, or withdrawing a registration does not make it current. Existing duplicate and prerequisite/repeat checks remain unchanged.

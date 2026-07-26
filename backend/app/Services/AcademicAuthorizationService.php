@@ -57,6 +57,11 @@ class AcademicAuthorizationService
         $this->assertRole($user, [...self::ADMIN_ROLES, 'registration_officer']);
     }
 
+    public function assertSystemAdministrator(User $user): void
+    {
+        $this->assertRole($user, self::ADMIN_ROLES);
+    }
+
     public function assertCanSearchStudents(User $user): void
     {
         $this->assertRole($user, [...self::ADMIN_ROLES, ...self::STUDENT_RECORD_ROLES]);

@@ -14,7 +14,10 @@ class EnsureActiveAccount
         $user = $request->user();
 
         if ($user !== null && $user->accountStatus?->status_code !== 'active') {
-            $user->currentAccessToken()?->delete();
+            $token = $user->currentAccessToken();
+            if ($token !== null && method_exists($token, 'delete')) {
+                $token->delete();
+            }
             throw new AccessDeniedHttpException('This account is disabled or inactive.');
         }
 

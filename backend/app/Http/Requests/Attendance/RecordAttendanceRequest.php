@@ -2,12 +2,22 @@
 
 namespace App\Http\Requests\Attendance;
 
+use App\Services\AcademicAuthorizationService;
 use Illuminate\Foundation\Http\FormRequest;
 
 class RecordAttendanceRequest extends FormRequest
 {
     public function authorize(): bool
     {
+        if ($this->user() === null) {
+            return false;
+        }
+
+        app(AcademicAuthorizationService::class)->assertCanAccessAttendanceSession(
+            $this->user(),
+            (int) $this->route('id')
+        );
+
         return true;
     }
 
