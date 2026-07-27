@@ -10,6 +10,7 @@ use App\Models\StudentDocument;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Gate;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class StudentDocumentController extends ApiController
@@ -36,14 +37,33 @@ class StudentDocumentController extends ApiController
         return UpdateStudentDocumentRequest::class;
     }
 
+    public function index(): JsonResponse
+    {
+        Gate::authorize('viewAny', StudentDocument::class);
+
+        $query = StudentDocument::query()->with('documentType');
+        if (request()->user()->effectiveRoles()->contains('student')) {
+            $query->where('student_id', request()->user()->student_id);
+        }
+
+        $documents = $query->paginate(request()->integer('per_page', 15));
+
+        return $this->successResponse(
+            StudentDocumentResource::collection($documents)->response(request())->getData(true)
+        );
+    }
+
     public function upload(Student $student, Request $request): JsonResponse
     {
-        $validated = $request->validate([
+        Gate::authorize('createFor', [StudentDocument::class, $student]);
+        $rules = [
             'document_type_id' => ['required', 'integer', 'exists:document_types,document_type_id'],
             'file' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:5120'],
-            'verification_notes' => ['nullable', 'string', 'max:255'],
-            'uploaded_at' => ['nullable', 'date'],
-        ]);
+        ];
+        if ($request->user()->student_id === null) {
+            $rules['verification_notes'] = ['nullable', 'string', 'max:255'];
+        }
+        $validated = $request->validate($rules);
 
         $file = $request->file('file');
         $originalFileName = $file->getClientOriginalName();
@@ -69,8 +89,10 @@ class StudentDocumentController extends ApiController
             'verification_status' => 'pending',
             'verified_by_user_id' => null,
             'verified_at' => null,
-            'verification_notes' => $validated['verification_notes'] ?? null,
-            'uploaded_at' => $validated['uploaded_at'] ?? now(),
+            'verification_notes' => $request->user()->student_id === null
+                ? ($validated['verification_notes'] ?? null)
+                : null,
+            'uploaded_at' => now(),
         ]);
 
         $document->load('documentType');
@@ -84,6 +106,7 @@ class StudentDocumentController extends ApiController
 
     public function download(StudentDocument $studentDocument): StreamedResponse|JsonResponse
     {
+        Gate::authorize('view', $studentDocument);
         $path = $studentDocument->file_url;
 
         if ($path === null || $path === '' || ! Storage::disk(self::STORAGE_DISK)->exists($path)) {
@@ -99,6 +122,7 @@ class StudentDocumentController extends ApiController
     public function destroy($id): JsonResponse
     {
         $document = StudentDocument::query()->findOrFail($id);
+        Gate::authorize('delete', $document);
 
         $this->deleteStoredFile($document);
         $document->delete();

@@ -17,7 +17,7 @@ class StudentAffairsDashboardController extends Controller
         return $this->successResponse([
             'total_students' => Student::query()->count(),
             'graduates_count' => Student::query()
-                ->where('student_status_id', 3)
+                ->whereHas('studentStatus', fn ($status) => $status->where('status_code', 'graduated'))
                 ->count(),
             'colleges_count' => $this->countActiveIfSupported(College::class),
             'departments_count' => $this->countActiveIfSupported(Department::class),

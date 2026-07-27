@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api\Concerns;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Gate;
+use App\Services\ResourceAuthorizationService;
 
 trait HandlesApiCrud
 {
@@ -17,6 +19,7 @@ trait HandlesApiCrud
 
     public function index(): JsonResponse
     {
+        $this->authorizeIfPolicyExists('viewAny', $this->modelClass());
         $models = $this->modelClass()::query()
             ->paginate(request()->integer('per_page', 15));
 
@@ -29,6 +32,7 @@ trait HandlesApiCrud
 
     public function store(): JsonResponse
     {
+        $this->authorizeIfPolicyExists('create', $this->modelClass());
         /** @var FormRequest $request */
         $request = app($this->storeRequestClass());
 
@@ -52,6 +56,7 @@ trait HandlesApiCrud
         $modelClass = $this->modelClass();
 
         $model = $modelClass::query()->findOrFail($id);
+        $this->authorizeIfPolicyExists('view', $model);
 
         $resourceClass = $this->resourceClass();
 
@@ -68,6 +73,7 @@ trait HandlesApiCrud
         $modelClass = $this->modelClass();
 
         $model = $modelClass::query()->findOrFail($id);
+        $this->authorizeIfPolicyExists('update', $model);
 
         $model->update($request->validated());
 
@@ -83,12 +89,28 @@ trait HandlesApiCrud
         $modelClass = $this->modelClass();
 
         $model = $modelClass::query()->findOrFail($id);
+        $this->authorizeIfPolicyExists('delete', $model);
 
         $model->delete();
 
         return $this->successResponse(
             [],
             'Operation completed successfully'
+        );
+    }
+
+    private function authorizeIfPolicyExists(string $ability, object|string $target): void
+    {
+        $modelClass = is_string($target) ? $target : $target::class;
+        if (Gate::getPolicyFor($modelClass) !== null) {
+            Gate::authorize($ability, $target);
+            return;
+        }
+
+        app(ResourceAuthorizationService::class)->authorize(
+            request()->user(),
+            $modelClass,
+            in_array($ability, ['create', 'update', 'delete', 'restore', 'forceDelete'], true)
         );
     }
 }

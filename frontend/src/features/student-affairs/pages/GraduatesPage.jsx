@@ -80,7 +80,7 @@ export default function GraduatesPage() {
     setError('')
     try {
       const [grads, lookups] = await Promise.all([
-        fetchAllPages(`${API}/students?student_status_id=3&`),
+        fetchAllPages(`${API}/students?student_status_code=graduated&`),
         loadLookups(),
       ])
 

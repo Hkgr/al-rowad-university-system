@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   FaSignOutAlt, FaBars, FaChevronRight, FaBell,
 } from 'react-icons/fa'
+import { canAccess, clearIdentity } from '../../features/auth/auth'
 
 /**
  * nav prop shape:
@@ -19,14 +20,16 @@ export default function DashboardLayout({ nav = [], appTitle = 'جامعة ال�
   const user      = JSON.parse(localStorage.getItem('user') || '{}')
 
   // Auto-derive page title from nav items based on current URL
-  const allItems   = nav.flatMap(s => s.items)
+  const authorizedNav = nav
+    .map(section => ({ ...section, items: section.items.filter(item => canAccess(item)) }))
+    .filter(section => section.items.length > 0)
+  const allItems   = authorizedNav.flatMap(s => s.items)
   const activeItem = allItems.find(item => location.pathname === item.to)
     ?? allItems.find(item => location.pathname.startsWith(item.to + '/'))
   const pageTitle  = activeItem ? `${activeItem.ar} · ${activeItem.en}` : appTitle
 
   const logout = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
+    clearIdentity()
     navigate('/login')
   }
 
@@ -135,7 +138,7 @@ export default function DashboardLayout({ nav = [], appTitle = 'جامعة ال�
             className="flex-1 px-[10px] pt-2 flex flex-col gap-2 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-thumb]:bg-white/7 [&::-webkit-scrollbar-thumb]:rounded-[3px]"
             dir="rtl"
           >
-            {nav.map((section, idx) => (
+            {authorizedNav.map((section, idx) => (
               <>
                 {idx > 0 && <div key={`divider-${idx}`} className="h-px bg-white/6 mx-3" />}
                 {renderSection(section, idx)}

@@ -18,6 +18,11 @@ headers {
 
 body:json {
   {
-
+    "student_status_code": "active"
   }
+}
+
+docs {
+  Graduation is intentionally unavailable. Requests resolving to `graduated`
+  return HTTP 409 with `graduation_eligibility_not_implemented`.
 }

@@ -75,15 +75,14 @@ A+ (≥98), A (≥95), A- (≥90), B+ (≥85), B (≥80), B- (≥75), C+ (≥70)
 |----------|-----------|
 | Grading policies | `/api/v1/grading-policies` |
 | Grade components | `/api/v1/grade-components` |
-| Student grade components | `/api/v1/student-grade-components` |
-| Student course results | `/api/v1/student-course-results` |
+| Student course results (read-only) | `/api/v1/student-course-results` |
 | Grade appeals | `/api/v1/grade-appeals` |
 | Grade approvals | `/api/v1/grade-approvals` |
 | Grade audit logs | `/api/v1/grade-audit-logs` |
 | Supplementary exam periods | `/api/v1/supplementary-exam-periods` |
 | Supplementary exam results | `/api/v1/supplementary-exam-results` |
 
-Each CRUD resource supports GET (list), POST, GET/{id}, PUT/PATCH/{id}, DELETE/{id}.
+Raw student results support only GET list/detail. Raw grade-component routes are not exposed. Grade writes must use `/registrations/{id}/grades`, which enforces role, section ownership, and registration eligibility.
 
 ---
 

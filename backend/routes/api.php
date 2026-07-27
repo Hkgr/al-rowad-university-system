@@ -4,6 +4,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
+use App\Services\UserIdentityService;
 
 use App\Http\Controllers\Api\AcademicLevelController;
 use App\Http\Controllers\Api\AcademicProgramController;
@@ -64,16 +65,13 @@ use App\Http\Controllers\Api\RolePermissionController;
 use App\Http\Controllers\Api\SemesterController;
 use App\Http\Controllers\Api\StudentController;
 use App\Http\Controllers\Api\StudentAcademicTermController;
-use App\Http\Controllers\Api\StudentAttendanceController;
 use App\Http\Controllers\Api\StudentCourseRegistrationController;
 use App\Http\Controllers\Api\StudentCourseResultController;
 use App\Http\Controllers\Api\StudentCreditLimitController;
 use App\Http\Controllers\Api\StudentAffairsDashboardController;
 use App\Http\Controllers\Api\StudentDocumentController;
-use App\Http\Controllers\Api\StudentGradeComponentController;
 use App\Http\Controllers\Api\StudentStatusController;
 use App\Http\Controllers\Api\SupplementaryExamPeriodController;
-use App\Http\Controllers\Api\SupplementaryExamResultController;
 use App\Http\Controllers\Api\SystemModuleController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\UserActivityLogController;
@@ -88,7 +86,7 @@ use App\Http\Controllers\Api\UserRoleController;
 |--------------------------------------------------------------------------
 */
 
-Route::post('login', function (Request $request) {
+Route::post('login', function (Request $request, UserIdentityService $identity) {
     $validated = $request->validate([
         'email' => ['required', 'email'],
         'password' => ['required', 'string'],
@@ -104,13 +102,22 @@ Route::post('login', function (Request $request) {
         ], 422);
     }
 
+    if ($user->accountStatus?->status_code !== 'active') {
+        return response()->json([
+            'success' => false,
+            'message' => 'This account is disabled or inactive.',
+            'error_code' => 'account_inactive',
+            'errors' => [],
+        ], 403);
+    }
+
     $token = $user->createToken('api-token')->plainTextToken;
 
     return response()->json([
         'success' => true,
         'message' => 'Login successful',
         'data' => [
-            'user' => $user,
+            'user' => $identity->payload($user),
             'token' => $token,
             'token_type' => 'Bearer',
         ],
@@ -126,17 +133,20 @@ Route::post('login', function (Request $request) {
 |--------------------------------------------------------------------------
 */
 
-Route::middleware('auth:sanctum')->group(function (): void {
-    Route::get('user', function (Request $request) {
+Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::class])->group(function (): void {
+    Route::get('user', function (Request $request, UserIdentityService $identity) {
         return response()->json([
             'success' => true,
             'message' => 'Operation completed successfully',
-            'data' => $request->user(),
+            'data' => $identity->payload($request->user()),
         ]);
     });
 
     Route::post('logout', function (Request $request) {
-        $request->user()?->currentAccessToken()?->delete();
+        $token = $request->user()?->currentAccessToken();
+        if ($token !== null && method_exists($token, 'delete')) {
+            $token->delete();
+        }
 
         return response()->json([
             'success' => true,
@@ -155,7 +165,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
 |--------------------------------------------------------------------------
 */
 
-Route::middleware('auth:sanctum')->prefix('v1')->group(function (): void {
+Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::class])->prefix('v1')->group(function (): void {
 
     /*
     |--------------------------------------------------------------------------
@@ -174,7 +184,8 @@ Route::middleware('auth:sanctum')->prefix('v1')->group(function (): void {
     |--------------------------------------------------------------------------
     */
 
-    Route::get('student-affairs/dashboard-stats', [StudentAffairsDashboardController::class, 'dashboardStats']);
+    Route::get('student-affairs/dashboard-stats', [StudentAffairsDashboardController::class, 'dashboardStats'])
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':students.view');
 
     /*
     |--------------------------------------------------------------------------
@@ -210,13 +221,13 @@ Route::middleware('auth:sanctum')->prefix('v1')->group(function (): void {
     |--------------------------------------------------------------------------
     */
 
-    Route::get('colleges/{college}/departments', [CollegeController::class, 'departments']);
-    Route::get('departments/{department}/programs', [DepartmentController::class, 'programs']);
-    Route::get('programs/{academic_program}/students', [AcademicProgramController::class, 'students']);
-    Route::get('programs/{academic_program}/courses', [AcademicProgramController::class, 'courses']);
-    Route::get('programs/{id}/mandatory-courses', [AcademicProgramController::class, 'mandatoryCourses']);
-    Route::get('programs/{id}/elective-courses', [AcademicProgramController::class, 'electiveCourses']);
-    Route::get('programs/{id}/study-plan', [AcademicProgramController::class, 'studyPlan']);
+    Route::get('colleges/{college}/departments', [CollegeController::class, 'departments'])->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.view');
+    Route::get('departments/{department}/programs', [DepartmentController::class, 'programs'])->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.view');
+    Route::get('programs/{academic_program}/students', [AcademicProgramController::class, 'students'])->middleware(\App\Http\Middleware\RequirePermission::class.':students.view');
+    Route::get('programs/{academic_program}/courses', [AcademicProgramController::class, 'courses'])->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.view');
+    Route::get('programs/{id}/mandatory-courses', [AcademicProgramController::class, 'mandatoryCourses'])->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.view');
+    Route::get('programs/{id}/elective-courses', [AcademicProgramController::class, 'electiveCourses'])->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.view');
+    Route::get('programs/{id}/study-plan', [AcademicProgramController::class, 'studyPlan'])->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.view');
 
     /*
     |--------------------------------------------------------------------------
@@ -251,10 +262,12 @@ Route::middleware('auth:sanctum')->prefix('v1')->group(function (): void {
     Route::get('course-offerings/{id}/deprived-students', [CourseOfferingController::class, 'deprivedStudents']);
     Route::post('course-offerings/{id}/apply-deprivation', [CourseOfferingController::class, 'applyDeprivation']);
     Route::get('course-offerings/by-program/{program_id}', [CourseOfferingController::class, 'byProgram']);
-    Route::get('course-offerings/{courseOffering}/instructors', [CourseOfferingInstructorController::class, 'index']);
-    Route::post('course-offerings/{courseOffering}/instructors', [CourseOfferingInstructorController::class, 'store']);
-    Route::patch('course-offering-instructors/{courseOfferingInstructor}', [CourseOfferingInstructorController::class, 'update']);
-    Route::delete('course-offering-instructors/{courseOfferingInstructor}', [CourseOfferingInstructorController::class, 'destroy']);
+    Route::middleware(\App\Http\Middleware\RequireModuleAccess::class.':courses')->group(function (): void {
+        Route::get('course-offerings/{courseOffering}/instructors', [CourseOfferingInstructorController::class, 'index']);
+        Route::post('course-offerings/{courseOffering}/instructors', [CourseOfferingInstructorController::class, 'store']);
+        Route::patch('course-offering-instructors/{courseOfferingInstructor}', [CourseOfferingInstructorController::class, 'update']);
+        Route::delete('course-offering-instructors/{courseOfferingInstructor}', [CourseOfferingInstructorController::class, 'destroy']);
+    });
 
     /*
     |--------------------------------------------------------------------------
@@ -288,9 +301,11 @@ Route::middleware('auth:sanctum')->prefix('v1')->group(function (): void {
     |--------------------------------------------------------------------------
     */
 
-    Route::post('registrations/register-student', [RegistrationController::class, 'registerStudent']);
-    Route::post('registrations/{id}/drop', [RegistrationController::class, 'drop']);
-    Route::post('registrations/{id}/withdraw', [RegistrationController::class, 'withdraw']);
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':registration.manage')->group(function (): void {
+        Route::post('registrations/register-student', [RegistrationController::class, 'registerStudent']);
+        Route::post('registrations/{id}/drop', [RegistrationController::class, 'drop']);
+        Route::post('registrations/{id}/withdraw', [RegistrationController::class, 'withdraw']);
+    });
 
     /*
     |--------------------------------------------------------------------------
@@ -335,13 +350,15 @@ Route::middleware('auth:sanctum')->prefix('v1')->group(function (): void {
 
     Route::apiResource('students', StudentController::class);
     Route::apiResource('student-academic-terms', StudentAcademicTermController::class);
-    Route::apiResource('student-attendance', StudentAttendanceController::class);
-    Route::apiResource('student-course-registrations', StudentCourseRegistrationController::class);
-    Route::apiResource('student-course-results', StudentCourseResultController::class);
+    Route::apiResource('student-course-registrations', StudentCourseRegistrationController::class)
+        ->only(['index', 'show']);
+    // Result mutations must go through GradeController/GradeService so registration
+    // eligibility, section ownership, and result workflow rules cannot be bypassed.
+    Route::apiResource('student-course-results', StudentCourseResultController::class)
+        ->only(['index', 'show']);
     Route::apiResource('student-credit-limits', StudentCreditLimitController::class);
     Route::get('student-documents/{studentDocument}/download', [StudentDocumentController::class, 'download']);
     Route::apiResource('student-documents', StudentDocumentController::class);
-    Route::apiResource('student-grade-components', StudentGradeComponentController::class);
     Route::apiResource('student-statuses', StudentStatusController::class);
 
     /*
@@ -382,7 +399,6 @@ Route::middleware('auth:sanctum')->prefix('v1')->group(function (): void {
     */
 
     Route::apiResource('supplementary-exam-periods', SupplementaryExamPeriodController::class);
-    Route::apiResource('supplementary-exam-results', SupplementaryExamResultController::class);
 
     /*
     |--------------------------------------------------------------------------
@@ -454,8 +470,12 @@ Route::middleware('auth:sanctum')->prefix('v1')->group(function (): void {
     |--------------------------------------------------------------------------
     */
 
-    Route::apiResource('login-audit-logs', LoginAuditLogController::class);
+    Route::apiResource('login-audit-logs', LoginAuditLogController::class)
+        ->only(['index', 'show'])
+        ->middleware(\App\Http\Middleware\RequireSystemAdministrator::class);
     Route::apiResource('user-activity-logs', UserActivityLogController::class);
     Route::apiResource('system-modules', SystemModuleController::class);
-    Route::apiResource('password-reset-tokens', PasswordResetTokenController::class);
+    Route::apiResource('password-reset-tokens', PasswordResetTokenController::class)
+        ->only(['index', 'show'])
+        ->middleware(\App\Http\Middleware\RequireSystemAdministrator::class);
 });

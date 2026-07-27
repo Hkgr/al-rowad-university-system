@@ -124,7 +124,7 @@ export default function ApprovalsPage() {
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body:    JSON.stringify({
           course_offering_id:   parseInt(offeringId),
-          approval_status_id:   2,
+          approval_status_code: 'approved',
           submitted_by_user_id: user.user_id,
         }),
       })

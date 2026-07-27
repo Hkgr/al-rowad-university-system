@@ -8,7 +8,7 @@ const hrNav = [
     items: [
       { to: '/hr',                 Icon: FaHome,               ar: 'الرئيسية',            en: 'Home',      end: true },
       { to: '/hr/employees',       Icon: FaUsers,              ar: 'الموظفون',             en: 'Employees'           },
-      { to: '/hr/employees/add',   Icon: FaUserPlus,           ar: 'إضافة موظف',           en: 'Add Employee', end: true },
+      { to: '/hr/employees/add',   Icon: FaUserPlus,           ar: 'إضافة موظف',           en: 'Add Employee', end: true, permissions: ['hr.manage'] },
       { to: '/hr/faculty',         Icon: FaChalkboardTeacher,  ar: 'هيئة التدريس',         en: 'Faculty'             },
     ],
   },

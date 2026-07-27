@@ -20,6 +20,10 @@ class StudentCourseRegistrationResource extends JsonResource
             'registration_status_id' => $this->registration_status_id,
             'result_status_id' => $this->result_status_id,
             'notes' => $this->notes,
+            'grade_entry_allowed' => $this->allowsGradeEntry(),
+            'grade_entry_blocked_reason' => $this->allowsGradeEntry()
+                ? null
+                : 'Historical or inactive registrations are read-only.',
             'student' => StudentResource::make($this->whenLoaded('student')),
             'course_offering' => CourseOfferingResource::make($this->whenLoaded('courseOffering')),
             'registration_status' => RegistrationStatusResource::make($this->whenLoaded('registrationStatus')),

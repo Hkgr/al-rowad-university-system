@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Attendance\RecordAttendanceRequest;
 use App\Services\AttendanceService;
+use App\Services\AcademicAuthorizationService;
 use Illuminate\Http\JsonResponse;
 
 class AttendanceController extends Controller
@@ -18,13 +19,15 @@ class AttendanceController extends Controller
         ], $status);
     }
 
-    public function sessionStudents(int $id, AttendanceService $service): JsonResponse
+    public function sessionStudents(int $id, AttendanceService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
+        $authorization->assertCanAccessAttendanceSession(request()->user(), $id);
         return $this->successResponse($service->getSessionStudents($id));
     }
 
-    public function record(int $id, RecordAttendanceRequest $request, AttendanceService $service): JsonResponse
+    public function record(int $id, RecordAttendanceRequest $request, AttendanceService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
+        $authorization->assertCanAccessAttendanceSession($request->user(), $id);
         $data = $service->recordSessionAttendance($id, $request->validated()['records']);
 
         return $this->successResponse($data, 'Attendance recorded successfully');

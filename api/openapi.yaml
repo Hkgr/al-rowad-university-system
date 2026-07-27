@@ -42,6 +42,12 @@ paths:
       responses:
         "200":
           description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        "403":
+          description: Account is disabled or inactive; no token is issued
         "422":
           description: Invalid credentials or validation error
 
@@ -55,8 +61,17 @@ paths:
       responses:
         "200":
           description: Authenticated user data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { $ref: '#/components/schemas/AuthenticatedIdentity' }
         "401":
           description: Unauthenticated
+        "403":
+          description: Account was disabled after authentication
 
   /logout:
     post:
@@ -78,6 +93,13 @@ paths:
       summary: List students
       security:
         - bearerAuth: []
+      parameters:
+        - name: student_status_code
+          in: query
+          required: false
+          description: Stable status-code filter (for example, `graduated`). Preferred over the legacy numeric ID filter.
+          schema:
+            type: string
       responses:
         "200":
           description: Students list
@@ -367,7 +389,199 @@ paths:
         "200":
           description: Open course offerings list
 
+  /v1/course-offerings/{id}/grade-sheet:
+    get:
+      tags: [Grades]
+      summary: Get current and result-backed historical grade rows
+      description: "Completed rows with results are visible but return `grade_entry_allowed: false`."
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: include_inactive, in: query, required: false, schema: { type: boolean, default: false } }
+      responses:
+        "200":
+          description: Grade sheet
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      students:
+                        type: array
+                        items: { $ref: '#/components/schemas/GradeSheetRow' }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /v1/registrations/{id}/grades:
+    get:
+      tags: [Grades]
+      summary: Read registration grades
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses:
+        "200": { description: Grade details, content: { application/json: { schema: { $ref: '#/components/schemas/RegistrationGradeResponse' } } } }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Grades]
+      summary: Enter grades for an eligible current registration
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GradeWrite' }
+      responses:
+        "201": { description: Grades created }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "422": { description: Ineligible registration or validation error }
+
+  /v1/student-course-results:
+    get:
+      tags: [Grades]
+      summary: List raw result records (Examination Committee, read-only)
+      description: Mutations are intentionally unavailable; grade writes must use `/registrations/{id}/grades`.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Paginated result records }
+        "401": { description: Unauthenticated }
+        "403": { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Grades]
+      summary: Unsupported raw result mutation
+      description: This route is not registered and returns `405 Method Not Allowed`.
+      responses:
+        "405": { description: Use the authorized grade-entry endpoint }
+
+  /v1/student-course-results/{id}:
+    get:
+      tags: [Grades]
+      summary: Read an authorized current or historical result
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses:
+        "200": { description: Result record }
+        "401": { description: Unauthenticated }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "404": { description: Result not found }
+    put:
+      tags: [Grades]
+      summary: Unsupported raw result mutation
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { "405": { description: Use the authorized grade-entry endpoint } }
+    patch:
+      tags: [Grades]
+      summary: Unsupported raw result mutation
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { "405": { description: Use the authorized grade-entry endpoint } }
+    delete:
+      tags: [Grades]
+      summary: Unsupported raw result deletion
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { "405": { description: Result deletion is not exposed } }
+
+  /v1/grade-approvals:
+    post:
+      tags: [Grades]
+      summary: Create a grade approval using a stable approval status code
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [course_offering_id, approval_status_code, submitted_by_user_id]
+              properties:
+                course_offering_id: { type: integer }
+                approval_status_code: { type: string, example: approved }
+                submitted_by_user_id: { type: integer }
+      responses:
+        "201": { description: Approval created }
+        "403": { $ref: '#/components/responses/Forbidden' }
+        "422": { description: Unknown or missing status code }
+
+  /v1/students/{student}:
+    put:
+      tags: [Students]
+      summary: Update student demographics (graduation transition is disabled)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: student, in: path, required: true, schema: { type: integer } }]
+      responses:
+        "200": { description: Student updated }
+        "409":
+          description: Graduation eligibility rules are not implemented
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: false }
+                  error_code: { type: string, example: graduation_eligibility_not_implemented }
+                  message: { type: string }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
 components:
+  responses:
+    Forbidden:
+      description: Authenticated user lacks the required role, student ownership, or assigned-section ownership
+  schemas:
+    AuthenticatedIdentity:
+      type: object
+      properties:
+        user_id: { type: integer }
+        username: { type: string }
+        email: { type: string, format: email }
+        student_id: { type: integer, nullable: true }
+        employee_id: { type: integer, nullable: true }
+        board_member_id: { type: integer, nullable: true }
+        roles:
+          type: array
+          items: { type: string }
+        permissions:
+          type: array
+          items: { type: string }
+    LoginResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          properties:
+            user: { $ref: '#/components/schemas/AuthenticatedIdentity' }
+            token: { type: string, description: Sanctum bearer token }
+            token_type: { type: string, example: Bearer }
+    GradeWrite:
+      type: object
+      required: [theoretical_mark, practical_mark]
+      properties:
+        theoretical_mark: { type: number, minimum: 0, maximum: 60 }
+        practical_mark: { type: number, minimum: 0, maximum: 40 }
+    GradeSheetRow:
+      type: object
+      properties:
+        student_course_registration_id: { type: integer }
+        registration_status: { type: object }
+        grade_entry_allowed: { type: boolean }
+        grade_entry_blocked_reason: { type: string, nullable: true }
+        theoretical_mark: { type: number, nullable: true }
+        practical_mark: { type: number, nullable: true }
+        final_mark: { type: number, nullable: true }
+    RegistrationGradeResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          properties:
+            registration:
+              type: object
+              properties:
+                grade_entry_allowed: { type: boolean }
+                grade_entry_blocked_reason: { type: string, nullable: true }
   securitySchemes:
     bearerAuth:
       type: http

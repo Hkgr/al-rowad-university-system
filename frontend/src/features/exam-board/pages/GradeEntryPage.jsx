@@ -40,6 +40,7 @@ async function saveGrade(registrationId, theory, prac) {
 // ── Grade row used in the bulk table ─────────────────────────────────────────
 
 function BulkRow({ row }) {
+  const canEdit = row.grade_entry_allowed === true
   const [theory,  setTheory]  = useState(row.theoretical_mark ?? '')
   const [prac,    setPrac]    = useState(row.practical_mark   ?? '')
   const [saving,  setSaving]  = useState(false)
@@ -54,7 +55,7 @@ function BulkRow({ row }) {
   const pWarn = prac   !== '' && p < 10
 
   async function handleSave() {
-    if (theory === '' || prac === '') return
+    if (!canEdit || theory === '' || prac === '') return
     setSaving(true); setErr('')
     try {
       const json = await saveGrade(row.student_course_registration_id, t, p)
@@ -76,6 +77,7 @@ function BulkRow({ row }) {
         <input
           type="number" min="0" max="60" step="0.5"
           value={theory}
+          disabled={!canEdit}
           onChange={e => { setTheory(e.target.value); setSaved(false) }}
           className={`w-[80px] px-2.5 py-1.5 border rounded-[8px] text-[13px] text-center outline-none focus:shadow-[0_0_0_2px_rgba(86,153,51,0.15)] ${tWarn ? 'border-red-400 bg-red-50' : 'border-primary/20 focus:border-primary'}`}
           dir="ltr"
@@ -87,6 +89,7 @@ function BulkRow({ row }) {
         <input
           type="number" min="0" max="40" step="0.5"
           value={prac}
+          disabled={!canEdit}
           onChange={e => { setPrac(e.target.value); setSaved(false) }}
           className={`w-[80px] px-2.5 py-1.5 border rounded-[8px] text-[13px] text-center outline-none focus:shadow-[0_0_0_2px_rgba(86,153,51,0.15)] ${pWarn ? 'border-red-400 bg-red-50' : 'border-primary/20 focus:border-primary'}`}
           dir="ltr"
@@ -99,12 +102,14 @@ function BulkRow({ row }) {
       <td className={`px-3 py-3 text-center text-[15px] font-black ${color}`}>{letter}</td>
       {/* Save */}
       <td className="px-3 py-3 text-center">
-        {saved
+        {!canEdit
+          ? <span className="text-[11px] font-bold text-amber-700" dir="rtl">للعرض فقط<br />سجل تاريخي</span>
+          : saved
           ? <span className="inline-flex items-center gap-1 text-[11.5px] text-green-700 font-bold"><FaCheck className="text-[10px]" /> تم</span>
           : (
             <button
               onClick={handleSave}
-              disabled={theory === '' || prac === '' || saving}
+              disabled={!canEdit || theory === '' || prac === '' || saving}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-[7px] text-[12px] font-bold disabled:opacity-40 hover:enabled:bg-primary-dark transition-colors"
             >
               {saving ? <FaSpinner className="animate-spin text-[10px]" /> : <FaSave className="text-[10px]" />}
@@ -311,6 +316,8 @@ function IndividualMode() {
   const [err,      setErr]      = useState('')
   const [loadRegs, setLoadRegs] = useState(false)
   const [loadGrade,setLoadGrade]= useState(false)
+  const selectedRegistration = regs.find(r => String(r.student_course_registration_id) === String(regId))
+  const canEdit = selectedRegistration?.grade_entry_allowed === true
 
   function handleSelect(student) {
     setSelected(student); setRegs([]); setRegId(''); setCurrent(null)
@@ -344,7 +351,7 @@ function IndividualMode() {
   const { letter, color } = fin !== null ? calcLetter(t, p) : { letter: '—', color: 'text-text-light' }
 
   async function handleSave() {
-    if (!regId || theory === '' || prac === '') return
+    if (!canEdit || !regId || theory === '' || prac === '') return
     setSaving(true); setErr(''); setSaved(false)
     try {
       const json = await saveGrade(regId, t, p)
@@ -400,6 +407,7 @@ function IndividualMode() {
               <input
                 type="number" min="0" max="60" step="0.5"
                 value={theory}
+                disabled={!canEdit}
                 onChange={e => { setTheory(e.target.value); setSaved(false) }}
                 className={`w-[130px] px-3 py-2.5 border rounded-[10px] text-[14px] text-center outline-none focus:shadow-[0_0_0_3px_rgba(86,153,51,0.1)] ${theory !== '' && t < 15 ? 'border-red-400 bg-red-50' : 'border-primary/20 focus:border-primary'}`}
                 dir="ltr"
@@ -410,6 +418,7 @@ function IndividualMode() {
               <input
                 type="number" min="0" max="40" step="0.5"
                 value={prac}
+                disabled={!canEdit}
                 onChange={e => { setPrac(e.target.value); setSaved(false) }}
                 className={`w-[130px] px-3 py-2.5 border rounded-[10px] text-[14px] text-center outline-none focus:shadow-[0_0_0_3px_rgba(86,153,51,0.1)] ${prac !== '' && p < 10 ? 'border-red-400 bg-red-50' : 'border-primary/20 focus:border-primary'}`}
                 dir="ltr"
@@ -429,9 +438,15 @@ function IndividualMode() {
               </div>
             </div>
 
+            {!canEdit && (
+              <div className="px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-[10px] text-[12px] font-bold text-amber-800" dir="rtl">
+                {selectedRegistration?.grade_entry_blocked_reason || 'هذا السجل التاريخي متاح للعرض فقط ولا يمكن تعديل درجاته.'}
+              </div>
+            )}
+
             <button
               onClick={handleSave}
-              disabled={theory === '' || prac === '' || saving}
+              disabled={!canEdit || theory === '' || prac === '' || saving}
               className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-[10px] text-[13.5px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-primary-dark transition-colors"
             >
               {saving ? <FaSpinner className="animate-spin" /> : saved ? <FaCheck /> : <FaSave />}
