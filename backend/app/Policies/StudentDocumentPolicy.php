@@ -8,6 +8,12 @@ use App\Models\User;
 
 class StudentDocumentPolicy
 {
+    public function viewAny(User $user): bool
+    {
+        return $user->effectiveRoles()->contains('student')
+            || $user->hasPermission('students.view');
+    }
+
     public function view(User $user, StudentDocument $document): bool
     {
         if ($user->effectiveRoles()->contains('student')) {
@@ -16,7 +22,7 @@ class StudentDocumentPolicy
 
         return $user->hasPermission('students.view');
     }
-    public function create(User $user): bool { return $user->student_id !== null || $this->manage($user); }
+    public function create(User $user): bool { return $this->manage($user); }
     public function createFor(User $user, Student $student): bool
     {
         return $this->manage($user)

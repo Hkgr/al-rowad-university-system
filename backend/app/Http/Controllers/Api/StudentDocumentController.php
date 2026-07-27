@@ -37,13 +37,28 @@ class StudentDocumentController extends ApiController
         return UpdateStudentDocumentRequest::class;
     }
 
+    public function index(): JsonResponse
+    {
+        Gate::authorize('viewAny', StudentDocument::class);
+
+        $query = StudentDocument::query()->with('documentType');
+        if (request()->user()->effectiveRoles()->contains('student')) {
+            $query->where('student_id', request()->user()->student_id);
+        }
+
+        $documents = $query->paginate(request()->integer('per_page', 15));
+
+        return $this->successResponse(
+            StudentDocumentResource::collection($documents)->response(request())->getData(true)
+        );
+    }
+
     public function upload(Student $student, Request $request): JsonResponse
     {
         Gate::authorize('createFor', [StudentDocument::class, $student]);
         $rules = [
             'document_type_id' => ['required', 'integer', 'exists:document_types,document_type_id'],
             'file' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:5120'],
-            'uploaded_at' => ['nullable', 'date'],
         ];
         if ($request->user()->student_id === null) {
             $rules['verification_notes'] = ['nullable', 'string', 'max:255'];
@@ -77,7 +92,7 @@ class StudentDocumentController extends ApiController
             'verification_notes' => $request->user()->student_id === null
                 ? ($validated['verification_notes'] ?? null)
                 : null,
-            'uploaded_at' => $validated['uploaded_at'] ?? now(),
+            'uploaded_at' => now(),
         ]);
 
         $document->load('documentType');

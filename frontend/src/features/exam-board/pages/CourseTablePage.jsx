@@ -21,6 +21,7 @@ const TYPE_LABEL = { mandatory: 'إجباري', elective: 'اختياري' }
 
 export default function CourseTablePage() {
   const canManage = hasPermission(PERMISSIONS.coursesManage)
+  const canViewHr = hasPermission(PERMISSIONS.hrView)
   const [years, setYears]             = useState([])
   const [semesters, setSemesters]     = useState([])
   const [colleges, setColleges]       = useState([])
@@ -57,8 +58,8 @@ export default function CourseTablePage() {
       get(`${API}/academic-levels?per_page=20`),
       get(`${API}/program-courses?per_page=500`),
       get(`${API}/course-offerings?per_page=500`),
-      get(`${API}/faculty-members?per_page=100`),
-      get(`${API}/employees?per_page=500`),
+      canViewHr ? get(`${API}/faculty-members?per_page=100`) : Promise.resolve({ success: true, data: [] }),
+      canViewHr ? get(`${API}/employees?per_page=500`) : Promise.resolve({ success: true, data: [] }),
     ]).then(([y, s, col, dep, prog, crs, lvl, pc, off, fac, emp]) => {
       setYears(y.success ? (y.data?.data ?? []) : [])
       setSemesters(s.success ? (s.data?.data ?? []) : [])
@@ -72,7 +73,7 @@ export default function CourseTablePage() {
       setFacultyMembers(fac.success ? (fac.data?.data ?? fac.data ?? []) : [])
       setEmployees(emp.success ? (emp.data?.data ?? emp.data ?? []) : [])
     }).finally(() => setLoading(false))
-  }, [])
+  }, [canViewHr])
 
   const courseMap = useMemo(() => Object.fromEntries(courses.map(c => [c.course_id, c])), [courses])
   const programMap = useMemo(() => Object.fromEntries(programs.map(p => [p.academic_program_id, p])), [programs])
@@ -362,7 +363,7 @@ export default function CourseTablePage() {
                           offering={r.offering}
                           facultyOptions={facultyOptions}
                           onUpdated={handleInstructorUpdated}
-                          readOnly={!canManage}
+                          readOnly={!canManage || !canViewHr}
                         />
                       ) : <span className="text-text-light">—</span>
                     ),

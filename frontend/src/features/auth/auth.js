@@ -5,11 +5,16 @@ export const PERMISSIONS = Object.freeze({
   registrationManage: 'registration.manage',
   coursesView: 'courses.view',
   coursesManage: 'courses.manage',
+  academicStructureView: 'academic_structure.view',
+  academicStructureManage: 'academic_structure.manage',
+  studentsView: 'students.view',
+  hrView: 'hr.view',
+  systemSettingsView: 'system_settings.view',
 })
 
 export const ACCESS = Object.freeze({
-  courseRegistration: { permissions: [PERMISSIONS.registrationView] },
-  courseManagement: { permissions: [PERMISSIONS.coursesView] },
+  courseRegistration: { allPermissions: [PERMISSIONS.registrationView, PERMISSIONS.studentsView, PERMISSIONS.academicStructureView, PERMISSIONS.coursesView, PERMISSIONS.systemSettingsView] },
+  courseManagement: { allPermissions: [PERMISSIONS.coursesView, PERMISSIONS.academicStructureView, PERMISSIONS.systemSettingsView] },
 })
 
 export function getIdentity() {
@@ -27,11 +32,14 @@ export function hasRole(role, user = getIdentity()) { return user?.roles?.includ
 export function hasPermission(permission, user = getIdentity()) {
   return hasRole('super_admin', user) || (user?.permissions?.includes(permission) ?? false)
 }
-export function canAccess({ permissions = [], roles = [] } = {}, user = getIdentity()) {
+export function canAccess({ permissions = [], allPermissions = [], roles = [] } = {}, user = getIdentity()) {
   if (!user) return false
-  return permissions.some(permission => hasPermission(permission, user))
+  const hasEveryRequiredPermission = allPermissions.every(permission => hasPermission(permission, user))
+  const hasAnyAlternative = permissions.some(permission => hasPermission(permission, user))
     || roles.some(role => hasRole(role, user))
     || (permissions.length === 0 && roles.length === 0)
+
+  return hasEveryRequiredPermission && hasAnyAlternative
 }
 export function landingRoute(user) {
   if (hasRole('student', user)) return '/student'

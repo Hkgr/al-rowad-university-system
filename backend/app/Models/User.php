@@ -210,10 +210,12 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return \App\Models\Permission::query()
             ->where('is_active', true)
-            ->whereHas('rolePermissions.role', fn ($query) => $query->where('is_active', true))
-            ->whereHas('rolePermissions.role.userRoles', fn ($query) => $query
-                ->where('user_id', $this->user_id)
-                ->where('user_roles.is_active', true))
+            ->whereHas('rolePermissions', fn ($rolePermissions) => $rolePermissions
+                ->whereHas('role', fn ($roles) => $roles
+                    ->where('is_active', true)
+                    ->whereHas('userRoles', fn ($userRoles) => $userRoles
+                        ->where('user_id', $this->user_id)
+                        ->where('user_roles.is_active', true))))
             ->pluck('permission_code')
             ->unique()
             ->values();

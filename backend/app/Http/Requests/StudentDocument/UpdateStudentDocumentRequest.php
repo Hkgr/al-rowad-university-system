@@ -3,7 +3,6 @@
 namespace App\Http\Requests\StudentDocument;
 
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 use App\Models\StudentDocument;
 use Illuminate\Support\Facades\Gate;
 

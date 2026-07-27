@@ -60,7 +60,7 @@ import professorNav             from '../features/professor-dashboard/nav'
 import ProfessorHome            from '../features/professor-dashboard/pages/ProfessorHome'
 import AttendanceDeprivationPage from '../features/professor-dashboard/pages/AttendanceDeprivationPage'
 
-function ProtectedRoute({ children, permissions = [], roles = [] }) {
+function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [] }) {
   const token = localStorage.getItem('token')
   const [identity, setIdentity] = useState(getIdentity())
   const [checking, setChecking] = useState(Boolean(token))
@@ -83,7 +83,7 @@ function ProtectedRoute({ children, permissions = [], roles = [] }) {
   if (!token) return <Navigate to="/login" replace />
   if (checking) return null
   if (!identity) return <Navigate to="/login" replace />
-  return canAccess({ permissions, roles }, identity) ? children : <Navigate to="/forbidden" replace />
+  return canAccess({ permissions, allPermissions, roles }, identity) ? children : <Navigate to="/forbidden" replace />
 }
 
 const protect = (element, access) => <ProtectedRoute {...access}>{element}</ProtectedRoute>

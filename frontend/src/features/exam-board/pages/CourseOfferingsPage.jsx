@@ -111,7 +111,7 @@ function CourseCombobox({ courses, excludeIds, value, onChange, placeholder, cou
 }
 
 // ── One card: a curriculum course + its details + its term status ───────────
-function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen, onToggle, onInstructorUpdated, busy, readOnly, courseDepartmentIdMap, departments, facultyMembers }) {
+function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen, onToggle, onInstructorUpdated, busy, canManageCurriculum, canManageOfferings, canAssignInstructors, courseDepartmentIdMap, departments, facultyMembers }) {
   const [capacity, setCapacity] = useState('40')
   const scope = course ? courseScopeInfo(course.course_id, courseDepartmentIdMap, departments) : null
 
@@ -124,7 +124,7 @@ function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen
           </div>
           <div className="text-[13px] text-text-dark mt-0.5">{course?.course_name ?? '—'}</div>
         </div>
-        {!readOnly && (
+        {canManageCurriculum && (
           <button
             type="button"
             onClick={() => onRemove(programCourse.program_course_id)}
@@ -168,7 +168,7 @@ function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen
             <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${offering.status === 'open' ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
               {offering.status === 'open' ? `مفتوحة (${offering.available_seats}/${offering.capacity})` : 'مغلقة'}
             </span>
-            {!readOnly && (
+            {canManageOfferings && (
               <button
                 type="button"
                 onClick={() => onToggle(offering)}
@@ -180,7 +180,7 @@ function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen
               </button>
             )}
           </div>
-        ) : readOnly ? (
+        ) : !canManageOfferings ? (
           <span className="inline-block text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-text-light">لم تُفتح لهذا الفصل بعد</span>
         ) : null}
         {offering && (
@@ -188,10 +188,10 @@ function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen
             offering={offering}
             facultyOptions={facultyMembers}
             onUpdated={onInstructorUpdated}
-            readOnly={readOnly}
+            readOnly={!canAssignInstructors}
           />
         )}
-        {!offering && !readOnly && (
+        {!offering && canManageOfferings && (
           <div className="flex items-center gap-1.5">
             <input
               type="number"
@@ -217,7 +217,7 @@ function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen
 }
 
 // ── One section = one academic level (year 1..5), full-width with a rich grid of course cards ──
-function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove, onOpen, onToggle, onInstructorUpdated, busyIds, readOnly, courseDepartmentIdMap, departments, facultyMembers }) {
+function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove, onOpen, onToggle, onInstructorUpdated, busyIds, canManageCurriculum, canAddCurriculum, canManageOfferings, canAssignInstructors, courseDepartmentIdMap, departments, facultyMembers }) {
   const [adding, setAdding]   = useState(false)
   const [courseId, setCourseId] = useState('')
   const [courseType, setCourseType] = useState('mandatory')
@@ -260,7 +260,9 @@ function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove,
                 onToggle={onToggle}
                 onInstructorUpdated={onInstructorUpdated}
                 busy={!!busyIds[programCourse.program_course_id] || (offering && !!busyIds[offering.course_offering_id])}
-                readOnly={readOnly}
+                canManageCurriculum={canManageCurriculum}
+                canManageOfferings={canManageOfferings}
+                canAssignInstructors={canAssignInstructors}
                 courseDepartmentIdMap={courseDepartmentIdMap}
                 departments={departments}
                 facultyMembers={facultyMembers}
@@ -271,7 +273,7 @@ function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove,
         {rows.length === 0 && !adding && (
           <p className="text-center text-[11.5px] text-text-light py-3" dir="rtl">لا توجد مواد بعد</p>
         )}
-        {!readOnly && (
+        {canAddCurriculum && (
         <div className={rows.length > 0 ? 'mt-3.5 pt-3.5 border-t border-primary/8' : ''}>
           {adding ? (
             <div className="max-w-md space-y-2" dir="rtl">
@@ -338,7 +340,7 @@ function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove,
 }
 
 // ── Shared / common courses (open to every college) ──────────────────────────
-function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onToggle, onInstructorUpdated, busyIds, facultyMembers, readOnly }) {
+function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onToggle, onInstructorUpdated, busyIds, facultyMembers, canManageOfferings, canAssignInstructors }) {
   const [adding, setAdding] = useState(false)
   const [courseId, setCourseId] = useState('')
   const [capacity, setCapacity] = useState('40')
@@ -352,7 +354,7 @@ function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onTogg
   const courseMap = useMemo(() => Object.fromEntries(courses.map(c => [c.course_id, c])), [courses])
 
   async function submit() {
-    if (readOnly) { setErr('ليس لديك صلاحية إدارة المواد'); return }
+    if (!canManageOfferings) { setErr('ليس لديك صلاحية إدارة المواد'); return }
     setErr('')
     if (!courseId) { setErr('اختر المادة'); return }
     if (!capacity || Number(capacity) < 1) { setErr('أدخل عدد المقاعد'); return }
@@ -389,7 +391,7 @@ function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onTogg
                   <span className={`px-2 py-0.5 rounded-full text-[10.5px] font-bold ${isOpen ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
                     {isOpen ? 'مفتوحة' : 'مغلقة'}
                   </span>
-                  {!readOnly && <button
+                  {canManageOfferings && <button
                     type="button"
                     onClick={() => onToggle(o)}
                     disabled={!!busyIds[o.course_offering_id]}
@@ -404,7 +406,7 @@ function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onTogg
                 offering={o}
                 facultyOptions={facultyMembers}
                 onUpdated={onInstructorUpdated}
-                readOnly={readOnly}
+                readOnly={!canAssignInstructors}
               />
             </div>
           )
@@ -413,7 +415,7 @@ function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onTogg
           <p className="text-center text-[12px] text-text-light py-2" dir="rtl">لا توجد مواد مشتركة مفتوحة لهذا الفصل</p>
         )}
 
-        {!readOnly && (adding ? (
+        {canManageOfferings && (adding ? (
           <div className="border border-primary/15 rounded-[10px] p-3 space-y-2" dir="rtl">
             <CourseCombobox courses={courses} excludeIds={excludeIds} value={courseId} onChange={setCourseId} />
             <div className="flex items-center gap-2">
@@ -460,7 +462,11 @@ function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onTogg
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function CourseOfferingsPage() {
-  const canManage = hasPermission(PERMISSIONS.coursesManage)
+  const canManageOfferings = hasPermission(PERMISSIONS.coursesManage)
+  const canManageCurriculum = hasPermission(PERMISSIONS.academicStructureManage)
+  const canViewHr = hasPermission(PERMISSIONS.hrView)
+  const canAssignInstructors = canManageOfferings && canViewHr
+  const canAddCurriculum = canManageCurriculum && canManageOfferings
   const [years, setYears]           = useState([])
   const [semesters, setSemesters]   = useState([])
   const [colleges, setColleges]     = useState([])
@@ -496,8 +502,8 @@ export default function CourseOfferingsPage() {
       get(`${API}/program-courses?per_page=200`),
       get(`${API}/course-offerings?per_page=200`),
       get(`${API}/course-departments?per_page=500`),
-      get(`${API}/faculty-members?per_page=100`),
-      get(`${API}/employees?per_page=500`),
+      canViewHr ? get(`${API}/faculty-members?per_page=100`) : Promise.resolve({ success: true, data: [] }),
+      canViewHr ? get(`${API}/employees?per_page=500`) : Promise.resolve({ success: true, data: [] }),
     ]).then(([y, s, col, dep, prog, crs, lvl, pc, off, cd, fac, emp]) => {
       setYears(y.success ? (y.data?.data ?? []) : [])
       setSemesters(s.success ? (s.data?.data ?? []) : [])
@@ -512,7 +518,7 @@ export default function CourseOfferingsPage() {
       setFacultyMembers(fac.success ? (fac.data?.data ?? fac.data ?? []) : [])
       setEmployees(emp.success ? (emp.data?.data ?? emp.data ?? []) : [])
     }).finally(() => setLoading(false))
-  }, [])
+  }, [canViewHr])
 
   const courseMap = useMemo(() => Object.fromEntries(courses.map(c => [c.course_id, c])), [courses])
 
@@ -599,7 +605,7 @@ export default function CourseOfferingsPage() {
   }
 
   async function handleAddCurriculumCourse(levelId, courseId, courseType, capacity) {
-    if (!canManage) throw new Error('ليس لديك صلاحية إدارة المواد')
+    if (!canManageCurriculum || !canManageOfferings) throw new Error('ليس لديك صلاحية إدارة المنهج وفتح المواد')
     const pcJson = await post(`${API}/program-courses`, {
       academic_program_id: Number(programId),
       course_id: courseId,
@@ -628,7 +634,7 @@ export default function CourseOfferingsPage() {
   }
 
   async function handleRemoveCurriculumCourse(programCourseId) {
-    if (!canManage) return
+    if (!canManageCurriculum) return
     if (!window.confirm('هل تريد إزالة هذه المادة من منهج هذا المستوى؟')) return
     setBusyIds(p => ({ ...p, [programCourseId]: true }))
     try {
@@ -641,7 +647,7 @@ export default function CourseOfferingsPage() {
   }
 
   async function handleOpenOffering(courseId, capacity) {
-    if (!canManage) return
+    if (!canManageOfferings) return
     setBusyIds(p => ({ ...p, [`open-${courseId}`]: true }))
     try {
       const json = await post(`${API}/course-offerings`, {
@@ -664,7 +670,7 @@ export default function CourseOfferingsPage() {
   }
 
   async function handleToggleStatus(offering) {
-    if (!canManage) return
+    if (!canManageOfferings) return
     const nextStatus = offering.status === 'open' ? 'closed' : 'open'
     setBusyIds(p => ({ ...p, [offering.course_offering_id]: true }))
     try {
@@ -689,7 +695,7 @@ export default function CourseOfferingsPage() {
   }
 
   async function handleAddSharedCourse(courseId, capacity) {
-    if (!canManage) throw new Error('ليس لديك صلاحية إدارة المواد')
+    if (!canManageOfferings) throw new Error('ليس لديك صلاحية إدارة المواد')
     const json = await post(`${API}/course-offerings`, {
       course_id: courseId,
       academic_year_id: Number(yearId),
@@ -767,7 +773,8 @@ export default function CourseOfferingsPage() {
             onInstructorUpdated={handleInstructorUpdated}
             busyIds={busyIds}
             facultyMembers={facultyOptions}
-            readOnly={!canManage}
+            canManageOfferings={canManageOfferings}
+            canAssignInstructors={canAssignInstructors}
           />
 
           {/* College + Program selector */}
@@ -807,7 +814,7 @@ export default function CourseOfferingsPage() {
 
           {programId && (
             <>
-              {canManage && <div className="flex justify-end mb-3">
+              {(canManageCurriculum || canManageOfferings) && <div className="flex justify-end mb-3">
                 <button
                   type="button"
                   onClick={() => setPreviewMode(p => !p)}
@@ -836,7 +843,10 @@ export default function CourseOfferingsPage() {
                       onToggle={handleToggleStatus}
                       onInstructorUpdated={handleInstructorUpdated}
                       busyIds={busyIds}
-                      readOnly={previewMode || !canManage}
+                      canManageCurriculum={!previewMode && canManageCurriculum}
+                      canAddCurriculum={!previewMode && canAddCurriculum}
+                      canManageOfferings={!previewMode && canManageOfferings}
+                      canAssignInstructors={!previewMode && canAssignInstructors}
                       courseDepartmentIdMap={courseDepartmentIdMap}
                       departments={departments}
                       facultyMembers={facultyOptions}
