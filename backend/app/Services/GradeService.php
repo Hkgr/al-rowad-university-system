@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Exceptions\GradeException;
 use App\Models\AcademicYear;
+use App\Models\Course;
 use App\Models\CourseOffering;
+use App\Models\Department;
 use App\Models\GradeAuditLog;
 use App\Models\GradeComponent;
 use App\Models\GradingPolicy;
@@ -90,6 +92,135 @@ class GradeService
 
         return [
             'course_offering_id' => $offering->course_offering_id,
+            'total_registered_students' => $registrations->count(),
+            'total_students_with_results' => $studentsWithResults,
+            'passed_count' => $passedCount,
+            'failed_count' => $statusCounts['failed'],
+            'incomplete_count' => $statusCounts['incomplete'],
+            'deprived_count' => $statusCounts['deprived'],
+            'withdrawn_count' => $statusCounts['withdrawn'],
+            'average_final_mark' => $finalMarks->isNotEmpty() ? round($finalMarks->avg(), 2) : null,
+            'highest_final_mark' => $finalMarks->isNotEmpty() ? round($finalMarks->max(), 2) : null,
+            'lowest_final_mark' => $finalMarks->isNotEmpty() ? round($finalMarks->min(), 2) : null,
+            'pass_rate' => $studentsWithResults > 0 ? round(($passedCount / $studentsWithResults) * 100, 2) : 0,
+        ];
+    }
+
+    public function getCourseStatistics(int $courseId, ?int $academicYearId = null, ?int $semesterId = null): array
+    {
+        $course = Course::query()->findOrFail($courseId);
+
+        $offeringIds = CourseOffering::query()
+            ->where('course_id', $courseId)
+            ->when($academicYearId, fn (Builder $query) => $query->where('academic_year_id', $academicYearId))
+            ->when($semesterId, fn (Builder $query) => $query->where('semester_id', $semesterId))
+            ->pluck('course_offering_id');
+
+        $registrations = $this->loadActiveRegistrationsForOfferings($offeringIds);
+
+        return array_merge([
+            'course_id' => $course->course_id,
+            'course_code' => $course->course_code,
+            'course_name' => $course->course_name,
+            'academic_year_id' => $academicYearId,
+            'semester_id' => $semesterId,
+            'offerings_count' => $offeringIds->count(),
+        ], $this->buildStatistics($registrations));
+    }
+
+    public function getDepartmentStatistics(int $departmentId, ?int $academicYearId = null, ?int $semesterId = null): array
+    {
+        $department = Department::query()->findOrFail($departmentId);
+
+        $offeringIds = CourseOffering::query()
+            ->where('department_id', $departmentId)
+            ->when($academicYearId, fn (Builder $query) => $query->where('academic_year_id', $academicYearId))
+            ->when($semesterId, fn (Builder $query) => $query->where('semester_id', $semesterId))
+            ->pluck('course_offering_id');
+
+        $registrations = $this->loadActiveRegistrationsForOfferings($offeringIds, withCourse: true);
+
+        $byCourse = $registrations
+            ->groupBy(fn (StudentCourseRegistration $registration) => $registration->courseOffering?->course_id)
+            ->map(function (Collection $courseRegistrations) {
+                $course = $courseRegistrations->first()?->courseOffering?->course;
+
+                return array_merge([
+                    'course_id' => $course?->course_id,
+                    'course_code' => $course?->course_code,
+                    'course_name' => $course?->course_name,
+                ], $this->buildStatistics($courseRegistrations));
+            })
+            ->values()
+            ->all();
+
+        return array_merge([
+            'department_id' => $department->department_id,
+            'department_name' => $department->department_name,
+            'academic_year_id' => $academicYearId,
+            'semester_id' => $semesterId,
+            'offerings_count' => $offeringIds->count(),
+            'courses_count' => count($byCourse),
+        ], $this->buildStatistics($registrations), [
+            'by_course' => $byCourse,
+        ]);
+    }
+
+    /**
+     * Load active/historical registrations (with results) for a set of
+     * course_offering_ids. Reuses the SAME currentOrHistoricalWithResult()
+     * scope that getResultsSummary() and getGradeSheet() already use —
+     * does not touch or duplicate their logic differently.
+     */
+    private function loadActiveRegistrationsForOfferings(Collection $offeringIds, bool $withCourse = false): Collection
+    {
+        if ($offeringIds->isEmpty()) {
+            return collect();
+        }
+
+        $with = ['studentCourseResult.resultStatus', 'registrationStatus'];
+        if ($withCourse) {
+            $with[] = 'courseOffering.course';
+        }
+
+        return StudentCourseRegistration::query()
+            ->whereIn('course_offering_id', $offeringIds)
+            ->with($with)
+            ->currentOrHistoricalWithResult()
+            ->get();
+    }
+
+    /**
+     * Compute pass/fail/mark statistics for an arbitrary collection of
+     * student_course_registrations. Independent copy of the same logic used
+     * inside getResultsSummary() — does not call or modify getResultsSummary().
+     */
+    private function buildStatistics(Collection $registrations): array
+    {
+        $withResults = $registrations->filter(fn (StudentCourseRegistration $registration) => $registration->studentCourseResult !== null);
+        $finalMarks = $withResults
+            ->map(fn (StudentCourseRegistration $registration) => (float) $registration->studentCourseResult->final_mark)
+            ->values();
+
+        $statusCounts = [
+            'passed' => 0,
+            'failed' => 0,
+            'incomplete' => 0,
+            'deprived' => 0,
+            'withdrawn' => 0,
+        ];
+
+        foreach ($withResults as $registration) {
+            $statusCode = $this->resolveEffectiveResultStatusCode($registration);
+            if (array_key_exists($statusCode, $statusCounts)) {
+                $statusCounts[$statusCode]++;
+            }
+        }
+
+        $passedCount = $statusCounts['passed'];
+        $studentsWithResults = $withResults->count();
+
+        return [
             'total_registered_students' => $registrations->count(),
             'total_students_with_results' => $studentsWithResults,
             'passed_count' => $passedCount,

@@ -11,7 +11,9 @@ use App\Http\Resources\DepartmentResource;
 use App\Http\Resources\CourseResource;
 use App\Http\Resources\ProgramCourseResource;
 use App\Models\Course;
+use App\Services\GradeService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class CourseController extends ApiController
 {
@@ -72,5 +74,21 @@ class CourseController extends ApiController
         ])->findOrFail($id);
 
         return $this->successResponse(CourseInstructorResource::collection($course->courseInstructors));
+    }
+
+    public function statistics(int $id, Request $request, GradeService $service): JsonResponse
+    {
+        $validated = $request->validate([
+            'academic_year_id' => ['sometimes', 'nullable', 'integer', 'exists:academic_years,academic_year_id'],
+            'semester_id' => ['sometimes', 'nullable', 'integer', 'exists:semesters,semester_id'],
+        ]);
+
+        $statistics = $service->getCourseStatistics(
+            $id,
+            $validated['academic_year_id'] ?? null,
+            $validated['semester_id'] ?? null,
+        );
+
+        return $this->successResponse($statistics);
     }
 }
