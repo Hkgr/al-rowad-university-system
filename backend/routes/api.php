@@ -223,6 +223,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
 
     Route::get('colleges/{college}/departments', [CollegeController::class, 'departments'])->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.view');
     Route::get('departments/{department}/programs', [DepartmentController::class, 'programs'])->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.view');
+    Route::get('departments/{id}/statistics', [DepartmentController::class, 'statistics']);
     Route::get('programs/{academic_program}/students', [AcademicProgramController::class, 'students'])->middleware(\App\Http\Middleware\RequirePermission::class.':students.view');
     Route::get('programs/{academic_program}/courses', [AcademicProgramController::class, 'courses'])->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.view');
     Route::get('programs/{id}/mandatory-courses', [AcademicProgramController::class, 'mandatoryCourses'])->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.view');
@@ -241,6 +242,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('courses/{id}/programs', [CourseController::class, 'programs']);
     Route::get('courses/{id}/prerequisites', [CourseController::class, 'prerequisites']);
     Route::get('courses/{id}/instructors', [CourseController::class, 'instructors']);
+    Route::get('courses/{id}/statistics', [CourseController::class, 'statistics']);
 
     /*
     |--------------------------------------------------------------------------
