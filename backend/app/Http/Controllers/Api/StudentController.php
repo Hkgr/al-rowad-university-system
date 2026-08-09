@@ -26,10 +26,24 @@ use Illuminate\Support\Facades\Gate;
 
 class StudentController extends ApiController
 {
+    public function store(): JsonResponse
+    {
+        Gate::authorize('create', Student::class);
+        $request = app($this->storeRequestClass());
+        $data = $request->validated();
+        abort_unless(app(DataScopeService::class)->canAccessProgram($request->user(), (int) $data['academic_program_id']), 403);
+        $student = Student::query()->create($data);
+
+        return $this->successResponse((new StudentResource($student))->resolve($request), 'Operation completed successfully', 201);
+    }
+
     public function update($id): JsonResponse
     {
         $student = Student::query()->findOrFail($id);
         Gate::authorize('update', $student);
+        if (request()->filled('academic_program_id')) {
+            abort_unless(app(DataScopeService::class)->canAccessProgram(request()->user(), request()->integer('academic_program_id')), 403);
+        }
         $statusCode = request()->input('student_status_code');
 
         if ($statusCode === null && request()->filled('student_status_id')) {
@@ -282,8 +296,8 @@ class StudentController extends ApiController
 
     public function registrations(Student $student): JsonResponse
     {
-        Gate::authorize('view', $student);
-        $registrations = $student->studentCourseRegistrations()
+        abort_unless(request()->user()->hasPermission('registration.view'), 403);
+        $registrations = app(DataScopeService::class)->scopeRegistrations($student->studentCourseRegistrations(), request()->user())
             ->with([
                 'courseOffering.course',
                 'courseOffering.academicYear',
@@ -303,14 +317,14 @@ class StudentController extends ApiController
     public function transcript(Student $student, GradeService $gradeService): JsonResponse
     {
         abort_unless(request()->user()->hasPermission('grades.view'), 403);
-        app(AcademicAuthorizationService::class)->assertStudentRecord(request()->user(), $student);
+        app(AcademicAuthorizationService::class)->assertCanAccessStudent(request()->user(), $student);
         return $this->successResponse($gradeService->getTranscript($student));
     }
 
     public function gpa(Student $student, Request $request, GradeService $gradeService): JsonResponse
     {
         abort_unless($request->user()->hasPermission('grades.view'), 403);
-        app(AcademicAuthorizationService::class)->assertStudentRecord($request->user(), $student);
+        app(AcademicAuthorizationService::class)->assertCanAccessStudent($request->user(), $student);
         $validated = $request->validate([
             'academic_year_id' => ['required', 'integer', 'exists:academic_years,academic_year_id'],
             'semester_id' => ['required', 'integer', 'exists:semesters,semester_id'],
@@ -328,14 +342,14 @@ class StudentController extends ApiController
     public function cgpa(Student $student, GradeService $gradeService): JsonResponse
     {
         abort_unless(request()->user()->hasPermission('grades.view'), 403);
-        app(AcademicAuthorizationService::class)->assertStudentRecord(request()->user(), $student);
+        app(AcademicAuthorizationService::class)->assertCanAccessStudent(request()->user(), $student);
         return $this->successResponse($gradeService->calculateCgpa($student));
     }
 
     public function attendance(Student $student, Request $request, AttendanceService $service): JsonResponse
     {
         abort_unless($request->user()->hasPermission('attendance.view'), 403);
-        app(AcademicAuthorizationService::class)->assertStudentRecord($request->user(), $student);
+        app(AcademicAuthorizationService::class)->assertCanAccessStudent($request->user(), $student);
         $validated = $request->validate([
             'academic_year_id' => ['sometimes', 'integer', 'exists:academic_years,academic_year_id'],
             'semester_id' => ['sometimes', 'integer', 'exists:semesters,semester_id'],
@@ -347,7 +361,8 @@ class StudentController extends ApiController
                 $student,
                 $validated['academic_year_id'] ?? null,
                 $validated['semester_id'] ?? null,
-                $validated['course_offering_id'] ?? null
+                $validated['course_offering_id'] ?? null,
+                $request->user()
             )
         );
     }
@@ -355,10 +370,13 @@ class StudentController extends ApiController
     public function absencePercentage(Student $student, Request $request, AttendanceService $service): JsonResponse
     {
         abort_unless($request->user()->hasPermission('attendance.view'), 403);
-        app(AcademicAuthorizationService::class)->assertStudentRecord($request->user(), $student);
+        app(AcademicAuthorizationService::class)->assertCanAccessStudent($request->user(), $student);
         $validated = $request->validate([
             'course_offering_id' => ['required', 'integer', 'exists:course_offerings,course_offering_id'],
         ]);
+        abort_unless(app(DataScopeService::class)->scopeRegistrations(
+            $student->studentCourseRegistrations(), $request->user()
+        )->where('course_offering_id', $validated['course_offering_id'])->exists(), 403);
 
         return $this->successResponse(
             $service->getStudentAbsencePercentage($student, (int) $validated['course_offering_id'])

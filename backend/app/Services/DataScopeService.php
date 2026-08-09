@@ -68,10 +68,31 @@ class DataScopeService
         });
     }
 
+    public function scopeRegistrationsForStaff(Builder $query, User $user): Builder
+    {
+        if ($this->bypassesScope($user)) return $query;
+
+        return $query->whereHas('student', fn (Builder $student) => $this->scopeStudentsForStaff($student, $user))
+            ->whereHas('courseOffering', fn (Builder $offering) => $this->scopeOfferingsForStaff($offering, $user));
+    }
+
     public function scopeResourceQuery(Builder $query, User $user): Builder
     {
         $model = $query->getModel();
         $table = $model->getTable();
+        if ($table === 'colleges') return $this->scopeColleges($query, $user);
+        if ($table === 'departments') return $this->scopeDepartments($query, $user);
+        if ($table === 'academic_programs') return $this->scopePrograms($query, $user);
+        if ($table === 'students') return $this->scopeStudents($query, $user);
+        if ($table === 'course_offerings') return $this->scopeOfferings($query, $user);
+        if ($table === 'student_course_registrations') return $this->scopeRegistrations($query, $user);
+        if ($table === 'courses') return $this->scopeCourses($query, $user);
+        if ($table === 'course_departments') {
+            return $query->whereHas('department', fn (Builder $department) => $this->scopeDepartments($department, $user));
+        }
+        if ($table === 'program_courses') {
+            return $query->whereHas('academicProgram', fn (Builder $program) => $this->scopePrograms($program, $user));
+        }
         if (in_array($table, ['student_academic_terms', 'student_credit_limits', 'student_documents', 'student_attendance', 'grade_appeals'], true)
             && Schema::hasColumn($table, 'student_id')) {
             return $query->whereHas('student', fn (Builder $student) => $this->scopeStudents($student, $user));
@@ -137,10 +158,11 @@ class DataScopeService
         if ($this->bypassesScope($user)) return $query;
         $scopes = $this->grouped($user);
         if ($scopes['university'] !== []) return $query;
-        return $query->whereIn('college_id', $scopes['college'])
+        return $query->where(fn (Builder $college) => $college
+            ->whereIn('college_id', $scopes['college'])
             ->orWhereHas('departments', fn (Builder $department) => $department
                 ->whereIn('department_id', $scopes['department'])
-                ->orWhereHas('academicPrograms', fn (Builder $program) => $program->whereIn('academic_program_id', $scopes['program'])));
+                ->orWhereHas('academicPrograms', fn (Builder $program) => $program->whereIn('academic_program_id', $scopes['program']))));
     }
 
     public function scopeDepartments(Builder $query, User $user): Builder
@@ -148,8 +170,10 @@ class DataScopeService
         if ($this->bypassesScope($user)) return $query;
         $scopes = $this->grouped($user);
         if ($scopes['university'] !== []) return $query;
-        return $query->whereIn('college_id', $scopes['college'])->orWhereIn('department_id', $scopes['department'])
-            ->orWhereHas('academicPrograms', fn (Builder $program) => $program->whereIn('academic_program_id', $scopes['program']));
+        return $query->where(fn (Builder $department) => $department
+            ->whereIn('college_id', $scopes['college'])
+            ->orWhereIn('department_id', $scopes['department'])
+            ->orWhereHas('academicPrograms', fn (Builder $program) => $program->whereIn('academic_program_id', $scopes['program'])));
     }
 
     public function scopePrograms(Builder $query, User $user): Builder
@@ -157,8 +181,49 @@ class DataScopeService
         if ($this->bypassesScope($user)) return $query;
         $scopes = $this->grouped($user);
         if ($scopes['university'] !== []) return $query;
-        return $query->whereIn('academic_program_id', $scopes['program'])->orWhereIn('department_id', $scopes['department'])
-            ->orWhereHas('department', fn (Builder $department) => $department->whereIn('college_id', $scopes['college']));
+        return $query->where(fn (Builder $program) => $program
+            ->whereIn('academic_program_id', $scopes['program'])
+            ->orWhereIn('department_id', $scopes['department'])
+            ->orWhereHas('department', fn (Builder $department) => $department->whereIn('college_id', $scopes['college'])));
+    }
+
+    public function scopeCourses(Builder $query, User $user): Builder
+    {
+        if ($this->bypassesScope($user)) return $query;
+
+        return $query->where(function (Builder $courses) use ($user): void {
+            $courses->whereHas('departments', fn (Builder $department) => $this->scopeDepartments($department, $user))
+                ->orWhereHas('academicPrograms', fn (Builder $program) => $this->scopePrograms($program, $user))
+                ->orWhereHas('courseOfferings', fn (Builder $offering) => $this->scopeOfferings($offering, $user));
+        });
+    }
+
+    private function scopeStudentsForStaff(Builder $query, User $user): Builder
+    {
+        if ($this->bypassesScope($user)) return $query;
+        $scopes = $this->grouped($user);
+        if ($scopes['university'] !== []) return $query;
+
+        return $query->where(fn (Builder $student) => $student
+            ->whereIn('academic_program_id', $scopes['program'])
+            ->orWhereHas('academicProgram', fn (Builder $program) => $program
+                ->whereIn('department_id', $scopes['department'])
+                ->orWhereHas('department', fn (Builder $department) => $department->whereIn('college_id', $scopes['college'])))
+            ->orWhereHas('studentCourseRegistrations', fn (Builder $registration) =>
+                $registration->whereIn('course_offering_id', $scopes['section'])));
+    }
+
+    private function scopeOfferingsForStaff(Builder $query, User $user): Builder
+    {
+        if ($this->bypassesScope($user)) return $query;
+        $scopes = $this->grouped($user);
+        if ($scopes['university'] !== []) return $query;
+
+        return $query->where(fn (Builder $offering) => $offering
+            ->whereIn('course_offering_id', $scopes['section'])
+            ->orWhereIn('academic_program_id', $scopes['program'])
+            ->orWhereIn('department_id', $scopes['department'])
+            ->orWhereHas('department', fn (Builder $department) => $department->whereIn('college_id', $scopes['college'])));
     }
 
     private function grouped(User $user): array

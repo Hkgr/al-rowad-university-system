@@ -35,8 +35,10 @@ export function hasPermission(permission, user = getIdentity()) {
 export function can(permission, user = getIdentity()) { return hasPermission(permission, user) }
 export function canAny(permissions, user = getIdentity()) { return permissions.some(permission => can(permission, user)) }
 export function canAll(permissions, user = getIdentity()) { return permissions.every(permission => can(permission, user)) }
-export function canAccess({ permissions = [], allPermissions = [], roles = [] } = {}, user = getIdentity()) {
+export function canAccess({ permissions = [], allPermissions = [], roles = [], studentIdentity = false, employeeIdentity = false } = {}, user = getIdentity()) {
   if (!user) return false
+  if (studentIdentity && !user.student_id) return false
+  if (employeeIdentity && !user.employee_id) return false
   const hasEveryRequiredPermission = allPermissions.every(permission => hasPermission(permission, user))
   const hasAnyAlternative = permissions.some(permission => hasPermission(permission, user))
     || roles.some(role => hasRole(role, user))
@@ -49,7 +51,7 @@ export function landingRoute(user) {
   if (canAll(['registration.manage', 'registration.view', 'students.view', 'courses.view'], user)) return '/exam-board/course-registration'
   if (canAny(['attendance.manage', 'grades.manage'], user) && user?.employee_id) return '/professor'
   if (hasPermission('hr.view', user)) return '/hr'
-  if (hasRole('student', user)) return '/student'
+  if (user?.student_id && canAny(['registration.view', 'grades.view', 'attendance.view'], user)) return '/student'
   if (hasPermission('academic_structure.view', user)) return '/academic-structure'
   return '/student-affairs'
 }

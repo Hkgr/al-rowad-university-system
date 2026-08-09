@@ -43,6 +43,16 @@ class AuthorizationP01Seeder extends Seeder
             OrganizationalUnit::query()->create(['unit_code' => '7', 'unit_name' => 'نائب رئيس الجامعة للشؤون الإدارية', 'unit_type_id' => $viceType->unit_type_id, 'parent_unit_id' => $presidency->organizational_unit_id, 'is_active' => true]);
         }
 
+        $officialAdmin = OrganizationalUnit::query()->where('unit_code', '7')->firstOrFail();
+        $presidency = OrganizationalUnit::query()->where('unit_code', 'PRES')->firstOrFail();
+        $viceType = OrganizationalUnitType::query()->where('type_code', 'vice_presidency')->firstOrFail();
+        $officialAdmin->update([
+            'unit_name' => 'نائب رئيس الجامعة للشؤون الإدارية',
+            'unit_type_id' => $viceType->unit_type_id,
+            'parent_unit_id' => $presidency->organizational_unit_id,
+            'is_active' => true,
+        ]);
+
         $directorateType = OrganizationalUnitType::query()->where('type_code', 'directorate')->value('unit_type_id');
         $officeType = OrganizationalUnitType::query()->where('type_code', 'office')->value('unit_type_id');
         $administrationType = OrganizationalUnitType::query()->firstOrCreate(
@@ -50,6 +60,8 @@ class AuthorizationP01Seeder extends Seeder
             ['type_name' => 'إدارة', 'description' => 'Administrative unit', 'is_active' => true]
         )->unit_type_id;
         $units = [
+            ['71', 'مديرية الشؤون الإدارية', $directorateType, '7'],
+            ['72', 'مديرية الشؤون المالية', $directorateType, '7'],
             ['73', 'مديرية شؤون الطلاب', $directorateType, '7'],
             ['731', 'مكتب الإرشاد والتوجيه', $officeType, '73'],
             ['732', 'مكتب القبول والتسجيل', $officeType, '73'],

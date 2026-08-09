@@ -60,7 +60,7 @@ import professorNav             from '../features/professor-dashboard/nav'
 import ProfessorHome            from '../features/professor-dashboard/pages/ProfessorHome'
 import AttendanceDeprivationPage from '../features/professor-dashboard/pages/AttendanceDeprivationPage'
 
-function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [] }) {
+function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], studentIdentity = false, employeeIdentity = false }) {
   const token = localStorage.getItem('token')
   const [identity, setIdentity] = useState(getIdentity())
   const [checking, setChecking] = useState(Boolean(token))
@@ -83,7 +83,7 @@ function ProtectedRoute({ children, permissions = [], allPermissions = [], roles
   if (!token) return <Navigate to="/login" replace />
   if (checking) return null
   if (!identity) return <Navigate to="/login" replace />
-  return canAccess({ permissions, allPermissions, roles }, identity) ? children : <Navigate to="/forbidden" replace />
+  return canAccess({ permissions, allPermissions, roles, studentIdentity, employeeIdentity }, identity) ? children : <Navigate to="/forbidden" replace />
 }
 
 const protect = (element, access) => <ProtectedRoute {...access}>{element}</ProtectedRoute>
@@ -117,7 +117,7 @@ export default function App() {
         {/* ── بوابة الطالب dashboard ── */}
         <Route
           element={
-            <ProtectedRoute roles={['student']}>
+            <ProtectedRoute studentIdentity permissions={['registration.view', 'grades.view', 'attendance.view']}>
               <DashboardLayout nav={studentNav} appTitle="بوابة الطالب" />
             </ProtectedRoute>
           }
@@ -132,12 +132,12 @@ export default function App() {
         {/* ── هيئة الامتحانات dashboard ── */}
         <Route
           element={
-            <ProtectedRoute permissions={['exams.view', 'grades.view', 'courses.view', 'registration.view']}>
+            <ProtectedRoute allPermissions={['exams.view', 'exams.manage']}>
               <DashboardLayout nav={examBoardNav} appTitle="هيئة الامتحانات" />
             </ProtectedRoute>
           }
         >
-          <Route path="/exam-board"                element={protect(<ExamBoardHome />, { permissions: ['exams.view', 'grades.view'] })} />
+          <Route path="/exam-board"                element={protect(<ExamBoardHome />, { allPermissions: ['exams.view', 'exams.manage'] })} />
           <Route path="/exam-board/grade-entry"   element={protect(<GradeEntryPage />, { permissions: ['grades.manage'] })} />
           <Route path="/exam-board/grade-sheet"   element={protect(<GradeSheetPage />, { permissions: ['grades.view'] })} />
           <Route path="/exam-board/approvals"     element={protect(<ApprovalsPage />, { permissions: ['exams.manage'] })} />
@@ -185,7 +185,7 @@ export default function App() {
         {/* ── بوابة الأستاذ dashboard ── */}
         <Route
           element={
-            <ProtectedRoute roles={['doctor_instructor']}>
+            <ProtectedRoute employeeIdentity permissions={['grades.manage', 'attendance.manage']}>
               <DashboardLayout nav={professorNav} appTitle="بوابة الأستاذ" />
             </ProtectedRoute>
           }

@@ -1334,16 +1334,23 @@ CREATE TABLE `organizational_units` (
 INSERT INTO `organizational_units` (`organizational_unit_id`, `unit_code`, `unit_name`, `unit_type_id`, `parent_unit_id`, `description`, `is_active`, `created_at`, `updated_at`) VALUES
 (1, 'BOT', 'Board of Trustees', 1, NULL, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
 (2, 'UC', 'University Council', 2, NULL, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
-(3, 'PRES', 'University President', 3, NULL, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
-(4, 'VP_ADMIN', 'Vice President for Administrative Affairs', 4, 3, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(3, 'PRES', 'رئيس الجامعة', 3, NULL, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(4, '7', 'نائب رئيس الجامعة للشؤون الإدارية', 4, 3, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
 (5, 'VP_SCI', 'Vice President for Scientific Affairs', 4, 3, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
 (6, 'VP_COMM', 'Vice President for Community Affairs', 4, 3, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
-(7, 'REG_OFFICE', 'Admissions and Registration Office', 7, 4, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
-(8, 'EXAM_OFFICE', 'Exam Office', 7, 4, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(7, '732', 'مكتب القبول والتسجيل', 7, 15, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(8, '735', 'إدارة الامتحانات', 5, 15, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
 (9, 'HR_OFFICE', 'HR Office', 7, 4, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
 (10, 'LIBRARY', 'University Library', 8, 4, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
 (11, 'ECON_COL', 'College of Economics', 10, 5, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
-(12, 'STAT_DEPT', 'Department of Statistics', 11, 11, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57');
+(12, 'STAT_DEPT', 'Department of Statistics', 11, 11, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(13, '71', 'مديرية الشؤون الإدارية', 6, 4, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(14, '72', 'مديرية الشؤون المالية', 6, 4, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(15, '73', 'مديرية شؤون الطلاب', 6, 4, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(16, '731', 'مكتب الإرشاد والتوجيه', 7, 15, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(17, '733', 'مكتب الخدمات الطلابية', 7, 15, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(18, '734', 'مكتب المنح والإيفاد والتبادل الطلابي', 7, 15, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(19, '736', 'مكتب التوثيق والتدقيق', 7, 15, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57');
 
 -- --------------------------------------------------------
 
@@ -3259,7 +3266,7 @@ ALTER TABLE `meeting_attendees`
 -- AUTO_INCREMENT for table `organizational_units`
 --
 ALTER TABLE `organizational_units`
-  MODIFY `organizational_unit_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=13;
+  MODIFY `organizational_unit_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=20;
 
 --
 -- AUTO_INCREMENT for table `organizational_unit_types`

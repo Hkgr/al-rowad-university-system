@@ -166,7 +166,7 @@ class AttendanceService
         });
     }
 
-    public function getStudentAttendance(Student $student, ?int $academicYearId = null, ?int $semesterId = null, ?int $courseOfferingId = null): array
+    public function getStudentAttendance(Student $student, ?int $academicYearId = null, ?int $semesterId = null, ?int $courseOfferingId = null, ?\App\Models\User $user = null): array
     {
         $registrationsQuery = StudentCourseRegistration::query()
             ->where('student_id', $student->student_id)
@@ -176,6 +176,10 @@ class AttendanceService
                 'courseOffering.semester',
                 'studentCourseResult.resultStatus',
             ]);
+
+        if ($user !== null) {
+            $registrationsQuery = app(DataScopeService::class)->scopeRegistrations($registrationsQuery, $user);
+        }
 
         if ($courseOfferingId !== null) {
             $registrationsQuery->where('course_offering_id', $courseOfferingId);

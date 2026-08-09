@@ -22,7 +22,7 @@ Run `php artisan identity:reconcile` for a dry-run identity report. It labels al
 
 The idempotent `AuthorizationP01Seeder` synchronizes the four system roles to this exact allow-list: it inserts missing grants and removes excess grants for those roles only. It never uses wildcards or changes non-system/custom roles. Production uses the SQL-first runbook, not this development seeder. It also upserts the official `7 → 73 → 731–736` organizational hierarchy by stable unit code.
 
-The production SQL makes `73` (مديرية شؤون الطلاب) a child of code `7`; `731`, `732`, `733`, `734`, `735`, and `736` are direct children of `73`. Codes `REG_OFFICE` and `EXAM_OFFICE` are migrated to official codes `732` and `735` across all known foreign keys and then disabled. The rollback cannot reconstruct those merged references without the mandatory backup.
+The production SQL establishes `PRES → 7 → 71, 72, 73 → 731–736`. Code `7` is نائب رئيس الجامعة للشؤون الإدارية, codes `71`–`73` are directorates, `731`–`734` and `736` are offices, and `735` is an administration. `VP_ADMIN`, `REG_OFFICE`, and `EXAM_OFFICE` are reconciled to `7`, `732`, and `735`; legacy rows are disabled only after known references are moved. The rollback cannot reconstruct merged references without the mandatory backup.
 
 ## React page/API parity inventory
 
