@@ -18,6 +18,7 @@ use App\Services\AttendanceService;
 use App\Services\GradeService;
 use App\Services\RegistrationService;
 use App\Services\AcademicAuthorizationService;
+use App\Services\DataScopeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -84,7 +85,7 @@ class StudentController extends ApiController
             'page' => ['sometimes', 'integer', 'min:1'],
         ]);
 
-        $query = Student::query();
+        $query = app(DataScopeService::class)->scopeStudents(Student::query(), $request->user());
 
         if (isset($validated['student_status_id'])) {
             $query->where('student_status_id', $validated['student_status_id']);
@@ -135,7 +136,7 @@ class StudentController extends ApiController
     public function deleted(Request $request): JsonResponse
     {
         Gate::authorize('viewAny', Student::class);
-        $students = Student::onlyTrashed()
+        $students = app(DataScopeService::class)->scopeStudents(Student::onlyTrashed(), $request->user())
             ->orderBy('student_number')
             ->paginate($request->integer('per_page', 15));
 
@@ -226,7 +227,7 @@ class StudentController extends ApiController
 
         $query = $validated['q'];
 
-        $students = Student::query()
+        $students = app(DataScopeService::class)->scopeStudents(Student::query(), $request->user())
             ->where(function ($builder) use ($query): void {
                 $builder->where('student_number', 'like', "%{$query}%")
                     ->orWhere('first_name', 'like', "%{$query}%")

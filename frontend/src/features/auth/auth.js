@@ -32,6 +32,9 @@ export function hasRole(role, user = getIdentity()) { return user?.roles?.includ
 export function hasPermission(permission, user = getIdentity()) {
   return hasRole('super_admin', user) || (user?.permissions?.includes(permission) ?? false)
 }
+export function can(permission, user = getIdentity()) { return hasPermission(permission, user) }
+export function canAny(permissions, user = getIdentity()) { return permissions.some(permission => can(permission, user)) }
+export function canAll(permissions, user = getIdentity()) { return permissions.every(permission => can(permission, user)) }
 export function canAccess({ permissions = [], allPermissions = [], roles = [] } = {}, user = getIdentity()) {
   if (!user) return false
   const hasEveryRequiredPermission = allPermissions.every(permission => hasPermission(permission, user))

@@ -5,6 +5,7 @@ namespace App\Policies;
 use App\Models\CourseOffering;
 use App\Models\User;
 use App\Services\AcademicAuthorizationService;
+use App\Services\DataScopeService;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 class CourseOfferingPolicy
@@ -25,12 +26,18 @@ class CourseOfferingPolicy
             return $this->isAssignedInstructor($user, $offering);
         }
 
-        return $user->hasPermission('courses.view');
+        return $user->hasPermission('courses.view')
+            && app(DataScopeService::class)->canAccessOffering($user, $offering);
     }
 
     public function create(User $user): bool { return $user->hasPermission('courses.manage'); }
-    public function update(User $user, CourseOffering $offering): bool { return $user->hasPermission('courses.manage'); }
-    public function delete(User $user, CourseOffering $offering): bool { return $user->hasPermission('courses.manage'); }
+    public function update(User $user, CourseOffering $offering): bool
+    {
+        return $user->hasPermission('courses.manage')
+            && app(DataScopeService::class)->canAccessOffering($user, $offering);
+    }
+
+    public function delete(User $user, CourseOffering $offering): bool { return $this->update($user, $offering); }
 
     public function viewRoster(User $user, CourseOffering $offering): bool
     {

@@ -22,9 +22,6 @@ class User extends Authenticatable implements MustVerifyEmail
         'email',
         'password_hash',
         'account_status_id',
-        'student_id',
-        'employee_id',
-        'board_member_id',
         'last_login_at',
         'email_verified_at',
         'failed_login_attempts',
@@ -191,6 +188,11 @@ class User extends Authenticatable implements MustVerifyEmail
     public function userRoleRecords(): HasMany
     {
         return $this->hasMany(UserRole::class, 'user_id', 'user_id');
+    }
+
+    public function accessScopes(): HasMany
+    {
+        return $this->hasMany(UserAccessScope::class, 'user_id', 'user_id');
     }
 
     public function effectiveRoles(): Collection

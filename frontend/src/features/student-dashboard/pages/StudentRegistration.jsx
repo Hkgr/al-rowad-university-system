@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { FaSpinner, FaCheckCircle, FaTimesCircle, FaPlus, FaMinus, FaBookOpen, FaClock } from 'react-icons/fa'
+import { can } from '../../auth/auth'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
@@ -41,7 +42,7 @@ function HoursBar({ registered, max, remaining }) {
 }
 
 // ── Registered courses panel ──────────────────────────────────────────────────
-function RegisteredPanel({ registrations, onDrop, dropping }) {
+function RegisteredPanel({ registrations, onDrop, dropping, editable }) {
   if (registrations.length === 0) return (
     <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
       <PanelHeader title="المواد المسجلة" count={0} />
@@ -68,7 +69,7 @@ function RegisteredPanel({ registrations, onDrop, dropping }) {
                 </span>
               </div>
             </div>
-            <button
+            {editable && <button
               onClick={() => onDrop(r.registration_id, r.course_name)}
               disabled={!!dropping[r.registration_id]}
               className="flex items-center gap-1.5 px-3 py-1.5 border border-red-300 text-red-600 rounded-[8px] text-[11.5px] font-bold hover:bg-red-50 disabled:opacity-40 transition-colors flex-shrink-0"
@@ -77,7 +78,7 @@ function RegisteredPanel({ registrations, onDrop, dropping }) {
                 ? <FaSpinner className="animate-spin text-[10px]" />
                 : <FaMinus className="text-[10px]" />}
               حذف
-            </button>
+            </button>}
           </div>
         ))}
       </div>
@@ -86,7 +87,7 @@ function RegisteredPanel({ registrations, onDrop, dropping }) {
 }
 
 // ── Available courses panel ───────────────────────────────────────────────────
-function AvailablePanel({ courses, onRegister, registering }) {
+function AvailablePanel({ courses, onRegister, registering, editable }) {
   const eligible   = courses.filter(c => c.eligibility_status === 'eligible')
   const ineligible = courses.filter(c => c.eligibility_status !== 'eligible')
 
@@ -106,7 +107,7 @@ function AvailablePanel({ courses, onRegister, registering }) {
       <div className="divide-y divide-primary/6 max-h-[600px] overflow-y-auto">
         {/* Eligible first */}
         {eligible.map(c => (
-          <CourseRow key={c.course_offering_id} course={c} onRegister={onRegister} registering={registering} />
+          <CourseRow key={c.course_offering_id} course={c} onRegister={onRegister} registering={registering} editable={editable} />
         ))}
         {/* Separator */}
         {eligible.length > 0 && ineligible.length > 0 && (
@@ -115,14 +116,14 @@ function AvailablePanel({ courses, onRegister, registering }) {
           </div>
         )}
         {ineligible.map(c => (
-          <CourseRow key={c.course_offering_id} course={c} onRegister={onRegister} registering={registering} />
+          <CourseRow key={c.course_offering_id} course={c} onRegister={onRegister} registering={registering} editable={editable} />
         ))}
       </div>
     </div>
   )
 }
 
-function CourseRow({ course, onRegister, registering }) {
+function CourseRow({ course, onRegister, registering, editable }) {
   const eligible = course.eligibility_status === 'eligible'
   const reasons  = course.eligibility_reasons ?? []
   const seats    = course.available_seats ?? 0
@@ -167,7 +168,7 @@ function CourseRow({ course, onRegister, registering }) {
           })}
         </div>
       </div>
-      <button
+      {editable && <button
         onClick={() => onRegister(course.course_offering_id, course.course_name)}
         disabled={!eligible || !!registering[course.course_offering_id]}
         className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-[8px] text-[11.5px] font-bold hover:enabled:bg-primary-dark disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex-shrink-0 mt-0.5"
@@ -176,7 +177,7 @@ function CourseRow({ course, onRegister, registering }) {
           ? <FaSpinner className="animate-spin text-[10px]" />
           : <FaPlus className="text-[10px]" />}
         تسجيل
-      </button>
+      </button>}
     </div>
   )
 }
@@ -194,6 +195,7 @@ function PanelHeader({ title, count }) {
 export default function StudentRegistration() {
   const user       = getUser()
   const studentId  = user.student_id
+  const canManageRegistration = can('registration.manage', user)
 
   const [years,             setYears]             = useState([])
   const [semesters,         setSemesters]         = useState([])
@@ -377,11 +379,13 @@ export default function StudentRegistration() {
               registrations={registrations}
               onDrop={handleDrop}
               dropping={dropping}
+              editable={canManageRegistration}
             />
             <AvailablePanel
               courses={available}
               onRegister={handleRegister}
               registering={registering}
+              editable={canManageRegistration}
             />
           </div>
         </>
