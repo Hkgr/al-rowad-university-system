@@ -9,6 +9,8 @@ use App\Http\Resources\CourseResource;
 use App\Http\Resources\ProgramCourseResource;
 use App\Http\Resources\StudentResource;
 use App\Models\AcademicProgram;
+use App\Services\DataScopeService;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -36,7 +38,9 @@ class AcademicProgramController extends ApiController
 
     public function students(AcademicProgram $academicProgram): JsonResponse
     {
-        $students = $academicProgram->students()
+        Gate::authorize('viewAny', \App\Models\Student::class);
+        abort_unless(app(DataScopeService::class)->canAccessProgram(request()->user(), $academicProgram->academic_program_id), 403);
+        $students = app(DataScopeService::class)->scopeStudents($academicProgram->students(), request()->user())
             ->with(['currentAcademicLevel', 'studentStatus'])
             ->orderBy('student_number')
             ->paginate(request()->integer('per_page', 15));

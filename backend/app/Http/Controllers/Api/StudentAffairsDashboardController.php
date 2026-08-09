@@ -9,14 +9,15 @@ use App\Models\Department;
 use App\Models\Student;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Schema;
+use App\Services\DataScopeService;
 
 class StudentAffairsDashboardController extends Controller
 {
     public function dashboardStats(): JsonResponse
     {
         return $this->successResponse([
-            'total_students' => Student::query()->count(),
-            'graduates_count' => Student::query()
+            'total_students' => app(DataScopeService::class)->scopeStudents(Student::query(), request()->user())->count(),
+            'graduates_count' => app(DataScopeService::class)->scopeStudents(Student::query(), request()->user())
                 ->whereHas('studentStatus', fn ($status) => $status->where('status_code', 'graduated'))
                 ->count(),
             'colleges_count' => $this->countActiveIfSupported(College::class),

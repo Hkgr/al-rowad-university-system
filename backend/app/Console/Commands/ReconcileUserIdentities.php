@@ -20,8 +20,8 @@ class ReconcileUserIdentities extends Command
                 $rows[] = [$user->user_id, $user->email, 'linked', $user->student_id, $user->employee_id];
                 continue;
             }
-            $students = Student::query()->where('email', $user->email)->pluck('student_id');
-            $employees = Employee::query()->where('email', $user->email)->pluck('employee_id');
+            $students = Student::query()->whereRaw('BINARY email = ?', [$user->email])->pluck('student_id');
+            $employees = Employee::query()->whereRaw('BINARY email = ?', [$user->email])->pluck('employee_id');
             $matches = $students->count() + $employees->count();
             $status = $matches === 0 ? 'unlinked' : ($matches === 1 ? 'deterministic' : 'ambiguous');
             if ($this->option('apply') && $matches === 1) {

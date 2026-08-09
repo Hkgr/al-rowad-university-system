@@ -18,11 +18,10 @@ class AcademicAuthorizationService
 
     public function assertStudentRecord(User $user, Student $student): void
     {
-        if ($user->student_id !== null && (int) $user->student_id === (int) $student->student_id) {
-            return;
+        if (! $user->hasPermission('students.view')
+            || ! app(DataScopeService::class)->canAccessStudent($user, $student)) {
+            throw new AccessDeniedHttpException('You are not authorized to access this student record.');
         }
-
-        $this->assertRole($user, [...self::ADMIN_ROLES, ...self::STUDENT_RECORD_ROLES]);
     }
 
     public function assertCanViewGrades(User $user, StudentCourseRegistration $registration): void
@@ -31,7 +30,9 @@ class AcademicAuthorizationService
             return;
         }
 
-        if ($user->hasPermission('grades.view') && $this->hasRole($user, [...self::ADMIN_ROLES, 'exam_officer'])) {
+        if ($user->hasPermission('grades.view')
+            && app(DataScopeService::class)->scopeRegistrations(StudentCourseRegistration::query(), $user)
+                ->whereKey($registration->student_course_registration_id)->exists()) {
             return;
         }
 
@@ -40,7 +41,9 @@ class AcademicAuthorizationService
 
     public function assertCanEnterGrades(User $user, StudentCourseRegistration $registration): void
     {
-        if ($user->hasPermission('grades.manage') && $this->hasRole($user, [...self::ADMIN_ROLES, 'exam_officer'])) {
+        if ($user->hasPermission('grades.manage')
+            && app(DataScopeService::class)->scopeRegistrations(StudentCourseRegistration::query(), $user)
+                ->whereKey($registration->student_course_registration_id)->exists()) {
             return;
         }
 
@@ -71,7 +74,9 @@ class AcademicAuthorizationService
 
     public function assertCanAccessOffering(User $user, int $courseOfferingId): void
     {
-        if ($this->hasRole($user, [...self::ADMIN_ROLES, 'exam_officer'])) {
+        $offering = CourseOffering::query()->findOrFail($courseOfferingId);
+        if (($user->hasPermission('courses.view') || $user->hasPermission('exams.view'))
+            && app(DataScopeService::class)->canAccessOffering($user, $offering)) {
             return;
         }
 

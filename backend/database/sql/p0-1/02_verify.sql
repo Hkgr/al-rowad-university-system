@@ -1,0 +1,7 @@
+SELECT COUNT(*)=1 table_present FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='user_access_scopes';
+SELECT scope_type,COUNT(*) grants FROM user_access_scopes WHERE is_active=1 GROUP BY scope_type;
+SELECT r.role_code,p.permission_code FROM role_permissions rp JOIN roles r ON r.role_id=rp.role_id JOIN permissions p ON p.permission_id=rp.permission_id WHERE r.role_code IN ('exam_officer','registration_officer','doctor_instructor','student') ORDER BY r.role_code,p.permission_code;
+SELECT unit_code,unit_name,t.type_code,parent_unit_id FROM organizational_units u JOIN organizational_unit_types t ON t.unit_type_id=u.unit_type_id WHERE unit_code IN ('73','731','732','733','734','735','736') ORDER BY unit_code;
+SELECT u.user_id,u.email,r.role_code FROM users u JOIN user_roles ur ON ur.user_id=u.user_id AND ur.is_active=1 JOIN roles r ON r.role_id=ur.role_id AND r.role_code IN ('exam_officer','registration_officer') LEFT JOIN user_access_scopes s ON s.user_id=u.user_id AND s.is_active=1 WHERE s.user_access_scope_id IS NULL ORDER BY u.user_id;
+SELECT u.user_id,u.email,'ambiguous exact email' finding,COUNT(DISTINCT s.student_id)+COUNT(DISTINCT e.employee_id) matches FROM users u LEFT JOIN students s ON BINARY s.email=BINARY u.email LEFT JOIN employees e ON BINARY e.email=BINARY u.email GROUP BY u.user_id,u.email HAVING matches>1;
+SELECT user_id,scope_type,scope_id,COUNT(*) duplicates FROM user_access_scopes GROUP BY user_id,scope_type,scope_id HAVING duplicates>1;

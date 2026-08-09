@@ -8,6 +8,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasTable('user_access_scopes')) {
+            return;
+        }
+
         Schema::create('user_access_scopes', function (Blueprint $table): void {
             $table->bigIncrements('user_access_scope_id');
             $table->integer('user_id');
@@ -26,6 +30,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (! Schema::hasTable('user_access_scopes')) {
+            return;
+        }
+
         Schema::dropIfExists('user_access_scopes');
     }
 };

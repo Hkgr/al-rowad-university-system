@@ -214,11 +214,11 @@ export default function StudentRegistration() {
 
   useEffect(() => {
     Promise.all([
-      fetch(`${API}/academic-years?per_page=50`, { headers: authHeaders() }).then(r => r.json()),
-      fetch(`${API}/semesters?per_page=20`,      { headers: authHeaders() }).then(r => r.json()),
+      fetch(`${API}/academic-years/current`, { headers: authHeaders() }).then(r => r.json()),
+      fetch(`${API}/semesters/active`,        { headers: authHeaders() }).then(r => r.json()),
     ]).then(([y, s]) => {
-      setYears(y.success     ? (y.data?.data ?? y.data ?? []) : [])
-      const allSems = s.success ? (s.data?.data ?? s.data ?? []) : []
+      setYears(y.success ? (Array.isArray(y.data) ? y.data : [y.data].filter(Boolean)) : [])
+      const allSems = s.success ? (Array.isArray(s.data) ? s.data : [s.data].filter(Boolean)) : []
       setSemesters(allSems)
       setFilteredSemesters(allSems)
     }).finally(() => setLoadingInit(false))

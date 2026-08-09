@@ -10,15 +10,11 @@ class StudentPolicy
 {
     public function viewAny(User $user): bool
     {
-        return ! $user->effectiveRoles()->contains('student') && $user->hasPermission('students.view');
+        return $user->hasPermission('students.view');
     }
 
     public function view(User $user, Student $student): bool
     {
-        if ($user->effectiveRoles()->contains('student')) {
-            return (int) $user->student_id === (int) $student->student_id;
-        }
-
         return $user->hasPermission('students.view')
             && app(DataScopeService::class)->canAccessStudent($user, $student);
     }

@@ -23,6 +23,8 @@ class AuthorizationP01Seeder extends Seeder
         foreach ($matrix as $roleCode => $permissionCodes) {
             $role = Role::query()->where('role_code', $roleCode)->firstOrFail();
             $permissions = Permission::query()->whereIn('permission_code', $permissionCodes)->get();
+            RolePermission::query()->where('role_id', $role->role_id)
+                ->whereNotIn('permission_id', $permissions->pluck('permission_id'))->delete();
             foreach ($permissions as $permission) {
                 RolePermission::query()->firstOrCreate([
                     'role_id' => $role->role_id,
@@ -39,7 +41,7 @@ class AuthorizationP01Seeder extends Seeder
             ['732', 'Admissions and Registration Office', $officeType, '73'],
             ['733', 'Student Services Office', $officeType, '73'],
             ['734', 'Scholarships, Delegations and Student Exchange Office', $officeType, '73'],
-            ['735', 'Examinations Administration', $directorateType, '73'],
+            ['735', 'Examinations Administration', OrganizationalUnitType::query()->where('type_code', 'administration')->value('unit_type_id'), '73'],
             ['736', 'Documentation and Audit Office', $officeType, '73'],
         ];
         foreach ($units as [$code, $name, $type, $parentCode]) {
