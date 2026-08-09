@@ -12,7 +12,7 @@ class StudentCourseRegistrationController extends ApiController
 {
     public function index(): JsonResponse
     {
-        app(AcademicAuthorizationService::class)->assertCanSearchStudents(request()->user());
+        abort_unless(request()->user()->hasPermission('registration.view'), 403);
         $registrations = app(DataScopeService::class)->scopeRegistrations(StudentCourseRegistration::query(), request()->user())
             ->with(['student', 'registrationStatus', 'courseOffering.course'])
             ->paginate(request()->integer('per_page', 15));
@@ -24,6 +24,7 @@ class StudentCourseRegistrationController extends ApiController
 
     public function show($id): JsonResponse
     {
+        abort_unless(request()->user()->hasPermission('registration.view'), 403);
         $registration = StudentCourseRegistration::query()
             ->with(['student', 'registrationStatus', 'courseOffering.course', 'studentCourseResult.resultStatus'])
             ->findOrFail($id);

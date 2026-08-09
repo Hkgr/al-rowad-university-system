@@ -33,6 +33,16 @@ class AuthorizationP01Seeder extends Seeder
             }
         }
 
+        $officialAdmin = OrganizationalUnit::query()->where('unit_code', '7')->first();
+        $legacyAdmin = OrganizationalUnit::query()->where('unit_code', 'VP_ADMIN')->first();
+        if ($officialAdmin === null && $legacyAdmin !== null) {
+            $legacyAdmin->update(['unit_code' => '7', 'unit_name' => 'نائب رئيس الجامعة للشؤون الإدارية']);
+        } elseif ($officialAdmin === null && $legacyAdmin === null) {
+            $presidency = OrganizationalUnit::query()->where('unit_code', 'PRES')->firstOrFail();
+            $viceType = OrganizationalUnitType::query()->where('type_code', 'vice_presidency')->firstOrFail();
+            OrganizationalUnit::query()->create(['unit_code' => '7', 'unit_name' => 'نائب رئيس الجامعة للشؤون الإدارية', 'unit_type_id' => $viceType->unit_type_id, 'parent_unit_id' => $presidency->organizational_unit_id, 'is_active' => true]);
+        }
+
         $directorateType = OrganizationalUnitType::query()->where('type_code', 'directorate')->value('unit_type_id');
         $officeType = OrganizationalUnitType::query()->where('type_code', 'office')->value('unit_type_id');
         $administrationType = OrganizationalUnitType::query()->firstOrCreate(

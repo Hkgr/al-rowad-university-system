@@ -106,11 +106,13 @@ class GradeService
         ];
     }
 
-    public function getCourseStatistics(int $courseId, ?int $academicYearId = null, ?int $semesterId = null): array
+    public function getCourseStatistics(int $courseId, ?int $academicYearId = null, ?int $semesterId = null, ?\App\Models\User $user = null): array
     {
         $course = Course::query()->findOrFail($courseId);
 
-        $offeringIds = CourseOffering::query()
+        $offeringQuery = CourseOffering::query();
+        if ($user !== null) $offeringQuery = app(DataScopeService::class)->scopeOfferings($offeringQuery, $user);
+        $offeringIds = $offeringQuery
             ->where('course_id', $courseId)
             ->when($academicYearId, fn (Builder $query) => $query->where('academic_year_id', $academicYearId))
             ->when($semesterId, fn (Builder $query) => $query->where('semester_id', $semesterId))
@@ -128,11 +130,13 @@ class GradeService
         ], $this->buildStatistics($registrations));
     }
 
-    public function getDepartmentStatistics(int $departmentId, ?int $academicYearId = null, ?int $semesterId = null): array
+    public function getDepartmentStatistics(int $departmentId, ?int $academicYearId = null, ?int $semesterId = null, ?\App\Models\User $user = null): array
     {
         $department = Department::query()->findOrFail($departmentId);
 
-        $offeringIds = CourseOffering::query()
+        $offeringQuery = CourseOffering::query();
+        if ($user !== null) $offeringQuery = app(DataScopeService::class)->scopeOfferings($offeringQuery, $user);
+        $offeringIds = $offeringQuery
             ->where('department_id', $departmentId)
             ->when($academicYearId, fn (Builder $query) => $query->where('academic_year_id', $academicYearId))
             ->when($semesterId, fn (Builder $query) => $query->where('semester_id', $semesterId))

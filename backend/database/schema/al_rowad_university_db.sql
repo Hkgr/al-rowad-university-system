@@ -3766,3 +3766,22 @@ COMMIT;
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+
+-- P0-1 identity uniqueness and explicit access scopes (production is applied via manual SQL runbook).
+ALTER TABLE `users`
+  ADD UNIQUE KEY `uq_users_student_identity` (`student_id`),
+  ADD UNIQUE KEY `uq_users_employee_identity` (`employee_id`);
+
+CREATE TABLE `user_access_scopes` (
+  `user_access_scope_id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `scope_type` enum('university','college','department','program','section') NOT NULL,
+  `scope_id` int(11) NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`user_access_scope_id`),
+  UNIQUE KEY `user_scope_unique` (`user_id`,`scope_type`,`scope_id`),
+  KEY `active_scope_lookup` (`scope_type`,`scope_id`,`is_active`),
+  CONSTRAINT `fk_user_access_scopes_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

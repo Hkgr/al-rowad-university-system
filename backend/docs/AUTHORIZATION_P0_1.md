@@ -6,7 +6,7 @@ Authorization is always the intersection of an effective permission and data sco
 
 `POST /api/login` (`data.user`) and `GET /api/user` (`data`) expose the same fields: `user_id`, `username`, `email`, `student_id`, `employee_id`, `board_member_id`, `roles`, `permissions`, `organizational_unit`, and `access_scopes`. Scope entries have `{type, id}`, where type is `university`, `college`, `department`, `program`, or `section` (a course offering). The client never submits these values as authorization evidence.
 
-Only valid scope references are effective. A university grant must reference an existing organizational unit whose type code is `university`; college, department, program, and section grants must reference their corresponding live records. Orphan or unsupported grants confer no access.
+Only valid scope references are effective. The schema has no universities table or `university` unit type, so a university grant references the existing institutional organizational root whose stable code is `PRES`. College, department, program, and section grants reference their corresponding live records. Orphan or unsupported grants confer no access.
 
 Run `php artisan identity:reconcile` for a dry-run identity report. It labels already linked, unlinked, deterministic, and ambiguous accounts. `--apply` links only a single exact, case-sensitive database email match; it never guesses by name. Review ambiguous and unlinked rows manually.
 

@@ -15,6 +15,8 @@ return new class extends Migration
         Schema::create('user_access_scopes', function (Blueprint $table): void {
             $table->bigIncrements('user_access_scope_id');
             $table->integer('user_id');
+            // university scope_id references the existing PRES organizational root;
+            // the remaining types reference their namesake academic tables.
             $table->enum('scope_type', ['university', 'college', 'department', 'program', 'section']);
             $table->unsignedInteger('scope_id');
             $table->boolean('is_active')->default(true);

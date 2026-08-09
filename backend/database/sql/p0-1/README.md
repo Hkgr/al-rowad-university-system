@@ -1,13 +1,15 @@
-# P0-1 SQL-first production runbook
+# P0-1 manual SQL-first production runbook
 
-Production does not run Laravel migrations or seeders. The mandatory order is:
+Production deployment is manual and does not run Laravel migrations or seeders:
 
-`backup → preflight → apply → verify → deploy code`
+`backup → preflight_manual → apply_manual → verify_manual → deploy code`
 
-1. Take and test a full database backup and put the application in maintenance mode.
-2. Run `00_preflight.sql`. Stop for missing/mismatched signed key types, duplicate student/employee identity links, missing/ambiguous unit code `7`, unexpected permission findings, orphan scopes, or ambiguous legacy-unit references. Email reconciliation reports use `BINARY`; no identity or scope is inferred.
-3. Run `01_apply.sql`. It aborts before data changes if identity uniqueness or parent unit `7` is unsafe, creates the scope table, adds nullable unique identity indexes, exactly synchronizes only the four P0-1 system roles, establishes `7 → 73 → 731–736`, migrates all known organizational-unit foreign keys from `REG_OFFICE`/`EXAM_OFFICE` to `732`/`735`, then disables the legacy rows.
-4. Run `02_verify.sql`. Every `failures` value must be zero. Any operational registration/exam user without a valid, non-orphan scope requires a manually approved scope before deployment. Re-run **apply then verify a second time** on the test copy; results must remain clean and no row counts may increase.
-5. Deploy code only after verification is clean. Never insert into Laravel's `migrations` table and never run `DatabaseSeeder` or `DemoAcademicSeeder` in production.
+1. Back up and test restore; enter maintenance mode.
+2. Run `00_preflight_manual.sql` in phpMyAdmin. Continue only when `can_apply=1`, duplicate identity reports are empty, `PRES` resolves exactly once, and any reported orphan scopes/operational users have been reviewed.
+3. Run `01_apply_manual.sql`. DDL is deliberately outside the DML transaction because MySQL/MariaDB implicitly commits DDL. The DML portion is idempotent. If both `7` and `VP_ADMIN` exist, apply stops for a human decision.
+4. Run `02_verify_manual.sql`. Every summarized status must be `PASS`; detail report `NEEDS_MANUAL_SCOPE` must be reviewed and resolved before deploying code.
+5. Run apply and verify only once per planned operation; the apply statements are safe to rerun after an interruption and do not append duplicate merge descriptions.
 
-`03_rollback.sql` removes only P0-1 structural additions. It cannot reconstruct merged foreign-key values, role grants, organizational names, or active flags; restore those data from the mandatory backup. The Laravel migration remains development-only and is guarded when SQL created the table first.
+University scope references the existing institutional organizational root with `unit_code='PRES'`; the schema has no universities table and no `university` organizational-unit type. No scope is granted automatically. The commented template in apply is intentionally a human-reviewed example.
+
+Rollback cannot reconstruct merged organizational references or prior role grants without the backup. Never edit Laravel's `migrations` table and never use `DatabaseSeeder`/`DemoAcademicSeeder` for production deployment.

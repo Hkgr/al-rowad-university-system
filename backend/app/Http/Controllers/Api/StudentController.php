@@ -302,12 +302,14 @@ class StudentController extends ApiController
 
     public function transcript(Student $student, GradeService $gradeService): JsonResponse
     {
+        abort_unless(request()->user()->hasPermission('grades.view'), 403);
         app(AcademicAuthorizationService::class)->assertStudentRecord(request()->user(), $student);
         return $this->successResponse($gradeService->getTranscript($student));
     }
 
     public function gpa(Student $student, Request $request, GradeService $gradeService): JsonResponse
     {
+        abort_unless($request->user()->hasPermission('grades.view'), 403);
         app(AcademicAuthorizationService::class)->assertStudentRecord($request->user(), $student);
         $validated = $request->validate([
             'academic_year_id' => ['required', 'integer', 'exists:academic_years,academic_year_id'],
@@ -325,12 +327,14 @@ class StudentController extends ApiController
 
     public function cgpa(Student $student, GradeService $gradeService): JsonResponse
     {
+        abort_unless(request()->user()->hasPermission('grades.view'), 403);
         app(AcademicAuthorizationService::class)->assertStudentRecord(request()->user(), $student);
         return $this->successResponse($gradeService->calculateCgpa($student));
     }
 
     public function attendance(Student $student, Request $request, AttendanceService $service): JsonResponse
     {
+        abort_unless($request->user()->hasPermission('attendance.view'), 403);
         app(AcademicAuthorizationService::class)->assertStudentRecord($request->user(), $student);
         $validated = $request->validate([
             'academic_year_id' => ['sometimes', 'integer', 'exists:academic_years,academic_year_id'],
@@ -350,6 +354,7 @@ class StudentController extends ApiController
 
     public function absencePercentage(Student $student, Request $request, AttendanceService $service): JsonResponse
     {
+        abort_unless($request->user()->hasPermission('attendance.view'), 403);
         app(AcademicAuthorizationService::class)->assertStudentRecord($request->user(), $student);
         $validated = $request->validate([
             'course_offering_id' => ['required', 'integer', 'exists:course_offerings,course_offering_id'],

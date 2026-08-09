@@ -101,7 +101,7 @@ class DataScopeService
 
     public function canAccessStudent(User $user, Student $student): bool
     {
-        return $this->scopeStudents(Student::query(), $user)->whereKey($student->student_id)->exists();
+        return $this->scopeStudents(Student::withTrashed(), $user)->whereKey($student->student_id)->exists();
     }
 
     public function canAccessOffering(User $user, CourseOffering $offering): bool
@@ -171,8 +171,9 @@ class DataScopeService
     private function scopeReferenceExists(string $type, int $id): bool
     {
         return match ($type) {
-            'university' => OrganizationalUnit::query()->whereKey($id)
-                ->whereHas('organizationalUnitType', fn (Builder $type) => $type->where('type_code', 'university'))->exists(),
+            // The schema has no universities table/type. PRES is the approved
+            // organizational root representing the institution.
+            'university' => OrganizationalUnit::query()->whereKey($id)->where('unit_code', 'PRES')->exists(),
             'college' => \App\Models\College::query()->whereKey($id)->exists(),
             'department' => Department::query()->whereKey($id)->exists(),
             'program' => AcademicProgram::query()->whereKey($id)->exists(),

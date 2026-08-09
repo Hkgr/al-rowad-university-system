@@ -78,6 +78,7 @@ class CourseController extends ApiController
 
     public function statistics(int $id, Request $request, GradeService $service): JsonResponse
     {
+        abort_unless($request->user()->hasPermission('grades.view'), 403);
         $validated = $request->validate([
             'academic_year_id' => ['sometimes', 'nullable', 'integer', 'exists:academic_years,academic_year_id'],
             'semester_id' => ['sometimes', 'nullable', 'integer', 'exists:semesters,semester_id'],
@@ -87,6 +88,7 @@ class CourseController extends ApiController
             $id,
             $validated['academic_year_id'] ?? null,
             $validated['semester_id'] ?? null,
+            $request->user(),
         );
 
         return $this->successResponse($statistics);

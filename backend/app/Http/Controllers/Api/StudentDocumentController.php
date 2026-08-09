@@ -134,6 +134,21 @@ class StudentDocumentController extends ApiController
         );
     }
 
+    public function update($id): JsonResponse
+    {
+        $document = app(DataScopeService::class)->scopeResourceQuery(StudentDocument::query(), request()->user())->findOrFail($id);
+        Gate::authorize('update', $document);
+        $request = app($this->updateRequestClass());
+        $data = $request->validated();
+        app(DataScopeService::class)->assertPayloadScope($request->user(), $data);
+        if (array_key_exists('verification_status', $data)) {
+            $data['verified_by_user_id'] = $request->user()->user_id;
+            $data['verified_at'] = now();
+        }
+        $document->update($data);
+        return $this->successResponse((new StudentDocumentResource($document->fresh('documentType')))->resolve($request));
+    }
+
     private function deleteStoredFile(StudentDocument $document): void
     {
         $path = $document->file_url;
