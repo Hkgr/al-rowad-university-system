@@ -45,9 +45,9 @@ export function canAccess({ permissions = [], allPermissions = [], roles = [] } 
   return hasEveryRequiredPermission && hasAnyAlternative
 }
 export function landingRoute(user) {
-  if (hasRole('exam_officer', user)) return '/exam-board'
-  if (hasRole('registration_officer', user)) return '/exam-board/course-registration'
-  if (hasRole('doctor_instructor', user)) return '/professor'
+  if (canAny(['exams.view', 'grades.view'], user)) return '/exam-board'
+  if (canAll(['registration.manage', 'registration.view', 'students.view', 'courses.view'], user)) return '/exam-board/course-registration'
+  if (canAny(['attendance.manage', 'grades.manage'], user) && user?.employee_id) return '/professor'
   if (hasPermission('hr.view', user)) return '/hr'
   if (hasPermission('academic_structure.view', user)) return '/academic-structure'
   if (hasRole('student', user)) return '/student'

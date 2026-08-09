@@ -107,11 +107,11 @@ export default function App() {
         >
           <Route path="/student-affairs"                   element={<StudentAffairsHome />}   />
           <Route path="/student-affairs/students"          element={<StudentsPage />}          />
-          <Route path="/student-affairs/students/add"      element={protect(<AddStudentPage />, { permissions: ['students.manage'], roles: ['registration_officer'] })} />
-          <Route path="/student-affairs/students/archived" element={protect(<ArchivedStudentsPage />, { permissions: ['students.manage'], roles: ['registration_officer'] })} />
+          <Route path="/student-affairs/students/add"      element={protect(<AddStudentPage />, { permissions: ['students.manage'] })} />
+          <Route path="/student-affairs/students/archived" element={protect(<ArchivedStudentsPage />, { permissions: ['students.manage'] })} />
           <Route path="/student-affairs/graduates"         element={<GraduatesPage />}         />
           <Route path="/student-affairs/students/:id"      element={<StudentProfilePage />}    />
-          <Route path="/student-affairs/students/:id/edit" element={protect(<EditStudentPage />, { permissions: ['students.manage'], roles: ['registration_officer'] })} />
+          <Route path="/student-affairs/students/:id/edit" element={protect(<EditStudentPage />, { permissions: ['students.manage'] })} />
         </Route>
 
         {/* ── بوابة الطالب dashboard ── */}

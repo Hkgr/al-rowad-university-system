@@ -2,12 +2,12 @@
 
 Production does not run Laravel migrations or seeders. The mandatory order is:
 
-`backup → 00_preflight.sql → 01_apply.sql → 02_verify.sql → deploy code`
+`backup → preflight → apply → verify → deploy code`
 
-1. Take and test a full database backup. Run all scripts with the application in maintenance mode.
-2. Run `00_preflight.sql`; stop if key types are not signed `INT`, required tables/roles/permissions are missing, or findings have not been reviewed. It reports missing/excess role grants and linked/unlinked/conflicting identities using `BINARY` email comparison. It never links an identity.
-3. Run `01_apply.sql`. It creates the single scope table, replaces the four system-role permission sets with the approved exact matrix, and upserts units 73/731–736. Unit 735 uses `administration`, never `directorate`. No user identity or scope is inferred.
-4. Run `02_verify.sql`. Any operational registration/exam user returned without a scope requires an explicit, manually approved `user_access_scopes` insert before code deployment. Duplicate output must be empty. Re-run apply and verify once on the test database to demonstrate idempotency.
-5. Deploy code only after verification is clean. Do not insert into Laravel's `migrations` table and do not run `DatabaseSeeder`/`DemoAcademicSeeder` in production.
+1. Take and test a full database backup and put the application in maintenance mode.
+2. Run `00_preflight.sql`. Stop for missing/mismatched signed key types, duplicate student/employee identity links, missing/ambiguous unit code `7`, unexpected permission findings, orphan scopes, or ambiguous legacy-unit references. Email reconciliation reports use `BINARY`; no identity or scope is inferred.
+3. Run `01_apply.sql`. It aborts before data changes if identity uniqueness or parent unit `7` is unsafe, creates the scope table, adds nullable unique identity indexes, exactly synchronizes only the four P0-1 system roles, establishes `7 → 73 → 731–736`, migrates all known organizational-unit foreign keys from `REG_OFFICE`/`EXAM_OFFICE` to `732`/`735`, then disables the legacy rows.
+4. Run `02_verify.sql`. Every `failures` value must be zero. Any operational registration/exam user without a valid, non-orphan scope requires a manually approved scope before deployment. Re-run **apply then verify a second time** on the test copy; results must remain clean and no row counts may increase.
+5. Deploy code only after verification is clean. Never insert into Laravel's `migrations` table and never run `DatabaseSeeder` or `DemoAcademicSeeder` in production.
 
-`03_rollback.sql` removes the new scope table. Because permission and organizational data may predate P0-1, restore those tables from the mandatory backup rather than applying destructive guessed reversals.
+`03_rollback.sql` removes only P0-1 structural additions. It cannot reconstruct merged foreign-key values, role grants, organizational names, or active flags; restore those data from the mandatory backup. The Laravel migration remains development-only and is guarded when SQL created the table first.

@@ -6,14 +6,15 @@ use App\Http\Resources\StudentCourseResultResource;
 use App\Models\StudentCourseResult;
 use App\Services\AcademicAuthorizationService;
 use Illuminate\Http\JsonResponse;
+use App\Services\DataScopeService;
 
 class StudentCourseResultController extends ApiController
 {
     public function index(): JsonResponse
     {
-        app(AcademicAuthorizationService::class)->assertExaminationCommittee(request()->user());
+        abort_unless(request()->user()->hasPermission('grades.view'), 403);
 
-        $results = StudentCourseResult::query()
+        $results = app(DataScopeService::class)->scopeResourceQuery(StudentCourseResult::query(), request()->user())
             ->with('studentCourseRegistration.registrationStatus')
             ->paginate(request()->integer('per_page', 15));
 

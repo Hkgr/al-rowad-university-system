@@ -19,3 +19,32 @@ SELECT 'EXCESS',r.role_code,p.permission_code FROM role_permissions rp JOIN role
 SELECT 'linked' status,user_id,email,student_id,employee_id FROM users WHERE student_id IS NOT NULL OR employee_id IS NOT NULL;
 SELECT 'unlinked' status,user_id,email,NULL student_id,NULL employee_id FROM users WHERE student_id IS NULL AND employee_id IS NULL;
 SELECT 'conflicting-exact-email' status,u.user_id,u.email,COUNT(DISTINCT s.student_id) student_matches,COUNT(DISTINCT e.employee_id) employee_matches FROM users u LEFT JOIN students s ON BINARY s.email=BINARY u.email LEFT JOIN employees e ON BINARY e.email=BINARY u.email GROUP BY u.user_id,u.email HAVING student_matches+employee_matches>1;
+
+-- Identity conflicts must be empty before unique indexes are applied.
+SELECT 'duplicate-student-link' finding,student_id,GROUP_CONCAT(user_id ORDER BY user_id) user_ids FROM users WHERE student_id IS NOT NULL GROUP BY student_id HAVING COUNT(*)>1;
+SELECT 'duplicate-employee-link' finding,employee_id,GROUP_CONCAT(user_id ORDER BY user_id) user_ids FROM users WHERE employee_id IS NOT NULL GROUP BY employee_id HAVING COUNT(*)>1;
+
+-- Official hierarchy, legacy duplicates, employees, and every FK reference to organizational units.
+SELECT u.organizational_unit_id,u.unit_code,u.unit_name,t.type_code,u.parent_unit_id,u.is_active FROM organizational_units u JOIN organizational_unit_types t ON t.unit_type_id=u.unit_type_id WHERE u.unit_code IN ('7','73','731','732','733','734','735','736','REG_OFFICE','EXAM_OFFICE') ORDER BY u.unit_code;
+SELECT e.employee_id,e.employee_number,u.unit_code FROM employees e JOIN organizational_units u ON u.organizational_unit_id=e.organizational_unit_id WHERE u.unit_code IN ('REG_OFFICE','EXAM_OFFICE','732','735');
+SELECT table_name,column_name,constraint_name FROM information_schema.key_column_usage WHERE table_schema=DATABASE() AND referenced_table_name='organizational_units' AND referenced_column_name='organizational_unit_id' ORDER BY table_name,column_name;
+SELECT 'legacy-reference' finding,'boards' source,COUNT(*) total FROM boards b JOIN organizational_units u ON u.organizational_unit_id=b.organizational_unit_id WHERE u.unit_code IN ('REG_OFFICE','EXAM_OFFICE') UNION ALL
+SELECT 'legacy-reference','colleges',COUNT(*) FROM colleges x JOIN organizational_units u ON u.organizational_unit_id=x.organizational_unit_id WHERE u.unit_code IN ('REG_OFFICE','EXAM_OFFICE') UNION ALL
+SELECT 'legacy-reference','departments',COUNT(*) FROM departments x JOIN organizational_units u ON u.organizational_unit_id=x.organizational_unit_id WHERE u.unit_code IN ('REG_OFFICE','EXAM_OFFICE') UNION ALL
+SELECT 'legacy-reference','employee_positions',COUNT(*) FROM employee_positions x JOIN organizational_units u ON u.organizational_unit_id=x.organizational_unit_id WHERE u.unit_code IN ('REG_OFFICE','EXAM_OFFICE') UNION ALL
+SELECT 'legacy-reference','employee_unit_assignments',COUNT(*) FROM employee_unit_assignments x JOIN organizational_units u ON u.organizational_unit_id=x.organizational_unit_id WHERE u.unit_code IN ('REG_OFFICE','EXAM_OFFICE') UNION ALL
+SELECT 'legacy-reference','children',COUNT(*) FROM organizational_units x JOIN organizational_units u ON u.organizational_unit_id=x.parent_unit_id WHERE u.unit_code IN ('REG_OFFICE','EXAM_OFFICE');
+
+-- Invalid/orphan scopes. The first deployment has no scope table yet.
+DELIMITER //
+DROP PROCEDURE IF EXISTS p01_preflight_scopes//
+CREATE PROCEDURE p01_preflight_scopes()
+BEGIN
+ IF EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='user_access_scopes') THEN
+  SELECT s.*,CASE s.scope_type WHEN 'university' THEN ou.organizational_unit_id WHEN 'college' THEN c.college_id WHEN 'department' THEN d.department_id WHEN 'program' THEN p.academic_program_id WHEN 'section' THEN co.course_offering_id ELSE NULL END referenced_id
+  FROM user_access_scopes s LEFT JOIN organizational_units ou ON s.scope_type='university' AND ou.organizational_unit_id=s.scope_id AND EXISTS(SELECT 1 FROM organizational_unit_types t WHERE t.unit_type_id=ou.unit_type_id AND t.type_code='university') LEFT JOIN colleges c ON s.scope_type='college' AND c.college_id=s.scope_id LEFT JOIN departments d ON s.scope_type='department' AND d.department_id=s.scope_id LEFT JOIN academic_programs p ON s.scope_type='program' AND p.academic_program_id=s.scope_id LEFT JOIN course_offerings co ON s.scope_type='section' AND co.course_offering_id=s.scope_id WHERE CASE s.scope_type WHEN 'university' THEN ou.organizational_unit_id WHEN 'college' THEN c.college_id WHEN 'department' THEN d.department_id WHEN 'program' THEN p.academic_program_id WHEN 'section' THEN co.course_offering_id ELSE NULL END IS NULL;
+ ELSE SELECT 'user_access_scopes not created yet' scope_preflight_status; END IF;
+END//
+CALL p01_preflight_scopes()//
+DROP PROCEDURE p01_preflight_scopes//
+DELIMITER ;

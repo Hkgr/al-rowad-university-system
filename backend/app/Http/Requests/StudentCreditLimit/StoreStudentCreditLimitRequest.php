@@ -20,7 +20,7 @@ class StoreStudentCreditLimitRequest extends FormRequest
             'min_credit_hours' => 'required|integer',
             'max_credit_hours' => 'required|integer',
             'is_excellent_student' => 'required|integer',
-            'approved_by_user_id' => 'nullable|integer|exists:users,user_id',
+            'approved_by_user_id' => 'prohibited',
             'notes' => 'nullable|string|max:255',
             'created_at' => 'nullable|date',
             'updated_at' => 'nullable|date',

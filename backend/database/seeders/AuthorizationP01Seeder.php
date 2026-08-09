@@ -35,14 +35,18 @@ class AuthorizationP01Seeder extends Seeder
 
         $directorateType = OrganizationalUnitType::query()->where('type_code', 'directorate')->value('unit_type_id');
         $officeType = OrganizationalUnitType::query()->where('type_code', 'office')->value('unit_type_id');
+        $administrationType = OrganizationalUnitType::query()->firstOrCreate(
+            ['type_code' => 'administration'],
+            ['type_name' => 'إدارة', 'description' => 'Administrative unit', 'is_active' => true]
+        )->unit_type_id;
         $units = [
-            ['73', 'Student Affairs Directorate', $directorateType, null],
-            ['731', 'Guidance and Counseling Office', $officeType, '73'],
-            ['732', 'Admissions and Registration Office', $officeType, '73'],
-            ['733', 'Student Services Office', $officeType, '73'],
-            ['734', 'Scholarships, Delegations and Student Exchange Office', $officeType, '73'],
-            ['735', 'Examinations Administration', OrganizationalUnitType::query()->where('type_code', 'administration')->value('unit_type_id'), '73'],
-            ['736', 'Documentation and Audit Office', $officeType, '73'],
+            ['73', 'مديرية شؤون الطلاب', $directorateType, '7'],
+            ['731', 'مكتب الإرشاد والتوجيه', $officeType, '73'],
+            ['732', 'مكتب القبول والتسجيل', $officeType, '73'],
+            ['733', 'مكتب الخدمات الطلابية', $officeType, '73'],
+            ['734', 'مكتب المنح والإيفاد والتبادل الطلابي', $officeType, '73'],
+            ['735', 'إدارة الامتحانات', $administrationType, '73'],
+            ['736', 'مكتب التوثيق والتدقيق', $officeType, '73'],
         ];
         foreach ($units as [$code, $name, $type, $parentCode]) {
             $parentId = $parentCode ? OrganizationalUnit::query()->where('unit_code', $parentCode)->value('organizational_unit_id') : null;

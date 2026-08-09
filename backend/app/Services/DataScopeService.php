@@ -9,12 +9,15 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use App\Models\AcademicProgram;
 use App\Models\Department;
+use Illuminate\Support\Facades\Schema;
+use App\Models\OrganizationalUnit;
 
 class DataScopeService
 {
     public function scopes(User $user): array
     {
         return $user->accessScopes()->where('is_active', true)->get(['scope_type', 'scope_id'])
+            ->filter(fn ($scope) => $this->scopeReferenceExists($scope->scope_type, (int) $scope->scope_id))
             ->map(fn ($scope) => ['type' => $scope->scope_type, 'id' => (int) $scope->scope_id])
             ->values()->all();
     }
@@ -56,9 +59,44 @@ class DataScopeService
 
     public function scopeRegistrations(Builder $query, User $user): Builder
     {
-        return $query->where(fn (Builder $q) => $q
-            ->whereHas('student', fn (Builder $student) => $this->scopeStudents($student, $user))
-            ->whereHas('courseOffering', fn (Builder $offering) => $this->scopeOfferings($offering, $user)));
+        if ($this->bypassesScope($user)) return $query;
+        return $query->where(function (Builder $paths) use ($user): void {
+            if ($user->student_id !== null) $paths->orWhere('student_id', $user->student_id);
+            $paths->orWhere(fn (Builder $staff) => $staff
+                ->whereHas('student', fn (Builder $student) => $this->scopeStudents($student, $user))
+                ->whereHas('courseOffering', fn (Builder $offering) => $this->scopeOfferings($offering, $user)));
+        });
+    }
+
+    public function scopeResourceQuery(Builder $query, User $user): Builder
+    {
+        $model = $query->getModel();
+        $table = $model->getTable();
+        if (in_array($table, ['student_academic_terms', 'student_credit_limits', 'student_documents', 'student_attendance', 'grade_appeals'], true)
+            && Schema::hasColumn($table, 'student_id')) {
+            return $query->whereHas('student', fn (Builder $student) => $this->scopeStudents($student, $user));
+        }
+        if (in_array($table, ['grade_approvals', 'grade_components', 'attendance_sessions'], true)
+            && Schema::hasColumn($table, 'course_offering_id')) {
+            return $query->whereHas('courseOffering', fn (Builder $offering) => $this->scopeOfferings($offering, $user));
+        }
+        if (in_array($table, ['student_course_results', 'student_grade_components', 'supplementary_exam_results'], true)
+            && Schema::hasColumn($table, 'student_course_registration_id')) {
+            return $query->whereHas('studentCourseRegistration', fn (Builder $registration) => $this->scopeRegistrations($registration, $user));
+        }
+        return $query;
+    }
+
+    public function assertPayloadScope(User $user, array $data): void
+    {
+        if (array_key_exists('student_id', $data)) {
+            $student = Student::query()->findOrFail($data['student_id']);
+            abort_unless($this->canAccessStudent($user, $student), 403);
+        }
+        if (array_key_exists('course_offering_id', $data)) {
+            $offering = CourseOffering::query()->findOrFail($data['course_offering_id']);
+            abort_unless($this->canAccessOffering($user, $offering), 403);
+        }
     }
 
     public function canAccessStudent(User $user, Student $student): bool
@@ -94,11 +132,53 @@ class DataScopeService
             || in_array((int) $department->college_id, $scopes['college'], true);
     }
 
+    public function scopeColleges(Builder $query, User $user): Builder
+    {
+        if ($this->bypassesScope($user)) return $query;
+        $scopes = $this->grouped($user);
+        if ($scopes['university'] !== []) return $query;
+        return $query->whereIn('college_id', $scopes['college'])
+            ->orWhereHas('departments', fn (Builder $department) => $department
+                ->whereIn('department_id', $scopes['department'])
+                ->orWhereHas('academicPrograms', fn (Builder $program) => $program->whereIn('academic_program_id', $scopes['program'])));
+    }
+
+    public function scopeDepartments(Builder $query, User $user): Builder
+    {
+        if ($this->bypassesScope($user)) return $query;
+        $scopes = $this->grouped($user);
+        if ($scopes['university'] !== []) return $query;
+        return $query->whereIn('college_id', $scopes['college'])->orWhereIn('department_id', $scopes['department'])
+            ->orWhereHas('academicPrograms', fn (Builder $program) => $program->whereIn('academic_program_id', $scopes['program']));
+    }
+
+    public function scopePrograms(Builder $query, User $user): Builder
+    {
+        if ($this->bypassesScope($user)) return $query;
+        $scopes = $this->grouped($user);
+        if ($scopes['university'] !== []) return $query;
+        return $query->whereIn('academic_program_id', $scopes['program'])->orWhereIn('department_id', $scopes['department'])
+            ->orWhereHas('department', fn (Builder $department) => $department->whereIn('college_id', $scopes['college']));
+    }
+
     private function grouped(User $user): array
     {
         $result = array_fill_keys(['university', 'college', 'department', 'program', 'section'], []);
         foreach ($this->scopes($user) as $scope) $result[$scope['type']][] = $scope['id'];
         return $result;
+    }
+
+    private function scopeReferenceExists(string $type, int $id): bool
+    {
+        return match ($type) {
+            'university' => OrganizationalUnit::query()->whereKey($id)
+                ->whereHas('organizationalUnitType', fn (Builder $type) => $type->where('type_code', 'university'))->exists(),
+            'college' => \App\Models\College::query()->whereKey($id)->exists(),
+            'department' => Department::query()->whereKey($id)->exists(),
+            'program' => AcademicProgram::query()->whereKey($id)->exists(),
+            'section' => CourseOffering::query()->whereKey($id)->exists(),
+            default => false,
+        };
     }
 
     private function bypassesScope(User $user): bool

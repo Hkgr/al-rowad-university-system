@@ -14,8 +14,6 @@ class AcademicAuthorizationService
 {
     private const ADMIN_ROLES = ['super_admin'];
 
-    private const STUDENT_RECORD_ROLES = ['registration_officer', 'exam_officer', 'academic_advisor'];
-
     public function assertStudentRecord(User $user, Student $student): void
     {
         if (! $user->hasPermission('students.view')
@@ -52,14 +50,14 @@ class AcademicAuthorizationService
 
     public function assertExaminationCommittee(User $user): void
     {
-        if (! $user->hasPermission('exams.manage') || ! $this->hasRole($user, [...self::ADMIN_ROLES, 'exam_officer'])) {
+        if (! $user->hasPermission('exams.manage')) {
             throw new AccessDeniedHttpException('This operation requires Examination Committee permission.');
         }
     }
 
     public function assertStudentAffairs(User $user): void
     {
-        $this->assertRole($user, [...self::ADMIN_ROLES, 'registration_officer']);
+        if (! $user->hasPermission('students.manage')) throw new AccessDeniedHttpException('Student management permission is required.');
     }
 
     public function assertSystemAdministrator(User $user): void
@@ -69,7 +67,7 @@ class AcademicAuthorizationService
 
     public function assertCanSearchStudents(User $user): void
     {
-        $this->assertRole($user, [...self::ADMIN_ROLES, ...self::STUDENT_RECORD_ROLES]);
+        if (! $user->hasPermission('students.view')) throw new AccessDeniedHttpException('Student view permission is required.');
     }
 
     public function assertCanAccessOffering(User $user, int $courseOfferingId): void
@@ -95,7 +93,7 @@ class AcademicAuthorizationService
 
     private function assertAssignedInstructor(User $user, int $courseOfferingId): void
     {
-        if (! $this->hasRole($user, ['doctor_instructor'])) {
+        if ($user->employee_id === null) {
             throw new AccessDeniedHttpException('This operation is restricted to the assigned section instructor.');
         }
 

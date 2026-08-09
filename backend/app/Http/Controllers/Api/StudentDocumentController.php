@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Gate;
+use App\Services\DataScopeService;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class StudentDocumentController extends ApiController
@@ -41,10 +42,9 @@ class StudentDocumentController extends ApiController
     {
         Gate::authorize('viewAny', StudentDocument::class);
 
-        $query = StudentDocument::query()->with('documentType');
-        if (request()->user()->effectiveRoles()->contains('student')) {
-            $query->where('student_id', request()->user()->student_id);
-        }
+        $query = app(DataScopeService::class)->scopeResourceQuery(
+            StudentDocument::query()->with('documentType'), request()->user()
+        );
 
         $documents = $query->paginate(request()->integer('per_page', 15));
 
@@ -56,11 +56,12 @@ class StudentDocumentController extends ApiController
     public function upload(Student $student, Request $request): JsonResponse
     {
         Gate::authorize('createFor', [StudentDocument::class, $student]);
+        $isOwner = (int) $request->user()->student_id === (int) $student->student_id;
         $rules = [
             'document_type_id' => ['required', 'integer', 'exists:document_types,document_type_id'],
             'file' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:5120'],
         ];
-        if ($request->user()->student_id === null) {
+        if (! $isOwner) {
             $rules['verification_notes'] = ['nullable', 'string', 'max:255'];
         }
         $validated = $request->validate($rules);
@@ -89,7 +90,7 @@ class StudentDocumentController extends ApiController
             'verification_status' => 'pending',
             'verified_by_user_id' => null,
             'verified_at' => null,
-            'verification_notes' => $request->user()->student_id === null
+            'verification_notes' => ! $isOwner
                 ? ($validated['verification_notes'] ?? null)
                 : null,
             'uploaded_at' => now(),

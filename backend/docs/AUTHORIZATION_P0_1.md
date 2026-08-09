@@ -6,6 +6,8 @@ Authorization is always the intersection of an effective permission and data sco
 
 `POST /api/login` (`data.user`) and `GET /api/user` (`data`) expose the same fields: `user_id`, `username`, `email`, `student_id`, `employee_id`, `board_member_id`, `roles`, `permissions`, `organizational_unit`, and `access_scopes`. Scope entries have `{type, id}`, where type is `university`, `college`, `department`, `program`, or `section` (a course offering). The client never submits these values as authorization evidence.
 
+Only valid scope references are effective. A university grant must reference an existing organizational unit whose type code is `university`; college, department, program, and section grants must reference their corresponding live records. Orphan or unsupported grants confer no access.
+
 Run `php artisan identity:reconcile` for a dry-run identity report. It labels already linked, unlinked, deterministic, and ambiguous accounts. `--apply` links only a single exact, case-sensitive database email match; it never guesses by name. Review ambiguous and unlinked rows manually.
 
 ## Access matrix
@@ -18,7 +20,9 @@ Run `php artisan identity:reconcile` for a dry-run identity report. It labels al
 | `student` | student/registration/grade/attendance views | linked student identity only | registration manage and other students |
 | `super_admin` | centralized permission and scope bypass | university-wide | no scattered controller bypasses |
 
-The idempotent `AuthorizationP01Seeder` only inserts missing grants from this allow-list; it neither uses wildcards nor removes custom grants. It also upserts organizational units 73 and 731–736 by stable unit code.
+The idempotent `AuthorizationP01Seeder` synchronizes the four system roles to this exact allow-list: it inserts missing grants and removes excess grants for those roles only. It never uses wildcards or changes non-system/custom roles. Production uses the SQL-first runbook, not this development seeder. It also upserts the official `7 → 73 → 731–736` organizational hierarchy by stable unit code.
+
+The production SQL makes `73` (مديرية شؤون الطلاب) a child of code `7`; `731`, `732`, `733`, `734`, `735`, and `736` are direct children of `73`. Codes `REG_OFFICE` and `EXAM_OFFICE` are migrated to official codes `732` and `735` across all known foreign keys and then disabled. The rollback cannot reconstruct those merged references without the mandatory backup.
 
 ## React page/API parity inventory
 

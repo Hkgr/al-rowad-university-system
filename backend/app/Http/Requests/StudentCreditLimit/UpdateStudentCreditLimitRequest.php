@@ -20,7 +20,7 @@ class UpdateStudentCreditLimitRequest extends FormRequest
             'min_credit_hours' => 'sometimes|nullable|integer',
             'max_credit_hours' => 'sometimes|nullable|integer',
             'is_excellent_student' => 'sometimes|nullable|integer',
-            'approved_by_user_id' => 'sometimes|nullable|integer|exists:users,user_id',
+            'approved_by_user_id' => 'prohibited',
             'notes' => 'sometimes|nullable|string|max:255',
             'created_at' => 'sometimes|nullable|date',
             'updated_at' => 'sometimes|nullable|date',

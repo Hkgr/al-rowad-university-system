@@ -166,6 +166,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
 */
 
 Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::class])->prefix('v1')->group(function (): void {
+    Route::put('users/{user}/identity', [UserController::class, 'linkIdentity'])
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':users_permissions.manage');
 
     /*
     |--------------------------------------------------------------------------

@@ -27,7 +27,6 @@ class StudentPolicy
 
     private function manage(User $user): bool
     {
-        return $user->hasPermission('students.manage')
-            || $user->effectiveRoles()->contains('registration_officer');
+        return $user->hasPermission('students.manage');
     }
 }

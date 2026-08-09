@@ -17,6 +17,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Foundation\Http\FormRequest;
+use App\Models\AcademicProgram;
 
 class CourseOfferingController extends ApiController
 {
@@ -56,8 +57,26 @@ class CourseOfferingController extends ApiController
         $scope = app(DataScopeService::class);
         abort_unless($scope->canAccessDepartment($request->user(), (int) $data['department_id'])
             && $scope->canAccessProgram($request->user(), (int) $data['academic_program_id']), 403);
+        abort_unless(AcademicProgram::query()->whereKey($data['academic_program_id'])->where('department_id', $data['department_id'])->exists(), 422);
         $offering = CourseOffering::query()->create($data);
         return $this->successResponse((new CourseOfferingResource($offering))->resolve($request), 'Operation completed successfully', 201);
+    }
+
+    public function update($id): JsonResponse
+    {
+        $scope = app(DataScopeService::class);
+        $offering = CourseOffering::query()->findOrFail($id);
+        Gate::authorize('update', $offering);
+        /** @var FormRequest $request */
+        $request = app($this->updateRequestClass());
+        $data = $request->validated();
+        $departmentId = (int) ($data['department_id'] ?? $offering->department_id);
+        $programId = (int) ($data['academic_program_id'] ?? $offering->academic_program_id);
+        abort_unless($scope->canAccessDepartment($request->user(), $departmentId)
+            && $scope->canAccessProgram($request->user(), $programId), 403);
+        abort_unless(AcademicProgram::query()->whereKey($programId)->where('department_id', $departmentId)->exists(), 422);
+        $offering->update($data);
+        return $this->successResponse((new CourseOfferingResource($offering->fresh()))->resolve($request));
     }
 
     public function open(): JsonResponse
@@ -165,6 +184,7 @@ class CourseOfferingController extends ApiController
 
     public function gradeSheet(int $id, GradeService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
+        abort_unless(request()->user()->hasPermission('grades.view'), 403);
         $authorization->assertCanAccessOffering(request()->user(), $id);
         $includeInactive = filter_var(request()->query('include_inactive', false), FILTER_VALIDATE_BOOLEAN);
 
@@ -173,18 +193,21 @@ class CourseOfferingController extends ApiController
 
     public function resultsSummary(int $id, GradeService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
+        abort_unless(request()->user()->hasPermission('grades.view'), 403);
         $authorization->assertCanAccessOffering(request()->user(), $id);
         return $this->successResponse($service->getResultsSummary($id));
     }
 
     public function attendanceSessions(int $id, AttendanceService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
+        abort_unless(request()->user()->hasPermission('attendance.view'), 403);
         $authorization->assertCanAccessOffering(request()->user(), $id);
         return $this->successResponse($service->getCourseOfferingSessions($id));
     }
 
     public function storeAttendanceSession(int $id, StoreCourseOfferingAttendanceSessionRequest $request, AttendanceService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
+        abort_unless($request->user()->hasPermission('attendance.manage'), 403);
         $authorization->assertCanAccessOffering($request->user(), $id);
         $session = $service->createCourseOfferingSession(
             $id,
@@ -197,6 +220,7 @@ class CourseOfferingController extends ApiController
 
     public function deprivedStudents(int $id, AttendanceService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
+        abort_unless(request()->user()->hasPermission('attendance.view'), 403);
         $authorization->assertCanAccessOffering(request()->user(), $id);
         return $this->successResponse($service->getDeprivedStudents($id));
     }
