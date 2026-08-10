@@ -18,7 +18,7 @@ return new class extends Migration
             // university scope_id references the existing PRES organizational root;
             // the remaining types reference their namesake academic tables.
             $table->enum('scope_type', ['university', 'college', 'department', 'program', 'section']);
-            $table->unsignedInteger('scope_id');
+            $table->integer('scope_id');
             $table->boolean('is_active')->default(true);
             $table->timestamps();
             $table->unique(['user_id', 'scope_type', 'scope_id'], 'user_scope_unique');

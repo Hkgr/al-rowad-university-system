@@ -39,7 +39,7 @@ class AcademicAuthorizationService
             return;
         }
 
-        if (app(DataScopeService::class)->scopeRegistrationsForStaff(StudentCourseRegistration::query(), $user)
+        if ($user->employee_id !== null && app(DataScopeService::class)->scopeRegistrationsForStaff(StudentCourseRegistration::query(), $user)
                 ->whereKey($registration->student_course_registration_id)->exists()) {
             return;
         }
@@ -53,7 +53,7 @@ class AcademicAuthorizationService
             throw new AccessDeniedHttpException('Grade management permission is required.');
         }
 
-        if (app(DataScopeService::class)->scopeRegistrationsForStaff(StudentCourseRegistration::query(), $user)
+        if ($user->employee_id !== null && app(DataScopeService::class)->scopeRegistrationsForStaff(StudentCourseRegistration::query(), $user)
                 ->whereKey($registration->student_course_registration_id)->exists()) {
             return;
         }

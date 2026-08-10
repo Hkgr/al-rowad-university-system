@@ -48,10 +48,11 @@ export function canAccess({ permissions = [], allPermissions = [], roles = [], s
 }
 export function landingRoute(user) {
   if (canAll(['exams.view', 'exams.manage'], user)) return '/exam-board'
-  if (canAll(['registration.manage', 'registration.view', 'students.view', 'courses.view'], user)) return '/exam-board/course-registration'
+  if (canAccess(ACCESS.courseRegistration, user) && hasPermission('registration.manage', user)) return '/exam-board/course-registration'
   if (canAny(['attendance.manage', 'grades.manage'], user) && user?.employee_id) return '/professor'
   if (hasPermission('hr.view', user)) return '/hr'
   if (user?.student_id && canAny(['registration.view', 'grades.view', 'attendance.view'], user)) return '/student'
   if (hasPermission('academic_structure.view', user)) return '/academic-structure'
-  return '/student-affairs'
+  if (hasPermission('students.view', user)) return '/student-affairs'
+  return '/forbidden'
 }

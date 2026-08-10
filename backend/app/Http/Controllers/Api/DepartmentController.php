@@ -8,6 +8,7 @@ use App\Http\Resources\AcademicProgramResource;
 use App\Http\Resources\DepartmentResource;
 use App\Models\Department;
 use App\Services\GradeService;
+use App\Services\DataScopeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -35,7 +36,8 @@ class DepartmentController extends ApiController
 
     public function programs(Department $department): JsonResponse
     {
-        $programs = $department->academicPrograms()
+        abort_unless(app(DataScopeService::class)->canAccessDepartment(request()->user(), $department->department_id), 403);
+        $programs = app(DataScopeService::class)->scopePrograms($department->academicPrograms(), request()->user())
             ->orderBy('program_name')
             ->paginate(request()->integer('per_page', 15));
 

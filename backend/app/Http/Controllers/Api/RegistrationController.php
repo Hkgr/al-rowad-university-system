@@ -26,11 +26,10 @@ class RegistrationController extends Controller
 
     public function registerStudent(RegisterStudentRequest $request, RegistrationService $service): JsonResponse
     {
-        abort_unless($request->user()->hasPermission('registration.manage'), 403);
         $scope = app(DataScopeService::class);
         $student = Student::query()->findOrFail($request->integer('student_id'));
         $offering = CourseOffering::query()->findOrFail($request->integer('course_offering_id'));
-        abort_unless($scope->canAccessStudent($request->user(), $student) && $scope->canAccessOffering($request->user(), $offering), 403);
+        abort_unless($scope->canStaffManageRegistration($request->user(), $student, $offering), 403);
         $result = $service->registerStudent(
             $request->validated(),
             $request->user()?->user_id
@@ -70,9 +69,7 @@ class RegistrationController extends Controller
     private function authorizeRegistration(StudentCourseRegistration $registration): void
     {
         $user = request()->user();
-        abort_unless($user->hasPermission('registration.manage'), 403);
         $scope = app(DataScopeService::class);
-        abort_unless($scope->canAccessStudent($user, $registration->student)
-            && $scope->canAccessOffering($user, $registration->courseOffering), 403);
+        abort_unless($scope->canStaffManageRegistration($user, $registration->student, $registration->courseOffering), 403);
     }
 }

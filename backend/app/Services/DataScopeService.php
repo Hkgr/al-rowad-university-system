@@ -78,6 +78,8 @@ class DataScopeService
 
     public function scopeResourceQuery(Builder $query, User $user): Builder
     {
+        if ($this->bypassesScope($user)) return $query;
+
         $model = $query->getModel();
         $table = $model->getTable();
         if ($table === 'colleges') return $this->scopeColleges($query, $user);
@@ -105,7 +107,8 @@ class DataScopeService
             && Schema::hasColumn($table, 'student_course_registration_id')) {
             return $query->whereHas('studentCourseRegistration', fn (Builder $registration) => $this->scopeRegistrations($registration, $user));
         }
-        return $query;
+        // A newly-added or unsupported resource must never silently become global.
+        return $query->whereRaw('1 = 0');
     }
 
     public function assertPayloadScope(User $user, array $data): void
@@ -128,6 +131,32 @@ class DataScopeService
     public function canAccessOffering(User $user, CourseOffering $offering): bool
     {
         return $this->scopeOfferings(CourseOffering::query(), $user)->whereKey($offering->course_offering_id)->exists();
+    }
+
+    public function canStaffAccessStudent(User $user, Student $student): bool
+    {
+        if ($this->bypassesScope($user)) return true;
+        if ($user->employee_id === null) return false;
+
+        return $this->scopeStudentsForStaff(Student::withTrashed(), $user)
+            ->whereKey($student->student_id)->exists();
+    }
+
+    public function canStaffAccessOffering(User $user, CourseOffering $offering): bool
+    {
+        if ($this->bypassesScope($user)) return true;
+        if ($user->employee_id === null) return false;
+
+        return $this->scopeOfferingsForStaff(CourseOffering::query(), $user)
+            ->whereKey($offering->course_offering_id)->exists();
+    }
+
+    public function canStaffManageRegistration(User $user, Student $student, CourseOffering $offering): bool
+    {
+        return $user->hasPermission('registration.manage')
+            && $this->canStaffAccessStudent($user, $student)
+            && $this->canAccessProgram($user, (int) $student->academic_program_id)
+            && $this->canStaffAccessOffering($user, $offering);
     }
 
     public function canAccessProgram(User $user, int $programId): bool
@@ -201,6 +230,7 @@ class DataScopeService
     private function scopeStudentsForStaff(Builder $query, User $user): Builder
     {
         if ($this->bypassesScope($user)) return $query;
+        if ($user->employee_id === null) return $query->whereRaw('1 = 0');
         $scopes = $this->grouped($user);
         if ($scopes['university'] !== []) return $query;
 
@@ -216,6 +246,7 @@ class DataScopeService
     private function scopeOfferingsForStaff(Builder $query, User $user): Builder
     {
         if ($this->bypassesScope($user)) return $query;
+        if ($user->employee_id === null) return $query->whereRaw('1 = 0');
         $scopes = $this->grouped($user);
         if ($scopes['university'] !== []) return $query;
 

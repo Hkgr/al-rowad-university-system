@@ -132,6 +132,16 @@ export default function App() {
         {/* ── هيئة الامتحانات dashboard ── */}
         <Route
           element={
+            <ProtectedRoute {...ACCESS.courseRegistration}>
+              <DashboardLayout nav={examBoardNav} appTitle="القبول والتسجيل" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/exam-board/course-registration" element={<CourseRegistrationPage />} />
+        </Route>
+
+        <Route
+          element={
             <ProtectedRoute allPermissions={['exams.view', 'exams.manage']}>
               <DashboardLayout nav={examBoardNav} appTitle="هيئة الامتحانات" />
             </ProtectedRoute>
@@ -145,7 +155,6 @@ export default function App() {
           <Route path="/exam-board/supplementary" element={protect(<ExamPlaceholder title="الامتحانات التكميلية" en="Supplementary Exams" />, { permissions: ['exams.view'] })} />
           <Route path="/exam-board/results"       element={protect(<ExamPlaceholder title="النتائج والتقارير" en="Results" />, { permissions: ['grades.view'] })} />
           <Route path="/exam-board/courses"             element={protect(<CoursesPage />, ACCESS.courseManagement)} />
-          <Route path="/exam-board/course-registration" element={protect(<CourseRegistrationPage />, ACCESS.courseRegistration)} />
           <Route path="/exam-board/course-offerings"    element={protect(<CourseOfferingsPage />, ACCESS.courseManagement)} />
           <Route path="/exam-board/course-table"        element={protect(<CourseTablePage />, ACCESS.courseManagement)} />
           <Route path="/exam-board/appeals"          element={protect(<ExamPlaceholder title="التظلمات" en="Appeals" />, { permissions: ['exams.view'] })} />
