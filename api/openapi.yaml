@@ -538,12 +538,35 @@ components:
         student_id: { type: integer, nullable: true }
         employee_id: { type: integer, nullable: true }
         board_member_id: { type: integer, nullable: true }
+        organizational_unit:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/IdentityOrganizationalUnit'
         roles:
           type: array
           items: { type: string }
         permissions:
           type: array
           items: { type: string }
+        access_scopes:
+          type: array
+          description: Server-derived effective data scopes; clients must never submit these as authorization evidence.
+          items: { $ref: '#/components/schemas/IdentityAccessScope' }
+    IdentityOrganizationalUnit:
+      type: object
+      required: [id, code, name]
+      properties:
+        id: { type: integer }
+        code: { type: string, example: "732" }
+        name: { type: string, example: مكتب القبول والتسجيل }
+    IdentityAccessScope:
+      type: object
+      required: [type, id]
+      properties:
+        type:
+          type: string
+          enum: [university, college, department, program, section]
+        id: { type: integer }
     LoginResponse:
       type: object
       properties:

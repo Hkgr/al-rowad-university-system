@@ -22,7 +22,7 @@ Run `php artisan identity:reconcile` for a dry-run identity report. It labels al
 
 The development-only `AuthorizationP01Seeder` synchronizes the four system roles to its allow-list. Production uses the SQL-first runbook instead: it adds missing required grants but deliberately preserves existing/custom grants, including grants attached to the four operational roles. Verification checks the required P0-1 subset and does not misreport an additional custom grant as a deployment failure. The hierarchy operation still upserts the official `7 → 73 → 731–736` units by stable unit code.
 
-The production SQL establishes `PRES → 7 → 71, 72, 73 → 731–736`. Code `7` is نائب رئيس الجامعة للشؤون الإدارية, codes `71`–`73` are directorates, `731`–`734` and `736` are offices, and `735` is an administration. `VP_ADMIN`, `REG_OFFICE`, and `EXAM_OFFICE` are reconciled to `7`, `732`, and `735`; legacy rows are disabled only after known references are moved. The rollback cannot reconstruct merged references without the mandatory backup.
+The production SQL seeds the full approved chart `PRES → 7 → 71, 72, 73 → 731–736` from an empty table and remains idempotent. Code `7` is نائب رئيس الجامعة للشؤون الإدارية, codes `71`–`73` are directorates, `731`–`734` and `736` are offices, and `735` is an administration. It creates and links the deterministic registrar/exam test employee identities to `732`/`735` and grants their existing users a `PRES` university scope. `VP_ADMIN`, `REG_OFFICE`, and `EXAM_OFFICE` are reconciled when present; the rollback cannot reconstruct merged references without the mandatory backup.
 
 ## React page/API parity inventory
 

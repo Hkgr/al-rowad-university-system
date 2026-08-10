@@ -227,7 +227,7 @@ class DataScopeService
         });
     }
 
-    private function scopeStudentsForStaff(Builder $query, User $user): Builder
+    public function scopeStudentsForStaff(Builder $query, User $user): Builder
     {
         if ($this->bypassesScope($user)) return $query;
         if ($user->employee_id === null) return $query->whereRaw('1 = 0');

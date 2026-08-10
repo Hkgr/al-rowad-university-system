@@ -53,12 +53,30 @@ class P01AuthorizationClosureTest extends TestCase
             'preflight excess/missing' => ['00_preflight.sql', "'EXCESS'"],
             'case-sensitive report' => ['00_preflight.sql', 'BINARY s.email=BINARY u.email'],
             'idempotent table' => ['01_apply.sql', 'CREATE TABLE IF NOT EXISTS user_access_scopes'],
+            'idempotent chart root' => ['01_apply.sql', "SELECT 'PRES','رئيس الجامعة'"],
+            'registrar identity' => ['01_apply.sql', "'P01-REGISTRAR'"],
+            'exam identity' => ['01_apply.sql', "'P01-EXAM-OFFICER'"],
             'required grants are additive' => ['01_apply.sql', 'INSERT INTO role_permissions'],
             'student cannot manage registration' => ['01_apply.sql', "('student','registration.view')"],
             'administration 735' => ['01_apply.sql', "'735','إدارة الامتحانات','administration'"],
             'operational scope verification' => ['02_verify.sql', "r.role_code IN ('exam_officer','registration_officer')"],
             'duplicate verification' => ['02_verify.sql', 'HAVING duplicates>1'],
         ];
+    }
+
+    public function test_staff_only_resources_do_not_fall_back_to_student_identity_scope(): void
+    {
+        $creditLimits = self::source('app/Http/Controllers/Api/StudentCreditLimitController.php');
+        self::assertStringContainsString('assertStaffRegistrar', $creditLimits);
+        self::assertStringContainsString('scopeStudentsForStaff', $creditLimits);
+
+        $auditLogs = self::source('app/Http/Controllers/Api/GradeAuditLogController.php');
+        self::assertStringContainsString('assertStaffGrader', $auditLogs);
+        self::assertStringContainsString('scopeRegistrationsForStaff', $auditLogs);
+
+        $studentPolicy = self::source('app/Policies/StudentPolicy.php');
+        self::assertStringContainsString('isStaff($user)', $studentPolicy);
+        self::assertStringContainsString('canStaffAccessStudent', $studentPolicy);
     }
 
     public function test_sql_preserves_custom_grants_and_first_apply_can_create_scope_table(): void
