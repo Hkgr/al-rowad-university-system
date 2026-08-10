@@ -56,9 +56,12 @@ class P01AuthorizationClosureTest extends TestCase
             'idempotent chart root' => ['01_apply.sql', "SELECT 'PRES','رئيس الجامعة'"],
             'registrar identity' => ['01_apply.sql', "'P01-REGISTRAR'"],
             'exam identity' => ['01_apply.sql', "'P01-EXAM-OFFICER'"],
+            'existing exam username' => ['01_apply.sql', "u.username='exam.board'"],
             'required grants are additive' => ['01_apply.sql', 'INSERT INTO role_permissions'],
             'student cannot manage registration' => ['01_apply.sql', "('student','registration.view')"],
             'administration 735' => ['01_apply.sql', "'735','إدارة الامتحانات','administration'"],
+            'certification office 736' => ['01_apply.sql', "'736','مكتب التوثيق والتصديق','office'"],
+            'exact full chart verification' => ['02_verify.sql', "'official_chart_exact'"],
             'operational scope verification' => ['02_verify.sql', "r.role_code IN ('exam_officer','registration_officer')"],
             'duplicate verification' => ['02_verify.sql', 'HAVING duplicates>1'],
         ];
@@ -77,6 +80,26 @@ class P01AuthorizationClosureTest extends TestCase
         $studentPolicy = self::source('app/Policies/StudentPolicy.php');
         self::assertStringContainsString('isStaff($user)', $studentPolicy);
         self::assertStringContainsString('canStaffAccessStudent', $studentPolicy);
+    }
+
+    public function test_development_seeder_uses_the_same_complete_official_chart(): void
+    {
+        $seeder = self::source('database/seeders/AuthorizationP01Seeder.php');
+        foreach ([
+            "['PRES', 'رئيس الجامعة', 'presidency', null]",
+            "['7', 'نائب رئيس الجامعة للشؤون الإدارية', 'vice_presidency', 'PRES']",
+            "['71', 'مديرية الشؤون الإدارية', 'directorate', '7']",
+            "['72', 'مديرية الشؤون المالية', 'directorate', '7']",
+            "['73', 'مديرية شؤون الطلاب', 'directorate', '7']",
+            "['731', 'مكتب الإرشاد والتوجيه', 'office', '73']",
+            "['732', 'مكتب القبول والتسجيل', 'office', '73']",
+            "['733', 'مكتب الخدمات الطلابية', 'office', '73']",
+            "['734', 'مكتب المنح والإيفاد والتبادل الطلابي', 'office', '73']",
+            "['735', 'إدارة الامتحانات', 'administration', '73']",
+            "['736', 'مكتب التوثيق والتصديق', 'office', '73']",
+        ] as $unit) {
+            self::assertStringContainsString($unit, $seeder);
+        }
     }
 
     public function test_sql_preserves_custom_grants_and_first_apply_can_create_scope_table(): void
