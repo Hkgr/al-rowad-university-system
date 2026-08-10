@@ -14,24 +14,33 @@ class AcademicAuthorizationService
 {
     private const ADMIN_ROLES = ['super_admin'];
 
-    private const STUDENT_RECORD_ROLES = ['registration_officer', 'exam_officer', 'academic_advisor'];
-
     public function assertStudentRecord(User $user, Student $student): void
     {
-        if ($user->student_id !== null && (int) $user->student_id === (int) $student->student_id) {
-            return;
+        if (! $user->hasPermission('students.view')
+            || ! app(DataScopeService::class)->canAccessStudent($user, $student)) {
+            throw new AccessDeniedHttpException('You are not authorized to access this student record.');
         }
+    }
 
-        $this->assertRole($user, [...self::ADMIN_ROLES, ...self::STUDENT_RECORD_ROLES]);
+    public function assertCanAccessStudent(User $user, Student $student): void
+    {
+        if (! app(DataScopeService::class)->canAccessStudent($user, $student)) {
+            throw new AccessDeniedHttpException('You are not authorized to access this student.');
+        }
     }
 
     public function assertCanViewGrades(User $user, StudentCourseRegistration $registration): void
     {
+        if (! $user->hasPermission('grades.view')) {
+            throw new AccessDeniedHttpException('Grade view permission is required.');
+        }
+
         if ($user->student_id !== null && (int) $user->student_id === (int) $registration->student_id) {
             return;
         }
 
-        if ($user->hasPermission('grades.view') && $this->hasRole($user, [...self::ADMIN_ROLES, 'exam_officer'])) {
+        if ($user->employee_id !== null && app(DataScopeService::class)->scopeRegistrationsForStaff(StudentCourseRegistration::query(), $user)
+                ->whereKey($registration->student_course_registration_id)->exists()) {
             return;
         }
 
@@ -40,7 +49,12 @@ class AcademicAuthorizationService
 
     public function assertCanEnterGrades(User $user, StudentCourseRegistration $registration): void
     {
-        if ($user->hasPermission('grades.manage') && $this->hasRole($user, [...self::ADMIN_ROLES, 'exam_officer'])) {
+        if (! $user->hasPermission('grades.manage')) {
+            throw new AccessDeniedHttpException('Grade management permission is required.');
+        }
+
+        if ($user->employee_id !== null && app(DataScopeService::class)->scopeRegistrationsForStaff(StudentCourseRegistration::query(), $user)
+                ->whereKey($registration->student_course_registration_id)->exists()) {
             return;
         }
 
@@ -49,14 +63,14 @@ class AcademicAuthorizationService
 
     public function assertExaminationCommittee(User $user): void
     {
-        if (! $user->hasPermission('exams.manage') || ! $this->hasRole($user, [...self::ADMIN_ROLES, 'exam_officer'])) {
+        if (! $user->hasPermission('exams.manage')) {
             throw new AccessDeniedHttpException('This operation requires Examination Committee permission.');
         }
     }
 
     public function assertStudentAffairs(User $user): void
     {
-        $this->assertRole($user, [...self::ADMIN_ROLES, 'registration_officer']);
+        if (! $user->hasPermission('students.manage')) throw new AccessDeniedHttpException('Student management permission is required.');
     }
 
     public function assertSystemAdministrator(User $user): void
@@ -66,12 +80,13 @@ class AcademicAuthorizationService
 
     public function assertCanSearchStudents(User $user): void
     {
-        $this->assertRole($user, [...self::ADMIN_ROLES, ...self::STUDENT_RECORD_ROLES]);
+        if (! $user->hasPermission('students.view')) throw new AccessDeniedHttpException('Student view permission is required.');
     }
 
     public function assertCanAccessOffering(User $user, int $courseOfferingId): void
     {
-        if ($this->hasRole($user, [...self::ADMIN_ROLES, 'exam_officer'])) {
+        $offering = CourseOffering::query()->findOrFail($courseOfferingId);
+        if (app(DataScopeService::class)->canAccessOffering($user, $offering)) {
             return;
         }
 
@@ -90,7 +105,7 @@ class AcademicAuthorizationService
 
     private function assertAssignedInstructor(User $user, int $courseOfferingId): void
     {
-        if (! $this->hasRole($user, ['doctor_instructor'])) {
+        if ($user->employee_id === null) {
             throw new AccessDeniedHttpException('This operation is restricted to the assigned section instructor.');
         }
 

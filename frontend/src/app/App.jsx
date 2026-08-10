@@ -60,7 +60,7 @@ import professorNav             from '../features/professor-dashboard/nav'
 import ProfessorHome            from '../features/professor-dashboard/pages/ProfessorHome'
 import AttendanceDeprivationPage from '../features/professor-dashboard/pages/AttendanceDeprivationPage'
 
-function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [] }) {
+function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], studentIdentity = false, employeeIdentity = false }) {
   const token = localStorage.getItem('token')
   const [identity, setIdentity] = useState(getIdentity())
   const [checking, setChecking] = useState(Boolean(token))
@@ -83,7 +83,7 @@ function ProtectedRoute({ children, permissions = [], allPermissions = [], roles
   if (!token) return <Navigate to="/login" replace />
   if (checking) return null
   if (!identity) return <Navigate to="/login" replace />
-  return canAccess({ permissions, allPermissions, roles }, identity) ? children : <Navigate to="/forbidden" replace />
+  return canAccess({ permissions, allPermissions, roles, studentIdentity, employeeIdentity }, identity) ? children : <Navigate to="/forbidden" replace />
 }
 
 const protect = (element, access) => <ProtectedRoute {...access}>{element}</ProtectedRoute>
@@ -107,17 +107,17 @@ export default function App() {
         >
           <Route path="/student-affairs"                   element={<StudentAffairsHome />}   />
           <Route path="/student-affairs/students"          element={<StudentsPage />}          />
-          <Route path="/student-affairs/students/add"      element={protect(<AddStudentPage />, { permissions: ['students.manage'], roles: ['registration_officer'] })} />
-          <Route path="/student-affairs/students/archived" element={protect(<ArchivedStudentsPage />, { permissions: ['students.manage'], roles: ['registration_officer'] })} />
+          <Route path="/student-affairs/students/add"      element={protect(<AddStudentPage />, { permissions: ['students.manage'] })} />
+          <Route path="/student-affairs/students/archived" element={protect(<ArchivedStudentsPage />, { permissions: ['students.manage'] })} />
           <Route path="/student-affairs/graduates"         element={<GraduatesPage />}         />
           <Route path="/student-affairs/students/:id"      element={<StudentProfilePage />}    />
-          <Route path="/student-affairs/students/:id/edit" element={protect(<EditStudentPage />, { permissions: ['students.manage'], roles: ['registration_officer'] })} />
+          <Route path="/student-affairs/students/:id/edit" element={protect(<EditStudentPage />, { permissions: ['students.manage'] })} />
         </Route>
 
         {/* ── بوابة الطالب dashboard ── */}
         <Route
           element={
-            <ProtectedRoute roles={['student']}>
+            <ProtectedRoute studentIdentity permissions={['registration.view', 'grades.view', 'attendance.view']}>
               <DashboardLayout nav={studentNav} appTitle="بوابة الطالب" />
             </ProtectedRoute>
           }
@@ -132,12 +132,22 @@ export default function App() {
         {/* ── هيئة الامتحانات dashboard ── */}
         <Route
           element={
-            <ProtectedRoute permissions={['exams.view', 'grades.view', 'courses.view', 'registration.view']}>
+            <ProtectedRoute {...ACCESS.courseRegistration}>
+              <DashboardLayout nav={examBoardNav} appTitle="القبول والتسجيل" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/exam-board/course-registration" element={<CourseRegistrationPage />} />
+        </Route>
+
+        <Route
+          element={
+            <ProtectedRoute allPermissions={['exams.view', 'exams.manage']}>
               <DashboardLayout nav={examBoardNav} appTitle="هيئة الامتحانات" />
             </ProtectedRoute>
           }
         >
-          <Route path="/exam-board"                element={protect(<ExamBoardHome />, { permissions: ['exams.view', 'grades.view'] })} />
+          <Route path="/exam-board"                element={protect(<ExamBoardHome />, { allPermissions: ['exams.view', 'exams.manage'] })} />
           <Route path="/exam-board/grade-entry"   element={protect(<GradeEntryPage />, { permissions: ['grades.manage'] })} />
           <Route path="/exam-board/grade-sheet"   element={protect(<GradeSheetPage />, { permissions: ['grades.view'] })} />
           <Route path="/exam-board/approvals"     element={protect(<ApprovalsPage />, { permissions: ['exams.manage'] })} />
@@ -145,7 +155,6 @@ export default function App() {
           <Route path="/exam-board/supplementary" element={protect(<ExamPlaceholder title="الامتحانات التكميلية" en="Supplementary Exams" />, { permissions: ['exams.view'] })} />
           <Route path="/exam-board/results"       element={protect(<ExamPlaceholder title="النتائج والتقارير" en="Results" />, { permissions: ['grades.view'] })} />
           <Route path="/exam-board/courses"             element={protect(<CoursesPage />, ACCESS.courseManagement)} />
-          <Route path="/exam-board/course-registration" element={protect(<CourseRegistrationPage />, ACCESS.courseRegistration)} />
           <Route path="/exam-board/course-offerings"    element={protect(<CourseOfferingsPage />, ACCESS.courseManagement)} />
           <Route path="/exam-board/course-table"        element={protect(<CourseTablePage />, ACCESS.courseManagement)} />
           <Route path="/exam-board/appeals"          element={protect(<ExamPlaceholder title="التظلمات" en="Appeals" />, { permissions: ['exams.view'] })} />
@@ -185,7 +194,7 @@ export default function App() {
         {/* ── بوابة الأستاذ dashboard ── */}
         <Route
           element={
-            <ProtectedRoute roles={['doctor_instructor']}>
+            <ProtectedRoute employeeIdentity permissions={['grades.manage', 'attendance.manage']}>
               <DashboardLayout nav={professorNav} appTitle="بوابة الأستاذ" />
             </ProtectedRoute>
           }

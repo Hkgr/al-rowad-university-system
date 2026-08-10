@@ -113,7 +113,7 @@ class RegistrationService
             ]);
         }
 
-        $registeredByUserId = $data['registered_by_user_id'] ?? $authenticatedUserId;
+        $registeredByUserId = $authenticatedUserId;
         if ($registeredByUserId === null) {
             throw new RegistrationException('registered_by_user_id is required when no authenticated user is available.', [
                 'registered_by_user_id' => ['The registered by user field is required.'],

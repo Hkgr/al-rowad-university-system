@@ -21,12 +21,14 @@ class AttendanceController extends Controller
 
     public function sessionStudents(int $id, AttendanceService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
+        abort_unless(request()->user()->hasPermission('attendance.view'), 403);
         $authorization->assertCanAccessAttendanceSession(request()->user(), $id);
         return $this->successResponse($service->getSessionStudents($id));
     }
 
     public function record(int $id, RecordAttendanceRequest $request, AttendanceService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
+        abort_unless($request->user()->hasPermission('attendance.manage'), 403);
         $authorization->assertCanAccessAttendanceSession($request->user(), $id);
         $data = $service->recordSessionAttendance($id, $request->validated()['records']);
 

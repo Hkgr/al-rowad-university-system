@@ -12,12 +12,22 @@ use App\Models\CourseOffering;
 use App\Services\AttendanceService;
 use App\Services\GradeService;
 use App\Services\AcademicAuthorizationService;
+use App\Services\DataScopeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Foundation\Http\FormRequest;
+use App\Models\AcademicProgram;
 
 class CourseOfferingController extends ApiController
 {
+    public function index(): JsonResponse
+    {
+        Gate::authorize('viewAny', CourseOffering::class);
+        $offerings = app(DataScopeService::class)->scopeOfferings(CourseOffering::query(), request()->user())
+            ->paginate(request()->integer('per_page', 15));
+        return $this->successResponse(CourseOfferingResource::collection($offerings)->response(request())->getData(true));
+    }
     protected function modelClass(): string
     {
         return CourseOffering::class;
@@ -38,10 +48,41 @@ class CourseOfferingController extends ApiController
         return UpdateCourseOfferingRequest::class;
     }
 
+    public function store(): JsonResponse
+    {
+        Gate::authorize('create', CourseOffering::class);
+        /** @var FormRequest $request */
+        $request = app($this->storeRequestClass());
+        $data = $request->validated();
+        $scope = app(DataScopeService::class);
+        abort_unless($scope->canAccessDepartment($request->user(), (int) $data['department_id'])
+            && $scope->canAccessProgram($request->user(), (int) $data['academic_program_id']), 403);
+        abort_unless(AcademicProgram::query()->whereKey($data['academic_program_id'])->where('department_id', $data['department_id'])->exists(), 422);
+        $offering = CourseOffering::query()->create($data);
+        return $this->successResponse((new CourseOfferingResource($offering))->resolve($request), 'Operation completed successfully', 201);
+    }
+
+    public function update($id): JsonResponse
+    {
+        $scope = app(DataScopeService::class);
+        $offering = CourseOffering::query()->findOrFail($id);
+        Gate::authorize('update', $offering);
+        /** @var FormRequest $request */
+        $request = app($this->updateRequestClass());
+        $data = $request->validated();
+        $departmentId = (int) ($data['department_id'] ?? $offering->department_id);
+        $programId = (int) ($data['academic_program_id'] ?? $offering->academic_program_id);
+        abort_unless($scope->canAccessDepartment($request->user(), $departmentId)
+            && $scope->canAccessProgram($request->user(), $programId), 403);
+        abort_unless(AcademicProgram::query()->whereKey($programId)->where('department_id', $departmentId)->exists(), 422);
+        $offering->update($data);
+        return $this->successResponse((new CourseOfferingResource($offering->fresh()))->resolve($request));
+    }
+
     public function open(): JsonResponse
     {
         Gate::authorize('viewAny', CourseOffering::class);
-        $offerings = CourseOffering::query()
+        $offerings = app(DataScopeService::class)->scopeOfferings(CourseOffering::query(), request()->user())
             ->with(['course', 'academicYear', 'semester', 'department', 'academicProgram', 'facultyMember'])
             ->withCount('studentCourseRegistrations')
             ->where('status', 'open')
@@ -105,7 +146,7 @@ class CourseOfferingController extends ApiController
             'status' => ['sometimes', 'nullable', 'string', 'max:50'],
         ]);
 
-        $offerings = CourseOffering::query()
+        $offerings = app(DataScopeService::class)->scopeOfferings(CourseOffering::query(), $request->user())
             ->with(['course', 'academicYear', 'semester', 'department', 'academicProgram', 'facultyMember'])
             ->withCount('studentCourseRegistrations')
             ->where('academic_year_id', $validated['academic_year_id'])
@@ -128,7 +169,7 @@ class CourseOfferingController extends ApiController
             'status' => ['sometimes', 'nullable', 'string', 'max:50'],
         ]);
 
-        $offerings = CourseOffering::query()
+        $offerings = app(DataScopeService::class)->scopeOfferings(CourseOffering::query(), $request->user())
             ->with(['course', 'academicYear', 'semester', 'department', 'academicProgram', 'facultyMember'])
             ->withCount('studentCourseRegistrations')
             ->where('academic_program_id', $program_id)
@@ -143,6 +184,7 @@ class CourseOfferingController extends ApiController
 
     public function gradeSheet(int $id, GradeService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
+        abort_unless(request()->user()->hasPermission('grades.view'), 403);
         $authorization->assertCanAccessOffering(request()->user(), $id);
         $includeInactive = filter_var(request()->query('include_inactive', false), FILTER_VALIDATE_BOOLEAN);
 
@@ -151,18 +193,21 @@ class CourseOfferingController extends ApiController
 
     public function resultsSummary(int $id, GradeService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
+        abort_unless(request()->user()->hasPermission('grades.view'), 403);
         $authorization->assertCanAccessOffering(request()->user(), $id);
         return $this->successResponse($service->getResultsSummary($id));
     }
 
     public function attendanceSessions(int $id, AttendanceService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
+        abort_unless(request()->user()->hasPermission('attendance.view'), 403);
         $authorization->assertCanAccessOffering(request()->user(), $id);
         return $this->successResponse($service->getCourseOfferingSessions($id));
     }
 
     public function storeAttendanceSession(int $id, StoreCourseOfferingAttendanceSessionRequest $request, AttendanceService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
+        abort_unless($request->user()->hasPermission('attendance.manage'), 403);
         $authorization->assertCanAccessOffering($request->user(), $id);
         $session = $service->createCourseOfferingSession(
             $id,
@@ -175,6 +220,7 @@ class CourseOfferingController extends ApiController
 
     public function deprivedStudents(int $id, AttendanceService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
+        abort_unless(request()->user()->hasPermission('attendance.view'), 403);
         $authorization->assertCanAccessOffering(request()->user(), $id);
         return $this->successResponse($service->getDeprivedStudents($id));
     }
@@ -182,6 +228,7 @@ class CourseOfferingController extends ApiController
     public function applyDeprivation(int $id, AttendanceService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
         $authorization->assertExaminationCommittee(request()->user());
+        $authorization->assertCanAccessOffering(request()->user(), $id);
         $result = $service->applyDeprivation($id, request()->user()?->user_id);
 
         return $this->successResponse($result, 'Deprivation applied successfully');

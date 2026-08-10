@@ -6,6 +6,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Gate;
 use App\Services\ResourceAuthorizationService;
+use App\Services\DataScopeService;
 
 trait HandlesApiCrud
 {
@@ -20,7 +21,7 @@ trait HandlesApiCrud
     public function index(): JsonResponse
     {
         $this->authorizeIfPolicyExists('viewAny', $this->modelClass());
-        $models = $this->modelClass()::query()
+        $models = app(DataScopeService::class)->scopeResourceQuery($this->modelClass()::query(), request()->user())
             ->paginate(request()->integer('per_page', 15));
 
         $payload = $this->resourceClass()::collection($models)
@@ -35,6 +36,7 @@ trait HandlesApiCrud
         $this->authorizeIfPolicyExists('create', $this->modelClass());
         /** @var FormRequest $request */
         $request = app($this->storeRequestClass());
+        app(DataScopeService::class)->assertPayloadScope(request()->user(), $request->validated());
 
         $modelClass = $this->modelClass();
 
@@ -55,7 +57,7 @@ trait HandlesApiCrud
     {
         $modelClass = $this->modelClass();
 
-        $model = $modelClass::query()->findOrFail($id);
+        $model = app(DataScopeService::class)->scopeResourceQuery($modelClass::query(), request()->user())->findOrFail($id);
         $this->authorizeIfPolicyExists('view', $model);
 
         $resourceClass = $this->resourceClass();
@@ -72,8 +74,9 @@ trait HandlesApiCrud
 
         $modelClass = $this->modelClass();
 
-        $model = $modelClass::query()->findOrFail($id);
+        $model = app(DataScopeService::class)->scopeResourceQuery($modelClass::query(), request()->user())->findOrFail($id);
         $this->authorizeIfPolicyExists('update', $model);
+        app(DataScopeService::class)->assertPayloadScope(request()->user(), $request->validated());
 
         $model->update($request->validated());
 
@@ -88,7 +91,7 @@ trait HandlesApiCrud
     {
         $modelClass = $this->modelClass();
 
-        $model = $modelClass::query()->findOrFail($id);
+        $model = app(DataScopeService::class)->scopeResourceQuery($modelClass::query(), request()->user())->findOrFail($id);
         $this->authorizeIfPolicyExists('delete', $model);
 
         $model->delete();
