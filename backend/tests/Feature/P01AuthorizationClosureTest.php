@@ -53,12 +53,34 @@ class P01AuthorizationClosureTest extends TestCase
             'preflight excess/missing' => ['00_preflight.sql', "'EXCESS'"],
             'case-sensitive report' => ['00_preflight.sql', 'BINARY s.email=BINARY u.email'],
             'idempotent table' => ['01_apply.sql', 'CREATE TABLE IF NOT EXISTS user_access_scopes'],
-            'exact matrix removes excess' => ['01_apply.sql', 'DELETE rp FROM role_permissions'],
+            'required grants are additive' => ['01_apply.sql', 'INSERT INTO role_permissions'],
             'student cannot manage registration' => ['01_apply.sql', "('student','registration.view')"],
             'administration 735' => ['01_apply.sql', "'735','إدارة الامتحانات','administration'"],
             'operational scope verification' => ['02_verify.sql', "r.role_code IN ('exam_officer','registration_officer')"],
             'duplicate verification' => ['02_verify.sql', 'HAVING duplicates>1'],
         ];
+    }
+
+    public function test_sql_preserves_custom_grants_and_first_apply_can_create_scope_table(): void
+    {
+        $apply = self::source('database/sql/p0-1/01_apply.sql');
+        self::assertStringNotContainsString('DELETE rp FROM role_permissions', $apply);
+        self::assertStringNotContainsString('operational user requires a manually reviewed valid scope', $apply);
+
+        $preflight = self::source('database/sql/p0-1/00_preflight.sql');
+        self::assertStringContainsString("'SELECT 1 can_apply, ''scope table will be created by apply", $preflight);
+
+        $verify = self::source('database/sql/p0-1/02_verify.sql');
+        self::assertStringContainsString("'required_permission_grants'", $verify);
+        self::assertStringNotContainsString("'permission_matrix_exact'", $verify);
+    }
+
+    public function test_reference_reads_and_administrative_routes_use_separate_authorization_paths(): void
+    {
+        $routes = self::source('routes/api.php');
+        self::assertStringContainsString("':academic_structure.view,registration.view,grades.view'", $routes);
+        self::assertStringContainsString("Route::apiResource('academic-levels', AcademicLevelController::class)->only(['index', 'show'])", $routes);
+        self::assertGreaterThanOrEqual(7, substr_count($routes, 'RequireSystemAdministrator::class'));
     }
 
     public function test_dual_role_landing_prefers_operational_role_and_student_ui_uses_safe_lookups(): void
@@ -68,6 +90,7 @@ class P01AuthorizationClosureTest extends TestCase
         $page = self::source('../frontend/src/features/student-dashboard/pages/StudentRegistration.jsx');
         self::assertStringContainsString('/academic-years/current', $page);
         self::assertStringContainsString('/semesters/active', $page);
+        self::assertStringContainsString('s.data?.data ?? s.data', $page);
     }
 
     public function test_login_and_me_share_the_identity_serializer(): void
