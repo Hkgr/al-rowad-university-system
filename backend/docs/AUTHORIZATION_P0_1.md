@@ -20,7 +20,7 @@ Run `php artisan identity:reconcile` for a dry-run identity report. It labels al
 | `student` | student/registration/grade/attendance views | linked student identity only | registration manage and other students |
 | `super_admin` | centralized permission and scope bypass | university-wide | no scattered controller bypasses |
 
-The idempotent `AuthorizationP01Seeder` synchronizes the four system roles to this exact allow-list: it inserts missing grants and removes excess grants for those roles only. It never uses wildcards or changes non-system/custom roles. Production uses the SQL-first runbook, not this development seeder. It also upserts the official `7 → 73 → 731–736` organizational hierarchy by stable unit code.
+The development-only `AuthorizationP01Seeder` synchronizes the four system roles to its allow-list. Production uses the SQL-first runbook instead: it adds missing required grants but deliberately preserves existing/custom grants, including grants attached to the four operational roles. Verification checks the required P0-1 subset and does not misreport an additional custom grant as a deployment failure. The hierarchy operation still upserts the official `7 → 73 → 731–736` units by stable unit code.
 
 The production SQL establishes `PRES → 7 → 71, 72, 73 → 731–736`. Code `7` is نائب رئيس الجامعة للشؤون الإدارية, codes `71`–`73` are directorates, `731`–`734` and `736` are offices, and `735` is an administration. `VP_ADMIN`, `REG_OFFICE`, and `EXAM_OFFICE` are reconciled to `7`, `732`, and `735`; legacy rows are disabled only after known references are moved. The rollback cannot reconstruct merged references without the mandatory backup.
 
@@ -35,6 +35,8 @@ The production SQL establishes `PRES → 7 → 71, 72, 73 → 731–736`. Code `
 | Student dashboard | linked student's profile, registrations, transcript, GPA and attendance | view permissions plus `student_id` ownership; no self-registration buttons |
 | Academic structure | college/department/program/course APIs | `academic_structure.view` and `courses.view`; manage for mutations; granted scope |
 | HR | employee/faculty/position APIs | `hr.view`; `hr.manage` for mutations |
+
+Academic-year, semester, and academic-level reference reads accept the view permissions used by academic structure, registration, and grade workflows. Their mutations use the centralized `super_admin` path instead of inheriting a workflow's read access. User/role/permission administration, identity linking, system modules, and security logs use that same centralized administrator path; operational permissions are not interchangeable with it.
 
 Laravel policies are authoritative. React's central `can`, `canAny`, `canAll`, and `canAccess` helpers only mirror the returned identity contract to avoid dead links and unintended 403 responses.
 
