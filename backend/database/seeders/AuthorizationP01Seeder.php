@@ -82,6 +82,26 @@ class AuthorizationP01Seeder extends Seeder
                 'HR_OFFICE' => '711', 'LIBRARY' => '13',
                 'REG_OFFICE' => '732', 'EXAM_OFFICE' => '735',
             ];
+            $knownOrganizationalReferences = [
+                'employees.organizational_unit_id',
+                'employee_positions.organizational_unit_id',
+                'employee_unit_assignments.organizational_unit_id',
+                'boards.organizational_unit_id',
+                'colleges.organizational_unit_id',
+                'departments.organizational_unit_id',
+                'organizational_units.parent_unit_id',
+            ];
+            $discoveredReferences = DB::table('information_schema.key_column_usage')
+                ->where('table_schema', DB::getDatabaseName())
+                ->where('referenced_table_name', 'organizational_units')
+                ->where('referenced_column_name', 'organizational_unit_id')
+                ->get(['table_name', 'column_name']);
+            foreach ($discoveredReferences as $reference) {
+                $key = "{$reference->table_name}.{$reference->column_name}";
+                if (! in_array($key, $knownOrganizationalReferences, true)) {
+                    throw new \RuntimeException("Unknown organizational-unit reference {$key}; reviewed migration is required.");
+                }
+            }
             foreach ($legacyUnits as $legacyCode => $officialCode) {
                 $legacyId = OrganizationalUnit::query()->where('unit_code', $legacyCode)->value('organizational_unit_id');
                 if ($legacyId === null) {
@@ -109,6 +129,15 @@ class AuthorizationP01Seeder extends Seeder
                     : 0;
                 if ($remainingScopes !== 0) {
                     throw new \RuntimeException("Legacy unit {$legacyCode} still owns ambiguous scopes; manual review is required.");
+                }
+                foreach ($discoveredReferences as $reference) {
+                    $remaining = DB::table($reference->table_name)
+                        ->where($reference->column_name, $legacyId)->count();
+                    if ($remaining !== 0) {
+                        throw new \RuntimeException(
+                            "Legacy unit {$legacyCode} is still referenced by {$reference->table_name}.{$reference->column_name}."
+                        );
+                    }
                 }
                 OrganizationalUnit::query()->where('organizational_unit_id', $legacyId)->update(['is_active' => false]);
             }

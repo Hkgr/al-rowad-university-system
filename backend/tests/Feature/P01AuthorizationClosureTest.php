@@ -213,6 +213,62 @@ class P01AuthorizationClosureTest extends TestCase
         }
     }
 
+    public function test_legacy_deactivation_uses_mysql_safe_materialized_state(): void
+    {
+        $apply = self::source('database/sql/p0-1/01_apply.sql');
+        self::assertStringContainsString('CREATE TEMPORARY TABLE p01_legacy_reference_state', $apply);
+        self::assertStringContainsString('INSERT INTO p01_legacy_reference_state', $apply);
+        self::assertStringContainsString(
+            'UPDATE organizational_units legacy JOIN p01_legacy_reference_state eligible',
+            $apply
+        );
+        self::assertStringContainsString('p01_STOP_LEGACY_UNIT_STILL_REFERENCED', $apply);
+        self::assertStringNotContainsString(
+            'UPDATE organizational_units legacy JOIN p01_legacy_unit_map',
+            $apply
+        );
+        foreach (explode(';', $apply) as $statement) {
+            $normalized = strtoupper(preg_replace('/\s+/', ' ', trim($statement)));
+            if (str_starts_with($normalized, 'UPDATE ORGANIZATIONAL_UNITS')) {
+                self::assertStringNotContainsString('SELECT ', $normalized);
+            }
+        }
+        self::assertSame(1, substr_count(
+            $apply,
+            'UPDATE organizational_units legacy JOIN p01_legacy_reference_state eligible'
+        ));
+    }
+
+    public function test_legacy_scope_reports_cover_scientific_and_community_aliases(): void
+    {
+        $preflight = self::source('database/sql/p0-1/00_preflight.sql');
+        foreach (['VP_ADMIN', 'VP_SCI', 'VP_COMM', 'HR_OFFICE', 'LIBRARY', 'REG_OFFICE', 'EXAM_OFFICE'] as $alias) {
+            self::assertStringContainsString("'$alias'", $preflight);
+        }
+        self::assertStringContainsString('scope_count', $preflight);
+        self::assertStringContainsString('scope_types', $preflight);
+        self::assertStringContainsString('AUTO_TO_PRES', $preflight);
+        self::assertStringContainsString('MANUAL_REVIEW_REQUIRED', $preflight);
+
+        $apply = self::source('database/sql/p0-1/01_apply.sql');
+        self::assertStringContainsString("legacy.unit_code IN ('VP_ADMIN','VP_SCI','VP_COMM')", $apply);
+        self::assertStringContainsString("root.unit_code='PRES'", $apply);
+
+        $verify = self::source('database/sql/p0-1/02_verify.sql');
+        self::assertStringContainsString("'legacy_scope_references'", $verify);
+        self::assertStringContainsString("'migrated_scope_integrity'", $verify);
+        self::assertStringContainsString("'organizational_fk_contract'", $verify);
+    }
+
+    public function test_seeder_discovers_and_rechecks_organizational_foreign_keys(): void
+    {
+        $seeder = self::source('database/seeders/AuthorizationP01Seeder.php');
+        self::assertStringContainsString("DB::table('information_schema.key_column_usage')", $seeder);
+        self::assertStringContainsString('Unknown organizational-unit reference', $seeder);
+        self::assertStringContainsString('is still referenced by', $seeder);
+        self::assertStringContainsString('still owns ambiguous scopes', $seeder);
+    }
+
     public function test_reference_reads_and_administrative_routes_use_separate_authorization_paths(): void
     {
         $routes = self::source('routes/api.php');

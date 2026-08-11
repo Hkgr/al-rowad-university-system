@@ -14,6 +14,8 @@ The authoritative set is exactly 58 expected records; unrelated production rows 
 
 The only automatic legacy mappings are `VP_ADMIN→7`, `VP_SCI→8`, `VP_COMM→9`, `HR_OFFICE→711`, `LIBRARY→13`, `REG_OFFICE→732`, and `EXAM_OFFICE→735`. Apply creates the official target first, moves every known organizational foreign key and child, converts unambiguous legacy vice-presidency university scopes to `PRES`, and only then deactivates an unreferenced alias. Any unknown organizational foreign key or ambiguous scope stops deployment for manual review.
 
+Legacy deactivation uses a materialized post-migration reference-state table followed by a direct `UPDATE ... JOIN`. It does not read `organizational_units` through a subquery while updating it, avoiding MySQL error 1093 on both MariaDB 10.4 and MySQL 8. Preflight reports every known table/column and scope type for all seven aliases; verification includes remaining legacy references, scope integrity, and the discovered foreign-key contract in `OVERALL`.
+
 The complete human-readable code/name/type/parent contract is in [`docs/P0_1_OFFICIAL_ORGANIZATIONAL_CHART.md`](../../../docs/P0_1_OFFICIAL_ORGANIZATIONAL_CHART.md); the executable Seeder source is `database/seeders/data/p01_official_chart.php`.
 
 Rollback cannot reconstruct merged organizational references or prior role grants without the backup. Never edit Laravel's `migrations` table and never use `DatabaseSeeder`/`DemoAcademicSeeder` for production deployment.
