@@ -82,6 +82,9 @@ class DataScopeService
 
         $model = $query->getModel();
         $table = $model->getTable();
+        // Calendar/level reference data is global. Authorization is still enforced
+        // by ResourceAuthorizationService; organizational scopes must not hide it.
+        if (in_array($table, ['academic_levels', 'academic_years', 'semesters'], true)) return $query;
         if ($table === 'colleges') return $this->scopeColleges($query, $user);
         if ($table === 'departments') return $this->scopeDepartments($query, $user);
         if ($table === 'academic_programs') return $this->scopePrograms($query, $user);
