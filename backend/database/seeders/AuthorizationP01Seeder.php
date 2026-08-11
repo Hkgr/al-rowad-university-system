@@ -102,6 +102,61 @@ class AuthorizationP01Seeder extends Seeder
                     throw new \RuntimeException("Unknown organizational-unit reference {$key}; reviewed migration is required.");
                 }
             }
+
+            $rootId = OrganizationalUnit::query()->where('unit_code', 'PRES')->value('organizational_unit_id');
+            $legacyUniversityRootIds = OrganizationalUnit::query()
+                ->whereIn('unit_code', ['VP_ADMIN', 'VP_SCI', 'VP_COMM'])
+                ->pluck('organizational_unit_id');
+            if ($legacyUniversityRootIds->isNotEmpty() && DB::getSchemaBuilder()->hasTable('user_access_scopes')) {
+                $legacyScopesByUser = DB::table('user_access_scopes')
+                    ->where('scope_type', 'university')
+                    ->whereIn('scope_id', $legacyUniversityRootIds)
+                    ->get()
+                    ->groupBy('user_id');
+
+                foreach ($legacyScopesByUser as $userId => $legacyScopes) {
+                    $officialScope = DB::table('user_access_scopes')
+                        ->where('user_id', $userId)
+                        ->where('scope_type', 'university')
+                        ->where('scope_id', $rootId)
+                        ->first();
+                    $finalIsActive = self::aggregateScopeActivity([
+                        ...$legacyScopes->pluck('is_active')->all(),
+                        ...($officialScope === null ? [] : [$officialScope->is_active]),
+                    ]);
+
+                    if ($officialScope === null) {
+                        DB::table('user_access_scopes')->insert([
+                            'user_id' => $userId,
+                            'scope_type' => 'university',
+                            'scope_id' => $rootId,
+                            'is_active' => $finalIsActive,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    } else {
+                        DB::table('user_access_scopes')
+                            ->where('user_access_scope_id', $officialScope->user_access_scope_id)
+                            ->update(['is_active' => $finalIsActive, 'updated_at' => now()]);
+                    }
+
+                    $persistedActivity = DB::table('user_access_scopes')
+                        ->where('user_id', $userId)
+                        ->where('scope_type', 'university')
+                        ->where('scope_id', $rootId)
+                        ->value('is_active');
+                    if ((bool) $persistedActivity !== $finalIsActive) {
+                        throw new \RuntimeException("Failed to persist the PRES scope before removing legacy scopes for user {$userId}.");
+                    }
+
+                    DB::table('user_access_scopes')
+                        ->where('user_id', $userId)
+                        ->where('scope_type', 'university')
+                        ->whereIn('scope_id', $legacyUniversityRootIds)
+                        ->delete();
+                }
+            }
+
             foreach ($legacyUnits as $legacyCode => $officialCode) {
                 $legacyId = OrganizationalUnit::query()->where('unit_code', $legacyCode)->value('organizational_unit_id');
                 if ($legacyId === null) {
@@ -112,17 +167,6 @@ class AuthorizationP01Seeder extends Seeder
                     DB::table($table)->where('organizational_unit_id', $legacyId)->update(['organizational_unit_id' => $officialId]);
                 }
                 OrganizationalUnit::query()->where('parent_unit_id', $legacyId)->update(['parent_unit_id' => $officialId]);
-
-                if (in_array($legacyCode, ['VP_ADMIN', 'VP_SCI', 'VP_COMM'], true) && DB::getSchemaBuilder()->hasTable('user_access_scopes')) {
-                    $rootId = OrganizationalUnit::query()->where('unit_code', 'PRES')->value('organizational_unit_id');
-                    $scopes = DB::table('user_access_scopes')->where('scope_type', 'university')->where('scope_id', $legacyId)->get();
-                    foreach ($scopes as $scope) {
-                        $duplicate = DB::table('user_access_scopes')->where('user_id', $scope->user_id)
-                            ->where('scope_type', 'university')->where('scope_id', $rootId)->exists();
-                        $query = DB::table('user_access_scopes')->where('user_access_scope_id', $scope->user_access_scope_id);
-                        $duplicate ? $query->delete() : $query->update(['scope_id' => $rootId, 'updated_at' => now()]);
-                    }
-                }
 
                 $remainingScopes = DB::getSchemaBuilder()->hasTable('user_access_scopes')
                     ? DB::table('user_access_scopes')->where('scope_type', 'university')->where('scope_id', $legacyId)->count()
@@ -152,7 +196,6 @@ class AuthorizationP01Seeder extends Seeder
                 ['registrar', 'registration_officer', 'P01-REGISTRAR', 'Registrar', 'registrar@rowad.edu', '732'],
                 ['exam.board', 'exam_officer', 'P01-EXAM-OFFICER', 'Exam Officer', 'exam.officer@rowad.edu', '735'],
             ];
-            $rootId = OrganizationalUnit::query()->where('unit_code', 'PRES')->value('organizational_unit_id');
             foreach ($identities as [$username, $roleCode, $employeeNumber, $lastName, $email, $unitCode]) {
                 $user = User::query()->where('username', $username)->firstOrFail();
                 if ($user->employee_id !== null) {
@@ -186,5 +229,10 @@ class AuthorizationP01Seeder extends Seeder
                 ], ['is_active' => true]);
             }
         });
+    }
+
+    public static function aggregateScopeActivity(array $states): bool
+    {
+        return max([0, ...array_map(static fn ($state): int => (int) (bool) $state, $states)]) === 1;
     }
 }

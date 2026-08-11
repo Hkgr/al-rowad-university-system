@@ -7,6 +7,7 @@ use App\Models\AcademicYear;
 use App\Models\Semester;
 use App\Models\User;
 use App\Services\ResourceAuthorizationService;
+use Database\Seeders\AuthorizationP01Seeder;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -267,6 +268,61 @@ class P01AuthorizationClosureTest extends TestCase
         self::assertStringContainsString('Unknown organizational-unit reference', $seeder);
         self::assertStringContainsString('is still referenced by', $seeder);
         self::assertStringContainsString('still owns ambiguous scopes', $seeder);
+    }
+
+    #[DataProvider('legacyScopeActivityProvider')]
+    public function test_legacy_scope_activity_uses_logical_or(array $states, bool $expected): void
+    {
+        self::assertSame($expected, AuthorizationP01Seeder::aggregateScopeActivity($states));
+    }
+
+    public static function legacyScopeActivityProvider(): array
+    {
+        return [
+            'inactive PRES and active VP_SCI' => [[0, 1], true],
+            'inactive PRES and active VP_COMM' => [[0, 1], true],
+            'mixed legacy states' => [[0, 0, 1, 0], true],
+            'active PRES and inactive legacy states' => [[1, 0, 0], true],
+            'missing PRES and active legacy scope' => [[1], true],
+            'missing PRES and inactive legacy scopes' => [[0, 0], false],
+            'inactive PRES and inactive legacy scopes' => [[0, 0, 0], false],
+        ];
+    }
+
+    public function test_seeder_persists_aggregated_official_scope_before_deleting_legacy_rows(): void
+    {
+        $seeder = self::source('database/seeders/AuthorizationP01Seeder.php');
+        $aggregation = strpos($seeder, 'aggregateScopeActivity([');
+        $officialInsert = strpos($seeder, "DB::table('user_access_scopes')->insert", $aggregation);
+        $persistenceCheck = strpos($seeder, '$persistedActivity =', $officialInsert);
+        $legacyDelete = strpos($seeder, "->whereIn('scope_id', \$legacyUniversityRootIds)\n                        ->delete()", $persistenceCheck);
+
+        self::assertIsInt($aggregation);
+        self::assertIsInt($officialInsert);
+        self::assertIsInt($persistenceCheck);
+        self::assertIsInt($legacyDelete);
+        self::assertLessThan($persistenceCheck, $officialInsert);
+        self::assertLessThan($legacyDelete, $persistenceCheck);
+        self::assertStringContainsString("->where('user_id', \$userId)", $seeder);
+        self::assertStringContainsString("->where('scope_type', 'university')", $seeder);
+        self::assertStringContainsString("whereIn('unit_code', ['VP_ADMIN', 'VP_SCI', 'VP_COMM'])", $seeder);
+        self::assertStringContainsString("->groupBy('user_id')", $seeder);
+        self::assertStringContainsString('if ($officialScope === null)', $seeder);
+        self::assertSame(
+            AuthorizationP01Seeder::aggregateScopeActivity([0, 1]),
+            AuthorizationP01Seeder::aggregateScopeActivity([
+                AuthorizationP01Seeder::aggregateScopeActivity([0, 1]),
+            ])
+        );
+        self::assertStringNotContainsString('role_permissions', substr(
+            $seeder,
+            $aggregation,
+            $legacyDelete - $aggregation
+        ));
+
+        $sql = self::source('database/sql/p0-1/01_apply.sql');
+        self::assertStringContainsString('MAX(s.is_active)', $sql);
+        self::assertStringContainsString('GREATEST(is_active,VALUES(is_active))', $sql);
     }
 
     public function test_reference_reads_and_administrative_routes_use_separate_authorization_paths(): void
