@@ -165,6 +165,54 @@ class P01AuthorizationClosureTest extends TestCase
         self::assertStringNotContainsString("'permission_matrix_exact'", $verify);
     }
 
+    public function test_all_confirmed_legacy_units_are_reported_reconciled_and_verified(): void
+    {
+        $preflight = self::source('database/sql/p0-1/00_preflight.sql');
+        $apply = self::source('database/sql/p0-1/01_apply.sql');
+        $verify = self::source('database/sql/p0-1/02_verify.sql');
+        $seeder = self::source('database/seeders/AuthorizationP01Seeder.php');
+        foreach (['VP_ADMIN', 'VP_SCI', 'VP_COMM', 'HR_OFFICE', 'LIBRARY', 'REG_OFFICE', 'EXAM_OFFICE'] as $alias) {
+            self::assertStringContainsString("'$alias'", $preflight);
+            self::assertStringContainsString("'$alias'", $apply);
+            self::assertStringContainsString("'$alias'", $verify);
+            self::assertStringContainsString("'$alias'", $seeder);
+        }
+        foreach (['employees', 'employee_positions', 'employee_unit_assignments', 'boards', 'colleges', 'departments'] as $table) {
+            self::assertStringContainsString("UPDATE $table", $apply);
+        }
+        self::assertStringContainsString('child.parent_unit_id=official.organizational_unit_id', $apply);
+        self::assertStringContainsString("scope_type='university'", $apply);
+        self::assertStringContainsString("'legacy_units_reconciled'", $verify);
+    }
+
+    public function test_preflight_blocks_manual_scopes_and_unexpected_employee_links(): void
+    {
+        $preflight = self::source('database/sql/p0-1/00_preflight.sql');
+        self::assertStringContainsString('NEEDS_MANUAL_SCOPE', $preflight);
+        self::assertStringContainsString('@p01_scope_ok=1', $preflight);
+        self::assertStringContainsString('@p01_core_ok=1 AND @p01_scope_ok=1', $preflight);
+        self::assertStringContainsString('BLOCKER_UNEXPECTED_EMPLOYEE_LINK', $preflight);
+        self::assertStringContainsString("u.username NOT IN (''registrar'',''exam.board'')", $preflight);
+
+        $apply = self::source('database/sql/p0-1/01_apply.sql');
+        self::assertStringContainsString('linked to an unexpected employee', $apply);
+        self::assertStringContainsString('u.employee_id IS NULL OR u.employee_id=e.employee_id', $apply);
+        self::assertStringContainsString('DROP TEMPORARY TABLE IF EXISTS p01_legacy_unit_map', $apply);
+
+        $verify = self::source('database/sql/p0-1/02_verify.sql');
+        self::assertStringContainsString("'all_operational_users_have_valid_scope'", $verify);
+    }
+
+    public function test_manual_and_non_manual_sql_are_synchronized(): void
+    {
+        foreach (['00_preflight', '01_apply', '02_verify'] as $script) {
+            self::assertSame(
+                self::source("database/sql/p0-1/{$script}.sql"),
+                self::source("database/sql/p0-1/{$script}_manual.sql")
+            );
+        }
+    }
+
     public function test_reference_reads_and_administrative_routes_use_separate_authorization_paths(): void
     {
         $routes = self::source('routes/api.php');

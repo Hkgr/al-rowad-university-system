@@ -19,6 +19,14 @@ class AuthorizationP01Seeder extends Seeder
 {
     public function run(): void
     {
+        foreach (['registrar' => 'P01-REGISTRAR', 'exam.board' => 'P01-EXAM-OFFICER'] as $username => $employeeNumber) {
+            $user = User::query()->where('username', $username)->firstOrFail();
+            if ($user->employee_id !== null
+                && Employee::query()->whereKey($user->employee_id)->value('employee_number') !== $employeeNumber) {
+                throw new \RuntimeException("{$username} is linked to an unexpected employee; manual review is required.");
+            }
+        }
+
         $matrix = [
             'exam_officer' => ['students.view', 'academic_structure.view', 'courses.view', 'registration.view', 'exams.view', 'exams.manage', 'grades.view', 'grades.manage', 'system_settings.view'],
             'registration_officer' => ['students.view', 'students.manage', 'admissions.view', 'admissions.manage', 'academic_structure.view', 'courses.view', 'registration.view', 'registration.manage', 'system_settings.view'],
@@ -69,6 +77,42 @@ class AuthorizationP01Seeder extends Seeder
                 ]);
             }
 
+            $legacyUnits = [
+                'VP_ADMIN' => '7', 'VP_SCI' => '8', 'VP_COMM' => '9',
+                'HR_OFFICE' => '711', 'LIBRARY' => '13',
+                'REG_OFFICE' => '732', 'EXAM_OFFICE' => '735',
+            ];
+            foreach ($legacyUnits as $legacyCode => $officialCode) {
+                $legacyId = OrganizationalUnit::query()->where('unit_code', $legacyCode)->value('organizational_unit_id');
+                if ($legacyId === null) {
+                    continue;
+                }
+                $officialId = OrganizationalUnit::query()->where('unit_code', $officialCode)->value('organizational_unit_id');
+                foreach (['employees', 'employee_positions', 'employee_unit_assignments', 'boards', 'colleges', 'departments'] as $table) {
+                    DB::table($table)->where('organizational_unit_id', $legacyId)->update(['organizational_unit_id' => $officialId]);
+                }
+                OrganizationalUnit::query()->where('parent_unit_id', $legacyId)->update(['parent_unit_id' => $officialId]);
+
+                if (in_array($legacyCode, ['VP_ADMIN', 'VP_SCI', 'VP_COMM'], true) && DB::getSchemaBuilder()->hasTable('user_access_scopes')) {
+                    $rootId = OrganizationalUnit::query()->where('unit_code', 'PRES')->value('organizational_unit_id');
+                    $scopes = DB::table('user_access_scopes')->where('scope_type', 'university')->where('scope_id', $legacyId)->get();
+                    foreach ($scopes as $scope) {
+                        $duplicate = DB::table('user_access_scopes')->where('user_id', $scope->user_id)
+                            ->where('scope_type', 'university')->where('scope_id', $rootId)->exists();
+                        $query = DB::table('user_access_scopes')->where('user_access_scope_id', $scope->user_access_scope_id);
+                        $duplicate ? $query->delete() : $query->update(['scope_id' => $rootId, 'updated_at' => now()]);
+                    }
+                }
+
+                $remainingScopes = DB::getSchemaBuilder()->hasTable('user_access_scopes')
+                    ? DB::table('user_access_scopes')->where('scope_type', 'university')->where('scope_id', $legacyId)->count()
+                    : 0;
+                if ($remainingScopes !== 0) {
+                    throw new \RuntimeException("Legacy unit {$legacyCode} still owns ambiguous scopes; manual review is required.");
+                }
+                OrganizationalUnit::query()->where('organizational_unit_id', $legacyId)->update(['is_active' => false]);
+            }
+
             $employeeTypeId = EmployeeType::query()->where('type_code', 'administrative')->value('employee_type_id');
             $employeeStatusId = EmployeeStatus::query()->where('status_code', 'active')->value('employee_status_id');
             if ($employeeTypeId === null || $employeeStatusId === null) {
@@ -82,6 +126,12 @@ class AuthorizationP01Seeder extends Seeder
             $rootId = OrganizationalUnit::query()->where('unit_code', 'PRES')->value('organizational_unit_id');
             foreach ($identities as [$username, $roleCode, $employeeNumber, $lastName, $email, $unitCode]) {
                 $user = User::query()->where('username', $username)->firstOrFail();
+                if ($user->employee_id !== null) {
+                    $linkedNumber = Employee::query()->whereKey($user->employee_id)->value('employee_number');
+                    if ($linkedNumber !== $employeeNumber) {
+                        throw new \RuntimeException("{$username} is linked to an unexpected employee; manual review is required.");
+                    }
+                }
                 $unitId = OrganizationalUnit::query()->where('unit_code', $unitCode)->value('organizational_unit_id');
                 $employee = Employee::query()->updateOrCreate(['employee_number' => $employeeNumber], [
                     'first_name' => 'Test',
@@ -92,7 +142,9 @@ class AuthorizationP01Seeder extends Seeder
                     'employee_status_id' => $employeeStatusId,
                     'organizational_unit_id' => $unitId,
                 ]);
-                $user->update(['employee_id' => $employee->employee_id]);
+                if ($user->employee_id === null) {
+                    $user->update(['employee_id' => $employee->employee_id]);
+                }
                 $roleId = Role::query()->where('role_code', $roleCode)->value('role_id');
                 UserRole::query()->updateOrCreate(['user_id' => $user->user_id, 'role_id' => $roleId], [
                     'assigned_by_user_id' => null,

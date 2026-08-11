@@ -22,6 +22,8 @@ Run `php artisan identity:reconcile` for a dry-run identity report. It labels al
 
 The development-only `AuthorizationP01Seeder` and production SQL use the same 58-record official chart contract. Both add missing required grants without deleting custom grants. The chart includes `PRES`, direct children `1`–`9`, and all image-derived descendants through `925`; only those official codes are corrected, so unrelated organizational rows remain untouched.
 
+Confirmed legacy aliases are reconciled only through the fixed mapping `VP_ADMIN→7`, `VP_SCI→8`, `VP_COMM→9`, `HR_OFFICE→711`, `LIBRARY→13`, `REG_OFFICE→732`, and `EXAM_OFFICE→735`. Known foreign keys and children are moved before an alias is deactivated; unknown references and ambiguous scopes fail closed. Preflight also blocks unexpected existing employee links and every active operational account without a valid scope, except the two null-linked deterministic test identities whose `PRES` scopes apply creates.
+
 See [the complete official chart table](P0_1_OFFICIAL_ORGANIZATIONAL_CHART.md) for every exact code, Arabic name, schema-valid type, and parent.
 
 The exact corrected records include `22 = الجودة والاعتماد الأكاديمي` (`unit`, parent `2`), `23 = مشاريع إنتاجية` (`unit`, parent `2`), and `736 = مكتب التوثيق والتصديق` (`office`, parent `73`). Username `exam.board` is distinct from role `exam_officer`; no examination grant is added to `board_member`. Deterministic registrar/exam employees are linked to `732`/`735` and receive `PRES` university scopes. Unique user identity indexes prevent future duplicate student/employee links.
