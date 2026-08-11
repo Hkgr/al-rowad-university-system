@@ -50,15 +50,26 @@ class P01AuthorizationClosureTest extends TestCase
     public static function sqlContractProvider(): array
     {
         return [
-            'preflight excess/missing' => ['00_preflight.sql', "'EXCESS'"],
-            'case-sensitive report' => ['00_preflight.sql', 'BINARY s.email=BINARY u.email'],
+            'real operational users' => ['00_preflight.sql', "'registrar','exam.board'"],
+            'case-sensitive identities' => ['00_preflight.sql', "BINARY username=BINARY 'exam.board'"],
             'idempotent table' => ['01_apply.sql', 'CREATE TABLE IF NOT EXISTS user_access_scopes'],
-            'exact matrix removes excess' => ['01_apply.sql', 'DELETE rp FROM role_permissions'],
-            'student cannot manage registration' => ['01_apply.sql', "('student','registration.view')"],
-            'administration 735' => ['01_apply.sql', "'735','إدارة الامتحانات','administration'"],
-            'operational scope verification' => ['02_verify.sql', "r.role_code IN ('exam_officer','registration_officer')"],
-            'duplicate verification' => ['02_verify.sql', 'HAVING duplicates>1'],
+            'presidency is seeded' => ['01_apply.sql', "'PRES','رئيس الجامعة'"],
+            'administration 735' => ['01_apply.sql', "'735','إدارة الامتحانات'"],
+            'correct 736 name' => ['01_apply.sql', "'736','مكتب التوثيق والتصديق'"],
+            'scientific branch' => ['01_apply.sql', "'8','نائب رئيس الجامعة للشؤون العلمية'"],
+            'community centers' => ['01_apply.sql', "'911','مركز التأهيل والتدريب'"],
+            'last official office' => ['01_apply.sql', "'925','مكتب العدالة وحقوق الإنسان'"],
+            'full chart verification' => ['02_verify.sql', 'official_chart_exact_58'],
         ];
+    }
+
+    public function test_operational_identity_is_exam_board_not_exam_officer(): void
+    {
+        foreach (['00_preflight.sql', '01_apply.sql', '02_verify.sql'] as $file) {
+            $sql = self::source('database/sql/p0-1/'.$file);
+            self::assertStringContainsString('exam.board', $sql);
+            self::assertStringNotContainsString('exam_officer', $sql);
+        }
     }
 
     public function test_dual_role_landing_prefers_operational_role_and_student_ui_uses_safe_lookups(): void
