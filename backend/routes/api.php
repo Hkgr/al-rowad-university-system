@@ -327,12 +327,12 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     // Reference reads above are available to registration/grade workflows. Their
     // administrative mutations must not inherit those operational permissions.
     Route::apiResource('academic-levels', AcademicLevelController::class)->except(['index', 'show'])
-        ->middleware(\App\Http\Middleware\RequireSystemAdministrator::class);
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.manage');
     Route::apiResource('academic-programs', AcademicProgramController::class);
     Route::apiResource('academic-years', AcademicYearController::class)->except(['index', 'show'])
-        ->middleware(\App\Http\Middleware\RequireSystemAdministrator::class);
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.manage');
     Route::apiResource('semesters', SemesterController::class)->except(['index', 'show'])
-        ->middleware(\App\Http\Middleware\RequireSystemAdministrator::class);
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.manage');
     Route::apiResource('colleges', CollegeController::class);
     Route::apiResource('departments', DepartmentController::class);
     Route::apiResource('courses', CourseController::class);

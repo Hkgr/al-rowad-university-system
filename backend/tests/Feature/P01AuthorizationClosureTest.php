@@ -2,8 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Models\AcademicLevel;
+use App\Models\AcademicYear;
+use App\Models\Semester;
+use App\Models\User;
+use App\Services\ResourceAuthorizationService;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 /**
  * Deployment/authorization contract tests that do not require the missing P0-2 schema.
@@ -50,7 +56,7 @@ class P01AuthorizationClosureTest extends TestCase
     public static function sqlContractProvider(): array
     {
         return [
-            'preflight excess/missing' => ['00_preflight.sql', "'EXCESS'"],
+            'preflight final gate' => ['00_preflight.sql', ') can_apply;'],
             'case-sensitive report' => ['00_preflight.sql', 'BINARY s.email=BINARY u.email'],
             'idempotent table' => ['01_apply.sql', 'CREATE TABLE IF NOT EXISTS user_access_scopes'],
             'idempotent chart root' => ['01_apply.sql', "SELECT 'PRES','رئيس الجامعة'"],
@@ -61,9 +67,12 @@ class P01AuthorizationClosureTest extends TestCase
             'student cannot manage registration' => ['01_apply.sql', "('student','registration.view')"],
             'administration 735' => ['01_apply.sql', "'735','إدارة الامتحانات','administration'"],
             'certification office 736' => ['01_apply.sql', "'736','مكتب التوثيق والتصديق','office'"],
-            'exact full chart verification' => ['02_verify.sql', "'official_chart_exact'"],
-            'operational scope verification' => ['02_verify.sql', "r.role_code IN ('exam_officer','registration_officer')"],
-            'duplicate verification' => ['02_verify.sql', 'HAVING duplicates>1'],
+            'exact full chart verification' => ['02_verify.sql', "'official_chart_58'"],
+            'operational scope verification' => ['02_verify.sql', "'staff_university_scopes'"],
+            'required access scope verification' => ['02_verify.sql', "'required_user_access_scopes'"],
+            'duplicate verification' => ['02_verify.sql', "'duplicate_identity_links'"],
+            'identity indexes' => ['02_verify.sql', "'identity_unique_indexes'"],
+            'comprehensive overall' => ['02_verify.sql', "FROM p01_verification WHERE status='FAIL'"],
         ];
     }
 
@@ -84,21 +93,59 @@ class P01AuthorizationClosureTest extends TestCase
 
     public function test_development_seeder_uses_the_same_complete_official_chart(): void
     {
+        $chart = require dirname(__DIR__, 2).'/database/seeders/data/p01_official_chart.php';
         $seeder = self::source('database/seeders/AuthorizationP01Seeder.php');
-        foreach ([
-            "['PRES', 'رئيس الجامعة', 'presidency', null]",
-            "['7', 'نائب رئيس الجامعة للشؤون الإدارية', 'vice_presidency', 'PRES']",
-            "['71', 'مديرية الشؤون الإدارية', 'directorate', '7']",
-            "['72', 'مديرية الشؤون المالية', 'directorate', '7']",
-            "['73', 'مديرية شؤون الطلاب', 'directorate', '7']",
-            "['731', 'مكتب الإرشاد والتوجيه', 'office', '73']",
-            "['732', 'مكتب القبول والتسجيل', 'office', '73']",
-            "['733', 'مكتب الخدمات الطلابية', 'office', '73']",
-            "['734', 'مكتب المنح والإيفاد والتبادل الطلابي', 'office', '73']",
-            "['735', 'إدارة الامتحانات', 'administration', '73']",
-            "['736', 'مكتب التوثيق والتصديق', 'office', '73']",
-        ] as $unit) {
-            self::assertStringContainsString($unit, $seeder);
+        self::assertCount(58, $chart);
+        self::assertSame(['PRES', 'رئيس الجامعة', 'presidency', null], $chart[0]);
+        self::assertContains(['1', 'إدارة البحوث والدراسات', 'administration', 'PRES'], $chart);
+        self::assertContains(['8', 'نائب رئيس الجامعة للشؤون العلمية', 'vice_presidency', 'PRES'], $chart);
+        self::assertContains(['9', 'نائب رئيس الجامعة للشؤون المجتمعية', 'vice_presidency', 'PRES'], $chart);
+        self::assertContains(['11', 'مركز البحوث والدراسات', 'center', '1'], $chart);
+        self::assertContains(['22', 'الجودة والاعتماد الأكاديمي', 'unit', '2'], $chart);
+        self::assertContains(['23', 'مشاريع إنتاجية', 'unit', '2'], $chart);
+        self::assertContains(['736', 'مكتب التوثيق والتصديق', 'office', '73'], $chart);
+        self::assertContains(['911', 'مركز التأهيل والتدريب', 'center', '91'], $chart);
+        self::assertContains(['925', 'مكتب العدالة وحقوق الإنسان', 'office', '92'], $chart);
+        self::assertStringContainsString("require __DIR__.'/data/p01_official_chart.php'", $seeder);
+        self::assertStringContainsString('count($chart) !== 58', $seeder);
+        self::assertStringNotContainsString("whereNotIn('permission_id'", $seeder);
+        self::assertStringContainsString("['exam.board', 'exam_officer'", $seeder);
+    }
+
+    public function test_apply_and_verify_embed_the_same_58_unit_contract(): void
+    {
+        $chart = require dirname(__DIR__, 2).'/database/seeders/data/p01_official_chart.php';
+        $apply = self::source('database/sql/p0-1/01_apply.sql');
+        $verify = self::source('database/sql/p0-1/02_verify.sql');
+        foreach ($chart as [$code, $name, $type, $parent]) {
+            $tuple = "'$code','$name','$type',".($parent === null ? 'NULL' : "'$parent'");
+            self::assertStringContainsString($tuple, $verify, "Verify is missing official unit $code");
+            foreach (["'$code'", "'$name'", "'$type'"] as $value) {
+                self::assertStringContainsString($value, $apply, "Apply is missing contract value for $code");
+            }
+        }
+    }
+
+    public function test_checked_in_schema_fixture_matches_the_official_chart(): void
+    {
+        $chart = require dirname(__DIR__, 2).'/database/seeders/data/p01_official_chart.php';
+        $schema = self::source('database/schema/al_rowad_university_db.sql');
+        $start = strpos($schema, 'INSERT INTO `organizational_units`');
+        $organizationalInsert = substr($schema, $start, strpos($schema, ';', $start) - $start);
+        preg_match_all("/\\((\\d+), '([^']+)', '([^']+)', (\\d+), (NULL|\\d+), NULL, 1, '2026-05-24 12:41:57'/u", $organizationalInsert, $matches, PREG_SET_ORDER);
+        $units = [];
+        $codesById = [];
+        foreach ($matches as $match) {
+            $units[$match[2]] = ['id' => (int) $match[1], 'name' => $match[3], 'type_id' => (int) $match[4], 'parent_id' => $match[5] === 'NULL' ? null : (int) $match[5]];
+            $codesById[(int) $match[1]] = $match[2];
+        }
+        $typeIds = ['presidency' => 3, 'vice_presidency' => 4, 'administration' => 5, 'directorate' => 6, 'office' => 7, 'center' => 8, 'club' => 9, 'college' => 10, 'institute' => 12, 'lab' => 13, 'unit' => 15];
+        foreach ($chart as [$code, $name, $type, $parent]) {
+            self::assertArrayHasKey($code, $units);
+            self::assertSame($name, $units[$code]['name'], "Schema name mismatch for $code");
+            self::assertSame($typeIds[$type], $units[$code]['type_id'], "Schema type mismatch for $code");
+            $actualParent = $units[$code]['parent_id'] === null ? null : ($codesById[$units[$code]['parent_id']] ?? null);
+            self::assertSame($parent, $actualParent, "Schema parent mismatch for $code");
         }
     }
 
@@ -109,10 +156,12 @@ class P01AuthorizationClosureTest extends TestCase
         self::assertStringNotContainsString('operational user requires a manually reviewed valid scope', $apply);
 
         $preflight = self::source('database/sql/p0-1/00_preflight.sql');
-        self::assertStringContainsString("'SELECT 1 can_apply, ''scope table will be created by apply", $preflight);
+        self::assertStringContainsString('@p01_scope_ok', $preflight);
+        self::assertStringContainsString('identity_index_name_conflict', $preflight);
+        self::assertStringContainsString('can_apply;', $preflight);
 
         $verify = self::source('database/sql/p0-1/02_verify.sql');
-        self::assertStringContainsString("'required_permission_grants'", $verify);
+        self::assertStringContainsString("'required_role_permissions'", $verify);
         self::assertStringNotContainsString("'permission_matrix_exact'", $verify);
     }
 
@@ -121,7 +170,70 @@ class P01AuthorizationClosureTest extends TestCase
         $routes = self::source('routes/api.php');
         self::assertStringContainsString("':academic_structure.view,registration.view,grades.view'", $routes);
         self::assertStringContainsString("Route::apiResource('academic-levels', AcademicLevelController::class)->only(['index', 'show'])", $routes);
-        self::assertGreaterThanOrEqual(7, substr_count($routes, 'RequireSystemAdministrator::class'));
+        self::assertGreaterThanOrEqual(3, substr_count($routes, "':academic_structure.manage'"));
+
+        $authorization = self::source('app/Services/ResourceAuthorizationService.php');
+        foreach (['academic_levels', 'academic_years', 'semesters', 'registration.view', 'grades.view', 'academic_structure.manage'] as $value) {
+            self::assertStringContainsString("'$value'", $authorization);
+        }
+        $scope = self::source('app/Services/DataScopeService.php');
+        self::assertStringContainsString("['academic_levels', 'academic_years', 'semesters']", $scope);
+    }
+
+    #[DataProvider('academicReferenceReaderProvider')]
+    public function test_global_academic_references_accept_each_intended_read_permission(string $permission): void
+    {
+        $user = $this->permissionUser([$permission]);
+        $authorization = new ResourceAuthorizationService();
+        foreach ([AcademicLevel::class, AcademicYear::class, Semester::class] as $model) {
+            $authorization->authorize($user, $model, false);
+        }
+
+        self::addToAssertionCount(3);
+    }
+
+    public static function academicReferenceReaderProvider(): array
+    {
+        return [
+            'registrar/structure reader' => ['academic_structure.view'],
+            'registration/student reader' => ['registration.view'],
+            'examination/grade reader' => ['grades.view'],
+        ];
+    }
+
+    public function test_reference_read_does_not_grant_management_and_manage_permission_does(): void
+    {
+        $authorization = new ResourceAuthorizationService();
+        try {
+            $authorization->authorize($this->permissionUser(['registration.view']), AcademicYear::class, true);
+            self::fail('Reference read permission unexpectedly authorized management.');
+        } catch (AccessDeniedHttpException) {
+            self::addToAssertionCount(1);
+        }
+
+        $authorization->authorize($this->permissionUser(['academic_structure.manage']), AcademicYear::class, true);
+        self::addToAssertionCount(1);
+    }
+
+    public function test_unauthorized_identity_cannot_read_global_academic_references(): void
+    {
+        $this->expectException(AccessDeniedHttpException::class);
+        (new ResourceAuthorizationService())->authorize($this->permissionUser([]), Semester::class, false);
+    }
+
+    public function test_exam_username_and_role_namespaces_are_not_confused(): void
+    {
+        $apply = self::source('database/sql/p0-1/01_apply.sql');
+        self::assertStringContainsString("u.username='exam.board'", $apply);
+        self::assertStringContainsString("WHEN 'exam.board' THEN 'exam_officer'", $apply);
+        self::assertStringNotContainsString("('board_member','exams.manage')", $apply);
+    }
+
+    public function test_identity_linking_remains_super_admin_only(): void
+    {
+        $request = self::source('app/Http/Requests/User/LinkUserIdentityRequest.php');
+        self::assertStringContainsString("effectiveRoles()->contains('super_admin')", $request);
+        self::assertStringNotContainsString("hasPermission('users_permissions.manage')", $request);
     }
 
     public function test_dual_role_landing_prefers_operational_role_and_student_ui_uses_safe_lookups(): void
@@ -142,5 +254,18 @@ class P01AuthorizationClosureTest extends TestCase
         foreach (['student_id', 'employee_id', 'roles', 'permissions', 'organizational_unit', 'access_scopes'] as $field) {
             self::assertStringContainsString("'$field'", $identity);
         }
+    }
+
+    private function permissionUser(array $permissions): User
+    {
+        $user = $this->getMockBuilder(User::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(['hasPermission'])
+            ->getMock();
+        $user->method('hasPermission')->willReturnCallback(
+            fn (string $permission): bool => in_array($permission, $permissions, true)
+        );
+
+        return $user;
     }
 }

@@ -2,12 +2,18 @@
 
 namespace Database\Seeders;
 
+use App\Models\Employee;
+use App\Models\EmployeeStatus;
+use App\Models\EmployeeType;
 use App\Models\OrganizationalUnit;
 use App\Models\OrganizationalUnitType;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\RolePermission;
+use App\Models\User;
+use App\Models\UserRole;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
 class AuthorizationP01Seeder extends Seeder
 {
@@ -23,8 +29,9 @@ class AuthorizationP01Seeder extends Seeder
         foreach ($matrix as $roleCode => $permissionCodes) {
             $role = Role::query()->where('role_code', $roleCode)->firstOrFail();
             $permissions = Permission::query()->whereIn('permission_code', $permissionCodes)->get();
-            RolePermission::query()->where('role_id', $role->role_id)
-                ->whereNotIn('permission_id', $permissions->pluck('permission_id'))->delete();
+            if ($permissions->count() !== count($permissionCodes)) {
+                throw new \RuntimeException("Missing one or more P0-1 permissions for role {$roleCode}.");
+            }
             foreach ($permissions as $permission) {
                 RolePermission::query()->firstOrCreate([
                     'role_id' => $role->role_id,
@@ -33,49 +40,70 @@ class AuthorizationP01Seeder extends Seeder
             }
         }
 
-        $typeIds = OrganizationalUnitType::query()
-            ->whereIn('type_code', ['presidency', 'vice_presidency', 'directorate', 'office', 'administration'])
-            ->pluck('unit_type_id', 'type_code');
+        $chart = require __DIR__.'/data/p01_official_chart.php';
+        if (count($chart) !== 58) {
+            throw new \RuntimeException('The official P0-1 chart must contain exactly 58 units.');
+        }
 
-        foreach (['presidency', 'vice_presidency', 'directorate', 'office'] as $requiredType) {
-            if (! $typeIds->has($requiredType)) {
-                throw new \RuntimeException("Missing organizational unit type: {$requiredType}");
+        DB::transaction(function () use ($chart): void {
+            $requiredTypes = collect($chart)->pluck(2)->unique()->values();
+            $typeIds = OrganizationalUnitType::query()
+                ->whereIn('type_code', $requiredTypes)
+                ->where('is_active', true)
+                ->pluck('unit_type_id', 'type_code');
+            if ($typeIds->count() !== $requiredTypes->count()) {
+                throw new \RuntimeException('One or more official organizational unit types are missing or inactive.');
             }
-        }
-        if (! $typeIds->has('administration')) {
-            $typeIds['administration'] = OrganizationalUnitType::query()->create([
-                'type_code' => 'administration',
-                'type_name' => 'إدارة',
-                'description' => 'Administrative unit',
-                'is_active' => true,
-            ])->unit_type_id;
-        }
 
-        // Source of truth: the complete approved P0-1 chart. Parents are processed
-        // before children so this remains idempotent even when the table is empty.
-        $units = [
-            ['PRES', 'رئيس الجامعة', 'presidency', null],
-            ['7', 'نائب رئيس الجامعة للشؤون الإدارية', 'vice_presidency', 'PRES'],
-            ['71', 'مديرية الشؤون الإدارية', 'directorate', '7'],
-            ['72', 'مديرية الشؤون المالية', 'directorate', '7'],
-            ['73', 'مديرية شؤون الطلاب', 'directorate', '7'],
-            ['731', 'مكتب الإرشاد والتوجيه', 'office', '73'],
-            ['732', 'مكتب القبول والتسجيل', 'office', '73'],
-            ['733', 'مكتب الخدمات الطلابية', 'office', '73'],
-            ['734', 'مكتب المنح والإيفاد والتبادل الطلابي', 'office', '73'],
-            ['735', 'إدارة الامتحانات', 'administration', '73'],
-            ['736', 'مكتب التوثيق والتصديق', 'office', '73'],
-        ];
+            foreach ($chart as [$code, $name, $typeCode, $parentCode]) {
+                $parentId = $parentCode === null ? null : OrganizationalUnit::query()
+                    ->where('unit_code', $parentCode)->value('organizational_unit_id');
+                if ($parentCode !== null && $parentId === null) {
+                    throw new \RuntimeException("Missing official parent {$parentCode} for unit {$code}.");
+                }
+                OrganizationalUnit::query()->updateOrCreate(['unit_code' => $code], [
+                    'unit_name' => $name,
+                    'unit_type_id' => $typeIds[$typeCode],
+                    'parent_unit_id' => $parentId,
+                    'is_active' => true,
+                ]);
+            }
 
-        foreach ($units as [$code, $name, $typeCode, $parentCode]) {
-            $parentId = $parentCode === null ? null : OrganizationalUnit::query()
-                ->where('unit_code', $parentCode)->value('organizational_unit_id');
-            OrganizationalUnit::query()->updateOrCreate(['unit_code' => $code], [
-                'unit_name' => $name,
-                'unit_type_id' => $typeIds[$typeCode],
-                'parent_unit_id' => $parentId,
-                'is_active' => true,
-            ]);
-        }
+            $employeeTypeId = EmployeeType::query()->where('type_code', 'administrative')->value('employee_type_id');
+            $employeeStatusId = EmployeeStatus::query()->where('status_code', 'active')->value('employee_status_id');
+            if ($employeeTypeId === null || $employeeStatusId === null) {
+                throw new \RuntimeException('Active administrative employee prerequisites are missing.');
+            }
+
+            $identities = [
+                ['registrar', 'registration_officer', 'P01-REGISTRAR', 'Registrar', 'registrar@rowad.edu', '732'],
+                ['exam.board', 'exam_officer', 'P01-EXAM-OFFICER', 'Exam Officer', 'exam.officer@rowad.edu', '735'],
+            ];
+            $rootId = OrganizationalUnit::query()->where('unit_code', 'PRES')->value('organizational_unit_id');
+            foreach ($identities as [$username, $roleCode, $employeeNumber, $lastName, $email, $unitCode]) {
+                $user = User::query()->where('username', $username)->firstOrFail();
+                $unitId = OrganizationalUnit::query()->where('unit_code', $unitCode)->value('organizational_unit_id');
+                $employee = Employee::query()->updateOrCreate(['employee_number' => $employeeNumber], [
+                    'first_name' => 'Test',
+                    'last_name' => $lastName,
+                    'email' => $email,
+                    'hire_date' => now()->toDateString(),
+                    'employee_type_id' => $employeeTypeId,
+                    'employee_status_id' => $employeeStatusId,
+                    'organizational_unit_id' => $unitId,
+                ]);
+                $user->update(['employee_id' => $employee->employee_id]);
+                $roleId = Role::query()->where('role_code', $roleCode)->value('role_id');
+                UserRole::query()->updateOrCreate(['user_id' => $user->user_id, 'role_id' => $roleId], [
+                    'assigned_by_user_id' => null,
+                    'assigned_at' => now(),
+                    'is_active' => true,
+                ]);
+                $user->accessScopes()->updateOrCreate([
+                    'scope_type' => 'university',
+                    'scope_id' => $rootId,
+                ], ['is_active' => true]);
+            }
+        });
     }
 }

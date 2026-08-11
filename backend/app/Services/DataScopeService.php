@@ -82,6 +82,9 @@ class DataScopeService
 
         $model = $query->getModel();
         $table = $model->getTable();
+        // These are global lookup tables. Authorization is permission-based in
+        // ResourceAuthorizationService/routes and must not be emptied by org scope.
+        if (in_array($table, ['academic_levels', 'academic_years', 'semesters'], true)) return $query;
         if ($table === 'colleges') return $this->scopeColleges($query, $user);
         if ($table === 'departments') return $this->scopeDepartments($query, $user);
         if ($table === 'academic_programs') return $this->scopePrograms($query, $user);
