@@ -73,6 +73,8 @@ export default function ProfessorGradesPage() {
     if (saving || submitting) return
     selectedIdRef.current = offeringId
     requestSequence.current += 1
+    setSheet(null); setWorkflow(null); setEdits({}); setLoadError(''); setNotice(null); setIncompleteIds([])
+    setLoading(Boolean(offeringId))
     setSelectedId(offeringId)
   }
 
@@ -82,16 +84,24 @@ export default function ProfessorGradesPage() {
   }
 
   async function refreshAfterSave(offeringId, successfulIds) {
+    const sequence = ++requestSequence.current
     try {
       const [nextSheet, nextWorkflow] = await Promise.all([getGradeSheet(offeringId), getGradeWorkflow(offeringId)])
-      if (Number(selectedIdRef.current) !== Number(offeringId)) return
+      if (sequence !== requestSequence.current || Number(selectedIdRef.current) !== Number(offeringId)) return
       const fresh = initialEdits(rowsFromSheet(nextSheet))
       setSheet(nextSheet); setWorkflow(nextWorkflow)
-      setEdits(current => Object.fromEntries(Object.keys(fresh).map(id => [
-        id,
-        successfulIds.includes(id) ? fresh[id] : (current[id]?.dirty ? current[id] : fresh[id]),
-      ])))
-    } catch (error) { setLoadError(apiMessage(error)); setWorkflow(null) }
+      setEdits(current => {
+        const retainedDirtyIds = Object.keys(current).filter(id => current[id]?.dirty && !successfulIds.includes(id))
+        const ids = new Set([...Object.keys(fresh), ...retainedDirtyIds])
+        return Object.fromEntries([...ids].map(id => [
+          id,
+          successfulIds.includes(id) ? (fresh[id] ?? current[id]) : (current[id]?.dirty ? current[id] : fresh[id]),
+        ]))
+      })
+    } catch (error) {
+      if (sequence !== requestSequence.current || Number(selectedIdRef.current) !== Number(offeringId)) return
+      setLoadError(apiMessage(error)); setWorkflow(null)
+    }
   }
 
   async function handleSave() {
@@ -119,6 +129,7 @@ export default function ProfessorGradesPage() {
     const locked = failed.find(result => result.error?.errorCode === 'grades_locked')
     await refreshAfterSave(offeringId, successfulIds)
     setSaving(false)
+    if (Number(selectedIdRef.current) !== Number(offeringId)) return
     const unsavedCount = invalidRows.length + failed.length
     setNotice({ type: unsavedCount ? 'error' : 'success', text: `تم حفظ ${successfulIds.length} سجل، وبقي ${unsavedCount} سجل غير محفوظ.${failed[0] ? ` ${apiMessage(failed[0].error)}` : ''}` })
     if (locked) setLoadError(ERROR_MESSAGES.grades_locked)
@@ -130,8 +141,10 @@ export default function ProfessorGradesPage() {
     try {
       await submitOfferingGrades(offeringId)
       setConfirmOpen(false); await loadGrades(offeringId)
+      if (Number(selectedIdRef.current) !== Number(offeringId)) return
       setNotice({ type: 'success', text: 'تم إرسال العلامات إلى هيئة الامتحانات.' })
     } catch (error) {
+      if (Number(selectedIdRef.current) !== Number(offeringId)) return
       if (error.errorCode === 'grade_sheet_incomplete') setIncompleteIds(error.details?.registration_ids ?? [])
       if (error.errorCode === 'grades_locked') await loadGrades(offeringId)
       setConfirmOpen(false); setNotice({ type: 'error', text: apiMessage(error) })
