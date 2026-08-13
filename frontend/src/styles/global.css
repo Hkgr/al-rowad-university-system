@@ -135,24 +135,13 @@ body {
   backdrop-filter: blur(14px);
 }
 
-.dashboard-header::after {
-  content: '';
-  position: absolute;
-  inset-inline-start: 28px;
-  bottom: -1px;
-  width: 68px;
-  height: 2px;
-  border-radius: 2px;
-  background: #569933;
-}
-
 .page-context,
 .header-actions,
 .header-controls,
 .user-trigger,
 .footer-brand,
 .footer-statuses,
-.status-item {
+.network-status {
   display: flex;
   align-items: center;
 }
@@ -171,7 +160,21 @@ body {
 }
 
 .page-context-copy {
+  position: relative;
   min-width: 0;
+  padding-inline-start: 12px;
+}
+
+.page-context-copy::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 50%;
+  width: 3px;
+  height: 30px;
+  border-radius: 3px;
+  background: #569933;
+  transform: translateY(-50%);
 }
 
 .page-context-copy p {
@@ -184,11 +187,14 @@ body {
   font-weight: 600;
 }
 
-.page-context-copy p span {
-  color: rgba(65, 115, 39, 0.42);
+.page-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  min-width: 0;
 }
 
-.page-context-copy h1 {
+.page-title-row h1 {
   margin: 0;
   overflow: hidden;
   color: #1a2e10;
@@ -199,9 +205,8 @@ body {
   white-space: nowrap;
 }
 
-.page-context-copy > small {
-  display: block;
-  margin-top: 1px;
+.page-title-row small {
+  flex-shrink: 0;
   color: #718067;
   font-size: 11.5px;
   line-height: 1.2;
@@ -221,15 +226,18 @@ body {
 }
 
 .header-date {
-  min-width: 116px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding-inline-end: 14px;
   border-inline-end: 1px solid #dce3d8;
   text-align: right;
+  white-space: nowrap;
 }
 
 .header-date strong,
-.header-date span {
-  display: block;
+.header-date span,
+.header-date time {
   font-size: 12px;
 }
 
@@ -238,8 +246,8 @@ body {
   font-weight: 700;
 }
 
-.header-date span {
-  margin-top: 2px;
+.header-date span,
+.header-date time {
   color: #718067;
 }
 
@@ -495,8 +503,8 @@ body {
 
 /* ─── System information footer ─────────────────────────────────────────── */
 .dashboard-footer {
-  min-height: 66px;
-  padding: 11px 28px;
+  min-height: 56px;
+  padding: 9px 28px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -507,18 +515,12 @@ body {
 
 .footer-brand {
   flex-shrink: 0;
-  gap: 9px;
-}
-
-.footer-brand img {
-  width: 29px;
-  height: 29px;
-  object-fit: contain;
+  gap: 7px;
 }
 
 .footer-brand strong,
 .footer-brand span {
-  display: block;
+  font-size: 12px;
 }
 
 .footer-brand strong {
@@ -527,75 +529,41 @@ body {
 }
 
 .footer-brand span {
-  margin-top: 2px;
   color: #66755c;
-  font-size: 11.5px;
 }
 
 .footer-statuses {
   justify-content: flex-end;
   gap: 0;
   color: #66755c;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
-.status-item {
+.network-status {
   gap: 8px;
   padding: 0 14px;
-  border-inline-start: 1px solid #dce3d8;
   white-space: nowrap;
 }
 
-.status-item:first-child {
-  border-inline-start: 0;
-}
-
-.status-item > svg {
+.network-status > svg {
   color: #74816c;
   font-size: 13px;
 }
 
-.status-item > span small,
-.status-item > span strong {
-  display: block;
-  font-size: 11.5px;
-}
-
-.status-item > span small {
-  color: #718067;
-}
-
-.status-item > span strong {
-  margin-top: 1px;
-  color: #526248;
-}
-
-.status-online > svg,
-.status-online > span strong::before {
+.status-online {
   color: #137a4b;
 }
 
-.status-offline > svg,
-.status-offline > span strong::before {
+.status-online > svg {
+  color: currentColor;
+}
+
+.status-offline {
   color: #b42318;
 }
 
-.status-unavailable > span strong::before,
-.status-online > span strong::before,
-.status-offline > span strong::before {
-  content: '●';
-  margin-inline-end: 5px;
-  color: #7b8874;
-  font-size: 7px;
-  vertical-align: 1px;
-}
-
-.status-online > span strong::before {
-  color: #137a4b;
-}
-
-.status-offline > span strong::before {
-  color: #b42318;
+.status-offline > svg {
+  color: currentColor;
 }
 
 .footer-version {
@@ -624,7 +592,6 @@ body {
     gap: 10px;
   }
 
-  .dashboard-header::after { inset-inline-start: 16px; }
   .mobile-menu,
   .page-context > img { display: flex; }
   .dashboard-footer { padding: 12px 16px; }
@@ -636,17 +603,16 @@ body {
 
   .user-trigger { padding: 1px; }
   .dashboard-footer { gap: 12px; }
-  .footer-brand img { display: none; }
-  .status-item { padding: 0 10px; }
+  .network-status { padding: 0 10px; }
 }
 
 @media (max-width: 560px) {
   .dashboard-header { padding-inline: 12px; }
   .page-context { gap: 7px; }
   .page-context > img { display: none; }
-  .page-context-copy p,
-  .page-context-copy > small { display: none; }
-  .page-context-copy h1 { font-size: 16px; }
+  .page-context-copy p { display: none; }
+  .page-title-row h1 { font-size: 16px; }
+  .page-title-row small { font-size: 10px; }
   .header-actions { gap: 5px; }
   .header-controls { border-color: transparent; background: transparent; }
   .header-tool { width: 38px; height: 38px; }
@@ -660,16 +626,19 @@ body {
   }
 
   .dashboard-footer {
-    min-height: 0;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 9px;
+    min-height: 56px;
+    padding-block: 8px;
+    gap: 10px;
   }
 
-  .footer-brand { justify-content: center; text-align: center; }
-  .footer-statuses { justify-content: center; }
-  .status-item { flex: 1; justify-content: center; }
+  .footer-brand { text-align: center; }
+  .footer-statuses { justify-content: flex-end; }
   .footer-version { display: none; }
+}
+
+@media (max-width: 420px) {
+  .dashboard-footer { flex-wrap: wrap; justify-content: center; }
+  .footer-statuses { justify-content: center; }
 }
 
 @media (prefers-reduced-motion: reduce) {
