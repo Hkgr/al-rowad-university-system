@@ -151,14 +151,16 @@ export default function DashboardHeader({ appTitle, pageTitle, activeItem, user,
         <button className="header-tool mobile-menu" onClick={toggleMenu} aria-label="فتح القائمة"><FaBars /></button>
         <img src="/logo.png" alt="جامعة الرواد" />
         <div className="page-context-copy">
-          <p>نظام جامعة الروّاد <span aria-hidden="true">/</span> {appTitle}</p>
-          <h1>{pageTitle}</h1>
-          {activeItem?.en && <small lang="en" dir="ltr">{activeItem.en}</small>}
+          <p>{appTitle}</p>
+          <div className="page-title-row">
+            <h1>{pageTitle}</h1>
+            {activeItem?.en && <small lang="en" dir="ltr">{activeItem.en}</small>}
+          </div>
         </div>
       </div>
 
       <div className="header-actions" dir="ltr">
-        <div className="header-date" dir="rtl"><strong>{date}</strong><span>{time}</span></div>
+        <div className="header-date" dir="rtl"><strong>{date}</strong><span aria-hidden="true">·</span><time>{time}</time></div>
         <div className="header-controls"><Notifications /><UserMenu user={user} logout={logout} /></div>
       </div>
     </header>
