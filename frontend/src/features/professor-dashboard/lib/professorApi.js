@@ -5,12 +5,12 @@ function authHeaders() {
 }
 
 class ProfessorApiError extends Error {
-  constructor(message, { status, errorCode, data } = {}) {
+  constructor(message, { status, errorCode, details } = {}) {
     super(message)
     this.name = 'ProfessorApiError'
     this.status = status
     this.errorCode = errorCode
-    this.data = data
+    this.details = details
   }
 }
 
@@ -24,7 +24,7 @@ async function apiRequest(path, options = {}) {
     throw new ProfessorApiError(json.message || `فشل الطلب (${res.status})`, {
       status: res.status,
       errorCode: json.error_code,
-      data: json.data,
+      details: json.errors ?? json.data ?? {},
     })
   }
   return json.data

@@ -646,6 +646,7 @@ class GradeService
             'student_id' => $registration->student_id,
             'student_number' => $registration->student?->student_number,
             'full_name' => $registration->student ? trim($registration->student->first_name.' '.$registration->student->last_name) : null,
+            'has_existing_grade' => $registration->studentCourseResult !== null,
             'theoretical_mark' => $grades['theoretical_mark'],
             'practical_mark' => $grades['practical_mark'],
             'final_mark' => $grades['final_mark'],
