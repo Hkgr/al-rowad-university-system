@@ -18,7 +18,11 @@ export async function apiRequest(path, options = {}) {
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
-    throw new Error(data?.message || 'تعذّر الاتصال بالخادم');
+    const error = new Error(data?.message || 'تعذّر الاتصال بالخادم');
+    error.status = response.status;
+    error.errorCode = data?.error_code;
+    error.details = data?.errors ?? data?.data ?? {};
+    throw error;
   }
 
   return data;
