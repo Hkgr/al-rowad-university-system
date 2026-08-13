@@ -417,6 +417,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::apiResource('employee-statuses', EmployeeStatusController::class);
     Route::apiResource('employee-types', EmployeeTypeController::class);
     Route::apiResource('employee-unit-assignments', EmployeeUnitAssignmentController::class);
+    Route::get('faculty-members/me', [FacultyMemberController::class, 'me']);
     Route::apiResource('faculty-members', FacultyMemberController::class);
     Route::apiResource('organizational-units', OrganizationalUnitController::class);
     Route::apiResource('organizational-unit-types', OrganizationalUnitTypeController::class);
