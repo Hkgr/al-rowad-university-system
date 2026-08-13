@@ -42,6 +42,7 @@ use App\Http\Controllers\Api\GradeApprovalController;
 use App\Http\Controllers\Api\GradeAuditLogController;
 use App\Http\Controllers\Api\GradeComponentController;
 use App\Http\Controllers\Api\GradeController;
+use App\Http\Controllers\Api\GradeWorkflowController;
 use App\Http\Controllers\Api\GradingPolicyController;
 use App\Http\Controllers\Api\LibraryAuthorController;
 use App\Http\Controllers\Api\LibraryBookController;
@@ -260,6 +261,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('course-offerings/{id}/capacity', [CourseOfferingController::class, 'capacity']);
     Route::get('course-offerings/by-semester', [CourseOfferingController::class, 'bySemester']);
     Route::get('course-offerings/{id}/grade-sheet', [CourseOfferingController::class, 'gradeSheet']);
+    Route::get('course-offerings/{courseOffering}/grade-workflow', [GradeWorkflowController::class, 'show']);
+    Route::post('course-offerings/{courseOffering}/submit-grades', [GradeWorkflowController::class, 'submit']);
     Route::get('course-offerings/{id}/results-summary', [CourseOfferingController::class, 'resultsSummary']);
     Route::get('course-offerings/{id}/attendance-sessions', [CourseOfferingController::class, 'attendanceSessions']);
     Route::post('course-offerings/{id}/attendance-sessions', [CourseOfferingController::class, 'storeAttendanceSession']);

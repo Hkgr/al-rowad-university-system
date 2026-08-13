@@ -9,6 +9,7 @@ use App\Models\CourseOffering;
 use App\Models\Department;
 use App\Models\GradeAuditLog;
 use App\Models\GradeComponent;
+use App\Models\GradeApproval;
 use App\Models\GradingPolicy;
 use App\Models\ResultStatus;
 use App\Models\Semester;
@@ -249,8 +250,9 @@ class GradeService
     public function createRegistrationGrades(int $registrationId, array $data, ?int $userId = null): array
     {
         return DB::transaction(function () use ($registrationId, $data, $userId): array {
-            $registration = $this->loadRegistration($registrationId, lock: true);
+            $registration = $this->lockRegistrationWorkflow($registrationId);
             $this->assertRegistrationAllowsGrading($registration);
+            $this->assertOfferingGradesEditable((int) $registration->course_offering_id);
 
             if ($registration->studentCourseResult !== null) {
                 throw new GradeException('Grades already exist for this registration. Use update endpoint instead.');
@@ -265,8 +267,9 @@ class GradeService
     public function updateRegistrationGrades(int $registrationId, array $data, ?int $userId = null): array
     {
         return DB::transaction(function () use ($registrationId, $data, $userId): array {
-            $registration = $this->loadRegistration($registrationId, lock: true);
+            $registration = $this->lockRegistrationWorkflow($registrationId);
             $this->assertRegistrationAllowsGrading($registration);
+            $this->assertOfferingGradesEditable((int) $registration->course_offering_id);
 
             if ($registration->studentCourseResult === null) {
                 throw new GradeException('No grades found for this registration. Use create endpoint first.');
@@ -535,7 +538,7 @@ class GradeService
             ],
             [
                 'mark' => $mark,
-                'grade_status' => 'submitted',
+                'grade_status' => 'draft',
                 'entered_by_user_id' => $userId,
                 'entered_at' => now(),
             ]
@@ -863,6 +866,36 @@ class GradeService
         }
 
         return $query->findOrFail($registrationId);
+    }
+
+    private function lockRegistrationWorkflow(int $registrationId): StudentCourseRegistration
+    {
+        $offeringId = StudentCourseRegistration::query()
+            ->whereKey($registrationId)
+            ->value('course_offering_id');
+
+        if ($offeringId !== null) {
+            CourseOffering::query()->whereKey($offeringId)->lockForUpdate()->first();
+        }
+
+        return $this->loadRegistration($registrationId, lock: true);
+    }
+
+    private function assertOfferingGradesEditable(int $courseOfferingId): void
+    {
+        $status = GradeApproval::query()
+            ->where('course_offering_id', $courseOfferingId)
+            ->with('approvalStatus')
+            ->orderByDesc('grade_approval_id')
+            ->first()?->approvalStatus?->status_code;
+
+        if (in_array($status, ['pending', 'approved'], true)) {
+            throw new GradeException(
+                'Grades have been submitted and cannot be modified.',
+                status: 409,
+                errorCode: 'grades_locked'
+            );
+        }
     }
 
     private function registrationRelations(): array

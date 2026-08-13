@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\GradeException;
 use App\Models\AttendanceSession;
 use App\Models\CourseOffering;
 use App\Models\FacultyMember;
@@ -53,12 +54,51 @@ class AcademicAuthorizationService
             throw new AccessDeniedHttpException('Grade management permission is required.');
         }
 
-        if ($user->employee_id !== null && app(DataScopeService::class)->scopeRegistrationsForStaff(StudentCourseRegistration::query(), $user)
-                ->whereKey($registration->student_course_registration_id)->exists()) {
+        $this->assertPrimaryInstructor($user, (int) $registration->course_offering_id);
+    }
+
+    public function assertPrimaryInstructor(User $user, int $courseOfferingId): void
+    {
+        if ($user->employee_id === null) {
+            throw new GradeException(
+                'Only the active primary instructor assigned to this section may manage its grades.',
+                status: 403,
+                errorCode: 'not_primary_instructor'
+            );
+        }
+
+        $facultyIds = FacultyMember::query()
+            ->where('employee_id', $user->employee_id)
+            ->where('is_active', true)
+            ->pluck('faculty_member_id');
+
+        $assigned = $facultyIds->isNotEmpty() && CourseOffering::query()
+            ->whereKey($courseOfferingId)
+            ->where(function ($query) use ($facultyIds): void {
+                $query->whereIn('faculty_member_id', $facultyIds)
+                    ->orWhereHas('offeringInstructors', fn ($instructors) => $instructors
+                        ->whereIn('faculty_member_id', $facultyIds)
+                        ->where('is_primary', true)
+                        ->where('is_active', true));
+            })
+            ->exists();
+
+        if (! $assigned) {
+            throw new GradeException(
+                'Only the active primary instructor assigned to this section may manage its grades.',
+                status: 403,
+                errorCode: 'not_primary_instructor'
+            );
+        }
+    }
+
+    public function assertCanViewGradeWorkflow(User $user, int $courseOfferingId): void
+    {
+        if ($user->hasPermission('exams.manage')) {
             return;
         }
 
-        $this->assertAssignedInstructor($user, (int) $registration->course_offering_id);
+        $this->assertPrimaryInstructor($user, $courseOfferingId);
     }
 
     public function assertExaminationCommittee(User $user): void
