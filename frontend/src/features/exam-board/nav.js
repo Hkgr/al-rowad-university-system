@@ -1,6 +1,6 @@
 import {
   FaHome, FaClipboardList, FaCheckDouble, FaExclamationTriangle,
-  FaCalendarAlt, FaChartBar, FaUsers, FaCog, FaEdit, FaBook,
+  FaCalendarAlt, FaChartBar, FaUsers, FaCog, FaBook,
   FaLockOpen, FaBookOpen, FaTable,
 } from 'react-icons/fa'
 import { ACCESS } from '../auth/auth'
@@ -10,7 +10,6 @@ const examBoardNav = [
     label: 'هيئة الامتحانات',
     items: [
       { to: '/exam-board',                  Icon: FaHome,                ar: 'الرئيسية',             en: 'Home',          end: true, permissions: ['exams.view', 'grades.view'] },
-      { to: '/exam-board/grade-entry',      Icon: FaEdit,                ar: 'إدخال الدرجات',        en: 'Grade Entry', permissions: ['grades.manage'] },
       { to: '/exam-board/grade-sheet',      Icon: FaClipboardList,       ar: 'كشوف الدرجات',         en: 'Grade Sheets', permissions: ['grades.view'] },
       { to: '/exam-board/approvals',        Icon: FaCheckDouble,         ar: 'اعتماد الدرجات',       en: 'Approvals', permissions: ['exams.manage'] },
       { to: '/exam-board/deprivation',      Icon: FaExclamationTriangle, ar: 'الحضور والحرمان',      en: 'Deprivation', permissions: ['exams.manage'] },

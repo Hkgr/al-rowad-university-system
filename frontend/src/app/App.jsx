@@ -46,7 +46,6 @@ import ProgramsPage          from '../features/academic-structure/pages/Programs
 import examBoardNav      from '../features/exam-board/nav'
 import ExamBoardHome     from '../features/exam-board/pages/ExamBoardHome'
 import GradeSheetPage    from '../features/exam-board/pages/GradeSheetPage'
-import GradeEntryPage    from '../features/exam-board/pages/GradeEntryPage'
 import ApprovalsPage     from '../features/exam-board/pages/ApprovalsPage'
 import DeprivationPage        from '../features/exam-board/pages/DeprivationPage'
 import CoursesPage            from '../features/exam-board/pages/CoursesPage'
@@ -59,6 +58,7 @@ import ExamPlaceholder        from '../features/exam-board/pages/ExamPlaceholder
 import professorNav             from '../features/professor-dashboard/nav'
 import ProfessorHome            from '../features/professor-dashboard/pages/ProfessorHome'
 import AttendanceDeprivationPage from '../features/professor-dashboard/pages/AttendanceDeprivationPage'
+import ProfessorGradesPage       from '../features/professor-dashboard/pages/ProfessorGradesPage'
 
 function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], studentIdentity = false, employeeIdentity = false }) {
   const token = localStorage.getItem('token')
@@ -148,7 +148,6 @@ export default function App() {
           }
         >
           <Route path="/exam-board"                element={protect(<ExamBoardHome />, { allPermissions: ['exams.view', 'exams.manage'] })} />
-          <Route path="/exam-board/grade-entry"   element={protect(<GradeEntryPage />, { permissions: ['grades.manage'] })} />
           <Route path="/exam-board/grade-sheet"   element={protect(<GradeSheetPage />, { permissions: ['grades.view'] })} />
           <Route path="/exam-board/approvals"     element={protect(<ApprovalsPage />, { permissions: ['exams.manage'] })} />
           <Route path="/exam-board/deprivation"   element={protect(<DeprivationPage />, { permissions: ['exams.manage'] })} />
@@ -201,6 +200,7 @@ export default function App() {
         >
           <Route path="/professor"             element={<ProfessorHome />}             />
           <Route path="/professor/attendance"  element={<AttendanceDeprivationPage />}  />
+          <Route path="/professor/grades" element={protect(<ProfessorGradesPage />, { employeeIdentity: true, permissions: ['grades.manage'] })} />
         </Route>
 
         {/* Default redirect */}

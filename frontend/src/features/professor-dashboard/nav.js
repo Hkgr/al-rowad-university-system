@@ -1,4 +1,4 @@
-import { FaHome, FaCalendarCheck } from 'react-icons/fa'
+import { FaHome, FaCalendarCheck, FaEdit } from 'react-icons/fa'
 
 const professorNav = [
   {
@@ -6,6 +6,7 @@ const professorNav = [
     items: [
       { to: '/professor',            Icon: FaHome,          ar: 'الرئيسية',        en: 'Home',      end: true, permissions: ['grades.manage', 'attendance.manage'] },
       { to: '/professor/attendance', Icon: FaCalendarCheck, ar: 'الحضور والحرمان', en: 'Attendance', permissions: ['attendance.manage'] },
+      { to: '/professor/grades',     Icon: FaEdit,          ar: 'إدخال العلامات',  en: 'Grades',     permissions: ['grades.manage'] },
     ],
   },
 ]

@@ -4,6 +4,32 @@ function authHeaders() {
   return { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }
 }
 
+class ProfessorApiError extends Error {
+  constructor(message, { status, errorCode, data } = {}) {
+    super(message)
+    this.name = 'ProfessorApiError'
+    this.status = status
+    this.errorCode = errorCode
+    this.data = data
+  }
+}
+
+async function apiRequest(path, options = {}) {
+  const res = await fetch(`${API}${path}`, {
+    ...options,
+    headers: { ...authHeaders(), ...options.headers },
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok || !json.success) {
+    throw new ProfessorApiError(json.message || `فشل الطلب (${res.status})`, {
+      status: res.status,
+      errorCode: json.error_code,
+      data: json.data,
+    })
+  }
+  return json.data
+}
+
 // Resolves the authenticated employee's faculty_members row. The API returns
 // null only when no matching row exists; request and server errors propagate.
 async function findMyFacultyMember() {
@@ -29,4 +55,16 @@ async function getMyOpenOfferings(facultyMemberId) {
   return all.filter(o => Number(o.faculty_member_id) === Number(facultyMemberId))
 }
 
-export { API, authHeaders, findMyFacultyMember, getMyOpenOfferings }
+const getGradeSheet = offeringId => apiRequest(`/course-offerings/${offeringId}/grade-sheet`)
+const getGradeWorkflow = offeringId => apiRequest(`/course-offerings/${offeringId}/grade-workflow`)
+const saveRegistrationGrade = (registrationId, values, hasExistingGrade) => apiRequest(`/registrations/${registrationId}/grades`, {
+  method: hasExistingGrade ? 'PUT' : 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(values),
+})
+const submitOfferingGrades = offeringId => apiRequest(`/course-offerings/${offeringId}/submit-grades`, { method: 'POST' })
+
+export {
+  API, authHeaders, ProfessorApiError, findMyFacultyMember, getMyOpenOfferings,
+  getGradeSheet, getGradeWorkflow, saveRegistrationGrade, submitOfferingGrades,
+}
