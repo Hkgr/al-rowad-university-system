@@ -43,7 +43,9 @@ export default function ProfessorGradesPage() {
   const selectedIdRef = useRef(null)
   const requestSequence = useRef(0)
   const rows = useMemo(() => rowsFromSheet(sheet), [sheet])
-  const dirtyIds = useMemo(() => Object.keys(edits).filter(id => edits[id].dirty), [edits])
+  const dirtyIds = useMemo(() => rows
+    .map(row => String(row.student_course_registration_id))
+    .filter(id => edits[id]?.dirty), [rows, edits])
   const knownWorkflow = workflow && WORKFLOW[workflow.status]
   const globallyEditable = Boolean(knownWorkflow && workflow.editable)
 
@@ -83,21 +85,19 @@ export default function ProfessorGradesPage() {
     setNotice(null); setIncompleteIds(list => list.filter(item => Number(item) !== Number(id)))
   }
 
-  async function refreshAfterSave(offeringId, successfulIds) {
+  async function refreshAfterSave(offeringId, successfulIds, dirtyIdsBeforeSave) {
     const sequence = ++requestSequence.current
     try {
       const [nextSheet, nextWorkflow] = await Promise.all([getGradeSheet(offeringId), getGradeWorkflow(offeringId)])
       if (sequence !== requestSequence.current || Number(selectedIdRef.current) !== Number(offeringId)) return
       const fresh = initialEdits(rowsFromSheet(nextSheet))
+      const missingDirtyCount = dirtyIdsBeforeSave.filter(id => !Object.hasOwn(fresh, id)).length
       setSheet(nextSheet); setWorkflow(nextWorkflow)
-      setEdits(current => {
-        const retainedDirtyIds = Object.keys(current).filter(id => current[id]?.dirty && !successfulIds.includes(id))
-        const ids = new Set([...Object.keys(fresh), ...retainedDirtyIds])
-        return Object.fromEntries([...ids].map(id => [
-          id,
-          successfulIds.includes(id) ? (fresh[id] ?? current[id]) : (current[id]?.dirty ? current[id] : fresh[id]),
-        ]))
-      })
+      setEdits(current => Object.fromEntries(Object.keys(fresh).map(id => [
+        id,
+        successfulIds.includes(id) ? (fresh[id] ?? current[id]) : (current[id]?.dirty ? current[id] : fresh[id]),
+      ])))
+      return missingDirtyCount
     } catch (error) {
       if (sequence !== requestSequence.current || Number(selectedIdRef.current) !== Number(offeringId)) return
       setLoadError(apiMessage(error)); setWorkflow(null)
@@ -127,11 +127,12 @@ export default function ProfessorGradesPage() {
     const failed = results.filter(result => !result.ok)
     const successfulIds = results.filter(result => result.ok).map(result => result.id)
     const locked = failed.find(result => result.error?.errorCode === 'grades_locked')
-    await refreshAfterSave(offeringId, successfulIds)
+    const missingDirtyCount = await refreshAfterSave(offeringId, successfulIds, dirtyIds)
     setSaving(false)
     if (Number(selectedIdRef.current) !== Number(offeringId)) return
     const unsavedCount = invalidRows.length + failed.length
-    setNotice({ type: unsavedCount ? 'error' : 'success', text: `تم حفظ ${successfulIds.length} سجل، وبقي ${unsavedCount} سجل غير محفوظ.${failed[0] ? ` ${apiMessage(failed[0].error)}` : ''}` })
+    const missingRowsMessage = missingDirtyCount ? ' بعض التسجيلات لم تعد مؤهلة أو لم تعد موجودة في الكشف.' : ''
+    setNotice({ type: unsavedCount || missingDirtyCount ? 'error' : 'success', text: `تم حفظ ${successfulIds.length} سجل، وبقي ${unsavedCount} سجل غير محفوظ.${failed[0] ? ` ${apiMessage(failed[0].error)}` : ''}${missingRowsMessage}` })
     if (locked) setLoadError(ERROR_MESSAGES.grades_locked)
   }
 
