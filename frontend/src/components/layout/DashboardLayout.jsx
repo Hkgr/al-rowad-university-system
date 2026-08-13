@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
-import {
-  FaSignOutAlt, FaBars, FaChevronRight, FaBell,
-} from 'react-icons/fa'
+import { FaSignOutAlt, FaChevronRight } from 'react-icons/fa'
 import { canAccess, clearIdentity } from '../../features/auth/auth'
+import DashboardHeader from './DashboardHeader'
+import DashboardFooter from './DashboardFooter'
 
 /**
  * nav prop shape:
@@ -181,41 +181,14 @@ export default function DashboardLayout({ nav = [], appTitle = 'جامعة ال�
       {/* ── Main area ── */}
       <div className="flex-1 min-w-0 flex flex-col" dir="ltr">
 
-        {/* Top bar */}
-        <header
-          className="h-[66px] flex items-center gap-3.5 px-[26px] sticky top-0 z-30 flex-shrink-0 max-[820px]:px-4"
-          style={{ background: 'linear-gradient(to bottom, #ffffff 0%, #f8fcf5 100%)', boxShadow: '0 1px 0 rgba(86,153,51,0.1), 0 4px 20px rgba(26,46,16,0.07)' }}
-        >
-          <button
-            className="hidden max-[820px]:flex bg-transparent border-none text-[19px] text-primary-dark cursor-pointer p-2 rounded-[9px] flex-shrink-0 hover:bg-primary/8"
-            onClick={() => setMobileOpen(v => !v)}
-          >
-            <FaBars />
-          </button>
-
-          <h2 className="flex-1 text-[17px] font-extrabold text-text-dark text-right pr-0.5" dir="rtl">
-            {pageTitle}
-          </h2>
-
-          <div className="flex items-center gap-2.5 flex-shrink-0">
-            <button className="relative w-10 h-10 rounded-[11px] bg-primary/7 border border-primary/14 text-primary-dark text-[16px] cursor-pointer flex items-center justify-center transition-all duration-[220ms] hover:bg-primary/14">
-              <FaBell />
-              <span className="absolute top-[-5px] right-[-5px] w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[10px] font-extrabold flex items-center justify-center border-2 border-white animate-[badgePulse_2s_ease-in-out_infinite] leading-none">3</span>
-            </button>
-            <div className="flex items-center gap-2 py-1 pl-3.5 pr-1 rounded-[30px] bg-primary/6 border border-primary/14 cursor-default hover:bg-primary/11">
-              <div className="w-[30px] h-[30px] rounded-full flex items-center justify-center text-[12px] font-black text-white" style={{ background: 'linear-gradient(135deg, #569933, #2d5c18)' }}>
-                {(user.username?.[0] ?? 'U').toUpperCase()}
-              </div>
-              <span className="text-[13px] font-semibold text-text-dark max-[820px]:hidden" dir="rtl">{user.username}</span>
-            </div>
-          </div>
-        </header>
+        <DashboardHeader appTitle={appTitle} pageTitle={pageTitle} activeItem={activeItem} user={user} toggleMenu={() => setMobileOpen(v => !v)} logout={logout} />
 
         {/* ← Page content goes here via Outlet */}
         <main className="flex-1 px-8 pt-7 pb-12 min-w-0 max-[820px]:px-4 max-[820px]:pt-5" dir="rtl">
           <Outlet />
         </main>
 
+        <DashboardFooter />
       </div>
     </div>
   )
