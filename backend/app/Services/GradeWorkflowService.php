@@ -10,6 +10,7 @@ use App\Models\StudentCourseRegistration;
 use App\Models\StudentCourseResult;
 use App\Models\StudentGradeComponent;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Collection;
 
 class GradeWorkflowService
 {
@@ -63,28 +64,14 @@ class GradeWorkflowService
                 ->get()
                 ->keyBy('student_course_registration_id');
 
-            $incomplete = $registrations->filter(function (StudentCourseRegistration $registration) use ($results): bool {
-                $result = $results->get($registration->student_course_registration_id);
-
-                if ($result?->is_deprived || $result?->resultStatus?->status_code === 'deprived') {
-                    return false;
-                }
-
-                return $result === null
-                    || $result->theoretical_total === null
-                    || $result->practical_total === null
-                    || (float) $result->theoretical_total < 0
-                    || (float) $result->theoretical_total > 60
-                    || (float) $result->practical_total < 0
-                    || (float) $result->practical_total > 40;
-            });
+            $incomplete = $this->incompleteRegistrations($registrations, $results);
 
             if ($incomplete->isNotEmpty()) {
                 throw new GradeException(
                     'All eligible students must have valid theoretical and practical marks before submission.',
                     ['registration_ids' => $incomplete->pluck('student_course_registration_id')->values()->all()],
                     409,
-                    'grades_incomplete'
+                    'grade_sheet_incomplete'
                 );
             }
 
@@ -94,7 +81,7 @@ class GradeWorkflowService
                 ->value('approval_status_id');
 
             if ($pendingStatusId === null) {
-                throw new GradeException('The pending grade approval status is not configured.');
+                throw new GradeException('The pending grade approval status is not configured.', status: 409, errorCode: 'grade_approval_status_missing');
             }
 
             $values = [
@@ -103,6 +90,7 @@ class GradeWorkflowService
                 'submitted_at' => now(),
                 'approved_by_user_id' => null,
                 'approval_date' => null,
+                'approval_role' => null,
                 'approval_notes' => null,
             ];
 
@@ -136,20 +124,7 @@ class GradeWorkflowService
             ->current()
             ->with('studentCourseResult.resultStatus')
             ->get();
-        $completed = $registrations->filter(function (StudentCourseRegistration $registration): bool {
-            $result = $registration->studentCourseResult;
-
-            return $result !== null && (
-                $result->is_deprived
-                || $result->resultStatus?->status_code === 'deprived'
-                || ($result->theoretical_total !== null
-                    && (float) $result->theoretical_total >= 0
-                    && (float) $result->theoretical_total <= 60
-                    && $result->practical_total !== null
-                    && (float) $result->practical_total >= 0
-                    && (float) $result->practical_total <= 40)
-            );
-        })->count();
+        $completed = $this->completedRegistrations($registrations)->count();
         $editable = $approval === null || $approval->allowsGradeEditing();
 
         return [
@@ -164,5 +139,35 @@ class GradeWorkflowService
             'completed_students_count' => $completed,
             'incomplete_students_count' => $registrations->count() - $completed,
         ];
+    }
+
+    public function completedRegistrations(Collection $registrations): Collection
+    {
+        return $registrations->filter(fn (StudentCourseRegistration $registration): bool =>
+            $this->resultIsComplete($registration->studentCourseResult));
+    }
+
+    public function incompleteRegistrations(Collection $registrations, ?Collection $results = null): Collection
+    {
+        return $registrations->filter(function (StudentCourseRegistration $registration) use ($results): bool {
+            $result = $results?->get($registration->student_course_registration_id)
+                ?? $registration->studentCourseResult;
+
+            return ! $this->resultIsComplete($result);
+        });
+    }
+
+    private function resultIsComplete(?StudentCourseResult $result): bool
+    {
+        return $result !== null && (
+            $result->is_deprived
+            || $result->resultStatus?->status_code === 'deprived'
+            || ($result->theoretical_total !== null
+                && (float) $result->theoretical_total >= 0
+                && (float) $result->theoretical_total <= 60
+                && $result->practical_total !== null
+                && (float) $result->practical_total >= 0
+                && (float) $result->practical_total <= 40)
+        );
     }
 }

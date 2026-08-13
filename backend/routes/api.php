@@ -392,7 +392,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     */
 
     Route::apiResource('grade-appeals', GradeAppealController::class);
-    Route::apiResource('grade-approvals', GradeApprovalController::class);
+    Route::post('grade-approvals/{gradeApproval}/approve', [GradeApprovalController::class, 'approve']);
+    Route::post('grade-approvals/{gradeApproval}/return-for-correction', [GradeApprovalController::class, 'returnForCorrection']);
+    Route::apiResource('grade-approvals', GradeApprovalController::class)->only(['index', 'show']);
     Route::apiResource('grade-audit-logs', GradeAuditLogController::class);
     Route::apiResource('grade-components', GradeComponentController::class);
     Route::apiResource('grading-policies', GradingPolicyController::class);
