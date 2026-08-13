@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class GradeApproval extends Model
 {
+    public const EDITABLE_STATUS = 'returned_for_correction';
+
     protected $table = 'grade_approvals';
 
     protected $primaryKey = 'grade_approval_id';
@@ -53,6 +55,18 @@ class GradeApproval extends Model
     public function submittedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'submitted_by_user_id', 'user_id');
+    }
+
+    public function workflowStatus(): string
+    {
+        $this->loadMissing('approvalStatus');
+
+        return $this->approvalStatus?->status_code ?? 'unknown';
+    }
+
+    public function allowsGradeEditing(): bool
+    {
+        return $this->workflowStatus() === self::EDITABLE_STATUS;
     }
 
 }

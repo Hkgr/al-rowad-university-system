@@ -30,9 +30,9 @@ class GradeWorkflowService
                 ->orderByDesc('grade_approval_id')
                 ->lockForUpdate()
                 ->first();
-            $currentStatus = $approval?->approvalStatus()->value('status_code');
+            $approval?->load('approvalStatus');
 
-            if ($approval !== null && $currentStatus !== 'returned_for_correction') {
+            if ($approval !== null && ! $approval->allowsGradeEditing()) {
                 throw new GradeException(
                     'Grades have already been submitted and cannot be submitted again.',
                     status: 409,
@@ -129,10 +129,7 @@ class GradeWorkflowService
             ->orderByDesc('grade_approval_id')
             ->first();
 
-        $status = $approval?->approvalStatus?->status_code ?? 'draft';
-        if (! in_array($status, ['pending', 'returned_for_correction', 'approved'], true)) {
-            $status = 'returned_for_correction';
-        }
+        $status = $approval?->workflowStatus() ?? 'draft';
 
         $registrations = StudentCourseRegistration::query()
             ->where('course_offering_id', $courseOfferingId)
@@ -153,7 +150,7 @@ class GradeWorkflowService
                     && (float) $result->practical_total <= 40)
             );
         })->count();
-        $editable = $approval === null || $status === 'returned_for_correction';
+        $editable = $approval === null || $approval->allowsGradeEditing();
 
         return [
             'course_offering_id' => $courseOfferingId,

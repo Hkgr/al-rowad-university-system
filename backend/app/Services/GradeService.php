@@ -297,8 +297,9 @@ class GradeService
     public function calculateRegistrationResult(int $registrationId, ?int $userId = null): array
     {
         return DB::transaction(function () use ($registrationId, $userId): array {
-            $registration = $this->loadRegistration($registrationId, lock: true);
+            $registration = $this->lockRegistrationWorkflow($registrationId);
             $this->assertRegistrationAllowsGrading($registration);
+            $this->assertOfferingGradesEditable((int) $registration->course_offering_id);
             $result = $registration->studentCourseResult;
 
             if ($result === null) {
@@ -883,13 +884,13 @@ class GradeService
 
     private function assertOfferingGradesEditable(int $courseOfferingId): void
     {
-        $status = GradeApproval::query()
+        $approval = GradeApproval::query()
             ->where('course_offering_id', $courseOfferingId)
             ->with('approvalStatus')
             ->orderByDesc('grade_approval_id')
-            ->first()?->approvalStatus?->status_code;
+            ->first();
 
-        if (in_array($status, ['pending', 'approved'], true)) {
+        if ($approval !== null && ! $approval->allowsGradeEditing()) {
             throw new GradeException(
                 'Grades have been submitted and cannot be modified.',
                 status: 409,

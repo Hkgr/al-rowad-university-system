@@ -108,6 +108,15 @@ class AcademicAuthorizationService
         }
     }
 
+    public function assertExaminationCommitteeCanAccessOffering(User $user, CourseOffering $offering): void
+    {
+        $this->assertExaminationCommittee($user);
+
+        if (! app(DataScopeService::class)->canAccessOffering($user, $offering)) {
+            throw new AccessDeniedHttpException('You are not authorized to access this course offering.');
+        }
+    }
+
     public function assertStudentAffairs(User $user): void
     {
         if (! $user->hasPermission('students.manage')) throw new AccessDeniedHttpException('Student management permission is required.');

@@ -8,6 +8,7 @@ use App\Http\Requests\Grade\UpdateRegistrationGradesRequest;
 use App\Services\GradeService;
 use App\Services\AcademicAuthorizationService;
 use App\Models\StudentCourseRegistration;
+use App\Models\CourseOffering;
 use Illuminate\Http\JsonResponse;
 
 class GradeController extends Controller
@@ -53,8 +54,11 @@ class GradeController extends Controller
 
     public function calculateResult(int $id, GradeService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
-        $authorization->assertExaminationCommittee(request()->user());
-        $authorization->assertCanEnterGrades(request()->user(), StudentCourseRegistration::query()->findOrFail($id));
+        $registration = StudentCourseRegistration::query()->findOrFail($id);
+        $authorization->assertExaminationCommitteeCanAccessOffering(
+            request()->user(),
+            CourseOffering::query()->findOrFail($registration->course_offering_id)
+        );
         $data = $service->calculateRegistrationResult($id, request()->user()?->user_id);
 
         return $this->successResponse($data, 'Result calculated successfully');
