@@ -43,8 +43,6 @@ function GradeRow({ row }) {
 }
 
 export default function ApprovalsPage() {
-  const user = JSON.parse(localStorage.getItem('user') || '{}')
-
   const [years,             setYears]             = useState([])
   const [semesters,         setSemesters]         = useState([])
   const [filteredSemesters, setFilteredSemesters] = useState([])
@@ -119,17 +117,29 @@ export default function ApprovalsPage() {
     if (!offeringId) return
     setApproving(true); setApproveErr('')
     try {
-      const res  = await fetch(`${API}/grade-approvals`, {
+      const approvalsRes = await fetch(
+        `${API}/grade-approvals?course_offering_id=${encodeURIComponent(offeringId)}&status=pending&per_page=1`,
+        { headers: authHeaders() },
+      )
+      const approvalsJson = await approvalsRes.json()
+      if (!approvalsRes.ok || !approvalsJson.success) {
+        setApproveErr(approvalsJson.message || 'تعذّر التحقق من طلب اعتماد المادة')
+        return
+      }
+
+      const pendingApprovals = approvalsJson.data?.data ?? approvalsJson.data ?? []
+      const gradeApprovalId = pendingApprovals[0]?.grade_approval_id
+      if (!gradeApprovalId) {
+        setApproveErr('علامات المادة لم تُرسل للاعتماد أو تمت مراجعتها مسبقاً')
+        return
+      }
+
+      const res = await fetch(`${API}/grade-approvals/${gradeApprovalId}/approve`, {
         method:  'POST',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          course_offering_id:   parseInt(offeringId),
-          approval_status_code: 'approved',
-          submitted_by_user_id: user.user_id,
-        }),
+        headers: authHeaders(),
       })
       const json = await res.json()
-      if (json.success) setApproved(true)
+      if (res.ok && json.success) setApproved(true)
       else setApproveErr(json.message || 'فشل الاعتماد')
     } catch { setApproveErr('تعذّر الاتصال بالخادم') }
     finally { setApproving(false) }
