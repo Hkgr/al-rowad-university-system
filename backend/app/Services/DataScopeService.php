@@ -99,7 +99,7 @@ class DataScopeService
             && Schema::hasColumn($table, 'student_id')) {
             return $query->whereHas('student', fn (Builder $student) => $this->scopeStudents($student, $user));
         }
-        if (in_array($table, ['grade_approvals', 'grade_components', 'attendance_sessions'], true)
+        if (in_array($table, ['grade_approvals', 'grade_part_approvals', 'grade_components', 'attendance_sessions'], true)
             && Schema::hasColumn($table, 'course_offering_id')) {
             return $query->whereHas('courseOffering', fn (Builder $offering) => $this->scopeOfferings($offering, $user));
         }

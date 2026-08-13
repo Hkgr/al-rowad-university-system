@@ -1076,6 +1076,47 @@ CREATE TABLE `grade_approvals` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `grade_part_approvals`
+--
+CREATE TABLE `grade_part_approvals` (
+  `grade_part_approval_id` bigint NOT NULL AUTO_INCREMENT,
+  `course_offering_id` int(11) NOT NULL,
+  `component_type` enum('practical','theoretical') NOT NULL,
+  `status` enum('draft','submitted','returned','approved') NOT NULL DEFAULT 'draft',
+  `submission_version` int unsigned NOT NULL DEFAULT 0,
+  `submitted_by_user_id` int(11) DEFAULT NULL,
+  `submitted_at` datetime DEFAULT NULL,
+  `reviewed_by_user_id` int(11) DEFAULT NULL,
+  `reviewed_at` datetime DEFAULT NULL,
+  `review_notes` text DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`grade_part_approval_id`),
+  UNIQUE KEY `uq_grade_part_current` (`course_offering_id`,`component_type`),
+  KEY `idx_grade_part_queue` (`status`,`submitted_at`),
+  CONSTRAINT `fk_grade_part_offering` FOREIGN KEY (`course_offering_id`) REFERENCES `course_offerings` (`course_offering_id`),
+  CONSTRAINT `fk_grade_part_submitter` FOREIGN KEY (`submitted_by_user_id`) REFERENCES `users` (`user_id`),
+  CONSTRAINT `fk_grade_part_reviewer` FOREIGN KEY (`reviewed_by_user_id`) REFERENCES `users` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `grade_part_approval_events` (
+  `grade_part_approval_event_id` bigint NOT NULL AUTO_INCREMENT,
+  `grade_part_approval_id` bigint NOT NULL,
+  `submission_version` int unsigned NOT NULL,
+  `action` varchar(30) NOT NULL,
+  `old_values` json DEFAULT NULL,
+  `new_values` json NOT NULL,
+  `performed_by_user_id` int(11) NOT NULL,
+  `performed_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`grade_part_approval_event_id`),
+  KEY `idx_grade_part_event_approval` (`grade_part_approval_id`,`submission_version`),
+  CONSTRAINT `fk_grade_part_event_approval` FOREIGN KEY (`grade_part_approval_id`) REFERENCES `grade_part_approvals` (`grade_part_approval_id`),
+  CONSTRAINT `fk_grade_part_event_user` FOREIGN KEY (`performed_by_user_id`) REFERENCES `users` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `grade_audit_logs`
 --
 
@@ -1816,10 +1857,10 @@ INSERT INTO `student_course_registrations` (`student_course_registration_id`, `s
 CREATE TABLE `student_course_results` (
   `student_course_result_id` int(11) NOT NULL,
   `student_course_registration_id` int(11) NOT NULL,
-  `theoretical_total` decimal(5,2) NOT NULL DEFAULT 0.00,
-  `practical_total` decimal(5,2) NOT NULL DEFAULT 0.00,
+  `theoretical_total` decimal(5,2) DEFAULT NULL,
+  `practical_total` decimal(5,2) DEFAULT NULL,
   `coursework_total` decimal(5,2) NOT NULL DEFAULT 0.00,
-  `final_mark` decimal(5,2) NOT NULL DEFAULT 0.00,
+  `final_mark` decimal(5,2) DEFAULT NULL,
   `result_status_id` int(11) NOT NULL,
   `is_deprived` tinyint(1) NOT NULL DEFAULT 0,
   `calculated_at` datetime DEFAULT NULL,

@@ -79,6 +79,11 @@ class CourseOffering extends Model
         return $this->hasMany(GradeApproval::class, 'course_offering_id', 'course_offering_id');
     }
 
+    public function gradePartApprovals(): HasMany
+    {
+        return $this->hasMany(GradePartApproval::class, 'course_offering_id', 'course_offering_id');
+    }
+
     public function gradeComponents(): HasMany
     {
         return $this->hasMany(GradeComponent::class, 'course_offering_id', 'course_offering_id');

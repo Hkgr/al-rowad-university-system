@@ -1,0 +1,1 @@
+Run `01_apply.sql`, then `02_verify.sql`. Apply is additive and backfills only legacy approvals whose status is `approved`; legacy pending rows are not promoted. Use `03_rollback.sql` only before new workflow events exist.

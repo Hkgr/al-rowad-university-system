@@ -92,6 +92,38 @@ class AcademicAuthorizationService
         }
     }
 
+    public function assertCanManageGradePart(User $user, int $courseOfferingId, string $part): void
+    {
+        if (! $user->hasPermission('grades.manage')) {
+            throw new GradeException('Grade management permission is required.', status: 403, errorCode: 'unauthorized_grade_part');
+        }
+
+        try {
+            $this->assertPrimaryInstructor($user, $courseOfferingId);
+            return;
+        } catch (GradeException) {
+            // A non-primary instructor may manage only the explicitly assigned part.
+        }
+
+        $facultyIds = FacultyMember::query()->where('employee_id', $user->employee_id)->where('is_active', true)->pluck('faculty_member_id');
+        $roles = $part === 'practical' ? ['practical', 'lab'] : ['theoretical'];
+        $assigned = $facultyIds->isNotEmpty() && CourseOffering::query()->whereKey($courseOfferingId)
+            ->whereHas('offeringInstructors', fn ($q) => $q->whereIn('faculty_member_id', $facultyIds)->whereIn('instructor_role', $roles)->where('is_active', true))->exists();
+        if (! $assigned) throw new GradeException('You are not authorized to manage this grade part.', status: 403, errorCode: 'unauthorized_grade_part');
+    }
+
+    public function assertCanViewGradeParts(User $user, int $courseOfferingId): void
+    {
+        if ($user->hasPermission('exams.manage')) {
+            $this->assertExaminationCommitteeCanAccessOffering($user, CourseOffering::query()->findOrFail($courseOfferingId));
+            return;
+        }
+        if (! $user->hasPermission('grades.view') && ! $user->hasPermission('grades.manage')) {
+            throw new GradeException('Grade view permission is required.', status: 403, errorCode: 'unauthorized_grade_part');
+        }
+        $this->assertAssignedInstructor($user, $courseOfferingId);
+    }
+
     public function assertCanViewGradeWorkflow(User $user, int $courseOfferingId): void
     {
         if ($user->hasPermission('exams.manage')) {

@@ -443,6 +443,30 @@ class GradeService
         );
     }
 
+    public function buildCalculationForRequiredParts(?float $theoretical, ?float $practical, bool $requiresTheoretical, bool $requiresPractical, ?string $existingStatusCode = null, bool $isDeprived = false): array
+    {
+        if (($requiresTheoretical && $theoretical === null) || ($requiresPractical && $practical === null)) {
+            throw new GradeException('All required grade parts must be present before final calculation.', status: 409, errorCode: 'grade_part_incomplete');
+        }
+
+        $policy = $this->defaultGradingPolicy();
+        $finalMark = round(($requiresTheoretical ? $theoretical : 0) + ($requiresPractical ? $practical : 0), 2);
+        $failed = ($requiresTheoretical && $theoretical < (float) $policy->minimum_theoretical_mark)
+            || ($requiresPractical && $practical < (float) $policy->minimum_practical_mark)
+            || $finalMark < (float) $policy->minimum_final_mark;
+        $status = ($existingStatusCode === 'deprived' || $isDeprived) ? 'deprived' : ($failed ? 'failed' : 'passed');
+        $letterGrade = $status === 'deprived' ? 'Z' : ($failed ? 'F' : match (true) {
+            $finalMark >= 98 => 'A+', $finalMark >= 95 => 'A', $finalMark >= 90 => 'A-', $finalMark >= 85 => 'B+',
+            $finalMark >= 80 => 'B', $finalMark >= 75 => 'B-', $finalMark >= 70 => 'C+', $finalMark >= 65 => 'C',
+            $finalMark >= 60 => 'C-', $finalMark >= 55 => 'D+', default => 'D',
+        });
+
+        return ['theoretical_mark' => $theoretical, 'practical_mark' => $practical, 'final_mark' => $finalMark,
+            'result_status_code' => $status, 'letter_grade' => $letterGrade,
+            'grade_points' => $this->resolveGradePoints($letterGrade, $status),
+            'calculation_details' => ['requires_theoretical' => $requiresTheoretical, 'requires_practical' => $requiresPractical]];
+    }
+
     public function buildCalculation(?float $theoretical, ?float $practical, ?string $existingStatusCode = null, bool $isDeprived = false): array
     {
         $policy = $this->defaultGradingPolicy();
