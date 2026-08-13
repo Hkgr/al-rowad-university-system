@@ -10,11 +10,22 @@ const ROLE_LABELS = {
 
 function getUserDetails(user) {
   const labelledRoles = (user.roles || []).map(role => ROLE_LABELS[role]).filter(Boolean)
+  const asScopeText = value => {
+    if (typeof value === 'string') return value.trim()
+    if (value && typeof value === 'object') return asScopeText(value.name)
+    return ''
+  }
+  const scope = [
+    user.department_name,
+    user.college_name,
+    user.organizational_unit,
+    user.access_scope,
+  ].map(asScopeText).find(Boolean)
 
   return {
     name: user.full_name || user.name || user.username || 'المستخدم',
     role: user.job_title || user.position_name || labelledRoles.join('، ') || 'مستخدم النظام',
-    scope: user.department_name || user.college_name || user.organizational_unit || user.access_scope,
+    scope,
   }
 }
 
