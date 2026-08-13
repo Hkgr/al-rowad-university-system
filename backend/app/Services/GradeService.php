@@ -262,6 +262,7 @@ class GradeService
     {
         return DB::transaction(function () use ($registrationId, $data, $userId): array {
             $registration = $this->lockRegistrationWorkflow($registrationId);
+            $this->assertLegacyGradeWorkflowAllowed((int) $registration->course_offering_id);
             $this->assertRegistrationAllowsGrading($registration);
             $this->assertOfferingGradesEditable((int) $registration->course_offering_id);
 
@@ -280,6 +281,7 @@ class GradeService
     {
         return DB::transaction(function () use ($registrationId, $data, $userId): array {
             $registration = $this->lockRegistrationWorkflow($registrationId);
+            $this->assertLegacyGradeWorkflowAllowed((int) $registration->course_offering_id);
             $this->assertRegistrationAllowsGrading($registration);
             $this->assertOfferingGradesEditable((int) $registration->course_offering_id);
 
@@ -315,6 +317,7 @@ class GradeService
     {
         return DB::transaction(function () use ($registrationId, $userId): array {
             $registration = $this->lockRegistrationWorkflow($registrationId);
+            $this->assertLegacyGradeWorkflowAllowed((int) $registration->course_offering_id);
             $this->assertRegistrationAllowsGrading($registration);
             $this->assertOfferingGradesEditable((int) $registration->course_offering_id);
             $result = $registration->studentCourseResult;
@@ -450,13 +453,26 @@ class GradeService
         );
     }
 
-    public function buildCalculationForRequiredParts(?float $theoretical, ?float $practical, bool $requiresTheoretical, bool $requiresPractical, ?string $existingStatusCode = null, bool $isDeprived = false): array
+    public function assertRequiredPartsPolicyCompatible(bool $requiresTheoretical, bool $requiresPractical, float $theoreticalMax, float $practicalMax): GradingPolicy
+    {
+        $policy = $this->defaultGradingPolicy();
+        $requiredMaximum = ($requiresTheoretical ? $theoreticalMax : 0) + ($requiresPractical ? $practicalMax : 0);
+        $policyMaximum = ($requiresTheoretical ? (float) $policy->theoretical_max_mark : 0)
+            + ($requiresPractical ? (float) $policy->practical_max_mark : 0);
+        if (abs($requiredMaximum - $policyMaximum) > 0.001
+            || (float) $policy->minimum_final_mark > $requiredMaximum) {
+            throw new GradeException('The grading policy is incompatible with the required grade parts.', status: 409, errorCode: 'grading_policy_incompatible');
+        }
+        return $policy;
+    }
+
+    public function buildCalculationForRequiredParts(?float $theoretical, ?float $practical, bool $requiresTheoretical, bool $requiresPractical, float $theoreticalMax, float $practicalMax, ?string $existingStatusCode = null, bool $isDeprived = false): array
     {
         if (($requiresTheoretical && $theoretical === null) || ($requiresPractical && $practical === null)) {
             throw new GradeException('All required grade parts must be present before final calculation.', status: 409, errorCode: 'grade_part_incomplete');
         }
 
-        $policy = $this->defaultGradingPolicy();
+        $policy = $this->assertRequiredPartsPolicyCompatible($requiresTheoretical, $requiresPractical, $theoreticalMax, $practicalMax);
         $finalMark = round(($requiresTheoretical ? $theoretical : 0) + ($requiresPractical ? $practical : 0), 2);
         $failed = ($requiresTheoretical && $theoretical < (float) $policy->minimum_theoretical_mark)
             || ($requiresPractical && $practical < (float) $policy->minimum_practical_mark)
@@ -958,6 +974,19 @@ class GradeService
             'courseOffering.semester',
             'studentCourseResult.resultStatus',
         ];
+    }
+
+    public function assertLegacyGradeWorkflowAllowed(int $offeringId): void
+    {
+        $usesGradeParts = GradeComponent::query()->where('course_offering_id', $offeringId)
+            ->where('is_required', true)->whereIn('component_type', GradePartApproval::PARTS)->exists();
+        if ($usesGradeParts) {
+            throw new GradeException(
+                'This course offering must use the grade-parts workflow.',
+                status: 409,
+                errorCode: 'legacy_grade_workflow_disabled'
+            );
+        }
     }
 
     private function assertRequestedGradePartsEditable(int $offeringId, array $data): void

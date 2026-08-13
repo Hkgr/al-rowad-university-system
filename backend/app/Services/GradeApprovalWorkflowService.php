@@ -85,6 +85,7 @@ class GradeApprovalWorkflowService
     private function transition(User $user, int $id, string $targetStatus, ?string $notes): GradeApproval
     {
         $visible = $this->find($user, $id);
+        $this->grades->assertLegacyGradeWorkflowAllowed((int) $visible->course_offering_id);
 
         return DB::transaction(function () use ($user, $visible, $targetStatus, $notes): GradeApproval {
             CourseOffering::query()->whereKey($visible->course_offering_id)->lockForUpdate()->firstOrFail();

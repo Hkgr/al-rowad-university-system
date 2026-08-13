@@ -36,6 +36,15 @@ LEFT JOIN grade_part_approvals gpa ON gpa.course_offering_id=ga.course_offering_
  AND gpa.component_type=parts.component_type AND gpa.status='approved'
 WHERE gpa.grade_part_approval_id IS NULL
 UNION ALL
+SELECT 'backfilled_required_components_approved',
+ CASE WHEN COUNT(*)=0 THEN 'PASS' ELSE 'FAIL' END
+FROM student_grade_components sgc
+JOIN grade_components gc ON gc.grade_component_id=sgc.grade_component_id AND gc.is_required=1
+JOIN grade_part_approvals gpa ON gpa.course_offering_id=gc.course_offering_id
+ AND gpa.component_type=gc.component_type AND gpa.status='approved'
+ AND gpa.review_notes LIKE 'Backfilled from approved legacy GradeApproval #%'
+WHERE sgc.grade_status<>'approved'
+UNION ALL
 SELECT 'no_nonapproved_legacy_promoted',
  CASE WHEN COUNT(*)=0 THEN 'PASS' ELSE 'FAIL' END
 FROM grade_part_approvals gpa
@@ -50,6 +59,7 @@ SELECT 'OVERALL', CASE WHEN
  AND (SELECT COUNT(DISTINCT CONSTRAINT_NAME) FROM information_schema.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_SCHEMA=DATABASE() AND CONSTRAINT_NAME IN ('fk_grade_part_approvals_offering','fk_grade_part_approvals_submitter','fk_grade_part_approvals_reviewer','fk_grade_part_approval_events_approval','fk_grade_part_approval_events_user'))=5
  AND (SELECT COUNT(DISTINCT INDEX_NAME) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND ((TABLE_NAME='grade_part_approvals' AND INDEX_NAME='idx_grade_part_approvals_queue') OR (TABLE_NAME='grade_part_approval_events' AND INDEX_NAME='idx_grade_part_approval_events_version')))=2
  AND (SELECT COUNT(*) FROM (SELECT course_offering_id,component_type FROM grade_part_approvals GROUP BY course_offering_id,component_type HAVING COUNT(*)>1) d)=0
+ AND (SELECT COUNT(*) FROM student_grade_components sgc JOIN grade_components gc ON gc.grade_component_id=sgc.grade_component_id AND gc.is_required=1 JOIN grade_part_approvals gpa ON gpa.course_offering_id=gc.course_offering_id AND gpa.component_type=gc.component_type AND gpa.status='approved' AND gpa.review_notes LIKE 'Backfilled from approved legacy GradeApproval #%' WHERE sgc.grade_status<>'approved')=0
  AND (SELECT COUNT(*) FROM grade_approvals ga JOIN approval_statuses aps ON aps.approval_status_id=ga.approval_status_id AND aps.status_code='approved'
       JOIN (SELECT DISTINCT course_offering_id,component_type FROM grade_components WHERE is_required=1 AND component_type IN ('practical','theoretical')) p ON p.course_offering_id=ga.course_offering_id
       LEFT JOIN grade_part_approvals gpa ON gpa.course_offering_id=ga.course_offering_id AND gpa.component_type=p.component_type AND gpa.status='approved'

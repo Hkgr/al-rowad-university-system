@@ -99,7 +99,7 @@ class GradePartWorkflowService
             if ($approval?->status === 'approved') $this->fail('This grade part is already approved.', 'grade_part_already_approved');
             if ($approval?->status === 'submitted') return $approval; // idempotent retry
             if ($approval && ! in_array($approval->status, ['draft', 'returned'], true)) $this->fail('This grade part cannot be submitted.', 'grade_part_already_submitted');
-            $registrations = StudentCourseRegistration::query()->where('course_offering_id', $offeringId)->current()->lockForUpdate()->get();
+            $registrations = StudentCourseRegistration::query()->where('course_offering_id', $offeringId)->current()->with(['studentCourseResult.resultStatus', 'resultStatus'])->lockForUpdate()->get();
             $components = GradeComponent::query()->where('course_offering_id', $offeringId)->where('component_type', $part)->where('is_required', true)->get();
             if ($registrations->isEmpty() || ! $this->partComplete($registrations, $components, $part)) $this->fail('Required marks for this grade part are incomplete.', 'grade_part_incomplete');
             $old = $approval?->toArray();
@@ -147,33 +147,53 @@ class GradePartWorkflowService
     private function finalize(int $offeringId, int $userId): void
     {
         $required = $this->requiredParts($offeringId);
-        $registrations = StudentCourseRegistration::query()->where('course_offering_id', $offeringId)->current()->lockForUpdate()->get();
+        $registrations = StudentCourseRegistration::query()->where('course_offering_id', $offeringId)->current()->with('resultStatus')->lockForUpdate()->get();
         $components = GradeComponent::query()->where('course_offering_id', $offeringId)->where('is_required', true)->get();
+        $this->grades->assertRequiredPartsPolicyCompatible(
+            in_array('theoretical', $required, true), in_array('practical', $required, true),
+            (float) $components->where('component_type', 'theoretical')->sum('max_mark'),
+            (float) $components->where('component_type', 'practical')->sum('max_mark')
+        );
         foreach ($registrations as $registration) {
             $existing = StudentCourseResult::query()->where('student_course_registration_id', $registration->student_course_registration_id)->lockForUpdate()->first();
-            $existingStatus = $existing === null ? null : ResultStatus::query()->whereKey($existing->result_status_id)->lockForUpdate()->value('status_code');
+            $existingStatus = $existing === null ? $registration->resultStatus?->status_code
+                : ResultStatus::query()->whereKey($existing->result_status_id)->lockForUpdate()->value('status_code');
+            $isDeprived = (bool) $existing?->is_deprived || $existingStatus === 'deprived'
+                || $registration->resultStatus?->status_code === 'deprived';
             $marks = StudentGradeComponent::query()->where('student_course_registration_id', $registration->student_course_registration_id)
                 ->whereIn('grade_component_id', $components->pluck('grade_component_id'))->lockForUpdate()->get()->keyBy('grade_component_id');
-            $totals = [];
-            foreach (GradePartApproval::PARTS as $part) {
-                $partComponents = $components->where('component_type', $part);
-                $totals[$part] = in_array($part, $required, true)
-                    ? $partComponents->sum(fn ($component) => (float) $marks->get($component->grade_component_id)->mark)
-                    : null;
+            $totals = ['theoretical' => null, 'practical' => null];
+            if (! $isDeprived) {
+                foreach (GradePartApproval::PARTS as $part) {
+                    $partComponents = $components->where('component_type', $part);
+                    if (in_array($part, $required, true)) {
+                        foreach ($partComponents as $component) {
+                            $grade = $marks->get($component->grade_component_id);
+                            if ($grade === null || $grade->mark === null) $this->fail('Required grade-part marks are incomplete.', 'grade_part_incomplete');
+                        }
+                        $totals[$part] = $partComponents->sum(fn ($component) => (float) $marks->get($component->grade_component_id)->mark);
+                    }
+                }
             }
-            $calculation = $this->grades->buildCalculationForRequiredParts(
-                $totals['theoretical'], $totals['practical'], in_array('theoretical', $required, true),
-                in_array('practical', $required, true), $existingStatus, (bool) $existing?->is_deprived
-            );
+            $calculation = $isDeprived
+                ? ['result_status_code' => 'deprived', 'final_mark' => $existing?->final_mark ?? 0]
+                : $this->grades->buildCalculationForRequiredParts(
+                    $totals['theoretical'], $totals['practical'], in_array('theoretical', $required, true),
+                    in_array('practical', $required, true),
+                    (float) $components->where('component_type', 'theoretical')->sum('max_mark'),
+                    (float) $components->where('component_type', 'practical')->sum('max_mark'),
+                    $existingStatus, false
+                );
             $statusId = ResultStatus::query()->where('status_code', $calculation['result_status_code'])->where('is_active', true)
                 ->lockForUpdate()->value('result_status_id');
             if ($statusId === null) $this->fail('The required result status is not configured.', 'result_status_missing');
 
             StudentCourseResult::query()->updateOrCreate(
                 ['student_course_registration_id' => $registration->student_course_registration_id],
-                ['theoretical_total' => $totals['theoretical'] ?? 0, 'practical_total' => $totals['practical'] ?? 0,
+                ['theoretical_total' => $isDeprived ? ($existing?->theoretical_total ?? 0) : ($totals['theoretical'] ?? 0),
+                 'practical_total' => $isDeprived ? ($existing?->practical_total ?? 0) : ($totals['practical'] ?? 0),
                  'coursework_total' => $existing?->coursework_total ?? 0, 'final_mark' => $calculation['final_mark'],
-                 'result_status_id' => $statusId, 'is_deprived' => (bool) $existing?->is_deprived,
+                 'result_status_id' => $statusId, 'is_deprived' => $isDeprived,
                  'calculated_at' => now(), 'calculated_by_user_id' => $userId]
             );
             $registration->update(['result_status_id' => $statusId]);
@@ -193,13 +213,13 @@ class GradePartWorkflowService
     {
         $partComponents = $components->where('component_type', $part); if ($partComponents->isEmpty()) return false;
         foreach ($registrations as $registration) {
-            if ($registration->studentCourseResult?->is_deprived) continue;
+            if ($registration->studentCourseResult?->is_deprived || $registration->studentCourseResult?->resultStatus?->status_code === 'deprived' || $registration->resultStatus?->status_code === 'deprived') continue;
             $grades = StudentGradeComponent::query()->where('student_course_registration_id', $registration->student_course_registration_id)->whereIn('grade_component_id', $partComponents->pluck('grade_component_id'))->get()->keyBy('grade_component_id');
             foreach ($partComponents as $component) { $grade = $grades->get($component->grade_component_id); if (! $grade || $grade->mark === null || (float) $grade->mark < 0 || (float) $grade->mark > (float) $component->max_mark) return false; }
         }
         return true;
     }
-    private function setComponentStatus(GradePartApproval $approval, string $status): void { StudentGradeComponent::query()->whereHas('studentCourseRegistration', fn ($q) => $q->where('course_offering_id', $approval->course_offering_id))->whereHas('gradeComponent', fn ($q) => $q->where('component_type', $approval->component_type))->lockForUpdate()->update(['grade_status' => $status]); }
+    private function setComponentStatus(GradePartApproval $approval, string $status): void { $componentIds = GradeComponent::query()->where('course_offering_id', $approval->course_offering_id)->where('component_type', $approval->component_type)->where('is_required', true)->lockForUpdate()->pluck('grade_component_id'); StudentGradeComponent::query()->whereIn('grade_component_id', $componentIds)->whereHas('studentCourseRegistration', fn ($q) => $q->where('course_offering_id', $approval->course_offering_id))->where('grade_status', 'submitted')->lockForUpdate()->update(['grade_status' => $status]); }
     private function event(GradePartApproval $approval, string $action, ?array $old, array $new, int $userId): void { GradePartApprovalEvent::query()->create(['grade_part_approval_id' => $approval->grade_part_approval_id, 'submission_version' => $approval->submission_version, 'action' => $action, 'old_values' => $old, 'new_values' => $new, 'performed_by_user_id' => $userId, 'performed_at' => now()]); }
     private function fail(string $message, string $code, int $status = 409): never { throw new GradeException($message, status: $status, errorCode: $code); }
 }

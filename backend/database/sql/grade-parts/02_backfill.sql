@@ -20,3 +20,14 @@ JOIN (
 LEFT JOIN grade_part_approvals existing ON existing.course_offering_id = ga.course_offering_id
  AND existing.component_type = required_parts.component_type
 WHERE existing.grade_part_approval_id IS NULL;
+
+
+-- Mark only required components belonging to approved legacy offerings; marks and audit logs are untouched.
+UPDATE student_grade_components sgc
+JOIN grade_components gc ON gc.grade_component_id = sgc.grade_component_id
+ AND gc.is_required = 1 AND gc.component_type IN ('practical','theoretical')
+JOIN grade_part_approvals gpa ON gpa.course_offering_id = gc.course_offering_id
+ AND gpa.component_type = gc.component_type AND gpa.status = 'approved'
+ AND gpa.review_notes LIKE 'Backfilled from approved legacy GradeApproval #%'
+SET sgc.grade_status = 'approved'
+WHERE sgc.grade_status <> 'approved';
