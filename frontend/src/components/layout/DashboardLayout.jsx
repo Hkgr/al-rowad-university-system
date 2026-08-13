@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
-import {
-  FaSignOutAlt, FaBars, FaChevronRight, FaBell,
-} from 'react-icons/fa'
+import { FaChevronRight } from 'react-icons/fa'
 import { canAccess, clearIdentity } from '../../features/auth/auth'
+import DashboardHeader from './DashboardHeader'
+import DashboardFooter from './DashboardFooter'
 
 /**
  * nav prop shape:
@@ -26,7 +26,7 @@ export default function DashboardLayout({ nav = [], appTitle = 'جامعة ال�
   const allItems   = authorizedNav.flatMap(s => s.items)
   const activeItem = allItems.find(item => location.pathname === item.to)
     ?? allItems.find(item => location.pathname.startsWith(item.to + '/'))
-  const pageTitle  = activeItem ? `${activeItem.ar} · ${activeItem.en}` : appTitle
+  const pageTitle  = activeItem?.ar || appTitle
 
   const logout = () => {
     clearIdentity()
@@ -149,30 +149,9 @@ export default function DashboardLayout({ nav = [], appTitle = 'جامعة ال�
           {/* Bottom fade */}
           <div className="h-7 flex-shrink-0 pointer-events-none" style={{ background: 'linear-gradient(to top, #0f2007 0%, transparent 100%)' }} />
 
-          {/* User card + logout */}
-          <div className="px-[10px] pb-3.5 pt-2 border-t border-white/6 flex flex-col gap-2" dir="rtl">
-            <div className="flex items-center gap-[11px] px-[11px] py-[9px] rounded-[12px] bg-white/5 border border-white/8 overflow-hidden min-h-[56px]">
-              <div className="relative flex-shrink-0">
-                <div className="w-9 h-9 rounded-full flex items-center justify-center text-[15px] font-black text-white shadow-[0_2px_10px_rgba(86,153,51,0.5)]" style={{ background: 'linear-gradient(135deg, #569933, #2d5c18)' }}>
-                  {(user.username?.[0] ?? 'U').toUpperCase()}
-                </div>
-                <span className="absolute bottom-0 left-0 w-2.5 h-2.5 rounded-full bg-[#22c55e] border-2 border-[#1a2e10] animate-[onlinePulse_2.5s_ease-in-out_infinite]" />
-              </div>
-              {!collapsed && (
-                <div className="flex flex-col min-w-0 overflow-hidden">
-                  <span className="text-[12.5px] font-bold text-white whitespace-nowrap overflow-hidden text-ellipsis">{user.username}</span>
-                  <span className="text-[9.5px] text-white/40 whitespace-nowrap overflow-hidden text-ellipsis mt-0.5">موظف · Employee</span>
-                </div>
-              )}
-            </div>
-            <button
-              className="flex items-center justify-center gap-[9px] px-3.5 py-[9px] rounded-[11px] bg-red-500/8 border border-red-500/18 text-red-300 text-[13px] font-bold cursor-pointer transition-all duration-[220ms] w-full hover:bg-red-500/18 hover:text-red-200"
-              onClick={logout}
-              dir="rtl"
-            >
-              <FaSignOutAlt />
-              {!collapsed && <span>تسجيل الخروج</span>}
-            </button>
+          {/* The account menu lives in the header to avoid duplicated user controls. */}
+          <div className="px-4 py-3 border-t border-white/6 text-center" dir="rtl">
+            {!collapsed && <span className="text-[11.5px] text-white/35">النظام الإداري والأكاديمي</span>}
           </div>
 
         </div>
@@ -181,41 +160,14 @@ export default function DashboardLayout({ nav = [], appTitle = 'جامعة ال�
       {/* ── Main area ── */}
       <div className="flex-1 min-w-0 flex flex-col" dir="ltr">
 
-        {/* Top bar */}
-        <header
-          className="h-[66px] flex items-center gap-3.5 px-[26px] sticky top-0 z-30 flex-shrink-0 max-[820px]:px-4"
-          style={{ background: 'linear-gradient(to bottom, #ffffff 0%, #f8fcf5 100%)', boxShadow: '0 1px 0 rgba(86,153,51,0.1), 0 4px 20px rgba(26,46,16,0.07)' }}
-        >
-          <button
-            className="hidden max-[820px]:flex bg-transparent border-none text-[19px] text-primary-dark cursor-pointer p-2 rounded-[9px] flex-shrink-0 hover:bg-primary/8"
-            onClick={() => setMobileOpen(v => !v)}
-          >
-            <FaBars />
-          </button>
-
-          <h2 className="flex-1 text-[17px] font-extrabold text-text-dark text-right pr-0.5" dir="rtl">
-            {pageTitle}
-          </h2>
-
-          <div className="flex items-center gap-2.5 flex-shrink-0">
-            <button className="relative w-10 h-10 rounded-[11px] bg-primary/7 border border-primary/14 text-primary-dark text-[16px] cursor-pointer flex items-center justify-center transition-all duration-[220ms] hover:bg-primary/14">
-              <FaBell />
-              <span className="absolute top-[-5px] right-[-5px] w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[10px] font-extrabold flex items-center justify-center border-2 border-white animate-[badgePulse_2s_ease-in-out_infinite] leading-none">3</span>
-            </button>
-            <div className="flex items-center gap-2 py-1 pl-3.5 pr-1 rounded-[30px] bg-primary/6 border border-primary/14 cursor-default hover:bg-primary/11">
-              <div className="w-[30px] h-[30px] rounded-full flex items-center justify-center text-[12px] font-black text-white" style={{ background: 'linear-gradient(135deg, #569933, #2d5c18)' }}>
-                {(user.username?.[0] ?? 'U').toUpperCase()}
-              </div>
-              <span className="text-[13px] font-semibold text-text-dark max-[820px]:hidden" dir="rtl">{user.username}</span>
-            </div>
-          </div>
-        </header>
+        <DashboardHeader appTitle={appTitle} pageTitle={pageTitle} activeItem={activeItem} user={user} toggleMenu={() => setMobileOpen(v => !v)} logout={logout} />
 
         {/* ← Page content goes here via Outlet */}
         <main className="flex-1 px-8 pt-7 pb-12 min-w-0 max-[820px]:px-4 max-[820px]:pt-5" dir="rtl">
           <Outlet />
         </main>
 
+        <DashboardFooter />
       </div>
     </div>
   )
