@@ -457,9 +457,11 @@ class GradeService
     {
         $policy = $this->defaultGradingPolicy();
         $requiredMaximum = ($requiresTheoretical ? $theoreticalMax : 0) + ($requiresPractical ? $practicalMax : 0);
-        $policyMaximum = ($requiresTheoretical ? (float) $policy->theoretical_max_mark : 0)
-            + ($requiresPractical ? (float) $policy->practical_max_mark : 0);
-        if (abs($requiredMaximum - $policyMaximum) > 0.001
+        $policyMaximum = (float) $policy->theoretical_max_mark + (float) $policy->practical_max_mark;
+        $partMaximumsMatch = (! $requiresTheoretical || abs($theoreticalMax - (float) $policy->theoretical_max_mark) <= 0.001)
+            && (! $requiresPractical || abs($practicalMax - (float) $policy->practical_max_mark) <= 0.001);
+        if (! $partMaximumsMatch
+            || abs($requiredMaximum - $policyMaximum) > 0.001
             || (float) $policy->minimum_final_mark > $requiredMaximum) {
             throw new GradeException('The grading policy is incompatible with the required grade parts.', status: 409, errorCode: 'grading_policy_incompatible');
         }
