@@ -95,6 +95,11 @@ class AcademicAuthorizationService
     public function assertCanViewGradeWorkflow(User $user, int $courseOfferingId): void
     {
         if ($user->hasPermission('exams.manage')) {
+            $this->assertExaminationCommitteeCanAccessOffering(
+                $user,
+                CourseOffering::query()->findOrFail($courseOfferingId)
+            );
+
             return;
         }
 
