@@ -640,6 +640,8 @@ class GradeService
             'letter_grade' => $grades['letter_grade'],
             'grade_points' => $grades['grade_points'],
             'result_status' => $grades['result_status'],
+            'is_deprived' => (bool) ($registration->studentCourseResult?->is_deprived
+                || $registration->studentCourseResult?->resultStatus?->status_code === 'deprived'),
             'registration_status' => $grades['registration']['registration_status'],
             'grade_entry_allowed' => $registration->allowsGradeEntry(),
             'grade_entry_blocked_reason' => $registration->allowsGradeEntry()
