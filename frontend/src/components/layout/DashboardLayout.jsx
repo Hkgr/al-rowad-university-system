@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
-import { FaSignOutAlt, FaChevronRight } from 'react-icons/fa'
+import { FaChevronRight } from 'react-icons/fa'
 import { canAccess, clearIdentity } from '../../features/auth/auth'
 import DashboardHeader from './DashboardHeader'
 import DashboardFooter from './DashboardFooter'
@@ -26,7 +26,7 @@ export default function DashboardLayout({ nav = [], appTitle = 'جامعة ال�
   const allItems   = authorizedNav.flatMap(s => s.items)
   const activeItem = allItems.find(item => location.pathname === item.to)
     ?? allItems.find(item => location.pathname.startsWith(item.to + '/'))
-  const pageTitle  = activeItem ? `${activeItem.ar} · ${activeItem.en}` : appTitle
+  const pageTitle  = activeItem?.ar || appTitle
 
   const logout = () => {
     clearIdentity()
@@ -149,30 +149,9 @@ export default function DashboardLayout({ nav = [], appTitle = 'جامعة ال�
           {/* Bottom fade */}
           <div className="h-7 flex-shrink-0 pointer-events-none" style={{ background: 'linear-gradient(to top, #0f2007 0%, transparent 100%)' }} />
 
-          {/* User card + logout */}
-          <div className="px-[10px] pb-3.5 pt-2 border-t border-white/6 flex flex-col gap-2" dir="rtl">
-            <div className="flex items-center gap-[11px] px-[11px] py-[9px] rounded-[12px] bg-white/5 border border-white/8 overflow-hidden min-h-[56px]">
-              <div className="relative flex-shrink-0">
-                <div className="w-9 h-9 rounded-full flex items-center justify-center text-[15px] font-black text-white shadow-[0_2px_10px_rgba(86,153,51,0.5)]" style={{ background: 'linear-gradient(135deg, #569933, #2d5c18)' }}>
-                  {(user.username?.[0] ?? 'U').toUpperCase()}
-                </div>
-                <span className="absolute bottom-0 left-0 w-2.5 h-2.5 rounded-full bg-[#22c55e] border-2 border-[#1a2e10] animate-[onlinePulse_2.5s_ease-in-out_infinite]" />
-              </div>
-              {!collapsed && (
-                <div className="flex flex-col min-w-0 overflow-hidden">
-                  <span className="text-[12.5px] font-bold text-white whitespace-nowrap overflow-hidden text-ellipsis">{user.username}</span>
-                  <span className="text-[9.5px] text-white/40 whitespace-nowrap overflow-hidden text-ellipsis mt-0.5">موظف · Employee</span>
-                </div>
-              )}
-            </div>
-            <button
-              className="flex items-center justify-center gap-[9px] px-3.5 py-[9px] rounded-[11px] bg-red-500/8 border border-red-500/18 text-red-300 text-[13px] font-bold cursor-pointer transition-all duration-[220ms] w-full hover:bg-red-500/18 hover:text-red-200"
-              onClick={logout}
-              dir="rtl"
-            >
-              <FaSignOutAlt />
-              {!collapsed && <span>تسجيل الخروج</span>}
-            </button>
+          {/* The account menu lives in the header to avoid duplicated user controls. */}
+          <div className="px-4 py-3 border-t border-white/6 text-center" dir="rtl">
+            {!collapsed && <span className="text-[11.5px] text-white/35">النظام الإداري والأكاديمي</span>}
           </div>
 
         </div>
