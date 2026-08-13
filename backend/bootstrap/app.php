@@ -58,6 +58,7 @@ return Application::configure(basePath: dirname(__DIR__))
             return response()->json([
                 'success' => false,
                 'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
                 'errors' => $exception->errors,
             ], $exception->status);
         });
