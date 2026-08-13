@@ -10,8 +10,7 @@ export default function useMyOfferings() {
   const load = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const user = JSON.parse(localStorage.getItem('user') || '{}')
-      const fm = await findMyFacultyMember(user.employee_id)
+      const fm = await findMyFacultyMember()
       setFacultyMember(fm)
       if (!fm) { setOfferings([]); return }
       setOfferings(await getMyOpenOfferings(fm.faculty_member_id))

@@ -4,19 +4,17 @@ function authHeaders() {
   return { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }
 }
 
-// Resolves the faculty_members row for this employee_id, or null (including
-// on any network/parse error) — callers must treat null as "not a professor."
-async function findMyFacultyMember(employeeId) {
-  if (!employeeId) return null
-  try {
-    const res  = await fetch(`${API}/faculty-members?per_page=100`, { headers: authHeaders() })
-    const json = await res.json()
-    if (!json.success) return null
-    const list = json.data?.data ?? json.data ?? []
-    return list.find(f => f.employee_id === employeeId) ?? null
-  } catch {
-    return null
+// Resolves the authenticated employee's faculty_members row. The API returns
+// null only when no matching row exists; request and server errors propagate.
+async function findMyFacultyMember() {
+  const res  = await fetch(`${API}/faculty-members/me`, { headers: authHeaders() })
+  const json = await res.json()
+
+  if (!res.ok || !json.success) {
+    throw new Error(json.message || `Failed to load faculty member (${res.status})`)
   }
+
+  return json.data ?? null
 }
 
 // Every currently-open offering, across every academic year/semester —
