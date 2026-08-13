@@ -10,6 +10,7 @@ use App\Models\Department;
 use App\Models\GradeAuditLog;
 use App\Models\GradeComponent;
 use App\Models\GradeApproval;
+use App\Models\GradePartApproval;
 use App\Models\GradingPolicy;
 use App\Models\ResultStatus;
 use App\Models\Semester;
@@ -268,7 +269,8 @@ class GradeService
                 throw new GradeException('Grades already exist for this registration. Use update endpoint instead.');
             }
 
-            $result = $this->persistGrades($registration, $data, $userId, isUpdate: false);
+            $this->assertRequestedGradePartsEditable((int) $registration->course_offering_id, $data);
+            $result = $this->persistGrades($registration, $data, $userId, isUpdate: false, changedParts: ['theoretical', 'practical']);
 
             return $this->formatRegistrationGrades($registration->fresh()->load($this->registrationRelations()));
         });
@@ -285,19 +287,24 @@ class GradeService
                 throw new GradeException('No grades found for this registration. Use create endpoint first.');
             }
 
+            $changedParts = collect(['theoretical', 'practical'])
+                ->filter(fn (string $part): bool => array_key_exists($part.'_mark', $data))->values()->all();
+            if ($changedParts === []) {
+                throw new GradeException('At least one grade part must be provided.', status: 422, errorCode: 'invalid_grade_part');
+            }
+            $this->assertRequestedGradePartsEditable((int) $registration->course_offering_id, $data);
+
             $oldTheoretical = (float) $registration->studentCourseResult->theoretical_total;
             $oldPractical = (float) $registration->studentCourseResult->practical_total;
+            $data['theoretical_mark'] ??= $oldTheoretical;
+            $data['practical_mark'] ??= $oldPractical;
 
-            $this->persistGrades($registration, $data, $userId, isUpdate: true);
+            $this->persistGrades($registration, $data, $userId, isUpdate: true, changedParts: $changedParts);
 
             $this->createAuditLogs(
-                $registration,
-                $oldTheoretical,
-                $oldPractical,
-                (float) $data['theoretical_mark'],
-                (float) $data['practical_mark'],
-                $userId,
-                $data['notes'] ?? 'Grade update'
+                $registration, $oldTheoretical, $oldPractical,
+                (float) $data['theoretical_mark'], (float) $data['practical_mark'],
+                $userId, $data['notes'] ?? 'Grade update', $changedParts
             );
 
             return $this->formatRegistrationGrades($registration->fresh()->load($this->registrationRelations()));
@@ -504,7 +511,7 @@ class GradeService
         ];
     }
 
-    private function persistGrades(StudentCourseRegistration $registration, array $data, ?int $userId, bool $isUpdate): StudentCourseResult
+    private function persistGrades(StudentCourseRegistration $registration, array $data, ?int $userId, bool $isUpdate, array $changedParts): StudentCourseResult
     {
         $theoretical = round((float) $data['theoretical_mark'], 2);
         $practical = round((float) $data['practical_mark'], 2);
@@ -512,18 +519,16 @@ class GradeService
 
         $resultStatusId = $this->resultStatusId($calculation['result_status_code']);
 
+        $resultValues = [
+            'final_mark' => $calculation['final_mark'], 'result_status_id' => $resultStatusId,
+            'is_deprived' => $calculation['result_status_code'] === 'deprived',
+            'calculated_at' => now(), 'calculated_by_user_id' => $userId,
+        ];
+        if (! $isUpdate || in_array('theoretical', $changedParts, true)) $resultValues['theoretical_total'] = $theoretical;
+        if (! $isUpdate || in_array('practical', $changedParts, true)) $resultValues['practical_total'] = $practical;
+        if (! $isUpdate) $resultValues['coursework_total'] = 0;
         $result = StudentCourseResult::query()->updateOrCreate(
-            ['student_course_registration_id' => $registration->student_course_registration_id],
-            [
-                'theoretical_total' => $theoretical,
-                'practical_total' => $practical,
-                'coursework_total' => 0,
-                'final_mark' => $calculation['final_mark'],
-                'result_status_id' => $resultStatusId,
-                'is_deprived' => $calculation['result_status_code'] === 'deprived',
-                'calculated_at' => now(),
-                'calculated_by_user_id' => $userId,
-            ]
+            ['student_course_registration_id' => $registration->student_course_registration_id], $resultValues
         );
 
         $registration->update([
@@ -531,7 +536,7 @@ class GradeService
             'notes' => $data['notes'] ?? $registration->notes,
         ]);
 
-        $this->syncGradeComponents($registration, $theoretical, $practical, $userId, $isUpdate);
+        $this->syncGradeComponents($registration, $theoretical, $practical, $userId, $isUpdate, $changedParts);
 
         return $result;
     }
@@ -541,7 +546,8 @@ class GradeService
         float $theoretical,
         float $practical,
         ?int $userId,
-        bool $isUpdate
+        bool $isUpdate,
+        array $changedParts
     ): void {
         $components = GradeComponent::query()
             ->where('course_offering_id', $registration->course_offering_id)
@@ -550,11 +556,11 @@ class GradeService
         $theoreticalComponent = $components->where('component_type', 'theoretical')->sortByDesc('max_mark')->first();
         $practicalComponent = $components->where('component_type', 'practical')->sortByDesc('max_mark')->first();
 
-        if ($theoreticalComponent) {
+        if ($theoreticalComponent && in_array('theoretical', $changedParts, true)) {
             $this->upsertStudentGradeComponent($registration, $theoreticalComponent, $theoretical, $userId, $isUpdate);
         }
 
-        if ($practicalComponent) {
+        if ($practicalComponent && in_array('practical', $changedParts, true)) {
             $this->upsertStudentGradeComponent($registration, $practicalComponent, $practical, $userId, $isUpdate);
         }
     }
@@ -587,7 +593,8 @@ class GradeService
         float $newTheoretical,
         float $newPractical,
         ?int $userId,
-        string $reason
+        string $reason,
+        array $changedParts
     ): void {
         if ($userId === null) {
             return;
@@ -597,6 +604,7 @@ class GradeService
 
         foreach ($components as $component) {
             $type = $component->gradeComponent?->component_type;
+            if (! in_array($type, $changedParts, true)) continue;
             $oldMark = $type === 'theoretical' ? $oldTheoretical : ($type === 'practical' ? $oldPractical : null);
             $newMark = $type === 'theoretical' ? $newTheoretical : ($type === 'practical' ? $newPractical : null);
 
@@ -950,6 +958,20 @@ class GradeService
             'courseOffering.semester',
             'studentCourseResult.resultStatus',
         ];
+    }
+
+    private function assertRequestedGradePartsEditable(int $offeringId, array $data): void
+    {
+        $requested = collect(GradePartApproval::PARTS)
+            ->filter(fn (string $part): bool => array_key_exists($part.'_mark', $data))->values();
+        if ($requested->isEmpty()) return;
+
+        $locked = GradePartApproval::query()->where('course_offering_id', $offeringId)
+            ->whereIn('component_type', $requested)->whereIn('status', ['submitted', 'approved'])
+            ->lockForUpdate()->pluck('component_type')->values()->all();
+        if ($locked !== []) {
+            throw new GradeException('One or more requested grade parts are locked.', ['parts' => $locked], 409, 'grade_part_locked');
+        }
     }
 
     private function assertRegistrationAllowsGrading(StudentCourseRegistration $registration): void
