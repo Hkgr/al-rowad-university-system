@@ -90,6 +90,7 @@ class GradeWorkflowService
                 'submitted_at' => now(),
                 'approved_by_user_id' => null,
                 'approval_date' => null,
+                'approval_role' => null,
                 'approval_notes' => null,
             ];
 

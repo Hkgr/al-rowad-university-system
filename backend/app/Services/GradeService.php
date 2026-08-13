@@ -49,13 +49,23 @@ class GradeService
             ->orderBy('student_course_registration_id')
             ->get();
 
+        $approval = GradeApproval::query()
+            ->where('course_offering_id', $courseOfferingId)
+            ->with('approvalStatus')
+            ->orderByDesc('grade_approval_id')
+            ->first();
+        $workflowEditable = $approval === null || $approval->allowsGradeEditing();
+
         return [
             'course_offering_id' => $offering->course_offering_id,
             'course_code' => $offering->course?->course_code,
             'course_name' => $offering->course?->course_name,
             'academic_year' => $this->compactAcademicYear($offering->academicYear),
             'semester' => $this->compactSemester($offering->semester),
-            'students' => $registrations->map(fn (StudentCourseRegistration $registration) => $this->formatGradeSheetRow($registration))->values()->all(),
+            'students' => $registrations
+                ->map(fn (StudentCourseRegistration $registration) => $this->formatGradeSheetRow($registration, $workflowEditable))
+                ->values()
+                ->all(),
         ];
     }
 
@@ -625,9 +635,11 @@ class GradeService
         ];
     }
 
-    private function formatGradeSheetRow(StudentCourseRegistration $registration): array
+    private function formatGradeSheetRow(StudentCourseRegistration $registration, bool $workflowEditable): array
     {
         $grades = $this->formatRegistrationGrades($registration);
+        $registrationAllowsGradeEntry = $registration->allowsGradeEntry();
+        $gradeEntryAllowed = $registrationAllowsGradeEntry && $workflowEditable;
 
         return [
             'student_course_registration_id' => $registration->student_course_registration_id,
@@ -643,10 +655,12 @@ class GradeService
             'is_deprived' => (bool) ($registration->studentCourseResult?->is_deprived
                 || $registration->studentCourseResult?->resultStatus?->status_code === 'deprived'),
             'registration_status' => $grades['registration']['registration_status'],
-            'grade_entry_allowed' => $registration->allowsGradeEntry(),
-            'grade_entry_blocked_reason' => $registration->allowsGradeEntry()
-                ? null
-                : 'Historical or inactive registrations are read-only.',
+            'grade_entry_allowed' => $gradeEntryAllowed,
+            'grade_entry_blocked_reason' => match (true) {
+                $gradeEntryAllowed => null,
+                ! $registrationAllowsGradeEntry => 'Historical or inactive registrations are read-only.',
+                default => 'Grades have been submitted for approval and are currently locked.',
+            },
             'notes' => $grades['notes'],
         ];
     }
