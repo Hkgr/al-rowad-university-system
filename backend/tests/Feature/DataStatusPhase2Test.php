@@ -176,7 +176,7 @@ class DataStatusPhase2Test extends TestCase
             ->assertJsonPath('error_code', 'graduation_eligibility_not_implemented');
 
         $approved = ApprovalStatus::query()->create(['status_code' => 'approved', 'status_name' => 'Approved', 'is_active' => true]);
-        $exam = $this->userWithRole('exam_officer');
+        $exam = $this->userWithRole('board_member');
         $this->actingAs($exam, 'sanctum')->postJson('/api/v1/grade-approvals', [
             'course_offering_id' => $this->offering->course_offering_id,
             'approval_status_code' => 'approved',
@@ -232,7 +232,7 @@ class DataStatusPhase2Test extends TestCase
     {
         $completed = $this->registration('completed', true);
         $result = $completed->studentCourseResult()->firstOrFail();
-        $exam = $this->userWithRole('exam_officer');
+        $exam = $this->userWithRole('board_member');
 
         $this->actingAs($exam, 'sanctum')
             ->getJson('/api/v1/student-course-results/'.$result->student_course_result_id)
@@ -263,7 +263,7 @@ class DataStatusPhase2Test extends TestCase
 
     public function test_grade_endpoint_accepts_current_registration_but_rejects_historical_and_student_writes(): void
     {
-        $exam = $this->userWithRole('exam_officer');
+        $exam = $this->userWithRole('board_member');
         $current = $this->registration('registered', false);
         $this->actingAs($exam, 'sanctum')->postJson('/api/v1/registrations/'.$current->student_course_registration_id.'/grades', [
             'theoretical_mark' => 48,
@@ -299,7 +299,7 @@ class DataStatusPhase2Test extends TestCase
             ->postJson('/api/v1/course-offerings/'.$this->offering->course_offering_id.'/apply-deprivation')
             ->assertForbidden();
 
-        $exam = $this->userWithRole('exam_officer');
+        $exam = $this->userWithRole('board_member');
         $this->actingAs($exam, 'sanctum')
             ->postJson('/api/v1/course-offerings/'.$this->offering->course_offering_id.'/apply-deprivation')
             ->assertOk();
@@ -308,7 +308,7 @@ class DataStatusPhase2Test extends TestCase
     public function test_disabled_user_cannot_reuse_authenticated_access(): void
     {
         $disabled = AccountStatus::query()->create(['status_code' => 'disabled', 'status_name' => 'Disabled', 'is_active' => true]);
-        $role = Role::query()->create(['role_code' => 'exam_officer', 'role_name' => 'Exam Officer', 'is_system_role' => true, 'is_active' => true]);
+        $role = Role::query()->create(['role_code' => 'board_member', 'role_name' => 'Exam Officer', 'is_system_role' => true, 'is_active' => true]);
         $user = User::query()->create(['username' => 'disabled', 'email' => 'disabled@test.invalid', 'password_hash' => 'unused', 'account_status_id' => $disabled->account_status_id]);
         UserRole::query()->create(['user_id' => $user->user_id, 'role_id' => $role->role_id, 'is_active' => true]);
 

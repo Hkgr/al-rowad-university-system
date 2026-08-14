@@ -29,7 +29,7 @@ The generic student update endpoint explicitly rejects any transition whose reso
 
 Existing route middleware, policies, assigned-section checks, student ownership checks, and Examination Committee deprivation/finalization boundaries were not widened. Visibility of a historical row does not confer write authority.
 
-Authenticated API requests now reject non-`active` accounts and revoke the presented token. Academic-record endpoints enforce student self-ownership or an authorized academic role. Grade and attendance section operations require the assigned instructor or Examination Committee role, while result calculation and final deprivation remain restricted to `exam_officer` (or system administration). Unauthorized operations return `403`.
+Authenticated API requests now reject non-`active` accounts and revoke the presented token. Academic-record endpoints enforce student self-ownership or an authorized academic role. Grade and attendance section operations require the assigned instructor or Examination Committee role, while result calculation and final deprivation remain restricted to `board_member` (or system administration). Unauthorized operations return `403`.
 
 The OpenAPI contract documents grade-sheet eligibility fields, grade read/write authorization errors, code-based approval submission, and the disabled graduation response. Bruno examples use `approval_status_code` and a non-graduation `student_status_code`; they no longer direct clients to sensitive numeric transitions.
 

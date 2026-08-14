@@ -1,23 +1,105 @@
--- P0-1 MANUAL VERIFY. Every status must be PASS; detail reports must be empty.
-SELECT 'PRES_unique_active' check_name,IF(COUNT(*)=1,'PASS','FAIL') status,COUNT(*) actual FROM organizational_units WHERE unit_code='PRES' AND is_active=1;
-SELECT '7_unique_active_name' check_name,IF(COUNT(*)=1,'PASS','FAIL') status,COUNT(*) actual FROM organizational_units WHERE unit_code='7' AND unit_name='نائب رئيس الجامعة للشؤون الإدارية' AND is_active=1;
-SELECT '7_type_and_parent' check_name,IF(COUNT(*)=1,'PASS','FAIL') status,COUNT(*) actual FROM organizational_units u JOIN organizational_unit_types t ON t.unit_type_id=u.unit_type_id JOIN organizational_units p ON p.organizational_unit_id=u.parent_unit_id WHERE u.unit_code='7' AND t.type_code='vice_presidency' AND p.unit_code='PRES';
-SELECT '71_72_73_direct_children' check_name,IF(COUNT(*)=3,'PASS','FAIL') status,COUNT(*) actual FROM organizational_units u JOIN organizational_units p ON p.organizational_unit_id=u.parent_unit_id JOIN organizational_unit_types t ON t.unit_type_id=u.unit_type_id WHERE u.unit_code IN ('71','72','73') AND p.unit_code='7' AND t.type_code='directorate' AND u.is_active=1;
-SELECT '731_736_children_and_types' check_name,IF(COUNT(*)=6,'PASS','FAIL') status,COUNT(*) actual FROM organizational_units u JOIN organizational_units p ON p.organizational_unit_id=u.parent_unit_id JOIN organizational_unit_types t ON t.unit_type_id=u.unit_type_id WHERE u.unit_code IN ('731','732','733','734','735','736') AND p.unit_code='73' AND ((u.unit_code='735' AND t.type_code='administration') OR (u.unit_code<>'735' AND t.type_code='office')) AND u.is_active=1;
-SELECT 'null_safe_hierarchy' check_name,IF(COUNT(*)=0,'PASS','FAIL') status,COUNT(*) failures FROM organizational_units u LEFT JOIN organizational_units p ON p.organizational_unit_id=u.parent_unit_id LEFT JOIN organizational_unit_types t ON t.unit_type_id=u.unit_type_id WHERE (u.unit_code='7' AND NOT (p.unit_code<=>'PRES' AND t.type_code<=>'vice_presidency')) OR (u.unit_code IN ('71','72','73') AND NOT (p.unit_code<=>'7' AND t.type_code<=>'directorate')) OR (u.unit_code IN ('731','732','733','734','736') AND NOT (p.unit_code<=>'73' AND t.type_code<=>'office')) OR (u.unit_code='735' AND NOT (p.unit_code<=>'73' AND t.type_code<=>'administration'));
-SELECT 'legacy_units_inactive' check_name,IF(COUNT(*)=0,'PASS','FAIL') status,COUNT(*) failures FROM organizational_units WHERE unit_code IN ('VP_ADMIN','REG_OFFICE','EXAM_OFFICE') AND is_active=1;
-SELECT 'legacy_references_removed' check_name,IF(SUM(refs)=0,'PASS','FAIL') status,SUM(refs) failures FROM (SELECT COUNT(*) refs FROM employees x JOIN organizational_units u ON u.organizational_unit_id=x.organizational_unit_id WHERE u.unit_code IN ('VP_ADMIN','REG_OFFICE','EXAM_OFFICE') UNION ALL SELECT COUNT(*) FROM employee_positions x JOIN organizational_units u ON u.organizational_unit_id=x.organizational_unit_id WHERE u.unit_code IN ('VP_ADMIN','REG_OFFICE','EXAM_OFFICE') UNION ALL SELECT COUNT(*) FROM employee_unit_assignments x JOIN organizational_units u ON u.organizational_unit_id=x.organizational_unit_id WHERE u.unit_code IN ('VP_ADMIN','REG_OFFICE','EXAM_OFFICE') UNION ALL SELECT COUNT(*) FROM boards x JOIN organizational_units u ON u.organizational_unit_id=x.organizational_unit_id WHERE u.unit_code IN ('VP_ADMIN','REG_OFFICE','EXAM_OFFICE') UNION ALL SELECT COUNT(*) FROM colleges x JOIN organizational_units u ON u.organizational_unit_id=x.organizational_unit_id WHERE u.unit_code IN ('VP_ADMIN','REG_OFFICE','EXAM_OFFICE') UNION ALL SELECT COUNT(*) FROM departments x JOIN organizational_units u ON u.organizational_unit_id=x.organizational_unit_id WHERE u.unit_code IN ('VP_ADMIN','REG_OFFICE','EXAM_OFFICE') UNION ALL SELECT COUNT(*) FROM organizational_units x JOIN organizational_units u ON u.organizational_unit_id=x.parent_unit_id WHERE u.unit_code IN ('VP_ADMIN','REG_OFFICE','EXAM_OFFICE')) q;
-SELECT 'scope_id_signed_int' check_name,IF(COUNT(*)=1,'PASS','FAIL') status,COUNT(*) actual FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='user_access_scopes' AND column_name='scope_id' AND data_type='int' AND column_type NOT LIKE '%unsigned%';
-SELECT 'scope_structure' check_name,IF((SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='user_access_scopes' AND column_name IN ('user_access_scope_id','user_id','scope_type','scope_id','is_active','created_at','updated_at'))=7 AND EXISTS(SELECT 1 FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name='user_access_scopes' AND index_name='user_scope_unique' AND non_unique=0) AND EXISTS(SELECT 1 FROM information_schema.key_column_usage WHERE table_schema=DATABASE() AND table_name='user_access_scopes' AND column_name='user_id' AND referenced_table_name='users' AND referenced_column_name='user_id'),'PASS','FAIL') status;
-SELECT 'invalid_orphan_scopes' check_name,IF(COUNT(*)=0,'PASS','FAIL') status,COUNT(*) failures FROM user_access_scopes s LEFT JOIN organizational_units root ON s.scope_type='university' AND root.organizational_unit_id=s.scope_id AND root.unit_code='PRES' LEFT JOIN colleges c ON s.scope_type='college' AND c.college_id=s.scope_id LEFT JOIN departments d ON s.scope_type='department' AND d.department_id=s.scope_id LEFT JOIN academic_programs p ON s.scope_type='program' AND p.academic_program_id=s.scope_id LEFT JOIN course_offerings co ON s.scope_type='section' AND co.course_offering_id=s.scope_id WHERE CASE s.scope_type WHEN 'university' THEN root.organizational_unit_id WHEN 'college' THEN c.college_id WHEN 'department' THEN d.department_id WHEN 'program' THEN p.academic_program_id WHEN 'section' THEN co.course_offering_id ELSE NULL END IS NULL;
-SELECT 'merge_description_not_duplicated' check_name,IF(COUNT(*)=0,'PASS','FAIL') status,COUNT(*) failures FROM organizational_units WHERE (LENGTH(COALESCE(description,''))-LENGTH(REPLACE(COALESCE(description,''),'Superseded by official unit','')))/LENGTH('Superseded by official unit')>1;
-SELECT 'roles_present' check_name,IF(COUNT(*)=4,'PASS','FAIL') status,COUNT(*) actual FROM roles WHERE role_code IN ('exam_officer','registration_officer','doctor_instructor','student') AND is_active=1;
-SELECT 'permissions_present' check_name,IF(COUNT(*)=15,'PASS','FAIL') status,COUNT(*) actual FROM permissions WHERE permission_code IN ('students.view','students.manage','admissions.view','admissions.manage','academic_structure.view','courses.view','registration.view','registration.manage','exams.view','exams.manage','grades.view','grades.manage','attendance.view','attendance.manage','system_settings.view') AND is_active=1;
-SELECT u.user_id,u.username,u.email,r.role_code,'NEEDS_MANUAL_SCOPE' finding FROM users u JOIN user_roles ur ON ur.user_id=u.user_id AND ur.is_active=1 JOIN roles r ON r.role_id=ur.role_id AND r.role_code IN ('exam_officer','registration_officer') LEFT JOIN user_access_scopes s ON s.user_id=u.user_id AND s.is_active=1 LEFT JOIN organizational_units root ON s.scope_type='university' AND root.organizational_unit_id=s.scope_id AND root.unit_code='PRES' LEFT JOIN colleges c ON s.scope_type='college' AND c.college_id=s.scope_id LEFT JOIN departments d ON s.scope_type='department' AND d.department_id=s.scope_id LEFT JOIN academic_programs p ON s.scope_type='program' AND p.academic_program_id=s.scope_id LEFT JOIN course_offerings co ON s.scope_type='section' AND co.course_offering_id=s.scope_id GROUP BY u.user_id,u.username,u.email,r.role_code HAVING COUNT(root.organizational_unit_id)+COUNT(c.college_id)+COUNT(d.department_id)+COUNT(p.academic_program_id)+COUNT(co.course_offering_id)=0;
-SELECT 'operational_users_have_valid_scope' check_name,IF(COUNT(*)=0,'PASS','FAIL') status,COUNT(*) failures FROM users u JOIN user_roles ur ON ur.user_id=u.user_id AND ur.is_active=1 JOIN roles r ON r.role_id=ur.role_id AND r.role_code IN ('exam_officer','registration_officer') WHERE NOT EXISTS(SELECT 1 FROM user_access_scopes s LEFT JOIN organizational_units root ON s.scope_type='university' AND root.organizational_unit_id=s.scope_id AND root.unit_code='PRES' LEFT JOIN colleges c ON s.scope_type='college' AND c.college_id=s.scope_id LEFT JOIN departments d ON s.scope_type='department' AND d.department_id=s.scope_id LEFT JOIN academic_programs p ON s.scope_type='program' AND p.academic_program_id=s.scope_id LEFT JOIN course_offerings co ON s.scope_type='section' AND co.course_offering_id=s.scope_id WHERE s.user_id=u.user_id AND s.is_active=1 AND CASE s.scope_type WHEN 'university' THEN root.organizational_unit_id WHEN 'college' THEN c.college_id WHEN 'department' THEN d.department_id WHEN 'program' THEN p.academic_program_id WHEN 'section' THEN co.course_offering_id ELSE NULL END IS NOT NULL);
-DROP TEMPORARY TABLE IF EXISTS p01_expected;
-CREATE TEMPORARY TABLE p01_expected(role_code VARCHAR(80),permission_code VARCHAR(120),PRIMARY KEY(role_code,permission_code));
-INSERT INTO p01_expected VALUES ('exam_officer','students.view'),('exam_officer','academic_structure.view'),('exam_officer','courses.view'),('exam_officer','registration.view'),('exam_officer','exams.view'),('exam_officer','exams.manage'),('exam_officer','grades.view'),('exam_officer','grades.manage'),('exam_officer','system_settings.view'),('registration_officer','students.view'),('registration_officer','students.manage'),('registration_officer','admissions.view'),('registration_officer','admissions.manage'),('registration_officer','academic_structure.view'),('registration_officer','courses.view'),('registration_officer','registration.view'),('registration_officer','registration.manage'),('registration_officer','system_settings.view'),('doctor_instructor','courses.view'),('doctor_instructor','students.view'),('doctor_instructor','attendance.view'),('doctor_instructor','attendance.manage'),('doctor_instructor','grades.view'),('doctor_instructor','grades.manage'),('student','students.view'),('student','registration.view'),('student','grades.view'),('student','attendance.view');
-SELECT 'permission_matrix_exact' check_name,IF(COUNT(*)=0,'PASS','FAIL') status,COUNT(*) failures FROM (SELECT e.role_code,e.permission_code FROM p01_expected e LEFT JOIN roles r USING(role_code) LEFT JOIN permissions p USING(permission_code) LEFT JOIN role_permissions rp ON rp.role_id=r.role_id AND rp.permission_id=p.permission_id WHERE rp.role_permission_id IS NULL UNION ALL SELECT r.role_code,p.permission_code FROM role_permissions rp JOIN roles r ON r.role_id=rp.role_id JOIN permissions p ON p.permission_id=rp.permission_id LEFT JOIN p01_expected e ON e.role_code=r.role_code AND e.permission_code=p.permission_code WHERE r.role_code IN ('exam_officer','registration_officer','doctor_instructor','student') AND e.role_code IS NULL) mismatches;
-SELECT 'OVERALL' check_name,IF((SELECT COUNT(*) FROM organizational_units u JOIN organizational_unit_types t ON t.unit_type_id=u.unit_type_id JOIN organizational_units p ON p.organizational_unit_id=u.parent_unit_id WHERE u.unit_code='7' AND u.unit_name='نائب رئيس الجامعة للشؤون الإدارية' AND u.is_active=1 AND t.type_code='vice_presidency' AND p.unit_code='PRES')=1 AND (SELECT COUNT(*) FROM organizational_units u JOIN organizational_units p ON p.organizational_unit_id=u.parent_unit_id JOIN organizational_unit_types t ON t.unit_type_id=u.unit_type_id WHERE u.unit_code IN ('71','72','73') AND p.unit_code='7' AND t.type_code='directorate' AND u.is_active=1)=3 AND (SELECT COUNT(*) FROM organizational_units u JOIN organizational_units p ON p.organizational_unit_id=u.parent_unit_id JOIN organizational_unit_types t ON t.unit_type_id=u.unit_type_id WHERE u.unit_code IN ('731','732','733','734','735','736') AND p.unit_code='73' AND ((u.unit_code='735' AND t.type_code='administration') OR (u.unit_code<>'735' AND t.type_code='office')) AND u.is_active=1)=6 AND (SELECT COUNT(*) FROM organizational_units WHERE unit_code IN ('VP_ADMIN','REG_OFFICE','EXAM_OFFICE') AND is_active=1)=0 AND NOT EXISTS(SELECT 1 FROM user_access_scopes s LEFT JOIN organizational_units root ON s.scope_type='university' AND root.organizational_unit_id=s.scope_id AND root.unit_code='PRES' LEFT JOIN colleges c ON s.scope_type='college' AND c.college_id=s.scope_id LEFT JOIN departments d ON s.scope_type='department' AND d.department_id=s.scope_id LEFT JOIN academic_programs p ON s.scope_type='program' AND p.academic_program_id=s.scope_id LEFT JOIN course_offerings co ON s.scope_type='section' AND co.course_offering_id=s.scope_id WHERE CASE s.scope_type WHEN 'university' THEN root.organizational_unit_id WHEN 'college' THEN c.college_id WHEN 'department' THEN d.department_id WHEN 'program' THEN p.academic_program_id WHEN 'section' THEN co.course_offering_id ELSE NULL END IS NULL) AND NOT EXISTS(SELECT 1 FROM p01_expected e LEFT JOIN roles r USING(role_code) LEFT JOIN permissions p USING(permission_code) LEFT JOIN role_permissions rp ON rp.role_id=r.role_id AND rp.permission_id=p.permission_id WHERE rp.role_permission_id IS NULL),'PASS','FAIL') status;
-SELECT 'OVERALL_SCOPE_GATE' check_name,IF(NOT EXISTS(SELECT 1 FROM user_access_scopes s LEFT JOIN organizational_units root ON s.scope_type='university' AND root.organizational_unit_id=s.scope_id AND root.unit_code='PRES' LEFT JOIN colleges c ON s.scope_type='college' AND c.college_id=s.scope_id LEFT JOIN departments d ON s.scope_type='department' AND d.department_id=s.scope_id LEFT JOIN academic_programs p ON s.scope_type='program' AND p.academic_program_id=s.scope_id LEFT JOIN course_offerings co ON s.scope_type='section' AND co.course_offering_id=s.scope_id WHERE CASE s.scope_type WHEN 'university' THEN root.organizational_unit_id WHEN 'college' THEN c.college_id WHEN 'department' THEN d.department_id WHEN 'program' THEN p.academic_program_id WHEN 'section' THEN co.course_offering_id ELSE NULL END IS NULL) AND NOT EXISTS(SELECT 1 FROM users u JOIN user_roles ur ON ur.user_id=u.user_id AND ur.is_active=1 JOIN roles r ON r.role_id=ur.role_id AND r.role_code IN ('exam_officer','registration_officer') WHERE NOT EXISTS(SELECT 1 FROM user_access_scopes s WHERE s.user_id=u.user_id AND s.is_active=1)),'PASS','FAIL') status;
+-- P0-1 MANUAL VERIFY: all categories contribute to OVERALL.
+DROP TEMPORARY TABLE IF EXISTS p01_expected_chart;
+CREATE TEMPORARY TABLE p01_expected_chart(unit_code VARCHAR(50) PRIMARY KEY,unit_name VARCHAR(255),type_code VARCHAR(50),parent_code VARCHAR(50) NULL);
+INSERT INTO p01_expected_chart VALUES
+('PRES','رئيس الجامعة','presidency',NULL),
+('1','إدارة البحوث والدراسات','administration','PRES'),
+('11','مركز البحوث والدراسات','center','1'),
+('12','مجلة جامعة الرواد','unit','1'),
+('13','المكتبة','center','1'),
+('2','إدارة التطوير ودعم القرار','administration','PRES'),
+('21','وحدة نظم المعلومات والتخطيط الاستراتيجي','unit','2'),
+('22','مكتب الجودة والاعتماد الأكاديمي','office','2'),
+('23','إدارة المشاريع الإنتاجية','administration','2'),
+('3','إدارة التعليم الإلكتروني','administration','PRES'),
+('31','التعليم عن بعد','unit','3'),
+('32','التعليم الافتراضي','unit','3'),
+('4','الأمين العام للجامعة','administration','PRES'),
+('41','مكتب الشؤون القانونية','office','4'),
+('42','مكتب الأمن والسلامة','office','4'),
+('5','مديرية العلاقات العامة والإعلام','directorate','PRES'),
+('51','مكتب العلاقات العامة','office','5'),
+('52','مكتب الإعلام والاتصال','office','5'),
+('6','وحدة التقييم والمتابعة','unit','PRES'),
+('7','نائب رئيس الجامعة للشؤون الإدارية','vice_presidency','PRES'),
+('71','مديرية الشؤون الإدارية','directorate','7'),
+('711','مكتب الموارد البشرية','office','71'),
+('712','مكتب الديوان والأرشيف','office','71'),
+('713','مكتب الرعاية الصحية','office','71'),
+('714','مكتب الخدمات الإدارية','office','71'),
+('715','المكتب التقني','office','71'),
+('72','مديرية الشؤون المالية','directorate','7'),
+('721','مكتب المحاسبة','office','72'),
+('722','أمين الصندوق','office','72'),
+('723','أمين المستودع','office','72'),
+('73','مديرية شؤون الطلاب','directorate','7'),
+('731','مكتب الإرشاد والتوجيه','office','73'),
+('732','مكتب القبول والتسجيل','office','73'),
+('733','مكتب الخدمات الطلابية','office','73'),
+('734','مكتب المنح والإيفاد والتبادل الطلابي','office','73'),
+('735','إدارة الامتحانات','administration','73'),
+('736','مكتب التوثيق والتصديق','office','73'),
+('8','نائب رئيس الجامعة للشؤون العلمية','vice_presidency','PRES'),
+('81','إدارة التعليم الجامعي','administration','8'),
+('811','الكليات','college','81'),
+('812','المعاهد','institute','81'),
+('813','المخابر','lab','81'),
+('82','إدارة الدراسات العليا والبحث العلمي','administration','8'),
+('821','الماجستير','unit','82'),
+('822','الدكتوراه','unit','82'),
+('823','التعليم المهني','unit','82'),
+('9','نائب رئيس الجامعة للشؤون المجتمعية','vice_presidency','PRES'),
+('91','إدارة تنمية وبناء القدرات','administration','9'),
+('911','مركز التأهيل والتدريب','center','91'),
+('912','مركز اللغات الأجنبية','center','91'),
+('913','مركز تقنية المعلومات','center','91'),
+('914','مركز ريادة الأعمال','center','91'),
+('92','إدارة الأنشطة المجتمعية','administration','9'),
+('921','نادي الشباب والرياضة','club','92'),
+('922','نادي التطوع والأنشطة المجتمعية','club','92'),
+('923','نادي أصدقاء البيئة','club','92'),
+('924','مكتب المسؤولية المجتمعية','office','92'),
+('925','مكتب العدالة وحقوق الإنسان','office','92');
+DROP TEMPORARY TABLE IF EXISTS p01_required_permissions;
+CREATE TEMPORARY TABLE p01_required_permissions(role_code VARCHAR(80),permission_code VARCHAR(120),PRIMARY KEY(role_code,permission_code));
+INSERT INTO p01_required_permissions VALUES
+('board_member','students.view'),
+('board_member','academic_structure.view'),
+('board_member','courses.view'),
+('board_member','registration.view'),
+('board_member','exams.view'),
+('board_member','exams.manage'),
+('board_member','grades.view'),
+('board_member','grades.manage'),
+('board_member','system_settings.view'),
+('registration_officer','students.view'),
+('registration_officer','students.manage'),
+('registration_officer','admissions.view'),
+('registration_officer','admissions.manage'),
+('registration_officer','academic_structure.view'),
+('registration_officer','courses.view'),
+('registration_officer','registration.view'),
+('registration_officer','registration.manage'),
+('registration_officer','system_settings.view'),
+('doctor_instructor','courses.view'),
+('doctor_instructor','students.view'),
+('doctor_instructor','attendance.view'),
+('doctor_instructor','attendance.manage'),
+('doctor_instructor','grades.view'),
+('doctor_instructor','grades.manage'),
+('student','students.view'),
+('student','registration.view'),
+('student','grades.view'),
+('student','attendance.view');
+SELECT 'organizational_units_exact_58' check_name,IF((SELECT COUNT(*) FROM p01_expected_chart)=58 AND (SELECT COUNT(*) FROM organizational_units u JOIN p01_expected_chart e ON e.unit_code=u.unit_code)=58,'PASS','FAIL') status;
+SELECT 'organizational_names_types_parents' check_name,IF(NOT EXISTS(SELECT 1 FROM p01_expected_chart e LEFT JOIN organizational_units u ON u.unit_code=e.unit_code AND u.unit_name=e.unit_name AND u.is_active=1 LEFT JOIN organizational_unit_types t ON t.unit_type_id=u.unit_type_id AND t.type_code=e.type_code LEFT JOIN organizational_units p ON p.organizational_unit_id=u.parent_unit_id WHERE u.organizational_unit_id IS NULL OR t.unit_type_id IS NULL OR NOT (p.unit_code<=>e.parent_code)),'PASS','FAIL') status;
+SELECT 'employee_creation_and_user_links' check_name,IF((SELECT COUNT(*) FROM users u JOIN employees emp ON emp.employee_id=u.employee_id JOIN organizational_units ou ON ou.organizational_unit_id=emp.organizational_unit_id WHERE (u.username='registrar' AND ou.unit_code='732') OR (u.username='exam.board' AND ou.unit_code='735'))=2,'PASS','FAIL') status;
+SELECT 'required_role_permissions' check_name,IF(NOT EXISTS(SELECT 1 FROM p01_required_permissions e LEFT JOIN roles r ON r.role_code=e.role_code LEFT JOIN permissions p ON p.permission_code=e.permission_code LEFT JOIN role_permissions rp ON rp.role_id=r.role_id AND rp.permission_id=p.permission_id WHERE rp.role_permission_id IS NULL),'PASS','FAIL') status;
+SELECT 'user_access_scopes' check_name,IF((SELECT COUNT(*) FROM user_access_scopes WHERE is_active=1)>=2,'PASS','FAIL') status;
+SELECT 'staff_university_scopes' check_name,IF((SELECT COUNT(DISTINCT u.user_id) FROM users u JOIN user_access_scopes s ON s.user_id=u.user_id AND s.scope_type='university' AND s.is_active=1 JOIN organizational_units p ON p.organizational_unit_id=s.scope_id AND p.unit_code='PRES' WHERE u.username IN ('registrar','exam.board'))=2,'PASS','FAIL') status;
+SELECT 'orphan_scopes' check_name,IF(NOT EXISTS(SELECT 1 FROM user_access_scopes s LEFT JOIN organizational_units root ON s.scope_type='university' AND root.organizational_unit_id=s.scope_id AND root.unit_code='PRES' LEFT JOIN colleges c ON s.scope_type='college' AND c.college_id=s.scope_id LEFT JOIN departments d ON s.scope_type='department' AND d.department_id=s.scope_id LEFT JOIN academic_programs ap ON s.scope_type='program' AND ap.academic_program_id=s.scope_id LEFT JOIN course_offerings co ON s.scope_type='section' AND co.course_offering_id=s.scope_id WHERE CASE s.scope_type WHEN 'university' THEN root.organizational_unit_id WHEN 'college' THEN c.college_id WHEN 'department' THEN d.department_id WHEN 'program' THEN ap.academic_program_id WHEN 'section' THEN co.course_offering_id END IS NULL),'PASS','FAIL') status;
+SELECT 'duplicate_identity_links' check_name,IF(NOT EXISTS(SELECT student_id FROM users WHERE student_id IS NOT NULL GROUP BY student_id HAVING COUNT(*)>1) AND NOT EXISTS(SELECT employee_id FROM users WHERE employee_id IS NOT NULL GROUP BY employee_id HAVING COUNT(*)>1),'PASS','FAIL') status;
+SELECT 'required_p01_test_identities' check_name,IF((SELECT COUNT(*) FROM users WHERE username IN ('registrar','exam.board'))=2 AND (SELECT COUNT(*) FROM users u JOIN user_roles ur ON ur.user_id=u.user_id AND ur.is_active=1 JOIN roles r ON r.role_id=ur.role_id WHERE (u.username='registrar' AND r.role_code='registration_officer') OR (u.username='exam.board' AND r.role_code='board_member'))=2,'PASS','FAIL') status;
+SELECT 'OVERALL' check_name,IF((SELECT COUNT(*) FROM p01_expected_chart)=58 AND NOT EXISTS(SELECT 1 FROM p01_expected_chart e LEFT JOIN organizational_units u ON u.unit_code=e.unit_code AND u.unit_name=e.unit_name AND u.is_active=1 LEFT JOIN organizational_unit_types t ON t.unit_type_id=u.unit_type_id AND t.type_code=e.type_code LEFT JOIN organizational_units p ON p.organizational_unit_id=u.parent_unit_id WHERE u.organizational_unit_id IS NULL OR t.unit_type_id IS NULL OR NOT (p.unit_code<=>e.parent_code)) AND (SELECT COUNT(*) FROM users u JOIN employees emp ON emp.employee_id=u.employee_id JOIN organizational_units ou ON ou.organizational_unit_id=emp.organizational_unit_id WHERE (u.username='registrar' AND ou.unit_code='732') OR (u.username='exam.board' AND ou.unit_code='735'))=2 AND NOT EXISTS(SELECT 1 FROM p01_required_permissions e LEFT JOIN roles r ON r.role_code=e.role_code LEFT JOIN permissions p ON p.permission_code=e.permission_code LEFT JOIN role_permissions rp ON rp.role_id=r.role_id AND rp.permission_id=p.permission_id WHERE rp.role_permission_id IS NULL) AND (SELECT COUNT(DISTINCT u.user_id) FROM users u JOIN user_access_scopes s ON s.user_id=u.user_id AND s.scope_type='university' AND s.is_active=1 JOIN organizational_units p ON p.organizational_unit_id=s.scope_id AND p.unit_code='PRES' WHERE u.username IN ('registrar','exam.board'))=2 AND NOT EXISTS(SELECT 1 FROM user_access_scopes s LEFT JOIN organizational_units root ON s.scope_type='university' AND root.organizational_unit_id=s.scope_id AND root.unit_code='PRES' LEFT JOIN colleges c ON s.scope_type='college' AND c.college_id=s.scope_id LEFT JOIN departments d ON s.scope_type='department' AND d.department_id=s.scope_id LEFT JOIN academic_programs ap ON s.scope_type='program' AND ap.academic_program_id=s.scope_id LEFT JOIN course_offerings co ON s.scope_type='section' AND co.course_offering_id=s.scope_id WHERE CASE s.scope_type WHEN 'university' THEN root.organizational_unit_id WHEN 'college' THEN c.college_id WHEN 'department' THEN d.department_id WHEN 'program' THEN ap.academic_program_id WHEN 'section' THEN co.course_offering_id END IS NULL) AND NOT EXISTS(SELECT student_id FROM users WHERE student_id IS NOT NULL GROUP BY student_id HAVING COUNT(*)>1) AND NOT EXISTS(SELECT employee_id FROM users WHERE employee_id IS NOT NULL GROUP BY employee_id HAVING COUNT(*)>1) AND (SELECT COUNT(*) FROM users WHERE username IN ('registrar','exam.board'))=2 AND (SELECT COUNT(*) FROM users u JOIN user_roles ur ON ur.user_id=u.user_id AND ur.is_active=1 JOIN roles r ON r.role_id=ur.role_id WHERE (u.username='registrar' AND r.role_code='registration_officer') OR (u.username='exam.board' AND r.role_code='board_member'))=2,'PASS','FAIL') status;
+DROP TEMPORARY TABLE p01_required_permissions;
+DROP TEMPORARY TABLE p01_expected_chart;

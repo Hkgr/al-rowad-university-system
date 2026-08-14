@@ -10,7 +10,7 @@ class ResourceAuthorizationService
     private const MODULE_TABLE_PREFIXES = [
         'students' => ['students', 'student_statuses', 'student_documents', 'student_academic_terms'],
         'admissions' => ['admission_', 'applicants'],
-        'academic_structure' => ['academic_', 'colleges', 'departments', 'program_'],
+        'academic_structure' => ['academic_', 'semesters', 'colleges', 'departments', 'program_'],
         'courses' => ['courses', 'course_'],
         'registration' => ['registration_', 'student_credit_', 'student_course_registrations'],
         'exams' => ['exam_', 'supplementary_'],

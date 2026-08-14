@@ -180,8 +180,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     |--------------------------------------------------------------------------
     */
 
-    Route::get('academic-years/current', [AcademicYearController::class, 'current']);
-    Route::get('semesters/active', [SemesterController::class, 'active']);
+    Route::get('academic-years/current', [AcademicYearController::class, 'current'])
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.view');
+    Route::get('semesters/active', [SemesterController::class, 'active'])
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.view');
 
     /*
     |--------------------------------------------------------------------------
@@ -327,10 +329,19 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     |--------------------------------------------------------------------------
     */
 
-    Route::apiResource('academic-levels', AcademicLevelController::class);
+    Route::apiResource('academic-levels', AcademicLevelController::class)->only(['index', 'show'])
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.view');
+    Route::apiResource('academic-levels', AcademicLevelController::class)->except(['index', 'show'])
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.manage');
     Route::apiResource('academic-programs', AcademicProgramController::class);
-    Route::apiResource('academic-years', AcademicYearController::class);
-    Route::apiResource('semesters', SemesterController::class);
+    Route::apiResource('academic-years', AcademicYearController::class)->only(['index', 'show'])
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.view');
+    Route::apiResource('academic-years', AcademicYearController::class)->except(['index', 'show'])
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.manage');
+    Route::apiResource('semesters', SemesterController::class)->only(['index', 'show'])
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.view');
+    Route::apiResource('semesters', SemesterController::class)->except(['index', 'show'])
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.manage');
     Route::apiResource('colleges', CollegeController::class);
     Route::apiResource('departments', DepartmentController::class);
     Route::apiResource('courses', CourseController::class);

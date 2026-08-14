@@ -14,15 +14,17 @@ Run `php artisan identity:reconcile` for a dry-run identity report. It labels al
 
 | Actor | Required permissions | Effective data boundary | Explicit exclusions |
 |---|---|---|---|
-| `exam_officer` | student, structure, course, registration, exam, grade and settings views; exam/grade manage | granted scopes | registration manage and permission administration |
+| `board_member` | student, structure, course, registration, exam, grade and settings views; exam/grade manage | granted scopes | registration manage and permission administration |
 | `registration_officer` | student/admission/registration manage and required views | granted scopes | exam/grade approval and permission administration |
 | `doctor_instructor` | course/student/attendance/grade operations | active assigned offerings only | other instructors' offerings |
 | `student` | student/registration/grade/attendance views | linked student identity only | registration manage and other students |
 | `super_admin` | centralized permission and scope bypass | university-wide | no scattered controller bypasses |
 
-The idempotent `AuthorizationP01Seeder` synchronizes the four system roles to this exact allow-list: it inserts missing grants and removes excess grants for those roles only. It never uses wildcards or changes non-system/custom roles. Production uses the SQL-first runbook, not this development seeder. It also upserts the official `7 → 73 → 731–736` organizational hierarchy by stable unit code.
+The idempotent `AuthorizationP01Seeder` ensures the four system roles contain this required allow-list: it inserts missing grants while preserving all existing custom grants. It never uses wildcards or changes non-system/custom roles. Production uses the SQL-first runbook, not this development seeder. It also upserts all 58 units in the official organizational chart by stable unit code, including a missing `PRES` root.
 
-The production SQL establishes `PRES → 7 → 71, 72, 73 → 731–736`. Code `7` is نائب رئيس الجامعة للشؤون الإدارية, codes `71`–`73` are directorates, `731`–`734` and `736` are offices, and `735` is an administration. `VP_ADMIN`, `REG_OFFICE`, and `EXAM_OFFICE` are reconciled to `7`, `732`, and `735`; legacy rows are disabled only after known references are moved. The rollback cannot reconstruct merged references without the mandatory backup.
+Academic levels, academic years, and semesters are global read-only reference resources for operational staff with `academic_structure.view`; organizational scoping does not hide them, and write routes still require the separate `academic_structure.manage` permission.
+
+The production SQL establishes the complete official chart under `PRES`, including top-level branches `1` through `9` and every listed descendant through `925`. It links `registrar` to an employee in `732`, links `exam.board` to an employee in `735`, and grants both identities a university scope rooted at `PRES`. Deployment remains gated on all three manual scripts passing against a restored production copy.
 
 ## React page/API parity inventory
 
