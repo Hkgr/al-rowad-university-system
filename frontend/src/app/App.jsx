@@ -215,7 +215,7 @@ export default function App() {
         {/* ── بوابة عميد الكلية dashboard ── */}
         <Route
           element={
-            <ProtectedRoute>
+            <ProtectedRoute roles={['dean']}>
               <DeanLayout />
             </ProtectedRoute>
           }
