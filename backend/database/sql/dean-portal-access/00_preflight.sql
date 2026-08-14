@@ -4,15 +4,15 @@
 SELECT 'required_structure' AS report_section, table_name, column_name, column_type, is_nullable, column_key
 FROM information_schema.columns
 WHERE table_schema = DATABASE()
-  AND ((table_name = 'colleges' AND column_name IN ('college_id','organizational_unit_id','college_code','college_name'))
-    OR (table_name = 'roles' AND column_name IN ('role_id','role_code','is_active'))
-    OR (table_name = 'account_statuses' AND column_name IN ('account_status_id','status_code','is_active'))
+  AND ((table_name = 'colleges' AND column_name IN ('college_id','organizational_unit_id','college_code','college_name','is_active'))
+    OR (table_name = 'roles' AND column_name IN ('role_id','role_code','role_name','is_active'))
+    OR (table_name = 'account_statuses' AND column_name IN ('account_status_id','status_code','status_name','is_active'))
     OR (table_name = 'employee_types' AND column_name IN ('employee_type_id','type_code','is_active'))
     OR (table_name = 'employee_statuses' AND column_name IN ('employee_status_id','status_code','is_active'))
-    OR (table_name = 'employees' AND column_name IN ('employee_id','employee_number','first_name','last_name','email','employee_type_id','employee_status_id','organizational_unit_id'))
-    OR (table_name = 'users' AND column_name IN ('user_id','username','email','password_hash','account_status_id','employee_id'))
-    OR (table_name = 'user_roles' AND column_name IN ('user_role_id','user_id','role_id','is_active'))
-    OR (table_name = 'user_access_scopes' AND column_name IN ('user_access_scope_id','user_id','scope_type','scope_id','is_active')))
+    OR (table_name = 'employees' AND column_name IN ('employee_id','employee_number','first_name','last_name','email','employee_type_id','employee_status_id','organizational_unit_id','created_at','updated_at'))
+    OR (table_name = 'users' AND column_name IN ('user_id','username','email','password_hash','account_status_id','employee_id','failed_login_attempts','created_at','updated_at'))
+    OR (table_name = 'user_roles' AND column_name IN ('user_role_id','user_id','role_id','assigned_by_user_id','assigned_at','is_active'))
+    OR (table_name = 'user_access_scopes' AND column_name IN ('user_access_scope_id','user_id','scope_type','scope_id','is_active','created_at','updated_at')))
 ORDER BY table_name, ordinal_position;
 
 SELECT 'target_college' AS report_section, college_id, college_code, college_name, organizational_unit_id, is_active
@@ -36,6 +36,8 @@ CREATE TEMPORARY TABLE dean_preflight_blockers (reason VARCHAR(255) NOT NULL);
 INSERT INTO dean_preflight_blockers
 SELECT 'FMF college must exist exactly once' WHERE (SELECT COUNT(*) FROM colleges WHERE college_code='FMF') <> 1;
 INSERT INTO dean_preflight_blockers
+SELECT 'FMF college 10 must be active' WHERE (SELECT COUNT(*) FROM colleges WHERE college_code='FMF' AND college_id=10 AND is_active=1) <> 1;
+INSERT INTO dean_preflight_blockers
 SELECT CONCAT('FMF college_id is ', COALESCE(CAST((SELECT MAX(college_id) FROM colleges WHERE college_code='FMF') AS CHAR), 'NULL'), ', expected 10')
 WHERE (SELECT COUNT(*) FROM colleges WHERE college_code='FMF' AND college_id=10) <> 1;
 INSERT INTO dean_preflight_blockers
@@ -51,15 +53,15 @@ INSERT INTO dean_preflight_blockers SELECT 'active employee status must exist ex
 WHERE (SELECT COUNT(*) FROM employee_statuses WHERE status_code='active' AND is_active=1) <> 1;
 INSERT INTO dean_preflight_blockers SELECT 'required table/column structure is incomplete'
 WHERE (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND
- ((table_name='colleges' AND column_name IN ('college_id','organizational_unit_id','college_code','college_name')) OR
-  (table_name='roles' AND column_name IN ('role_id','role_code','is_active')) OR
-  (table_name='account_statuses' AND column_name IN ('account_status_id','status_code','is_active')) OR
+ ((table_name='colleges' AND column_name IN ('college_id','organizational_unit_id','college_code','college_name','is_active')) OR
+  (table_name='roles' AND column_name IN ('role_id','role_code','role_name','is_active')) OR
+  (table_name='account_statuses' AND column_name IN ('account_status_id','status_code','status_name','is_active')) OR
   (table_name='employee_types' AND column_name IN ('employee_type_id','type_code','is_active')) OR
   (table_name='employee_statuses' AND column_name IN ('employee_status_id','status_code','is_active')) OR
-  (table_name='employees' AND column_name IN ('employee_id','employee_number','first_name','last_name','email','employee_type_id','employee_status_id','organizational_unit_id')) OR
-  (table_name='users' AND column_name IN ('user_id','username','email','password_hash','account_status_id','employee_id')) OR
-  (table_name='user_roles' AND column_name IN ('user_role_id','user_id','role_id','is_active')) OR
-  (table_name='user_access_scopes' AND column_name IN ('user_access_scope_id','user_id','scope_type','scope_id','is_active')))) <> 39;
+  (table_name='employees' AND column_name IN ('employee_id','employee_number','first_name','last_name','email','employee_type_id','employee_status_id','organizational_unit_id','created_at','updated_at')) OR
+  (table_name='users' AND column_name IN ('user_id','username','email','password_hash','account_status_id','employee_id','failed_login_attempts','created_at','updated_at')) OR
+  (table_name='user_roles' AND column_name IN ('user_role_id','user_id','role_id','assigned_by_user_id','assigned_at','is_active')) OR
+  (table_name='user_access_scopes' AND column_name IN ('user_access_scope_id','user_id','scope_type','scope_id','is_active','created_at','updated_at')))) <> 51;
 INSERT INTO dean_preflight_blockers SELECT 'user_access_scopes does not support a direct college scope'
 WHERE NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE()
  AND table_name='user_access_scopes' AND column_name='scope_type' AND column_type LIKE '%college%');
@@ -76,6 +78,14 @@ WHERE EXISTS (SELECT 1 FROM users WHERE (email='dean.fmf.test@rowad.edu' OR user
 INSERT INTO dean_preflight_blockers SELECT 'test employee identity is linked to a different user'
 WHERE EXISTS (SELECT 1 FROM users WHERE employee_id=(SELECT employee_id FROM employees
  WHERE employee_number='TEMP-DEAN-FMF-2026' LIMIT 1) AND email<>'dean.fmf.test@rowad.edu');
+INSERT INTO dean_preflight_blockers SELECT 'existing test account has a non-dean role; review it manually'
+WHERE EXISTS (SELECT 1 FROM users u JOIN user_roles ur ON ur.user_id=u.user_id
+ JOIN roles r ON r.role_id=ur.role_id
+ WHERE u.email='dean.fmf.test@rowad.edu' AND r.role_code<>'dean');
+INSERT INTO dean_preflight_blockers SELECT 'existing test account has an active scope other than college 10; review it manually'
+WHERE EXISTS (SELECT 1 FROM users u JOIN user_access_scopes s ON s.user_id=u.user_id
+ WHERE u.email='dean.fmf.test@rowad.edu' AND s.is_active=1
+   AND NOT (s.scope_type='college' AND s.scope_id=10));
 
 SELECT 'BLOCKED_REASON' AS report_section, reason FROM dean_preflight_blockers ORDER BY reason;
 SELECT 'OVERALL' AS report_section, IF(COUNT(*)=0, 'READY', 'BLOCKED') AS result,
