@@ -63,8 +63,16 @@ const saveRegistrationGrade = (registrationId, values, hasExistingGrade) => apiR
   body: JSON.stringify(values),
 })
 const submitOfferingGrades = offeringId => apiRequest(`/course-offerings/${offeringId}/submit-grades`, { method: 'POST' })
+const getGradePartsWorkflow = offeringId => apiRequest(`/course-offerings/${offeringId}/grade-parts-workflow`)
+const saveRegistrationGradePart = (registrationId, part, payload) => apiRequest(`/registrations/${registrationId}/grade-parts/${part}`, {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(payload),
+})
+const submitOfferingGradePart = (offeringId, part) => apiRequest(`/course-offerings/${offeringId}/grade-parts/${part}/submit`, { method: 'POST' })
 
 export {
   API, authHeaders, ProfessorApiError, findMyFacultyMember, getMyOpenOfferings,
   getGradeSheet, getGradeWorkflow, saveRegistrationGrade, submitOfferingGrades,
+  getGradePartsWorkflow, saveRegistrationGradePart, submitOfferingGradePart,
 }
