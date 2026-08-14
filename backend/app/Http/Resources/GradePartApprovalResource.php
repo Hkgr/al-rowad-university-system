@@ -13,9 +13,22 @@ class GradePartApprovalResource extends JsonResource
             'id' => $this->grade_part_approval_id, 'course_offering_id' => $this->course_offering_id,
             'component_type' => $this->component_type, 'status' => $this->status,
             'submission_version' => $this->submission_version, 'submitted_by_user_id' => $this->submitted_by_user_id,
+            'submitted_by_name' => $this->userName($this->submittedBy),
             'submitted_at' => $this->submitted_at?->toISOString(), 'reviewed_by_user_id' => $this->reviewed_by_user_id,
+            'reviewed_by_name' => $this->userName($this->reviewedBy),
             'reviewed_at' => $this->reviewed_at?->toISOString(), 'review_notes' => $this->review_notes,
+            'course_code' => $this->courseOffering?->course?->course_code,
+            'course_name' => $this->courseOffering?->course?->course_name,
             'course_offering' => $this->whenLoaded('courseOffering'),
         ];
+    }
+
+    private function userName($user): ?string
+    {
+        if ($user?->employee) {
+            return trim($user->employee->first_name.' '.$user->employee->last_name);
+        }
+
+        return $user?->username;
     }
 }
