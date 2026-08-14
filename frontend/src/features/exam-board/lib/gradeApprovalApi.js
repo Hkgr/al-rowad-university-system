@@ -34,28 +34,6 @@ function queryString(filters) {
   return params.toString()
 }
 
-export function getGradeApprovals(filters, options = {}) {
-  return request(`/v1/grade-approvals?${queryString(filters)}`, options)
-}
-
-export function getGradeApprovalDetails(gradeApprovalId, options = {}) {
-  return request(`/v1/grade-approvals/${gradeApprovalId}`, options)
-}
-
-export function approveGradeApproval(gradeApprovalId, approvalNotes) {
-  return request(`/v1/grade-approvals/${gradeApprovalId}/approve`, {
-    method: 'POST',
-    body: JSON.stringify({ approval_notes: approvalNotes }),
-  })
-}
-
-export function returnGradeApprovalForCorrection(gradeApprovalId, approvalNotes) {
-  return request(`/v1/grade-approvals/${gradeApprovalId}/return-for-correction`, {
-    method: 'POST',
-    body: JSON.stringify({ approval_notes: approvalNotes }),
-  })
-}
-
 export function getGradePartApprovals(filters, options = {}) {
   return request(`/v1/grade-part-approvals?${queryString(filters)}`, options)
 }

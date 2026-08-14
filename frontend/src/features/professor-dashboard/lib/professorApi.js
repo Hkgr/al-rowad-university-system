@@ -55,14 +55,6 @@ async function getMyOpenOfferings(facultyMemberId) {
   return all.filter(o => Number(o.faculty_member_id) === Number(facultyMemberId))
 }
 
-const getGradeSheet = offeringId => apiRequest(`/course-offerings/${offeringId}/grade-sheet`)
-const getGradeWorkflow = offeringId => apiRequest(`/course-offerings/${offeringId}/grade-workflow`)
-const saveRegistrationGrade = (registrationId, values, hasExistingGrade) => apiRequest(`/registrations/${registrationId}/grades`, {
-  method: hasExistingGrade ? 'PUT' : 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(values),
-})
-const submitOfferingGrades = offeringId => apiRequest(`/course-offerings/${offeringId}/submit-grades`, { method: 'POST' })
 const getGradePartsWorkflow = offeringId => apiRequest(`/course-offerings/${offeringId}/grade-parts-workflow`)
 const saveRegistrationGradePart = (registrationId, part, payload) => apiRequest(`/registrations/${registrationId}/grade-parts/${part}`, {
   method: 'PUT',
@@ -73,6 +65,5 @@ const submitOfferingGradePart = (offeringId, part) => apiRequest(`/course-offeri
 
 export {
   API, authHeaders, ProfessorApiError, findMyFacultyMember, getMyOpenOfferings,
-  getGradeSheet, getGradeWorkflow, saveRegistrationGrade, submitOfferingGrades,
   getGradePartsWorkflow, saveRegistrationGradePart, submitOfferingGradePart,
 }

@@ -19,6 +19,8 @@ class GradePartApprovalResource extends JsonResource
             'reviewed_at' => $this->reviewed_at?->toISOString(), 'review_notes' => $this->review_notes,
             'course_code' => $this->courseOffering?->course?->course_code,
             'course_name' => $this->courseOffering?->course?->course_name,
+            'academic_year_name' => $this->courseOffering?->academicYear?->year_name,
+            'semester_name' => $this->courseOffering?->semester?->semester_name,
             'course_offering' => $this->whenLoaded('courseOffering'),
         ];
     }
