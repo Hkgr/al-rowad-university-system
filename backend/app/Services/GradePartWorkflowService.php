@@ -49,6 +49,13 @@ class GradePartWorkflowService
         return [
             'course_offering_id' => $offeringId, 'course' => ['course_id' => $offering->course_id, 'course_code' => $offering->course?->course_code, 'course_name' => $offering->course?->course_name],
             'required_parts' => $required, 'parts' => $parts,
+            'components' => collect(GradePartApproval::PARTS)->mapWithKeys(fn ($part) => [$part => $offering->gradeComponents
+                ->where('component_type', $part)
+                ->map(fn ($component) => [
+                    'grade_component_id' => $component->grade_component_id,
+                    'component_type' => $component->component_type,
+                    'max_mark' => (float) $component->max_mark,
+                ])->values()->all()])->all(),
             'students' => $registrations->map(fn ($registration) => [
                 'registration_id' => $registration->student_course_registration_id,
                 'registration_status' => $registration->registrationStatus?->status_code,
