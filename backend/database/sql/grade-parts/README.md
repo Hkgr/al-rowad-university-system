@@ -1,0 +1,1 @@
+Manual phpMyAdmin order: `00_precheck.sql` (read-only), `01_apply.sql` (DDL only), `02_backfill.sql` (idempotent approved-only data backfill), then `03_verify.sql` (read-only). Before any manual rollback, run `04_rollback_precheck.sql`; no supplied SQL file drops tables.

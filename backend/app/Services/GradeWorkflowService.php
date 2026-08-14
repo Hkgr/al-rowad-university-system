@@ -25,6 +25,7 @@ class GradeWorkflowService
     {
         return DB::transaction(function () use ($courseOfferingId, $userId): array {
             CourseOffering::query()->whereKey($courseOfferingId)->lockForUpdate()->firstOrFail();
+            app(GradeService::class)->assertLegacyGradeWorkflowAllowed($courseOfferingId);
 
             $approval = GradeApproval::query()
                 ->where('course_offering_id', $courseOfferingId)
