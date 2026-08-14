@@ -7,6 +7,14 @@ use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 class ResourceAuthorizationService
 {
+    private const GLOBAL_ACADEMIC_REFERENCE_TABLES = ['academic_levels', 'academic_years', 'semesters'];
+
+    private const GLOBAL_ACADEMIC_READ_PERMISSIONS = [
+        'academic_structure.view',
+        'registration.view',
+        'grades.view',
+    ];
+
     private const MODULE_TABLE_PREFIXES = [
         'students' => ['students', 'student_statuses', 'student_documents', 'student_academic_terms'],
         'admissions' => ['admission_', 'applicants'],
@@ -27,6 +35,19 @@ class ResourceAuthorizationService
     public function authorize(User $user, string $modelClass, bool $write): void
     {
         $table = (new $modelClass())->getTable();
+        if (in_array($table, self::GLOBAL_ACADEMIC_REFERENCE_TABLES, true)) {
+            $allowed = $write
+                ? $user->hasPermission('academic_structure.manage')
+                : collect(self::GLOBAL_ACADEMIC_READ_PERMISSIONS)->contains(
+                    fn (string $permission): bool => $user->hasPermission($permission)
+                );
+            if (! $allowed) {
+                throw new AccessDeniedHttpException('You do not have permission to access this academic reference resource.');
+            }
+
+            return;
+        }
+
         $module = $this->moduleFor($table);
         $permission = $module.'.'.($write ? 'manage' : 'view');
 

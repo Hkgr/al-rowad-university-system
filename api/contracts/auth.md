@@ -95,7 +95,11 @@ Content-Type: application/json
       "account_status_id": 1,
       "student_id": null,
       "employee_id": 1,
-      "board_member_id": null
+      "board_member_id": null,
+      "roles": ["registration_officer"],
+      "permissions": ["students.view", "registration.view", "registration.manage"],
+      "organizational_unit": { "id": 7, "code": "732", "name": "مكتب القبول والتسجيل" },
+      "access_scopes": [{ "type": "university", "id": 3 }]
     },
     "token": "1|plainTextTokenValue",
     "token_type": "Bearer"
@@ -161,6 +165,10 @@ None
     "student_id": null,
     "employee_id": 1,
     "board_member_id": null,
+    "roles": ["registration_officer"],
+    "permissions": ["students.view", "registration.view", "registration.manage"],
+    "organizational_unit": { "id": 7, "code": "732", "name": "مكتب القبول والتسجيل" },
+    "access_scopes": [{ "type": "university", "id": 3 }],
     "last_login_at": "2026-06-20T10:00:00.000000Z"
   }
 }
@@ -176,7 +184,8 @@ None
 
 ### Frontend notes
 
-- Call on app startup or after login to hydrate user context (linked `student_id`, `employee_id`, etc.).
+- `POST /api/login` and `GET /api/user` expose the same identity fields, including `roles`, `permissions`, `organizational_unit`, and server-derived `access_scopes`.
+- Call on app startup or after login to hydrate user context (linked `student_id`, `employee_id`, etc.). Never submit `access_scopes` from the browser as authorization evidence.
 - If this returns 401, clear stored token and redirect to login.
 
 ---

@@ -13,26 +13,26 @@ class GradeAuditLogController extends ApiController
 {
     public function index(): JsonResponse
     {
-        abort_unless(request()->user()->hasPermission('grades.manage'), 403);
+        $this->assertStaffGrader();
         $logs = $this->scopedQuery()->paginate(request()->integer('per_page', 15));
         return $this->successResponse(GradeAuditLogResource::collection($logs)->response(request())->getData(true));
     }
 
     public function show($id): JsonResponse
     {
-        abort_unless(request()->user()->hasPermission('grades.manage'), 403);
+        $this->assertStaffGrader();
         $log = $this->scopedQuery()->findOrFail($id);
         return $this->successResponse((new GradeAuditLogResource($log))->resolve(request()));
     }
 
     public function store(): JsonResponse
     {
-        abort_unless(request()->user()->hasPermission('grades.manage'), 403);
+        $this->assertStaffGrader();
         /** @var StoreGradeAuditLogRequest $request */
         $request = app(StoreGradeAuditLogRequest::class);
         $data = $request->validated();
         $component = StudentGradeComponent::query()->findOrFail($data['student_grade_component_id']);
-        abort_unless(app(DataScopeService::class)->scopeRegistrations(
+        abort_unless(app(DataScopeService::class)->scopeRegistrationsForStaff(
             $component->studentCourseRegistration()->getQuery(), $request->user()
         )->whereKey($component->student_course_registration_id)->exists(), 403);
         $data['changed_by_user_id'] = $request->user()->user_id;
@@ -47,7 +47,15 @@ class GradeAuditLogController extends ApiController
     private function scopedQuery()
     {
         return GradeAuditLog::query()->whereHas('studentGradeComponent.studentCourseRegistration', fn ($registration) =>
-            app(DataScopeService::class)->scopeRegistrations($registration, request()->user()));
+            app(DataScopeService::class)->scopeRegistrationsForStaff($registration, request()->user()));
+    }
+
+    private function assertStaffGrader(): void
+    {
+        $user = request()->user();
+        abort_unless($user !== null
+            && ($user->employee_id !== null || $user->effectiveRoles()->contains('super_admin'))
+            && $user->hasPermission('grades.manage'), 403);
     }
 
     protected function modelClass(): string { return GradeAuditLog::class; }

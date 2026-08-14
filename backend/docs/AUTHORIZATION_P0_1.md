@@ -20,9 +20,13 @@ Run `php artisan identity:reconcile` for a dry-run identity report. It labels al
 | `student` | student/registration/grade/attendance views | linked student identity only | registration manage and other students |
 | `super_admin` | centralized permission and scope bypass | university-wide | no scattered controller bypasses |
 
-The idempotent `AuthorizationP01Seeder` synchronizes the four system roles to this exact allow-list: it inserts missing grants and removes excess grants for those roles only. It never uses wildcards or changes non-system/custom roles. Production uses the SQL-first runbook, not this development seeder. It also upserts the official `7 → 73 → 731–736` organizational hierarchy by stable unit code.
+The development-only `AuthorizationP01Seeder` and production SQL use the same 58-record official chart contract. Both add missing required grants without deleting custom grants. The chart includes `PRES`, direct children `1`–`9`, and all image-derived descendants through `925`; only those official codes are corrected, so unrelated organizational rows remain untouched.
 
-The production SQL establishes `PRES → 7 → 71, 72, 73 → 731–736`. Code `7` is نائب رئيس الجامعة للشؤون الإدارية, codes `71`–`73` are directorates, `731`–`734` and `736` are offices, and `735` is an administration. `VP_ADMIN`, `REG_OFFICE`, and `EXAM_OFFICE` are reconciled to `7`, `732`, and `735`; legacy rows are disabled only after known references are moved. The rollback cannot reconstruct merged references without the mandatory backup.
+Confirmed legacy aliases are reconciled only through the fixed mapping `VP_ADMIN→7`, `VP_SCI→8`, `VP_COMM→9`, `HR_OFFICE→711`, `LIBRARY→13`, `REG_OFFICE→732`, and `EXAM_OFFICE→735`. Known foreign keys and children are moved before an alias is deactivated; unknown references and ambiguous scopes fail closed. Preflight also blocks unexpected existing employee links and every active operational account without a valid scope, except the two null-linked deterministic test identities whose `PRES` scopes apply creates.
+
+See [the complete official chart table](P0_1_OFFICIAL_ORGANIZATIONAL_CHART.md) for every exact code, Arabic name, schema-valid type, and parent.
+
+The exact corrected records include `22 = الجودة والاعتماد الأكاديمي` (`unit`, parent `2`), `23 = مشاريع إنتاجية` (`unit`, parent `2`), and `736 = مكتب التوثيق والتصديق` (`office`, parent `73`). Username `exam.board` is distinct from role `exam_officer`; no examination grant is added to `board_member`. Deterministic registrar/exam employees are linked to `732`/`735` and receive `PRES` university scopes. Unique user identity indexes prevent future duplicate student/employee links.
 
 ## React page/API parity inventory
 
@@ -35,6 +39,8 @@ The production SQL establishes `PRES → 7 → 71, 72, 73 → 731–736`. Code `
 | Student dashboard | linked student's profile, registrations, transcript, GPA and attendance | view permissions plus `student_id` ownership; no self-registration buttons |
 | Academic structure | college/department/program/course APIs | `academic_structure.view` and `courses.view`; manage for mutations; granted scope |
 | HR | employee/faculty/position APIs | `hr.view`; `hr.manage` for mutations |
+
+Academic-year, semester, and academic-level reference reads are global and accept `academic_structure.view`, `registration.view`, or `grades.view`; organizational scope never empties them. Their mutations require `academic_structure.manage` and do not inherit read access. Identity linking and security administration remain on the centralized `super_admin` path.
 
 Laravel policies are authoritative. React's central `can`, `canAny`, `canAll`, and `canAccess` helpers only mirror the returned identity contract to avoid dead links and unintended 403 responses.
 

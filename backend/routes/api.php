@@ -170,7 +170,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
 
 Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::class])->prefix('v1')->group(function (): void {
     Route::put('users/{user}/identity', [UserController::class, 'linkIdentity'])
-        ->middleware(\App\Http\Middleware\RequirePermission::class.':users_permissions.manage');
+        ->middleware(\App\Http\Middleware\RequireSystemAdministrator::class);
 
     /*
     |--------------------------------------------------------------------------
@@ -180,8 +180,13 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     |--------------------------------------------------------------------------
     */
 
-    Route::get('academic-years/current', [AcademicYearController::class, 'current']);
-    Route::get('semesters/active', [SemesterController::class, 'active']);
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.view,registration.view,grades.view')->group(function (): void {
+        Route::get('academic-years/current', [AcademicYearController::class, 'current']);
+        Route::get('semesters/active', [SemesterController::class, 'active']);
+        Route::apiResource('academic-levels', AcademicLevelController::class)->only(['index', 'show']);
+        Route::apiResource('academic-years', AcademicYearController::class)->only(['index', 'show']);
+        Route::apiResource('semesters', SemesterController::class)->only(['index', 'show']);
+    });
 
     /*
     |--------------------------------------------------------------------------
@@ -327,10 +332,15 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     |--------------------------------------------------------------------------
     */
 
-    Route::apiResource('academic-levels', AcademicLevelController::class);
+    // Reference reads above are available to registration/grade workflows. Their
+    // administrative mutations must not inherit those operational permissions.
+    Route::apiResource('academic-levels', AcademicLevelController::class)->except(['index', 'show'])
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.manage');
     Route::apiResource('academic-programs', AcademicProgramController::class);
-    Route::apiResource('academic-years', AcademicYearController::class);
-    Route::apiResource('semesters', SemesterController::class);
+    Route::apiResource('academic-years', AcademicYearController::class)->except(['index', 'show'])
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.manage');
+    Route::apiResource('semesters', SemesterController::class)->except(['index', 'show'])
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.manage');
     Route::apiResource('colleges', CollegeController::class);
     Route::apiResource('departments', DepartmentController::class);
     Route::apiResource('courses', CourseController::class);
@@ -475,11 +485,13 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     |--------------------------------------------------------------------------
     */
 
-    Route::apiResource('users', UserController::class);
-    Route::apiResource('roles', RoleController::class);
-    Route::apiResource('permissions', PermissionController::class);
-    Route::apiResource('user-roles', UserRoleController::class);
-    Route::apiResource('role-permissions', RolePermissionController::class);
+    Route::middleware(\App\Http\Middleware\RequireSystemAdministrator::class)->group(function (): void {
+        Route::apiResource('users', UserController::class);
+        Route::apiResource('roles', RoleController::class);
+        Route::apiResource('permissions', PermissionController::class);
+        Route::apiResource('user-roles', UserRoleController::class);
+        Route::apiResource('role-permissions', RolePermissionController::class);
+    });
 
     /*
     |--------------------------------------------------------------------------
@@ -492,8 +504,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::apiResource('login-audit-logs', LoginAuditLogController::class)
         ->only(['index', 'show'])
         ->middleware(\App\Http\Middleware\RequireSystemAdministrator::class);
-    Route::apiResource('user-activity-logs', UserActivityLogController::class);
-    Route::apiResource('system-modules', SystemModuleController::class);
+    Route::apiResource('user-activity-logs', UserActivityLogController::class)
+        ->middleware(\App\Http\Middleware\RequireSystemAdministrator::class);
+    Route::apiResource('system-modules', SystemModuleController::class)
+        ->middleware(\App\Http\Middleware\RequireSystemAdministrator::class);
     Route::apiResource('password-reset-tokens', PasswordResetTokenController::class)
         ->only(['index', 'show'])
         ->middleware(\App\Http\Middleware\RequireSystemAdministrator::class);

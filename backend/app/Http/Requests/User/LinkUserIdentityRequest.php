@@ -8,7 +8,7 @@ class LinkUserIdentityRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->hasPermission('users_permissions.manage') === true;
+        return $this->user()?->effectiveRoles()->contains('super_admin') === true;
     }
 
     public function rules(): array

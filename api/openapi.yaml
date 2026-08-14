@@ -3,7 +3,11 @@
 info:
   title: Al Rowad University API
   version: 1.0.0
-  description: Official API documentation for Al Rowad University System.
+  description: >-
+    Official API documentation for Al Rowad University System. P0-1 uses the
+    authoritative 58-record organizational chart rooted at PRES; identity
+    scopes are server-derived and organizational reference reads are distinct
+    from academic-structure management.
 
 servers:
   - url: http://127.0.0.1:8000/api
@@ -361,11 +365,32 @@ paths:
       tags:
         - Lookups
       summary: List academic levels
+      description: Global reference read; requires academic_structure.view, registration.view, or grades.view. Read access does not authorize mutations.
       security:
         - bearerAuth: []
       responses:
         "200":
           description: Academic levels list
+
+  /v1/academic-years/current:
+    get:
+      tags: [Lookups]
+      summary: Get the current academic year
+      description: Global reference read available to academic-structure, registration, and grade viewers, including students with registration.view.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Current academic year }
+        "403": { $ref: '#/components/responses/Forbidden' }
+
+  /v1/semesters/active:
+    get:
+      tags: [Lookups]
+      summary: List active semesters
+      description: Global reference read available to academic-structure, registration, and grade viewers, including students with registration.view.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Active semesters }
+        "403": { $ref: '#/components/responses/Forbidden' }
 
   /v1/student-statuses:
     get:
@@ -538,12 +563,35 @@ components:
         student_id: { type: integer, nullable: true }
         employee_id: { type: integer, nullable: true }
         board_member_id: { type: integer, nullable: true }
+        organizational_unit:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/IdentityOrganizationalUnit'
         roles:
           type: array
           items: { type: string }
         permissions:
           type: array
           items: { type: string }
+        access_scopes:
+          type: array
+          description: Server-derived effective data scopes; clients must never submit these as authorization evidence.
+          items: { $ref: '#/components/schemas/IdentityAccessScope' }
+    IdentityOrganizationalUnit:
+      type: object
+      required: [id, code, name]
+      properties:
+        id: { type: integer }
+        code: { type: string, example: "732" }
+        name: { type: string, example: مكتب القبول والتسجيل }
+    IdentityAccessScope:
+      type: object
+      required: [type, id]
+      properties:
+        type:
+          type: string
+          enum: [university, college, department, program, section]
+        id: { type: integer }
     LoginResponse:
       type: object
       properties:
