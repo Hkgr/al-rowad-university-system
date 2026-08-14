@@ -56,6 +56,28 @@ export function returnGradeApprovalForCorrection(gradeApprovalId, approvalNotes)
   })
 }
 
+export function getGradePartApprovals(filters, options = {}) {
+  return request(`/v1/grade-part-approvals?${queryString(filters)}`, options)
+}
+
+export function getGradePartApprovalDetails(approvalId, options = {}) {
+  return request(`/v1/grade-part-approvals/${approvalId}`, options)
+}
+
+export function approveGradePartApproval(approvalId, reviewNotes) {
+  return request(`/v1/grade-part-approvals/${approvalId}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ review_notes: reviewNotes }),
+  })
+}
+
+export function returnGradePartApprovalForCorrection(approvalId, reviewNotes) {
+  return request(`/v1/grade-part-approvals/${approvalId}/return-for-correction`, {
+    method: 'POST',
+    body: JSON.stringify({ review_notes: reviewNotes }),
+  })
+}
+
 export function getApprovalFilterOptions(options = {}) {
   return Promise.all([
     request('/v1/academic-years?per_page=100', options),
