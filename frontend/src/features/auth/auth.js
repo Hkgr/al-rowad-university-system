@@ -47,6 +47,8 @@ export function canAccess({ permissions = [], allPermissions = [], roles = [], s
   return hasEveryRequiredPermission && hasAnyAlternative
 }
 export function landingRoute(user) {
+  // Portal roles take precedence over permission-based staff landing pages.
+  if (hasRole('dean', user)) return '/dean'
   if (canAll(['exams.view', 'exams.manage'], user)) return '/exam-board'
   if (canAccess(ACCESS.courseRegistration, user) && hasPermission('registration.manage', user)) return '/exam-board/course-registration'
   if (canAny(['attendance.manage', 'grades.manage'], user) && user?.employee_id) return '/professor'
