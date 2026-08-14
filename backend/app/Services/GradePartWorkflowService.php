@@ -129,7 +129,7 @@ class GradePartWorkflowService
     public function paginate(User $user, array $filters): LengthAwarePaginator
     {
         return $this->dataScope->scopeResourceQuery(GradePartApproval::query(), $user)
-            ->with(['courseOffering.course', 'submittedBy.employee', 'reviewedBy.employee'])
+            ->with(['courseOffering.course', 'courseOffering.academicYear', 'courseOffering.semester', 'submittedBy.employee', 'reviewedBy.employee'])
             ->when($filters['status'] ?? null, fn (Builder $q, $v) => $q->where('status', $v))
             ->when($filters['component_type'] ?? null, fn (Builder $q, $v) => $q->where('component_type', $v))
             ->orderByRaw("CASE WHEN status = 'submitted' THEN 0 ELSE 1 END")->orderBy('submitted_at')->paginate($filters['per_page'] ?? 15);
@@ -138,7 +138,7 @@ class GradePartWorkflowService
     public function find(User $user, int $id): GradePartApproval
     {
         $approval = $this->dataScope->scopeResourceQuery(GradePartApproval::query(), $user)
-            ->with(['courseOffering.course', 'submittedBy.employee', 'reviewedBy.employee', 'events'])->find($id);
+            ->with(['courseOffering.course', 'courseOffering.academicYear', 'courseOffering.semester', 'submittedBy.employee', 'reviewedBy.employee', 'events'])->find($id);
         if (! $approval && GradePartApproval::query()->whereKey($id)->exists()) $this->fail('You are not authorized to access this grade part.', 'unauthorized_grade_part', 403);
         return $approval ?? GradePartApproval::query()->findOrFail($id);
     }
