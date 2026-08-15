@@ -82,6 +82,7 @@ class DataScopeService
 
         $model = $query->getModel();
         $table = $model->getTable();
+        if ($table === 'academic_levels') return $query;
         if ($table === 'colleges') return $this->scopeColleges($query, $user);
         if ($table === 'departments') return $this->scopeDepartments($query, $user);
         if ($table === 'academic_programs') return $this->scopePrograms($query, $user);
