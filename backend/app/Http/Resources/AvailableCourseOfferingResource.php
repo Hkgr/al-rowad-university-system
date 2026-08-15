@@ -12,12 +12,13 @@ class AvailableCourseOfferingResource extends JsonResource
     {
         return [
             'course_offering_id' => $this->course_offering_id,
-            'status' => $this->status,
-            'capacity' => $this->capacity,
-            'available_seats' => $this->available_seats,
+            'course_id' => $this->course_id,
             'course_code' => $this->whenLoaded('course', fn () => $this->course?->course_code),
             'course_name' => $this->whenLoaded('course', fn () => $this->course?->course_name),
             'credit_hours' => $this->whenLoaded('course', fn () => $this->course?->credit_hours),
+            'status' => $this->status,
+            'capacity' => $this->capacity,
+            'available_seats' => $this->available_seats,
             'course' => CourseResource::make($this->whenLoaded('course')),
             'academic_year' => AcademicYearResource::make($this->whenLoaded('academicYear')),
             'semester' => SemesterResource::make($this->whenLoaded('semester')),
@@ -25,7 +26,8 @@ class AvailableCourseOfferingResource extends JsonResource
             'program' => AcademicProgramResource::make($this->whenLoaded('academicProgram')),
             'faculty_member' => FacultyMemberResource::make($this->whenLoaded('facultyMember')),
             'eligibility_status' => $this->eligibility_status,
-            'reasons' => $this->eligibility_reasons ?? [],
+            'eligibility_reasons' => $this->eligibility_reasons ?? [],
+            'missing_prerequisites' => $this->missing_prerequisites ?? [],
         ];
     }
 }

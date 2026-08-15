@@ -1,395 +1,502 @@
-import { useState, useEffect } from 'react'
-import { FaSpinner, FaCheckCircle, FaTimesCircle, FaPlus, FaMinus, FaBookOpen, FaClock } from 'react-icons/fa'
-import { can } from '../../auth/auth'
-
-const API = 'https://rust.alrowaduni.edu.sy/api/v1'
-
-function authHeaders() {
-  return { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }
-}
-
-function getUser() {
-  return JSON.parse(localStorage.getItem('user') || '{}')
-}
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import {
+  FaBookOpen, FaCheckCircle, FaClock, FaPlus, FaMinus, FaSpinner,
+} from 'react-icons/fa'
+import { apiRequest } from '../../../services/apiClient'
+import StudentConfirmDialog from '../components/StudentConfirmDialog'
 
 const REASON_LABELS = {
-  already_registered:   { ar: 'مسجل مسبقاً',        color: 'bg-blue-100 text-blue-700'   },
-  missing_prerequisites:{ ar: 'متطلبات سابقة ناقصة', color: 'bg-red-100 text-red-700'    },
-  no_available_seats:   { ar: 'لا توجد مقاعد',        color: 'bg-orange-100 text-orange-700'},
-  credit_limit_exceeded:{ ar: 'تجاوز الحد الأقصى',   color: 'bg-yellow-100 text-yellow-700'},
+  already_registered: { ar: 'مسجل مسبقاً', tone: 'registered' },
+  missing_prerequisites: { ar: 'متطلب سابق غير محقق', tone: 'prerequisite' },
+  no_available_seats: { ar: 'لا توجد مقاعد متاحة', tone: 'full' },
+  credit_limit_exceeded: { ar: 'تجاوز الحد المسموح من الساعات', tone: 'hours' },
 }
 
-// ── Hours progress bar ────────────────────────────────────────────────────────
+const BADGE_CLASS = {
+  eligible: 'bg-green-100 text-green-700',
+  registered: 'bg-blue-100 text-blue-700',
+  prerequisite: 'bg-amber-100 text-amber-800',
+  full: 'bg-orange-100 text-orange-700',
+  hours: 'bg-yellow-100 text-yellow-800',
+}
+
 function HoursBar({ registered, max, remaining }) {
   const pct = max > 0 ? Math.min((registered / max) * 100, 100) : 0
-  const color = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-primary'
+  const color = pct >= 100 ? 'bg-red-500' : pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-primary'
+
   return (
-    <div className="bg-white border border-primary/12 rounded-[14px] p-4 mb-5 shadow-[0_2px_8px_rgba(26,46,16,0.05)]">
-      <div className="flex items-center justify-between mb-2" dir="rtl">
-        <span className="text-[12.5px] font-bold text-text-dark">الساعات المعتمدة المسجلة</span>
-        <span className="text-[13px] font-extrabold text-text-dark">
-          <span className="text-primary">{registered}</span> / {max} ساعة
-        </span>
+    <section className="bg-white border border-primary/12 rounded-[16px] p-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]" dir="rtl">
+      <div className="grid grid-cols-3 max-[640px]:grid-cols-1 gap-4 mb-4">
+        <div>
+          <p className="text-[11.5px] font-semibold text-text-light mb-1">الساعات المسجلة</p>
+          <p className="text-[22px] font-black text-text-dark tabular-nums">{registered}</p>
+        </div>
+        <div>
+          <p className="text-[11.5px] font-semibold text-text-light mb-1">الحد الأقصى</p>
+          <p className="text-[22px] font-black text-text-dark tabular-nums">{max}</p>
+        </div>
+        <div>
+          <p className="text-[11.5px] font-semibold text-text-light mb-1">الساعات المتبقية</p>
+          <p className="text-[22px] font-black text-primary tabular-nums">{remaining}</p>
+        </div>
       </div>
       <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
         <div className={`h-full rounded-full transition-all duration-500 ${color}`} style={{ width: `${pct}%` }} />
       </div>
-      <p className="text-[11px] text-text-light mt-1.5 text-left" dir="rtl">
-        متبقي: <strong className="text-text-dark">{remaining} ساعة</strong>
+      {remaining <= 0 ? (
+        <p className="mt-3 text-[12.5px] font-semibold text-red-700">
+          لقد وصلت إلى الحد الأقصى المسموح من الساعات لهذا الفصل
+        </p>
+      ) : null}
+    </section>
+  )
+}
+
+function UnavailableState() {
+  return (
+    <section className="bg-white border border-primary/12 rounded-[18px] px-6 py-14 text-center shadow-[0_2px_12px_rgba(26,46,16,0.05)]" dir="rtl">
+      <FaClock className="mx-auto text-[34px] text-primary/35 mb-4" aria-hidden="true" />
+      <h3 className="text-[18px] font-black text-text-dark mb-2">الوقت الآن ليس متاحاً للتسجيل على مواد</h3>
+      <p className="text-[13.5px] text-text-light leading-7 max-w-[460px] mx-auto">
+        لا توجد مواد مفتوحة للتسجيل حالياً ضمن برنامجك الدراسي.
+        ستظهر المواد هنا عند إتاحتها من الكلية.
       </p>
-    </div>
+    </section>
   )
 }
 
-// ── Registered courses panel ──────────────────────────────────────────────────
-function RegisteredPanel({ registrations, onDrop, dropping, editable }) {
-  if (registrations.length === 0) return (
-    <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
-      <PanelHeader title="المواد المسجلة" count={0} />
-      <div className="flex flex-col items-center py-12 gap-2">
-        <FaBookOpen className="text-[36px] text-primary/15" />
-        <p className="text-[12px] text-text-light" dir="rtl">لم تسجل أي مادة بعد</p>
-      </div>
-    </div>
-  )
-
-  return (
-    <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
-      <PanelHeader title="المواد المسجلة" count={registrations.length} />
-      <div className="divide-y divide-primary/6">
-        {registrations.map(r => (
-          <div key={r.registration_id} className="flex items-center justify-between gap-3 px-5 py-3.5" dir="rtl">
-            <div className="flex-1 min-w-0">
-              <div className="font-semibold text-[13px] text-text-dark truncate">{r.course_name}</div>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-[11px] text-text-light font-mono">{r.course_code}</span>
-                <span className="text-[10.5px] text-primary font-bold">{r.credit_hours} ساعات</span>
-                <span className="inline-block px-1.5 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold rounded-full">
-                  {r.registration_status?.status_name || 'مسجل'}
-                </span>
-              </div>
-            </div>
-            {editable && <button
-              onClick={() => onDrop(r.registration_id, r.course_name)}
-              disabled={!!dropping[r.registration_id]}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-red-300 text-red-600 rounded-[8px] text-[11.5px] font-bold hover:bg-red-50 disabled:opacity-40 transition-colors flex-shrink-0"
-            >
-              {dropping[r.registration_id]
-                ? <FaSpinner className="animate-spin text-[10px]" />
-                : <FaMinus className="text-[10px]" />}
-              حذف
-            </button>}
-          </div>
-        ))}
-      </div>
-    </div>
-  )
+function statusBadge(course) {
+  const reasons = course.eligibility_reasons ?? []
+  if (course.eligibility_status === 'eligible') {
+    return { label: 'متاح', className: BADGE_CLASS.eligible }
+  }
+  if (reasons.includes('already_registered')) {
+    return { label: REASON_LABELS.already_registered.ar, className: BADGE_CLASS.registered }
+  }
+  if (reasons.includes('missing_prerequisites')) {
+    return { label: 'شرط سابق', className: BADGE_CLASS.prerequisite }
+  }
+  if (reasons.includes('no_available_seats')) {
+    return { label: 'ممتلئ', className: BADGE_CLASS.full }
+  }
+  if (reasons.includes('credit_limit_exceeded')) {
+    return { label: 'تجاوز الساعات', className: BADGE_CLASS.hours }
+  }
+  return { label: 'غير مؤهل', className: 'bg-gray-100 text-text-light' }
 }
 
-// ── Available courses panel ───────────────────────────────────────────────────
-function AvailablePanel({ courses, onRegister, registering, editable }) {
-  const eligible   = courses.filter(c => c.eligibility_status === 'eligible')
-  const ineligible = courses.filter(c => c.eligibility_status !== 'eligible')
-
-  if (courses.length === 0) return (
-    <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
-      <PanelHeader title="المواد المتاحة للتسجيل" count={0} />
-      <div className="flex flex-col items-center py-12 gap-2">
-        <FaBookOpen className="text-[36px] text-primary/15" />
-        <p className="text-[12px] text-text-light" dir="rtl">لا توجد مواد متاحة للتسجيل في هذا الفصل</p>
-      </div>
-    </div>
-  )
-
-  return (
-    <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
-      <PanelHeader title="المواد المتاحة للتسجيل" count={courses.length} />
-      <div className="divide-y divide-primary/6 max-h-[600px] overflow-y-auto">
-        {/* Eligible first */}
-        {eligible.map(c => (
-          <CourseRow key={c.course_offering_id} course={c} onRegister={onRegister} registering={registering} editable={editable} />
-        ))}
-        {/* Separator */}
-        {eligible.length > 0 && ineligible.length > 0 && (
-          <div className="px-5 py-2 bg-gray-50 text-[11px] text-text-light font-bold" dir="rtl">
-            — مواد غير مؤهلة للتسجيل حالياً —
-          </div>
-        )}
-        {ineligible.map(c => (
-          <CourseRow key={c.course_offering_id} course={c} onRegister={onRegister} registering={registering} editable={editable} />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function CourseRow({ course, onRegister, registering, editable }) {
+function CourseRow({ course, onRegister, registering }) {
   const eligible = course.eligibility_status === 'eligible'
-  const reasons  = course.eligibility_reasons ?? []
-  const seats    = course.available_seats ?? 0
+  const reasons = course.eligibility_reasons ?? []
+  const missing = course.missing_prerequisites ?? []
+  const seats = course.available_seats ?? 0
   const capacity = course.capacity ?? 0
+  const badge = statusBadge(course)
+  const busy = Boolean(registering[course.course_offering_id])
 
   return (
-    <div className={`flex items-start justify-between gap-3 px-5 py-3.5 transition-colors ${eligible ? 'hover:bg-primary/[0.02]' : 'opacity-70'}`} dir="rtl">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-semibold text-[13px] text-text-dark">{course.course_name}</span>
-          {eligible
-            ? <FaCheckCircle className="text-green-500 text-[12px] flex-shrink-0" />
-            : <FaTimesCircle className="text-red-400 text-[12px] flex-shrink-0" />
-          }
-        </div>
-        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-          <span className="text-[11px] text-text-light font-mono">{course.course_code}</span>
-          <span className="text-[10.5px] text-primary font-bold">{course.credit_hours} ساعات</span>
-          {course.faculty_member && (
-            <span className="text-[10.5px] text-text-light">
-              د. {course.faculty_member.first_name} {course.faculty_member.last_name}
+    <article className={`px-5 py-4 ${eligible ? 'bg-white' : 'bg-primary/[0.015]'}`} dir="rtl">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h4 className="font-bold text-[14px] text-text-dark">{course.course_name}</h4>
+            <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${badge.className}`}>{badge.label}</span>
+          </div>
+          <div className="flex items-center gap-2 mt-1 flex-wrap text-[11.5px] text-text-light">
+            <span className="font-mono">{course.course_code}</span>
+            <span className="text-primary font-bold">{course.credit_hours} ساعات</span>
+            <span className={seats > 0 ? 'text-green-700 font-semibold' : 'text-orange-700 font-semibold'}>
+              {seats}/{capacity} مقعد
             </span>
-          )}
+          </div>
+          {reasons
+            .filter(reason => reason !== 'already_registered')
+            .filter(reason => reason !== 'missing_prerequisites' || missing.length === 0)
+            .map(reason => {
+              const info = REASON_LABELS[reason]
+              return (
+                <p key={reason} className="mt-2 text-[12px] font-semibold text-text-dark">
+                  {info?.ar ?? reason}
+                </p>
+              )
+            })}
+          {missing.length > 0 ? (
+            <div className="mt-2 rounded-[10px] border border-amber-200 bg-amber-50 px-3 py-2">
+              <p className="text-[12px] font-bold text-amber-900">متطلب سابق غير محقق:</p>
+              <ul className="mt-1 space-y-0.5">
+                {missing.map(item => (
+                  <li key={item.course_id} className="text-[12.5px] text-amber-900">
+                    {[item.course_code, item.course_name].filter(Boolean).join(' — ')}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
-        <div className="flex items-center gap-2 mt-1 flex-wrap">
-          {/* Seat count */}
-          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${seats > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
-            {seats}/{capacity} مقعد
-          </span>
-          {/* Schedule placeholder */}
-          <span className="inline-flex items-center gap-1 text-[10px] text-text-light bg-gray-100 px-1.5 py-0.5 rounded-full">
-            <FaClock className="text-[9px]" /> الجدول غير محدد بعد
-          </span>
-          {/* Ineligibility reasons */}
-          {reasons.map(r => {
-            const info = REASON_LABELS[r] ?? { ar: r, color: 'bg-gray-100 text-text-light' }
-            return (
-              <span key={r} className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${info.color}`}>
-                {info.ar}
-              </span>
-            )
-          })}
-        </div>
+        <button
+          type="button"
+          onClick={() => onRegister(course)}
+          disabled={!eligible || busy}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-[10px] text-[12px] font-bold hover:enabled:bg-primary-dark disabled:opacity-35 disabled:cursor-not-allowed transition-colors shrink-0"
+        >
+          {busy ? <FaSpinner className="animate-spin text-[10px]" /> : <FaPlus className="text-[10px]" />}
+          تسجيل
+        </button>
       </div>
-      {editable && <button
-        onClick={() => onRegister(course.course_offering_id, course.course_name)}
-        disabled={!eligible || !!registering[course.course_offering_id]}
-        className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-[8px] text-[11.5px] font-bold hover:enabled:bg-primary-dark disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex-shrink-0 mt-0.5"
-      >
-        {registering[course.course_offering_id]
-          ? <FaSpinner className="animate-spin text-[10px]" />
-          : <FaPlus className="text-[10px]" />}
-        تسجيل
-      </button>}
-    </div>
+    </article>
   )
 }
 
-function PanelHeader({ title, count }) {
-  return (
-    <div className="flex items-center gap-2 px-5 py-3 bg-primary/[0.05] border-b border-primary/10" dir="rtl">
-      <span className="text-[13px] font-extrabold text-text-dark">{title}</span>
-      <span className="text-[11px] text-text-light bg-primary/10 px-2 py-0.5 rounded-full font-bold">{count}</span>
-    </div>
-  )
-}
-
-// ── Main page ─────────────────────────────────────────────────────────────────
 export default function StudentRegistration() {
-  const user       = getUser()
-  const studentId  = user.student_id
-  const canManageRegistration = can('registration.manage', user)
+  const navigate = useNavigate()
+  const requestSeq = useRef(0)
 
-  const [years,             setYears]             = useState([])
-  const [semesters,         setSemesters]         = useState([])
-  const [filteredSemesters, setFilteredSemesters] = useState([])
-  const [yearId,            setYearId]            = useState('')
-  const [semId,             setSemId]             = useState('')
-  const [available,         setAvailable]         = useState([])
-  const [summary,           setSummary]           = useState(null)
-  const [loadingInit,       setLoadingInit]       = useState(true)
-  const [loadingFilter,     setLoadingFilter]     = useState(false)
-  const [loadingData,       setLoadingData]       = useState(false)
-  const [registering,       setRegistering]       = useState({})
-  const [dropping,          setDropping]          = useState({})
-  const [err,               setErr]               = useState('')
-  const [toast,             setToast]             = useState('')
+  const [payload, setPayload] = useState(null)
+  const [yearId, setYearId] = useState('')
+  const [semesterId, setSemesterId] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState('')
+  const [toast, setToast] = useState('')
+  const [registering, setRegistering] = useState({})
+  const [dropping, setDropping] = useState({})
+  const [confirm, setConfirm] = useState(null)
+  const [calendarYear, setCalendarYear] = useState(null)
+  const hasLoadedRef = useRef(false)
+
+  const academicYear = payload?.academic_year ?? calendarYear
+  const semesters = payload?.semesters ?? []
+  const selectedYearId = yearId || String(academicYear?.academic_year_id || '')
+  const selectedSemesterId = semesterId || String(payload?.semester?.semester_id || '')
+  const registrationOpen = payload?.registration_open === true
+  const termReady = Boolean(selectedYearId && selectedSemesterId)
+  const available = payload?.available_courses ?? []
+  const summary = payload?.summary ?? null
+  const registrations = summary?.registrations ?? []
+  const busy = loading || refreshing
 
   useEffect(() => {
+    let active = true
+    // Keep these calendar lookups for the dual-role landing contract.
+    // They must not populate the semester dropdown or fabricate a registration window.
     Promise.all([
-      fetch(`${API}/academic-years/current`, { headers: authHeaders() }).then(r => r.json()),
-      fetch(`${API}/semesters/active`,        { headers: authHeaders() }).then(r => r.json()),
-    ]).then(([y, s]) => {
-      setYears(y.success ? (Array.isArray(y.data) ? y.data : [y.data].filter(Boolean)) : [])
-      const allSems = s.success ? (Array.isArray(s.data) ? s.data : [s.data].filter(Boolean)) : []
-      setSemesters(allSems)
-      setFilteredSemesters(allSems)
-    }).finally(() => setLoadingInit(false))
+      apiRequest('/v1/academic-years/current').catch(() => null),
+      apiRequest('/v1/semesters/active').catch(() => null),
+    ]).then(([yearResponse, semesterResponse]) => {
+      if (!active) return
+      setCalendarYear(yearResponse?.data ?? null)
+      void semesterResponse
+    })
+    return () => { active = false }
   }, [])
 
-  function handleYearChange(yId, allSems) {
-    setYearId(yId); setSemId(''); setAvailable([]); setSummary(null); setErr('')
-    if (!yId) { setFilteredSemesters(allSems); return }
-    setLoadingFilter(true)
-    Promise.all(
-      allSems.map(s =>
-        fetch(`${API}/students/${studentId}/available-courses?academic_year_id=${yId}&semester_id=${s.semester_id}`, { headers: authHeaders() })
-          .then(r => r.json())
-          .then(json => ({ sem: s, has: json.success && Array.isArray(json.data) && json.data.length > 0 }))
-          .catch(() => ({ sem: s, has: false }))
-      )
-    ).then(results => {
-      const valid = results.filter(r => r.has).map(r => r.sem)
-      const list  = valid.length > 0 ? valid : allSems
-      setFilteredSemesters(list)
-      if (valid.length === 1) {
-        const sId = String(valid[0].semester_id)
-        setSemId(sId)
-        loadData(yId, sId)
+  useEffect(() => {
+    let active = true
+    const seq = ++requestSeq.current
+
+    async function load() {
+      if (hasLoadedRef.current) setRefreshing(true)
+      else setLoading(true)
+      setError('')
+
+      const params = new URLSearchParams()
+      if (yearId) params.set('academic_year_id', yearId)
+      if (semesterId) params.set('semester_id', semesterId)
+      const query = params.toString()
+
+      try {
+        const response = await apiRequest(`/v1/student/registration${query ? `?${query}` : ''}`)
+        if (!active || seq !== requestSeq.current) return
+        setPayload(response?.data ?? null)
+        hasLoadedRef.current = true
+      } catch (requestError) {
+        if (!active || seq !== requestSeq.current) return
+        if (requestError.status === 401) {
+          navigate('/login', { replace: true })
+          return
+        }
+        setError(
+          requestError.status === 403
+            ? 'ليس لديك صلاحية لتسجيل المواد.'
+            : (requestError.message || 'تعذّر تحميل بيانات التسجيل. يرجى المحاولة مرة أخرى.'),
+        )
+      } finally {
+        if (active && seq === requestSeq.current) {
+          setLoading(false)
+          setRefreshing(false)
+        }
       }
-    }).finally(() => setLoadingFilter(false))
+    }
+
+    load()
+    return () => { active = false }
+  }, [yearId, semesterId, navigate])
+
+  const hours = useMemo(() => ({
+    registered: summary?.total_registered_hours ?? 0,
+    max: summary?.max_allowed_hours ?? 0,
+    remaining: summary?.remaining_hours ?? 0,
+  }), [summary])
+
+  function showToast(message) {
+    setToast(message)
+    window.setTimeout(() => setToast(''), 3200)
   }
 
-  function loadData(yId, sId) {
-    if (!yId || !sId) return
-    setAvailable([]); setSummary(null); setErr(''); setLoadingData(true)
-    Promise.all([
-      fetch(`${API}/students/${studentId}/available-courses?academic_year_id=${yId}&semester_id=${sId}`, { headers: authHeaders() }).then(r => r.json()),
-      fetch(`${API}/students/${studentId}/registration-summary?academic_year_id=${yId}&semester_id=${sId}`, { headers: authHeaders() }).then(r => r.json()),
-    ]).then(([av, sm]) => {
-      if (av.success) setAvailable(Array.isArray(av.data) ? av.data : [])
-      if (sm.success) setSummary(sm.data)
-      if (!av.success) setErr(av.message || 'فشل تحميل المواد المتاحة')
-    }).catch(() => setErr('تعذّر الاتصال بالخادم'))
-    .finally(() => setLoadingData(false))
-  }
-
-  function showToast(msg) {
-    setToast(msg)
-    setTimeout(() => setToast(''), 3000)
-  }
-
-  async function handleRegister(offeringId, name) {
-    setRegistering(p => ({ ...p, [offeringId]: true })); setErr('')
+  async function confirmRegister() {
+    const course = confirm?.course
+    if (!course) return
+    setRegistering(current => ({ ...current, [course.course_offering_id]: true }))
+    setError('')
     try {
-      const res  = await fetch(`${API}/registrations/register-student`, {
-        method:  'POST',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ student_id: studentId, course_offering_id: offeringId }),
+      await apiRequest(`/v1/student/registration/course-offerings/${course.course_offering_id}/register`, {
+        method: 'POST',
+        body: JSON.stringify({}),
       })
-      const json = await res.json()
-      if (json.success) { showToast(`تم تسجيل "${name}" بنجاح`); loadData(yearId, semId) }
-      else setErr(json.message || 'فشل التسجيل')
-    } catch { setErr('تعذّر الاتصال بالخادم') }
-    finally { setRegistering(p => ({ ...p, [offeringId]: false })) }
+      showToast(`تم تسجيل "${course.course_name}" بنجاح`)
+      setConfirm(null)
+      const response = await apiRequest(`/v1/student/registration?academic_year_id=${selectedYearId}&semester_id=${selectedSemesterId}`)
+      setPayload(response?.data ?? null)
+    } catch (requestError) {
+      if (requestError.status === 401) {
+        navigate('/login', { replace: true })
+        return
+      }
+      setError(requestError.message || 'فشل تسجيل المادة')
+    } finally {
+      setRegistering(current => ({ ...current, [course.course_offering_id]: false }))
+    }
   }
 
-  async function handleDrop(registrationId, name) {
-    if (!window.confirm(`هل تريد حذف تسجيل مادة "${name}"؟`)) return
-    setDropping(p => ({ ...p, [registrationId]: true })); setErr('')
+  async function confirmDrop() {
+    const registration = confirm?.registration
+    if (!registration) return
+    setDropping(current => ({ ...current, [registration.registration_id]: true }))
+    setError('')
     try {
-      const res  = await fetch(`${API}/registrations/${registrationId}/drop`, {
-        method:  'POST',
-        headers: authHeaders(),
+      await apiRequest(`/v1/student/registration/registrations/${registration.registration_id}/drop`, {
+        method: 'POST',
+        body: JSON.stringify({}),
       })
-      const json = await res.json()
-      if (json.success) { showToast(`تم حذف "${name}" من قائمة التسجيل`); loadData(yearId, semId) }
-      else setErr(json.message || 'فشل الحذف')
-    } catch { setErr('تعذّر الاتصال بالخادم') }
-    finally { setDropping(p => ({ ...p, [registrationId]: false })) }
+      showToast(`تم حذف "${registration.course_name}" من قائمة التسجيل`)
+      setConfirm(null)
+      const response = await apiRequest(`/v1/student/registration?academic_year_id=${selectedYearId}&semester_id=${selectedSemesterId}`)
+      setPayload(response?.data ?? null)
+    } catch (requestError) {
+      if (requestError.status === 401) {
+        navigate('/login', { replace: true })
+        return
+      }
+      setError(requestError.message || 'فشل حذف التسجيل')
+    } finally {
+      setDropping(current => ({ ...current, [registration.registration_id]: false }))
+    }
   }
 
-  const registrations = summary?.registrations ?? []
+  if (loading) {
+    return (
+      <div className="flex justify-center py-20 text-primary">
+        <FaSpinner className="animate-spin text-[32px]" aria-hidden="true" />
+      </div>
+    )
+  }
 
-  if (loadingInit) return (
-    <div className="flex justify-center py-20 text-primary"><FaSpinner className="animate-spin text-[32px]" /></div>
-  )
+  const afterHours = confirm?.type === 'register'
+    ? hours.registered + Number(confirm.course?.credit_hours || 0)
+    : hours.registered
 
   return (
-    <>
-      {/* Header */}
-      <div className="mb-5" dir="rtl">
-        <h2 className="text-[20px] font-black text-text-dark mb-[3px]">تسجيل المواد</h2>
-        <p className="text-[12.5px] text-text-light">Course Registration</p>
-      </div>
-
-      {/* Year + Semester selector */}
-      <div className="bg-white border border-primary/12 rounded-[16px] p-5 mb-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
-        <div className="grid grid-cols-2 max-[580px]:grid-cols-1 gap-4" dir="rtl">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[12px] font-bold text-text-dark">السنة الدراسية</label>
-            <select
-              className="px-3 py-2.5 border border-primary/20 rounded-[10px] text-[13.5px] text-text-dark outline-none focus:border-primary"
-              value={yearId}
-              onChange={e => handleYearChange(e.target.value, semesters)}
-              dir="rtl"
-            >
-              <option value="">اختر السنة</option>
-              {years.map(y => <option key={y.academic_year_id} value={y.academic_year_id}>{y.year_name}</option>)}
-            </select>
+    <div className="space-y-5" dir="rtl">
+      <header className="bg-[linear-gradient(135deg,rgba(86,153,51,0.12),rgba(255,255,255,0.95))] border border-primary/12 rounded-[20px] px-6 py-6 shadow-[0_2px_16px_rgba(26,46,16,0.06)]">
+        <p className="text-[12px] font-bold text-primary mb-1">بوابة الطالب</p>
+        <h1 className="text-[22px] font-black text-text-dark">تسجيل المواد</h1>
+        <p className="mt-2 text-[13.5px] text-text-light leading-7">
+          تظهر هنا المواد التي أتاحتها الكلية لبرنامجك الدراسي في الفصل الحالي.
+        </p>
+        <div className="mt-4 flex flex-wrap items-end gap-3">
+          <div className="min-w-[200px]">
+            <p className="text-[11.5px] font-semibold text-text-light mb-1">السنة الدراسية</p>
+            <p className="text-[14px] font-bold text-text-dark">{academicYear?.year_name || '—'}</p>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[12px] font-bold text-text-dark">
+          {semesters.length > 1 ? (
+            <label className="flex flex-col gap-1 text-[12px] font-semibold text-text-light">
               الفصل الدراسي
-              {loadingFilter && <FaSpinner className="inline mr-2 animate-spin text-[11px] text-primary" />}
+              <select
+                className="min-w-[200px] py-2.5 px-3 border-[1.5px] border-primary/20 rounded-[12px] bg-white text-[13.5px] text-text-dark"
+                value={selectedSemesterId}
+                onChange={event => setSemesterId(event.target.value)}
+                disabled={busy}
+              >
+                <option value="">اختر الفصل الدراسي</option>
+                {semesters.map(semester => (
+                  <option key={semester.semester_id} value={semester.semester_id}>
+                    {semester.semester_name}
+                  </option>
+                ))}
+              </select>
             </label>
-            <select
-              className="px-3 py-2.5 border border-primary/20 rounded-[10px] text-[13.5px] text-text-dark outline-none focus:border-primary disabled:opacity-50"
-              value={semId}
-              onChange={e => { setSemId(e.target.value); loadData(yearId, e.target.value) }}
-              disabled={!yearId || loadingFilter}
-              dir="rtl"
-            >
-              <option value="">اختر الفصل</option>
-              {filteredSemesters.map(s => <option key={s.semester_id} value={s.semester_id}>{s.semester_name}</option>)}
-            </select>
-          </div>
+          ) : (
+            <div className="min-w-[160px]">
+              <p className="text-[11.5px] font-semibold text-text-light mb-1">الفصل الدراسي</p>
+              <p className="text-[14px] font-bold text-text-dark">
+                {payload?.semester?.semester_name || (semesters[0]?.semester_name ?? '—')}
+              </p>
+            </div>
+          )}
+          {refreshing ? <span className="text-[12px] text-text-light pb-1">جاري التحديث…</span> : null}
         </div>
-      </div>
+      </header>
 
-      {/* Toast */}
-      {toast && (
-        <div className="mb-4 px-4 py-2.5 text-[12.5px] text-green-700 bg-green-50 border border-green-200 rounded-[10px] flex items-center gap-2" dir="rtl">
-          <FaCheckCircle className="text-green-500 flex-shrink-0" /> {toast}
+      {toast ? (
+        <div className="px-4 py-2.5 text-[12.5px] text-green-700 bg-green-50 border border-green-200 rounded-[10px] flex items-center gap-2">
+          <FaCheckCircle className="text-green-500 shrink-0" /> {toast}
+        </div>
+      ) : null}
+      {error ? (
+        <p className="px-4 py-2.5 text-[12.5px] text-red-600 bg-red-50 border border-red-200 rounded-[10px]">⚠ {error}</p>
+      ) : null}
+
+      {summary ? (
+        <HoursBar registered={hours.registered} max={hours.max} remaining={hours.remaining} />
+      ) : null}
+
+      {!registrationOpen ? (
+        <UnavailableState />
+      ) : !termReady ? (
+        <section className="border border-amber-200 bg-amber-50 rounded-[16px] px-5 py-4 text-[13px] font-semibold text-amber-900" dir="rtl">
+          اختر الفصل الدراسي لعرض المواد المتاحة للتسجيل.
+        </section>
+      ) : (
+        <div className="grid grid-cols-2 max-[900px]:grid-cols-1 gap-5">
+          <section className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
+            <div className="flex items-center gap-2 px-5 py-3 bg-primary/[0.05] border-b border-primary/10">
+              <span className="text-[13px] font-extrabold text-text-dark">المواد المتاحة من الكلية</span>
+              <span className="text-[11px] text-text-light bg-primary/10 px-2 py-0.5 rounded-full font-bold">{available.length}</span>
+            </div>
+            {available.length === 0 ? (
+              <div className="flex flex-col items-center py-12 gap-2 px-5">
+                <FaBookOpen className="text-[32px] text-primary/15" />
+                <p className="text-[13px] font-bold text-text-dark">الوقت الآن ليس متاحاً للتسجيل على مواد</p>
+                <p className="text-[12px] text-text-light text-center leading-6">
+                  لا توجد مواد مفتوحة للتسجيل حالياً ضمن برنامجك الدراسي.
+                  ستظهر المواد هنا عند إتاحتها من الكلية.
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-primary/8">
+                {available.map(course => (
+                  <CourseRow
+                    key={course.course_offering_id}
+                    course={course}
+                    onRegister={selected => setConfirm({ type: 'register', course: selected })}
+                    registering={registering}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
+            <div className="flex items-center gap-2 px-5 py-3 bg-primary/[0.05] border-b border-primary/10">
+              <span className="text-[13px] font-extrabold text-text-dark">المواد المسجلة</span>
+              <span className="text-[11px] text-text-light bg-primary/10 px-2 py-0.5 rounded-full font-bold">{registrations.length}</span>
+            </div>
+            {registrations.length === 0 ? (
+              <div className="flex flex-col items-center py-12 gap-2">
+                <FaBookOpen className="text-[32px] text-primary/15" />
+                <p className="text-[12.5px] text-text-light">لم تسجل أي مادة بعد</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-primary/8">
+                {registrations.map(registration => {
+                  const canDrop = registration.offering_status === 'open'
+                  const dropBusy = Boolean(dropping[registration.registration_id])
+                  return (
+                    <div key={registration.registration_id} className="flex items-center justify-between gap-3 px-5 py-4">
+                      <div className="min-w-0">
+                        <p className="font-bold text-[13.5px] text-text-dark truncate">{registration.course_name}</p>
+                        <div className="flex items-center gap-2 mt-1 flex-wrap text-[11.5px] text-text-light">
+                          <span className="font-mono">{registration.course_code}</span>
+                          <span className="text-primary font-bold">{registration.credit_hours} ساعات</span>
+                          <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold rounded-full">
+                            {registration.registration_status?.status_name || 'مسجل'}
+                          </span>
+                        </div>
+                      </div>
+                      {canDrop ? (
+                        <button
+                          type="button"
+                          onClick={() => setConfirm({ type: 'drop', registration })}
+                          disabled={dropBusy}
+                          className="flex items-center gap-1.5 px-3 py-1.5 border border-red-300 text-red-600 rounded-[10px] text-[12px] font-bold hover:bg-red-50 disabled:opacity-40 shrink-0"
+                        >
+                          {dropBusy ? <FaSpinner className="animate-spin text-[10px]" /> : <FaMinus className="text-[10px]" />}
+                          حذف
+                        </button>
+                      ) : null}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </section>
         </div>
       )}
-      {err && (
-        <p className="mb-4 px-4 py-2.5 text-[12.5px] text-red-600 bg-red-50 border border-red-200 rounded-[10px]" dir="rtl">⚠ {err}</p>
-      )}
 
-      {loadingData && (
-        <div className="flex justify-center py-16 text-primary"><FaSpinner className="animate-spin text-[28px]" /></div>
-      )}
-
-      {summary && !loadingData && (
-        <>
-          {/* Hours bar */}
-          <HoursBar
-            registered={summary.total_registered_hours}
-            max={summary.max_allowed_hours}
-            remaining={summary.remaining_hours}
-          />
-
-          {/* Schedule notice */}
-          <div className="mb-5 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-[10px] flex items-center gap-2 text-[12px] text-amber-800" dir="rtl">
-            <FaClock className="flex-shrink-0" />
-            الجدول الزمني للمواد غير متاح حالياً — سيتم إضافة أوقات المحاضرات عند توفر البيانات من الإدارة.
+      {!registrationOpen && registrations.length > 0 ? (
+        <section className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
+          <div className="flex items-center gap-2 px-5 py-3 bg-primary/[0.05] border-b border-primary/10">
+            <span className="text-[13px] font-extrabold text-text-dark">المواد المسجلة</span>
+            <span className="text-[11px] text-text-light bg-primary/10 px-2 py-0.5 rounded-full font-bold">{registrations.length}</span>
           </div>
-
-          {/* Two panels */}
-          <div className="grid grid-cols-2 max-[860px]:grid-cols-1 gap-5">
-            <RegisteredPanel
-              registrations={registrations}
-              onDrop={handleDrop}
-              dropping={dropping}
-              editable={canManageRegistration}
-            />
-            <AvailablePanel
-              courses={available}
-              onRegister={handleRegister}
-              registering={registering}
-              editable={canManageRegistration}
-            />
+          <div className="divide-y divide-primary/8">
+            {registrations.map(registration => (
+              <div key={registration.registration_id} className="px-5 py-4">
+                <p className="font-bold text-[13.5px] text-text-dark">{registration.course_name}</p>
+                <div className="flex items-center gap-2 mt-1 text-[11.5px] text-text-light">
+                  <span className="font-mono">{registration.course_code}</span>
+                  <span className="text-primary font-bold">{registration.credit_hours} ساعات</span>
+                  <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold rounded-full">
+                    {registration.registration_status?.status_name || 'مسجل'}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
-        </>
-      )}
-    </>
+        </section>
+      ) : null}
+
+      {confirm?.type === 'register' ? (
+        <StudentConfirmDialog
+          title="تأكيد تسجيل المادة"
+          confirmLabel="تأكيد التسجيل"
+          busy={Boolean(registering[confirm.course.course_offering_id])}
+          onConfirm={confirmRegister}
+          onCancel={() => setConfirm(null)}
+        >
+          <p className="text-[13px] text-text-dark"><span className="text-text-light">المادة:</span> {confirm.course.course_name}</p>
+          <p className="text-[13px] text-text-dark"><span className="text-text-light">الساعات:</span> {confirm.course.credit_hours}</p>
+          <p className="text-[13px] font-semibold text-text-dark">
+            بعد التسجيل: الساعات المسجلة ستكون {afterHours} من {hours.max}
+          </p>
+        </StudentConfirmDialog>
+      ) : null}
+
+      {confirm?.type === 'drop' ? (
+        <StudentConfirmDialog
+          title="تأكيد حذف التسجيل"
+          confirmLabel="تأكيد الحذف"
+          confirmTone="danger"
+          busy={Boolean(dropping[confirm.registration.registration_id])}
+          onConfirm={confirmDrop}
+          onCancel={() => setConfirm(null)}
+        >
+          <p className="text-[13px] text-text-dark">
+            هل تريد حذف تسجيل مادة "{confirm.registration.course_name}"؟
+          </p>
+        </StudentConfirmDialog>
+      ) : null}
+    </div>
   )
 }

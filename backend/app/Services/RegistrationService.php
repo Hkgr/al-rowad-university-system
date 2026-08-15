@@ -6,6 +6,7 @@ use App\Exceptions\RegistrationException;
 use App\Models\AcademicYear;
 use App\Models\CourseOffering;
 use App\Models\CoursePrerequisite;
+use App\Models\ProgramCourse;
 use App\Models\RegistrationStatus;
 use App\Models\Semester;
 use App\Models\Student;
@@ -21,6 +22,8 @@ use Illuminate\Support\Facades\DB;
 class RegistrationService
 {
     private const DEFAULT_MAX_CREDIT_HOURS = 18;
+
+    private const UNSATISFACTORY_RESULT_STATUSES = ['deprived', 'withdrawn', 'incomplete', 'failed'];
 
     public function paginate(int $perPage = 15): LengthAwarePaginator
     {
@@ -411,40 +414,14 @@ class RegistrationService
 
         $offerings = $query->orderBy('course_offering_id')->get();
 
-        $registeredOfferingIds = StudentCourseRegistration::query()
-            ->where('student_id', $student->student_id)
-            ->current()
-            ->pluck('course_offering_id')
-            ->all();
+        $registeredOfferingIds = $this->currentRegisteredOfferingIds($student);
 
         $hours = ($academicYearId !== null && $semesterId !== null)
             ? $this->getHoursSnapshot($student, $academicYearId, $semesterId)
             : null;
 
         return $offerings->map(function (CourseOffering $offering) use ($student, $registeredOfferingIds, $hours): CourseOffering {
-            $reasons = [];
-            $courseCreditHours = (int) ($offering->course?->credit_hours ?? 0);
-
-            if (in_array($offering->course_offering_id, $registeredOfferingIds, true)) {
-                $reasons[] = 'already_registered';
-            }
-
-            if ($this->getMissingPrerequisites($student, (int) $offering->course_id) !== []) {
-                $reasons[] = 'missing_prerequisites';
-            }
-
-            if ((int) $offering->available_seats <= 0) {
-                $reasons[] = 'no_available_seats';
-            }
-
-            if ($hours !== null && ($hours['registered_hours'] + $courseCreditHours) > $hours['max_allowed_hours']) {
-                $reasons[] = 'credit_limit_exceeded';
-            }
-
-            $offering->setAttribute('eligibility_status', $reasons === [] ? 'eligible' : 'not_eligible');
-            $offering->setAttribute('eligibility_reasons', $reasons);
-
-            return $offering;
+            return $this->annotateOfferingEligibility($offering, $student, $registeredOfferingIds, $hours);
         });
     }
 
@@ -498,24 +475,244 @@ class RegistrationService
             ->get();
 
         foreach ($registrations as $registration) {
-            $result = $registration->studentCourseResult;
-
-            if ($result !== null) {
-                if ($result->final_mark !== null && (float) $result->final_mark >= 50) {
-                    return true;
-                }
-
-                if ($result->resultStatus?->status_code === 'passed') {
-                    return true;
-                }
-            }
-
-            if ($registration->resultStatus?->status_code === 'passed') {
+            if ($this->attemptSatisfiesPrerequisite($registration)) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    public function getSelfRegistrationOfferings(Student $student, int $academicYearId, int $semesterId): Collection
+    {
+        $query = CourseOffering::query()
+            ->with([
+                'course',
+                'academicYear',
+                'semester',
+                'department',
+                'academicProgram',
+                'facultyMember.employee',
+            ]);
+        $this->constrainSelfRegistrationOfferings($query, $student);
+        $query
+            ->where('academic_year_id', $academicYearId)
+            ->where('semester_id', $semesterId);
+
+        $offerings = $query->orderBy('course_offering_id')->get();
+        $registeredOfferingIds = $this->currentRegisteredOfferingIds($student);
+        $hours = $this->getHoursSnapshot($student, $academicYearId, $semesterId);
+
+        return $offerings->map(function (CourseOffering $offering) use ($student, $registeredOfferingIds, $hours): CourseOffering {
+            return $this->annotateOfferingEligibility($offering, $student, $registeredOfferingIds, $hours);
+        });
+    }
+
+    public function selfRegistrationOpenSemesters(Student $student, int $academicYearId): Collection
+    {
+        $semesterIds = $this->constrainSelfRegistrationOfferings(CourseOffering::query(), $student)
+            ->where('academic_year_id', $academicYearId)
+            ->whereNotNull('semester_id')
+            ->distinct()
+            ->pluck('semester_id');
+
+        if ($semesterIds->isEmpty()) {
+            return collect();
+        }
+
+        return Semester::query()
+            ->whereIn('semester_id', $semesterIds)
+            ->orderBy('semester_order')
+            ->get();
+    }
+
+    public function assertSelfRegistrationAllowed(Student $student, CourseOffering $offering): void
+    {
+        if ($student->academic_program_id === null) {
+            throw new RegistrationException('Student is not assigned to an academic program.', [
+                'student_id' => ['Student is not assigned to an academic program.'],
+            ]);
+        }
+
+        if ($offering->status !== 'open') {
+            throw new RegistrationException('The selected course offering is not open for registration.', [
+                'course_offering_id' => ['The selected course offering is not open for registration.'],
+            ]);
+        }
+
+        if ($offering->academic_program_id === null
+            || (int) $offering->academic_program_id !== (int) $student->academic_program_id) {
+            throw new RegistrationException('The selected course offering is not available for this academic program.', [
+                'course_offering_id' => ['The selected course offering is not available for this academic program.'],
+            ]);
+        }
+
+        if ($offering->academic_year_id === null || $offering->semester_id === null) {
+            throw new RegistrationException('The selected course offering does not belong to a complete academic term.', [
+                'course_offering_id' => ['The selected course offering does not belong to a complete academic term.'],
+            ]);
+        }
+
+        $currentYearId = AcademicYear::query()->where('is_current', true)->value('academic_year_id');
+        if ($currentYearId === null || (int) $offering->academic_year_id !== (int) $currentYearId) {
+            throw new RegistrationException('The selected course offering is not open for the current academic term.', [
+                'course_offering_id' => ['The selected course offering is not open for the current academic term.'],
+            ]);
+        }
+
+        if (! $this->courseIsOnActiveProgramCurriculum($student, (int) $offering->course_id)) {
+            throw new RegistrationException('The selected course is not part of the student program curriculum.', [
+                'course_offering_id' => ['The selected course is not part of the student program curriculum.'],
+            ]);
+        }
+
+        $visible = $this->constrainSelfRegistrationOfferings(
+            CourseOffering::query()->whereKey($offering->course_offering_id),
+            $student
+        )->exists();
+
+        if (! $visible) {
+            throw new RegistrationException('The selected course offering is not available for student self-registration.', [
+                'course_offering_id' => ['The selected course offering is not available for student self-registration.'],
+            ]);
+        }
+    }
+
+    public function assertSelfDropAllowed(Student $student, StudentCourseRegistration $registration): void
+    {
+        if ((int) $registration->student_id !== (int) $student->student_id) {
+            throw new RegistrationException('You can only drop your own course registration.', [
+                'registration' => ['You can only drop your own course registration.'],
+            ], 403);
+        }
+
+        $registration->loadMissing(['registrationStatus', 'courseOffering']);
+
+        if ($registration->registrationStatus?->status_code !== StudentCourseRegistration::CURRENT_STATUS) {
+            throw new RegistrationException('Only a current registration can be dropped.', [
+                'registration' => ['Only a current registration can be dropped.'],
+            ]);
+        }
+
+        if ($registration->courseOffering?->status !== 'open') {
+            throw new RegistrationException('Self-drop is not allowed after registration has closed for this offering.', [
+                'registration' => ['Self-drop is not allowed after registration has closed for this offering.'],
+            ]);
+        }
+    }
+
+    private function annotateOfferingEligibility(
+        CourseOffering $offering,
+        Student $student,
+        array $registeredOfferingIds,
+        ?array $hours
+    ): CourseOffering {
+        $missing = $this->getMissingPrerequisites($student, (int) $offering->course_id);
+        $reasons = [];
+        $courseCreditHours = (int) ($offering->course?->credit_hours ?? 0);
+
+        if (in_array((int) $offering->course_offering_id, $registeredOfferingIds, true)) {
+            $reasons[] = 'already_registered';
+        }
+
+        if ($missing !== []) {
+            $reasons[] = 'missing_prerequisites';
+        }
+
+        if ((int) $offering->available_seats <= 0) {
+            $reasons[] = 'no_available_seats';
+        }
+
+        if ($hours !== null && ($hours['registered_hours'] + $courseCreditHours) > $hours['max_allowed_hours']) {
+            $reasons[] = 'credit_limit_exceeded';
+        }
+
+        $offering->setAttribute('eligibility_status', $reasons === [] ? 'eligible' : 'not_eligible');
+        $offering->setAttribute('eligibility_reasons', $reasons);
+        $offering->setAttribute('missing_prerequisites', $missing);
+
+        return $offering;
+    }
+
+    private function constrainSelfRegistrationOfferings(Builder $query, Student $student): Builder
+    {
+        if ($student->academic_program_id === null) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        $programId = (int) $student->academic_program_id;
+        $query
+            ->where('course_offerings.status', 'open')
+            ->whereNotNull('course_offerings.academic_program_id')
+            ->where('course_offerings.academic_program_id', $programId);
+
+        $curriculumCourseIds = ProgramCourse::query()
+            ->where('academic_program_id', $programId)
+            ->where('is_active', true)
+            ->pluck('course_id');
+
+        if ($curriculumCourseIds->isNotEmpty()) {
+            $query->whereIn('course_offerings.course_id', $curriculumCourseIds);
+        }
+
+        return $query;
+    }
+
+    private function courseIsOnActiveProgramCurriculum(Student $student, int $courseId): bool
+    {
+        if ($student->academic_program_id === null) {
+            return false;
+        }
+
+        $programId = (int) $student->academic_program_id;
+        $hasCurriculum = ProgramCourse::query()
+            ->where('academic_program_id', $programId)
+            ->where('is_active', true)
+            ->exists();
+
+        if (! $hasCurriculum) {
+            return true;
+        }
+
+        return ProgramCourse::query()
+            ->where('academic_program_id', $programId)
+            ->where('course_id', $courseId)
+            ->where('is_active', true)
+            ->exists();
+    }
+
+    private function currentRegisteredOfferingIds(Student $student): array
+    {
+        return StudentCourseRegistration::query()
+            ->where('student_id', $student->student_id)
+            ->current()
+            ->pluck('course_offering_id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+    }
+
+    private function attemptSatisfiesPrerequisite(StudentCourseRegistration $registration): bool
+    {
+        $result = $registration->studentCourseResult;
+        if ($result !== null) {
+            if ($result->is_deprived) {
+                return false;
+            }
+
+            $statusCode = $result->resultStatus?->status_code;
+            if (in_array($statusCode, self::UNSATISFACTORY_RESULT_STATUSES, true)) {
+                return false;
+            }
+
+            return $statusCode === 'passed';
+        }
+
+        $registrationStatusCode = $registration->resultStatus?->status_code;
+        if (in_array($registrationStatusCode, self::UNSATISFACTORY_RESULT_STATUSES, true)) {
+            return false;
+        }
+
+        return $registrationStatusCode === 'passed';
     }
 
     private function getHoursSnapshot(Student $student, int $academicYearId, int $semesterId): array

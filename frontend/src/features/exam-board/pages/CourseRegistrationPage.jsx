@@ -278,7 +278,7 @@ function AvailablePanel({ courses, levels, programCourseMap, currentLevelId, onR
 
 function CourseRow({ course, onRegister, registering, canManage }) {
   const eligible = course.eligibility_status === 'eligible'
-  const reasons  = course.reasons ?? []
+  const reasons  = course.eligibility_reasons ?? []
   const seats    = course.available_seats ?? 0
   const capacity = course.capacity ?? 0
   const typeInfo = COURSE_TYPE_LABELS[course._courseType]
