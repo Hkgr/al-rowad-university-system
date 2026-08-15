@@ -71,6 +71,7 @@ use App\Http\Controllers\Api\RolePermissionController;
 use App\Http\Controllers\Api\SemesterController;
 use App\Http\Controllers\Api\StudentController;
 use App\Http\Controllers\Api\StudentSelfRegistrationController;
+use App\Http\Controllers\Api\StudentSelfAttendanceController;
 use App\Http\Controllers\Api\StudentSelfGpaController;
 use App\Http\Controllers\Api\StudentSelfTranscriptController;
 use App\Http\Controllers\Api\StudentAcademicTermController;
@@ -223,6 +224,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::middleware(\App\Http\Middleware\RequirePermission::class.':grades.view')->group(function (): void {
         Route::get('student/transcript', [StudentSelfTranscriptController::class, 'show']);
         Route::get('student/gpa-overview', [StudentSelfGpaController::class, 'show']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':attendance.view')->group(function (): void {
+        Route::get('student/attendance-overview', [StudentSelfAttendanceController::class, 'show']);
     });
     Route::get('students/{student}/profile', [StudentController::class, 'profile']);
     Route::get('students/{student}/academic-info', [StudentController::class, 'academicInfo']);
