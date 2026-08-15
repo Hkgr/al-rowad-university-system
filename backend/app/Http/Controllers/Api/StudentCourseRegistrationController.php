@@ -34,7 +34,7 @@ class StudentCourseRegistrationController extends ApiController
         abort_unless(app(DataScopeService::class)->scopeRegistrations(StudentCourseRegistration::query(), $user)->whereKey($id)->exists(), 403);
 
         if ($authorization->canExposeStudentCourseResult($user, $registration)) {
-            $registration->load('studentCourseResult.resultStatus');
+            $registration->load(['resultStatus', 'studentCourseResult.resultStatus']);
         }
 
         return $this->successResponse(

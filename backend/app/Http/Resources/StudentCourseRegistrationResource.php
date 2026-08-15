@@ -11,7 +11,7 @@ class StudentCourseRegistrationResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        $exposeResult = $this->shouldExposeCourseResult($request);
+        $exposeOfficialResult = $this->shouldExposeOfficialResult($request);
 
         return [
             'student_course_registration_id' => $this->student_course_registration_id,
@@ -21,8 +21,8 @@ class StudentCourseRegistrationResource extends JsonResource
             'registered_by_user_id' => $this->registered_by_user_id,
             'advisor_user_id' => $this->advisor_user_id,
             'registration_status_id' => $this->registration_status_id,
-            'result_status_id' => $this->result_status_id,
-            'notes' => $this->notes,
+            'result_status_id' => $this->when($exposeOfficialResult, $this->result_status_id),
+            'notes' => $this->when($this->shouldExposeInternalNotes($request), $this->notes),
             'grade_entry_allowed' => $this->allowsGradeEntry(),
             'grade_entry_blocked_reason' => $this->allowsGradeEntry()
                 ? null
@@ -30,9 +30,12 @@ class StudentCourseRegistrationResource extends JsonResource
             'student' => StudentResource::make($this->whenLoaded('student')),
             'course_offering' => CourseOfferingResource::make($this->whenLoaded('courseOffering')),
             'registration_status' => RegistrationStatusResource::make($this->whenLoaded('registrationStatus')),
-            'result_status' => ResultStatusResource::make($this->whenLoaded('resultStatus')),
+            'result_status' => $this->when(
+                $exposeOfficialResult,
+                fn () => ResultStatusResource::make($this->whenLoaded('resultStatus'))
+            ),
             'student_course_result' => $this->when(
-                $exposeResult,
+                $exposeOfficialResult && $this->relationLoaded('studentCourseResult') && $this->studentCourseResult !== null,
                 fn () => StudentCourseResultResource::make($this->studentCourseResult)
             ),
             'created_at' => $this->created_at,
@@ -40,17 +43,23 @@ class StudentCourseRegistrationResource extends JsonResource
         ];
     }
 
-    private function shouldExposeCourseResult(Request $request): bool
+    private function shouldExposeOfficialResult(Request $request): bool
     {
-        if (! $this->relationLoaded('studentCourseResult') || $this->studentCourseResult === null) {
-            return false;
-        }
-
         $user = $request->user();
         if ($user === null) {
             return false;
         }
 
         return app(AcademicAuthorizationService::class)->canExposeStudentCourseResult($user, $this->resource);
+    }
+
+    private function shouldExposeInternalNotes(Request $request): bool
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return false;
+        }
+
+        return ! app(AcademicAuthorizationService::class)->isRestrictedToOfficialStudentGrades($user);
     }
 }
