@@ -41,9 +41,12 @@ export default function DataTable({
             {emptySubtitle && <p className="text-[12.5px] text-text-light">{emptySubtitle}</p>}
             {hasFilters && onClearFilters && (
               <button
+                type="button"
                 className="mt-2.5 px-5 py-2 bg-primary/8 border border-primary/20 rounded-[10px] text-primary-dark text-[13px] font-semibold cursor-pointer transition-all duration-200 hover:bg-primary/15"
                 onClick={onClearFilters}
                 dir="rtl"
+                aria-label="مسح الفلاتر"
+                title="مسح الفلاتر"
               >
                 مسح الفلاتر
               </button>
@@ -96,6 +99,7 @@ export default function DataTable({
       {!loading && totalPages > 1 && (
         <div className="flex items-center justify-center gap-4 mt-5 py-1">
           <button
+            type="button"
             className="flex items-center gap-1.5 px-4 py-2 border-[1.5px] border-primary/20 rounded-[10px] bg-white text-primary-dark text-[13px] font-semibold cursor-pointer transition-all duration-200 disabled:opacity-[0.38] disabled:cursor-not-allowed hover:not-disabled:bg-primary/8 hover:not-disabled:border-primary/40"
             disabled={page <= 1}
             onClick={() => onPageChange(page - 1)}
@@ -112,6 +116,7 @@ export default function DataTable({
           </div>
 
           <button
+            type="button"
             className="flex items-center gap-1.5 px-4 py-2 border-[1.5px] border-primary/20 rounded-[10px] bg-white text-primary-dark text-[13px] font-semibold cursor-pointer transition-all duration-200 disabled:opacity-[0.38] disabled:cursor-not-allowed hover:not-disabled:bg-primary/8 hover:not-disabled:border-primary/40"
             disabled={page >= totalPages}
             onClick={() => onPageChange(page + 1)}

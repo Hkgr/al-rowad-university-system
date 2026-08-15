@@ -5,12 +5,16 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\TeachingStaffResource;
 use App\Models\College;
+use App\Models\CourseOfferingInstructor;
 use App\Models\FacultyMember;
 use App\Models\User;
 use App\Services\DataScopeService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 class TeachingStaffController extends Controller
@@ -25,7 +29,13 @@ class TeachingStaffController extends Controller
         $validated = $request->validate([
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
             'page' => ['sometimes', 'integer', 'min:1'],
+            'search' => ['sometimes', 'string', 'min:1', 'max:150'],
+            'academic_rank' => ['sometimes', 'string', 'min:1', 'max:100'],
+            'assignment_type' => ['sometimes', Rule::in(['theoretical', 'practical', 'both', 'unassigned'])],
         ]);
+
+        $user = $request->user();
+        $collegeIds = $this->accessibleCollegeIdList($user);
 
         $query = FacultyMember::query()
             ->with([
@@ -38,13 +48,16 @@ class TeachingStaffController extends Controller
                     ->where('status_code', 'active')
                     ->where('is_active', true)));
 
-        $this->dataScope->scopeFacultyMembers($query, $request->user());
+        $this->dataScope->scopeFacultyMembers($query, $user);
+        $query->select('faculty_members.*');
+        $this->applyAssignmentSummaries($query, $collegeIds);
+        $this->applyTeachingStaffFilters($query, $validated, $collegeIds);
 
         $staff = $query
             ->orderBy('faculty_member_id')
             ->paginate((int) ($validated['per_page'] ?? 15));
 
-        $this->hydrateColleges(collect($staff->items()), $request->user());
+        $this->hydrateColleges(collect($staff->items()), $user);
 
         $payload = TeachingStaffResource::collection($staff)
             ->response($request)
@@ -57,20 +70,188 @@ class TeachingStaffController extends Controller
     {
         $this->assertCanViewTeachingStaff($request);
 
-        $facultyMember = $this->dataScope
-            ->scopeFacultyMembers(FacultyMember::query(), $request->user())
-            ->whereKey($facultyMember->faculty_member_id)
-            ->firstOrFail();
+        $user = $request->user();
+        $collegeIds = $this->accessibleCollegeIdList($user);
+
+        $query = FacultyMember::query()
+            ->whereKey($facultyMember->faculty_member_id);
+
+        $this->dataScope->scopeFacultyMembers($query, $user);
+        $query->select('faculty_members.*');
+        $this->applyAssignmentSummaries($query, $collegeIds);
+
+        $facultyMember = $query->firstOrFail();
 
         $facultyMember->load([
             'employee.employeeStatus',
             'employee.employeeUnitAssignments' => fn ($assignments) => $assignments->where('is_active', true),
         ]);
-        $this->hydrateColleges(collect([$facultyMember]), $request->user());
+        $this->hydrateColleges(collect([$facultyMember]), $user);
 
         return $this->successResponse(
             (new TeachingStaffResource($facultyMember))->resolve($request)
         );
+    }
+
+    private function applyTeachingStaffFilters(Builder $query, array $validated, array $collegeIds): void
+    {
+        if (isset($validated['academic_rank'])) {
+            $query->where('academic_rank', $validated['academic_rank']);
+        }
+
+        if (isset($validated['search'])) {
+            $pattern = $this->likeContains($validated['search']);
+            $query->where(function (Builder $search) use ($pattern): void {
+                $search
+                    ->whereHas('employee', function (Builder $employee) use ($pattern): void {
+                        $employee->where(function (Builder $fields) use ($pattern): void {
+                            $fields->where('first_name', 'like', $pattern)
+                                ->orWhere('last_name', 'like', $pattern)
+                                ->orWhere('employee_number', 'like', $pattern)
+                                ->orWhere('email', 'like', $pattern)
+                                ->orWhereRaw(
+                                    "CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, '')) LIKE ?",
+                                    [$pattern]
+                                );
+                        });
+                    })
+                    ->orWhere('specialization', 'like', $pattern);
+            });
+        }
+
+        if (! isset($validated['assignment_type'])) {
+            return;
+        }
+
+        $constrain = fn (Builder $assignments) => $this->constrainActiveScopedAssignments($assignments, $collegeIds);
+
+        match ($validated['assignment_type']) {
+            'theoretical' => $query->whereHas(
+                'offeringInstructors',
+                function (Builder $assignments) use ($constrain): void {
+                    $constrain($assignments);
+                    $assignments->where('instructor_role', 'theoretical');
+                }
+            ),
+            'practical' => $query->whereHas(
+                'offeringInstructors',
+                function (Builder $assignments) use ($constrain): void {
+                    $constrain($assignments);
+                    $assignments->where('instructor_role', 'practical');
+                }
+            ),
+            'both' => $query
+                ->whereHas(
+                    'offeringInstructors',
+                    function (Builder $assignments) use ($constrain): void {
+                        $constrain($assignments);
+                        $assignments->where('instructor_role', 'theoretical');
+                    }
+                )
+                ->whereHas(
+                    'offeringInstructors',
+                    function (Builder $assignments) use ($constrain): void {
+                        $constrain($assignments);
+                        $assignments->where('instructor_role', 'practical');
+                    }
+                ),
+            'unassigned' => $query->whereDoesntHave('offeringInstructors', $constrain),
+        };
+    }
+
+    private function applyAssignmentSummaries(Builder $query, array $collegeIds): void
+    {
+        $constrain = fn (Builder $assignments) => $this->constrainActiveScopedAssignments($assignments, $collegeIds);
+
+        $query->withCount([
+            'offeringInstructors as active_assignment_count' => $constrain,
+            'offeringInstructors as theoretical_assignment_count' => function (Builder $assignments) use ($constrain): void {
+                $constrain($assignments);
+                $assignments->where('instructor_role', 'theoretical');
+            },
+            'offeringInstructors as practical_assignment_count' => function (Builder $assignments) use ($constrain): void {
+                $constrain($assignments);
+                $assignments->where('instructor_role', 'practical');
+            },
+        ]);
+
+        $query->addSelect([
+            'active_course_count' => CourseOfferingInstructor::query()
+                ->selectRaw('COUNT(DISTINCT course_offerings.course_id)')
+                ->join(
+                    'course_offerings',
+                    'course_offerings.course_offering_id',
+                    '=',
+                    'course_offering_instructors.course_offering_id'
+                )
+                ->whereColumn(
+                    'course_offering_instructors.faculty_member_id',
+                    'faculty_members.faculty_member_id'
+                )
+                ->where('course_offering_instructors.is_active', true)
+                ->whereIn(
+                    'course_offering_instructors.course_offering_id',
+                    $this->offeringsInAccessibleCollegesQuery($collegeIds)
+                ),
+        ]);
+    }
+
+    private function constrainActiveScopedAssignments(Builder $assignments, array $collegeIds): void
+    {
+        $assignments
+            ->where('is_active', true)
+            ->whereIn('course_offering_id', $this->offeringsInAccessibleCollegesQuery($collegeIds));
+    }
+
+    private function offeringsInAccessibleCollegesQuery(array $collegeIds)
+    {
+        $query = DB::table('course_offerings as accessible_offerings')
+            ->leftJoin(
+                'departments as offering_departments',
+                'offering_departments.department_id',
+                '=',
+                'accessible_offerings.department_id'
+            )
+            ->leftJoin(
+                'academic_programs as offering_programs',
+                'offering_programs.academic_program_id',
+                '=',
+                'accessible_offerings.academic_program_id'
+            )
+            ->leftJoin(
+                'departments as program_departments',
+                'program_departments.department_id',
+                '=',
+                'offering_programs.department_id'
+            )
+            ->select('accessible_offerings.course_offering_id');
+
+        if ($collegeIds === []) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->whereIn(
+            DB::raw('CASE
+                WHEN offering_departments.college_id IS NOT NULL
+                 AND program_departments.college_id IS NOT NULL
+                 AND offering_departments.college_id <> program_departments.college_id THEN NULL
+                ELSE COALESCE(offering_departments.college_id, program_departments.college_id)
+            END'),
+            $collegeIds
+        );
+    }
+
+    private function accessibleCollegeIdList(User $user): array
+    {
+        return array_values(array_unique(array_map(
+            static fn ($id): int => (int) $id,
+            $this->dataScope->accessibleCollegeIds($user)
+        )));
+    }
+
+    private function likeContains(string $term): string
+    {
+        return '%'.addcslashes($term, "%_\\").'%';
     }
 
     private function assertCanViewTeachingStaff(Request $request): void
