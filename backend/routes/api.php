@@ -433,6 +433,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('faculty-members/me', [FacultyMemberController::class, 'me']);
     Route::apiResource('faculty-members', FacultyMemberController::class);
     Route::get('teaching-staff', [TeachingStaffController::class, 'index']);
+    Route::get('teaching-staff/{facultyMember}/assignments', [TeachingStaffController::class, 'assignments']);
+    Route::get('teaching-staff/{facultyMember}/sessions', [TeachingStaffController::class, 'sessions']);
     Route::get('teaching-staff/{facultyMember}', [TeachingStaffController::class, 'show']);
     Route::apiResource('organizational-units', OrganizationalUnitController::class);
     Route::apiResource('organizational-unit-types', OrganizationalUnitTypeController::class);
