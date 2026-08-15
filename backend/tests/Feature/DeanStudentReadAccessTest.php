@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\AcademicProgram;
 use App\Models\AcademicLevel;
+use App\Models\AcademicProgram;
 use App\Models\AccountStatus;
 use App\Models\College;
 use App\Models\Department;
@@ -21,7 +21,9 @@ use Tests\TestCase;
 class DeanStudentReadAccessTest extends TestCase
 {
     private User $dean;
+
     private Student $collegeAStudent;
+
     private Student $collegeBStudent;
 
     protected function setUp(): void
@@ -188,8 +190,7 @@ class DeanStudentReadAccessTest extends TestCase
         AcademicProgram $program,
         AcademicLevel $academicLevel,
         StudentStatus $studentStatus
-    ): Student
-    {
+    ): Student {
         return Student::query()->create([
             'student_number' => $studentNumber,
             'first_name' => 'Test',
