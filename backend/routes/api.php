@@ -76,6 +76,7 @@ use App\Http\Controllers\Api\StudentDocumentController;
 use App\Http\Controllers\Api\StudentStatusController;
 use App\Http\Controllers\Api\SupplementaryExamPeriodController;
 use App\Http\Controllers\Api\SystemModuleController;
+use App\Http\Controllers\Api\TeachingStaffAssignmentOfferingController;
 use App\Http\Controllers\Api\TeachingStaffController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\UserActivityLogController;
@@ -433,6 +434,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('faculty-members/me', [FacultyMemberController::class, 'me']);
     Route::apiResource('faculty-members', FacultyMemberController::class);
     Route::get('teaching-staff', [TeachingStaffController::class, 'index']);
+    Route::get('teaching-staff/assignment-offerings', [TeachingStaffAssignmentOfferingController::class, 'index']);
+    Route::get('teaching-staff/assignment-offerings/{courseOffering}', [TeachingStaffAssignmentOfferingController::class, 'show']);
+    Route::put('teaching-staff/assignment-offerings/{courseOffering}/slots', [TeachingStaffAssignmentOfferingController::class, 'updateSlots']);
     Route::get('teaching-staff/{facultyMember}/assignments', [TeachingStaffController::class, 'assignments']);
     Route::get('teaching-staff/{facultyMember}/sessions', [TeachingStaffController::class, 'sessions']);
     Route::get('teaching-staff/{facultyMember}', [TeachingStaffController::class, 'show']);

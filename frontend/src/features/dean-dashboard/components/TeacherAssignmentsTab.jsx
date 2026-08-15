@@ -1,4 +1,4 @@
-import { FaBookOpen } from 'react-icons/fa'
+import { FaBookOpen, FaCog, FaPlus } from 'react-icons/fa'
 import DataTable from '../../../components/table/DataTable'
 import FilterBar from '../../../components/table/FilterBar'
 import { TabState } from './DeanStudentRecordPanels'
@@ -41,6 +41,9 @@ export default function TeacherAssignmentsTab({
   onStatusChange,
   onRoleChange,
   onClearFilters,
+  canManage = false,
+  onAddAssignment,
+  onManageOffering,
 }) {
   const grouped = rows
   const hasFilters = Boolean(status !== 'active' || role)
@@ -158,8 +161,41 @@ export default function TeacherAssignmentsTab({
     },
   ]
 
+  if (canManage) {
+    columns.push({
+      key: 'manage',
+      header: 'إدارة',
+      align: 'center',
+      render: group => (
+        <button
+          type="button"
+          className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] mx-auto cursor-pointer transition-all duration-[180ms] text-primary border-primary/20 bg-primary/6 hover:bg-primary/14 hover:border-primary/35"
+          title="إدارة التكليف"
+          aria-label="إدارة التكليف"
+          onClick={() => onManageOffering?.(group)}
+        >
+          <FaCog aria-hidden="true" />
+        </button>
+      ),
+    })
+  }
+
   return (
     <div>
+      {canManage && (
+        <div className="flex justify-start mb-4">
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-[10px] text-[13px] font-bold hover:bg-primary-dark transition-colors"
+            onClick={onAddAssignment}
+            aria-label="إضافة تكليف تدريسي"
+            title="إضافة تكليف تدريسي"
+          >
+            <FaPlus aria-hidden="true" className="text-[11px]" />
+            إضافة تكليف تدريسي
+          </button>
+        </div>
+      )}
       <FilterBar
         filters={[
           {

@@ -81,6 +81,7 @@ export function sessionTypeLabel(type) {
 export function offeringStatusLabel(status) {
   if (status === 'open') return 'مفتوح'
   if (status === 'closed') return 'مغلق'
+  if (status === 'cancelled') return 'ملغى'
   return displayValue(status)
 }
 
@@ -111,7 +112,7 @@ export function componentState(hours, slot) {
       ? { kind: 'assigned', label: 'نعم', title: 'هذا المدرس مكلف بهذا الشق' }
       : { kind: 'inactive', label: 'غير نشط', title: 'تكليف غير نشط لهذا الشق' }
   }
-  return { kind: 'unassigned', label: 'غير مكلف', title: 'المقرر يحتوي هذا الشق ولكن هذا المدرس ليس مكلفًا به' }
+  return { kind: 'unassigned', label: 'بدون مدرس', title: 'المقرر يحتوي هذا الشق ولكن هذا المدرس ليس مكلفًا به' }
 }
 
 export function groupAssignmentsByOffering(rows) {
@@ -219,4 +220,40 @@ export function buildTeacherTimeline(assignments = [], sessions = []) {
   })
 
   return events.sort((a, b) => timelineInstant(b.date) - timelineInstant(a.date))
+}
+
+export function teacherChoiceLabel(teacher) {
+  if (!teacher) return '—'
+  const name = teacher.full_name || fullTeacherName(teacher)
+  const number = teacher.employee_number || teacher.employee?.employee_number
+  const rank = academicRankLabel(teacher.academic_rank)
+  return [name, number, rank === '—' ? null : rank].filter(Boolean).join(' — ')
+}
+
+export function activeComponentFacultyId(component) {
+  if (!component?.available || !component?.is_active) return null
+  const id = component.faculty_member?.faculty_member_id
+  return id == null ? null : Number(id)
+}
+
+export function facultySlotName(faculty) {
+  if (!faculty) return 'بدون مدرس'
+  return displayValue(faculty.full_name)
+}
+
+export function firstApiErrorMessage(error, fallback) {
+  const details = error?.details
+  if (details && typeof details === 'object') {
+    const first = Object.values(details).flat().find(value => typeof value === 'string' && value.trim())
+    if (first) return first
+  }
+  if (error?.message && error.message !== 'Validation failed' && error.message !== 'تعذّر الاتصال بالخادم') {
+    return error.message
+  }
+  return fallback
+}
+
+export function offeringTitle(offering) {
+  const course = offering?.course
+  return [course?.course_code, course?.course_name].filter(Boolean).join(' — ') || 'طرح مقرر'
 }
