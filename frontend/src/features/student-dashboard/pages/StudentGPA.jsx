@@ -150,7 +150,9 @@ export default function StudentGPA() {
         {gpaError && <p className="mt-3 text-[12.5px] text-red-600" dir="rtl">⚠ {gpaError}</p>}
         {termGPA && (
           <div className="mt-5 flex items-center gap-5 bg-blue-50 border border-blue-500/20 rounded-[14px] px-6 py-4" dir="rtl">
-            <div className="text-[48px] font-black text-blue-600 leading-none">{Number(termGPA.gpa).toFixed(2)}</div>
+            <div className="text-[48px] font-black text-blue-600 leading-none">
+              {termGPA.gpa === null || termGPA.gpa === undefined ? '—' : Number(termGPA.gpa).toFixed(2)}
+            </div>
             <div>
               <p className="text-[13px] font-extrabold text-text-dark">معدل الفصل</p>
               <p className="text-[12px] text-text-light mt-0.5">{termGPA.total_credit_hours} ساعة معتمدة</p>

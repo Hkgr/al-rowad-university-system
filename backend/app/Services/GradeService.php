@@ -361,63 +361,54 @@ class GradeService
 
     public function getTranscript(Student $student): array
     {
-        $student->load([
-            'currentAcademicLevel',
-            'academicProgram.department.college',
-            'studentCourseRegistrations' => function ($query): void {
-                $query->with([
-                    'courseOffering.course',
-                    'courseOffering.academicYear',
-                    'courseOffering.semester',
-                    'studentCourseResult.resultStatus',
-                    'registrationStatus',
-                ])->academicAttempts()->orderBy('student_course_registration_id');
-            },
-        ]);
+        $student->load(['currentAcademicLevel', 'academicProgram.department.college']);
 
-        $grouped = $student->studentCourseRegistrations
-            ->groupBy(fn (StudentCourseRegistration $registration) => $registration->courseOffering?->academic_year_id.'-'.$registration->courseOffering?->semester_id)
-            ->map(function (Collection $registrations) {
-                $first = $registrations->first();
+        $registrations = $this->officialAcademicAttempts($student)
+            ->get()
+            ->filter(fn (StudentCourseRegistration $registration): bool => $this->isOfficiallyVisibleAttempt($registration))
+            ->values();
+
+        $terms = $registrations
+            ->groupBy(fn (StudentCourseRegistration $registration) => ($registration->courseOffering?->academic_year_id ?? 'none').'-'.($registration->courseOffering?->semester_id ?? 'none'))
+            ->map(function (Collection $termRegistrations) {
+                $first = $termRegistrations->first();
+                $year = $first?->courseOffering?->academicYear;
+                $semester = $first?->courseOffering?->semester;
+                $courses = $termRegistrations
+                    ->sortBy(fn (StudentCourseRegistration $registration) => $registration->courseOffering?->course?->course_code ?? '')
+                    ->map(fn (StudentCourseRegistration $registration) => $this->formatTranscriptCourse($registration))
+                    ->values();
+
+                $gpaEvaluation = $this->summarizeGpaCollection($termRegistrations);
 
                 return [
-                    'academic_year' => $this->compactAcademicYear($first?->courseOffering?->academicYear),
-                    'semester' => $this->compactSemester($first?->courseOffering?->semester),
-                    'courses' => $registrations->map(fn (StudentCourseRegistration $registration) => $this->formatTranscriptCourse($registration))->values()->all(),
+                    'academic_year' => $this->compactAcademicYear($year),
+                    'semester' => $this->compactSemester($semester),
+                    'term_gpa' => $gpaEvaluation['gpa'],
+                    'included_credit_hours' => $gpaEvaluation['included_credit_hours'],
+                    'courses' => $courses->all(),
+                    '_sort_start' => $year?->start_date?->format('Y-m-d') ?? '9999-99-99',
+                    '_sort_order' => (int) ($semester?->semester_order ?? 9999),
                 ];
+            })
+            ->sortBy(fn (array $term): string => $term['_sort_start'].'-'.str_pad((string) $term['_sort_order'], 4, '0', STR_PAD_LEFT))
+            ->map(function (array $term): array {
+                unset($term['_sort_start'], $term['_sort_order']);
+
+                return $term;
             })
             ->values()
             ->all();
 
-        $program = $student->academicProgram;
-        $department = $program?->department;
+        $identity = $this->officialStudentIdentity($student);
+        $cgpaEvaluation = $this->summarizeGpaCollection($this->selectBestAttempts($registrations));
+        $summary = $this->officialTranscriptSummary($registrations, $cgpaEvaluation['gpa']);
 
-        return [
-            'student_id' => $student->student_id,
-            'student_number' => $student->student_number,
-            'full_name' => trim($student->first_name.' '.$student->last_name),
-            'program' => $program ? [
-                'academic_program_id' => $program->academic_program_id,
-                'program_code' => $program->program_code,
-                'program_name' => $program->program_name,
-            ] : null,
-            'department' => $department ? [
-                'department_id' => $department->department_id,
-                'department_code' => $department->department_code,
-                'department_name' => $department->department_name,
-            ] : null,
-            'college' => $department?->college ? [
-                'college_id' => $department->college->college_id,
-                'college_code' => $department->college->college_code,
-                'college_name' => $department->college->college_name,
-            ] : null,
-            'academic_level' => $student->currentAcademicLevel ? [
-                'academic_level_id' => $student->currentAcademicLevel->academic_level_id,
-                'level_code' => $student->currentAcademicLevel->level_code,
-                'level_name' => $student->currentAcademicLevel->level_name,
-            ] : null,
-            'terms' => $grouped,
-        ];
+        return array_merge($identity, [
+            'student' => $identity,
+            'summary' => $summary,
+            'terms' => $terms,
+        ]);
     }
 
     public function calculateGpa(Student $student, int $academicYearId, int $semesterId): array
@@ -718,18 +709,44 @@ class GradeService
 
     private function formatTranscriptCourse(StudentCourseRegistration $registration): array
     {
-        $grades = $this->formatRegistrationGrades($registration);
+        $offering = $registration->courseOffering;
+        $course = $offering?->course;
+        $result = $registration->studentCourseResult;
+        $visibility = $this->officialComponentVisibility($offering);
+        $statusCode = $this->resolveEffectiveResultStatusCode($registration) ?? 'incomplete';
+        $isDeprived = (bool) ($result?->is_deprived || $statusCode === 'deprived');
+        $theoretical = $result?->theoretical_total !== null ? (float) $result->theoretical_total : null;
+        $practical = $result?->practical_total !== null ? (float) $result->practical_total : null;
+        $finalMark = $result?->final_mark !== null ? (float) $result->final_mark : null;
+        $letterGrade = $this->officialLetterGrade($finalMark, $statusCode);
+        $loadedStatus = $result?->resultStatus;
 
         return [
-            'course_code' => $grades['course']['course_code'] ?? null,
-            'course_name' => $grades['course']['course_name'] ?? null,
-            'credit_hours' => $grades['course']['credit_hours'] ?? null,
-            'theoretical_mark' => $grades['theoretical_mark'],
-            'practical_mark' => $grades['practical_mark'],
-            'final_mark' => $grades['final_mark'],
-            'letter_grade' => $grades['letter_grade'],
-            'grade_points' => $grades['grade_points'],
-            'result_status' => $grades['result_status'],
+            'registration_id' => $registration->student_course_registration_id,
+            'course_offering_id' => $registration->course_offering_id,
+            'course_id' => $course?->course_id,
+            'course_code' => $course?->course_code,
+            'course_name' => $course?->course_name,
+            'credit_hours' => $course?->credit_hours,
+            'academic_year' => $this->compactAcademicYear($offering?->academicYear),
+            'semester' => $this->compactSemester($offering?->semester),
+            'grades' => [
+                'theoretical_mark' => $visibility['theoretical'] ? $theoretical : null,
+                'practical_mark' => $visibility['practical'] ? $practical : null,
+                'final_mark' => $finalMark,
+                'letter_grade' => $letterGrade,
+                'grade_points' => $this->resolveGradePoints($letterGrade, $statusCode),
+            ],
+            'theoretical_mark' => $visibility['theoretical'] ? $theoretical : null,
+            'practical_mark' => $visibility['practical'] ? $practical : null,
+            'final_mark' => $finalMark,
+            'letter_grade' => $letterGrade,
+            'grade_points' => $this->resolveGradePoints($letterGrade, $statusCode),
+            'is_deprived' => $isDeprived,
+            'result_status' => [
+                'status_code' => $statusCode,
+                'status_name' => $loadedStatus?->status_name ?? ucfirst($statusCode),
+            ],
         ];
     }
 
@@ -757,7 +774,7 @@ class GradeService
             }
         }
 
-        $gpa = $totalCreditHours > 0 ? round($totalWeightedPoints / $totalCreditHours, 2) : 0.00;
+        $gpa = $totalCreditHours > 0 ? round($totalWeightedPoints / $totalCreditHours, 2) : null;
 
         $academicYear = null;
         $semester = null;
@@ -913,16 +930,221 @@ class GradeService
 
     private function gpaEligibleRegistrations(Student $student): Builder
     {
+        return $this->officialAcademicAttempts($student);
+    }
+
+    private function officialAcademicAttempts(Student $student): Builder
+    {
         return StudentCourseRegistration::query()
             ->where('student_id', $student->student_id)
             ->academicAttempts()
+            ->whereHas('studentCourseResult')
+            ->whereIn('course_offering_id', function ($subquery): void {
+                $this->constrainAuthoritativeApprovedGradeApproval($subquery);
+            })
             ->with([
                 'courseOffering.course',
                 'courseOffering.academicYear',
                 'courseOffering.semester',
+                'courseOffering.gradeComponents',
+                'courseOffering.gradeApprovals.approvalStatus',
                 'studentCourseResult.resultStatus',
                 'registrationStatus',
             ]);
+    }
+
+    private function constrainAuthoritativeApprovedGradeApproval($subquery): void
+    {
+        $subquery->from('grade_approvals')
+            ->join('approval_statuses', 'approval_statuses.approval_status_id', '=', 'grade_approvals.approval_status_id')
+            ->select('grade_approvals.course_offering_id')
+            ->where('approval_statuses.status_code', 'approved')
+            ->whereRaw(
+                'grade_approvals.grade_approval_id = (
+                    SELECT MAX(latest_grade_approvals.grade_approval_id)
+                    FROM grade_approvals AS latest_grade_approvals
+                    WHERE latest_grade_approvals.course_offering_id = grade_approvals.course_offering_id
+                )'
+            );
+    }
+
+    private function isOfficiallyVisibleAttempt(StudentCourseRegistration $registration): bool
+    {
+        $offering = $registration->courseOffering;
+        if ($offering === null || $registration->studentCourseResult === null) {
+            return false;
+        }
+
+        $approvals = $offering->relationLoaded('gradeApprovals')
+            ? $offering->gradeApprovals
+            : $offering->gradeApprovals()->with('approvalStatus')->get();
+
+        if ($approvals->count() === 0) {
+            return false;
+        }
+
+        $latest = $approvals
+            ->sortByDesc(fn (GradeApproval $approval): int => (int) $approval->grade_approval_id)
+            ->first();
+        $latest?->loadMissing('approvalStatus');
+
+        return $latest?->approvalStatus?->status_code === 'approved';
+    }
+
+    private function officialComponentVisibility(?CourseOffering $offering): array
+    {
+        $required = $offering?->gradeComponents
+            ? $offering->gradeComponents
+                ->where('is_required', true)
+                ->pluck('component_type')
+                ->unique()
+                ->values()
+            : collect();
+
+        if ($required->isNotEmpty()) {
+            return [
+                'theoretical' => $required->contains('theoretical'),
+                'practical' => $required->contains('practical'),
+            ];
+        }
+
+        $theoryHours = (float) ($offering?->course?->theoretical_hours ?? 0);
+        $practicalHours = (float) ($offering?->course?->practical_hours ?? 0);
+
+        if ($theoryHours > 0 && $practicalHours <= 0) {
+            return ['theoretical' => true, 'practical' => false];
+        }
+
+        if ($practicalHours > 0 && $theoryHours <= 0) {
+            return ['theoretical' => false, 'practical' => true];
+        }
+
+        return ['theoretical' => true, 'practical' => true];
+    }
+
+    private function officialLetterGrade(?float $finalMark, string $statusCode): string
+    {
+        if ($statusCode === 'deprived') {
+            return 'Z';
+        }
+        if ($statusCode === 'withdrawn') {
+            return 'W';
+        }
+        if ($statusCode === 'incomplete') {
+            return 'I';
+        }
+        if ($statusCode === 'failed' || $finalMark === null) {
+            return 'F';
+        }
+
+        return match (true) {
+            $finalMark >= 98 => 'A+',
+            $finalMark >= 95 => 'A',
+            $finalMark >= 90 => 'A-',
+            $finalMark >= 85 => 'B+',
+            $finalMark >= 80 => 'B',
+            $finalMark >= 75 => 'B-',
+            $finalMark >= 70 => 'C+',
+            $finalMark >= 65 => 'C',
+            $finalMark >= 60 => 'C-',
+            $finalMark >= 55 => 'D+',
+            $finalMark >= 50 => 'D',
+            default => 'F',
+        };
+    }
+
+    private function summarizeGpaCollection(Collection $registrations): array
+    {
+        $totalWeightedPoints = 0.0;
+        $totalCreditHours = 0;
+
+        foreach ($registrations as $registration) {
+            $evaluation = $this->evaluateGpaCourse($registration);
+            if (! $evaluation['included']) {
+                continue;
+            }
+
+            $totalWeightedPoints += $evaluation['grade_points'] * $evaluation['credit_hours'];
+            $totalCreditHours += $evaluation['credit_hours'];
+        }
+
+        return [
+            'gpa' => $totalCreditHours > 0 ? round($totalWeightedPoints / $totalCreditHours, 2) : null,
+            'included_credit_hours' => $totalCreditHours,
+        ];
+    }
+
+    private function officialTranscriptSummary(Collection $registrations, ?float $cgpa): array
+    {
+        $passed = 0;
+        $failed = 0;
+        $deprived = 0;
+        $attemptedHours = 0;
+        $passedHours = 0;
+        $failedHours = 0;
+
+        foreach ($registrations as $registration) {
+            $hours = (int) ($registration->courseOffering?->course?->credit_hours ?? 0);
+            $attemptedHours += $hours;
+            $statusCode = $this->resolveEffectiveResultStatusCode($registration);
+            $isDeprived = (bool) ($registration->studentCourseResult?->is_deprived || $statusCode === 'deprived');
+
+            if ($isDeprived) {
+                $deprived++;
+                continue;
+            }
+
+            if ($statusCode === 'passed') {
+                $passed++;
+                $passedHours += $hours;
+            } elseif ($statusCode === 'failed') {
+                $failed++;
+                $failedHours += $hours;
+            }
+        }
+
+        return [
+            'approved_courses_count' => $registrations->count(),
+            'passed_courses_count' => $passed,
+            'failed_courses_count' => $failed,
+            'deprived_courses_count' => $deprived,
+            'total_attempted_credit_hours' => $attemptedHours,
+            'total_passed_credit_hours' => $passedHours,
+            'total_failed_credit_hours' => $failedHours,
+            'cgpa' => $cgpa,
+        ];
+    }
+
+    private function officialStudentIdentity(Student $student): array
+    {
+        $program = $student->academicProgram;
+        $department = $program?->department;
+
+        return [
+            'student_id' => $student->student_id,
+            'student_number' => $student->student_number,
+            'full_name' => trim($student->first_name.' '.$student->last_name),
+            'program' => $program ? [
+                'academic_program_id' => $program->academic_program_id,
+                'program_code' => $program->program_code,
+                'program_name' => $program->program_name,
+            ] : null,
+            'department' => $department ? [
+                'department_id' => $department->department_id,
+                'department_code' => $department->department_code,
+                'department_name' => $department->department_name,
+            ] : null,
+            'college' => $department?->college ? [
+                'college_id' => $department->college->college_id,
+                'college_code' => $department->college->college_code,
+                'college_name' => $department->college->college_name,
+            ] : null,
+            'academic_level' => $student->currentAcademicLevel ? [
+                'academic_level_id' => $student->currentAcademicLevel->academic_level_id,
+                'level_code' => $student->currentAcademicLevel->level_code,
+                'level_name' => $student->currentAcademicLevel->level_name,
+            ] : null,
+        ];
     }
 
     private function loadRegistration(int $registrationId, bool $lock = false): StudentCourseRegistration
@@ -1168,6 +1390,7 @@ class GradeService
             'semester_id' => $semester->semester_id,
             'semester_code' => $semester->semester_code,
             'semester_name' => $semester->semester_name,
+            'semester_order' => $semester->semester_order,
         ];
     }
 

@@ -86,9 +86,9 @@ export default function DashboardLayout({ nav = [], appTitle = 'جامعة ال�
     <div className="flex min-h-screen bg-[#f0f5ec]" dir="rtl">
 
       {/* Mobile overlay */}
-      {mobileOpen && (
+        {mobileOpen && (
         <div
-          className="fixed inset-0 bg-black/52 z-40 backdrop-blur-[4px]"
+          className="fixed inset-0 bg-black/52 z-40 backdrop-blur-[4px] print:hidden"
           onClick={() => setMobileOpen(false)}
         />
       )}
@@ -96,7 +96,7 @@ export default function DashboardLayout({ nav = [], appTitle = 'جامعة ال�
       {/* ── Sidebar ── */}
       <aside
         className={[
-          'h-screen sticky top-0 flex-shrink-0 flex flex-col overflow-hidden z-50',
+          'h-screen sticky top-0 flex-shrink-0 flex flex-col overflow-hidden z-50 print:hidden',
           'transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
           sidebarWidth,
           'max-[820px]:fixed max-[820px]:right-0 max-[820px]:top-0 max-[820px]:w-[272px] max-[820px]:transition-transform',

@@ -71,7 +71,9 @@ export default function GradeSheetPage() {
             {cgpa && (
               <div className="flex items-center gap-2 bg-primary/[0.05] border border-primary/15 rounded-[10px] px-4 py-2">
                 <span className="text-[11px] text-text-light">المعدل التراكمي</span>
-                <span className="text-[20px] font-black text-primary">{Number(cgpa.cgpa).toFixed(2)}</span>
+                <span className="text-[20px] font-black text-primary">
+                  {cgpa.cgpa === null || cgpa.cgpa === undefined ? '—' : Number(cgpa.cgpa).toFixed(2)}
+                </span>
               </div>
             )}
           </div>
