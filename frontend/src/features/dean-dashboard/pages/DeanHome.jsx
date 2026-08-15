@@ -19,6 +19,8 @@ import {
 import { deanHomeWelcome } from '../utils/deanPortalCopy'
 import { formatDisplayDate } from '../utils/teacherDisplay'
 
+const TERM_SELECTION_MESSAGE = 'اختر السنة الدراسية والفصل لعرض مؤشرات الفصل'
+
 function formatCount(value) {
   if (value === null || value === undefined) return '—'
   const number = Number(value)
@@ -66,15 +68,16 @@ export default function DeanHome() {
   const [error, setError] = useState('')
   const [yearId, setYearId] = useState('')
   const [semesterId, setSemesterId] = useState('')
-  const [layoutUserId, setLayoutUserId] = useState(userId)
   const [layout, setLayout] = useState(() => loadDeanDashboardLayout(userId))
   const [customizerOpen, setCustomizerOpen] = useState(false)
   const hasLoadedRef = useRef(false)
+  const layoutUserIdRef = useRef(userId)
 
-  if (layoutUserId !== userId) {
-    setLayoutUserId(userId)
+  useEffect(() => {
+    if (layoutUserIdRef.current === userId) return
+    layoutUserIdRef.current = userId
     setLayout(loadDeanDashboardLayout(userId))
-  }
+  }, [userId])
 
   const busy = loading || refreshing
 
@@ -84,6 +87,7 @@ export default function DeanHome() {
   const filterOptions = dashboard?.filter_options ?? { academic_years: [], semesters: [] }
   const selectedYearId = yearId || String(dashboard?.context?.academic_year?.academic_year_id || '')
   const selectedSemesterId = semesterId || String(dashboard?.context?.semester?.semester_id || '')
+  const termResolved = dashboard?.term_resolved === true
 
   useEffect(() => {
     let active = true
@@ -131,6 +135,7 @@ export default function DeanHome() {
     const currentCapabilities = dashboard?.capabilities ?? {}
     const currentKpis = dashboard?.kpis ?? {}
     const sessionsByType = dashboard?.charts?.sessions_by_type
+    const termReady = dashboard?.term_resolved === true
     const passHint = currentCapabilities.grades && currentKpis.graded_students_count
       ? `نسبة النجاح: ${formatPercent(currentKpis.pass_rate)}`
       : ''
@@ -158,7 +163,7 @@ export default function DeanHome() {
         value: formatCount(currentKpis.course_offerings),
         unavailable: currentCapabilities.courses === false,
         accent: '#0f766e',
-        hint: 'حسب السنة والفصل المحددين',
+        hint: termReady ? 'حسب السنة والفصل المحددين' : TERM_SELECTION_MESSAGE,
       },
       {
         id: 'kpi_open_registration',
@@ -166,9 +171,11 @@ export default function DeanHome() {
         value: formatCount(currentKpis.open_registration_offerings),
         unavailable: currentCapabilities.courses === false,
         accent: '#7ab356',
-        hint: currentKpis.closed_registration_offerings != null
-          ? `مغلقة: ${formatCount(currentKpis.closed_registration_offerings)}`
-          : '',
+        hint: !termReady
+          ? TERM_SELECTION_MESSAGE
+          : (currentKpis.closed_registration_offerings != null
+            ? `مغلقة: ${formatCount(currentKpis.closed_registration_offerings)}`
+            : ''),
       },
       {
         id: 'kpi_attendance_sessions',
@@ -176,7 +183,7 @@ export default function DeanHome() {
         value: formatCount(currentKpis.attendance_sessions),
         unavailable: currentCapabilities.attendance === false,
         accent: '#f59e0b',
-        hint: sessionTypeHint(sessionsByType, busy),
+        hint: termReady ? sessionTypeHint(sessionsByType, busy) : TERM_SELECTION_MESSAGE,
       },
       {
         id: 'kpi_average_final_mark',
@@ -186,9 +193,11 @@ export default function DeanHome() {
         accent: '#8b5cf6',
         hint: currentCapabilities.grades === false
           ? 'يتطلب صلاحية عرض النتائج'
-          : (currentKpis.average_final_mark == null
-            ? 'لا توجد نتائج نهائية متاحة للفصل المحدد'
-            : passHint),
+          : (!termReady
+            ? TERM_SELECTION_MESSAGE
+            : (currentKpis.average_final_mark == null
+              ? 'لا توجد نتائج نهائية متاحة للفصل المحدد'
+              : passHint)),
       },
       {
         id: 'kpi_incomplete_assignments',
@@ -196,7 +205,7 @@ export default function DeanHome() {
         value: formatCount(currentKpis.incomplete_assignments),
         unavailable: currentCapabilities.courses === false,
         accent: '#ef4444',
-        hint: 'المواد التي ينقصها شق نظري أو عملي مطلوب',
+        hint: termReady ? 'المواد التي ينقصها شق نظري أو عملي مطلوب' : TERM_SELECTION_MESSAGE,
       },
     ].filter(card => isWidgetVisible(layout, card.id))
   }, [busy, dashboard, layout])
@@ -289,7 +298,7 @@ export default function DeanHome() {
         key="chart_offering_statuses"
         title="حالة المواد في الفصل"
         loading={busy && !dashboard}
-        emptyText="لا توجد مواد مطروحة للفصل المحدد"
+        emptyText={termResolved ? 'لا توجد مواد مطروحة للفصل المحدد' : TERM_SELECTION_MESSAGE}
         items={(charts.offering_statuses ?? []).map(row => ({
           key: row.status,
           label: row.label,
@@ -304,7 +313,7 @@ export default function DeanHome() {
         key="chart_teaching_assignments"
         title="اكتمال التكليفات التدريسية"
         loading={busy && !dashboard}
-        emptyText="لا توجد مواد مطروحة للفصل المحدد"
+        emptyText={termResolved ? 'لا توجد مواد مطروحة للفصل المحدد' : TERM_SELECTION_MESSAGE}
         items={(charts.teaching_assignment_status ?? []).map(row => ({
           key: row.code,
           label: row.label,
@@ -314,12 +323,12 @@ export default function DeanHome() {
       />
     ) : null,
 
-    chart_average_results_by_program: isWidgetVisible(layout, 'chart_average_results_by_program') && (showResultsChart || (busy && !dashboard)) ? (
+    chart_average_results_by_program: isWidgetVisible(layout, 'chart_average_results_by_program') && (!termResolved || showResultsChart || (busy && !dashboard)) ? (
       <DashboardBarChart
         key="chart_average_results_by_program"
         title="متوسط النتائج حسب البرنامج"
         loading={busy && !dashboard}
-        emptyText="لا توجد نتائج نهائية متاحة للفصل المحدد"
+        emptyText={termResolved ? 'لا توجد نتائج نهائية متاحة للفصل المحدد' : TERM_SELECTION_MESSAGE}
         valueSuffix=""
         items={resultsChart.map(row => ({
           key: row.academic_program_id ?? row.program_name,
@@ -343,9 +352,11 @@ export default function DeanHome() {
           </div>
         ) : attentionItems.length === 0 ? (
           <p className="text-[13px] text-text-light leading-7">
-            {kpis.course_offerings
-              ? 'لا توجد مواد تحتاج إلى استكمال التكليف التدريسي'
-              : 'لا توجد مواد مطروحة للفصل المحدد'}
+            {!termResolved
+              ? TERM_SELECTION_MESSAGE
+              : (kpis.course_offerings
+                ? 'لا توجد مواد تحتاج إلى استكمال التكليف التدريسي'
+                : 'لا توجد مواد مطروحة للفصل المحدد')}
           </p>
         ) : (
           <ul className="space-y-2">
@@ -444,7 +455,7 @@ export default function DeanHome() {
               onChange={event => setYearId(event.target.value)}
               disabled={busy && !dashboard}
             >
-              <option value="" disabled={Boolean(selectedYearId)}>اختر السنة الدراسية</option>
+              <option value="">اختر السنة الدراسية</option>
               {(filterOptions.academic_years ?? []).map(year => (
                 <option key={year.academic_year_id} value={year.academic_year_id}>
                   {year.year_name}{year.is_current ? ' (الحالية)' : ''}
@@ -460,7 +471,7 @@ export default function DeanHome() {
               onChange={event => setSemesterId(event.target.value)}
               disabled={busy && !dashboard}
             >
-              <option value="" disabled={Boolean(selectedSemesterId)}>اختر الفصل الدراسي</option>
+              <option value="">اختر الفصل الدراسي</option>
               {(filterOptions.semesters ?? []).map(semester => (
                 <option key={semester.semester_id} value={semester.semester_id}>
                   {semester.semester_name}{semester.is_active ? ' (نشط)' : ''}
@@ -472,6 +483,11 @@ export default function DeanHome() {
             <span className="text-[12px] text-text-light pb-2">جاري تحديث بيانات الفصل…</span>
           ) : null}
         </div>
+        {!busy && dashboard && !termResolved ? (
+          <p className="mt-4 rounded-[12px] border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] font-semibold text-amber-900">
+            {TERM_SELECTION_MESSAGE}
+          </p>
+        ) : null}
       </motion.header>
 
       {error ? (

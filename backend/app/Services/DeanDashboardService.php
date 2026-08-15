@@ -42,15 +42,19 @@ class DeanDashboardService
             ? $this->activeTeachingStaffCount($user)
             : null;
 
-        $offerings = $capabilities['courses']
-            ? $this->offeringMetrics($user, $context['academic_year']['academic_year_id'] ?? null, $context['semester']['semester_id'] ?? null)
+        $yearId = $context['academic_year']['academic_year_id'] ?? null;
+        $semesterId = $context['semester']['semester_id'] ?? null;
+        $termResolved = $yearId !== null && $semesterId !== null;
+
+        $offerings = $termResolved && $capabilities['courses']
+            ? $this->offeringMetrics($user, (int) $yearId, (int) $semesterId)
             : $this->unavailableOfferingMetrics();
 
-        $attendance = $capabilities['attendance'] && $capabilities['courses']
+        $attendance = $termResolved && $capabilities['attendance'] && $capabilities['courses']
             ? $this->attendanceMetrics($offerings['offering_ids_query'])
             : $this->unavailableAttendanceMetrics();
 
-        $grades = $capabilities['grades'] && $capabilities['courses']
+        $grades = $termResolved && $capabilities['grades'] && $capabilities['courses']
             ? $this->gradeMetrics($offerings['offering_ids_query'])
             : $this->unavailableGradeMetrics();
 
@@ -59,6 +63,7 @@ class DeanDashboardService
         return [
             'college' => $college,
             'college_resolved' => true,
+            'term_resolved' => $termResolved,
             'context' => $context,
             'filter_options' => $filterOptions,
             'capabilities' => $capabilities,
@@ -167,6 +172,7 @@ class DeanDashboardService
         $semester = $semesterId !== null
             ? $semesters->firstWhere('semester_id', $semesterId)
             : $this->exactlyOne($semesters->where('is_active', true));
+        // Multiple active semesters stay unresolved. is_active is not "current".
 
         return [
             'academic_year' => $year,
@@ -184,6 +190,8 @@ class DeanDashboardService
         return [
             'college' => null,
             'college_resolved' => false,
+            'term_resolved' => ($context['academic_year']['academic_year_id'] ?? null) !== null
+                && ($context['semester']['semester_id'] ?? null) !== null,
             'context' => $context,
             'filter_options' => $filterOptions,
             'capabilities' => $capabilities,
@@ -331,17 +339,11 @@ class DeanDashboardService
         );
     }
 
-    private function offeringMetrics(User $user, ?int $academicYearId, ?int $semesterId): array
+    private function offeringMetrics(User $user, int $academicYearId, int $semesterId): array
     {
-        $query = $this->scopedOfferingsQuery($user);
-
-        if ($academicYearId !== null) {
-            $query->where('course_offerings.academic_year_id', $academicYearId);
-        }
-
-        if ($semesterId !== null) {
-            $query->where('course_offerings.semester_id', $semesterId);
-        }
+        $query = $this->scopedOfferingsQuery($user)
+            ->where('course_offerings.academic_year_id', $academicYearId)
+            ->where('course_offerings.semester_id', $semesterId);
 
         $offeringIds = (clone $query)->select('course_offerings.course_offering_id');
         $total = (clone $query)->count('course_offerings.course_offering_id');
