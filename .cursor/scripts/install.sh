@@ -61,11 +61,15 @@ if ! command -v composer >/dev/null 2>&1; then
   rm -f /tmp/composer-setup.php
 fi
 
-if ! command -v node >/dev/null 2>&1 || [ "$(node -v | cut -d. -f1)" != "v24" ]; then
+# Check /usr/bin/node explicitly so this stays idempotent even when another node
+# (e.g. the runtime's /exec-daemon/node, or an nvm install) shadows it on PATH.
+if [ ! -x /usr/bin/node ] || [ "$(/usr/bin/node -v 2>/dev/null | cut -d. -f1)" != "v24" ]; then
   log "Installing Node.js 24"
   curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs
 fi
+# Prefer the pinned Node 24 (frontend/.node-version) ahead of any shadowing node.
+export PATH="/usr/bin:$PATH"
 
 # ---------------------------------------------------------------------------
 # 2. MariaDB service + database/user

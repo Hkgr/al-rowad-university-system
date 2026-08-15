@@ -10,7 +10,7 @@
     },
     {
       "name": "frontend-vite",
-      "command": "cd frontend && npm run dev -- --host 127.0.0.1 --port 5173 --strictPort"
+      "command": "cd frontend && PATH=\"/usr/bin:$PATH\" npm run dev -- --host 127.0.0.1 --port 5173 --strictPort"
     }
   ],
   "ports": [8000, 5173]
