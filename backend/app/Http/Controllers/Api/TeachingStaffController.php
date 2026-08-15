@@ -101,6 +101,7 @@ class TeachingStaffController extends Controller
         $this->assertCanViewTeachingStaff($request);
         $user = $request->user();
         $facultyMember = $this->resolveScopedFacultyMember($user, $facultyMember);
+        $collegeIds = $this->accessibleCollegeIdList($user);
 
         $validated = $request->validate([
             'status' => ['sometimes', Rule::in(['active', 'inactive', 'all'])],
@@ -115,6 +116,10 @@ class TeachingStaffController extends Controller
 
         $query = CourseOfferingInstructor::query()
             ->where('course_offering_instructors.faculty_member_id', $facultyMember->faculty_member_id)
+            ->whereIn(
+                'course_offering_instructors.course_offering_id',
+                $this->offeringsInAccessibleCollegesQuery($collegeIds)
+            )
             ->whereHas(
                 'courseOffering',
                 fn (Builder $offering) => $this->dataScope->scopeOfferings($offering, $user)
@@ -186,6 +191,7 @@ class TeachingStaffController extends Controller
 
         $user = $request->user();
         $facultyMember = $this->resolveScopedFacultyMember($user, $facultyMember);
+        $collegeIds = $this->accessibleCollegeIdList($user);
 
         $validated = $request->validate([
             'session_type' => ['sometimes', Rule::in(['theoretical', 'practical'])],
@@ -199,6 +205,10 @@ class TeachingStaffController extends Controller
 
         $query = AttendanceSession::query()
             ->where('attendance_sessions.faculty_member_id', $facultyMember->faculty_member_id)
+            ->whereIn(
+                'attendance_sessions.course_offering_id',
+                $this->offeringsInAccessibleCollegesQuery($collegeIds)
+            )
             ->whereHas(
                 'courseOffering',
                 fn (Builder $offering) => $this->dataScope->scopeOfferings($offering, $user)

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
@@ -98,9 +98,16 @@ export default function DeanTeacherProfile() {
   const [assignmentPage, setAssignmentPage] = useState(1)
   const [sessionType, setSessionType] = useState('')
   const [sessionPage, setSessionPage] = useState(1)
+  const assignmentsRef = useRef(emptyListState())
+  const sessionsRef = useRef(emptyListState())
+  const requestSeqRef = useRef(0)
 
   useEffect(() => {
     let active = true
+    const requestSeq = requestSeqRef.current + 1
+    requestSeqRef.current = requestSeq
+    assignmentsRef.current = emptyListState()
+    sessionsRef.current = emptyListState()
 
     async function loadProfile() {
       setLoading(true)
@@ -117,17 +124,17 @@ export default function DeanTeacherProfile() {
 
       try {
         const response = await apiRequest(`/v1/teaching-staff/${id}`)
-        if (!active) return
+        if (!active || requestSeq !== requestSeqRef.current) return
         setProfile(response?.data ?? null)
       } catch (requestError) {
-        if (!active) return
+        if (!active || requestSeq !== requestSeqRef.current) return
         if (requestError.status === 401) {
           navigate('/login', { replace: true })
           return
         }
         setError('تعذّر الوصول إلى ملف هذا المدرس.')
       } finally {
-        if (active) setLoading(false)
+        if (active && requestSeq === requestSeqRef.current) setLoading(false)
       }
     }
 
@@ -136,73 +143,73 @@ export default function DeanTeacherProfile() {
   }, [id, navigate])
 
   async function loadAssignments() {
-    setAssignments(current => ({ ...current, loading: true, error: '' }))
+    if (assignmentsRef.current.loaded || assignmentsRef.current.loading) return
+    const requestSeq = requestSeqRef.current
+    assignmentsRef.current = { ...assignmentsRef.current, loading: true, error: '' }
+    setAssignments(assignmentsRef.current)
     try {
       const rows = await fetchAllPages(`/v1/teaching-staff/${id}/assignments?status=all`)
-      setAssignments({ loading: false, loaded: true, error: '', rows })
+      if (requestSeq !== requestSeqRef.current) return
+      assignmentsRef.current = { loading: false, loaded: true, error: '', rows }
+      setAssignments(assignmentsRef.current)
     } catch (requestError) {
+      if (requestSeq !== requestSeqRef.current) return
       if (requestError.status === 401) {
         navigate('/login', { replace: true })
         return
       }
-      setAssignments({
+      assignmentsRef.current = {
         loading: false,
         loaded: true,
         error: 'تعذّر تحميل تكليفات المدرس.',
         rows: [],
-      })
+      }
+      setAssignments(assignmentsRef.current)
     }
   }
 
   async function loadSessions() {
-    setSessions(current => ({ ...current, loading: true, error: '' }))
+    if (sessionsRef.current.loaded || sessionsRef.current.loading) return
+    const requestSeq = requestSeqRef.current
+    sessionsRef.current = { ...sessionsRef.current, loading: true, error: '' }
+    setSessions(sessionsRef.current)
     try {
       const rows = await fetchAllPages(`/v1/teaching-staff/${id}/sessions`)
-      setSessions({ loading: false, loaded: true, error: '', rows })
+      if (requestSeq !== requestSeqRef.current) return
+      sessionsRef.current = { loading: false, loaded: true, error: '', rows }
+      setSessions(sessionsRef.current)
     } catch (requestError) {
+      if (requestSeq !== requestSeqRef.current) return
       if (requestError.status === 401) {
         navigate('/login', { replace: true })
         return
       }
-      setSessions({
+      sessionsRef.current = {
         loading: false,
         loaded: true,
-        error: requestError.status === 403
-          ? 'تعذّر تحميل جلسات المدرس.'
-          : 'تعذّر تحميل جلسات المدرس.',
+        error: 'تعذّر تحميل جلسات المدرس.',
         rows: [],
-      })
+      }
+      setSessions(sessionsRef.current)
     }
   }
 
-  useEffect(() => {
-    if (!profile) return
-    if (activeTab === 'assignments' && !assignments.loaded && !assignments.loading) {
-      loadAssignments()
-    }
-    if (activeTab === 'sessions' && !sessions.loaded && !sessions.loading) {
-      loadSessions()
-    }
-    if (activeTab === 'activity') {
-      if (!assignments.loaded && !assignments.loading) loadAssignments()
-      if (!sessions.loaded && !sessions.loading) loadSessions()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, profile, id])
+  function openTab(tabId) {
+    setActiveTab(tabId)
+    if (tabId === 'assignments' || tabId === 'activity') loadAssignments()
+    if (tabId === 'sessions' || tabId === 'activity') loadSessions()
+  }
 
-  const filteredAssignments = useMemo(() => {
-    return assignments.rows.filter(row => {
-      if (assignmentStatus === 'active' && !row.is_active) return false
-      if (assignmentStatus === 'inactive' && row.is_active) return false
-      if (assignmentRole && row.instructor_role !== assignmentRole) return false
+  const groupedAssignments = useMemo(() => {
+    return groupAssignmentsByOffering(assignments.rows).filter(group => {
+      const hasActiveSlot = group.slots.some(slot => slot.is_active)
+      if (assignmentStatus === 'active' && !hasActiveSlot) return false
+      if (assignmentStatus === 'inactive' && hasActiveSlot) return false
+      if (assignmentRole === 'theoretical' && !group.theoretical) return false
+      if (assignmentRole === 'practical' && !group.practical) return false
       return true
     })
-  }, [assignments.rows, assignmentRole, assignmentStatus])
-
-  const groupedAssignments = useMemo(
-    () => groupAssignmentsByOffering(filteredAssignments),
-    [filteredAssignments],
-  )
+  }, [assignmentRole, assignmentStatus, assignments.rows])
   const assignmentTotalPages = Math.max(1, Math.ceil(groupedAssignments.length / PAGE_SIZE))
   const safeAssignmentPage = Math.min(assignmentPage, assignmentTotalPages)
   const pagedAssignments = groupedAssignments.slice(
@@ -338,7 +345,7 @@ export default function DeanTeacherProfile() {
                   ? 'text-primary border-primary bg-primary/[0.04]'
                   : 'text-text-gray border-transparent hover:text-text-dark hover:bg-primary/[0.02]'
               }`}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => openTab(tab.id)}
             >
               <tab.Icon aria-hidden="true" className="text-[12px]" />
               <span>{tab.ar}</span>
