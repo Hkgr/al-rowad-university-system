@@ -76,6 +76,7 @@ use App\Http\Controllers\Api\StudentDocumentController;
 use App\Http\Controllers\Api\StudentStatusController;
 use App\Http\Controllers\Api\SupplementaryExamPeriodController;
 use App\Http\Controllers\Api\SystemModuleController;
+use App\Http\Controllers\Api\TeachingStaffController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\UserActivityLogController;
 use App\Http\Controllers\Api\UserRoleController;
@@ -274,12 +275,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('course-offerings/{id}/deprived-students', [CourseOfferingController::class, 'deprivedStudents']);
     Route::post('course-offerings/{id}/apply-deprivation', [CourseOfferingController::class, 'applyDeprivation']);
     Route::get('course-offerings/by-program/{program_id}', [CourseOfferingController::class, 'byProgram']);
-    Route::middleware(\App\Http\Middleware\RequireModuleAccess::class.':courses')->group(function (): void {
-        Route::get('course-offerings/{courseOffering}/instructors', [CourseOfferingInstructorController::class, 'index']);
-        Route::post('course-offerings/{courseOffering}/instructors', [CourseOfferingInstructorController::class, 'store']);
-        Route::patch('course-offering-instructors/{courseOfferingInstructor}', [CourseOfferingInstructorController::class, 'update']);
-        Route::delete('course-offering-instructors/{courseOfferingInstructor}', [CourseOfferingInstructorController::class, 'destroy']);
-    });
+    Route::get('course-offerings/{courseOffering}/instructors', [CourseOfferingInstructorController::class, 'index']);
+    Route::post('course-offerings/{courseOffering}/instructors', [CourseOfferingInstructorController::class, 'store']);
+    Route::patch('course-offering-instructors/{courseOfferingInstructor}', [CourseOfferingInstructorController::class, 'update']);
+    Route::delete('course-offering-instructors/{courseOfferingInstructor}', [CourseOfferingInstructorController::class, 'destroy']);
 
     /*
     |--------------------------------------------------------------------------
@@ -433,6 +432,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::apiResource('employee-unit-assignments', EmployeeUnitAssignmentController::class);
     Route::get('faculty-members/me', [FacultyMemberController::class, 'me']);
     Route::apiResource('faculty-members', FacultyMemberController::class);
+    Route::get('teaching-staff', [TeachingStaffController::class, 'index']);
+    Route::get('teaching-staff/{facultyMember}', [TeachingStaffController::class, 'show']);
     Route::apiResource('organizational-units', OrganizationalUnitController::class);
     Route::apiResource('organizational-unit-types', OrganizationalUnitTypeController::class);
     Route::apiResource('positions', PositionController::class);

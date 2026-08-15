@@ -94,4 +94,24 @@ class CourseOffering extends Model
         return $this->hasMany(StudentCourseRegistration::class, 'course_offering_id', 'course_offering_id');
     }
 
+    public function resolveCollege(): ?College
+    {
+        $this->loadMissing(['department.college', 'academicProgram.department.college']);
+
+        $departmentCollege = $this->department_id !== null
+            ? $this->department?->college
+            : null;
+        $programCollege = $this->academic_program_id !== null
+            ? $this->academicProgram?->department?->college
+            : null;
+
+        if ($departmentCollege && $programCollege) {
+            return (int) $departmentCollege->college_id === (int) $programCollege->college_id
+                ? $departmentCollege
+                : null;
+        }
+
+        return $departmentCollege ?? $programCollege;
+    }
+
 }
