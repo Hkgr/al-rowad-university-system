@@ -1,8 +1,5 @@
 {
   "name": "Al Rowad University System",
-  "build": {
-    "dockerfile": "Dockerfile"
-  },
   "user": "ubuntu",
   "install": "bash ./.cursor/scripts/install.sh",
   "start": "bash ./.cursor/scripts/start.sh",

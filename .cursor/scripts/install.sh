@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 #
-# Idempotent repository bootstrap for the Al Rowad University System.
+# Idempotent bootstrap for the Al Rowad University System monorepo on the default
+# Cursor Cloud Agent image (Ubuntu 24.04).
 #
-# Runs after the source tree is checked out. Safe to run repeatedly: it only
-# imports the schema / regenerates state that is missing. With environment
-# builds this runs once to create the baseline snapshot (including the seeded
-# MariaDB data dir); per-boot service startup lives in start.sh.
+# Runs after the source tree is checked out. Safe to run repeatedly: system
+# packages are only installed when missing and app state is only imported/created
+# when absent. With environment builds this runs once to create the baseline
+# snapshot (including the seeded MariaDB data dir); per-boot service startup lives
+# in start.sh.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,6 +22,54 @@ DB_PASS="laravel"
 
 log() { printf '\n\033[1;32m[install]\033[0m %s\n' "$*"; }
 
+# ---------------------------------------------------------------------------
+# 1. System toolchains (installed only when missing)
+#    - PHP 8.4: composer.lock resolves Symfony 8.x (needs PHP >= 8.4); also
+#      matches deploy.sh's Plesk 8.4 preference. Ubuntu 24.04 only ships 8.3, so
+#      we use the ondrej/php PPA.
+#    - MariaDB: the domain schema lives in a SQL dump, not migrations.
+#    - Composer + Node.js 24 (pinned in frontend/.node-version).
+# ---------------------------------------------------------------------------
+PHP_VERSION="8.4"
+
+if ! command -v php >/dev/null 2>&1 || ! php -v 2>/dev/null | grep -q "^PHP ${PHP_VERSION}"; then
+  log "Installing PHP ${PHP_VERSION} and extensions"
+  sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    software-properties-common ca-certificates curl gnupg
+  sudo add-apt-repository -y ppa:ondrej/php
+  sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    "php${PHP_VERSION}-cli" "php${PHP_VERSION}-mysql" "php${PHP_VERSION}-mbstring" \
+    "php${PHP_VERSION}-xml" "php${PHP_VERSION}-curl" "php${PHP_VERSION}-zip" \
+    "php${PHP_VERSION}-bcmath" "php${PHP_VERSION}-gd" "php${PHP_VERSION}-sqlite3" \
+    "php${PHP_VERSION}-intl"
+  sudo update-alternatives --set php "/usr/bin/php${PHP_VERSION}"
+fi
+
+if ! command -v mysqld >/dev/null 2>&1 && ! command -v mariadbd >/dev/null 2>&1; then
+  log "Installing MariaDB server + client"
+  sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    mariadb-server mariadb-client
+fi
+
+if ! command -v composer >/dev/null 2>&1; then
+  log "Installing Composer"
+  curl -fsSL https://getcomposer.org/installer -o /tmp/composer-setup.php
+  sudo php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer
+  rm -f /tmp/composer-setup.php
+fi
+
+if ! command -v node >/dev/null 2>&1 || [ "$(node -v | cut -d. -f1)" != "v24" ]; then
+  log "Installing Node.js 24"
+  curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs
+fi
+
+# ---------------------------------------------------------------------------
+# 2. MariaDB service + database/user
+# ---------------------------------------------------------------------------
 mariadb_running() { sudo mysqladmin ping >/dev/null 2>&1; }
 
 start_mariadb() {
@@ -48,11 +98,13 @@ GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'%';
 FLUSH PRIVILEGES;
 SQL
 
-# Import the domain schema on first run only. The phpMyAdmin dump adds primary
-# keys via trailing ALTER TABLEs, but a few newer tables declare inline FOREIGN
-# KEYs that reference indexes not yet created at that point (and some against the
-# dump's signed-int PKs). Strip inline FK constraints during import; the ORM
-# enforces those relations at the application layer.
+# ---------------------------------------------------------------------------
+# 3. Import the domain schema (first run only)
+#    The phpMyAdmin dump adds primary keys via trailing ALTER TABLEs, but a few
+#    newer tables declare inline FOREIGN KEYs that reference indexes not yet
+#    created at that point (and some against the dump's signed-int PKs). Strip
+#    inline FK constraints during import; the ORM enforces those relations.
+# ---------------------------------------------------------------------------
 schema_present="$(sudo mysql -N -e \
   "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${DB_NAME}' AND table_name='account_statuses';")"
 if [ "${schema_present}" = "0" ]; then
@@ -76,7 +128,9 @@ else
   log "Domain schema already present; skipping import"
 fi
 
-# --- Backend (Laravel / PHP) ---
+# ---------------------------------------------------------------------------
+# 4. Backend (Laravel / PHP)
+# ---------------------------------------------------------------------------
 cd "$BACKEND_DIR"
 
 log "Installing backend Composer dependencies"
@@ -148,7 +202,9 @@ php artisan tinker --execute="
 if (\$u) { \$u->password_hash = Illuminate\Support\Facades\Hash::make('Password123!'); \$u->account_status_id = 1; \$u->save(); }
 "
 
-# --- Frontend (React / Vite) ---
+# ---------------------------------------------------------------------------
+# 5. Frontend (React / Vite)
+# ---------------------------------------------------------------------------
 cd "$FRONTEND_DIR"
 
 log "Installing frontend npm dependencies"
