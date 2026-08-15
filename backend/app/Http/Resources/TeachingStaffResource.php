@@ -34,6 +34,10 @@ class TeachingStaffResource extends JsonResource
                     'college_name' => $college->college_name,
                 ])->values()
             ),
+            'active_assignment_count' => (int) ($this->active_assignment_count ?? 0),
+            'theoretical_assignment_count' => (int) ($this->theoretical_assignment_count ?? 0),
+            'practical_assignment_count' => (int) ($this->practical_assignment_count ?? 0),
+            'active_course_count' => (int) ($this->active_course_count ?? 0),
         ];
     }
 }
