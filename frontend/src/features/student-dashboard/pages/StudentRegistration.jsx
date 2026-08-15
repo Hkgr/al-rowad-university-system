@@ -218,7 +218,8 @@ export default function StudentRegistration() {
       fetch(`${API}/semesters/active`,        { headers: authHeaders() }).then(r => r.json()),
     ]).then(([y, s]) => {
       setYears(y.success ? (Array.isArray(y.data) ? y.data : [y.data].filter(Boolean)) : [])
-      const allSems = s.success ? (Array.isArray(s.data) ? s.data : [s.data].filter(Boolean)) : []
+      const semesterPayload = s.data?.data ?? s.data
+      const allSems = s.success ? (Array.isArray(semesterPayload) ? semesterPayload : [semesterPayload].filter(Boolean)) : []
       setSemesters(allSems)
       setFilteredSemesters(allSems)
     }).finally(() => setLoadingInit(false))
