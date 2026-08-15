@@ -200,6 +200,9 @@ class AttendanceService
             );
         }
 
+        $hideInternalNotes = $user !== null
+            && app(AcademicAuthorizationService::class)->isRestrictedToOfficialStudentGrades($user);
+
         $registrations = $registrationsQuery->orderBy('student_course_registration_id')->get();
 
         return [
@@ -213,7 +216,13 @@ class AttendanceService
                 'semester_id' => $semesterId,
                 'course_offering_id' => $courseOfferingId,
             ],
-            'courses' => $registrations->map(fn (StudentCourseRegistration $registration) => $this->formatStudentCourseAttendance($registration))->values()->all(),
+            'courses' => $registrations
+                ->map(fn (StudentCourseRegistration $registration) => $this->formatStudentCourseAttendance(
+                    $registration,
+                    includeInternalNotes: ! $hideInternalNotes
+                ))
+                ->values()
+                ->all(),
         ];
     }
 
@@ -502,7 +511,13 @@ class AttendanceService
         $theoretical = ['recorded' => 0, 'present' => 0, 'absent' => 0, 'excused' => 0, 'late' => 0];
         $practical = ['recorded' => 0, 'present' => 0, 'absent' => 0, 'excused' => 0, 'late' => 0];
 
-        $sessionPayload = $sessions->map(function (AttendanceSession $session) use (
+        $relevantSessions = $this->relevantSessionsForStudentRegistration(
+            $sessions,
+            $registration,
+            $attendancesBySessionId
+        );
+
+        $sessionPayload = $relevantSessions->map(function (AttendanceSession $session) use (
             $attendancesBySessionId,
             &$counts,
             &$countedAsAbsent,
@@ -572,9 +587,9 @@ class AttendanceService
             ],
             'academic_year' => $this->compactYear($year),
             'semester' => $this->compactSemester($semester),
-            'created_sessions_count' => $sessions->count(),
+            'created_sessions_count' => $relevantSessions->count(),
             'recorded_sessions_count' => $recorded,
-            'unrecorded_sessions_count' => max($sessions->count() - $recorded, 0),
+            'unrecorded_sessions_count' => max($relevantSessions->count() - $recorded, 0),
             'present_count' => $counts['present'],
             'absent_count' => $counts['absent'],
             'excused_count' => $counts['excused'],
@@ -656,7 +671,47 @@ class AttendanceService
         return $time !== '' ? $time : null;
     }
 
-    private function formatStudentCourseAttendance(StudentCourseRegistration $registration): array
+    private function relevantSessionsForStudentRegistration(
+        Collection $sessions,
+        StudentCourseRegistration $registration,
+        Collection $attendancesBySessionId
+    ): Collection {
+        $statusCode = $registration->registrationStatus?->status_code;
+        $canShowUnrecorded = $statusCode === null
+            || in_array($statusCode, StudentCourseRegistration::HISTORICAL_ATTEMPT_STATUSES, true);
+
+        return $sessions
+            ->filter(function (AttendanceSession $session) use ($registration, $attendancesBySessionId, $canShowUnrecorded): bool {
+                if ($attendancesBySessionId->has((int) $session->attendance_session_id)) {
+                    return true;
+                }
+
+                if (! $canShowUnrecorded) {
+                    return false;
+                }
+
+                return $this->sessionIsOnOrAfterRegistration($session, $registration);
+            })
+            ->values();
+    }
+
+    private function sessionIsOnOrAfterRegistration(AttendanceSession $session, StudentCourseRegistration $registration): bool
+    {
+        $sessionDate = $session->session_date?->format('Y-m-d');
+        $registrationDate = $registration->registration_date?->format('Y-m-d');
+
+        if ($sessionDate === null) {
+            return false;
+        }
+
+        if ($registrationDate === null) {
+            return true;
+        }
+
+        return $sessionDate >= $registrationDate;
+    }
+
+    private function formatStudentCourseAttendance(StudentCourseRegistration $registration, bool $includeInternalNotes = true): array
     {
         $offering = $registration->courseOffering;
         $stats = $this->calculateAbsenceStats($registration->student_id, (int) $registration->course_offering_id);
@@ -666,17 +721,24 @@ class AttendanceService
             ->whereHas('attendanceSession', fn (Builder $query) => $query->where('course_offering_id', $registration->course_offering_id))
             ->with(['attendanceSession', 'attendanceStatus'])
             ->get()
-            ->map(fn (StudentAttendance $attendance) => [
-                'student_attendance_id' => $attendance->student_attendance_id,
-                'attendance_session_id' => $attendance->attendance_session_id,
-                'session_date' => $attendance->attendanceSession?->session_date,
-                'session_type' => $attendance->attendanceSession?->session_type,
-                'attendance_status' => [
-                    'status_code' => $attendance->attendanceStatus?->status_code,
-                    'status_name' => $attendance->attendanceStatus?->status_name,
-                ],
-                'notes' => $attendance->notes,
-            ])
+            ->map(function (StudentAttendance $attendance) use ($includeInternalNotes): array {
+                $payload = [
+                    'student_attendance_id' => $attendance->student_attendance_id,
+                    'attendance_session_id' => $attendance->attendance_session_id,
+                    'session_date' => $attendance->attendanceSession?->session_date,
+                    'session_type' => $attendance->attendanceSession?->session_type,
+                    'attendance_status' => [
+                        'status_code' => $attendance->attendanceStatus?->status_code,
+                        'status_name' => $attendance->attendanceStatus?->status_name,
+                    ],
+                ];
+
+                if ($includeInternalNotes) {
+                    $payload['notes'] = $attendance->notes;
+                }
+
+                return $payload;
+            })
             ->values()
             ->all();
 
