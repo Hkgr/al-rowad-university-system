@@ -68,6 +68,7 @@ import DeanStudentProfile  from '../features/dean-dashboard/pages/DeanStudentPro
 import DeanTeachers        from '../features/dean-dashboard/pages/DeanTeachers'
 import DeanTeacherProfile  from '../features/dean-dashboard/pages/DeanTeacherProfile'
 import DeanCourses         from '../features/dean-dashboard/pages/DeanCourses'
+import DeanCourseOfferingProfile from '../features/dean-dashboard/pages/DeanCourseOfferingProfile'
 import DeanReports         from '../features/dean-dashboard/pages/DeanReports'
 import DeanCalendar        from '../features/dean-dashboard/pages/DeanCalendar'
 
@@ -228,6 +229,7 @@ export default function App() {
           <Route path="/dean/teachers"      element={<DeanTeachers />} />
           <Route path="/dean/teachers/:id"  element={<DeanTeacherProfile />} />
           <Route path="/dean/courses"       element={<DeanCourses />} />
+          <Route path="/dean/courses/:id"   element={<DeanCourseOfferingProfile />} />
           <Route path="/dean/reports"       element={<DeanReports />} />
           <Route path="/dean/calendar"      element={<DeanCalendar />} />
         </Route>
