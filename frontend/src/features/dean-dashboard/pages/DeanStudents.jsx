@@ -1,9 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FaEye, FaGraduationCap, FaPhone } from 'react-icons/fa'
+import {
+  FaChevronDown, FaDownload, FaEye, FaFileExcel, FaFilePdf, FaGraduationCap, FaPhone, FaSpinner,
+} from 'react-icons/fa'
 import DataTable from '../../../components/table/DataTable'
 import FilterBar from '../../../components/table/FilterBar'
 import { apiRequest } from '../../../services/apiClient'
+import { exportRowsToExcel } from '../../../utils/excelExport'
+import { exportRowsToPdf } from '../../../utils/pdfExport'
 
 const PAGE_SIZE = 15
 const API_PAGE_SIZE = 100
@@ -24,6 +28,21 @@ function arabicYearLabel(order) {
   if (!order || order < 1) return null
   const word = YEAR_ORDINALS_AR[order - 1]
   return word ? `السنة ${word}` : `السنة ${order}`
+}
+
+function genderLabel(gender) {
+  if (gender === 'male') return 'ذكر'
+  if (gender === 'female') return 'أنثى'
+  return gender || '—'
+}
+
+function formatDate(iso) {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('ar-SY')
+}
+
+function todayStamp() {
+  return new Date().toISOString().slice(0, 10)
 }
 
 function paginatedRows(response) {
@@ -53,7 +72,8 @@ function loadLookups() {
     lookupPromise = Promise.all([
       fetchAllPages('academic-programs'),
       fetchAllPages('academic-levels'),
-    ]).then(([programs, levels]) => {
+      fetchAllPages('colleges').catch(() => []),
+    ]).then(([programs, levels, colleges]) => {
       const programMap = Object.fromEntries(
         programs.map(program => [program.academic_program_id, program.program_name]),
       )
@@ -63,7 +83,11 @@ function loadLookups() {
           { name: level.level_name, order: level.level_order },
         ]),
       )
-      return { programMap, levelMap }
+      return {
+        programMap,
+        levelMap,
+        colleges: Array.isArray(colleges) ? colleges : [],
+      }
     }).catch(error => {
       lookupPromise = null
       throw error
@@ -91,8 +115,12 @@ export default function DeanStudents() {
   const [allStudents, setAllStudents] = useState([])
   const [programMap, setProgramMap] = useState({})
   const [levelMap, setLevelMap] = useState({})
+  const [colleges, setColleges] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [exportError, setExportError] = useState('')
+  const [exporting, setExporting] = useState(false)
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [revealedPhones, setRevealedPhones] = useState(new Set())
   const [search, setSearch] = useState('')
   const [filterProgram, setFilterProgram] = useState('')
@@ -101,6 +129,7 @@ export default function DeanStudents() {
   const [filterGender, setFilterGender] = useState('')
   const [page, setPage] = useState(1)
   const navigate = useNavigate()
+  const exportMenuRef = useRef(null)
 
   useEffect(() => {
     let active = true
@@ -119,6 +148,7 @@ export default function DeanStudents() {
         setAllStudents(students)
         setProgramMap(lookups.programMap)
         setLevelMap(lookups.levelMap)
+        setColleges(lookups.colleges ?? [])
       } catch (requestError) {
         if (!active) return
 
@@ -140,6 +170,19 @@ export default function DeanStudents() {
     load()
     return () => { active = false }
   }, [navigate])
+
+  useEffect(() => {
+    if (!exportMenuOpen) return undefined
+
+    function handlePointerDown(event) {
+      if (!exportMenuRef.current?.contains(event.target)) {
+        setExportMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => document.removeEventListener('mousedown', handlePointerDown)
+  }, [exportMenuOpen])
 
   const filteredStudents = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -170,6 +213,10 @@ export default function DeanStudents() {
     safePage * PAGE_SIZE,
   )
   const hasFilters = Boolean(search || filterProgram || filterLevel || filterStatus || filterGender)
+  const canExport = !loading && !exporting && filteredStudents.length > 0
+  const collegeName = colleges.length === 1
+    ? colleges[0]?.college_name
+    : null
 
   const programOptions = useMemo(() => {
     const availableProgramIds = new Set(
@@ -215,9 +262,85 @@ export default function DeanStudents() {
     })
   }
 
+  function getProgramName(student) {
+    return programMap[student.academic_program_id] ?? 'لم يتخصص بعد'
+  }
+
   function getLevelName(student) {
     const level = levelMap[student.current_academic_level_id]
     return level ? (arabicYearLabel(level.order) ?? level.name) : null
+  }
+
+  function getStatusLabel(student) {
+    return STATUS_MAP[student.student_status_id]?.ar ?? '—'
+  }
+
+  function buildReportColumns() {
+    return [
+      { header: 'رقم القيد', value: student => student.student_number, text: true },
+      {
+        header: 'الاسم الكامل',
+        value: student => `${student.first_name ?? ''} ${student.last_name ?? ''}`.trim() || '—',
+      },
+      { header: 'التخصص', value: student => getProgramName(student) },
+      { header: 'السنة الدراسية', value: student => getLevelName(student) },
+      { header: 'الهاتف', value: student => student.phone_number, text: true },
+      { header: 'البريد الإلكتروني', value: student => student.email },
+      { header: 'الجنس', value: student => genderLabel(student.gender) },
+      { header: 'تاريخ القبول', value: student => formatDate(student.enrollment_date) },
+      { header: 'الحالة', value: student => getStatusLabel(student) },
+    ]
+  }
+
+  function buildSubtitleParts() {
+    const generatedAt = new Date().toLocaleDateString('ar-SY')
+    return [
+      collegeName ? `الكلية: ${collegeName}` : null,
+      `عدد الطلاب: ${filteredStudents.length}`,
+      hasFilters ? 'بعد تطبيق الفلاتر' : 'بدون فلاتر نشطة',
+      `تاريخ الإنشاء: ${generatedAt}`,
+    ].filter(Boolean)
+  }
+
+  async function handleExport(format) {
+    if (!filteredStudents.length) {
+      setExportError('لا توجد بيانات مطابقة لتصديرها.')
+      setExportMenuOpen(false)
+      return
+    }
+
+    setExportMenuOpen(false)
+    setExportError('')
+    setExporting(true)
+
+    try {
+      const columns = buildReportColumns()
+      const subtitleParts = buildSubtitleParts()
+      const filenameBase = `تقرير_طلاب_الكلية_${todayStamp()}`
+
+      if (format === 'pdf') {
+        await exportRowsToPdf({
+          title: 'تقرير طلاب الكلية',
+          subtitle: subtitleParts.join(' — '),
+          columns,
+          rows: filteredStudents,
+          filename: `${filenameBase}.pdf`,
+        })
+      } else {
+        exportRowsToExcel({
+          title: 'تقرير طلاب الكلية',
+          subtitleLines: subtitleParts,
+          sheetName: 'طلاب الكلية',
+          columns,
+          rows: filteredStudents,
+          filename: `${filenameBase}.xlsx`,
+        })
+      }
+    } catch {
+      setExportError('تعذّر إنشاء التقرير. يرجى المحاولة مرة أخرى.')
+    } finally {
+      setExporting(false)
+    }
   }
 
   const columns = [
@@ -300,11 +423,7 @@ export default function DeanStudents() {
       header: 'تاريخ القبول',
       align: 'center',
       cellClassName: 'text-[13.5px] text-text-dark whitespace-nowrap',
-      render: student => (
-        student.enrollment_date
-          ? new Date(student.enrollment_date).toLocaleDateString('ar-SY')
-          : '—'
-      ),
+      render: student => formatDate(student.enrollment_date),
     },
     {
       key: 'status',
@@ -341,6 +460,58 @@ export default function DeanStudents() {
                 ? `${filteredStudents.length} نتيجة من أصل ${allStudents.length} طالب`
                 : `عرض ومتابعة طلاب الكلية — ${allStudents.length} طالب`}
           </p>
+        </div>
+
+        <div className="relative" ref={exportMenuRef}>
+          <button
+            type="button"
+            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-primary/25 text-primary-dark rounded-[12px] text-[13.5px] font-bold whitespace-nowrap transition-all duration-[220ms] hover:bg-primary/6 disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={() => {
+              if (!filteredStudents.length) {
+                setExportError('لا توجد بيانات مطابقة لتصديرها.')
+                return
+              }
+              setExportError('')
+              setExportMenuOpen(open => !open)
+            }}
+            disabled={loading || exporting}
+            aria-haspopup="menu"
+            aria-expanded={exportMenuOpen}
+          >
+            {exporting
+              ? <FaSpinner className="animate-spin text-[12px]" />
+              : <FaDownload className="text-[12px]" />}
+            <span>{exporting ? 'جاري إنشاء التقرير…' : 'تنزيل التقرير'}</span>
+            {!exporting && <FaChevronDown className="text-[10px] opacity-70" />}
+          </button>
+
+          {exportMenuOpen && (
+            <div
+              className="absolute left-0 top-[calc(100%+6px)] z-20 min-w-[180px] bg-white border border-primary/15 rounded-[12px] shadow-[0_8px_24px_rgba(26,46,16,0.12)] overflow-hidden"
+              role="menu"
+            >
+              <button
+                type="button"
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] font-semibold text-text-dark hover:bg-primary/6 transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+                onClick={() => handleExport('pdf')}
+                disabled={!canExport}
+                role="menuitem"
+              >
+                <FaFilePdf className="text-red-500 text-[13px]" />
+                <span>PDF</span>
+              </button>
+              <button
+                type="button"
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] font-semibold text-text-dark hover:bg-primary/6 transition-colors border-t border-primary/8 disabled:opacity-45 disabled:cursor-not-allowed"
+                onClick={() => handleExport('excel')}
+                disabled={!canExport}
+                role="menuitem"
+              >
+                <FaFileExcel className="text-green-600 text-[13px]" />
+                <span>Excel</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -398,6 +569,12 @@ export default function DeanStudents() {
       {error && (
         <div className="flex items-center justify-between gap-3 bg-red-500/6 border border-red-500/25 rounded-[12px] px-[18px] py-3 mb-4 text-[13.5px] text-red-600">
           <span>⚠ {error}</span>
+        </div>
+      )}
+
+      {exportError && (
+        <div className="flex items-center justify-between gap-3 bg-amber-500/8 border border-amber-500/25 rounded-[12px] px-[18px] py-3 mb-4 text-[13.5px] text-amber-700">
+          <span>⚠ {exportError}</span>
         </div>
       )}
 
