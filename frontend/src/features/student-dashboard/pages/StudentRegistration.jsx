@@ -21,6 +21,13 @@ const BADGE_CLASS = {
   hours: 'bg-yellow-100 text-yellow-800',
 }
 
+function studentRegistrationPath(semesterId) {
+  const params = new URLSearchParams()
+  if (semesterId) params.set('semester_id', semesterId)
+  const query = params.toString()
+  return `/v1/student/registration${query ? `?${query}` : ''}`
+}
+
 function HoursBar({ registered, max, remaining }) {
   const pct = max > 0 ? Math.min((registered / max) * 100, 100) : 0
   const color = pct >= 100 ? 'bg-red-500' : pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-primary'
@@ -153,7 +160,6 @@ export default function StudentRegistration() {
   const requestSeq = useRef(0)
 
   const [payload, setPayload] = useState(null)
-  const [yearId, setYearId] = useState('')
   const [semesterId, setSemesterId] = useState('')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -162,15 +168,13 @@ export default function StudentRegistration() {
   const [registering, setRegistering] = useState({})
   const [dropping, setDropping] = useState({})
   const [confirm, setConfirm] = useState(null)
-  const [calendarYear, setCalendarYear] = useState(null)
   const hasLoadedRef = useRef(false)
 
-  const academicYear = payload?.academic_year ?? calendarYear
+  const academicYear = payload?.academic_year ?? null
   const semesters = payload?.semesters ?? []
-  const selectedYearId = yearId || String(academicYear?.academic_year_id || '')
   const selectedSemesterId = semesterId || String(payload?.semester?.semester_id || '')
   const registrationOpen = payload?.registration_open === true
-  const termReady = Boolean(selectedYearId && selectedSemesterId)
+  const termReady = Boolean(academicYear?.academic_year_id && selectedSemesterId)
   const available = payload?.available_courses ?? []
   const summary = payload?.summary ?? null
   const registrations = summary?.registrations ?? []
@@ -185,7 +189,8 @@ export default function StudentRegistration() {
       apiRequest('/v1/semesters/active').catch(() => null),
     ]).then(([yearResponse, semesterResponse]) => {
       if (!active) return
-      setCalendarYear(yearResponse?.data ?? null)
+      // Calendar lookups only; the current year is resolved server-side.
+      void yearResponse
       void semesterResponse
     })
     return () => { active = false }
@@ -200,13 +205,8 @@ export default function StudentRegistration() {
       else setLoading(true)
       setError('')
 
-      const params = new URLSearchParams()
-      if (yearId) params.set('academic_year_id', yearId)
-      if (semesterId) params.set('semester_id', semesterId)
-      const query = params.toString()
-
       try {
-        const response = await apiRequest(`/v1/student/registration${query ? `?${query}` : ''}`)
+        const response = await apiRequest(studentRegistrationPath(semesterId))
         if (!active || seq !== requestSeq.current) return
         setPayload(response?.data ?? null)
         hasLoadedRef.current = true
@@ -231,7 +231,7 @@ export default function StudentRegistration() {
 
     load()
     return () => { active = false }
-  }, [yearId, semesterId, navigate])
+  }, [semesterId, navigate])
 
   const hours = useMemo(() => ({
     registered: summary?.total_registered_hours ?? 0,
@@ -256,7 +256,7 @@ export default function StudentRegistration() {
       })
       showToast(`تم تسجيل "${course.course_name}" بنجاح`)
       setConfirm(null)
-      const response = await apiRequest(`/v1/student/registration?academic_year_id=${selectedYearId}&semester_id=${selectedSemesterId}`)
+      const response = await apiRequest(studentRegistrationPath(selectedSemesterId))
       setPayload(response?.data ?? null)
     } catch (requestError) {
       if (requestError.status === 401) {
@@ -281,7 +281,7 @@ export default function StudentRegistration() {
       })
       showToast(`تم حذف "${registration.course_name}" من قائمة التسجيل`)
       setConfirm(null)
-      const response = await apiRequest(`/v1/student/registration?academic_year_id=${selectedYearId}&semester_id=${selectedSemesterId}`)
+      const response = await apiRequest(studentRegistrationPath(selectedSemesterId))
       setPayload(response?.data ?? null)
     } catch (requestError) {
       if (requestError.status === 401) {

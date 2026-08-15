@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\RegistrationException;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\AcademicYearResource;
 use App\Http\Resources\AvailableCourseOfferingResource;
@@ -27,11 +28,10 @@ class StudentSelfRegistrationController extends Controller
     {
         $student = $this->authenticatedStudent($request);
         $validated = $request->validate([
-            'academic_year_id' => ['sometimes', 'integer', 'min:1', 'exists:academic_years,academic_year_id'],
             'semester_id' => ['sometimes', 'integer', 'min:1', 'exists:semesters,semester_id'],
         ]);
 
-        $year = AcademicYear::query()->where('is_current', true)->first();
+        $year = $this->uniqueCurrentAcademicYear();
 
         $openSemesters = $year === null
             ? collect()
@@ -84,6 +84,11 @@ class StudentSelfRegistrationController extends Controller
     public function register(Request $request, CourseOffering $courseOffering): JsonResponse
     {
         $student = $this->authenticatedStudent($request);
+        if ($this->uniqueCurrentAcademicYear() === null) {
+            throw new RegistrationException('The selected course offering is not open for the current academic term.', [
+                'course_offering_id' => ['The selected course offering is not open for the current academic term.'],
+            ]);
+        }
         $this->registration->assertSelfRegistrationAllowed($student, $courseOffering);
 
         $result = $this->registration->registerStudent(
@@ -112,6 +117,13 @@ class StudentSelfRegistrationController extends Controller
             (new StudentCourseRegistrationResource($updated))->resolve($request),
             'تم حذف تسجيل المادة بنجاح.'
         );
+    }
+
+    private function uniqueCurrentAcademicYear(): ?AcademicYear
+    {
+        $currentYears = AcademicYear::query()->where('is_current', true)->get();
+
+        return $currentYears->count() === 1 ? $currentYears->first() : null;
     }
 
     private function authenticatedStudent(Request $request): Student
