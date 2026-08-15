@@ -22,8 +22,6 @@ import {
 const PAGE_SIZE = 15
 const API_PAGE_SIZE = 100
 
-let lookupPromise
-
 function paginatedRows(response) {
   return response?.data?.data ?? []
 }
@@ -44,36 +42,6 @@ async function fetchAllPages(path) {
   }
 
   return rows
-}
-
-function loadLookups() {
-  if (!lookupPromise) {
-    lookupPromise = Promise.all([
-      fetchAllPages('academic-programs'),
-      fetchAllPages('academic-levels'),
-      fetchAllPages('colleges').catch(() => []),
-    ]).then(([programs, levels, colleges]) => {
-      const programMap = Object.fromEntries(
-        programs.map(program => [program.academic_program_id, program.program_name]),
-      )
-      const levelMap = Object.fromEntries(
-        levels.map(level => [
-          level.academic_level_id,
-          { name: level.level_name, order: level.level_order },
-        ]),
-      )
-      return {
-        programMap,
-        levelMap,
-        colleges: Array.isArray(colleges) ? colleges : [],
-      }
-    }).catch(error => {
-      lookupPromise = null
-      throw error
-    })
-  }
-
-  return lookupPromise
 }
 
 function todayStamp() {
@@ -108,16 +76,25 @@ export default function DeanStudents() {
       setError('')
 
       try {
-        const [students, lookups] = await Promise.all([
+        const [students, programs, levels, colleges] = await Promise.all([
           fetchAllPages('students'),
-          loadLookups(),
+          fetchAllPages('academic-programs'),
+          fetchAllPages('academic-levels'),
+          fetchAllPages('colleges').catch(() => []),
         ])
         if (!active) return
 
         setAllStudents(students)
-        setProgramMap(lookups.programMap)
-        setLevelMap(lookups.levelMap)
-        setColleges(lookups.colleges ?? [])
+        setProgramMap(Object.fromEntries(
+          programs.map(program => [program.academic_program_id, program.program_name]),
+        ))
+        setLevelMap(Object.fromEntries(
+          levels.map(level => [
+            level.academic_level_id,
+            { name: level.level_name, order: level.level_order },
+          ]),
+        ))
+        setColleges(Array.isArray(colleges) ? colleges : [])
       } catch (requestError) {
         if (!active) return
 
