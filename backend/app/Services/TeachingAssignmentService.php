@@ -271,40 +271,7 @@ class TeachingAssignmentService
 
     public function offeringsInAccessibleCollegesQuery(array $collegeIds)
     {
-        $query = DB::table('course_offerings as accessible_offerings')
-            ->leftJoin(
-                'departments as offering_departments',
-                'offering_departments.department_id',
-                '=',
-                'accessible_offerings.department_id'
-            )
-            ->leftJoin(
-                'academic_programs as offering_programs',
-                'offering_programs.academic_program_id',
-                '=',
-                'accessible_offerings.academic_program_id'
-            )
-            ->leftJoin(
-                'departments as program_departments',
-                'program_departments.department_id',
-                '=',
-                'offering_programs.department_id'
-            )
-            ->select('accessible_offerings.course_offering_id');
-
-        if ($collegeIds === []) {
-            return $query->whereRaw('1 = 0');
-        }
-
-        return $query->whereIn(
-            DB::raw('CASE
-                WHEN offering_departments.college_id IS NOT NULL
-                 AND program_departments.college_id IS NOT NULL
-                 AND offering_departments.college_id <> program_departments.college_id THEN NULL
-                ELSE COALESCE(offering_departments.college_id, program_departments.college_id)
-            END'),
-            $collegeIds
-        );
+        return CourseOffering::idsResolvedToColleges($collegeIds);
     }
 
     public function accessibleCollegeIdList(User $user): array

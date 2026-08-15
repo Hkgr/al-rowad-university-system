@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 
 class CourseOffering extends Model
 {
@@ -112,6 +113,55 @@ class CourseOffering extends Model
         }
 
         return $departmentCollege ?? $programCollege;
+    }
+
+    /**
+     * Query-level equivalent of resolveCollege() for College-scoped access.
+     *
+     * Direct department College is used when present; otherwise fall back through
+     * Academic Program → Department → College. Conflicting Colleges fail closed.
+     */
+    public static function idsResolvedToColleges(array $collegeIds)
+    {
+        $query = DB::table('course_offerings as accessible_offerings')
+            ->leftJoin(
+                'departments as offering_departments',
+                'offering_departments.department_id',
+                '=',
+                'accessible_offerings.department_id'
+            )
+            ->leftJoin(
+                'academic_programs as offering_programs',
+                'offering_programs.academic_program_id',
+                '=',
+                'accessible_offerings.academic_program_id'
+            )
+            ->leftJoin(
+                'departments as program_departments',
+                'program_departments.department_id',
+                '=',
+                'offering_programs.department_id'
+            )
+            ->select('accessible_offerings.course_offering_id');
+
+        $collegeIds = array_values(array_unique(array_map(
+            static fn ($id): int => (int) $id,
+            $collegeIds
+        )));
+
+        if ($collegeIds === []) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->whereIn(
+            DB::raw('CASE
+                WHEN offering_departments.college_id IS NOT NULL
+                 AND program_departments.college_id IS NOT NULL
+                 AND offering_departments.college_id <> program_departments.college_id THEN NULL
+                ELSE COALESCE(offering_departments.college_id, program_departments.college_id)
+            END'),
+            $collegeIds
+        );
     }
 
 }
