@@ -316,12 +316,12 @@ export default function DeanStudents() {
       key: 'view',
       header: 'عرض',
       align: 'center',
-      render: () => (
+      render: student => (
         <button
-          className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] text-blue-500 border-blue-500/20 bg-blue-500/6 disabled:opacity-45 disabled:cursor-not-allowed"
-          title="عرض الملف — سيتم تفعيله في المرحلة التالية"
-          aria-label="عرض الملف — سيتم تفعيله في المرحلة التالية"
-          disabled
+          className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-blue-500 border-blue-500/20 bg-blue-500/6 hover:bg-blue-500/14 hover:border-blue-500/35"
+          title="عرض ملف الطالب"
+          aria-label="عرض ملف الطالب"
+          onClick={() => navigate(`/dean/students/${student.student_id}`)}
         >
           <FaEye />
         </button>

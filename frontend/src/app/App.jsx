@@ -61,13 +61,14 @@ import AttendanceDeprivationPage from '../features/professor-dashboard/pages/Att
 import ProfessorGradesPage       from '../features/professor-dashboard/pages/ProfessorGradesPage'
 
 // ── بوابة عميد الكلية (Dean Dashboard) ─────────────────────────────────────
-import DeanLayout   from '../features/dean-dashboard/DeanLayout'
-import DeanHome     from '../features/dean-dashboard/pages/DeanHome'
-import DeanStudents from '../features/dean-dashboard/pages/DeanStudents'
-import DeanTeachers from '../features/dean-dashboard/pages/DeanTeachers'
-import DeanCourses  from '../features/dean-dashboard/pages/DeanCourses'
-import DeanReports  from '../features/dean-dashboard/pages/DeanReports'
-import DeanCalendar from '../features/dean-dashboard/pages/DeanCalendar'
+import DeanLayout          from '../features/dean-dashboard/DeanLayout'
+import DeanHome            from '../features/dean-dashboard/pages/DeanHome'
+import DeanStudents        from '../features/dean-dashboard/pages/DeanStudents'
+import DeanStudentProfile  from '../features/dean-dashboard/pages/DeanStudentProfile'
+import DeanTeachers        from '../features/dean-dashboard/pages/DeanTeachers'
+import DeanCourses         from '../features/dean-dashboard/pages/DeanCourses'
+import DeanReports         from '../features/dean-dashboard/pages/DeanReports'
+import DeanCalendar        from '../features/dean-dashboard/pages/DeanCalendar'
 
 function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], studentIdentity = false, employeeIdentity = false }) {
   const token = localStorage.getItem('token')
@@ -220,12 +221,13 @@ export default function App() {
             </ProtectedRoute>
           }
         >
-          <Route path="/dean"          element={<DeanHome />} />
-          <Route path="/dean/students" element={<DeanStudents />} />
-          <Route path="/dean/teachers" element={<DeanTeachers />} />
-          <Route path="/dean/courses"  element={<DeanCourses />} />
-          <Route path="/dean/reports"  element={<DeanReports />} />
-          <Route path="/dean/calendar" element={<DeanCalendar />} />
+          <Route path="/dean"               element={<DeanHome />} />
+          <Route path="/dean/students"      element={<DeanStudents />} />
+          <Route path="/dean/students/:id"  element={<DeanStudentProfile />} />
+          <Route path="/dean/teachers"      element={<DeanTeachers />} />
+          <Route path="/dean/courses"       element={<DeanCourses />} />
+          <Route path="/dean/reports"       element={<DeanReports />} />
+          <Route path="/dean/calendar"      element={<DeanCalendar />} />
         </Route>
 
         {/* Default redirect */}
