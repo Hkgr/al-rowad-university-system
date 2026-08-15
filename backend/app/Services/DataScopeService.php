@@ -51,7 +51,7 @@ class DataScopeService
             $q->orWhereIn('course_offering_id', $scopes['section'])
                 ->orWhereIn('academic_program_id', $scopes['program'])
                 ->orWhereIn('department_id', $scopes['department'])
-                ->orWhereHas('department', fn (Builder $department) => $department->whereIn('college_id', $scopes['college']))
+                ->orWhereIn('course_offering_id', CourseOffering::idsResolvedToColleges($scopes['college']))
                 ->orWhereIn('faculty_member_id', $facultyIds)
                 ->orWhereHas('offeringInstructors', fn (Builder $instructor) =>
                     $instructor->whereIn('faculty_member_id', $facultyIds)->where('is_active', true));
