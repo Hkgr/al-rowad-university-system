@@ -14,6 +14,7 @@ export const PERMISSIONS = Object.freeze({
   teachingStaffView: 'teaching_staff.view',
   gradesView: 'grades.view',
   attendanceView: 'attendance.view',
+  dashboardsView: 'dashboards.view',
   systemSettingsView: 'system_settings.view',
 })
 

@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\CourseInstructorController;
 use App\Http\Controllers\Api\CourseOfferingController;
 use App\Http\Controllers\Api\CourseOfferingInstructorController;
 use App\Http\Controllers\Api\DeanCourseOfferingController;
+use App\Http\Controllers\Api\DeanDashboardController;
 use App\Http\Controllers\Api\DeanRegistrationOfferingController;
 use App\Http\Controllers\Api\CoursePrerequisiteController;
 use App\Http\Controllers\Api\DepartmentController;
@@ -435,6 +436,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::apiResource('employee-unit-assignments', EmployeeUnitAssignmentController::class);
     Route::get('faculty-members/me', [FacultyMemberController::class, 'me']);
     Route::apiResource('faculty-members', FacultyMemberController::class);
+    Route::get('dean/dashboard', [DeanDashboardController::class, 'show'])
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':dashboards.view');
     Route::get('dean/course-offerings', [DeanCourseOfferingController::class, 'index']);
     Route::get('dean/course-offerings/{courseOffering}/students', [DeanCourseOfferingController::class, 'students']);
     Route::get('dean/course-offerings/{courseOffering}/sessions', [DeanCourseOfferingController::class, 'sessions']);
