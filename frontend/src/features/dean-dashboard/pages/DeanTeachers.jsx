@@ -339,13 +339,13 @@ export default function DeanTeachers() {
       key: 'view',
       header: 'عرض',
       align: 'center',
-      render: () => (
+      render: teacher => (
         <button
           type="button"
-          className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] mx-auto text-blue-500 border-blue-500/20 bg-blue-500/6 opacity-40 cursor-not-allowed"
-          title="سيتم توفير ملف المدرس في مرحلة لاحقة"
-          aria-label="عرض ملف المدرس — غير متاح حالياً"
-          disabled
+          className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] mx-auto cursor-pointer transition-all duration-[180ms] text-blue-500 border-blue-500/20 bg-blue-500/6 hover:bg-blue-500/14 hover:border-blue-500/35"
+          title="عرض ملف المدرس"
+          aria-label="عرض ملف المدرس"
+          onClick={() => navigate(`/dean/teachers/${teacher.faculty_member_id}`)}
         >
           <FaEye />
         </button>

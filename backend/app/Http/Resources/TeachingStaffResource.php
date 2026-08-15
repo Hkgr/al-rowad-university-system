@@ -25,6 +25,12 @@ class TeachingStaffResource extends JsonResource
                 'last_name' => $employee->last_name,
                 'phone_number' => $employee->phone_number,
                 'email' => $employee->email,
+                'employee_status' => $employee->relationLoaded('employeeStatus') && $employee->employeeStatus !== null
+                    ? [
+                        'status_code' => $employee->employeeStatus->status_code,
+                        'status_name' => $employee->employeeStatus->status_name,
+                    ]
+                    : null,
             ],
             'colleges' => $this->when(
                 $this->relationLoaded('colleges'),

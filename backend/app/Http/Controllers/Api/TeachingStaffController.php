@@ -3,7 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\TeachingStaffAssignmentResource;
 use App\Http\Resources\TeachingStaffResource;
+use App\Http\Resources\TeachingStaffSessionResource;
+use App\Models\AttendanceSession;
 use App\Models\College;
 use App\Models\CourseOfferingInstructor;
 use App\Models\FacultyMember;
@@ -91,6 +94,190 @@ class TeachingStaffController extends Controller
         return $this->successResponse(
             (new TeachingStaffResource($facultyMember))->resolve($request)
         );
+    }
+
+    public function assignments(Request $request, FacultyMember $facultyMember): JsonResponse
+    {
+        $this->assertCanViewTeachingStaff($request);
+        $user = $request->user();
+        $facultyMember = $this->resolveScopedFacultyMember($user, $facultyMember);
+        $collegeIds = $this->accessibleCollegeIdList($user);
+
+        $validated = $request->validate([
+            'status' => ['sometimes', Rule::in(['active', 'inactive', 'all'])],
+            'role' => ['sometimes', Rule::in(['theoretical', 'practical'])],
+            'academic_year_id' => ['sometimes', 'integer', 'min:1', 'exists:academic_years,academic_year_id'],
+            'semester_id' => ['sometimes', 'integer', 'min:1', 'exists:semesters,semester_id'],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+            'page' => ['sometimes', 'integer', 'min:1'],
+        ]);
+
+        $status = $validated['status'] ?? 'active';
+
+        $query = CourseOfferingInstructor::query()
+            ->where('course_offering_instructors.faculty_member_id', $facultyMember->faculty_member_id)
+            ->whereIn(
+                'course_offering_instructors.course_offering_id',
+                $this->offeringsInAccessibleCollegesQuery($collegeIds)
+            )
+            ->whereHas(
+                'courseOffering',
+                fn (Builder $offering) => $this->dataScope->scopeOfferings($offering, $user)
+            )
+            ->with($this->offeringDisplayRelations())
+            ->join(
+                'course_offerings',
+                'course_offerings.course_offering_id',
+                '=',
+                'course_offering_instructors.course_offering_id'
+            )
+            ->leftJoin(
+                'academic_years',
+                'academic_years.academic_year_id',
+                '=',
+                'course_offerings.academic_year_id'
+            )
+            ->leftJoin(
+                'semesters',
+                'semesters.semester_id',
+                '=',
+                'course_offerings.semester_id'
+            )
+            ->leftJoin(
+                'courses',
+                'courses.course_id',
+                '=',
+                'course_offerings.course_id'
+            )
+            ->select('course_offering_instructors.*');
+
+        if ($status === 'active') {
+            $query->where('course_offering_instructors.is_active', true);
+        } elseif ($status === 'inactive') {
+            $query->where('course_offering_instructors.is_active', false);
+        }
+
+        if (isset($validated['role'])) {
+            $query->where('course_offering_instructors.instructor_role', $validated['role']);
+        }
+
+        if (isset($validated['academic_year_id'])) {
+            $query->where('course_offerings.academic_year_id', (int) $validated['academic_year_id']);
+        }
+
+        if (isset($validated['semester_id'])) {
+            $query->where('course_offerings.semester_id', (int) $validated['semester_id']);
+        }
+
+        $assignments = $query
+            ->orderByDesc('course_offering_instructors.is_active')
+            ->orderByDesc('academic_years.start_date')
+            ->orderByDesc('semesters.semester_order')
+            ->orderBy('courses.course_code')
+            ->orderBy('courses.course_name')
+            ->paginate((int) ($validated['per_page'] ?? 15));
+
+        $payload = TeachingStaffAssignmentResource::collection($assignments)
+            ->response($request)
+            ->getData(true);
+
+        return $this->successResponse($payload);
+    }
+
+    public function sessions(Request $request, FacultyMember $facultyMember): JsonResponse
+    {
+        $this->assertCanViewTeachingStaff($request);
+        $this->assertCanViewAttendanceSessions($request);
+
+        $user = $request->user();
+        $facultyMember = $this->resolveScopedFacultyMember($user, $facultyMember);
+        $collegeIds = $this->accessibleCollegeIdList($user);
+
+        $validated = $request->validate([
+            'session_type' => ['sometimes', Rule::in(['theoretical', 'practical'])],
+            'academic_year_id' => ['sometimes', 'integer', 'min:1', 'exists:academic_years,academic_year_id'],
+            'semester_id' => ['sometimes', 'integer', 'min:1', 'exists:semesters,semester_id'],
+            'date_from' => ['sometimes', 'date'],
+            'date_to' => ['sometimes', 'date', Rule::when($request->filled('date_from'), ['after_or_equal:date_from'])],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+            'page' => ['sometimes', 'integer', 'min:1'],
+        ]);
+
+        $query = AttendanceSession::query()
+            ->where('attendance_sessions.faculty_member_id', $facultyMember->faculty_member_id)
+            ->whereIn(
+                'attendance_sessions.course_offering_id',
+                $this->offeringsInAccessibleCollegesQuery($collegeIds)
+            )
+            ->whereHas(
+                'courseOffering',
+                fn (Builder $offering) => $this->dataScope->scopeOfferings($offering, $user)
+            )
+            ->with($this->offeringDisplayRelations())
+            ->withCount('studentAttendances as recorded_count');
+
+        if (isset($validated['session_type'])) {
+            $query->where('attendance_sessions.session_type', $validated['session_type']);
+        }
+
+        if (isset($validated['academic_year_id']) || isset($validated['semester_id'])) {
+            $query->whereHas('courseOffering', function (Builder $offering) use ($validated): void {
+                if (isset($validated['academic_year_id'])) {
+                    $offering->where('academic_year_id', (int) $validated['academic_year_id']);
+                }
+                if (isset($validated['semester_id'])) {
+                    $offering->where('semester_id', (int) $validated['semester_id']);
+                }
+            });
+        }
+
+        if (isset($validated['date_from'])) {
+            $query->whereDate('attendance_sessions.session_date', '>=', $validated['date_from']);
+        }
+
+        if (isset($validated['date_to'])) {
+            $query->whereDate('attendance_sessions.session_date', '<=', $validated['date_to']);
+        }
+
+        $sessions = $query
+            ->orderByDesc('attendance_sessions.session_date')
+            ->orderByDesc('attendance_sessions.attendance_session_id')
+            ->paginate((int) ($validated['per_page'] ?? 15));
+
+        $payload = TeachingStaffSessionResource::collection($sessions)
+            ->response($request)
+            ->getData(true);
+
+        return $this->successResponse($payload);
+    }
+
+    private function resolveScopedFacultyMember(User $user, FacultyMember $facultyMember): FacultyMember
+    {
+        $query = FacultyMember::query()
+            ->whereKey($facultyMember->faculty_member_id);
+
+        $this->dataScope->scopeFacultyMembers($query, $user);
+
+        return $query->firstOrFail();
+    }
+
+    private function offeringDisplayRelations(): array
+    {
+        return [
+            'courseOffering.course',
+            'courseOffering.academicYear',
+            'courseOffering.semester',
+            'courseOffering.department',
+            'courseOffering.academicProgram',
+        ];
+    }
+
+    private function assertCanViewAttendanceSessions(Request $request): void
+    {
+        $user = $request->user();
+        if ($user === null || ! $user->hasPermission('attendance.view')) {
+            throw new AccessDeniedHttpException('You are not authorized to view attendance sessions.');
+        }
     }
 
     private function applyTeachingStaffFilters(Builder $query, array $validated, array $collegeIds): void
