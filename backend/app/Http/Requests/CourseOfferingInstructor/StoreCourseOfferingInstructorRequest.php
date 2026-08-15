@@ -18,12 +18,11 @@ class StoreCourseOfferingInstructorRequest extends FormRequest
         return [
             'faculty_member_id' => ['required', 'integer', 'exists:faculty_members,faculty_member_id'],
             'instructor_role' => [
-                'nullable',
+                'required',
                 'string',
-                'max:50',
                 Rule::in(CourseOfferingInstructor::ROLES),
             ],
-            'is_primary' => ['sometimes', 'boolean'],
+            'is_primary' => ['prohibited'],
             'is_active' => ['sometimes', 'boolean'],
         ];
     }

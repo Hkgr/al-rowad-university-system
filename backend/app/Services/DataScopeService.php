@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\College;
 use App\Models\CourseOffering;
 use App\Models\FacultyMember;
 use App\Models\Student;
@@ -90,6 +91,7 @@ class DataScopeService
         if ($table === 'course_offerings') return $this->scopeOfferings($query, $user);
         if ($table === 'student_course_registrations') return $this->scopeRegistrations($query, $user);
         if ($table === 'courses') return $this->scopeCourses($query, $user);
+        if ($table === 'faculty_members') return $this->scopeFacultyMembers($query, $user);
         if ($table === 'course_departments') {
             return $query->whereHas('department', fn (Builder $department) => $this->scopeDepartments($department, $user));
         }
@@ -228,6 +230,79 @@ class DataScopeService
         });
     }
 
+    public function scopeFacultyMembers(Builder $query, User $user): Builder
+    {
+        if ($this->bypassesScope($user)) {
+            return $query;
+        }
+
+        $unitIds = $this->accessibleCollegeOrganizationalUnitIds($user);
+        if ($unitIds === []) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->whereHas('employee', function (Builder $employee) use ($unitIds): void {
+            $employee->where(function (Builder $membership) use ($unitIds): void {
+                $membership->whereIn('organizational_unit_id', $unitIds)
+                    ->orWhereHas('employeeUnitAssignments', function (Builder $assignment) use ($unitIds): void {
+                        $assignment->whereIn('organizational_unit_id', $unitIds)
+                            ->where('is_active', true);
+                    });
+            });
+        });
+    }
+
+    public function canAccessFacultyMember(User $user, FacultyMember $facultyMember): bool
+    {
+        return $this->scopeFacultyMembers(FacultyMember::query(), $user)
+            ->whereKey($facultyMember->faculty_member_id)
+            ->exists();
+    }
+
+    public function facultyMemberBelongsToCollege(FacultyMember $facultyMember, College $college): bool
+    {
+        $unitId = $college->organizational_unit_id;
+        if ($unitId === null) {
+            return false;
+        }
+
+        $facultyMember->loadMissing('employee');
+        $employee = $facultyMember->employee;
+        if ($employee === null) {
+            return false;
+        }
+
+        if ($employee->employeeUnitAssignments()
+            ->where('organizational_unit_id', $unitId)
+            ->where('is_active', true)
+            ->exists()) {
+            return true;
+        }
+
+        return $employee->organizational_unit_id !== null
+            && (int) $employee->organizational_unit_id === (int) $unitId;
+    }
+
+    public function accessibleCollegeIds(User $user): array
+    {
+        return $this->scopeColleges(College::query(), $user)
+            ->pluck('college_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    public function accessibleCollegeOrganizationalUnitIds(User $user): array
+    {
+        return College::query()
+            ->whereIn('college_id', $this->accessibleCollegeIds($user))
+            ->whereNotNull('organizational_unit_id')
+            ->pluck('organizational_unit_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
     private function scopeStudentsForStaff(Builder $query, User $user): Builder
     {
         if ($this->bypassesScope($user)) return $query;
@@ -271,7 +346,7 @@ class DataScopeService
             // The schema has no universities table/type. PRES is the approved
             // organizational root representing the institution.
             'university' => OrganizationalUnit::query()->whereKey($id)->where('unit_code', 'PRES')->exists(),
-            'college' => \App\Models\College::query()->whereKey($id)->exists(),
+            'college' => College::query()->whereKey($id)->exists(),
             'department' => Department::query()->whereKey($id)->exists(),
             'program' => AcademicProgram::query()->whereKey($id)->exists(),
             'section' => CourseOffering::query()->whereKey($id)->exists(),

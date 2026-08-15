@@ -1,0 +1,39 @@
+<?php
+
+namespace App\Http\Resources;
+
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+/** @mixin \App\Models\FacultyMember */
+class TeachingStaffResource extends JsonResource
+{
+    public function toArray(Request $request): array
+    {
+        $employee = $this->employee;
+
+        return [
+            'faculty_member_id' => $this->faculty_member_id,
+            'academic_rank' => $this->academic_rank,
+            'specialization' => $this->specialization,
+            'office_location' => $this->office_location,
+            'is_active' => $this->is_active,
+            'employee' => $employee === null ? null : [
+                'employee_id' => $employee->employee_id,
+                'employee_number' => $employee->employee_number,
+                'first_name' => $employee->first_name,
+                'last_name' => $employee->last_name,
+                'phone_number' => $employee->phone_number,
+                'email' => $employee->email,
+            ],
+            'colleges' => $this->when(
+                $this->relationLoaded('colleges'),
+                fn () => $this->colleges->map(fn ($college) => [
+                    'college_id' => $college->college_id,
+                    'college_code' => $college->college_code,
+                    'college_name' => $college->college_name,
+                ])->values()
+            ),
+        ];
+    }
+}

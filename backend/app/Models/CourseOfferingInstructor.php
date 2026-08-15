@@ -8,12 +8,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class CourseOfferingInstructor extends Model
 {
     public const ROLES = [
-        'instructor',
         'theoretical',
         'practical',
-        'lab',
-        'assistant',
-        'co_instructor',
     ];
 
     protected $table = 'course_offering_instructors';
