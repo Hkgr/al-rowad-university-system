@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   FaArrowRight, FaBookOpen, FaCalendarAlt, FaHistory, FaSpinner, FaUser,
 } from 'react-icons/fa'
+import { hasPermission, PERMISSIONS } from '../../auth/auth'
 import { apiRequest } from '../../../services/apiClient'
 import { InfoField, SectionTitle } from '../components/DeanStudentRecordPanels'
 import TeacherActivityTimeline from '../components/TeacherActivityTimeline'
+import TeacherAssignmentManagerModal from '../components/TeacherAssignmentManagerModal'
 import TeacherAssignmentsTab from '../components/TeacherAssignmentsTab'
 import TeacherSessionsTab from '../components/TeacherSessionsTab'
 import {
@@ -98,6 +100,8 @@ export default function DeanTeacherProfile() {
   const [assignmentPage, setAssignmentPage] = useState(1)
   const [sessionType, setSessionType] = useState('')
   const [sessionPage, setSessionPage] = useState(1)
+  const [manager, setManager] = useState(null)
+  const [notice, setNotice] = useState('')
   const assignmentsRef = useRef(emptyListState())
   const sessionsRef = useRef(emptyListState())
   const requestSeqRef = useRef(0)
@@ -121,6 +125,8 @@ export default function DeanTeacherProfile() {
       setAssignmentPage(1)
       setSessionType('')
       setSessionPage(1)
+      setManager(null)
+      setNotice('')
 
       try {
         const response = await apiRequest(`/v1/teaching-staff/${id}`)
@@ -142,10 +148,20 @@ export default function DeanTeacherProfile() {
     return () => { active = false }
   }, [id, navigate])
 
-  async function loadAssignments() {
-    if (assignmentsRef.current.loaded || assignmentsRef.current.loading) return
+  useEffect(() => {
+    if (!notice) return undefined
+    const timer = window.setTimeout(() => setNotice(''), 5000)
+    return () => window.clearTimeout(timer)
+  }, [notice])
+
+  const goToLogin = useCallback(() => {
+    navigate('/login', { replace: true })
+  }, [navigate])
+
+  async function loadAssignments({ force = false } = {}) {
+    if (!force && (assignmentsRef.current.loaded || assignmentsRef.current.loading)) return
     const requestSeq = requestSeqRef.current
-    assignmentsRef.current = { ...assignmentsRef.current, loading: true, error: '' }
+    assignmentsRef.current = { ...emptyListState(), loading: true }
     setAssignments(assignmentsRef.current)
     try {
       const rows = await fetchAllPages(`/v1/teaching-staff/${id}/assignments?status=all`)
@@ -155,7 +171,7 @@ export default function DeanTeacherProfile() {
     } catch (requestError) {
       if (requestSeq !== requestSeqRef.current) return
       if (requestError.status === 401) {
-        navigate('/login', { replace: true })
+        goToLogin()
         return
       }
       assignmentsRef.current = {
@@ -181,7 +197,7 @@ export default function DeanTeacherProfile() {
     } catch (requestError) {
       if (requestSeq !== requestSeqRef.current) return
       if (requestError.status === 401) {
-        navigate('/login', { replace: true })
+        goToLogin()
         return
       }
       sessionsRef.current = {
@@ -191,6 +207,24 @@ export default function DeanTeacherProfile() {
         rows: [],
       }
       setSessions(sessionsRef.current)
+    }
+  }
+
+  async function refreshAfterAssignmentSave() {
+    const requestSeq = requestSeqRef.current
+    setManager(null)
+    setNotice('تم تحديث التكليف التدريسي بنجاح.')
+    setAssignmentStatus('active')
+    try {
+      const response = await apiRequest(`/v1/teaching-staff/${id}`)
+      if (requestSeq !== requestSeqRef.current) return
+      setProfile(response?.data ?? null)
+      await loadAssignments({ force: true })
+    } catch (requestError) {
+      if (requestSeq !== requestSeqRef.current) return
+      if (requestError.status === 401) {
+        goToLogin()
+      }
     }
   }
 
@@ -249,6 +283,7 @@ export default function DeanTeacherProfile() {
   )
 
   const goBack = () => navigate('/dean/teachers')
+  const canManage = hasPermission(PERMISSIONS.teachingStaffManage)
 
   if (loading) {
     return (
@@ -285,6 +320,12 @@ export default function DeanTeacherProfile() {
           <span>رجوع إلى المدرسين</span>
         </button>
       </div>
+
+      {notice && (
+        <div className="mb-4 bg-green-500/8 border border-green-500/25 rounded-[12px] px-[18px] py-3 text-[13.5px] text-green-700 font-semibold">
+          {notice}
+        </div>
+      )}
 
       <motion.div
         className="bg-white border border-primary/12 rounded-[18px] px-6 py-5 mb-5 shadow-[0_2px_16px_rgba(26,46,16,0.06)]"
@@ -395,6 +436,9 @@ export default function DeanTeacherProfile() {
                 setAssignmentRole('')
                 setAssignmentPage(1)
               }}
+              canManage={canManage}
+              onAddAssignment={() => setManager({ mode: 'add' })}
+              onManageOffering={group => setManager({ mode: 'manage', offeringId: group.course_offering_id })}
             />
           )}
 
@@ -435,6 +479,17 @@ export default function DeanTeacherProfile() {
           )}
         </div>
       </div>
+
+      {manager && (
+        <TeacherAssignmentManagerModal
+          mode={manager.mode}
+          profileTeacher={profile}
+          offeringId={manager.offeringId}
+          onClose={() => setManager(null)}
+          onSaved={refreshAfterAssignmentSave}
+          onUnauthorized={goToLogin}
+        />
+      )}
     </div>
   )
 }

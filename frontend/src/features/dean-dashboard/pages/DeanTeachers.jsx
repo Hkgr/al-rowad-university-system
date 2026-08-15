@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { FaChalkboardTeacher, FaEye, FaPhone } from 'react-icons/fa'
 import DataTable from '../../../components/table/DataTable'
 import FilterBar from '../../../components/table/FilterBar'
+import { hasPermission, PERMISSIONS } from '../../auth/auth'
 import { apiRequest } from '../../../services/apiClient'
 import {
   ASSIGNMENT_TYPE_OPTIONS,
@@ -370,6 +371,11 @@ export default function DeanTeachers() {
                 ? `عدد المدرسين: ${filteredTeachers.length} من أصل ${allTeachers.length}`
                 : `عدد المدرسين: ${allTeachers.length}`}
           </p>
+          {hasPermission(PERMISSIONS.teachingStaffManage) && (
+            <p className="text-[12px] text-primary-dark mt-1 font-semibold">
+              يمكن إدارة التكليفات التدريسية من ملف المدرس
+            </p>
+          )}
         </div>
       </div>
 

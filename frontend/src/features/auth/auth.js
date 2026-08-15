@@ -9,6 +9,8 @@ export const PERMISSIONS = Object.freeze({
   academicStructureManage: 'academic_structure.manage',
   studentsView: 'students.view',
   hrView: 'hr.view',
+  teachingStaffManage: 'teaching_staff.manage',
+  teachingStaffView: 'teaching_staff.view',
   systemSettingsView: 'system_settings.view',
 })
 

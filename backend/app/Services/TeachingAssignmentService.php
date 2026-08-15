@@ -9,6 +9,8 @@ use App\Models\CourseOffering;
 use App\Models\CourseOfferingInstructor;
 use App\Models\FacultyMember;
 use App\Models\User;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
@@ -168,6 +170,261 @@ class TeachingAssignmentService
                     $slot->update(['is_primary' => $expected]);
                 }
             });
+    }
+
+    public function syncOfferingAssignmentSlots(
+        User $user,
+        CourseOffering $courseOffering,
+        ?int $theoreticalFacultyMemberId,
+        ?int $practicalFacultyMemberId
+    ): CourseOffering {
+        return DB::transaction(function () use (
+            $user,
+            $courseOffering,
+            $theoreticalFacultyMemberId,
+            $practicalFacultyMemberId
+        ): CourseOffering {
+            $offering = CourseOffering::query()
+                ->whereKey($courseOffering->course_offering_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $offering->loadMissing('course');
+            $this->assertCanManageAssignments($user, $offering);
+            $this->assertOfferingInAccessibleColleges($user, $offering);
+
+            $course = $offering->course;
+            if ($course === null) {
+                throw ValidationException::withMessages([
+                    'course_offering' => ['The course offering course cannot be resolved.'],
+                ]);
+            }
+
+            $theoreticalAvailable = (int) $course->theoretical_hours > 0;
+            $practicalAvailable = (int) $course->practical_hours > 0;
+
+            if (! $theoreticalAvailable && $theoreticalFacultyMemberId !== null) {
+                throw ValidationException::withMessages([
+                    'theoretical_faculty_member_id' => ['هذا المقرر لا يحتوي على شق نظري'],
+                ]);
+            }
+
+            if (! $practicalAvailable && $practicalFacultyMemberId !== null) {
+                throw ValidationException::withMessages([
+                    'practical_faculty_member_id' => ['هذا المقرر لا يحتوي على شق عملي'],
+                ]);
+            }
+
+            $slots = CourseOfferingInstructor::query()
+                ->where('course_offering_id', $offering->course_offering_id)
+                ->lockForUpdate()
+                ->get()
+                ->keyBy(fn (CourseOfferingInstructor $slot): string => (string) $slot->instructor_role);
+
+            if ($theoreticalAvailable) {
+                $this->assignOrDeactivateSlot(
+                    $offering,
+                    $course,
+                    $slots,
+                    'theoretical',
+                    $theoreticalFacultyMemberId,
+                    'theoretical_faculty_member_id'
+                );
+            }
+
+            if ($practicalAvailable) {
+                $this->assignOrDeactivateSlot(
+                    $offering,
+                    $course,
+                    $slots,
+                    'practical',
+                    $practicalFacultyMemberId,
+                    'practical_faculty_member_id'
+                );
+            }
+
+            $activeFacultyIds = CourseOfferingInstructor::query()
+                ->where('course_offering_id', $offering->course_offering_id)
+                ->where('is_active', true)
+                ->pluck('faculty_member_id')
+                ->filter()
+                ->unique()
+                ->map(fn ($id): int => (int) $id);
+
+            foreach ($activeFacultyIds as $facultyMemberId) {
+                $this->ensureGenericCourseInstructor((int) $offering->course_id, $facultyMemberId);
+            }
+
+            $this->normalizePrimaryFlags($offering);
+            $this->syncLegacyFacultyPointer($offering);
+
+            return $offering->fresh([
+                'course',
+                'academicYear',
+                'semester',
+                'department',
+                'academicProgram',
+                'offeringInstructors.facultyMember.employee',
+            ]);
+        });
+    }
+
+    public function offeringsInAccessibleCollegesQuery(array $collegeIds)
+    {
+        $query = DB::table('course_offerings as accessible_offerings')
+            ->leftJoin(
+                'departments as offering_departments',
+                'offering_departments.department_id',
+                '=',
+                'accessible_offerings.department_id'
+            )
+            ->leftJoin(
+                'academic_programs as offering_programs',
+                'offering_programs.academic_program_id',
+                '=',
+                'accessible_offerings.academic_program_id'
+            )
+            ->leftJoin(
+                'departments as program_departments',
+                'program_departments.department_id',
+                '=',
+                'offering_programs.department_id'
+            )
+            ->select('accessible_offerings.course_offering_id');
+
+        if ($collegeIds === []) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->whereIn(
+            DB::raw('CASE
+                WHEN offering_departments.college_id IS NOT NULL
+                 AND program_departments.college_id IS NOT NULL
+                 AND offering_departments.college_id <> program_departments.college_id THEN NULL
+                ELSE COALESCE(offering_departments.college_id, program_departments.college_id)
+            END'),
+            $collegeIds
+        );
+    }
+
+    public function accessibleCollegeIdList(User $user): array
+    {
+        return array_values(array_unique(array_map(
+            static fn ($id): int => (int) $id,
+            $this->dataScope->accessibleCollegeIds($user)
+        )));
+    }
+
+    private function assignOrDeactivateSlot(
+        CourseOffering $offering,
+        Course $course,
+        Collection $slots,
+        string $role,
+        ?int $desiredFacultyMemberId,
+        string $attribute
+    ): void {
+        $slot = $slots->get($role);
+        $currentActiveId = ($slot !== null && $slot->is_active)
+            ? (int) $slot->faculty_member_id
+            : null;
+        $desiredId = $desiredFacultyMemberId === null ? null : (int) $desiredFacultyMemberId;
+
+        if ($desiredId === null) {
+            $this->deactivateSlot($slot);
+
+            return;
+        }
+
+        if ($currentActiveId === $desiredId) {
+            return;
+        }
+
+        $facultyMember = FacultyMember::query()
+            ->with('employee.employeeStatus')
+            ->find($desiredId);
+
+        if ($facultyMember === null) {
+            throw ValidationException::withMessages([
+                $attribute => ['The selected faculty member is invalid.'],
+            ]);
+        }
+
+        try {
+            $this->assertValidAssignment($offering, $facultyMember, $role);
+        } catch (ValidationException $exception) {
+            throw ValidationException::withMessages([
+                $attribute => collect($exception->errors())->flatten()->all(),
+            ]);
+        }
+
+        $this->assignSlot($offering, $course, $slots, $role, $facultyMember);
+    }
+
+    private function assignSlot(
+        CourseOffering $offering,
+        Course $course,
+        Collection $slots,
+        string $role,
+        FacultyMember $facultyMember
+    ): void {
+        $slot = $slots->get($role);
+        $isPrimary = $this->deriveIsPrimary($course, $role);
+        $facultyMemberId = (int) $facultyMember->faculty_member_id;
+
+        if ($slot === null) {
+            $created = new CourseOfferingInstructor([
+                'course_offering_id' => $offering->course_offering_id,
+                'faculty_member_id' => $facultyMemberId,
+                'instructor_role' => $role,
+                'is_primary' => $isPrimary,
+                'is_active' => true,
+            ]);
+            $created->save();
+            $slots->put($role, $created);
+
+            return;
+        }
+
+        $dirty = false;
+        if ((int) $slot->faculty_member_id !== $facultyMemberId) {
+            $slot->faculty_member_id = $facultyMemberId;
+            $dirty = true;
+        }
+        if (! $slot->is_active) {
+            $slot->is_active = true;
+            $dirty = true;
+        }
+        if ((bool) $slot->is_primary !== $isPrimary) {
+            $slot->is_primary = $isPrimary;
+            $dirty = true;
+        }
+
+        if ($dirty) {
+            $slot->save();
+        }
+    }
+
+    private function deactivateSlot(?CourseOfferingInstructor $slot): void
+    {
+        if ($slot === null || ! $slot->is_active) {
+            return;
+        }
+
+        $slot->is_active = false;
+        $slot->save();
+    }
+
+    private function assertOfferingInAccessibleColleges(User $user, CourseOffering $offering): void
+    {
+        $collegeIds = $this->accessibleCollegeIdList($user);
+        $allowed = CourseOffering::query()
+            ->whereKey($offering->course_offering_id)
+            ->whereIn('course_offering_id', $this->offeringsInAccessibleCollegesQuery($collegeIds))
+            ->exists();
+
+        if (! $allowed) {
+            throw new AccessDeniedHttpException('You are not authorized to access this course offering.');
+        }
     }
 
     private function primaryRoleForCourse(?Course $course): ?string
