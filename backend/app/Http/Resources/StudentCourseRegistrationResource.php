@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Services\AcademicAuthorizationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -10,6 +11,8 @@ class StudentCourseRegistrationResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $exposeResult = $this->shouldExposeCourseResult($request);
+
         return [
             'student_course_registration_id' => $this->student_course_registration_id,
             'student_id' => $this->student_id,
@@ -28,9 +31,26 @@ class StudentCourseRegistrationResource extends JsonResource
             'course_offering' => CourseOfferingResource::make($this->whenLoaded('courseOffering')),
             'registration_status' => RegistrationStatusResource::make($this->whenLoaded('registrationStatus')),
             'result_status' => ResultStatusResource::make($this->whenLoaded('resultStatus')),
-            'student_course_result' => StudentCourseResultResource::make($this->whenLoaded('studentCourseResult')),
+            'student_course_result' => $this->when(
+                $exposeResult,
+                fn () => StudentCourseResultResource::make($this->studentCourseResult)
+            ),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];
+    }
+
+    private function shouldExposeCourseResult(Request $request): bool
+    {
+        if (! $this->relationLoaded('studentCourseResult') || $this->studentCourseResult === null) {
+            return false;
+        }
+
+        $user = $request->user();
+        if ($user === null) {
+            return false;
+        }
+
+        return app(AcademicAuthorizationService::class)->canExposeStudentCourseResult($user, $this->resource);
     }
 }

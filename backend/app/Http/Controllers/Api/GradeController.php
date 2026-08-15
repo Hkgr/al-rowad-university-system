@@ -24,7 +24,9 @@ class GradeController extends Controller
 
     public function show(int $id, GradeService $service, AcademicAuthorizationService $authorization): JsonResponse
     {
-        $authorization->assertCanViewGrades(request()->user(), StudentCourseRegistration::query()->findOrFail($id));
+        $registration = StudentCourseRegistration::query()->findOrFail($id);
+        $authorization->assertCanViewGrades(request()->user(), $registration);
+
         return $this->successResponse($service->getRegistrationGrades($id));
     }
 

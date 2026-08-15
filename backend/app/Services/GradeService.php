@@ -471,11 +471,7 @@ class GradeService
             || ($requiresPractical && $practical < (float) $policy->minimum_practical_mark)
             || $finalMark < (float) $policy->minimum_final_mark;
         $status = ($existingStatusCode === 'deprived' || $isDeprived) ? 'deprived' : ($failed ? 'failed' : 'passed');
-        $letterGrade = $status === 'deprived' ? 'Z' : ($failed ? 'F' : match (true) {
-            $finalMark >= 98 => 'A+', $finalMark >= 95 => 'A', $finalMark >= 90 => 'A-', $finalMark >= 85 => 'B+',
-            $finalMark >= 80 => 'B', $finalMark >= 75 => 'B-', $finalMark >= 70 => 'C+', $finalMark >= 65 => 'C',
-            $finalMark >= 60 => 'C-', $finalMark >= 55 => 'D+', default => 'D',
-        });
+        $letterGrade = $status === 'deprived' ? 'Z' : ($failed ? 'F' : $this->letterGradeFromFinalMark($finalMark));
 
         return ['theoretical_mark' => $theoretical, 'practical_mark' => $practical, 'final_mark' => $finalMark,
             'result_status_code' => $status, 'letter_grade' => $letterGrade,
@@ -718,7 +714,13 @@ class GradeService
         $theoretical = $result?->theoretical_total !== null ? (float) $result->theoretical_total : null;
         $practical = $result?->practical_total !== null ? (float) $result->practical_total : null;
         $finalMark = $result?->final_mark !== null ? (float) $result->final_mark : null;
-        $letterGrade = $this->officialLetterGrade($finalMark, $statusCode);
+        $letterGrade = $this->letterGradeFromOfficialResult(
+            $theoretical,
+            $practical,
+            $finalMark,
+            $statusCode,
+            $visibility
+        );
         $loadedStatus = $result?->resultStatus;
 
         return [
@@ -968,27 +970,35 @@ class GradeService
             );
     }
 
-    private function isOfficiallyVisibleAttempt(StudentCourseRegistration $registration): bool
+    public function isOfficiallyApprovedOffering(?CourseOffering $offering): bool
     {
-        $offering = $registration->courseOffering;
-        if ($offering === null || $registration->studentCourseResult === null) {
+        if ($offering === null || $offering->course_offering_id === null) {
             return false;
         }
 
-        $approvals = $offering->relationLoaded('gradeApprovals')
-            ? $offering->gradeApprovals
-            : $offering->gradeApprovals()->with('approvalStatus')->get();
-
-        if ($approvals->count() === 0) {
-            return false;
+        if ($offering->relationLoaded('gradeApprovals')) {
+            return $this->latestApprovalIsApproved($offering->gradeApprovals);
         }
 
-        $latest = $approvals
-            ->sortByDesc(fn (GradeApproval $approval): int => (int) $approval->grade_approval_id)
-            ->first();
-        $latest?->loadMissing('approvalStatus');
+        return CourseOffering::query()
+            ->whereKey($offering->course_offering_id)
+            ->whereIn('course_offering_id', function ($subquery): void {
+                $this->constrainAuthoritativeApprovedGradeApproval($subquery);
+            })
+            ->exists();
+    }
 
-        return $latest?->approvalStatus?->status_code === 'approved';
+    public function scopeOfficialApprovedResults(Builder $query, ?int $studentId = null): Builder
+    {
+        return $query->whereHas('studentCourseRegistration', function (Builder $registration) use ($studentId): void {
+            if ($studentId !== null) {
+                $registration->where('student_id', $studentId);
+            }
+
+            $registration->whereIn('course_offering_id', function ($subquery): void {
+                $this->constrainAuthoritativeApprovedGradeApproval($subquery);
+            });
+        });
     }
 
     private function officialComponentVisibility(?CourseOffering $offering): array
@@ -1022,35 +1032,48 @@ class GradeService
         return ['theoretical' => true, 'practical' => true];
     }
 
-    private function officialLetterGrade(?float $finalMark, string $statusCode): string
+    private function letterGradeFromOfficialResult(
+        ?float $theoretical,
+        ?float $practical,
+        ?float $finalMark,
+        string $statusCode,
+        array $visibility
+    ): string {
+        $policy = $this->defaultGradingPolicy();
+        $theoreticalForPolicy = $visibility['theoretical']
+            ? $theoretical
+            : ($theoretical ?? (float) $policy->minimum_theoretical_mark);
+        $practicalForPolicy = $visibility['practical']
+            ? $practical
+            : ($practical ?? (float) $policy->minimum_practical_mark);
+
+        return $this->resolveLetterGrade(
+            $finalMark,
+            $statusCode,
+            $theoreticalForPolicy,
+            $practicalForPolicy,
+            $policy
+        );
+    }
+
+    private function isOfficiallyVisibleAttempt(StudentCourseRegistration $registration): bool
     {
-        if ($statusCode === 'deprived') {
-            return 'Z';
-        }
-        if ($statusCode === 'withdrawn') {
-            return 'W';
-        }
-        if ($statusCode === 'incomplete') {
-            return 'I';
-        }
-        if ($statusCode === 'failed' || $finalMark === null) {
-            return 'F';
+        return $registration->studentCourseResult !== null
+            && $this->isOfficiallyApprovedOffering($registration->courseOffering);
+    }
+
+    private function latestApprovalIsApproved(Collection $approvals): bool
+    {
+        if ($approvals->isEmpty()) {
+            return false;
         }
 
-        return match (true) {
-            $finalMark >= 98 => 'A+',
-            $finalMark >= 95 => 'A',
-            $finalMark >= 90 => 'A-',
-            $finalMark >= 85 => 'B+',
-            $finalMark >= 80 => 'B',
-            $finalMark >= 75 => 'B-',
-            $finalMark >= 70 => 'C+',
-            $finalMark >= 65 => 'C',
-            $finalMark >= 60 => 'C-',
-            $finalMark >= 55 => 'D+',
-            $finalMark >= 50 => 'D',
-            default => 'F',
-        };
+        $latest = $approvals
+            ->sortByDesc(fn (GradeApproval $approval): int => (int) $approval->grade_approval_id)
+            ->first();
+        $latest?->loadMissing('approvalStatus');
+
+        return $latest?->approvalStatus?->status_code === 'approved';
     }
 
     private function summarizeGpaCollection(Collection $registrations): array
@@ -1298,6 +1321,11 @@ class GradeService
             return 'F';
         }
 
+        return $this->letterGradeFromFinalMark($finalMark);
+    }
+
+    private function letterGradeFromFinalMark(float $finalMark): string
+    {
         return match (true) {
             $finalMark >= 98 => 'A+',
             $finalMark >= 95 => 'A',
