@@ -1,0 +1,20 @@
+{
+  "name": "Al Rowad University System",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "user": "ubuntu",
+  "install": "bash ./.cursor/scripts/install.sh",
+  "start": "bash ./.cursor/scripts/start.sh",
+  "terminals": [
+    {
+      "name": "backend-api",
+      "command": "cd backend && php artisan serve --host=127.0.0.1 --port=8000"
+    },
+    {
+      "name": "frontend-vite",
+      "command": "cd frontend && npm run dev -- --host 127.0.0.1 --port 5173 --strictPort"
+    }
+  ],
+  "ports": [8000, 5173]
+}
