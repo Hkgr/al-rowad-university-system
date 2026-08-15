@@ -444,6 +444,134 @@ class GradeService
         );
     }
 
+    public function getGpaOverview(Student $student): array
+    {
+        $student->load(['currentAcademicLevel', 'academicProgram.department.college']);
+
+        $registrations = $this->officialAcademicAttempts($student)
+            ->get()
+            ->filter(fn (StudentCourseRegistration $registration): bool => $this->isOfficiallyVisibleAttempt($registration))
+            ->values();
+
+        $termGroups = $registrations
+            ->groupBy(function (StudentCourseRegistration $registration): string {
+                $offering = $registration->courseOffering;
+
+                return ($offering?->academic_year_id ?? 'none').'-'.($offering?->semester_id ?? 'none');
+            })
+            ->map(function (Collection $termRegistrations): array {
+                $first = $termRegistrations->first();
+                $year = $first?->courseOffering?->academicYear;
+                $semester = $first?->courseOffering?->semester;
+                $summary = $this->summarizeGpaCollection($termRegistrations);
+
+                return [
+                    'academic_year_id' => $year?->academic_year_id,
+                    'year_name' => $year?->year_name,
+                    'semester_id' => $semester?->semester_id,
+                    'semester_code' => $semester?->semester_code,
+                    'semester_name' => $semester?->semester_name,
+                    'semester_order' => $semester?->semester_order,
+                    'term_gpa' => $summary['gpa'],
+                    'included_credit_hours' => $summary['included_credit_hours'],
+                    'included_courses_count' => $summary['included_courses_count'],
+                    'courses' => $this->gpaEligibleCourseRows($termRegistrations),
+                    'registrations' => $termRegistrations,
+                    '_sort' => $this->officialTermChronologyKey($year, $semester),
+                ];
+            })
+            ->sortBy('_sort')
+            ->values();
+
+        $attemptsThroughTerm = collect();
+        $timeline = [];
+        $years = [];
+
+        foreach ($termGroups as $term) {
+            $attemptsThroughTerm = $attemptsThroughTerm->concat($term['registrations']);
+            $cumulative = $this->summarizeGpaCollection($this->selectBestAttempts($attemptsThroughTerm));
+            $yearKey = $term['academic_year_id'] ?? 'none';
+
+            if (! isset($years[$yearKey])) {
+                $years[$yearKey] = [
+                    'academic_year_id' => $term['academic_year_id'],
+                    'year_name' => $term['year_name'],
+                    'semesters' => [],
+                    '_registrations' => collect(),
+                    '_sort' => $term['_sort'],
+                ];
+            }
+
+            $years[$yearKey]['_registrations'] = $years[$yearKey]['_registrations']->concat($term['registrations']);
+            $years[$yearKey]['semesters'][] = [
+                'semester_id' => $term['semester_id'],
+                'semester_code' => $term['semester_code'],
+                'semester_name' => $term['semester_name'],
+                'semester_order' => $term['semester_order'],
+                'term_gpa' => $term['term_gpa'],
+                'cumulative_gpa_after_term' => $cumulative['gpa'],
+                'included_credit_hours' => $term['included_credit_hours'],
+                'included_courses_count' => $term['included_courses_count'],
+                'courses' => $term['courses'],
+            ];
+
+            $timeline[] = [
+                'academic_year_id' => $term['academic_year_id'],
+                'year_name' => $term['year_name'],
+                'semester_id' => $term['semester_id'],
+                'semester_code' => $term['semester_code'],
+                'semester_name' => $term['semester_name'],
+                'semester_order' => $term['semester_order'],
+                'label' => trim(($term['year_name'] ?? '').' · '.($term['semester_name'] ?? ''), ' ·'),
+                'term_gpa' => $term['term_gpa'],
+                'cumulative_gpa' => $cumulative['gpa'],
+                'included_credit_hours' => $term['included_credit_hours'],
+                'included_courses_count' => $term['included_courses_count'],
+            ];
+        }
+
+        $yearPayload = collect($years)
+            ->sortBy('_sort')
+            ->map(function (array $year): array {
+                $summary = $this->summarizeGpaCollection($year['_registrations']);
+
+                return [
+                    'academic_year_id' => $year['academic_year_id'],
+                    'year_name' => $year['year_name'],
+                    'year_gpa' => $summary['gpa'],
+                    'included_credit_hours' => $summary['included_credit_hours'],
+                    'semesters' => $year['semesters'],
+                ];
+            })
+            ->values()
+            ->all();
+
+        $cgpaEvaluation = $this->summarizeGpaCollection($this->selectBestAttempts($registrations));
+        $termPoints = collect($timeline)->filter(fn (array $point): bool => $point['term_gpa'] !== null);
+        $highest = $termPoints->sortByDesc('term_gpa')->first();
+        $lowest = $termPoints->sortBy('term_gpa')->first();
+
+        return [
+            'student' => $this->officialStudentIdentity($student),
+            'scale' => [
+                'maximum' => 4.0,
+            ],
+            'summary' => [
+                'cgpa' => $cgpaEvaluation['gpa'],
+                'total_included_credit_hours' => $cgpaEvaluation['included_credit_hours'],
+                'approved_courses_count' => $registrations->count(),
+                'completed_terms_count' => $termPoints->count(),
+                'highest_term_gpa' => is_array($highest) ? $highest['term_gpa'] : null,
+                'lowest_term_gpa' => is_array($lowest) ? $lowest['term_gpa'] : null,
+                'highest_term' => $this->compactGpaTermHighlight($highest),
+                'lowest_term' => $this->compactGpaTermHighlight($lowest),
+                'repeated_courses_handling' => 'highest_attempt_only',
+            ],
+            'years' => $yearPayload,
+            'timeline' => $timeline,
+        ];
+    }
+
     public function assertRequiredPartsPolicyCompatible(bool $requiresTheoretical, bool $requiresPractical, float $theoreticalMax, float $practicalMax): GradingPolicy
     {
         $policy = $this->defaultGradingPolicy();
@@ -1080,6 +1208,7 @@ class GradeService
     {
         $totalWeightedPoints = 0.0;
         $totalCreditHours = 0;
+        $includedCoursesCount = 0;
 
         foreach ($registrations as $registration) {
             $evaluation = $this->evaluateGpaCourse($registration);
@@ -1089,11 +1218,13 @@ class GradeService
 
             $totalWeightedPoints += $evaluation['grade_points'] * $evaluation['credit_hours'];
             $totalCreditHours += $evaluation['credit_hours'];
+            $includedCoursesCount++;
         }
 
         return [
             'gpa' => $totalCreditHours > 0 ? round($totalWeightedPoints / $totalCreditHours, 2) : null,
             'included_credit_hours' => $totalCreditHours,
+            'included_courses_count' => $includedCoursesCount,
         ];
     }
 
@@ -1441,6 +1572,54 @@ class GradeService
         return [
             'status_code' => $statusCode,
             'status_name' => $statusName,
+        ];
+    }
+
+    private function gpaEligibleCourseRows(Collection $registrations): array
+    {
+        $rows = [];
+
+        foreach ($registrations as $registration) {
+            $evaluation = $this->evaluateGpaCourse($registration);
+            if (! $evaluation['included']) {
+                continue;
+            }
+
+            $course = $evaluation['course'];
+            $rows[] = [
+                'registration_id' => $course['registration_id'] ?? $registration->student_course_registration_id,
+                'course_id' => $course['course_id'] ?? null,
+                'course_code' => $course['course_code'] ?? null,
+                'course_name' => $course['course_name'] ?? null,
+                'credit_hours' => $course['credit_hours'] ?? 0,
+                'final_mark' => $course['final_mark'] ?? null,
+                'letter_grade' => $course['letter_grade'] ?? null,
+                'grade_points' => $course['grade_points'] ?? $evaluation['grade_points'],
+            ];
+        }
+
+        return $rows;
+    }
+
+    private function officialTermChronologyKey($year, $semester): string
+    {
+        return ($year?->start_date?->format('Y-m-d') ?? '9999-99-99')
+            .'-'.str_pad((string) ($semester?->semester_order ?? 9999), 4, '0', STR_PAD_LEFT);
+    }
+
+    private function compactGpaTermHighlight(?array $point): ?array
+    {
+        if ($point === null) {
+            return null;
+        }
+
+        return [
+            'academic_year_id' => $point['academic_year_id'] ?? null,
+            'year_name' => $point['year_name'] ?? null,
+            'semester_id' => $point['semester_id'] ?? null,
+            'semester_name' => $point['semester_name'] ?? null,
+            'term_gpa' => $point['term_gpa'] ?? null,
+            'label' => $point['label'] ?? null,
         ];
     }
 }

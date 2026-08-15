@@ -1,165 +1,345 @@
-import { useState, useEffect } from 'react'
-import { FaSpinner } from 'react-icons/fa'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { FaChartLine, FaGraduationCap } from 'react-icons/fa'
+import { apiRequest } from '../../../services/apiClient'
+import GpaTrendChart from '../components/GpaTrendChart'
 
-const API = 'https://rust.alrowaduni.edu.sy/api/v1'
-
-function authHeaders() {
-  return { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }
+function formatGpa(value) {
+  if (value === null || value === undefined || value === '') return '—'
+  const number = Number(value)
+  if (!Number.isFinite(number)) return '—'
+  return number.toFixed(2)
 }
 
-function getStudentId() {
-  return JSON.parse(localStorage.getItem('user') || '{}').student_id
+function formatMark(value) {
+  if (value === null || value === undefined || value === '') return '—'
+  const number = Number(value)
+  if (!Number.isFinite(number)) return '—'
+  return String(parseFloat(number.toFixed(2)))
+}
+
+function roundDiff(value) {
+  return Math.round(Math.abs(Number(value)) * 100) / 100
+}
+
+function SkeletonBlock({ className }) {
+  return <div className={`animate-pulse rounded-[12px] bg-primary/10 ${className}`} />
+}
+
+function GpaSkeleton() {
+  return (
+    <div className="space-y-5" dir="rtl" aria-busy="true" aria-live="polite">
+      <div className="grid grid-cols-2 max-[640px]:grid-cols-1 gap-3">
+        <SkeletonBlock className="h-16" />
+        <SkeletonBlock className="h-16" />
+      </div>
+      <div className="grid grid-cols-4 max-[800px]:grid-cols-2 gap-3">
+        <SkeletonBlock className="h-24" />
+        <SkeletonBlock className="h-24" />
+        <SkeletonBlock className="h-24" />
+        <SkeletonBlock className="h-24" />
+      </div>
+      <SkeletonBlock className="h-72" />
+    </div>
+  )
+}
+
+function MetricCard({ label, value, hint }) {
+  return (
+    <article className="bg-white border border-primary/12 rounded-[16px] px-4 py-4 shadow-[0_2px_12px_rgba(26,46,16,0.05)]">
+      <p className="text-[12px] font-bold text-text-light mb-2">{label}</p>
+      <p className="text-[28px] font-black text-text-dark leading-none tabular-nums">{value}</p>
+      {hint ? <p className="mt-2 text-[11.5px] text-text-light leading-6">{hint}</p> : null}
+    </article>
+  )
+}
+
+function EmptyGpaState() {
+  return (
+    <section className="bg-white border border-primary/12 rounded-[18px] px-6 py-16 text-center shadow-[0_2px_12px_rgba(26,46,16,0.05)]" dir="rtl">
+      <FaGraduationCap className="mx-auto text-[40px] text-primary/25 mb-4" aria-hidden="true" />
+      <h3 className="text-[17px] font-black text-text-dark mb-2">لا توجد بيانات معدل معتمدة حتى الآن</h3>
+      <p className="text-[13.5px] text-text-light leading-7 max-w-[460px] mx-auto">
+        سيظهر تطور معدلك هنا بعد اعتماد نتائج المواد رسمياً.
+      </p>
+    </section>
+  )
+}
+
+function insightFromTimeline(timeline) {
+  const scored = timeline.filter(point => point.term_gpa !== null && point.term_gpa !== undefined)
+  if (scored.length < 2) {
+    return {
+      text: 'لا توجد فصول سابقة كافية لقياس اتجاه المعدل.',
+      accessible: 'لا توجد فصول سابقة كافية لقياس اتجاه المعدل.',
+    }
+  }
+
+  const previous = Number(scored[scored.length - 2].term_gpa)
+  const latest = Number(scored[scored.length - 1].term_gpa)
+  const diff = roundDiff(latest - previous)
+
+  if (latest > previous) {
+    return {
+      text: `تحسن معدل الفصل بمقدار ${diff.toFixed(2)} مقارنة بالفصل السابق.`,
+      accessible: `ارتفع معدل الفصل من ${previous.toFixed(2)} إلى ${latest.toFixed(2)} خلال آخر فصلين.`,
+    }
+  }
+  if (latest < previous) {
+    return {
+      text: `انخفض معدل الفصل بمقدار ${diff.toFixed(2)} مقارنة بالفصل السابق.`,
+      accessible: `انخفض معدل الفصل من ${previous.toFixed(2)} إلى ${latest.toFixed(2)} خلال آخر فصلين.`,
+    }
+  }
+  return {
+    text: 'معدل الفصل مستقر مقارنة بالفصل السابق.',
+    accessible: `معدل الفصل مستقر عند ${latest.toFixed(2)} خلال آخر فصلين.`,
+  }
 }
 
 export default function StudentGPA() {
-  const [cgpa,          setCgpa]          = useState(null)
-  const [academicYears, setAcademicYears] = useState([])
-  const [semesters,     setSemesters]     = useState([])
-  const [loading,       setLoading]       = useState(true)
-
-  const [yearId,     setYearId]     = useState('')
-  const [semId,      setSemId]      = useState('')
-  const [termGPA,    setTermGPA]    = useState(null)
-  const [gpaLoading, setGpaLoading] = useState(false)
-  const [gpaError,   setGpaError]   = useState('')
+  const navigate = useNavigate()
+  const [payload, setPayload] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [yearId, setYearId] = useState('')
+  const [semesterId, setSemesterId] = useState('')
 
   useEffect(() => {
-    const id = getStudentId()
-    if (!id) return
-    Promise.all([
-      fetch(`${API}/students/${id}/cgpa`,   { headers: authHeaders() }).then(r => r.json()),
-      fetch(`${API}/academic-years`,        { headers: authHeaders() }).then(r => r.json()),
-      fetch(`${API}/semesters`,             { headers: authHeaders() }).then(r => r.json()),
-    ]).then(([cgpaRes, years, sems]) => {
-      if (cgpaRes.success) setCgpa(cgpaRes.data)
-      setAcademicYears(years.success ? (years.data?.data ?? []) : [])
-      setSemesters(sems.success ? (sems.data?.data ?? []) : [])
-    }).finally(() => setLoading(false))
-  }, [])
+    let active = true
+    ;(async () => {
+      setLoading(true)
+      setError('')
+      try {
+        const response = await apiRequest('/v1/student/gpa-overview')
+        if (!active) return
+        setPayload(response?.data ?? null)
+      } catch (requestError) {
+        if (!active) return
+        if (requestError.status === 401) {
+          navigate('/login', { replace: true })
+          return
+        }
+        setError(
+          requestError.status === 403
+            ? 'ليس لديك صلاحية لعرض بيانات المعدل.'
+            : 'تعذّر تحميل بيانات المعدل. يرجى المحاولة مرة أخرى.',
+        )
+      } finally {
+        if (active) setLoading(false)
+      }
+    })()
+    return () => { active = false }
+  }, [navigate])
 
-  async function calcGPA() {
-    const id = getStudentId()
-    if (!id || !yearId || !semId) return
-    setGpaLoading(true)
-    setGpaError('')
-    setTermGPA(null)
-    try {
-      const res  = await fetch(`${API}/students/${id}/gpa?academic_year_id=${yearId}&semester_id=${semId}`, { headers: authHeaders() })
-      const json = await res.json()
-      if (json.success) setTermGPA(json.data)
-      else setGpaError(json.message || 'فشل احتساب المعدل')
-    } catch { setGpaError('تعذّر الاتصال') }
-    finally { setGpaLoading(false) }
+  const summary = payload?.summary ?? {}
+  const years = payload?.years ?? []
+  const timeline = payload?.timeline ?? []
+  const selectedYear = years.find(year => String(year.academic_year_id) === String(yearId)) ?? null
+  const selectedSemester = selectedYear?.semesters?.find(semester => String(semester.semester_id) === String(semesterId)) ?? null
+  const insight = useMemo(() => insightFromTimeline(timeline), [timeline])
+  const hasGpaData = (summary.cgpa !== null && summary.cgpa !== undefined)
+    || timeline.some(point => point.term_gpa !== null && point.term_gpa !== undefined)
+
+  const period = useMemo(() => {
+    if (selectedSemester) {
+      return {
+        label: 'معدل الفصل',
+        value: selectedSemester.term_gpa,
+        hours: selectedSemester.included_credit_hours,
+        courses: selectedSemester.courses ?? [],
+      }
+    }
+    if (selectedYear) {
+      return {
+        label: 'معدل السنة',
+        value: selectedYear.year_gpa,
+        hours: selectedYear.included_credit_hours,
+        courses: (selectedYear.semesters ?? []).flatMap(semester => semester.courses ?? []),
+      }
+    }
+    return {
+      label: 'المعدل التراكمي الحالي',
+      value: summary.cgpa,
+      hours: summary.total_included_credit_hours,
+      courses: [],
+    }
+  }, [selectedSemester, selectedYear, summary])
+
+  function handleYearChange(value) {
+    setYearId(value)
+    setSemesterId('')
   }
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-24 gap-3 text-primary-light">
-      <FaSpinner className="text-[26px] animate-[spin_0.7s_linear_infinite]" />
-    </div>
-  )
-
-  const cgpaVal   = cgpa?.cgpa ?? null
-  const cgpaColor = cgpaVal === null ? '#569933' : cgpaVal >= 3.7 ? '#16a34a' : cgpaVal >= 3.0 ? '#3b82f6' : cgpaVal >= 2.0 ? '#f59e0b' : '#ef4444'
+  function handleChartSelect(point) {
+    if (point?.academic_year_id == null) return
+    setYearId(String(point.academic_year_id))
+    setSemesterId(point.semester_id != null ? String(point.semester_id) : '')
+  }
 
   return (
-    <>
-      <div className="mb-6" dir="rtl">
+    <div dir="rtl">
+      <div className="mb-6">
         <h2 className="text-[20px] font-black text-text-dark mb-[3px]">المعدل الدراسي</h2>
-        <p className="text-[12.5px] text-text-light">GPA / CGPA</p>
+        <p className="text-[12.5px] text-text-light leading-7">متابعة المعدل الفصلي والتراكمي وتطور الأداء الأكاديمي</p>
       </div>
 
-      {/* CGPA card */}
-      <div className="bg-white border border-primary/12 rounded-[18px] p-6 mb-6 shadow-[0_2px_16px_rgba(26,46,16,0.06)]">
-        <div className="flex items-center gap-2 mb-5 pb-3 border-b border-primary/10" dir="rtl">
-          <h3 className="text-[15px] font-extrabold text-text-dark">المعدل التراكمي</h3>
-          <span className="text-[11px] text-text-light">Cumulative GPA</span>
-        </div>
-        <div className="flex items-center gap-6 flex-wrap" dir="rtl">
-          <div className="text-[64px] font-black leading-none" style={{ color: cgpaColor }}>
-            {cgpaVal !== null ? Number(cgpaVal).toFixed(2) : '—'}
-          </div>
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2 text-[13px]" dir="rtl">
-              <span className="text-text-light">من</span>
-              <span className="font-bold text-text-dark">4.0</span>
-            </div>
-            <div className="flex items-center gap-2 text-[13px]" dir="rtl">
-              <span className="text-text-light">الساعات المحتسبة:</span>
-              <span className="font-bold text-text-dark">{cgpa?.total_included_credit_hours ?? 0}</span>
-            </div>
-            <div className="flex items-center gap-2 text-[13px]" dir="rtl">
-              <span className="text-text-light">المقررات:</span>
-              <span className="font-bold text-text-dark">{cgpa?.included_courses_count ?? 0}</span>
-            </div>
-          </div>
-          {/* Visual bar */}
-          <div className="flex-1 min-w-[160px]">
-            <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-700"
-                style={{ width: `${cgpaVal !== null ? (cgpaVal / 4.0) * 100 : 0}%`, background: cgpaColor }}
-              />
-            </div>
-            <div className="flex justify-between text-[10px] text-text-light mt-1" dir="ltr">
-              <span>0.0</span><span>1.0</span><span>2.0</span><span>3.0</span><span>4.0</span>
-            </div>
-          </div>
-        </div>
-      </div>
+      {loading ? <GpaSkeleton /> : null}
 
-      {/* Term GPA calculator */}
-      <div className="bg-white border border-primary/12 rounded-[18px] p-6 shadow-[0_2px_16px_rgba(26,46,16,0.06)]">
-        <div className="flex items-center gap-2 mb-5 pb-3 border-b border-primary/10" dir="rtl">
-          <h3 className="text-[15px] font-extrabold text-text-dark">معدل الفصل الدراسي</h3>
-          <span className="text-[11px] text-text-light">Term GPA</span>
-        </div>
-        <div className="flex items-end gap-3 flex-wrap" dir="rtl">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[12px] font-bold text-text-dark">العام الدراسي</label>
-            <select
-              className="px-3 py-2 border border-primary/20 rounded-[10px] bg-white text-[13.5px] text-text-dark outline-none focus:border-primary focus:shadow-[0_0_0_3px_rgba(86,153,51,0.1)] min-w-[170px]"
-              value={yearId}
-              onChange={e => { setYearId(e.target.value); setTermGPA(null) }}
-              dir="rtl"
-            >
-              <option value="">اختر العام</option>
-              {academicYears.map(y => <option key={y.academic_year_id} value={y.academic_year_id}>{y.year_name}</option>)}
-            </select>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[12px] font-bold text-text-dark">الفصل الدراسي</label>
-            <select
-              className="px-3 py-2 border border-primary/20 rounded-[10px] bg-white text-[13.5px] text-text-dark outline-none focus:border-primary focus:shadow-[0_0_0_3px_rgba(86,153,51,0.1)] min-w-[170px]"
-              value={semId}
-              onChange={e => { setSemId(e.target.value); setTermGPA(null) }}
-              dir="rtl"
-            >
-              <option value="">اختر الفصل</option>
-              {semesters.map(s => <option key={s.semester_id} value={s.semester_id}>{s.semester_name}</option>)}
-            </select>
-          </div>
-          <button
-            className="flex items-center gap-2 px-5 py-2 bg-primary text-white rounded-[10px] text-[13.5px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-primary-dark transition-colors"
-            disabled={!yearId || !semId || gpaLoading}
-            onClick={calcGPA}
-          >
-            {gpaLoading && <FaSpinner className="animate-spin" />}
-            احتساب
-          </button>
-        </div>
-        {gpaError && <p className="mt-3 text-[12.5px] text-red-600" dir="rtl">⚠ {gpaError}</p>}
-        {termGPA && (
-          <div className="mt-5 flex items-center gap-5 bg-blue-50 border border-blue-500/20 rounded-[14px] px-6 py-4" dir="rtl">
-            <div className="text-[48px] font-black text-blue-600 leading-none">
-              {termGPA.gpa === null || termGPA.gpa === undefined ? '—' : Number(termGPA.gpa).toFixed(2)}
+      {!loading && error ? (
+        <section className="bg-white border border-red-200 rounded-[18px] px-5 py-4 text-[13.5px] text-red-700">
+          {error}
+        </section>
+      ) : null}
+
+      {!loading && !error && !hasGpaData ? <EmptyGpaState /> : null}
+
+      {!loading && !error && hasGpaData ? (
+        <div className="space-y-5">
+          <section className="bg-white border border-primary/12 rounded-[18px] p-4 shadow-[0_2px_12px_rgba(26,46,16,0.05)]">
+            <div className="grid grid-cols-2 max-[640px]:grid-cols-1 gap-3">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[12px] font-bold text-text-dark">السنة الدراسية</span>
+                <select
+                  className="px-3 py-2.5 border border-primary/20 rounded-[10px] bg-white text-[13.5px] text-text-dark outline-none focus:border-primary focus:shadow-[0_0_0_3px_rgba(86,153,51,0.1)]"
+                  value={yearId}
+                  onChange={event => handleYearChange(event.target.value)}
+                >
+                  <option value="">كل السنوات</option>
+                  {years.map(year => (
+                    <option key={year.academic_year_id} value={year.academic_year_id}>{year.year_name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[12px] font-bold text-text-dark">الفصل الدراسي</span>
+                <select
+                  className="px-3 py-2.5 border border-primary/20 rounded-[10px] bg-white text-[13.5px] text-text-dark outline-none focus:border-primary focus:shadow-[0_0_0_3px_rgba(86,153,51,0.1)] disabled:bg-[#f4fbee] disabled:text-text-light"
+                  value={semesterId}
+                  onChange={event => setSemesterId(event.target.value)}
+                  disabled={!selectedYear}
+                >
+                  <option value="">كل الفصول</option>
+                  {(selectedYear?.semesters ?? []).map(semester => (
+                    <option key={semester.semester_id} value={semester.semester_id}>{semester.semester_name}</option>
+                  ))}
+                </select>
+              </label>
             </div>
-            <div>
-              <p className="text-[13px] font-extrabold text-text-dark">معدل الفصل</p>
-              <p className="text-[12px] text-text-light mt-0.5">{termGPA.total_credit_hours} ساعة معتمدة</p>
+          </section>
+
+          <section className="grid grid-cols-4 max-[980px]:grid-cols-2 max-[520px]:grid-cols-1 gap-3">
+            <MetricCard label="المعدل التراكمي" value={formatGpa(summary.cgpa)} hint="من 4.00" />
+            <MetricCard label={period.label} value={formatGpa(period.value)} />
+            <MetricCard label="الساعات المحتسبة" value={period.hours ?? 0} />
+            <MetricCard label="الفصول المكتملة" value={summary.completed_terms_count ?? 0} />
+          </section>
+
+          {summary.highest_term || summary.lowest_term ? (
+            <section className="grid grid-cols-2 max-[640px]:grid-cols-1 gap-3">
+              {summary.highest_term ? (
+                <article className="bg-white border border-primary/12 rounded-[16px] px-4 py-4">
+                  <p className="text-[12px] font-bold text-text-light">أفضل فصل</p>
+                  <p className="mt-1 text-[15px] font-black text-text-dark">{summary.highest_term.label}</p>
+                  <p className="mt-1 text-[13px] text-text-gray">أعلى GPA: <span className="font-black text-text-dark">{formatGpa(summary.highest_term.term_gpa)}</span></p>
+                </article>
+              ) : null}
+              {summary.lowest_term ? (
+                <article className="bg-white border border-primary/12 rounded-[16px] px-4 py-4">
+                  <p className="text-[12px] font-bold text-text-light">أقل فصل</p>
+                  <p className="mt-1 text-[15px] font-black text-text-dark">{summary.lowest_term.label}</p>
+                  <p className="mt-1 text-[13px] text-text-gray">أدنى GPA: <span className="font-black text-text-dark">{formatGpa(summary.lowest_term.term_gpa)}</span></p>
+                </article>
+              ) : null}
+            </section>
+          ) : null}
+
+          <section className="bg-white border border-primary/12 rounded-[18px] p-5 shadow-[0_2px_12px_rgba(26,46,16,0.05)]">
+            <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+              <div className="flex items-center gap-2">
+                <FaChartLine className="text-primary" aria-hidden="true" />
+                <h3 className="text-[15px] font-black text-text-dark">تطور المعدل</h3>
+              </div>
+              <ul className="flex items-center gap-4 text-[12px] text-text-gray">
+                <li className="flex items-center gap-1.5">
+                  <span className="inline-block w-6 border-t-[3px] border-solid border-primary" aria-hidden="true" />
+                  <span>معدل الفصل GPA</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <span className="inline-block w-6 border-t-[3px] border-dashed border-primary-dark" aria-hidden="true" />
+                  <span>المعدل التراكمي CGPA</span>
+                </li>
+              </ul>
             </div>
-          </div>
-        )}
-      </div>
-    </>
+            <GpaTrendChart
+              points={timeline}
+              selectedYearId={yearId}
+              selectedSemesterId={semesterId}
+              onSelectPoint={handleChartSelect}
+            />
+            <p className="mt-4 text-[13px] text-text-dark leading-7">{insight.text}</p>
+            <p className="sr-only">{insight.accessible}</p>
+          </section>
+
+          {yearId ? (
+            <section className="bg-white border border-primary/12 rounded-[18px] overflow-hidden shadow-[0_2px_12px_rgba(26,46,16,0.05)]">
+              <div className="px-5 py-4 border-b border-primary/10">
+                <h3 className="text-[15px] font-black text-text-dark">تفاصيل المواد المحتسبة</h3>
+                <p className="text-[12px] text-text-light mt-1">
+                  {selectedSemester ? selectedSemester.semester_name : selectedYear?.year_name}
+                </p>
+              </div>
+              {period.courses.length === 0 ? (
+                <p className="px-5 py-8 text-[13px] text-text-light">لا توجد مواد محتسبة في هذه الفترة.</p>
+              ) : (
+                <>
+                  <div className="overflow-x-auto hidden min-[701px]:block">
+                    <table className="w-full border-collapse text-[13px]">
+                      <thead>
+                        <tr className="bg-[#fafaf8]">
+                          <th className="px-4 py-2.5 text-right text-[11px] font-bold text-text-light">المقرر</th>
+                          <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">الساعات</th>
+                          <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">العلامة النهائية</th>
+                          <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">التقدير</th>
+                          <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">النقاط</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {period.courses.map(course => (
+                          <tr key={course.registration_id} className="border-t border-primary/8">
+                            <td className="px-4 py-3">
+                              <div className="font-semibold text-text-dark">{course.course_name}</div>
+                              <div className="text-[11px] text-text-light font-mono mt-0.5">{course.course_code}</div>
+                            </td>
+                            <td className="px-3 py-3 text-center font-bold text-text-dark">{course.credit_hours ?? '—'}</td>
+                            <td className="px-3 py-3 text-center font-black text-text-dark">{formatMark(course.final_mark)}</td>
+                            <td className="px-3 py-3 text-center font-black text-primary">{course.letter_grade || '—'}</td>
+                            <td className="px-3 py-3 text-center font-bold text-text-dark">{formatGpa(course.grade_points)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="hidden max-[700px]:block divide-y divide-primary/8">
+                    {period.courses.map(course => (
+                      <article key={course.registration_id} className="px-4 py-4">
+                        <h4 className="font-bold text-[14px] text-text-dark">{course.course_name}</h4>
+                        <p className="text-[11.5px] text-text-light font-mono mt-0.5">{course.course_code}</p>
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-[12px]">
+                          <p className="text-text-light">الساعات: <span className="font-bold text-text-dark">{course.credit_hours ?? '—'}</span></p>
+                          <p className="text-text-light">التقدير: <span className="font-black text-primary">{course.letter_grade || '—'}</span></p>
+                          <p className="text-text-light">العلامة: <span className="font-semibold text-text-dark">{formatMark(course.final_mark)}</span></p>
+                          <p className="text-text-light">النقاط: <span className="font-semibold text-text-dark">{formatGpa(course.grade_points)}</span></p>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </>
+              )}
+            </section>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   )
 }
