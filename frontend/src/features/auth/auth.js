@@ -5,6 +5,7 @@ export const PERMISSIONS = Object.freeze({
   registrationManage: 'registration.manage',
   coursesView: 'courses.view',
   coursesManage: 'courses.manage',
+  courseOfferingsManage: 'course_offerings.manage',
   academicStructureView: 'academic_structure.view',
   academicStructureManage: 'academic_structure.manage',
   studentsView: 'students.view',
