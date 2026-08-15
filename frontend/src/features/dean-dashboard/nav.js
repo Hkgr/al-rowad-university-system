@@ -1,5 +1,5 @@
 import {
-  FaBook, FaCalendarAlt, FaChalkboardTeacher, FaChartBar, FaHome, FaLockOpen, FaUsers,
+  FaBook, FaCalendarAlt, FaChalkboardTeacher, FaChartBar, FaClipboardList, FaHome, FaLockOpen, FaUsers,
 } from 'react-icons/fa'
 
 const deanNav = [
@@ -16,6 +16,7 @@ const deanNav = [
       { to: '/dean/teachers', Icon: FaChalkboardTeacher, ar: 'المدرسين', en: 'Teachers' },
       { to: '/dean/courses', Icon: FaBook, ar: 'المواد', en: 'Courses' },
       { to: '/dean/registration-offerings', Icon: FaLockOpen, ar: 'فتح المواد للتسجيل', en: 'Registration offerings' },
+      { to: '/dean/registration-requests', Icon: FaClipboardList, ar: 'طلبات تسجيل الطلاب', en: 'Registration requests' },
     ],
   },
   {

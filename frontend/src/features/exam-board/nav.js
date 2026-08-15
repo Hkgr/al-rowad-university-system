@@ -22,6 +22,7 @@ const examBoardNav = [
     items: [
       { to: '/exam-board/course-offerings',     Icon: FaLockOpen, ar: 'فتح المواد',      en: 'Course Offerings',     end: true, ...ACCESS.courseManagement },
       { to: '/exam-board/course-registration', Icon: FaBookOpen, ar: 'تسجيل المواد',    en: 'Course Registration', end: true, ...ACCESS.courseRegistration },
+      { to: '/exam-board/approved-registration-requests', Icon: FaCheckDouble, ar: 'طلبات التسجيل المعتمدة', en: 'Approved requests', end: true, ...ACCESS.courseRegistration },
       { to: '/exam-board/course-table',        Icon: FaTable,    ar: 'جدول المواد',     en: 'Course Table',        end: true, ...ACCESS.courseManagement },
       { to: '/exam-board/courses',             Icon: FaBook,     ar: 'المواد الدراسية', en: 'Courses',             end: true, ...ACCESS.courseManagement },
     ],

@@ -74,6 +74,8 @@ use App\Http\Controllers\Api\StudentSelfRegistrationController;
 use App\Http\Controllers\Api\StudentSelfAttendanceController;
 use App\Http\Controllers\Api\StudentSelfGpaController;
 use App\Http\Controllers\Api\StudentSelfTranscriptController;
+use App\Http\Controllers\Api\AcademicAdvisingRegistrationRequestController;
+use App\Http\Controllers\Api\ApprovedRegistrationRequestController;
 use App\Http\Controllers\Api\StudentAcademicTermController;
 use App\Http\Controllers\Api\StudentCourseRegistrationController;
 use App\Http\Controllers\Api\StudentCourseResultController;
@@ -218,8 +220,21 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('students/{student}/registration-summary', [StudentController::class, 'registrationSummary']);
     Route::middleware(\App\Http\Middleware\RequirePermission::class.':registration.view')->group(function (): void {
         Route::get('student/registration', [StudentSelfRegistrationController::class, 'show']);
-        Route::post('student/registration/course-offerings/{courseOffering}/register', [StudentSelfRegistrationController::class, 'register']);
-        Route::post('student/registration/registrations/{id}/drop', [StudentSelfRegistrationController::class, 'drop']);
+        Route::post('student/registration/request/items/{courseOffering}', [StudentSelfRegistrationController::class, 'addItem']);
+        Route::delete('student/registration/request/items/{requestItem}', [StudentSelfRegistrationController::class, 'removeItem']);
+        Route::patch('student/registration/request', [StudentSelfRegistrationController::class, 'updateRequest']);
+        Route::post('student/registration/request/submit', [StudentSelfRegistrationController::class, 'submit']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':registration_requests.view')->group(function (): void {
+        Route::get('academic-advising/registration-requests', [AcademicAdvisingRegistrationRequestController::class, 'index']);
+        Route::get('academic-advising/registration-requests/{registrationRequest}', [AcademicAdvisingRegistrationRequestController::class, 'show']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':registration_requests.review')->group(function (): void {
+        Route::post('academic-advising/registration-requests/{registrationRequest}/return', [AcademicAdvisingRegistrationRequestController::class, 'returnForModification']);
+        Route::post('academic-advising/registration-requests/{registrationRequest}/approve', [AcademicAdvisingRegistrationRequestController::class, 'approve']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':registration.view')->group(function (): void {
+        Route::get('registration-requests/approved', [ApprovedRegistrationRequestController::class, 'index']);
     });
     Route::middleware(\App\Http\Middleware\RequirePermission::class.':grades.view')->group(function (): void {
         Route::get('student/transcript', [StudentSelfTranscriptController::class, 'show']);

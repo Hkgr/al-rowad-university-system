@@ -98,9 +98,12 @@ class DataScopeService
         if ($table === 'program_courses') {
             return $query->whereHas('academicProgram', fn (Builder $program) => $this->scopePrograms($program, $user));
         }
-        if (in_array($table, ['student_academic_terms', 'student_credit_limits', 'student_documents', 'student_attendance', 'grade_appeals'], true)
+        if (in_array($table, ['student_academic_terms', 'student_credit_limits', 'student_documents', 'student_attendance', 'grade_appeals', 'student_registration_requests'], true)
             && Schema::hasColumn($table, 'student_id')) {
             return $query->whereHas('student', fn (Builder $student) => $this->scopeStudents($student, $user));
+        }
+        if (in_array($table, ['student_registration_request_items', 'student_registration_request_events'], true)) {
+            return $query->whereHas('request', fn (Builder $request) => $this->scopeResourceQuery($request, $user));
         }
         if (in_array($table, ['grade_approvals', 'grade_part_approvals', 'grade_components', 'attendance_sessions'], true)
             && Schema::hasColumn($table, 'course_offering_id')) {
@@ -143,6 +146,11 @@ class DataScopeService
 
         return $this->scopeStudentsForStaff(Student::withTrashed(), $user)
             ->whereKey($student->student_id)->exists();
+    }
+
+    public function scopeStaffStudents(Builder $query, User $user): Builder
+    {
+        return $this->scopeStudentsForStaff($query, $user);
     }
 
     public function canStaffAccessOffering(User $user, CourseOffering $offering): bool
