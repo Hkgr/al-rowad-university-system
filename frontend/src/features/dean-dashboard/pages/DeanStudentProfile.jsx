@@ -3,58 +3,22 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { FaArrowRight, FaSpinner, FaUser } from 'react-icons/fa'
 import { apiRequest } from '../../../services/apiClient'
-
-const YEAR_ORDINALS_AR = ['الأولى', 'الثانية', 'الثالثة', 'الرابعة', 'الخامسة', 'السادسة', 'السابعة']
-
-const STATUS_MAP = {
-  1: { ar: 'يدرس حاليًا', color: '#22c55e', bg: 'rgba(34,197,94,0.1)' },
-  2: { ar: 'منقطع', color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
-  3: { ar: 'خريج', color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
-  4: { ar: 'مسحوب', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
-  5: { ar: 'مفصول', color: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
-  6: { ar: 'موقوف', color: '#f97316', bg: 'rgba(249,115,22,0.1)' },
-}
-
-function arabicYearLabel(order) {
-  if (!order || order < 1) return null
-  const word = YEAR_ORDINALS_AR[order - 1]
-  return word ? `السنة ${word}` : `السنة ${order}`
-}
-
-function formatDate(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('ar-SY', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
-}
-
-function genderLabel(gender) {
-  if (gender === 'male') return 'ذكر'
-  if (gender === 'female') return 'أنثى'
-  return gender || '—'
-}
-
-function academicLevelLabel(level) {
-  if (!level) return null
-  return arabicYearLabel(level.level_order) ?? level.level_name ?? null
-}
-
-function statusPresentation(status) {
-  const mapped = STATUS_MAP[status?.student_status_id]
-  if (mapped) return mapped
-  if (status?.status_name) {
-    return { ar: status.status_name, color: '#64748b', bg: 'rgba(100,116,139,0.1)' }
-  }
-  return null
-}
+import StudentStatusBadge from '../components/StudentStatusBadge'
+import {
+  academicLevelLabel,
+  formatDate,
+  fullStudentName,
+  genderLabel,
+  studentStatusLabel,
+} from '../utils/studentDisplay'
 
 function InfoField({ label, value }) {
+  const display = value === null || value === undefined || value === '' ? '—' : value
+
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1 min-w-0">
       <span className="text-[11px] font-bold text-text-light uppercase tracking-wide">{label}</span>
-      <span className="text-[14px] font-semibold text-text-dark">{value || '—'}</span>
+      <span className="text-[14px] font-semibold text-text-dark break-words">{display}</span>
     </div>
   )
 }
@@ -64,20 +28,6 @@ function SectionTitle({ title }) {
     <div className="mb-4 pb-2.5 border-b border-primary/12">
       <h3 className="text-[15px] font-extrabold text-text-dark">{title}</h3>
     </div>
-  )
-}
-
-function StatusBadge({ status }) {
-  const presentation = statusPresentation(status)
-  if (!presentation) return <span className="text-[12px] text-text-light">—</span>
-
-  return (
-    <span
-      className="inline-flex items-center px-3 py-0.5 rounded-full text-[12px] font-bold whitespace-nowrap"
-      style={{ color: presentation.color, background: presentation.bg }}
-    >
-      {presentation.ar}
-    </span>
   )
 }
 
@@ -148,7 +98,7 @@ export default function DeanStudentProfile() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-24 text-primary-light" dir="rtl">
-        <FaSpinner className="text-[30px] animate-[spin_0.7s_linear_infinite]" />
+        <FaSpinner className="text-[30px] animate-[spin_0.7s_linear_infinite]" aria-hidden="true" />
         <span className="text-[14px] font-medium">جاري تحميل ملف الطالب…</span>
       </div>
     )
@@ -160,17 +110,16 @@ export default function DeanStudentProfile() {
 
   const levelLabel = academicLevelLabel(profile.academic_level)
   const programName = profile.program?.program_name
-  const fullName = profile.full_name
-    || `${profile.first_name ?? ''} ${profile.last_name ?? ''}`.trim()
-    || '—'
+  const name = fullStudentName(profile)
+  const longDateOptions = { year: 'numeric', month: 'long', day: 'numeric' }
 
   const identityFields = [
     { label: 'رقم القيد', value: profile.student_number },
-    { label: 'الاسم الكامل', value: fullName },
+    { label: 'الاسم الكامل', value: name },
     { label: 'اسم الأب', value: profile.father_name },
     { label: 'اسم الأم', value: profile.mother_name },
     { label: 'الجنس', value: genderLabel(profile.gender) },
-    { label: 'تاريخ الميلاد', value: formatDate(profile.date_of_birth) },
+    { label: 'تاريخ الميلاد', value: formatDate(profile.date_of_birth, longDateOptions) },
     { label: 'الجنسية', value: profile.nationality },
   ]
 
@@ -185,12 +134,8 @@ export default function DeanStudentProfile() {
     { label: 'القسم', value: profile.department?.department_name },
     { label: 'الكلية', value: profile.college?.college_name },
     { label: 'السنة الدراسية', value: levelLabel },
-    { label: 'تاريخ القبول', value: formatDate(profile.enrollment_date) },
-    {
-      label: 'الحالة',
-      value: statusPresentation(profile.student_status)?.ar
-        ?? profile.student_status?.status_name,
-    },
+    { label: 'تاريخ القبول', value: formatDate(profile.enrollment_date, longDateOptions) },
+    { label: 'الحالة', value: studentStatusLabel(profile) },
   ]
 
   return (
@@ -201,7 +146,7 @@ export default function DeanStudentProfile() {
           className="flex items-center gap-2 text-[13.5px] font-semibold text-text-gray hover:text-primary transition-colors"
           onClick={goBack}
         >
-          <FaArrowRight />
+          <FaArrowRight aria-hidden="true" />
           <span>العودة إلى طلاب الكلية</span>
         </button>
       </div>
@@ -214,12 +159,12 @@ export default function DeanStudentProfile() {
       >
         <div className="flex items-center gap-5 flex-wrap">
           <div className="w-[68px] h-[68px] flex-shrink-0 rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center text-[28px] text-primary">
-            <FaUser />
+            <FaUser aria-hidden="true" />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 flex-wrap mb-1">
-              <h2 className="text-[20px] font-black text-text-dark">{fullName}</h2>
-              <StatusBadge status={profile.student_status} />
+              <h2 className="text-[20px] font-black text-text-dark break-words">{name}</h2>
+              <StudentStatusBadge status={profile.student_status} />
             </div>
             <div className="flex items-center gap-2.5 flex-wrap text-[12.5px] text-text-gray">
               <span className="font-mono bg-primary/7 border border-primary/15 px-2 py-0.5 rounded-[6px] text-primary-dark font-bold text-[12px]">
@@ -228,7 +173,7 @@ export default function DeanStudentProfile() {
               {programName && (
                 <>
                   <span className="text-primary/30">•</span>
-                  <span>{programName}</span>
+                  <span className="break-words">{programName}</span>
                 </>
               )}
               {levelLabel && (
