@@ -10,6 +10,7 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -98,6 +99,19 @@ return Application::configure(basePath: dirname(__DIR__))
                 'error_code' => 'forbidden',
                 'errors' => [],
             ], 403);
+        });
+
+        $exceptions->render(function (ConflictHttpException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage() ?: 'Conflict',
+                'error_code' => 'conflict',
+                'errors' => [],
+            ], 409);
         });
 
         $exceptions->render(function (Throwable $exception, Request $request) {

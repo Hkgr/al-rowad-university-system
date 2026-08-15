@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\CourseInstructorController;
 use App\Http\Controllers\Api\CourseOfferingController;
 use App\Http\Controllers\Api\CourseOfferingInstructorController;
 use App\Http\Controllers\Api\DeanCourseOfferingController;
+use App\Http\Controllers\Api\DeanRegistrationOfferingController;
 use App\Http\Controllers\Api\CoursePrerequisiteController;
 use App\Http\Controllers\Api\DepartmentController;
 use App\Http\Controllers\Api\DocumentTypeController;
@@ -438,6 +439,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('dean/course-offerings/{courseOffering}/students', [DeanCourseOfferingController::class, 'students']);
     Route::get('dean/course-offerings/{courseOffering}/sessions', [DeanCourseOfferingController::class, 'sessions']);
     Route::get('dean/course-offerings/{courseOffering}', [DeanCourseOfferingController::class, 'show']);
+    Route::get('dean/registration-offerings', [DeanRegistrationOfferingController::class, 'index']);
+    Route::post('dean/registration-offerings/open', [DeanRegistrationOfferingController::class, 'open']);
+    Route::post('dean/registration-offerings/{courseOffering}/open', [DeanRegistrationOfferingController::class, 'reopen']);
+    Route::post('dean/registration-offerings/{courseOffering}/close', [DeanRegistrationOfferingController::class, 'close']);
     Route::get('teaching-staff', [TeachingStaffController::class, 'index']);
     Route::get('teaching-staff/assignment-offerings', [TeachingStaffAssignmentOfferingController::class, 'index']);
     Route::get('teaching-staff/assignment-offerings/{courseOffering}', [TeachingStaffAssignmentOfferingController::class, 'show']);
