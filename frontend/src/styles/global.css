@@ -674,3 +674,25 @@ body {
   font-size: 11.5px;
   line-height: 1.55;
 }
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  html,
+  body,
+  #root {
+    background: #fff !important;
+    min-height: auto !important;
+  }
+
+  .print-hidden {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+}

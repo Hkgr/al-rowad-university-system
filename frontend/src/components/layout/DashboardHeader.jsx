@@ -146,7 +146,7 @@ export default function DashboardHeader({ appTitle, pageTitle, activeItem, user,
   }).format(now), [now])
 
   return (
-    <header className="dashboard-header" dir="rtl">
+    <header className="dashboard-header print-hidden" dir="rtl">
       <div className="page-context">
         <button className="header-tool mobile-menu" onClick={toggleMenu} aria-label="فتح القائمة"><FaBars /></button>
         <img src="/logo.png" alt="جامعة الرواد" />

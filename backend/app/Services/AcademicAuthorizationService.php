@@ -36,16 +36,41 @@ class AcademicAuthorizationService
             throw new AccessDeniedHttpException('Grade view permission is required.');
         }
 
-        if ($user->student_id !== null && (int) $user->student_id === (int) $registration->student_id) {
+        if ($this->hasInternalGradeViewAccess($user, $registration)) {
             return;
         }
 
-        if ($user->employee_id !== null && app(DataScopeService::class)->scopeRegistrationsForStaff(StudentCourseRegistration::query(), $user)
-                ->whereKey($registration->student_course_registration_id)->exists()) {
+        if ($this->isRestrictedToOfficialStudentGrades($user)
+            && (int) $user->student_id === (int) $registration->student_id) {
+            $registration->loadMissing('courseOffering');
+            if (! app(GradeService::class)->isOfficiallyApprovedOffering($registration->courseOffering)) {
+                throw new AccessDeniedHttpException('النتيجة غير متاحة قبل اعتمادها رسمياً.');
+            }
+
             return;
         }
 
-        $this->assertAssignedInstructor($user, (int) $registration->course_offering_id);
+        throw new AccessDeniedHttpException('This operation is restricted to the assigned section instructor.');
+    }
+
+    public function isRestrictedToOfficialStudentGrades(User $user): bool
+    {
+        return $user->student_id !== null && $user->employee_id === null;
+    }
+
+    public function canExposeStudentCourseResult(User $user, StudentCourseRegistration $registration): bool
+    {
+        if (! $this->isRestrictedToOfficialStudentGrades($user)) {
+            return true;
+        }
+
+        if ((int) $user->student_id !== (int) $registration->student_id) {
+            return false;
+        }
+
+        $registration->loadMissing('courseOffering');
+
+        return app(GradeService::class)->isOfficiallyApprovedOffering($registration->courseOffering);
     }
 
     public function assertCanEnterGrades(User $user, StudentCourseRegistration $registration): void
@@ -189,17 +214,36 @@ class AcademicAuthorizationService
         $this->assertCanAccessOffering($user, (int) $offeringId);
     }
 
+    private function hasInternalGradeViewAccess(User $user, StudentCourseRegistration $registration): bool
+    {
+        if ($user->employee_id !== null && app(DataScopeService::class)
+            ->scopeRegistrationsForStaff(StudentCourseRegistration::query(), $user)
+            ->whereKey($registration->student_course_registration_id)
+            ->exists()) {
+            return true;
+        }
+
+        return $this->isAssignedInstructor($user, (int) $registration->course_offering_id);
+    }
+
     private function assertAssignedInstructor(User $user, int $courseOfferingId): void
     {
-        if ($user->employee_id === null) {
+        if (! $this->isAssignedInstructor($user, $courseOfferingId)) {
             throw new AccessDeniedHttpException('This operation is restricted to the assigned section instructor.');
+        }
+    }
+
+    private function isAssignedInstructor(User $user, int $courseOfferingId): bool
+    {
+        if ($user->employee_id === null) {
+            return false;
         }
 
         $facultyIds = FacultyMember::query()
             ->where('employee_id', $user->employee_id)
             ->pluck('faculty_member_id');
 
-        $assigned = CourseOffering::query()
+        return CourseOffering::query()
             ->whereKey($courseOfferingId)
             ->where(function ($query) use ($facultyIds): void {
                 $query->whereIn('faculty_member_id', $facultyIds)
@@ -207,10 +251,6 @@ class AcademicAuthorizationService
                         $instructors->whereIn('faculty_member_id', $facultyIds)->where('is_active', true));
             })
             ->exists();
-
-        if (! $assigned) {
-            throw new AccessDeniedHttpException('This operation is restricted to the assigned section instructor.');
-        }
     }
 
     private function assertRole(User $user, array $roles): void

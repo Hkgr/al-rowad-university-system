@@ -297,15 +297,28 @@ class StudentController extends ApiController
     public function registrations(Student $student): JsonResponse
     {
         abort_unless(request()->user()->hasPermission('registration.view'), 403);
-        $registrations = app(DataScopeService::class)->scopeRegistrations($student->studentCourseRegistrations(), request()->user())
+        $user = request()->user();
+        $registrationsQuery = app(DataScopeService::class)->scopeRegistrations($student->studentCourseRegistrations(), $user)
             ->with([
                 'courseOffering.course',
                 'courseOffering.academicYear',
                 'courseOffering.semester',
                 'registrationStatus',
                 'resultStatus',
-                'studentCourseResult.resultStatus',
-            ])
+            ]);
+
+        if (app(AcademicAuthorizationService::class)->isRestrictedToOfficialStudentGrades($user)) {
+            $registrationsQuery->with([
+                'studentCourseResult' => function ($query) use ($user): void {
+                    app(GradeService::class)->scopeOfficialApprovedResults($query, (int) $user->student_id);
+                    $query->with('resultStatus');
+                },
+            ]);
+        } else {
+            $registrationsQuery->with('studentCourseResult.resultStatus');
+        }
+
+        $registrations = $registrationsQuery
             ->latest('student_course_registration_id')
             ->paginate(request()->integer('per_page', 15));
 

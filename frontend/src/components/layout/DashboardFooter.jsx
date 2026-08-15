@@ -17,7 +17,7 @@ export default function DashboardFooter() {
   }, [])
 
   return (
-    <footer className="dashboard-footer" dir="rtl">
+    <footer className="dashboard-footer print-hidden" dir="rtl">
       <div className="footer-brand">
         <strong>نظام جامعة الروّاد</strong>
         <span>© {new Date().getFullYear()}</span>

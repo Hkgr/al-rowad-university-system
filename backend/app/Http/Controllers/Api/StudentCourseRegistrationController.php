@@ -25,11 +25,17 @@ class StudentCourseRegistrationController extends ApiController
     public function show($id): JsonResponse
     {
         abort_unless(request()->user()->hasPermission('registration.view'), 403);
+        $user = request()->user();
+        $authorization = app(AcademicAuthorizationService::class);
         $registration = StudentCourseRegistration::query()
-            ->with(['student', 'registrationStatus', 'courseOffering.course', 'studentCourseResult.resultStatus'])
+            ->with(['student', 'registrationStatus', 'courseOffering.course'])
             ->findOrFail($id);
-        app(AcademicAuthorizationService::class)->assertStudentRecord(request()->user(), $registration->student);
-        abort_unless(app(DataScopeService::class)->scopeRegistrations(StudentCourseRegistration::query(), request()->user())->whereKey($id)->exists(), 403);
+        $authorization->assertStudentRecord($user, $registration->student);
+        abort_unless(app(DataScopeService::class)->scopeRegistrations(StudentCourseRegistration::query(), $user)->whereKey($id)->exists(), 403);
+
+        if ($authorization->canExposeStudentCourseResult($user, $registration)) {
+            $registration->load(['resultStatus', 'studentCourseResult.resultStatus']);
+        }
 
         return $this->successResponse(
             (new StudentCourseRegistrationResource($registration))->resolve(request())
