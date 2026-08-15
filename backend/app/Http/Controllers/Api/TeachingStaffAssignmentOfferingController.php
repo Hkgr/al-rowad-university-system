@@ -137,16 +137,19 @@ class TeachingStaffAssignmentOfferingController extends Controller
         SyncOfferingAssignmentSlotsRequest $request,
         CourseOffering $courseOffering
     ): JsonResponse {
+        // This endpoint is full-state replacement for both teaching component slots;
+        // both keys are intentionally required to prevent accidental unassignment from
+        // partial payloads.
         $validated = $request->validated();
         $offering = $this->teachingAssignments->syncOfferingAssignmentSlots(
             $request->user(),
             $courseOffering,
-            array_key_exists('theoretical_faculty_member_id', $validated)
-                ? ($validated['theoretical_faculty_member_id'] === null ? null : (int) $validated['theoretical_faculty_member_id'])
-                : null,
-            array_key_exists('practical_faculty_member_id', $validated)
-                ? ($validated['practical_faculty_member_id'] === null ? null : (int) $validated['practical_faculty_member_id'])
-                : null
+            $validated['theoretical_faculty_member_id'] === null
+                ? null
+                : (int) $validated['theoretical_faculty_member_id'],
+            $validated['practical_faculty_member_id'] === null
+                ? null
+                : (int) $validated['practical_faculty_member_id']
         );
 
         return $this->successResponse(
