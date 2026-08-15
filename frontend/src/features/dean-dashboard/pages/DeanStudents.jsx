@@ -8,42 +8,21 @@ import FilterBar from '../../../components/table/FilterBar'
 import { apiRequest } from '../../../services/apiClient'
 import { exportRowsToExcel } from '../../../utils/excelExport'
 import { exportRowsToPdf } from '../../../utils/pdfExport'
+import StudentStatusBadge from '../components/StudentStatusBadge'
+import {
+  STUDENT_STATUS_FILTER_OPTIONS,
+  arabicYearLabel,
+  formatDate,
+  fullStudentName,
+  genderLabel,
+  normalizeSearchText,
+  studentStatusLabel,
+} from '../utils/studentDisplay'
 
 const PAGE_SIZE = 15
 const API_PAGE_SIZE = 100
-const YEAR_ORDINALS_AR = ['الأولى', 'الثانية', 'الثالثة', 'الرابعة', 'الخامسة', 'السادسة', 'السابعة']
-
-const STATUS_MAP = {
-  1: { ar: 'يدرس حاليًا', color: '#22c55e', bg: 'rgba(34,197,94,0.1)' },
-  2: { ar: 'منقطع', color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
-  3: { ar: 'خريج', color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
-  4: { ar: 'مسحوب', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
-  5: { ar: 'مفصول', color: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
-  6: { ar: 'موقوف', color: '#f97316', bg: 'rgba(249,115,22,0.1)' },
-}
 
 let lookupPromise
-
-function arabicYearLabel(order) {
-  if (!order || order < 1) return null
-  const word = YEAR_ORDINALS_AR[order - 1]
-  return word ? `السنة ${word}` : `السنة ${order}`
-}
-
-function genderLabel(gender) {
-  if (gender === 'male') return 'ذكر'
-  if (gender === 'female') return 'أنثى'
-  return gender || '—'
-}
-
-function formatDate(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('ar-SY')
-}
-
-function todayStamp() {
-  return new Date().toISOString().slice(0, 10)
-}
 
 function paginatedRows(response) {
   return response?.data?.data ?? []
@@ -97,18 +76,8 @@ function loadLookups() {
   return lookupPromise
 }
 
-function StatusBadge({ statusId }) {
-  const status = STATUS_MAP[statusId]
-  if (!status) return <span className="text-[11px] text-text-light">—</span>
-
-  return (
-    <span
-      className="inline-block px-2 py-[3px] rounded-full text-[11px] font-bold whitespace-nowrap"
-      style={{ color: status.color, background: status.bg }}
-    >
-      {status.ar}
-    </span>
-  )
+function todayStamp() {
+  return new Date().toISOString().slice(0, 10)
 }
 
 export default function DeanStudents() {
@@ -180,12 +149,20 @@ export default function DeanStudents() {
       }
     }
 
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') setExportMenuOpen(false)
+    }
+
     document.addEventListener('mousedown', handlePointerDown)
-    return () => document.removeEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
   }, [exportMenuOpen])
 
   const filteredStudents = useMemo(() => {
-    const query = search.trim().toLowerCase()
+    const query = normalizeSearchText(search)
 
     return allStudents.filter(student => {
       if (filterProgram && String(student.academic_program_id) !== filterProgram) return false
@@ -194,9 +171,9 @@ export default function DeanStudents() {
       if (filterGender && student.gender !== filterGender) return false
 
       if (query) {
-        const fullName = `${student.first_name ?? ''} ${student.last_name ?? ''}`.toLowerCase()
-        const studentNumber = String(student.student_number ?? '').toLowerCase()
-        const email = String(student.email ?? '').toLowerCase()
+        const fullName = normalizeSearchText(fullStudentName(student))
+        const studentNumber = normalizeSearchText(student.student_number)
+        const email = normalizeSearchText(student.email)
         if (!fullName.includes(query) && !studentNumber.includes(query) && !email.includes(query)) {
           return false
         }
@@ -220,7 +197,10 @@ export default function DeanStudents() {
 
   const programOptions = useMemo(() => {
     const availableProgramIds = new Set(
-      allStudents.map(student => String(student.academic_program_id)),
+      allStudents
+        .map(student => student.academic_program_id)
+        .filter(id => id != null)
+        .map(id => String(id)),
     )
 
     return Object.entries(programMap)
@@ -271,38 +251,32 @@ export default function DeanStudents() {
     return level ? (arabicYearLabel(level.order) ?? level.name) : null
   }
 
-  function getStatusLabel(student) {
-    return STATUS_MAP[student.student_status_id]?.ar ?? '—'
-  }
-
   function buildReportColumns() {
     return [
       { header: 'رقم القيد', value: student => student.student_number, text: true },
-      {
-        header: 'الاسم الكامل',
-        value: student => `${student.first_name ?? ''} ${student.last_name ?? ''}`.trim() || '—',
-      },
+      { header: 'الاسم الكامل', value: student => fullStudentName(student) },
       { header: 'التخصص', value: student => getProgramName(student) },
       { header: 'السنة الدراسية', value: student => getLevelName(student) },
       { header: 'الهاتف', value: student => student.phone_number, text: true },
       { header: 'البريد الإلكتروني', value: student => student.email },
       { header: 'الجنس', value: student => genderLabel(student.gender) },
       { header: 'تاريخ القبول', value: student => formatDate(student.enrollment_date) },
-      { header: 'الحالة', value: student => getStatusLabel(student) },
+      { header: 'الحالة', value: student => studentStatusLabel(student) },
     ]
   }
 
   function buildSubtitleParts() {
-    const generatedAt = new Date().toLocaleDateString('ar-SY')
     return [
       collegeName ? `الكلية: ${collegeName}` : null,
       `عدد الطلاب: ${filteredStudents.length}`,
       hasFilters ? 'بعد تطبيق الفلاتر' : 'بدون فلاتر نشطة',
-      `تاريخ الإنشاء: ${generatedAt}`,
+      `تاريخ الإنشاء: ${formatDate(new Date())}`,
     ].filter(Boolean)
   }
 
   async function handleExport(format) {
+    if (exporting) return
+
     if (!filteredStudents.length) {
       setExportError('لا توجد بيانات مطابقة لتصديرها.')
       setExportMenuOpen(false)
@@ -357,7 +331,7 @@ export default function DeanStudents() {
       align: 'center',
       render: student => (
         <span className="inline-block px-2.5 py-[3px] bg-primary/8 border border-primary/15 rounded-[8px] text-[12px] font-bold text-primary-dark font-mono">
-          {student.student_number}
+          {student.student_number || '—'}
         </span>
       ),
     },
@@ -366,8 +340,15 @@ export default function DeanStudents() {
       header: 'الاسم الكامل',
       align: 'right',
       dir: 'rtl',
-      cellClassName: 'text-[13.5px] font-semibold text-text-dark whitespace-nowrap',
-      render: student => `${student.first_name ?? ''} ${student.last_name ?? ''}`.trim() || '—',
+      cellClassName: 'text-[13.5px] font-semibold text-text-dark',
+      render: student => {
+        const name = fullStudentName(student)
+        return (
+          <span className="block max-w-[200px] truncate" title={name}>
+            {name}
+          </span>
+        )
+      },
     },
     {
       key: 'program',
@@ -377,8 +358,22 @@ export default function DeanStudents() {
       render: student => {
         const programName = programMap[student.academic_program_id]
         return programName
-          ? <span className="text-[12px] font-medium text-text-gray whitespace-nowrap">{programName}</span>
-          : <span className="inline-block px-2 py-[3px] rounded-full text-[11px] font-bold whitespace-nowrap text-amber-600" style={{ background: 'rgba(245,158,11,0.1)' }}>لم يتخصص بعد</span>
+          ? (
+            <span
+              className="block max-w-[180px] truncate text-[12px] font-medium text-text-gray"
+              title={programName}
+            >
+              {programName}
+            </span>
+          )
+          : (
+            <span
+              className="inline-block px-2 py-[3px] rounded-full text-[11px] font-bold whitespace-nowrap text-amber-600"
+              style={{ background: 'rgba(245,158,11,0.1)' }}
+            >
+              لم يتخصص بعد
+            </span>
+          )
       },
     },
     {
@@ -400,16 +395,20 @@ export default function DeanStudents() {
       render: student => (
         revealedPhones.has(student.student_id) ? (
           <button
+            type="button"
             className="text-[12px] font-mono text-text-dark whitespace-nowrap cursor-pointer hover:text-primary transition-colors"
             title="إخفاء الرقم"
+            aria-label="إخفاء رقم الهاتف"
             onClick={() => togglePhone(student.student_id)}
           >
             {student.phone_number}
           </button>
         ) : (
           <button
+            type="button"
             className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[12px] mx-auto cursor-pointer transition-all duration-[180ms] text-green-600 border-green-600/20 bg-green-600/6 hover:bg-green-600/14 hover:border-green-600/35 disabled:opacity-40 disabled:cursor-not-allowed"
             title={student.phone_number ? 'إظهار رقم الهاتف' : 'لا يوجد رقم هاتف'}
+            aria-label={student.phone_number ? 'إظهار رقم الهاتف' : 'لا يوجد رقم هاتف'}
             onClick={() => togglePhone(student.student_id)}
             disabled={!student.phone_number}
           >
@@ -429,7 +428,7 @@ export default function DeanStudents() {
       key: 'status',
       header: 'الحالة',
       align: 'center',
-      render: student => <StatusBadge statusId={student.student_status_id} />,
+      render: student => <StudentStatusBadge statusId={student.student_status_id} />,
     },
     {
       key: 'view',
@@ -437,6 +436,7 @@ export default function DeanStudents() {
       align: 'center',
       render: student => (
         <button
+          type="button"
           className="w-8 h-8 rounded-[8px] border flex items-center justify-center text-[13px] cursor-pointer transition-all duration-[180ms] text-blue-500 border-blue-500/20 bg-blue-500/6 hover:bg-blue-500/14 hover:border-blue-500/35"
           title="عرض ملف الطالب"
           aria-label="عرض ملف الطالب"
@@ -450,8 +450,8 @@ export default function DeanStudents() {
 
   return (
     <div dir="rtl">
-      <div className="flex items-center justify-between mb-5 gap-4 flex-wrap">
-        <div>
+      <div className="flex items-start sm:items-center justify-between mb-5 gap-4 flex-wrap">
+        <div className="min-w-0">
           <h2 className="text-[20px] font-black text-text-dark mb-[3px]">طلاب الكلية</h2>
           <p className="text-[12.5px] text-text-light">
             {loading
@@ -467,8 +467,10 @@ export default function DeanStudents() {
             type="button"
             className="flex items-center gap-2 px-4 py-2.5 bg-white border border-primary/25 text-primary-dark rounded-[12px] text-[13.5px] font-bold whitespace-nowrap transition-all duration-[220ms] hover:bg-primary/6 disabled:opacity-50 disabled:cursor-not-allowed"
             onClick={() => {
+              if (exporting) return
               if (!filteredStudents.length) {
                 setExportError('لا توجد بيانات مطابقة لتصديرها.')
+                setExportMenuOpen(false)
                 return
               }
               setExportError('')
@@ -477,12 +479,13 @@ export default function DeanStudents() {
             disabled={loading || exporting}
             aria-haspopup="menu"
             aria-expanded={exportMenuOpen}
+            aria-label="تنزيل التقرير"
           >
             {exporting
-              ? <FaSpinner className="animate-spin text-[12px]" />
-              : <FaDownload className="text-[12px]" />}
+              ? <FaSpinner className="animate-spin text-[12px]" aria-hidden="true" />
+              : <FaDownload className="text-[12px]" aria-hidden="true" />}
             <span>{exporting ? 'جاري إنشاء التقرير…' : 'تنزيل التقرير'}</span>
-            {!exporting && <FaChevronDown className="text-[10px] opacity-70" />}
+            {!exporting && <FaChevronDown className="text-[10px] opacity-70" aria-hidden="true" />}
           </button>
 
           {exportMenuOpen && (
@@ -497,7 +500,7 @@ export default function DeanStudents() {
                 disabled={!canExport}
                 role="menuitem"
               >
-                <FaFilePdf className="text-red-500 text-[13px]" />
+                <FaFilePdf className="text-red-500 text-[13px]" aria-hidden="true" />
                 <span>PDF</span>
               </button>
               <button
@@ -507,7 +510,7 @@ export default function DeanStudents() {
                 disabled={!canExport}
                 role="menuitem"
               >
-                <FaFileExcel className="text-green-600 text-[13px]" />
+                <FaFileExcel className="text-green-600 text-[13px]" aria-hidden="true" />
                 <span>Excel</span>
               </button>
             </div>
@@ -544,10 +547,7 @@ export default function DeanStudents() {
             onChange: value => updateFilter(setFilterStatus, value),
             placeholder: 'جميع الحالات',
             minWidth: 140,
-            options: Object.entries(STATUS_MAP).map(([value, status]) => ({
-              value,
-              label: status.ar,
-            })),
+            options: STUDENT_STATUS_FILTER_OPTIONS.map(({ value, label }) => ({ value, label })),
           },
           {
             key: 'gender',
