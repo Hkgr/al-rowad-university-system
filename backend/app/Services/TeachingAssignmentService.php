@@ -40,7 +40,8 @@ class TeachingAssignmentService
     {
         if (! $user->hasPermission('teaching_staff.view')
             && ! $user->hasPermission('teaching_staff.manage')
-            && ! $user->hasPermission('courses.view')) {
+            && ! $user->hasPermission('courses.view')
+            && ! $user->hasPermission('courses.manage')) {
             throw new AccessDeniedHttpException('You are not authorized to view teaching assignments.');
         }
 

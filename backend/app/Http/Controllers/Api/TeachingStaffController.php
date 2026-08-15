@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\TeachingStaffResource;
 use App\Models\College;
 use App\Models\FacultyMember;
+use App\Models\User;
 use App\Services\DataScopeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,6 +22,10 @@ class TeachingStaffController extends Controller
     public function index(Request $request): JsonResponse
     {
         $this->assertCanViewTeachingStaff($request);
+        $validated = $request->validate([
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+            'page' => ['sometimes', 'integer', 'min:1'],
+        ]);
 
         $query = FacultyMember::query()
             ->with([
@@ -37,9 +42,9 @@ class TeachingStaffController extends Controller
 
         $staff = $query
             ->orderBy('faculty_member_id')
-            ->paginate($request->integer('per_page', 15));
+            ->paginate((int) ($validated['per_page'] ?? 15));
 
-        $this->hydrateColleges(collect($staff->items()));
+        $this->hydrateColleges(collect($staff->items()), $request->user());
 
         $payload = TeachingStaffResource::collection($staff)
             ->response($request)
@@ -61,7 +66,7 @@ class TeachingStaffController extends Controller
             'employee.employeeStatus',
             'employee.employeeUnitAssignments' => fn ($assignments) => $assignments->where('is_active', true),
         ]);
-        $this->hydrateColleges(collect([$facultyMember]));
+        $this->hydrateColleges(collect([$facultyMember]), $request->user());
 
         return $this->successResponse(
             (new TeachingStaffResource($facultyMember))->resolve($request)
@@ -78,10 +83,15 @@ class TeachingStaffController extends Controller
         }
     }
 
-    private function hydrateColleges(Collection $facultyMembers): void
+    private function hydrateColleges(Collection $facultyMembers, User $user): void
     {
+        $accessibleUnitIds = collect($this->dataScope->accessibleCollegeOrganizationalUnitIds($user))
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
         $unitIds = $facultyMembers
-            ->flatMap(function (FacultyMember $facultyMember): array {
+            ->flatMap(function (FacultyMember $facultyMember) use ($accessibleUnitIds): array {
                 $employee = $facultyMember->employee;
                 if ($employee === null) {
                     return [];
@@ -96,9 +106,12 @@ class TeachingStaffController extends Controller
                     $ids[] = $employee->organizational_unit_id;
                 }
 
-                return $ids;
+                return collect($ids)
+                    ->map(fn ($id) => (int) $id)
+                    ->intersect($accessibleUnitIds)
+                    ->values()
+                    ->all();
             })
-            ->map(fn ($id) => (int) $id)
             ->unique()
             ->values();
 
@@ -106,6 +119,7 @@ class TeachingStaffController extends Controller
             ? collect()
             : College::query()
                 ->whereIn('organizational_unit_id', $unitIds)
+                ->whereIn('organizational_unit_id', $accessibleUnitIds)
                 ->get(['college_id', 'college_code', 'college_name', 'organizational_unit_id'])
                 ->keyBy(fn (College $college) => (int) $college->organizational_unit_id);
 
@@ -117,6 +131,7 @@ class TeachingStaffController extends Controller
                 ->push($employee?->organizational_unit_id)
                 ->filter()
                 ->map(fn ($id) => (int) $id)
+                ->intersect($accessibleUnitIds)
                 ->unique();
 
             $facultyMember->setRelation(
