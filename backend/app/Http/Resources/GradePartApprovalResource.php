@@ -21,7 +21,44 @@ class GradePartApprovalResource extends JsonResource
             'course_name' => $this->courseOffering?->course?->course_name,
             'academic_year_name' => $this->courseOffering?->academicYear?->year_name,
             'semester_name' => $this->courseOffering?->semester?->semester_name,
+            'section' => [
+                'course_offering_id' => $this->course_offering_id,
+            ],
+            'part_statuses' => [
+                'theoretical' => $this->partIndicator('theoretical'),
+                'practical' => $this->partIndicator('practical'),
+            ],
             'course_offering' => $this->whenLoaded('courseOffering'),
+        ];
+    }
+
+    /**
+     * @return array{required: bool|null, status: string}
+     */
+    private function partIndicator(string $part): array
+    {
+        $offering = $this->courseOffering;
+        $required = null;
+        if ($offering?->relationLoaded('gradeComponents')) {
+            $required = $offering->gradeComponents
+                ->where('is_required', true)
+                ->contains('component_type', $part);
+        }
+
+        $approval = null;
+        if ($offering?->relationLoaded('gradePartApprovals')) {
+            $approval = $offering->gradePartApprovals->firstWhere('component_type', $part);
+        } elseif ($this->component_type === $part) {
+            $approval = $this->resource;
+        }
+
+        if ($required === false) {
+            return ['required' => false, 'status' => 'not_required'];
+        }
+
+        return [
+            'required' => $required,
+            'status' => $approval?->status ?? 'draft',
         ];
     }
 
