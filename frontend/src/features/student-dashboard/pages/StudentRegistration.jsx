@@ -35,6 +35,57 @@ const STATUS_LABELS = {
   approved: { ar: 'تم اعتماد طلب التسجيل', className: 'bg-green-100 text-green-800 border-green-200' },
 }
 
+function knownReasonLabel(code) {
+  if (typeof code !== 'string' || code === '') return null
+  return REASON_LABELS[code]?.ar ?? null
+}
+
+function collectKnownReasonCodes(error) {
+  const codes = []
+
+  function push(value) {
+    if (typeof value === 'string' && REASON_LABELS[value] && !codes.includes(value)) {
+      codes.push(value)
+    }
+  }
+
+  function pushFromList(list) {
+    if (!Array.isArray(list)) {
+      push(list)
+      return
+    }
+    list.forEach(item => {
+      if (typeof item === 'string') {
+        push(item)
+        return
+      }
+      if (item && typeof item === 'object') {
+        push(item.reason)
+        if (Array.isArray(item.reasons)) item.reasons.forEach(push)
+      }
+    })
+  }
+
+  push(error?.errorCode)
+  pushFromList(error?.itemFailures)
+  const details = error?.details && typeof error.details === 'object' ? error.details : {}
+  pushFromList(details.course_offering_id)
+  pushFromList(details.items)
+
+  return codes
+}
+
+function registrationErrorMessage(error, fallback) {
+  const labels = collectKnownReasonCodes(error)
+    .map(knownReasonLabel)
+    .filter(Boolean)
+
+  if (labels.length === 1) return labels[0]
+  if (labels.length > 1) return labels.join('، ')
+
+  return fallback || error?.message || ''
+}
+
 function studentRegistrationPath(semesterId) {
   const params = new URLSearchParams()
   if (semesterId) params.set('semester_id', semesterId)
@@ -270,11 +321,12 @@ export default function StudentRegistration() {
           return
         }
         setError(
-          requestError.errorCode === 'academic_requirement_configuration_invalid'
-            ? 'تعذر التحقق من متطلبات الخطة حالياً. يرجى مراجعة شؤون الطلاب.'
-            : requestError.status === 403
-              ? 'ليس لديك صلاحية لتسجيل المواد.'
-              : (requestError.message || 'تعذّر تحميل بيانات التسجيل. يرجى المحاولة مرة أخرى.'),
+          requestError.status === 403
+            ? 'ليس لديك صلاحية لتسجيل المواد.'
+            : registrationErrorMessage(
+              requestError,
+              'تعذّر تحميل بيانات التسجيل. يرجى المحاولة مرة أخرى.',
+            ),
         )
       } finally {
         if (active && seq === requestSeq.current) {
@@ -314,7 +366,7 @@ export default function StudentRegistration() {
         navigate('/login', { replace: true })
         return
       }
-      setError(requestError.message || 'تعذّر إضافة المادة إلى الطلب')
+      setError(registrationErrorMessage(requestError, 'تعذّر إضافة المادة إلى الطلب'))
     } finally {
       setAdding(current => ({ ...current, [course.course_offering_id]: false }))
     }
@@ -385,7 +437,7 @@ export default function StudentRegistration() {
         navigate('/login', { replace: true })
         return
       }
-      setError(requestError.message || 'تعذّر إرسال الطلب')
+      setError(registrationErrorMessage(requestError, 'تعذّر إرسال الطلب'))
     } finally {
       setSubmitting(false)
     }
