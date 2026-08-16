@@ -273,7 +273,7 @@ export default function ProfessorGradesPage() {
           })}
         </div>}
         {requiredAssignedParts.length > 1 && <div className="inline-flex max-w-full gap-1 p-1 mb-4 bg-primary/5 border border-primary/10 rounded-[12px]" dir="rtl" role="tablist">
-          {requiredAssignedParts.map(part => <button key={part} role="tab" aria-selected={selectedPart === part} onClick={() => selectPart(part)} className={`px-5 py-2.5 rounded-[9px] text-[13px] font-extrabold transition-colors ${selectedPart === part ? 'bg-primary text-white shadow-sm' : 'text-text-dark hover:bg-white'}`}>{PARTS[part].full}</button>)}
+          {requiredAssignedParts.map(part => <button key={part} role="tab" aria-selected={selectedPart === part} onClick={() => selectPart(part)} className={`px-5 py-2.5 rounded-[9px] text-[13px] font-extrabold transition-colors ${selectedPart === part ? 'bg-primary text-white shadow-sm' : 'text-text-dark hover:bg-white'}`}>{PARTS[part].label}</button>)}
         </div>}
         {partState?.status === 'returned' && partState?.review_notes && <ReviewNotes part={selectedPart} notes={partState.review_notes} />}
         {notice && <Notice notice={notice} />}
@@ -357,7 +357,7 @@ function PartPanels({ workflow }) {
       if (state?.assigned_to_me !== true) {
         return <div key={part} className="rounded-[14px] border border-primary/10 bg-[#f4f5f2] p-4 text-text-light">
           <div className="flex items-center gap-2 font-extrabold text-[14px] text-text-dark"><FaLock className="text-[12px]" /> الجزء {PARTS[part].label}</div>
-          <div className="text-[12.5px] mt-2">هذا الجزء مسند إلى مدرس آخر</div>
+          <div className="text-[12.5px] mt-2">{part === 'practical' ? 'الجزء العملي مسند إلى مدرس آخر' : 'الجزء النظري مسند إلى مدرس آخر'}</div>
           {workflow.part_assignments?.[part]?.instructor_name && <div className="text-[11px] mt-1">المدرّس: {workflow.part_assignments[part].instructor_name}</div>}
           <WorkflowStrip state={state} muted />
         </div>
@@ -391,7 +391,7 @@ function WorkflowStrip({ state, muted = false }) {
 function MarksTable({ rows, part, partState, componentDefinitions, edits, rowValidation, updateMark, refreshRequired, loadError, loading, saving, submitting }) {
   const locked = ['submitted', 'approved'].includes(partState?.status)
   return <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)] mb-4">
-    <div className="overflow-x-auto">
+    <div className="max-h-[70vh] overflow-auto">
       <table className="w-full min-w-[760px] border-collapse text-[13px]" dir="rtl">
         <thead className="sticky top-0 z-[1] bg-[#fafaf8] shadow-[0_1px_0_rgba(26,46,16,0.08)]">
           <tr>

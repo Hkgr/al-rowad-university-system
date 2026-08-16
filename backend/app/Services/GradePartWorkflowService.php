@@ -64,12 +64,15 @@ class GradePartWorkflowService
             $assignedToMe = in_array($part, $assignedParts, true);
             $editableStatus = in_array($status, ['draft', 'returned'], true);
             $complete = $this->partComplete($registrations, $offering->gradeComponents, $part);
+            $gradeStateAllowsEditing = $registrations->contains(
+                fn ($registration): bool => $registration->allowsGradeEntry() && ! $this->registrationIsDeprived($registration)
+            );
             $parts[$part] = [
                 'required' => $requiredPart,
                 'assigned_to_me' => $assignedToMe,
                 'status' => $status,
                 'approval_id' => $approval?->grade_part_approval_id,
-                'can_edit' => $requiredPart && $assignedToMe && $editableStatus && ! $official,
+                'can_edit' => $requiredPart && $assignedToMe && $editableStatus && $gradeStateAllowsEditing && ! $official,
                 'can_submit' => $assignedToMe && $requiredPart && $editableStatus && $complete && ! $official,
                 'submission_version' => $approval?->submission_version ?? 0,
                 'submitted_at' => $approval?->submitted_at?->toISOString(),
@@ -155,6 +158,7 @@ class GradePartWorkflowService
     public function savePart(StudentCourseRegistration $registration, string $part, array $data, User $user): array
     {
         $this->assertPart($part);
+        $this->assignments->assertCanManageGradePart($user, (int) $registration->course_offering_id, $part);
         return DB::transaction(function () use ($registration, $part, $data, $user): array {
             $locked = StudentCourseRegistration::query()->whereKey($registration->student_course_registration_id)
                 ->with(['registrationStatus', 'resultStatus', 'studentCourseResult.resultStatus'])
@@ -193,6 +197,7 @@ class GradePartWorkflowService
     public function submit(int $offeringId, string $part, User $user): GradePartApproval
     {
         $this->assertPart($part);
+        $this->assignments->assertCanManageGradePart($user, $offeringId, $part);
         return DB::transaction(function () use ($offeringId, $part, $user): GradePartApproval {
             CourseOffering::query()->whereKey($offeringId)->lockForUpdate()->firstOrFail();
             $this->assertJointFirstSubmission($user, $offeringId, [$part]);
