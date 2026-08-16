@@ -1,6 +1,7 @@
 -- READ ONLY. Require OVERALL = PASS after 01_apply.sql.
 -- Fully qualified objects: do not depend on phpMyAdmin's selected database.
 -- Individual checks and OVERALL use the same SET variables. OVERALL cannot PASS if any required subcheck is FAIL.
+-- OVERALL requires @overall_ready (shared with 00_preflight.sql / 01_apply.sql) plus post-apply grants.
 -- Structural predicates match 00_preflight.sql / 01_apply.sql. Missing request tables are FAIL here.
 
 SET @srr_absent_ok := 0;
@@ -764,28 +765,7 @@ SET @verify_student_no_request_perms_ok := IF((
 ) = 0, 1, 0);
 
 SET @verify_overall_ok := IF(
-    @verify_srr_columns_ok = 1
-    AND @verify_srr_types_ok = 1
-    AND @verify_srr_engine_ok = 1
-    AND @verify_srr_pk_ok = 1
-    AND @verify_srr_unique_ok = 1
-    AND @verify_srr_fk_ok = 1
-    AND @verify_srr_fk_types_ok = 1
-    AND @verify_srri_columns_ok = 1
-    AND @verify_srri_types_ok = 1
-    AND @verify_srri_engine_ok = 1
-    AND @verify_srri_pk_ok = 1
-    AND @verify_srri_unique_ok = 1
-    AND @verify_srri_fk_ok = 1
-    AND @verify_srri_fk_types_ok = 1
-    AND @verify_srre_columns_ok = 1
-    AND @verify_srre_types_ok = 1
-    AND @verify_srre_engine_ok = 1
-    AND @verify_srre_pk_ok = 1
-    AND @verify_srre_fk_ok = 1
-    AND @verify_srre_fk_types_ok = 1
-    AND @permission_code_unique_ok = 1
-    AND @role_permissions_unique_ok = 1
+    @overall_ready = 1
     AND @verify_permissions_description_ok = 1
     AND @verify_request_permissions_ok = 1
     AND @verify_advisor_permissions_ok = 1
@@ -796,6 +776,10 @@ SET @verify_overall_ok := IF(
     1,
     0
 );
+
+SELECT
+    'shared_structural_prerequisites' AS check_name,
+    IF(@overall_ready = 1, 'PASS', 'FAIL') AS result;
 
 SELECT 'A_requests_table_columns' AS check_name, IF(@verify_srr_columns_ok = 1, 'PASS', 'FAIL') AS result;
 SELECT 'A2_requests_column_types' AS check_name, IF(@verify_srr_types_ok = 1, 'PASS', 'FAIL') AS result;
