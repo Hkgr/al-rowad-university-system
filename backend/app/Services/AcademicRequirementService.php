@@ -3,9 +3,11 @@
 namespace App\Services;
 
 use App\Exceptions\AcademicRequirementConfigurationException;
+use App\Exceptions\RegistrationException;
 use App\Models\AcademicProgram;
 use App\Models\AcademicRequirementGroup;
 use App\Models\Course;
+use App\Models\CourseOffering;
 use App\Models\ProgramCourse;
 use App\Models\Student;
 use App\Models\StudentCourseRegistration;
@@ -22,6 +24,14 @@ class AcademicRequirementService
     public const CLASSIFICATION_REQUIREMENT_MAPPING_MISSING = 'requirement_mapping_missing';
 
     public const CLASSIFICATION_REQUIREMENT_CONFIGURATION_INVALID = 'requirement_configuration_invalid';
+
+    public const REASON_ELECTIVE_REQUIREMENT_COMPLETED = 'elective_requirement_completed';
+
+    public const REASON_ELECTIVE_REQUIREMENT_FULLY_COMMITTED = 'elective_requirement_fully_committed';
+
+    public const REASON_ELECTIVE_REQUIREMENT_LIMIT_EXCEEDED = 'elective_requirement_limit_exceeded';
+
+    public const REASON_COURSE_OUTSIDE_CURRENT_CURRICULUM = 'course_outside_current_curriculum';
 
     public function __construct(private GradeService $grades)
     {
@@ -253,6 +263,249 @@ class AcademicRequirementService
             'groups' => $groupPayloads->all(),
             'outside_current_curriculum' => $outside,
         ];
+    }
+
+    public function buildRegistrationCommitmentContext(Student $student): array
+    {
+        $programId = $student->academic_program_id === null ? null : (int) $student->academic_program_id;
+        if ($programId === null) {
+            return $this->emptyCommitmentContext($student);
+        }
+
+        $curriculumByGroup = $this->loadValidatedCurriculum($programId);
+        $groups = $this->loadActiveRequirementGroups($programId);
+        $this->assertRequirementGroupsConfiguration($programId, $groups, $curriculumByGroup);
+        $curriculumByCourseId = $this->indexCurriculumByCourseId($curriculumByGroup);
+
+        $registrations = $this->loadStudentRegistrations($student);
+        $pendingItems = $this->loadOpenRequestItems($student);
+
+        $earnedCourseIds = [];
+        $registeredCourseIds = [];
+        $pendingCourseIds = [];
+        $pendingItemSnapshots = [];
+
+        foreach ($registrations as $registration) {
+            $courseId = $this->registrationCourseId($registration);
+            if ($courseId === null || ! isset($curriculumByCourseId[$courseId])) {
+                continue;
+            }
+
+            if ($this->grades->isOfficiallyPassedAttempt($registration)) {
+                $earnedCourseIds[$courseId] = true;
+            }
+        }
+
+        foreach ($registrations as $registration) {
+            if ($registration->registrationStatus?->status_code !== StudentCourseRegistration::CURRENT_STATUS) {
+                continue;
+            }
+
+            $courseId = $this->registrationCourseId($registration);
+            if ($courseId === null
+                || ! isset($curriculumByCourseId[$courseId])
+                || isset($earnedCourseIds[$courseId])
+                || isset($registeredCourseIds[$courseId])) {
+                continue;
+            }
+
+            $registeredCourseIds[$courseId] = true;
+        }
+
+        foreach ($pendingItems as $item) {
+            $course = $item->courseOffering?->course;
+            $courseId = $course?->course_id === null ? null : (int) $course->course_id;
+            if ($courseId === null || ! isset($curriculumByCourseId[$courseId])) {
+                continue;
+            }
+
+            $classified = $curriculumByCourseId[$courseId];
+            $group = $classified['requirement_group'];
+            $hours = (int) ($classified['program_course']->course?->credit_hours ?? $course->credit_hours ?? 0);
+            $pendingItemSnapshots[] = [
+                'request_id' => (int) $item->student_registration_request_id,
+                'course_id' => $courseId,
+                'group_id' => (int) $group->requirement_group_id,
+                'credit_hours' => $hours,
+                'course_offering_id' => (int) $item->course_offering_id,
+            ];
+
+            if (isset($earnedCourseIds[$courseId]) || isset($registeredCourseIds[$courseId]) || isset($pendingCourseIds[$courseId])) {
+                continue;
+            }
+
+            $pendingCourseIds[$courseId] = true;
+        }
+
+        $groupStates = [];
+        foreach ($groups as $group) {
+            $mappedCourses = $curriculumByGroup->get((int) $group->requirement_group_id, collect());
+            $requiredHours = (int) $group->required_credit_hours;
+            $earnedHours = $this->hoursForCourseIds($mappedCourses, $earnedCourseIds);
+            $registeredHours = $this->hoursForCourseIds($mappedCourses, $registeredCourseIds);
+            $pendingHours = $this->hoursForCourseIds($mappedCourses, $pendingCourseIds);
+            $committedHours = $earnedHours + $registeredHours + $pendingHours;
+            $groupId = (int) $group->requirement_group_id;
+            $groupStates[$groupId] = [
+                'requirement_group_id' => $groupId,
+                'group_code' => $group->group_code,
+                'group_name' => $group->group_name,
+                'requirement_scope' => $group->requirement_scope,
+                'requirement_type' => $group->requirement_type,
+                'required_credit_hours' => $requiredHours,
+                'pool_credit_hours' => $this->poolCreditHours($mappedCourses),
+                'earned_hours' => $earnedHours,
+                'registered_in_progress_hours' => $registeredHours,
+                'pending_request_hours' => $pendingHours,
+                'committed_hours' => $committedHours,
+                'remaining_commitment_capacity' => max($requiredHours - $committedHours, 0),
+            ];
+        }
+
+        return [
+            'student_id' => $student->student_id,
+            'academic_program_id' => $programId,
+            'curriculum_by_course_id' => $curriculumByCourseId,
+            'groups' => $groupStates,
+            'earned_course_ids' => $earnedCourseIds,
+            'registered_course_ids' => $registeredCourseIds,
+            'pending_course_ids' => $pendingCourseIds,
+            'pending_items' => $pendingItemSnapshots,
+        ];
+    }
+
+    public function evaluateRegistrationCandidate(
+        Student $student,
+        Course|CourseOffering|int $candidate,
+        ?array $context = null
+    ): array {
+        $context ??= $this->buildRegistrationCommitmentContext($student);
+        $courseId = $this->candidateCourseId($candidate);
+
+        if ($courseId === null || ! isset($context['curriculum_by_course_id'][$courseId])) {
+            return $this->candidateEvaluationPayload(
+                allowed: false,
+                classification: self::CLASSIFICATION_OUTSIDE_CURRENT_CURRICULUM,
+                courseId: $courseId,
+                candidateHours: $this->candidateCreditHours($candidate, null),
+                reason: self::REASON_COURSE_OUTSIDE_CURRENT_CURRICULUM,
+                context: $context
+            );
+        }
+
+        $classified = $context['curriculum_by_course_id'][$courseId];
+        if (($classified['classification'] ?? self::CLASSIFICATION_MAPPED) !== self::CLASSIFICATION_MAPPED) {
+            $this->failClosed(
+                $classified['program_course'],
+                (int) $context['academic_program_id'],
+                (string) ($classified['reason'] ?? $classified['classification'])
+            );
+        }
+
+        $programCourse = $classified['program_course'];
+        $group = $classified['requirement_group'];
+        $groupId = (int) $group->requirement_group_id;
+        $groupState = $context['groups'][$groupId] ?? null;
+        $candidateHours = (int) ($programCourse->course?->credit_hours ?? $this->candidateCreditHours($candidate, $programCourse->course));
+        $alreadyCommitted = isset($context['earned_course_ids'][$courseId])
+            || isset($context['registered_course_ids'][$courseId])
+            || isset($context['pending_course_ids'][$courseId]);
+        $delta = $alreadyCommitted ? 0 : $candidateHours;
+        $requiredHours = (int) ($groupState['required_credit_hours'] ?? $group->required_credit_hours);
+        $earnedHours = (int) ($groupState['earned_hours'] ?? 0);
+        $registeredHours = (int) ($groupState['registered_in_progress_hours'] ?? 0);
+        $pendingHours = (int) ($groupState['pending_request_hours'] ?? 0);
+        $committedHours = (int) ($groupState['committed_hours'] ?? ($earnedHours + $registeredHours + $pendingHours));
+        $prospective = $committedHours + $delta;
+        $requirementType = strtolower((string) ($groupState['requirement_type'] ?? $group->requirement_type));
+        $reason = null;
+        $allowed = true;
+
+        if ($requirementType === AcademicRequirementGroup::TYPE_ELECTIVE) {
+            if ($earnedHours >= $requiredHours) {
+                $allowed = false;
+                $reason = self::REASON_ELECTIVE_REQUIREMENT_COMPLETED;
+            } elseif ($delta > 0) {
+                if ($committedHours >= $requiredHours) {
+                    $allowed = false;
+                    $reason = self::REASON_ELECTIVE_REQUIREMENT_FULLY_COMMITTED;
+                } elseif ($prospective > $requiredHours) {
+                    $allowed = false;
+                    $reason = self::REASON_ELECTIVE_REQUIREMENT_LIMIT_EXCEEDED;
+                }
+            }
+        }
+
+        return $this->candidateEvaluationPayload(
+            allowed: $allowed,
+            classification: self::CLASSIFICATION_MAPPED,
+            courseId: $courseId,
+            candidateHours: $candidateHours,
+            reason: $reason,
+            context: $context,
+            programCourse: $programCourse,
+            groupState: $groupState,
+            group: $group,
+            delta: $delta,
+            committedHours: $committedHours,
+            prospective: $prospective
+        );
+    }
+
+    public function evaluateRegistrationCandidates(Student $student, Collection $candidates, ?array $context = null): Collection
+    {
+        $context ??= $this->buildRegistrationCommitmentContext($student);
+
+        return $candidates->map(
+            fn (Course|CourseOffering|int $candidate): array => $this->evaluateRegistrationCandidate($student, $candidate, $context)
+        )->values();
+    }
+
+    public function validateRegistrationRequestCommitment(Student $student, StudentRegistrationRequest $request, ?array $context = null): array
+    {
+        $context ??= $this->buildRegistrationCommitmentContext($student);
+        $running = $this->contextWithoutRequest($context, $request);
+        $failures = [];
+
+        $request->loadMissing('items.courseOffering.course');
+        foreach ($request->items->sortBy('student_registration_request_item_id') as $item) {
+            $offering = $item->courseOffering;
+            if ($offering === null) {
+                continue;
+            }
+
+            $evaluation = $this->evaluateRegistrationCandidate($student, $offering, $running);
+            if (! $evaluation['allowed']) {
+                $failures[] = [
+                    'course_offering_id' => (int) $offering->course_offering_id,
+                    'reason' => $evaluation['reason'],
+                    'requirement_group_id' => $evaluation['requirement_group_id'] ?? null,
+                ];
+                continue;
+            }
+
+            $running = $this->contextWithCandidate($running, $evaluation);
+        }
+
+        return $failures;
+    }
+
+    public function assertRegistrationCandidateAllowed(
+        Student $student,
+        CourseOffering $offering,
+        ?array $context = null
+    ): array {
+        $evaluation = $this->evaluateRegistrationCandidate($student, $offering, $context);
+        if ($evaluation['allowed']) {
+            return $evaluation;
+        }
+
+        throw new RegistrationException(
+            $this->registrationDenialMessage((string) $evaluation['reason']),
+            ['course_offering_id' => [(string) $evaluation['reason']]],
+            422,
+            (string) $evaluation['reason']
+        );
     }
 
     /**
@@ -613,4 +866,227 @@ class AcademicRequirementService
             ? (int) $course->course_id
             : $course;
     }
+
+    private function emptyCommitmentContext(Student $student): array
+    {
+        return [
+            'student_id' => $student->student_id,
+            'academic_program_id' => $student->academic_program_id,
+            'curriculum_by_course_id' => [],
+            'groups' => [],
+            'earned_course_ids' => [],
+            'registered_course_ids' => [],
+            'pending_course_ids' => [],
+            'pending_items' => [],
+        ];
+    }
+
+    /**
+     * @param  Collection<int, AcademicRequirementGroup>  $groups
+     * @param  Collection<int, Collection<int, ProgramCourse>>  $curriculumByGroup
+     */
+    private function assertRequirementGroupsConfiguration(
+        int $programId,
+        Collection $groups,
+        Collection $curriculumByGroup
+    ): void {
+        foreach ($groups as $group) {
+            $mappedCourses = $curriculumByGroup->get((int) $group->requirement_group_id, collect());
+            $requiredHours = (int) $group->required_credit_hours;
+            $poolHours = $this->poolCreditHours($mappedCourses);
+            $type = strtolower((string) $group->requirement_type);
+
+            if ($requiredHours < 0) {
+                $this->failClosedGroup($programId, $group, 'required_credit_hours_negative');
+            }
+
+            if ($type === AcademicRequirementGroup::TYPE_ELECTIVE) {
+                if ($requiredHours > $poolHours) {
+                    $this->failClosedGroup($programId, $group, 'elective_required_hours_exceed_pool');
+                }
+
+                continue;
+            }
+
+            if ($type === AcademicRequirementGroup::TYPE_MANDATORY) {
+                if ($requiredHours !== $poolHours) {
+                    $this->failClosedGroup($programId, $group, 'mandatory_required_hours_mismatch_pool');
+                }
+
+                continue;
+            }
+
+            $this->failClosedGroup($programId, $group, 'requirement_type_invalid');
+        }
+    }
+
+    private function failClosedGroup(int $programId, AcademicRequirementGroup $group, string $reason): never
+    {
+        throw new AcademicRequirementConfigurationException(
+            'Academic requirement configuration is invalid for the current program curriculum.',
+            [
+                'academic_program_id' => $programId,
+                'requirement_group_id' => $group->requirement_group_id,
+                'reason' => $reason,
+            ]
+        );
+    }
+
+    private function candidateCourseId(Course|CourseOffering|int $candidate): ?int
+    {
+        if ($candidate instanceof CourseOffering) {
+            $courseId = $candidate->course_id ?? $candidate->course?->course_id;
+
+            return $courseId === null ? null : (int) $courseId;
+        }
+
+        if ($candidate instanceof Course) {
+            return (int) $candidate->course_id;
+        }
+
+        return $candidate;
+    }
+
+    private function candidateCreditHours(Course|CourseOffering|int $candidate, ?Course $fallback): int
+    {
+        if ($candidate instanceof CourseOffering) {
+            return (int) ($candidate->course?->credit_hours ?? $fallback?->credit_hours ?? 0);
+        }
+
+        if ($candidate instanceof Course) {
+            return (int) ($candidate->credit_hours ?? $fallback?->credit_hours ?? 0);
+        }
+
+        return (int) ($fallback?->credit_hours ?? 0);
+    }
+
+    private function candidateEvaluationPayload(
+        bool $allowed,
+        string $classification,
+        ?int $courseId,
+        int $candidateHours,
+        ?string $reason,
+        array $context,
+        ?ProgramCourse $programCourse = null,
+        ?array $groupState = null,
+        ?AcademicRequirementGroup $group = null,
+        int $delta = 0,
+        int $committedHours = 0,
+        int $prospective = 0
+    ): array {
+        $requiredHours = (int) ($groupState['required_credit_hours'] ?? $group?->required_credit_hours ?? 0);
+        $earnedHours = (int) ($groupState['earned_hours'] ?? 0);
+        $registeredHours = (int) ($groupState['registered_in_progress_hours'] ?? 0);
+        $pendingHours = (int) ($groupState['pending_request_hours'] ?? 0);
+
+        return [
+            'allowed' => $allowed,
+            'classification' => $classification,
+            'course_id' => $courseId,
+            'program_course_id' => $programCourse?->program_course_id,
+            'requirement_group_id' => $groupState['requirement_group_id'] ?? $group?->requirement_group_id,
+            'requirement_scope' => $groupState['requirement_scope'] ?? $group?->requirement_scope,
+            'requirement_type' => $groupState['requirement_type'] ?? $group?->requirement_type,
+            'required_credit_hours' => $requiredHours,
+            'earned_hours' => $earnedHours,
+            'registered_in_progress_hours' => $registeredHours,
+            'pending_request_hours' => $pendingHours,
+            'committed_hours' => $committedHours,
+            'candidate_credit_hours' => $candidateHours,
+            'candidate_commitment_delta' => $delta,
+            'prospective_committed_hours' => $prospective,
+            'remaining_commitment_capacity' => max($requiredHours - $committedHours, 0),
+            'reason' => $reason,
+            'academic_program_id' => $context['academic_program_id'] ?? null,
+        ];
+    }
+
+    private function contextWithoutRequest(array $context, StudentRegistrationRequest $request): array
+    {
+        $requestId = (int) $request->student_registration_request_id;
+        $seenCourseIds = [];
+
+        foreach ($context['pending_items'] ?? [] as $item) {
+            if ((int) $item['request_id'] !== $requestId) {
+                continue;
+            }
+
+            $courseId = (int) $item['course_id'];
+            if (isset($seenCourseIds[$courseId])) {
+                continue;
+            }
+            $seenCourseIds[$courseId] = true;
+
+            if (! isset($context['pending_course_ids'][$courseId])) {
+                continue;
+            }
+            if (isset($context['earned_course_ids'][$courseId]) || isset($context['registered_course_ids'][$courseId])) {
+                continue;
+            }
+
+            unset($context['pending_course_ids'][$courseId]);
+            $groupId = (int) $item['group_id'];
+            $hours = (int) $item['credit_hours'];
+            if (! isset($context['groups'][$groupId])) {
+                continue;
+            }
+
+            $context['groups'][$groupId]['pending_request_hours'] = max(
+                (int) $context['groups'][$groupId]['pending_request_hours'] - $hours,
+                0
+            );
+            $context['groups'][$groupId]['committed_hours'] = (int) $context['groups'][$groupId]['earned_hours']
+                + (int) $context['groups'][$groupId]['registered_in_progress_hours']
+                + (int) $context['groups'][$groupId]['pending_request_hours'];
+            $context['groups'][$groupId]['remaining_commitment_capacity'] = max(
+                (int) $context['groups'][$groupId]['required_credit_hours']
+                - (int) $context['groups'][$groupId]['committed_hours'],
+                0
+            );
+        }
+
+        return $context;
+    }
+
+    private function contextWithCandidate(array $context, array $evaluation): array
+    {
+        $delta = (int) ($evaluation['candidate_commitment_delta'] ?? 0);
+        $courseId = $evaluation['course_id'] === null ? null : (int) $evaluation['course_id'];
+        $groupId = $evaluation['requirement_group_id'] === null ? null : (int) $evaluation['requirement_group_id'];
+
+        if ($delta <= 0 || $courseId === null || $groupId === null) {
+            if ($courseId !== null) {
+                $context['pending_course_ids'][$courseId] = true;
+            }
+
+            return $context;
+        }
+
+        $context['pending_course_ids'][$courseId] = true;
+        if (! isset($context['groups'][$groupId])) {
+            return $context;
+        }
+
+        $context['groups'][$groupId]['pending_request_hours'] = (int) $context['groups'][$groupId]['pending_request_hours'] + $delta;
+        $context['groups'][$groupId]['committed_hours'] = (int) $context['groups'][$groupId]['committed_hours'] + $delta;
+        $context['groups'][$groupId]['remaining_commitment_capacity'] = max(
+            (int) $context['groups'][$groupId]['required_credit_hours']
+            - (int) $context['groups'][$groupId]['committed_hours'],
+            0
+        );
+
+        return $context;
+    }
+
+    private function registrationDenialMessage(string $reason): string
+    {
+        return match ($reason) {
+            self::REASON_ELECTIVE_REQUIREMENT_COMPLETED => 'The elective requirement for this group is already completed.',
+            self::REASON_ELECTIVE_REQUIREMENT_FULLY_COMMITTED => 'The elective requirement for this group is already fully committed.',
+            self::REASON_ELECTIVE_REQUIREMENT_LIMIT_EXCEEDED => 'Adding this course would exceed the elective requirement limit.',
+            self::REASON_COURSE_OUTSIDE_CURRENT_CURRICULUM => 'The selected course is not part of the student current program curriculum.',
+            default => 'This course cannot be registered under the current academic requirement rules.',
+        };
+    }
+
 }

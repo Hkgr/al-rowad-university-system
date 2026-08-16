@@ -29,6 +29,7 @@ class RegistrationRequestService
         private RegistrationService $registration,
         private AcademicTermResolver $academicTerms,
         private DataScopeService $dataScopes,
+        private AcademicRequirementService $requirements,
     ) {
     }
 
@@ -119,6 +120,7 @@ class RegistrationRequestService
                 (int) $offering->semester_id,
                 $actor
             );
+            $student = $this->lockStudentRow($student);
 
             $registeredIds = $this->registration->currentOfferingIds($student);
             if (in_array((int) $offering->course_offering_id, $registeredIds, true)) {
@@ -141,7 +143,8 @@ class RegistrationRequestService
                 $offering->fresh() ?? $offering,
                 $this->registration->hoursSnapshot($student, (int) $year->academic_year_id, (int) $offering->semester_id),
                 $registeredIds,
-                $this->requestHours($request, $registeredIds)
+                $this->requestHours($request, $registeredIds),
+                $this->requirements->buildRegistrationCommitmentContext($student)
             );
             if ($failure !== null) {
                 throw new RegistrationRequestException('This course cannot be added to the registration request.', [
@@ -240,6 +243,7 @@ class RegistrationRequestService
         return DB::transaction(function () use ($student, $actor, $year, $semesterId): StudentRegistrationRequest {
             $request = $this->lockExistingRequest($student, (int) $year->academic_year_id, $semesterId);
             $this->assertEditable($request);
+            $student = $this->lockStudentRow($student);
             $request->loadMissing(['items.courseOffering.course']);
 
             if ($request->items->isEmpty()) {
@@ -738,6 +742,14 @@ class RegistrationRequestService
             ->first();
     }
 
+    private function lockStudentRow(Student $student): Student
+    {
+        return Student::query()
+            ->whereKey($student->student_id)
+            ->lockForUpdate()
+            ->firstOrFail();
+    }
+
     private function lockExistingRequest(Student $student, int $academicYearId, int $semesterId): StudentRegistrationRequest
     {
         $request = StudentRegistrationRequest::query()
@@ -959,8 +971,10 @@ class RegistrationRequestService
             (int) $request->semester_id
         );
         $registeredIds = $this->registration->currentOfferingIds($student);
+        $requirementContext = $this->requirements->buildRegistrationCommitmentContext($student);
         $runningRequestHours = 0;
         $failures = [];
+        $failedOfferingIds = [];
 
         foreach ($request->items->sortBy('student_registration_request_item_id') as $item) {
             $offering = $item->courseOffering;
@@ -969,21 +983,40 @@ class RegistrationRequestService
                     'course_offering_id' => (int) $item->course_offering_id,
                     'reason' => 'offering_not_found',
                 ];
+                $failedOfferingIds[(int) $item->course_offering_id] = true;
                 continue;
             }
 
-            $reason = $this->itemFailureReason($student, $offering, $hours, $registeredIds, $runningRequestHours);
+            $reason = $this->itemFailureReason(
+                $student,
+                $offering,
+                $hours,
+                $registeredIds,
+                $runningRequestHours,
+                $requirementContext
+            );
             if ($reason !== null) {
                 $failures[] = [
                     'course_offering_id' => (int) $offering->course_offering_id,
                     'reason' => $reason,
                 ];
+                $failedOfferingIds[(int) $offering->course_offering_id] = true;
                 continue;
             }
 
             if (! in_array((int) $offering->course_offering_id, $registeredIds, true)) {
                 $runningRequestHours += (int) ($offering->course?->credit_hours ?? 0);
             }
+        }
+
+        foreach ($this->requirements->validateRegistrationRequestCommitment($student, $request, $requirementContext) as $failure) {
+            $offeringId = (int) $failure['course_offering_id'];
+            if (isset($failedOfferingIds[$offeringId])) {
+                continue;
+            }
+
+            $failures[] = $failure;
+            $failedOfferingIds[$offeringId] = true;
         }
 
         return $failures;
@@ -994,7 +1027,8 @@ class RegistrationRequestService
         CourseOffering $offering,
         array $hours,
         array $registeredOfferingIds,
-        int $runningRequestHours
+        int $runningRequestHours,
+        ?array $requirementContext = null
     ): ?string {
         try {
             $this->registration->assertSelfRegistrationAllowed($student, $offering);
@@ -1020,11 +1054,20 @@ class RegistrationRequestService
             return 'credit_limit_exceeded';
         }
 
+        $evaluation = $this->requirements->evaluateRegistrationCandidate($student, $offering, $requirementContext);
+        if (! $evaluation['allowed']) {
+            return (string) $evaluation['reason'];
+        }
+
         return null;
     }
 
     private function mapRegistrationException(RegistrationException $exception): string
     {
+        if (is_string($exception->errorCode) && $exception->errorCode !== '') {
+            return $exception->errorCode;
+        }
+
         $message = $exception->getMessage();
         if (str_contains($message, 'not open for registration')) {
             return 'offering_closed';
@@ -1048,7 +1091,7 @@ class RegistrationRequestService
             return 'not_current_term';
         }
         if (str_contains($message, 'program curriculum')) {
-            return 'not_on_curriculum';
+            return AcademicRequirementService::REASON_COURSE_OUTSIDE_CURRENT_CURRICULUM;
         }
         if (str_contains($message, 'not assigned to an academic program')) {
             return 'no_program';
