@@ -16,17 +16,36 @@ class GradePartWorkflowController extends Controller
     public function show(CourseOffering $offering, Request $request, AcademicAuthorizationService $authorization, GradePartWorkflowService $service): JsonResponse
     {
         $authorization->assertCanViewGradeParts($request->user(), $offering->course_offering_id);
-        return $this->success($service->workflow($offering->course_offering_id));
+
+        return $this->success($service->workflow($offering->course_offering_id, $request->user()));
     }
+
     public function update(StudentCourseRegistration $registration, string $part, SaveGradePartRequest $request, AcademicAuthorizationService $authorization, GradePartWorkflowService $service): JsonResponse
     {
         $authorization->assertCanManageGradePart($request->user(), $registration->course_offering_id, $part);
-        return $this->success($service->savePart($registration, $part, $request->validated(), $request->user()->user_id), 'Grade part saved successfully');
+
+        return $this->success($service->savePart($registration, $part, $request->validated(), $request->user()), 'Grade part saved successfully');
     }
+
     public function submit(CourseOffering $offering, string $part, Request $request, AcademicAuthorizationService $authorization, GradePartWorkflowService $service): JsonResponse
     {
         $authorization->assertCanManageGradePart($request->user(), $offering->course_offering_id, $part);
-        return $this->success($service->submit($offering->course_offering_id, $part, $request->user()->user_id)->toArray(), 'Grade part submitted successfully');
+
+        return $this->success($service->submit($offering->course_offering_id, $part, $request->user())->toArray(), 'Grade part submitted successfully');
     }
-    private function success(mixed $data, string $message = 'Operation completed successfully'): JsonResponse { return response()->json(['success' => true, 'message' => $message, 'data' => $data]); }
+
+    public function submitMyParts(CourseOffering $offering, Request $request, AcademicAuthorizationService $authorization, GradePartWorkflowService $service): JsonResponse
+    {
+        $authorization->assertAssignedInstructor($request->user(), $offering->course_offering_id);
+
+        return $this->success(
+            $service->submitMyParts($request->user(), $offering->course_offering_id),
+            'Assigned grade parts submitted successfully'
+        );
+    }
+
+    private function success(mixed $data, string $message = 'Operation completed successfully'): JsonResponse
+    {
+        return response()->json(['success' => true, 'message' => $message, 'data' => $data]);
+    }
 }

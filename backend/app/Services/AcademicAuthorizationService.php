@@ -75,11 +75,24 @@ class AcademicAuthorizationService
 
     public function assertCanEnterGrades(User $user, StudentCourseRegistration $registration): void
     {
-        if (! $user->hasPermission('grades.manage')) {
-            throw new AccessDeniedHttpException('Grade management permission is required.');
+        if ($user->hasPermission('exams.manage')) {
+            $this->assertExaminationCommitteeCanAccessOffering(
+                $user,
+                CourseOffering::query()->findOrFail($registration->course_offering_id)
+            );
+
+            return;
         }
 
-        $this->assertPrimaryInstructor($user, (int) $registration->course_offering_id);
+        if ($user->hasPermission('grades.manage')) {
+            throw new GradeException(
+                'Grade mutations must use the grade-part workflow.',
+                status: 403,
+                errorCode: 'grade_part_workflow_required'
+            );
+        }
+
+        throw new AccessDeniedHttpException('Grade management permission is required.');
     }
 
     public function assertPrimaryInstructor(User $user, int $courseOfferingId): void
@@ -117,24 +130,27 @@ class AcademicAuthorizationService
         }
     }
 
+    /**
+     * @return list<string>
+     */
+    public function assignedGradeParts(User $user, int $courseOfferingId): array
+    {
+        return $this->gradeAssignments()->assignedGradeParts($user, $courseOfferingId);
+    }
+
+    public function canManageGradePart(User $user, int $courseOfferingId, string $part): bool
+    {
+        return $this->gradeAssignments()->canManageGradePart($user, $courseOfferingId, $part);
+    }
+
     public function assertCanManageGradePart(User $user, int $courseOfferingId, string $part): void
     {
-        if (! $user->hasPermission('grades.manage')) {
-            throw new GradeException('Grade management permission is required.', status: 403, errorCode: 'unauthorized_grade_part');
-        }
+        $this->gradeAssignments()->assertCanManageGradePart($user, $courseOfferingId, $part);
+    }
 
-        try {
-            $this->assertPrimaryInstructor($user, $courseOfferingId);
-            return;
-        } catch (GradeException) {
-            // A non-primary instructor may manage only the explicitly assigned part.
-        }
-
-        $facultyIds = FacultyMember::query()->where('employee_id', $user->employee_id)->where('is_active', true)->pluck('faculty_member_id');
-        $roles = $part === 'practical' ? ['practical', 'lab'] : ['theoretical'];
-        $assigned = $facultyIds->isNotEmpty() && CourseOffering::query()->whereKey($courseOfferingId)
-            ->whereHas('offeringInstructors', fn ($q) => $q->whereIn('faculty_member_id', $facultyIds)->whereIn('instructor_role', $roles)->where('is_active', true))->exists();
-        if (! $assigned) throw new GradeException('You are not authorized to manage this grade part.', status: 403, errorCode: 'unauthorized_grade_part');
+    public function assertAssignedInstructor(User $user, int $courseOfferingId): void
+    {
+        $this->gradeAssignments()->assertAssignedInstructor($user, $courseOfferingId);
     }
 
     public function assertCanViewGradeParts(User $user, int $courseOfferingId): void
@@ -160,7 +176,7 @@ class AcademicAuthorizationService
             return;
         }
 
-        $this->assertPrimaryInstructor($user, $courseOfferingId);
+        $this->assertAssignedInstructor($user, $courseOfferingId);
     }
 
     public function assertExaminationCommittee(User $user): void
@@ -226,31 +242,14 @@ class AcademicAuthorizationService
         return $this->isAssignedInstructor($user, (int) $registration->course_offering_id);
     }
 
-    private function assertAssignedInstructor(User $user, int $courseOfferingId): void
-    {
-        if (! $this->isAssignedInstructor($user, $courseOfferingId)) {
-            throw new AccessDeniedHttpException('This operation is restricted to the assigned section instructor.');
-        }
-    }
-
     private function isAssignedInstructor(User $user, int $courseOfferingId): bool
     {
-        if ($user->employee_id === null) {
-            return false;
-        }
+        return $this->gradeAssignments()->isAssignedInstructor($user, $courseOfferingId);
+    }
 
-        $facultyIds = FacultyMember::query()
-            ->where('employee_id', $user->employee_id)
-            ->pluck('faculty_member_id');
-
-        return CourseOffering::query()
-            ->whereKey($courseOfferingId)
-            ->where(function ($query) use ($facultyIds): void {
-                $query->whereIn('faculty_member_id', $facultyIds)
-                    ->orWhereHas('offeringInstructors', fn ($instructors) =>
-                        $instructors->whereIn('faculty_member_id', $facultyIds)->where('is_active', true));
-            })
-            ->exists();
+    private function gradeAssignments(): ProfessorGradeAssignmentService
+    {
+        return app(ProfessorGradeAssignmentService::class);
     }
 
     private function assertRole(User $user, array $roles): void

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\GradeException;
 use App\Http\Controllers\Controller;
 use App\Models\CourseOffering;
 use App\Services\AcademicAuthorizationService;
@@ -28,9 +29,7 @@ class GradeWorkflowController extends Controller
         AcademicAuthorizationService $authorization,
         GradeWorkflowService $service
     ): JsonResponse {
-        if (! $request->user()->hasPermission('grades.manage')) {
-            abort(403, 'Grade management permission is required.');
-        }
+        $user = $request->user();
         $request->validate([
             'submitted_by_user_id' => ['prohibited'],
             'submitted_at' => ['prohibited'],
@@ -39,7 +38,18 @@ class GradeWorkflowController extends Controller
             'approval_status_id' => ['prohibited'],
             'approval_status_code' => ['prohibited'],
         ]);
-        $authorization->assertPrimaryInstructor($request->user(), $courseOffering->course_offering_id);
+
+        if ($user->hasPermission('exams.manage')) {
+            $authorization->assertExaminationCommitteeCanAccessOffering($user, $courseOffering);
+        } elseif ($user->hasPermission('grades.manage')) {
+            throw new GradeException(
+                'Grade mutations must use the grade-part workflow.',
+                status: 403,
+                errorCode: 'grade_part_workflow_required'
+            );
+        } else {
+            abort(403, 'Grade management permission is required.');
+        }
 
         return $this->successResponse(
             $service->submit($courseOffering->course_offering_id, $request->user()->user_id),

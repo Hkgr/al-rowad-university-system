@@ -47,6 +47,7 @@ use App\Http\Controllers\Api\GradeComponentController;
 use App\Http\Controllers\Api\GradeController;
 use App\Http\Controllers\Api\GradeWorkflowController;
 use App\Http\Controllers\Api\GradePartWorkflowController;
+use App\Http\Controllers\Api\ProfessorCourseOfferingController;
 use App\Http\Controllers\Api\GradePartApprovalController;
 use App\Http\Controllers\Api\GradingPolicyController;
 use App\Http\Controllers\Api\LibraryAuthorController;
@@ -299,8 +300,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('course-offerings/{id}/capacity', [CourseOfferingController::class, 'capacity']);
     Route::get('course-offerings/by-semester', [CourseOfferingController::class, 'bySemester']);
     Route::get('course-offerings/{id}/grade-sheet', [CourseOfferingController::class, 'gradeSheet']);
+    Route::get('professor/course-offerings', [ProfessorCourseOfferingController::class, 'index']);
     Route::get('course-offerings/{offering}/grade-parts-workflow', [GradePartWorkflowController::class, 'show']);
     Route::put('registrations/{registration}/grade-parts/{part}', [GradePartWorkflowController::class, 'update']);
+    Route::post('course-offerings/{offering}/grade-parts/submit-my-parts', [GradePartWorkflowController::class, 'submitMyParts']);
     Route::post('course-offerings/{offering}/grade-parts/{part}/submit', [GradePartWorkflowController::class, 'submit']);
     Route::get('course-offerings/{courseOffering}/grade-workflow', [GradeWorkflowController::class, 'show']);
     Route::post('course-offerings/{courseOffering}/submit-grades', [GradeWorkflowController::class, 'submit']);

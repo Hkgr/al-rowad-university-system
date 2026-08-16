@@ -6,7 +6,7 @@ const professorNav = [
     items: [
       { to: '/professor',            Icon: FaHome,          ar: 'الرئيسية',        en: 'Home',      end: true, permissions: ['grades.manage', 'attendance.manage'] },
       { to: '/professor/attendance', Icon: FaCalendarCheck, ar: 'الحضور والحرمان', en: 'Attendance', permissions: ['attendance.manage'] },
-      { to: '/professor/grades',     Icon: FaEdit,          ar: 'إدخال العلامات',  en: 'Grades',     permissions: ['grades.manage'] },
+      { to: '/professor/grades',     Icon: FaEdit,          ar: 'إدارة العلامات',  en: 'Grades',     permissions: ['grades.manage'] },
     ],
   },
 ]
