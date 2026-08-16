@@ -4,6 +4,7 @@ use App\Exceptions\AcademicRequirementConfigurationException;
 use App\Exceptions\AttendanceException;
 use App\Exceptions\DisciplinaryCaseException;
 use App\Exceptions\GradeException;
+use App\Exceptions\GraduationEligibilityException;
 use App\Exceptions\RegistrationException;
 use App\Exceptions\RegistrationRequestException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -116,6 +117,19 @@ return Application::configure(basePath: dirname(__DIR__))
                 'message' => $exception->getMessage(),
                 'error_code' => $exception->errorCode,
                 'errors' => $exception->context,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (GraduationEligibilityException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
             ], $exception->status);
         });
 
