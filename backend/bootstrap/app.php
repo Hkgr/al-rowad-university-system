@@ -3,6 +3,7 @@
 use App\Exceptions\AttendanceException;
 use App\Exceptions\GradeException;
 use App\Exceptions\RegistrationException;
+use App\Exceptions\RegistrationRequestException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -73,6 +74,20 @@ return Application::configure(basePath: dirname(__DIR__))
                 'success' => false,
                 'message' => $exception->getMessage(),
                 'errors' => $exception->errors,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (RegistrationRequestException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+                'item_failures' => $exception->itemFailures,
             ], $exception->status);
         });
 

@@ -2,25 +2,22 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Exceptions\RegistrationException;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\AcademicYearResource;
 use App\Http\Resources\AvailableCourseOfferingResource;
 use App\Http\Resources\SemesterResource;
-use App\Http\Resources\StudentCourseRegistrationResource;
-use App\Http\Resources\StudentRegistrationResultResource;
 use App\Http\Resources\StudentRegistrationSummaryResource;
-use App\Models\AcademicYear;
 use App\Models\CourseOffering;
 use App\Models\Student;
-use App\Services\RegistrationService;
+use App\Models\StudentRegistrationRequestItem;
+use App\Services\RegistrationRequestService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 class StudentSelfRegistrationController extends Controller
 {
-    public function __construct(private RegistrationService $registration)
+    public function __construct(private RegistrationRequestService $requests)
     {
     }
 
@@ -31,99 +28,90 @@ class StudentSelfRegistrationController extends Controller
             'semester_id' => ['sometimes', 'integer', 'min:1', 'exists:semesters,semester_id'],
         ]);
 
-        $year = $this->uniqueCurrentAcademicYear();
-
-        $openSemesters = $year === null
-            ? collect()
-            : $this->registration->selfRegistrationOpenSemesters($student, (int) $year->academic_year_id);
-
-        $requestedSemesterId = isset($validated['semester_id']) ? (int) $validated['semester_id'] : null;
-        $semester = $requestedSemesterId !== null
-            ? $openSemesters->firstWhere('semester_id', $requestedSemesterId)
-            : null;
-
-        if ($semester === null && $openSemesters->count() === 1) {
-            $semester = $openSemesters->first();
-        }
-
-        $registrationOpen = $openSemesters->isNotEmpty();
-        $available = [];
-        $summary = null;
-
-        if ($year !== null && $semester !== null) {
-            $available = $this->registration->getSelfRegistrationOfferings(
-                $student,
-                (int) $year->academic_year_id,
-                (int) $semester->semester_id
-            );
-            $summary = $this->registration->getRegistrationSummary(
-                $student,
-                (int) $year->academic_year_id,
-                (int) $semester->semester_id
-            );
-        } elseif ($year !== null && ! $registrationOpen) {
-            $summary = $this->registration->getRegistrationSummary(
-                $student,
-                (int) $year->academic_year_id,
-                $requestedSemesterId
-            );
-        }
+        $workspace = $this->requests->studentWorkspace(
+            $student,
+            isset($validated['semester_id']) ? (int) $validated['semester_id'] : null
+        );
 
         return $this->successResponse([
-            'registration_open' => $registrationOpen,
-            'academic_year' => $year === null ? null : (new AcademicYearResource($year))->resolve($request),
-            'semester' => $semester === null ? null : (new SemesterResource($semester))->resolve($request),
-            'semesters' => SemesterResource::collection($openSemesters)->resolve($request),
-            'available_courses' => AvailableCourseOfferingResource::collection($available)->resolve($request),
-            'summary' => $summary === null
+            'registration_open' => $workspace['registration_open'],
+            'academic_year' => $workspace['academic_year'] === null
                 ? null
-                : (new StudentRegistrationSummaryResource($summary))->resolve($request),
+                : (new AcademicYearResource($workspace['academic_year']))->resolve($request),
+            'semester' => $workspace['semester'] === null
+                ? null
+                : (new SemesterResource($workspace['semester']))->resolve($request),
+            'semesters' => SemesterResource::collection($workspace['semesters'])->resolve($request),
+            'available_courses' => AvailableCourseOfferingResource::collection($workspace['available_courses'])->resolve($request),
+            'summary' => $workspace['summary'] === null
+                ? null
+                : (new StudentRegistrationSummaryResource($workspace['summary']))->resolve($request),
+            'hours' => $workspace['hours'],
+            'request' => $workspace['request'],
         ]);
     }
 
-    public function register(Request $request, CourseOffering $courseOffering): JsonResponse
+    public function addItem(Request $request, CourseOffering $courseOffering): JsonResponse
     {
         $student = $this->authenticatedStudent($request);
-        if ($this->uniqueCurrentAcademicYear() === null) {
-            throw new RegistrationException('The selected course offering is not open for the current academic term.', [
-                'course_offering_id' => ['The selected course offering is not open for the current academic term.'],
-            ]);
-        }
-        $this->registration->assertSelfRegistrationAllowed($student, $courseOffering);
-
-        $result = $this->registration->registerStudent(
-            [
-                'student_id' => $student->student_id,
-                'course_offering_id' => $courseOffering->course_offering_id,
-            ],
-            $request->user()?->user_id
-        );
+        $result = $this->requests->addItem($student, $courseOffering, $request->user());
 
         return $this->successResponse(
-            (new StudentRegistrationResultResource($result))->resolve($request),
-            'تم تسجيل المادة بنجاح.',
+            ['request' => $this->requests->studentRequestView($student, $result)],
+            'تمت إضافة المادة إلى طلب التسجيل.',
             201
         );
     }
 
-    public function drop(Request $request, int $id): JsonResponse
+    public function removeItem(Request $request, StudentRegistrationRequestItem $requestItem): JsonResponse
     {
         $student = $this->authenticatedStudent($request);
-        $registration = $this->registration->findOrFail($id);
-        $this->registration->assertSelfDropAllowed($student, $registration);
-        $updated = $this->registration->dropRegistration($registration);
+        $result = $this->requests->removeItem($student, $requestItem, $request->user());
 
         return $this->successResponse(
-            (new StudentCourseRegistrationResource($updated))->resolve($request),
-            'تم حذف تسجيل المادة بنجاح.'
+            ['request' => $this->requests->studentRequestView($student, $result)],
+            'تمت إزالة المادة من طلب التسجيل.'
         );
     }
 
-    private function uniqueCurrentAcademicYear(): ?AcademicYear
+    public function updateRequest(Request $request): JsonResponse
     {
-        $currentYears = AcademicYear::query()->where('is_current', true)->get();
+        $student = $this->authenticatedStudent($request);
+        $validated = $request->validate([
+            'student_notes' => ['nullable', 'string', 'max:1000'],
+            'semester_id' => ['sometimes', 'integer', 'min:1', 'exists:semesters,semester_id'],
+        ]);
 
-        return $currentYears->count() === 1 ? $currentYears->first() : null;
+        $result = $this->requests->updateNotes(
+            $student,
+            $validated['student_notes'] ?? null,
+            $request->user(),
+            isset($validated['semester_id']) ? (int) $validated['semester_id'] : null
+        );
+
+        return $this->successResponse(
+            ['request' => $this->requests->studentRequestView($student, $result)],
+            'تم حفظ ملاحظات الطلب.'
+        );
+    }
+
+    public function submit(Request $request): JsonResponse
+    {
+        $student = $this->authenticatedStudent($request);
+        $validated = $request->validate([
+            'semester_id' => ['sometimes', 'integer', 'min:1', 'exists:semesters,semester_id'],
+        ]);
+
+        $result = $this->requests->submit(
+            $student,
+            $request->user(),
+            isset($validated['semester_id']) ? (int) $validated['semester_id'] : null
+        );
+
+        return $this->successResponse(
+            ['request' => $this->requests->studentRequestView($student, $result)],
+            'تم إرسال طلب التسجيل إلى المرشد الأكاديمي.'
+        );
     }
 
     private function authenticatedStudent(Request $request): Student

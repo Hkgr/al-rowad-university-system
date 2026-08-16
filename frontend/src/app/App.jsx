@@ -25,6 +25,7 @@ import StudentTranscript  from '../features/student-dashboard/pages/StudentTrans
 import StudentGPA         from '../features/student-dashboard/pages/StudentGPA'
 import StudentAttendance  from '../features/student-dashboard/pages/StudentAttendance'
 import StudentRegistration from '../features/student-dashboard/pages/StudentRegistration'
+import StudentCalendar from '../features/student-dashboard/pages/StudentCalendar'
 
 // ── الموارد البشرية (HR) ────────────────────────────────────────────────────
 import hrNav                from '../features/hr-dashboard/nav'
@@ -53,6 +54,7 @@ import CourseRegistrationPage from '../features/exam-board/pages/CourseRegistrat
 import CourseOfferingsPage    from '../features/exam-board/pages/CourseOfferingsPage'
 import CourseTablePage        from '../features/exam-board/pages/CourseTablePage'
 import ExamPlaceholder        from '../features/exam-board/pages/ExamPlaceholder'
+import ApprovedRegistrationRequestsPage from '../features/registration-requests/pages/ApprovedRegistrationRequestsPage'
 
 // ── بوابة الأستاذ (Professor Dashboard) ─────────────────────────────────────
 import professorNav             from '../features/professor-dashboard/nav'
@@ -70,6 +72,8 @@ import DeanTeacherProfile  from '../features/dean-dashboard/pages/DeanTeacherPro
 import DeanCourses         from '../features/dean-dashboard/pages/DeanCourses'
 import DeanCourseOfferingProfile from '../features/dean-dashboard/pages/DeanCourseOfferingProfile'
 import DeanRegistrationOfferings from '../features/dean-dashboard/pages/DeanRegistrationOfferings'
+import DeanRegistrationRequests from '../features/dean-dashboard/pages/DeanRegistrationRequests'
+import DeanRegistrationRequestDetail from '../features/dean-dashboard/pages/DeanRegistrationRequestDetail'
 import DeanReports         from '../features/dean-dashboard/pages/DeanReports'
 import DeanCalendar        from '../features/dean-dashboard/pages/DeanCalendar'
 
@@ -125,6 +129,7 @@ export default function App() {
           <Route path="/student-affairs/graduates"         element={<GraduatesPage />}         />
           <Route path="/student-affairs/students/:id"      element={<StudentProfilePage />}    />
           <Route path="/student-affairs/students/:id/edit" element={protect(<EditStudentPage />, { permissions: ['students.manage'] })} />
+          <Route path="/student-affairs/approved-registration-requests" element={protect(<ApprovedRegistrationRequestsPage />, { permissions: ['registration.view'] })} />
         </Route>
 
         {/* ── بوابة الطالب dashboard ── */}
@@ -140,6 +145,7 @@ export default function App() {
           <Route path="/student/gpa"        element={<StudentGPA />}        />
           <Route path="/student/attendance"    element={<StudentAttendance />} />
           <Route path="/student/registration" element={<StudentRegistration />} />
+          <Route path="/student/calendar" element={<StudentCalendar />} />
         </Route>
 
         {/* ── هيئة الامتحانات dashboard ── */}
@@ -151,6 +157,7 @@ export default function App() {
           }
         >
           <Route path="/exam-board/course-registration" element={<CourseRegistrationPage />} />
+          <Route path="/exam-board/approved-registration-requests" element={<ApprovedRegistrationRequestsPage />} />
         </Route>
 
         <Route
@@ -232,6 +239,8 @@ export default function App() {
           <Route path="/dean/courses"       element={<DeanCourses />} />
           <Route path="/dean/courses/:id"   element={<DeanCourseOfferingProfile />} />
           <Route path="/dean/registration-offerings" element={<DeanRegistrationOfferings />} />
+          <Route path="/dean/registration-requests" element={<DeanRegistrationRequests />} />
+          <Route path="/dean/registration-requests/:id" element={<DeanRegistrationRequestDetail />} />
           <Route path="/dean/reports"       element={<DeanReports />} />
           <Route path="/dean/calendar"      element={<DeanCalendar />} />
         </Route>

@@ -22,6 +22,7 @@ export async function apiRequest(path, options = {}) {
     error.status = response.status;
     error.errorCode = data?.error_code;
     error.details = data?.errors ?? data?.data ?? {};
+    error.itemFailures = data?.item_failures ?? [];
     throw error;
   }
 

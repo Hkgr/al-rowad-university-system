@@ -8,17 +8,26 @@ import StudentConfirmDialog from '../components/StudentConfirmDialog'
 
 const REASON_LABELS = {
   already_registered: { ar: 'مسجل مسبقاً', tone: 'registered' },
+  already_in_request: { ar: 'مضاف إلى الطلب', tone: 'request' },
   missing_prerequisites: { ar: 'متطلب سابق غير محقق', tone: 'prerequisite' },
-  no_available_seats: { ar: 'لا توجد مقاعد متاحة', tone: 'full' },
-  credit_limit_exceeded: { ar: 'تجاوز الحد المسموح من الساعات', tone: 'hours' },
+  no_available_seats: { ar: 'لا توجد مقاعد', tone: 'full' },
+  credit_limit_exceeded: { ar: 'تجاوز الساعات', tone: 'hours' },
 }
 
 const BADGE_CLASS = {
   eligible: 'bg-green-100 text-green-700',
   registered: 'bg-blue-100 text-blue-700',
+  request: 'bg-primary/10 text-primary-dark',
   prerequisite: 'bg-amber-100 text-amber-800',
   full: 'bg-orange-100 text-orange-700',
   hours: 'bg-yellow-100 text-yellow-800',
+}
+
+const STATUS_LABELS = {
+  draft: { ar: 'مسودة', className: 'bg-gray-100 text-text-dark border-gray-200' },
+  submitted: { ar: 'بانتظار مراجعة المرشد الأكاديمي', className: 'bg-amber-100 text-amber-900 border-amber-200' },
+  returned: { ar: 'أعيد للتعديل', className: 'bg-orange-100 text-orange-800 border-orange-200' },
+  approved: { ar: 'تم اعتماد طلب التسجيل', className: 'bg-green-100 text-green-800 border-green-200' },
 }
 
 function studentRegistrationPath(semesterId) {
@@ -28,34 +37,44 @@ function studentRegistrationPath(semesterId) {
   return `/v1/student/registration${query ? `?${query}` : ''}`
 }
 
-function HoursBar({ registered, max, remaining }) {
-  const pct = max > 0 ? Math.min((registered / max) * 100, 100) : 0
+function HoursPanel({ hours, requestStatus }) {
+  const snapshot = hours?.approved_snapshot
+  const approved = requestStatus === 'approved' && snapshot
+  const registered = approved ? (snapshot.registered_hours_before_approval ?? 0) : (hours?.registered_hours ?? 0)
+  const requestHours = approved ? (snapshot.request_hours_at_approval ?? 0) : (hours?.request_hours ?? 0)
+  const projected = approved ? (snapshot.projected_hours_at_approval ?? registered + requestHours) : (hours?.projected_hours ?? registered + requestHours)
+  const max = approved ? (snapshot.max_allowed_hours_at_approval ?? 0) : (hours?.max_allowed_hours ?? 0)
+  const remaining = approved ? (snapshot.remaining_hours_after_approval ?? 0) : (hours?.remaining_after_approval ?? 0)
+  const pct = max > 0 ? Math.min((projected / max) * 100, 100) : 0
   const color = pct >= 100 ? 'bg-red-500' : pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-primary'
 
   return (
     <section className="bg-white border border-primary/12 rounded-[16px] p-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]" dir="rtl">
-      <div className="grid grid-cols-3 max-[640px]:grid-cols-1 gap-4 mb-4">
+      <div className="grid grid-cols-5 max-[900px]:grid-cols-2 max-[520px]:grid-cols-1 gap-4 mb-4">
         <div>
-          <p className="text-[11.5px] font-semibold text-text-light mb-1">الساعات المسجلة</p>
+          <p className="text-[11.5px] font-semibold text-text-light mb-1">{approved ? 'الساعات قبل الاعتماد' : 'الساعات المسجلة حالياً'}</p>
           <p className="text-[22px] font-black text-text-dark tabular-nums">{registered}</p>
         </div>
         <div>
-          <p className="text-[11.5px] font-semibold text-text-light mb-1">الحد الأقصى</p>
+          <p className="text-[11.5px] font-semibold text-text-light mb-1">{approved ? 'ساعات الطلب المعتمدة' : 'ساعات الطلب'}</p>
+          <p className="text-[22px] font-black text-primary tabular-nums">{requestHours}</p>
+        </div>
+        <div>
+          <p className="text-[11.5px] font-semibold text-text-light mb-1">{approved ? 'إجمالي الساعات بعد الاعتماد' : 'الإجمالي بعد الاعتماد'}</p>
+          <p className="text-[22px] font-black text-text-dark tabular-nums">{projected}</p>
+        </div>
+        <div>
+          <p className="text-[11.5px] font-semibold text-text-light mb-1">{approved ? 'الحد الأقصى وقت الاعتماد' : 'الحد الأقصى المسموح'}</p>
           <p className="text-[22px] font-black text-text-dark tabular-nums">{max}</p>
         </div>
         <div>
-          <p className="text-[11.5px] font-semibold text-text-light mb-1">الساعات المتبقية</p>
+          <p className="text-[11.5px] font-semibold text-text-light mb-1">{approved ? 'المتبقي بعد الاعتماد' : 'المتبقي بعد الاعتماد'}</p>
           <p className="text-[22px] font-black text-primary tabular-nums">{remaining}</p>
         </div>
       </div>
       <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
         <div className={`h-full rounded-full transition-all duration-500 ${color}`} style={{ width: `${pct}%` }} />
       </div>
-      {remaining <= 0 ? (
-        <p className="mt-3 text-[12.5px] font-semibold text-red-700">
-          لقد وصلت إلى الحد الأقصى المسموح من الساعات لهذا الفصل
-        </p>
-      ) : null}
     </section>
   )
 }
@@ -81,11 +100,14 @@ function statusBadge(course) {
   if (reasons.includes('already_registered')) {
     return { label: REASON_LABELS.already_registered.ar, className: BADGE_CLASS.registered }
   }
+  if (reasons.includes('already_in_request')) {
+    return { label: REASON_LABELS.already_in_request.ar, className: BADGE_CLASS.request }
+  }
   if (reasons.includes('missing_prerequisites')) {
-    return { label: 'شرط سابق', className: BADGE_CLASS.prerequisite }
+    return { label: 'متطلب سابق غير محقق', className: BADGE_CLASS.prerequisite }
   }
   if (reasons.includes('no_available_seats')) {
-    return { label: 'ممتلئ', className: BADGE_CLASS.full }
+    return { label: 'لا توجد مقاعد', className: BADGE_CLASS.full }
   }
   if (reasons.includes('credit_limit_exceeded')) {
     return { label: 'تجاوز الساعات', className: BADGE_CLASS.hours }
@@ -93,14 +115,14 @@ function statusBadge(course) {
   return { label: 'غير مؤهل', className: 'bg-gray-100 text-text-light' }
 }
 
-function CourseRow({ course, onRegister, registering }) {
+function CourseRow({ course, onAdd, adding, canEdit }) {
   const eligible = course.eligibility_status === 'eligible'
   const reasons = course.eligibility_reasons ?? []
   const missing = course.missing_prerequisites ?? []
   const seats = course.available_seats ?? 0
   const capacity = course.capacity ?? 0
   const badge = statusBadge(course)
-  const busy = Boolean(registering[course.course_offering_id])
+  const busy = Boolean(adding[course.course_offering_id])
 
   return (
     <article className={`px-5 py-4 ${eligible ? 'bg-white' : 'bg-primary/[0.015]'}`} dir="rtl">
@@ -118,7 +140,7 @@ function CourseRow({ course, onRegister, registering }) {
             </span>
           </div>
           {reasons
-            .filter(reason => reason !== 'already_registered')
+            .filter(reason => reason !== 'already_registered' && reason !== 'already_in_request')
             .filter(reason => reason !== 'missing_prerequisites' || missing.length === 0)
             .map(reason => {
               const info = REASON_LABELS[reason]
@@ -141,15 +163,17 @@ function CourseRow({ course, onRegister, registering }) {
             </div>
           ) : null}
         </div>
-        <button
-          type="button"
-          onClick={() => onRegister(course)}
-          disabled={!eligible || busy}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-[10px] text-[12px] font-bold hover:enabled:bg-primary-dark disabled:opacity-35 disabled:cursor-not-allowed transition-colors shrink-0"
-        >
-          {busy ? <FaSpinner className="animate-spin text-[10px]" /> : <FaPlus className="text-[10px]" />}
-          تسجيل
-        </button>
+        {canEdit ? (
+          <button
+            type="button"
+            onClick={() => onAdd(course)}
+            disabled={!eligible || busy}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-[10px] text-[12px] font-bold hover:enabled:bg-primary-dark disabled:opacity-35 disabled:cursor-not-allowed transition-colors shrink-0"
+          >
+            {busy ? <FaSpinner className="animate-spin text-[10px]" /> : <FaPlus className="text-[10px]" />}
+            إضافة إلى الطلب
+          </button>
+        ) : null}
       </div>
     </article>
   )
@@ -158,6 +182,7 @@ function CourseRow({ course, onRegister, registering }) {
 export default function StudentRegistration() {
   const navigate = useNavigate()
   const requestSeq = useRef(0)
+  const notesTimer = useRef(null)
 
   const [payload, setPayload] = useState(null)
   const [semesterId, setSemesterId] = useState('')
@@ -165,8 +190,11 @@ export default function StudentRegistration() {
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
   const [toast, setToast] = useState('')
-  const [registering, setRegistering] = useState({})
-  const [dropping, setDropping] = useState({})
+  const [adding, setAdding] = useState({})
+  const [removing, setRemoving] = useState({})
+  const [submitting, setSubmitting] = useState(false)
+  const [savingNotes, setSavingNotes] = useState(false)
+  const [studentNotes, setStudentNotes] = useState('')
   const [confirm, setConfirm] = useState(null)
   const hasLoadedRef = useRef(false)
 
@@ -178,18 +206,22 @@ export default function StudentRegistration() {
   const available = payload?.available_courses ?? []
   const summary = payload?.summary ?? null
   const registrations = summary?.registrations ?? []
+  const request = payload?.request ?? null
+  const requestItems = request?.items ?? []
+  const hours = payload?.hours ?? request?.hours ?? null
+  const status = request?.status ?? 'draft'
+  const canEdit = registrationOpen && termReady && (!request || status === 'draft' || status === 'returned')
+  const readOnly = status === 'submitted' || status === 'approved'
   const busy = loading || refreshing
+  const statusMeta = STATUS_LABELS[status] ?? STATUS_LABELS.draft
 
   useEffect(() => {
     let active = true
-    // Keep these calendar lookups for the dual-role landing contract.
-    // They must not populate the semester dropdown or fabricate a registration window.
     Promise.all([
       apiRequest('/v1/academic-years/current').catch(() => null),
       apiRequest('/v1/semesters/active').catch(() => null),
     ]).then(([yearResponse, semesterResponse]) => {
       if (!active) return
-      // Calendar lookups only; the current year is resolved server-side.
       void yearResponse
       void semesterResponse
     })
@@ -209,6 +241,7 @@ export default function StudentRegistration() {
         const response = await apiRequest(studentRegistrationPath(semesterId))
         if (!active || seq !== requestSeq.current) return
         setPayload(response?.data ?? null)
+        setStudentNotes(response?.data?.request?.student_notes ?? '')
         hasLoadedRef.current = true
       } catch (requestError) {
         if (!active || seq !== requestSeq.current) return
@@ -233,66 +266,110 @@ export default function StudentRegistration() {
     return () => { active = false }
   }, [semesterId, navigate])
 
-  const hours = useMemo(() => ({
-    registered: summary?.total_registered_hours ?? 0,
-    max: summary?.max_allowed_hours ?? 0,
-    remaining: summary?.remaining_hours ?? 0,
-  }), [summary])
-
   function showToast(message) {
     setToast(message)
     window.setTimeout(() => setToast(''), 3200)
   }
 
-  async function confirmRegister() {
-    const course = confirm?.course
-    if (!course) return
-    setRegistering(current => ({ ...current, [course.course_offering_id]: true }))
+  async function reload() {
+    const response = await apiRequest(studentRegistrationPath(selectedSemesterId))
+    setPayload(response?.data ?? null)
+    setStudentNotes(response?.data?.request?.student_notes ?? studentNotes)
+  }
+
+  async function addCourse(course) {
+    setAdding(current => ({ ...current, [course.course_offering_id]: true }))
     setError('')
     try {
-      await apiRequest(`/v1/student/registration/course-offerings/${course.course_offering_id}/register`, {
+      await apiRequest(`/v1/student/registration/request/items/${course.course_offering_id}`, {
         method: 'POST',
         body: JSON.stringify({}),
       })
-      showToast(`تم تسجيل "${course.course_name}" بنجاح`)
-      setConfirm(null)
-      const response = await apiRequest(studentRegistrationPath(selectedSemesterId))
-      setPayload(response?.data ?? null)
+      showToast(`تمت إضافة "${course.course_name}" إلى الطلب`)
+      await reload()
     } catch (requestError) {
       if (requestError.status === 401) {
         navigate('/login', { replace: true })
         return
       }
-      setError(requestError.message || 'فشل تسجيل المادة')
+      setError(requestError.message || 'تعذّر إضافة المادة إلى الطلب')
     } finally {
-      setRegistering(current => ({ ...current, [course.course_offering_id]: false }))
+      setAdding(current => ({ ...current, [course.course_offering_id]: false }))
     }
   }
 
-  async function confirmDrop() {
-    const registration = confirm?.registration
-    if (!registration) return
-    setDropping(current => ({ ...current, [registration.registration_id]: true }))
+  async function removeItem(item) {
+    setRemoving(current => ({ ...current, [item.student_registration_request_item_id]: true }))
     setError('')
     try {
-      await apiRequest(`/v1/student/registration/registrations/${registration.registration_id}/drop`, {
-        method: 'POST',
-        body: JSON.stringify({}),
+      await apiRequest(`/v1/student/registration/request/items/${item.student_registration_request_item_id}`, {
+        method: 'DELETE',
       })
-      showToast(`تم حذف "${registration.course_name}" من قائمة التسجيل`)
-      setConfirm(null)
-      const response = await apiRequest(studentRegistrationPath(selectedSemesterId))
-      setPayload(response?.data ?? null)
+      showToast(`تمت إزالة "${item.course_name}" من الطلب`)
+      await reload()
     } catch (requestError) {
       if (requestError.status === 401) {
         navigate('/login', { replace: true })
         return
       }
-      setError(requestError.message || 'فشل حذف التسجيل')
+      setError(requestError.message || 'تعذّر إزالة المادة من الطلب')
     } finally {
-      setDropping(current => ({ ...current, [registration.registration_id]: false }))
+      setRemoving(current => ({ ...current, [item.student_registration_request_item_id]: false }))
     }
   }
+
+  function scheduleNotesSave(value) {
+    setStudentNotes(value)
+    if (!canEdit) return
+    window.clearTimeout(notesTimer.current)
+    notesTimer.current = window.setTimeout(async () => {
+      setSavingNotes(true)
+      try {
+        await apiRequest('/v1/student/registration/request', {
+          method: 'PATCH',
+          body: JSON.stringify({
+            student_notes: value,
+            ...(selectedSemesterId ? { semester_id: Number(selectedSemesterId) } : {}),
+          }),
+        })
+      } catch (requestError) {
+        setError(requestError.message || 'تعذّر حفظ الملاحظات')
+      } finally {
+        setSavingNotes(false)
+      }
+    }, 500)
+  }
+
+  async function confirmSubmit() {
+    setSubmitting(true)
+    setError('')
+    try {
+      await apiRequest('/v1/student/registration/request', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          student_notes: studentNotes,
+          ...(selectedSemesterId ? { semester_id: Number(selectedSemesterId) } : {}),
+        }),
+      })
+      await apiRequest('/v1/student/registration/request/submit', {
+        method: 'POST',
+        body: JSON.stringify(selectedSemesterId ? { semester_id: Number(selectedSemesterId) } : {}),
+      })
+      showToast(status === 'returned' ? 'تم إعادة إرسال الطلب' : 'تم إرسال الطلب إلى المرشد الأكاديمي')
+      setConfirm(null)
+      await reload()
+    } catch (requestError) {
+      if (requestError.status === 401) {
+        navigate('/login', { replace: true })
+        return
+      }
+      setError(requestError.message || 'تعذّر إرسال الطلب')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const submitLabel = status === 'returned' ? 'إعادة إرسال الطلب' : 'إرسال الطلب للمرشد الأكاديمي'
 
   if (loading) {
     return (
@@ -302,17 +379,13 @@ export default function StudentRegistration() {
     )
   }
 
-  const afterHours = confirm?.type === 'register'
-    ? hours.registered + Number(confirm.course?.credit_hours || 0)
-    : hours.registered
-
   return (
     <div className="space-y-5" dir="rtl">
       <header className="bg-[linear-gradient(135deg,rgba(86,153,51,0.12),rgba(255,255,255,0.95))] border border-primary/12 rounded-[20px] px-6 py-6 shadow-[0_2px_16px_rgba(26,46,16,0.06)]">
         <p className="text-[12px] font-bold text-primary mb-1">بوابة الطالب</p>
         <h1 className="text-[22px] font-black text-text-dark">تسجيل المواد</h1>
         <p className="mt-2 text-[13.5px] text-text-light leading-7">
-          تظهر هنا المواد التي أتاحتها الكلية لبرنامجك الدراسي في الفصل الحالي.
+          ابنِ طلب التسجيل ثم أرسله إلى المرشد الأكاديمي. إرسال الطلب لا يعني حجز المقعد نهائياً.
         </p>
         <div className="mt-4 flex flex-wrap items-end gap-3">
           <div className="min-w-[200px]">
@@ -344,6 +417,9 @@ export default function StudentRegistration() {
               </p>
             </div>
           )}
+          <span className={`text-[12px] font-bold px-3 py-1.5 rounded-full border ${statusMeta.className}`}>
+            {request ? statusMeta.ar : 'مسودة'}
+          </span>
           {refreshing ? <span className="text-[12px] text-text-light pb-1">جاري التحديث…</span> : null}
         </div>
       </header>
@@ -357,18 +433,55 @@ export default function StudentRegistration() {
         <p className="px-4 py-2.5 text-[12.5px] text-red-600 bg-red-50 border border-red-200 rounded-[10px]">⚠ {error}</p>
       ) : null}
 
-      {summary ? (
-        <HoursBar registered={hours.registered} max={hours.max} remaining={hours.remaining} />
+      {hours ? <HoursPanel hours={hours} requestStatus={request ? status : null} /> : null}
+
+      <p className="text-[12.5px] text-text-gray bg-primary/5 border border-primary/12 rounded-[12px] px-4 py-3">
+        إرسال الطلب لا يعني حجز المقعد نهائياً. يتم تثبيت التسجيل بعد اعتماد المرشد الأكاديمي.
+      </p>
+
+      {status === 'submitted' ? (
+        <section className="border border-amber-200 bg-amber-50 rounded-[16px] px-5 py-4 text-[13px] font-semibold text-amber-900">
+          تم إرسال طلبك وهو بانتظار مراجعة المرشد الأكاديمي.
+        </section>
       ) : null}
 
-      {!registrationOpen ? (
+      {status === 'returned' ? (
+        <section className="border border-orange-200 bg-orange-50 rounded-[16px] px-5 py-4">
+          <h2 className="text-[14px] font-black text-orange-900 mb-2">ملاحظات المرشد الأكاديمي</h2>
+          <p className="text-[13.5px] leading-7 text-orange-950 whitespace-pre-wrap">{request?.advisor_notes || '—'}</p>
+        </section>
+      ) : null}
+
+      {status === 'approved' ? (
+        <section className="border border-green-200 bg-green-50 rounded-[16px] px-5 py-4 text-[13px] font-semibold text-green-900 space-y-1">
+          <p>تم اعتماد طلب التسجيل.</p>
+          {request?.approved_at ? <p>تاريخ الاعتماد: {String(request.approved_at).slice(0, 16)}</p> : null}
+          {request?.advisor?.full_name ? <p>المرشد الأكاديمي: {request.advisor.full_name}</p> : null}
+          {hours?.approved_snapshot ? (
+            <>
+              <p>ساعات الطلب المعتمدة: {hours.approved_snapshot.request_hours_at_approval}</p>
+              <p>الساعات قبل الاعتماد: {hours.approved_snapshot.registered_hours_before_approval}</p>
+              <p>إجمالي الساعات بعد الاعتماد: {hours.approved_snapshot.projected_hours_at_approval}</p>
+              <p>الحد الأقصى وقت الاعتماد: {hours.approved_snapshot.max_allowed_hours_at_approval}</p>
+            </>
+          ) : null}
+        </section>
+      ) : null}
+
+      {!registrationOpen && request ? (
+        <section className="border border-primary/20 bg-primary/5 rounded-[16px] px-5 py-4 text-[13px] font-semibold text-text-dark">
+          انتهت فترة إضافة المقررات، ويمكنك الاطلاع على حالة طلبك.
+        </section>
+      ) : null}
+
+      {!registrationOpen && !request ? (
         <UnavailableState />
       ) : !termReady ? (
         <section className="border border-amber-200 bg-amber-50 rounded-[16px] px-5 py-4 text-[13px] font-semibold text-amber-900" dir="rtl">
           اختر الفصل الدراسي لعرض المواد المتاحة للتسجيل.
         </section>
       ) : (
-        <div className="grid grid-cols-2 max-[900px]:grid-cols-1 gap-5">
+        <div className="grid grid-cols-2 max-[1100px]:grid-cols-1 gap-5">
           <section className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
             <div className="flex items-center gap-2 px-5 py-3 bg-primary/[0.05] border-b border-primary/10">
               <span className="text-[13px] font-extrabold text-text-dark">المواد المتاحة من الكلية</span>
@@ -377,11 +490,7 @@ export default function StudentRegistration() {
             {available.length === 0 ? (
               <div className="flex flex-col items-center py-12 gap-2 px-5">
                 <FaBookOpen className="text-[32px] text-primary/15" />
-                <p className="text-[13px] font-bold text-text-dark">الوقت الآن ليس متاحاً للتسجيل على مواد</p>
-                <p className="text-[12px] text-text-light text-center leading-6">
-                  لا توجد مواد مفتوحة للتسجيل حالياً ضمن برنامجك الدراسي.
-                  ستظهر المواد هنا عند إتاحتها من الكلية.
-                </p>
+                <p className="text-[13px] font-bold text-text-dark">لا توجد مواد مفتوحة حالياً</p>
               </div>
             ) : (
               <div className="divide-y divide-primary/8">
@@ -389,8 +498,9 @@ export default function StudentRegistration() {
                   <CourseRow
                     key={course.course_offering_id}
                     course={course}
-                    onRegister={selected => setConfirm({ type: 'register', course: selected })}
-                    registering={registering}
+                    onAdd={addCourse}
+                    adding={adding}
+                    canEdit={canEdit}
                   />
                 ))}
               </div>
@@ -399,40 +509,39 @@ export default function StudentRegistration() {
 
           <section className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
             <div className="flex items-center gap-2 px-5 py-3 bg-primary/[0.05] border-b border-primary/10">
-              <span className="text-[13px] font-extrabold text-text-dark">المواد المسجلة</span>
-              <span className="text-[11px] text-text-light bg-primary/10 px-2 py-0.5 rounded-full font-bold">{registrations.length}</span>
+              <span className="text-[13px] font-extrabold text-text-dark">طلب التسجيل</span>
+              <span className="text-[11px] text-text-light bg-primary/10 px-2 py-0.5 rounded-full font-bold">{requestItems.length}</span>
             </div>
-            {registrations.length === 0 ? (
-              <div className="flex flex-col items-center py-12 gap-2">
+            {requestItems.length === 0 ? (
+              <div className="flex flex-col items-center py-12 gap-2 px-5">
                 <FaBookOpen className="text-[32px] text-primary/15" />
-                <p className="text-[12.5px] text-text-light">لم تسجل أي مادة بعد</p>
+                <p className="text-[12.5px] text-text-light">لم تُضف أي مادة إلى الطلب بعد</p>
               </div>
             ) : (
               <div className="divide-y divide-primary/8">
-                {registrations.map(registration => {
-                  const canDrop = registration.offering_status === 'open'
-                  const dropBusy = Boolean(dropping[registration.registration_id])
+                {requestItems.map(item => {
+                  const removeBusy = Boolean(removing[item.student_registration_request_item_id])
                   return (
-                    <div key={registration.registration_id} className="flex items-center justify-between gap-3 px-5 py-4">
+                    <div key={item.student_registration_request_item_id} className="flex items-center justify-between gap-3 px-5 py-4">
                       <div className="min-w-0">
-                        <p className="font-bold text-[13.5px] text-text-dark truncate">{registration.course_name}</p>
+                        <p className="font-bold text-[13.5px] text-text-dark truncate">{item.course_name}</p>
                         <div className="flex items-center gap-2 mt-1 flex-wrap text-[11.5px] text-text-light">
-                          <span className="font-mono">{registration.course_code}</span>
-                          <span className="text-primary font-bold">{registration.credit_hours} ساعات</span>
-                          <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold rounded-full">
-                            {registration.registration_status?.status_name || 'مسجل'}
+                          <span className="font-mono">{item.course_code}</span>
+                          <span className="text-primary font-bold">{item.credit_hours} ساعات</span>
+                          <span className="px-1.5 py-0.5 bg-primary/10 text-primary-dark text-[10px] font-bold rounded-full">
+                            في الطلب
                           </span>
                         </div>
                       </div>
-                      {canDrop ? (
+                      {canEdit ? (
                         <button
                           type="button"
-                          onClick={() => setConfirm({ type: 'drop', registration })}
-                          disabled={dropBusy}
+                          onClick={() => removeItem(item)}
+                          disabled={removeBusy}
                           className="flex items-center gap-1.5 px-3 py-1.5 border border-red-300 text-red-600 rounded-[10px] text-[12px] font-bold hover:bg-red-50 disabled:opacity-40 shrink-0"
                         >
-                          {dropBusy ? <FaSpinner className="animate-spin text-[10px]" /> : <FaMinus className="text-[10px]" />}
-                          حذف
+                          {removeBusy ? <FaSpinner className="animate-spin text-[10px]" /> : <FaMinus className="text-[10px]" />}
+                          إزالة
                         </button>
                       ) : null}
                     </div>
@@ -440,14 +549,40 @@ export default function StudentRegistration() {
                 })}
               </div>
             )}
+
+            <div className="px-5 py-4 border-t border-primary/10 space-y-3">
+              <label className="block text-[12.5px] font-bold text-text-dark">
+                ملاحظات للمرشد الأكاديمي
+                <textarea
+                  className="mt-2 w-full min-h-[96px] rounded-[12px] border-[1.5px] border-primary/20 px-3 py-2 text-[13px] text-text-dark disabled:bg-gray-50"
+                  maxLength={1000}
+                  placeholder="يمكنك إضافة أي ملاحظة ترغب بإيصالها إلى المرشد الأكاديمي..."
+                  value={studentNotes}
+                  onChange={event => scheduleNotesSave(event.target.value)}
+                  disabled={!canEdit}
+                  readOnly={readOnly}
+                />
+              </label>
+              {savingNotes ? <p className="text-[11.5px] text-text-light">جاري حفظ الملاحظات…</p> : null}
+              {canEdit ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirm({ type: 'submit' })}
+                  disabled={requestItems.length === 0 || submitting}
+                  className="w-full py-2.5 rounded-[12px] bg-primary text-white text-[13.5px] font-black hover:enabled:bg-primary-dark disabled:opacity-40"
+                >
+                  {submitLabel}
+                </button>
+              ) : null}
+            </div>
           </section>
         </div>
       )}
 
-      {!registrationOpen && registrations.length > 0 ? (
+      {registrations.length > 0 ? (
         <section className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
           <div className="flex items-center gap-2 px-5 py-3 bg-primary/[0.05] border-b border-primary/10">
-            <span className="text-[13px] font-extrabold text-text-dark">المواد المسجلة</span>
+            <span className="text-[13px] font-extrabold text-text-dark">مسجل ومعتمد سابقاً</span>
             <span className="text-[11px] text-text-light bg-primary/10 px-2 py-0.5 rounded-full font-bold">{registrations.length}</span>
           </div>
           <div className="divide-y divide-primary/8">
@@ -457,8 +592,8 @@ export default function StudentRegistration() {
                 <div className="flex items-center gap-2 mt-1 text-[11.5px] text-text-light">
                   <span className="font-mono">{registration.course_code}</span>
                   <span className="text-primary font-bold">{registration.credit_hours} ساعات</span>
-                  <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold rounded-full">
-                    {registration.registration_status?.status_name || 'مسجل'}
+                  <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded-full">
+                    مسجل ومعتمد سابقاً
                   </span>
                 </div>
               </div>
@@ -467,34 +602,19 @@ export default function StudentRegistration() {
         </section>
       ) : null}
 
-      {confirm?.type === 'register' ? (
+      {confirm?.type === 'submit' ? (
         <StudentConfirmDialog
-          title="تأكيد تسجيل المادة"
-          confirmLabel="تأكيد التسجيل"
-          busy={Boolean(registering[confirm.course.course_offering_id])}
-          onConfirm={confirmRegister}
+          title={submitLabel}
+          confirmLabel="تأكيد الإرسال"
+          busy={submitting}
+          onConfirm={confirmSubmit}
           onCancel={() => setConfirm(null)}
         >
-          <p className="text-[13px] text-text-dark"><span className="text-text-light">المادة:</span> {confirm.course.course_name}</p>
-          <p className="text-[13px] text-text-dark"><span className="text-text-light">الساعات:</span> {confirm.course.credit_hours}</p>
-          <p className="text-[13px] font-semibold text-text-dark">
-            بعد التسجيل: الساعات المسجلة ستكون {afterHours} من {hours.max}
-          </p>
-        </StudentConfirmDialog>
-      ) : null}
-
-      {confirm?.type === 'drop' ? (
-        <StudentConfirmDialog
-          title="تأكيد حذف التسجيل"
-          confirmLabel="تأكيد الحذف"
-          confirmTone="danger"
-          busy={Boolean(dropping[confirm.registration.registration_id])}
-          onConfirm={confirmDrop}
-          onCancel={() => setConfirm(null)}
-        >
-          <p className="text-[13px] text-text-dark">
-            هل تريد حذف تسجيل مادة "{confirm.registration.course_name}"؟
-          </p>
+          <p className="text-[13px] text-text-dark">عدد المواد: {requestItems.length}</p>
+          <p className="text-[13px] text-text-dark">ساعات الطلب: {hours?.request_hours ?? 0}</p>
+          <p className="text-[13px] text-text-dark">الساعات المسجلة مسبقاً: {hours?.registered_hours ?? 0}</p>
+          <p className="text-[13px] text-text-dark">الإجمالي المتوقع بعد الاعتماد: {hours?.projected_hours ?? 0}</p>
+          <p className="text-[13px] font-semibold text-text-dark">الحد الأقصى: {hours?.max_allowed_hours ?? 0}</p>
         </StudentConfirmDialog>
       ) : null}
     </div>

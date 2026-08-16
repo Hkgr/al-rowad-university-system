@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\DB;
 
 class RegistrationService
 {
-    private const DEFAULT_MAX_CREDIT_HOURS = 18;
+    public const DEFAULT_MAX_CREDIT_HOURS = 18;
 
     private const UNSATISFACTORY_RESULT_STATUSES = ['deprived', 'withdrawn', 'incomplete', 'failed'];
 
@@ -55,9 +55,27 @@ class RegistrationService
         }
     }
 
+    public function registerStudentWithinTransaction(array $data, ?int $authenticatedUserId = null): array
+    {
+        return $this->performRegisterStudent($data, $authenticatedUserId);
+    }
+
+    public function hoursSnapshot(Student $student, int $academicYearId, int $semesterId): array
+    {
+        return $this->getHoursSnapshot($student, $academicYearId, $semesterId);
+    }
+
+    public function currentOfferingIds(Student $student): array
+    {
+        return $this->currentRegisteredOfferingIds($student);
+    }
+
     private function performRegisterStudent(array $data, ?int $authenticatedUserId): array
     {
-        $student = Student::query()->find($data['student_id']);
+        $student = Student::query()
+            ->whereKey($data['student_id'])
+            ->lockForUpdate()
+            ->first();
         if ($student === null) {
             throw new RegistrationException('The selected student does not exist.', [
                 'student_id' => ['The selected student does not exist.'],
@@ -66,8 +84,9 @@ class RegistrationService
 
         $courseOffering = CourseOffering::query()
             ->with('course')
+            ->whereKey($data['course_offering_id'])
             ->lockForUpdate()
-            ->find($data['course_offering_id']);
+            ->first();
 
         if ($courseOffering === null) {
             throw new RegistrationException('The selected course offering does not exist.', [
@@ -80,6 +99,13 @@ class RegistrationService
                 'course_offering_id' => ['The selected course offering is not open for registration.'],
             ]);
         }
+
+        StudentCourseRegistration::query()
+            ->where('student_id', $student->student_id)
+            ->where('course_offering_id', $courseOffering->course_offering_id)
+            ->orderBy('student_course_registration_id')
+            ->lockForUpdate()
+            ->get();
 
         if ($this->registrationExists($student->student_id, $courseOffering->course_offering_id)) {
             $this->throwDuplicateRegistrationException();
@@ -483,7 +509,13 @@ class RegistrationService
         return false;
     }
 
-    public function getSelfRegistrationOfferings(Student $student, int $academicYearId, int $semesterId): Collection
+    public function getSelfRegistrationOfferings(
+        Student $student,
+        int $academicYearId,
+        int $semesterId,
+        int $pendingRequestHours = 0,
+        array $requestOfferingIds = []
+    ): Collection
     {
         $query = CourseOffering::query()
             ->with([
@@ -503,8 +535,21 @@ class RegistrationService
         $registeredOfferingIds = $this->currentRegisteredOfferingIds($student);
         $hours = $this->getHoursSnapshot($student, $academicYearId, $semesterId);
 
-        return $offerings->map(function (CourseOffering $offering) use ($student, $registeredOfferingIds, $hours): CourseOffering {
-            return $this->annotateOfferingEligibility($offering, $student, $registeredOfferingIds, $hours);
+        return $offerings->map(function (CourseOffering $offering) use (
+            $student,
+            $registeredOfferingIds,
+            $hours,
+            $pendingRequestHours,
+            $requestOfferingIds
+        ): CourseOffering {
+            return $this->annotateOfferingEligibility(
+                $offering,
+                $student,
+                $registeredOfferingIds,
+                $hours,
+                $pendingRequestHours,
+                $requestOfferingIds
+            );
         });
     }
 
@@ -553,8 +598,8 @@ class RegistrationService
             ]);
         }
 
-        $currentYearId = AcademicYear::query()->where('is_current', true)->value('academic_year_id');
-        if ($currentYearId === null || (int) $offering->academic_year_id !== (int) $currentYearId) {
+        $currentYearId = app(AcademicTermResolver::class)->uniqueCurrentAcademicYearId();
+        if ($currentYearId === null || (int) $offering->academic_year_id !== $currentYearId) {
             throw new RegistrationException('The selected course offering is not open for the current academic term.', [
                 'course_offering_id' => ['The selected course offering is not open for the current academic term.'],
             ]);
@@ -605,14 +650,22 @@ class RegistrationService
         CourseOffering $offering,
         Student $student,
         array $registeredOfferingIds,
-        ?array $hours
+        ?array $hours,
+        int $pendingRequestHours = 0,
+        array $requestOfferingIds = []
     ): CourseOffering {
         $missing = $this->getMissingPrerequisites($student, (int) $offering->course_id);
         $reasons = [];
         $courseCreditHours = (int) ($offering->course?->credit_hours ?? 0);
+        $offeringId = (int) $offering->course_offering_id;
+        $alreadyInRequest = in_array($offeringId, $requestOfferingIds, true);
 
-        if (in_array((int) $offering->course_offering_id, $registeredOfferingIds, true)) {
+        if (in_array($offeringId, $registeredOfferingIds, true)) {
             $reasons[] = 'already_registered';
+        }
+
+        if ($alreadyInRequest) {
+            $reasons[] = 'already_in_request';
         }
 
         if ($missing !== []) {
@@ -623,7 +676,12 @@ class RegistrationService
             $reasons[] = 'no_available_seats';
         }
 
-        if ($hours !== null && ($hours['registered_hours'] + $courseCreditHours) > $hours['max_allowed_hours']) {
+        $committedHours = $hours === null ? null : ((int) $hours['registered_hours'] + max($pendingRequestHours, 0));
+        if (
+            $hours !== null
+            && ! $alreadyInRequest
+            && ($committedHours + $courseCreditHours) > $hours['max_allowed_hours']
+        ) {
             $reasons[] = 'credit_limit_exceeded';
         }
 
