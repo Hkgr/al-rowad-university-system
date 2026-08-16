@@ -1098,6 +1098,27 @@ class GradeService
             );
     }
 
+    public function isOfficiallyVisibleAttempt(StudentCourseRegistration $registration): bool
+    {
+        return $registration->studentCourseResult !== null
+            && $this->isOfficiallyApprovedOffering($registration->courseOffering);
+    }
+
+    public function isOfficiallyPassedAttempt(StudentCourseRegistration $registration): bool
+    {
+        return $this->isOfficiallyVisibleAttempt($registration)
+            && $this->resolveEffectiveResultStatusCode($registration) === 'passed';
+    }
+
+    public function officialAttemptResultStatus(StudentCourseRegistration $registration): ?string
+    {
+        if (! $this->isOfficiallyVisibleAttempt($registration)) {
+            return null;
+        }
+
+        return $this->resolveEffectiveResultStatusCode($registration);
+    }
+
     public function isOfficiallyApprovedOffering(?CourseOffering $offering): bool
     {
         if ($offering === null || $offering->course_offering_id === null) {
@@ -1182,12 +1203,6 @@ class GradeService
             $practicalForPolicy,
             $policy
         );
-    }
-
-    private function isOfficiallyVisibleAttempt(StudentCourseRegistration $registration): bool
-    {
-        return $registration->studentCourseResult !== null
-            && $this->isOfficiallyApprovedOffering($registration->courseOffering);
     }
 
     private function latestApprovalIsApproved(Collection $approvals): bool

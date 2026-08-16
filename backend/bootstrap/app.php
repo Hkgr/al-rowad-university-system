@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\AcademicRequirementConfigurationException;
 use App\Exceptions\AttendanceException;
 use App\Exceptions\DisciplinaryCaseException;
 use App\Exceptions\GradeException;
@@ -101,6 +102,19 @@ return Application::configure(basePath: dirname(__DIR__))
                 'error_code' => $exception->errorCode,
                 'errors' => $exception->errors,
                 'item_failures' => $exception->itemFailures,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (AcademicRequirementConfigurationException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->context,
             ], $exception->status);
         });
 
