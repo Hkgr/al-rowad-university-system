@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\GraduationEligibilityException;
 use App\Http\Requests\Student\StoreStudentRequest;
 use App\Http\Requests\Student\UpdateStudentRequest;
 use App\Http\Resources\AvailableCourseOfferingResource;
+use App\Http\Resources\GraduationEligibilityResource;
 use App\Http\Resources\StudentAcademicInfoResource;
 use App\Http\Resources\StudentCourseRegistrationResource;
 use App\Http\Resources\StudentDocumentResource;
@@ -18,6 +20,7 @@ use App\Models\StudentStatus;
 use App\Services\AcademicRequirementService;
 use App\Services\AttendanceService;
 use App\Services\GradeService;
+use App\Services\GraduationEligibilityService;
 use App\Services\RegistrationService;
 use App\Services\AcademicAuthorizationService;
 use App\Services\DataScopeService;
@@ -55,15 +58,51 @@ class StudentController extends ApiController
         }
 
         if ($statusCode === 'graduated') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Graduation is temporarily unavailable until institutional eligibility rules are implemented.',
-                'error_code' => 'graduation_eligibility_not_implemented',
-                'errors' => [],
-            ], 409);
+            return $this->updateGraduatedStatus($id, $student);
         }
 
         return parent::update($id);
+    }
+
+    public function graduationEligibility(Student $student, GraduationEligibilityService $graduation): JsonResponse
+    {
+        Gate::authorize('view', $student);
+
+        return $this->successResponse(
+            (new GraduationEligibilityResource(
+                $graduation->evaluate($student)
+            ))->resolve(request())
+        );
+    }
+
+    private function updateGraduatedStatus($id, Student $student): JsonResponse
+    {
+        return DB::transaction(function () use ($id, $student): JsonResponse {
+            $locked = Student::query()
+                ->whereKey($student->student_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $locked->loadMissing('studentStatus');
+
+            if (request()->filled('academic_program_id')
+                && (int) request()->integer('academic_program_id') !== (int) $locked->academic_program_id) {
+                throw new GraduationEligibilityException(
+                    'The student academic program cannot be changed in the same request as a graduation status transition.',
+                    [
+                        'academic_program_id' => ['graduation_program_change_not_allowed'],
+                        'student_status' => ['graduation_program_change_not_allowed'],
+                    ],
+                    409,
+                    GraduationEligibilityException::PROGRAM_CHANGE_ERROR_CODE
+                );
+            }
+
+            if ($locked->studentStatus?->status_code !== 'graduated') {
+                app(GraduationEligibilityService::class)->assertEligible($locked);
+            }
+
+            return parent::update($id);
+        });
     }
 
     protected function modelClass(): string

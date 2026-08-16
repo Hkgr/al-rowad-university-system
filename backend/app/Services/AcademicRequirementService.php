@@ -51,6 +51,70 @@ class AcademicRequirementService
         )->values();
     }
 
+    public function assertProgramGraduationConfiguration(AcademicProgram|int $program): AcademicProgram
+    {
+        $programModel = $program instanceof AcademicProgram
+            ? $program
+            : AcademicProgram::query()->findOrFail($this->programId($program));
+        $programId = (int) $programModel->academic_program_id;
+        $curriculumByGroup = $this->loadValidatedCurriculum($programId);
+        $groups = $this->loadActiveRequirementGroups($programId);
+
+        if ($groups->isEmpty()) {
+            throw new AcademicRequirementConfigurationException(
+                'Academic requirement configuration is invalid for the current program curriculum.',
+                [
+                    'academic_program_id' => $programId,
+                    'reason' => 'no_active_requirement_groups',
+                ]
+            );
+        }
+
+        $mappedCourseCount = (int) $curriculumByGroup->sum(
+            fn (Collection $mappedCourses): int => $mappedCourses->count()
+        );
+        if ($mappedCourseCount === 0) {
+            throw new AcademicRequirementConfigurationException(
+                'Academic requirement configuration is invalid for the current program curriculum.',
+                [
+                    'academic_program_id' => $programId,
+                    'reason' => 'no_active_curriculum',
+                ]
+            );
+        }
+
+        $this->assertRequirementGroupsConfiguration($programId, $groups, $curriculumByGroup);
+
+        foreach ($groups as $group) {
+            $scope = strtolower((string) $group->requirement_scope);
+            if (! in_array($scope, [
+                AcademicRequirementGroup::SCOPE_UNIVERSITY,
+                AcademicRequirementGroup::SCOPE_COLLEGE,
+                AcademicRequirementGroup::SCOPE_DEPARTMENT,
+            ], true)) {
+                $this->failClosedGroup($programId, $group, 'requirement_scope_invalid');
+            }
+        }
+
+        $requiredTotal = (int) $groups->sum(
+            fn (AcademicRequirementGroup $group): int => (int) $group->required_credit_hours
+        );
+        if ($programModel->total_credit_hours !== null
+            && (int) $programModel->total_credit_hours !== $requiredTotal) {
+            throw new AcademicRequirementConfigurationException(
+                'Academic requirement configuration is invalid for the current program curriculum.',
+                [
+                    'academic_program_id' => $programId,
+                    'reason' => 'program_total_credit_hours_mismatch',
+                    'program_total_credit_hours' => (int) $programModel->total_credit_hours,
+                    'requirement_required_hours' => $requiredTotal,
+                ]
+            );
+        }
+
+        return $programModel;
+    }
+
     public function getRequirementGroupMappedCourses(AcademicRequirementGroup|int $group): Collection
     {
         $groupModel = $group instanceof AcademicRequirementGroup
