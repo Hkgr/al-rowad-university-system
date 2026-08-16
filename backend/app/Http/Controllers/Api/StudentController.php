@@ -77,25 +77,25 @@ class StudentController extends ApiController
 
     private function updateGraduatedStatus($id, Student $student): JsonResponse
     {
-        if (request()->filled('academic_program_id')
-            && (int) request()->integer('academic_program_id') !== (int) $student->academic_program_id) {
-            throw new GraduationEligibilityException(
-                'The student academic program cannot be changed in the same request as a graduation status transition.',
-                [
-                    'academic_program_id' => ['graduation_program_change_not_allowed'],
-                    'student_status' => ['graduation_program_change_not_allowed'],
-                ],
-                409,
-                GraduationEligibilityException::PROGRAM_CHANGE_ERROR_CODE
-            );
-        }
-
         return DB::transaction(function () use ($id, $student): JsonResponse {
             $locked = Student::query()
                 ->whereKey($student->student_id)
                 ->lockForUpdate()
                 ->firstOrFail();
             $locked->loadMissing('studentStatus');
+
+            if (request()->filled('academic_program_id')
+                && (int) request()->integer('academic_program_id') !== (int) $locked->academic_program_id) {
+                throw new GraduationEligibilityException(
+                    'The student academic program cannot be changed in the same request as a graduation status transition.',
+                    [
+                        'academic_program_id' => ['graduation_program_change_not_allowed'],
+                        'student_status' => ['graduation_program_change_not_allowed'],
+                    ],
+                    409,
+                    GraduationEligibilityException::PROGRAM_CHANGE_ERROR_CODE
+                );
+            }
 
             if ($locked->studentStatus?->status_code !== 'graduated') {
                 app(GraduationEligibilityService::class)->assertEligible($locked);
