@@ -27,9 +27,12 @@ returns `OVERALL = READY`.
 2. `01_apply.sql` — idempotent DDL + permission grants. Fail-closed:
    if `@apply_ready = 0`, every `CREATE TABLE` is a no-op `SELECT` and
    every `INSERT` is gated. Zero DDL/DML must execute.
-3. `02_verify.sql` — read-only. Require `OVERALL = PASS`. Verifies
-   InnoDB, column types/nullability, primary keys, unique indexes, FK
-   targets, and approval-hour snapshot columns — not only column names.
+3. `02_verify.sql` — read-only. Require `OVERALL = PASS`. Every
+   structural/security subcheck is a SET variable; `OVERALL` is PASS
+   only when every mandatory variable is 1. It cannot PASS while a
+   required subcheck is FAIL. Predicates match preflight/apply for
+   columns, types/signedness/nullability, VARCHAR capacity, PK,
+   uniques, FK targets, FK types, InnoDB, and uniqueness compatibility.
 
 If an existing request table is only partially compatible, preflight
 `OVERALL = BLOCKED` and apply performs no schema or data writes.

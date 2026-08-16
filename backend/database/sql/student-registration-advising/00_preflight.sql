@@ -2,6 +2,12 @@
 -- Fully qualified objects: do not depend on phpMyAdmin's selected database.
 -- Do not create a new academic_advisor role. Reuse the existing one.
 -- SET user variables only; this file must not CREATE/INSERT/UPDATE/DELETE.
+-- Compatibility predicates below must stay equivalent in 01_apply.sql and 02_verify.sql.
+-- Missing request tables are READY here (apply will create them). Partial tables are BLOCKED.
+
+SET @srr_absent_ok := 1;
+SET @srri_absent_ok := 1;
+SET @srre_absent_ok := 1;
 
 SET @db_ready := IF(
     EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'alrowad_uni_rust'),
@@ -105,63 +111,79 @@ SET @fk_targets_signed_int := IF(
     0
 );
 
-SET @permission_code_unique_ok := IF(
-    @db_ready = 0,
-    0,
-    IF(
-        EXISTS (
-            SELECT 1
-            FROM information_schema.statistics
-            WHERE table_schema = 'alrowad_uni_rust'
-              AND table_name = 'permissions'
-              AND non_unique = 0
-              AND index_name <> 'PRIMARY'
-            GROUP BY index_name
-            HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'permission_code'
+SET @permission_code_has_unique := IF(
+    @db_ready = 1
+    AND EXISTS (
+        SELECT 1
+        FROM information_schema.statistics
+        WHERE table_schema = 'alrowad_uni_rust'
+          AND table_name = 'permissions'
+          AND non_unique = 0
+          AND index_name <> 'PRIMARY'
+        GROUP BY index_name
+        HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'permission_code'
+    ),
+    1,
+    0
+);
+SET @permission_code_no_duplicates := IF(
+    @db_ready = 1
+    AND NOT EXISTS (
+        SELECT permission_code
+        FROM `alrowad_uni_rust`.`permissions`
+        WHERE permission_code IN (
+            'registration_requests.view',
+            'registration_requests.review',
+            'registration.view',
+            'registration.manage'
         )
-        OR NOT EXISTS (
-            SELECT permission_code
-            FROM `alrowad_uni_rust`.`permissions`
-            WHERE permission_code IN (
-                'registration_requests.view',
-                'registration_requests.review',
-                'registration.view',
-                'registration.manage'
-            )
-            GROUP BY permission_code
-            HAVING COUNT(*) > 1
-        ),
-        1,
-        0
-    )
+        GROUP BY permission_code
+        HAVING COUNT(*) > 1
+    ),
+    1,
+    0
+);
+SET @permission_code_unique_ok := IF(
+    @permission_code_has_unique = 1
+    AND @permission_code_no_duplicates = 1,
+    1,
+    0
 );
 
-SET @role_permissions_unique_ok := IF(
-    @db_ready = 0,
-    0,
-    IF(
-        EXISTS (
-            SELECT 1
-            FROM information_schema.statistics
-            WHERE table_schema = 'alrowad_uni_rust'
-              AND table_name = 'role_permissions'
-              AND non_unique = 0
-              AND index_name <> 'PRIMARY'
-            GROUP BY index_name
-            HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) IN (
-                'role_id,permission_id',
-                'permission_id,role_id'
-            )
+SET @role_permissions_has_unique := IF(
+    @db_ready = 1
+    AND EXISTS (
+        SELECT 1
+        FROM information_schema.statistics
+        WHERE table_schema = 'alrowad_uni_rust'
+          AND table_name = 'role_permissions'
+          AND non_unique = 0
+          AND index_name <> 'PRIMARY'
+        GROUP BY index_name
+        HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) IN (
+            'role_id,permission_id',
+            'permission_id,role_id'
         )
-        OR NOT EXISTS (
-            SELECT role_id, permission_id
-            FROM `alrowad_uni_rust`.`role_permissions`
-            GROUP BY role_id, permission_id
-            HAVING COUNT(*) > 1
-        ),
-        1,
-        0
-    )
+    ),
+    1,
+    0
+);
+SET @role_permissions_no_duplicates := IF(
+    @db_ready = 1
+    AND NOT EXISTS (
+        SELECT role_id, permission_id
+        FROM `alrowad_uni_rust`.`role_permissions`
+        GROUP BY role_id, permission_id
+        HAVING COUNT(*) > 1
+    ),
+    1,
+    0
+);
+SET @role_permissions_unique_ok := IF(
+    @role_permissions_has_unique = 1
+    AND @role_permissions_no_duplicates = 1,
+    1,
+    0
 );
 
 SET @srr_exists := (
@@ -188,7 +210,7 @@ SET @srre_exists := (
 
 SET @srr_engine_ok := IF(
     @srr_exists = 0,
-    1,
+    @srr_absent_ok,
     IF((
         SELECT ENGINE
         FROM information_schema.tables
@@ -198,7 +220,7 @@ SET @srr_engine_ok := IF(
 );
 SET @srri_engine_ok := IF(
     @srri_exists = 0,
-    1,
+    @srri_absent_ok,
     IF((
         SELECT ENGINE
         FROM information_schema.tables
@@ -208,7 +230,7 @@ SET @srri_engine_ok := IF(
 );
 SET @srre_engine_ok := IF(
     @srre_exists = 0,
-    1,
+    @srre_absent_ok,
     IF((
         SELECT ENGINE
         FROM information_schema.tables
@@ -219,30 +241,65 @@ SET @srre_engine_ok := IF(
 
 SET @srr_columns_ok := IF(
     @srr_exists = 0,
-    1,
+    @srr_absent_ok,
     IF((
         SELECT COUNT(*)
         FROM (
-            SELECT 'student_registration_request_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable
-            UNION ALL SELECT 'student_id', 'int', 'NO'
-            UNION ALL SELECT 'academic_year_id', 'int', 'NO'
-            UNION ALL SELECT 'semester_id', 'int', 'NO'
-            UNION ALL SELECT 'status', 'varchar', 'NO'
-            UNION ALL SELECT 'submission_version', 'int', 'NO'
-            UNION ALL SELECT 'student_notes', 'text', 'YES'
-            UNION ALL SELECT 'advisor_user_id', 'int', 'YES'
-            UNION ALL SELECT 'advisor_notes', 'text', 'YES'
-            UNION ALL SELECT 'first_submitted_at', 'datetime', 'YES'
-            UNION ALL SELECT 'last_submitted_at', 'datetime', 'YES'
-            UNION ALL SELECT 'reviewed_at', 'datetime', 'YES'
-            UNION ALL SELECT 'approved_at', 'datetime', 'YES'
-            UNION ALL SELECT 'registered_hours_before_approval', 'int', 'YES'
-            UNION ALL SELECT 'request_hours_at_approval', 'int', 'YES'
-            UNION ALL SELECT 'projected_hours_at_approval', 'int', 'YES'
-            UNION ALL SELECT 'max_allowed_hours_at_approval', 'int', 'YES'
-            UNION ALL SELECT 'remaining_hours_after_approval', 'int', 'YES'
-            UNION ALL SELECT 'created_at', 'timestamp', 'NO'
-            UNION ALL SELECT 'updated_at', 'timestamp', 'NO'
+            SELECT 'student_registration_request_id' AS column_name
+            UNION ALL SELECT 'student_id'
+            UNION ALL SELECT 'academic_year_id'
+            UNION ALL SELECT 'semester_id'
+            UNION ALL SELECT 'status'
+            UNION ALL SELECT 'submission_version'
+            UNION ALL SELECT 'student_notes'
+            UNION ALL SELECT 'advisor_user_id'
+            UNION ALL SELECT 'advisor_notes'
+            UNION ALL SELECT 'first_submitted_at'
+            UNION ALL SELECT 'last_submitted_at'
+            UNION ALL SELECT 'reviewed_at'
+            UNION ALL SELECT 'approved_at'
+            UNION ALL SELECT 'registered_hours_before_approval'
+            UNION ALL SELECT 'request_hours_at_approval'
+            UNION ALL SELECT 'projected_hours_at_approval'
+            UNION ALL SELECT 'max_allowed_hours_at_approval'
+            UNION ALL SELECT 'remaining_hours_after_approval'
+            UNION ALL SELECT 'created_at'
+            UNION ALL SELECT 'updated_at'
+        ) required
+        LEFT JOIN information_schema.columns c
+            ON c.table_schema = 'alrowad_uni_rust'
+           AND c.table_name = 'student_registration_requests'
+           AND c.column_name = required.column_name
+        WHERE c.column_name IS NULL
+    ) = 0, 1, 0)
+);
+
+SET @srr_types_ok := IF(
+    @srr_exists = 0,
+    @srr_absent_ok,
+    IF((
+        SELECT COUNT(*)
+        FROM (
+            SELECT 'student_registration_request_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable, 0 AS min_length
+            UNION ALL SELECT 'student_id', 'int', 'NO', 0
+            UNION ALL SELECT 'academic_year_id', 'int', 'NO', 0
+            UNION ALL SELECT 'semester_id', 'int', 'NO', 0
+            UNION ALL SELECT 'status', 'varchar', 'NO', 40
+            UNION ALL SELECT 'submission_version', 'int', 'NO', 0
+            UNION ALL SELECT 'student_notes', 'text', 'YES', 0
+            UNION ALL SELECT 'advisor_user_id', 'int', 'YES', 0
+            UNION ALL SELECT 'advisor_notes', 'text', 'YES', 0
+            UNION ALL SELECT 'first_submitted_at', 'datetime', 'YES', 0
+            UNION ALL SELECT 'last_submitted_at', 'datetime', 'YES', 0
+            UNION ALL SELECT 'reviewed_at', 'datetime', 'YES', 0
+            UNION ALL SELECT 'approved_at', 'datetime', 'YES', 0
+            UNION ALL SELECT 'registered_hours_before_approval', 'int', 'YES', 0
+            UNION ALL SELECT 'request_hours_at_approval', 'int', 'YES', 0
+            UNION ALL SELECT 'projected_hours_at_approval', 'int', 'YES', 0
+            UNION ALL SELECT 'max_allowed_hours_at_approval', 'int', 'YES', 0
+            UNION ALL SELECT 'remaining_hours_after_approval', 'int', 'YES', 0
+            UNION ALL SELECT 'created_at', 'timestamp', 'NO', 0
+            UNION ALL SELECT 'updated_at', 'timestamp', 'NO', 0
         ) required
         LEFT JOIN information_schema.columns c
             ON c.table_schema = 'alrowad_uni_rust'
@@ -252,22 +309,43 @@ SET @srr_columns_ok := IF(
            OR LOWER(c.data_type) <> required.data_type
            OR c.is_nullable <> required.is_nullable
            OR (required.data_type = 'int' AND LOWER(c.column_type) LIKE '%unsigned%')
-           OR (required.column_name = 'status' AND IFNULL(c.character_maximum_length, 0) < 40)
+           OR (required.min_length > 0 AND IFNULL(c.character_maximum_length, 0) < required.min_length)
     ) = 0, 1, 0)
 );
 
 SET @srri_columns_ok := IF(
     @srri_exists = 0,
-    1,
+    @srri_absent_ok,
     IF((
         SELECT COUNT(*)
         FROM (
-            SELECT 'student_registration_request_item_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable
-            UNION ALL SELECT 'student_registration_request_id', 'int', 'NO'
-            UNION ALL SELECT 'course_offering_id', 'int', 'NO'
-            UNION ALL SELECT 'student_course_registration_id', 'int', 'YES'
-            UNION ALL SELECT 'created_at', 'timestamp', 'NO'
-            UNION ALL SELECT 'updated_at', 'timestamp', 'NO'
+            SELECT 'student_registration_request_item_id' AS column_name
+            UNION ALL SELECT 'student_registration_request_id'
+            UNION ALL SELECT 'course_offering_id'
+            UNION ALL SELECT 'student_course_registration_id'
+            UNION ALL SELECT 'created_at'
+            UNION ALL SELECT 'updated_at'
+        ) required
+        LEFT JOIN information_schema.columns c
+            ON c.table_schema = 'alrowad_uni_rust'
+           AND c.table_name = 'student_registration_request_items'
+           AND c.column_name = required.column_name
+        WHERE c.column_name IS NULL
+    ) = 0, 1, 0)
+);
+
+SET @srri_types_ok := IF(
+    @srri_exists = 0,
+    @srri_absent_ok,
+    IF((
+        SELECT COUNT(*)
+        FROM (
+            SELECT 'student_registration_request_item_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable, 0 AS min_length
+            UNION ALL SELECT 'student_registration_request_id', 'int', 'NO', 0
+            UNION ALL SELECT 'course_offering_id', 'int', 'NO', 0
+            UNION ALL SELECT 'student_course_registration_id', 'int', 'YES', 0
+            UNION ALL SELECT 'created_at', 'timestamp', 'NO', 0
+            UNION ALL SELECT 'updated_at', 'timestamp', 'NO', 0
         ) required
         LEFT JOIN information_schema.columns c
             ON c.table_schema = 'alrowad_uni_rust'
@@ -277,24 +355,49 @@ SET @srri_columns_ok := IF(
            OR LOWER(c.data_type) <> required.data_type
            OR c.is_nullable <> required.is_nullable
            OR (required.data_type = 'int' AND LOWER(c.column_type) LIKE '%unsigned%')
+           OR (required.min_length > 0 AND IFNULL(c.character_maximum_length, 0) < required.min_length)
     ) = 0, 1, 0)
 );
 
 SET @srre_columns_ok := IF(
     @srre_exists = 0,
-    1,
+    @srre_absent_ok,
     IF((
         SELECT COUNT(*)
         FROM (
-            SELECT 'student_registration_request_event_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable
-            UNION ALL SELECT 'student_registration_request_id', 'int', 'NO'
-            UNION ALL SELECT 'event_type', 'varchar', 'NO'
-            UNION ALL SELECT 'actor_user_id', 'int', 'YES'
-            UNION ALL SELECT 'from_status', 'varchar', 'YES'
-            UNION ALL SELECT 'to_status', 'varchar', 'YES'
-            UNION ALL SELECT 'submission_version', 'int', 'YES'
-            UNION ALL SELECT 'notes', 'text', 'YES'
-            UNION ALL SELECT 'created_at', 'timestamp', 'NO'
+            SELECT 'student_registration_request_event_id' AS column_name
+            UNION ALL SELECT 'student_registration_request_id'
+            UNION ALL SELECT 'event_type'
+            UNION ALL SELECT 'actor_user_id'
+            UNION ALL SELECT 'from_status'
+            UNION ALL SELECT 'to_status'
+            UNION ALL SELECT 'submission_version'
+            UNION ALL SELECT 'notes'
+            UNION ALL SELECT 'created_at'
+        ) required
+        LEFT JOIN information_schema.columns c
+            ON c.table_schema = 'alrowad_uni_rust'
+           AND c.table_name = 'student_registration_request_events'
+           AND c.column_name = required.column_name
+        WHERE c.column_name IS NULL
+    ) = 0, 1, 0)
+);
+
+SET @srre_types_ok := IF(
+    @srre_exists = 0,
+    @srre_absent_ok,
+    IF((
+        SELECT COUNT(*)
+        FROM (
+            SELECT 'student_registration_request_event_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable, 0 AS min_length
+            UNION ALL SELECT 'student_registration_request_id', 'int', 'NO', 0
+            UNION ALL SELECT 'event_type', 'varchar', 'NO', 40
+            UNION ALL SELECT 'actor_user_id', 'int', 'YES', 0
+            UNION ALL SELECT 'from_status', 'varchar', 'YES', 40
+            UNION ALL SELECT 'to_status', 'varchar', 'YES', 40
+            UNION ALL SELECT 'submission_version', 'int', 'YES', 0
+            UNION ALL SELECT 'notes', 'text', 'YES', 0
+            UNION ALL SELECT 'created_at', 'timestamp', 'NO', 0
         ) required
         LEFT JOIN information_schema.columns c
             ON c.table_schema = 'alrowad_uni_rust'
@@ -304,13 +407,13 @@ SET @srre_columns_ok := IF(
            OR LOWER(c.data_type) <> required.data_type
            OR c.is_nullable <> required.is_nullable
            OR (required.data_type = 'int' AND LOWER(c.column_type) LIKE '%unsigned%')
-           OR (required.column_name = 'event_type' AND IFNULL(c.character_maximum_length, 0) < 40)
+           OR (required.min_length > 0 AND IFNULL(c.character_maximum_length, 0) < required.min_length)
     ) = 0, 1, 0)
 );
 
 SET @srr_pk_ok := IF(
     @srr_exists = 0,
-    1,
+    @srr_absent_ok,
     IF((
         SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index)
         FROM information_schema.statistics
@@ -321,7 +424,7 @@ SET @srr_pk_ok := IF(
 );
 SET @srri_pk_ok := IF(
     @srri_exists = 0,
-    1,
+    @srri_absent_ok,
     IF((
         SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index)
         FROM information_schema.statistics
@@ -332,7 +435,7 @@ SET @srri_pk_ok := IF(
 );
 SET @srre_pk_ok := IF(
     @srre_exists = 0,
-    1,
+    @srre_absent_ok,
     IF((
         SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index)
         FROM information_schema.statistics
@@ -344,7 +447,7 @@ SET @srre_pk_ok := IF(
 
 SET @srr_unique_ok := IF(
     @srr_exists = 0,
-    1,
+    @srr_absent_ok,
     IF(EXISTS (
         SELECT 1
         FROM information_schema.statistics
@@ -358,7 +461,7 @@ SET @srr_unique_ok := IF(
 );
 SET @srri_unique_ok := IF(
     @srri_exists = 0,
-    1,
+    @srri_absent_ok,
     IF(EXISTS (
         SELECT 1
         FROM information_schema.statistics
@@ -373,7 +476,7 @@ SET @srri_unique_ok := IF(
 
 SET @srr_fk_ok := IF(
     @srr_exists = 0,
-    1,
+    @srr_absent_ok,
     IF((
         SELECT COUNT(*)
         FROM (
@@ -394,7 +497,7 @@ SET @srr_fk_ok := IF(
 );
 SET @srri_fk_ok := IF(
     @srri_exists = 0,
-    1,
+    @srri_absent_ok,
     IF((
         SELECT COUNT(*)
         FROM (
@@ -414,7 +517,7 @@ SET @srri_fk_ok := IF(
 );
 SET @srre_fk_ok := IF(
     @srre_exists = 0,
-    1,
+    @srre_absent_ok,
     IF((
         SELECT COUNT(*)
         FROM (
@@ -434,7 +537,7 @@ SET @srre_fk_ok := IF(
 
 SET @srr_fk_types_ok := IF(
     @srr_exists = 0,
-    1,
+    @srr_absent_ok,
     IF((
         SELECT COUNT(*)
         FROM (
@@ -443,22 +546,24 @@ SET @srr_fk_types_ok := IF(
             UNION ALL SELECT 'student_registration_requests', 'semester_id', 'semesters', 'semester_id'
             UNION ALL SELECT 'student_registration_requests', 'advisor_user_id', 'users', 'user_id'
         ) pairs
-        INNER JOIN information_schema.columns src
+        LEFT JOIN information_schema.columns src
             ON src.table_schema = 'alrowad_uni_rust'
            AND src.table_name = pairs.src_table
            AND src.column_name = pairs.src_column
-        INNER JOIN information_schema.columns dst
+        LEFT JOIN information_schema.columns dst
             ON dst.table_schema = 'alrowad_uni_rust'
            AND dst.table_name = pairs.dst_table
            AND dst.column_name = pairs.dst_column
-        WHERE src.column_type <> dst.column_type
+        WHERE src.column_name IS NULL
+           OR dst.column_name IS NULL
+           OR src.column_type <> dst.column_type
            OR LOWER(src.data_type) <> 'int'
            OR LOWER(dst.data_type) <> 'int'
     ) = 0, 1, 0)
 );
 SET @srri_fk_types_ok := IF(
     @srri_exists = 0,
-    1,
+    @srri_absent_ok,
     IF((
         SELECT COUNT(*)
         FROM (
@@ -466,37 +571,41 @@ SET @srri_fk_types_ok := IF(
             UNION ALL SELECT 'student_registration_request_items', 'course_offering_id', 'course_offerings', 'course_offering_id'
             UNION ALL SELECT 'student_registration_request_items', 'student_course_registration_id', 'student_course_registrations', 'student_course_registration_id'
         ) pairs
-        INNER JOIN information_schema.columns src
+        LEFT JOIN information_schema.columns src
             ON src.table_schema = 'alrowad_uni_rust'
            AND src.table_name = pairs.src_table
            AND src.column_name = pairs.src_column
-        INNER JOIN information_schema.columns dst
+        LEFT JOIN information_schema.columns dst
             ON dst.table_schema = 'alrowad_uni_rust'
            AND dst.table_name = pairs.dst_table
            AND dst.column_name = pairs.dst_column
-        WHERE src.column_type <> dst.column_type
+        WHERE src.column_name IS NULL
+           OR dst.column_name IS NULL
+           OR src.column_type <> dst.column_type
            OR LOWER(src.data_type) <> 'int'
            OR LOWER(dst.data_type) <> 'int'
     ) = 0, 1, 0)
 );
 SET @srre_fk_types_ok := IF(
     @srre_exists = 0,
-    1,
+    @srre_absent_ok,
     IF((
         SELECT COUNT(*)
         FROM (
             SELECT 'student_registration_request_events' AS src_table, 'student_registration_request_id' AS src_column, 'student_registration_requests' AS dst_table, 'student_registration_request_id' AS dst_column
             UNION ALL SELECT 'student_registration_request_events', 'actor_user_id', 'users', 'user_id'
         ) pairs
-        INNER JOIN information_schema.columns src
+        LEFT JOIN information_schema.columns src
             ON src.table_schema = 'alrowad_uni_rust'
            AND src.table_name = pairs.src_table
            AND src.column_name = pairs.src_column
-        INNER JOIN information_schema.columns dst
+        LEFT JOIN information_schema.columns dst
             ON dst.table_schema = 'alrowad_uni_rust'
            AND dst.table_name = pairs.dst_table
            AND dst.column_name = pairs.dst_column
-        WHERE src.column_type <> dst.column_type
+        WHERE src.column_name IS NULL
+           OR dst.column_name IS NULL
+           OR src.column_type <> dst.column_type
            OR LOWER(src.data_type) <> 'int'
            OR LOWER(dst.data_type) <> 'int'
     ) = 0, 1, 0)
@@ -505,6 +614,7 @@ SET @srre_fk_types_ok := IF(
 SET @srr_compatible := IF(
     @srr_engine_ok = 1
     AND @srr_columns_ok = 1
+    AND @srr_types_ok = 1
     AND @srr_pk_ok = 1
     AND @srr_unique_ok = 1
     AND @srr_fk_ok = 1
@@ -515,6 +625,7 @@ SET @srr_compatible := IF(
 SET @srri_compatible := IF(
     @srri_engine_ok = 1
     AND @srri_columns_ok = 1
+    AND @srri_types_ok = 1
     AND @srri_pk_ok = 1
     AND @srri_unique_ok = 1
     AND @srri_fk_ok = 1
@@ -525,6 +636,7 @@ SET @srri_compatible := IF(
 SET @srre_compatible := IF(
     @srre_engine_ok = 1
     AND @srre_columns_ok = 1
+    AND @srre_types_ok = 1
     AND @srre_pk_ok = 1
     AND @srre_fk_ok = 1
     AND @srre_fk_types_ok = 1,
@@ -644,8 +756,9 @@ SELECT
     'new_or_compatible_student_registration_requests' AS check_name,
     IF(@srr_compatible = 1, 'READY', 'BLOCKED') AS result,
     @srr_exists AS table_exists,
-    @srr_engine_ok AS engine_ok,
     @srr_columns_ok AS columns_ok,
+    @srr_types_ok AS types_ok,
+    @srr_engine_ok AS engine_ok,
     @srr_pk_ok AS pk_ok,
     @srr_unique_ok AS unique_ok,
     @srr_fk_ok AS fk_ok,
@@ -655,8 +768,9 @@ SELECT
     'new_or_compatible_student_registration_request_items' AS check_name,
     IF(@srri_compatible = 1, 'READY', 'BLOCKED') AS result,
     @srri_exists AS table_exists,
-    @srri_engine_ok AS engine_ok,
     @srri_columns_ok AS columns_ok,
+    @srri_types_ok AS types_ok,
+    @srri_engine_ok AS engine_ok,
     @srri_pk_ok AS pk_ok,
     @srri_unique_ok AS unique_ok,
     @srri_fk_ok AS fk_ok,
@@ -666,8 +780,9 @@ SELECT
     'new_or_compatible_student_registration_request_events' AS check_name,
     IF(@srre_compatible = 1, 'READY', 'BLOCKED') AS result,
     @srre_exists AS table_exists,
-    @srre_engine_ok AS engine_ok,
     @srre_columns_ok AS columns_ok,
+    @srre_types_ok AS types_ok,
+    @srre_engine_ok AS engine_ok,
     @srre_pk_ok AS pk_ok,
     @srre_fk_ok AS fk_ok,
     @srre_fk_types_ok AS fk_types_ok;
