@@ -12,6 +12,11 @@ const REASON_LABELS = {
   missing_prerequisites: { ar: 'متطلب سابق غير محقق', tone: 'prerequisite' },
   no_available_seats: { ar: 'لا توجد مقاعد', tone: 'full' },
   credit_limit_exceeded: { ar: 'تجاوز الساعات', tone: 'hours' },
+  elective_requirement_completed: { ar: 'لقد استوفيت الساعات المطلوبة لهذا المتطلب الاختياري.', tone: 'hours' },
+  elective_requirement_fully_committed: { ar: 'تم حجز كامل الساعات المطلوبة لهذا المتطلب ضمن مقرراتك المسجلة أو طلبات التسجيل الحالية.', tone: 'hours' },
+  elective_requirement_limit_exceeded: { ar: 'إضافة هذا المقرر ستتجاوز الساعات المطلوبة لهذا المتطلب الاختياري.', tone: 'hours' },
+  course_outside_current_curriculum: { ar: 'هذا المقرر ليس ضمن خطتك الدراسية الحالية.', tone: 'prerequisite' },
+  academic_requirement_configuration_invalid: { ar: 'تعذر التحقق من متطلبات الخطة حالياً. يرجى مراجعة شؤون الطلاب.', tone: 'full' },
 }
 
 const BADGE_CLASS = {
@@ -28,6 +33,57 @@ const STATUS_LABELS = {
   submitted: { ar: 'بانتظار مراجعة المرشد الأكاديمي', className: 'bg-amber-100 text-amber-900 border-amber-200' },
   returned: { ar: 'أعيد للتعديل', className: 'bg-orange-100 text-orange-800 border-orange-200' },
   approved: { ar: 'تم اعتماد طلب التسجيل', className: 'bg-green-100 text-green-800 border-green-200' },
+}
+
+function knownReasonLabel(code) {
+  if (typeof code !== 'string' || code === '') return null
+  return REASON_LABELS[code]?.ar ?? null
+}
+
+function collectKnownReasonCodes(error) {
+  const codes = []
+
+  function push(value) {
+    if (typeof value === 'string' && REASON_LABELS[value] && !codes.includes(value)) {
+      codes.push(value)
+    }
+  }
+
+  function pushFromList(list) {
+    if (!Array.isArray(list)) {
+      push(list)
+      return
+    }
+    list.forEach(item => {
+      if (typeof item === 'string') {
+        push(item)
+        return
+      }
+      if (item && typeof item === 'object') {
+        push(item.reason)
+        if (Array.isArray(item.reasons)) item.reasons.forEach(push)
+      }
+    })
+  }
+
+  push(error?.errorCode)
+  pushFromList(error?.itemFailures)
+  const details = error?.details && typeof error.details === 'object' ? error.details : {}
+  pushFromList(details.course_offering_id)
+  pushFromList(details.items)
+
+  return codes
+}
+
+function registrationErrorMessage(error, fallback) {
+  const labels = collectKnownReasonCodes(error)
+    .map(knownReasonLabel)
+    .filter(Boolean)
+
+  if (labels.length === 1) return labels[0]
+  if (labels.length > 1) return labels.join('، ')
+
+  return fallback || error?.message || ''
 }
 
 function studentRegistrationPath(semesterId) {
@@ -111,6 +167,21 @@ function statusBadge(course) {
   }
   if (reasons.includes('credit_limit_exceeded')) {
     return { label: 'تجاوز الساعات', className: BADGE_CLASS.hours }
+  }
+  if (reasons.includes('elective_requirement_completed')) {
+    return { label: 'تم استيفاء الاختياري', className: BADGE_CLASS.hours }
+  }
+  if (reasons.includes('elective_requirement_fully_committed')) {
+    return { label: 'الساعات محجوزة', className: BADGE_CLASS.hours }
+  }
+  if (reasons.includes('elective_requirement_limit_exceeded')) {
+    return { label: 'تجاوز حد الاختياري', className: BADGE_CLASS.hours }
+  }
+  if (reasons.includes('course_outside_current_curriculum')) {
+    return { label: 'خارج الخطة الحالية', className: BADGE_CLASS.prerequisite }
+  }
+  if (reasons.includes('academic_requirement_configuration_invalid')) {
+    return { label: 'تعذر التحقق من الخطة', className: BADGE_CLASS.full }
   }
   return { label: 'غير مؤهل', className: 'bg-gray-100 text-text-light' }
 }
@@ -252,7 +323,10 @@ export default function StudentRegistration() {
         setError(
           requestError.status === 403
             ? 'ليس لديك صلاحية لتسجيل المواد.'
-            : (requestError.message || 'تعذّر تحميل بيانات التسجيل. يرجى المحاولة مرة أخرى.'),
+            : registrationErrorMessage(
+              requestError,
+              'تعذّر تحميل بيانات التسجيل. يرجى المحاولة مرة أخرى.',
+            ),
         )
       } finally {
         if (active && seq === requestSeq.current) {
@@ -292,7 +366,7 @@ export default function StudentRegistration() {
         navigate('/login', { replace: true })
         return
       }
-      setError(requestError.message || 'تعذّر إضافة المادة إلى الطلب')
+      setError(registrationErrorMessage(requestError, 'تعذّر إضافة المادة إلى الطلب'))
     } finally {
       setAdding(current => ({ ...current, [course.course_offering_id]: false }))
     }
@@ -363,7 +437,7 @@ export default function StudentRegistration() {
         navigate('/login', { replace: true })
         return
       }
-      setError(requestError.message || 'تعذّر إرسال الطلب')
+      setError(registrationErrorMessage(requestError, 'تعذّر إرسال الطلب'))
     } finally {
       setSubmitting(false)
     }
