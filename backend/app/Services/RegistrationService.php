@@ -25,6 +25,10 @@ class RegistrationService
 
     private const UNSATISFACTORY_RESULT_STATUSES = ['deprived', 'withdrawn', 'incomplete', 'failed'];
 
+    public function __construct(private AcademicRequirementService $requirements)
+    {
+    }
+
     public function paginate(int $perPage = 15): LengthAwarePaginator
     {
         return StudentCourseRegistration::query()
@@ -141,6 +145,8 @@ class RegistrationService
                 'course_offering_id' => ['Credit hour limit exceeded for this academic term.'],
             ]);
         }
+
+        $this->requirements->assertRegistrationCandidateAllowed($student, $courseOffering);
 
         $registeredByUserId = $authenticatedUserId;
         if ($registeredByUserId === null) {
@@ -446,8 +452,10 @@ class RegistrationService
             ? $this->getHoursSnapshot($student, $academicYearId, $semesterId)
             : null;
 
-        return $offerings->map(function (CourseOffering $offering) use ($student, $registeredOfferingIds, $hours): CourseOffering {
-            return $this->annotateOfferingEligibility($offering, $student, $registeredOfferingIds, $hours);
+        $requirementContext = $this->requirements->buildRegistrationCommitmentContext($student);
+
+        return $offerings->map(function (CourseOffering $offering) use ($student, $registeredOfferingIds, $hours, $requirementContext): CourseOffering {
+            return $this->annotateOfferingEligibility($offering, $student, $registeredOfferingIds, $hours, requirementContext: $requirementContext);
         });
     }
 
@@ -534,13 +542,15 @@ class RegistrationService
         $offerings = $query->orderBy('course_offering_id')->get();
         $registeredOfferingIds = $this->currentRegisteredOfferingIds($student);
         $hours = $this->getHoursSnapshot($student, $academicYearId, $semesterId);
+        $requirementContext = $this->requirements->buildRegistrationCommitmentContext($student);
 
         return $offerings->map(function (CourseOffering $offering) use (
             $student,
             $registeredOfferingIds,
             $hours,
             $pendingRequestHours,
-            $requestOfferingIds
+            $requestOfferingIds,
+            $requirementContext
         ): CourseOffering {
             return $this->annotateOfferingEligibility(
                 $offering,
@@ -548,7 +558,8 @@ class RegistrationService
                 $registeredOfferingIds,
                 $hours,
                 $pendingRequestHours,
-                $requestOfferingIds
+                $requestOfferingIds,
+                $requirementContext
             );
         });
     }
@@ -652,7 +663,8 @@ class RegistrationService
         array $registeredOfferingIds,
         ?array $hours,
         int $pendingRequestHours = 0,
-        array $requestOfferingIds = []
+        array $requestOfferingIds = [],
+        ?array $requirementContext = null
     ): CourseOffering {
         $missing = $this->getMissingPrerequisites($student, (int) $offering->course_id);
         $reasons = [];
@@ -683,6 +695,11 @@ class RegistrationService
             && ($committedHours + $courseCreditHours) > $hours['max_allowed_hours']
         ) {
             $reasons[] = 'credit_limit_exceeded';
+        }
+
+        $evaluation = $this->requirements->evaluateRegistrationCandidate($student, $offering, $requirementContext);
+        if (! $evaluation['allowed'] && is_string($evaluation['reason']) && $evaluation['reason'] !== '') {
+            $reasons[] = $evaluation['reason'];
         }
 
         $offering->setAttribute('eligibility_status', $reasons === [] ? 'eligible' : 'not_eligible');
