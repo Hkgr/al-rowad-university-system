@@ -12,6 +12,7 @@ use App\Models\Semester;
 use App\Models\Student;
 use App\Models\StudentCourseRegistration;
 use App\Models\StudentCreditLimit;
+use App\Support\CourseRequirementClassification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
@@ -385,6 +386,9 @@ class RegistrationService
         $registrations = $registrationsQuery
             ->orderBy('student_course_registration_id')
             ->get();
+        $registrations->each(
+            fn (StudentCourseRegistration $registration) => $registration->setRelation('student', $student)
+        );
 
         $resolvedYearId = $academicYearId ?? (int) ($registrations->first()?->courseOffering?->academic_year_id ?? 0);
         $resolvedSemesterId = $semesterId ?? (int) ($registrations->first()?->courseOffering?->semester_id ?? 0);
@@ -445,6 +449,10 @@ class RegistrationService
         }
 
         $offerings = $query->orderBy('course_offering_id')->get();
+        CourseRequirementClassification::classifyStudentOfferings(
+            $student->academic_program_id === null ? null : (int) $student->academic_program_id,
+            $offerings
+        );
 
         $registeredOfferingIds = $this->currentRegisteredOfferingIds($student);
 
@@ -540,6 +548,10 @@ class RegistrationService
             ->where('semester_id', $semesterId);
 
         $offerings = $query->orderBy('course_offering_id')->get();
+        CourseRequirementClassification::classifyStudentOfferings(
+            $student->academic_program_id === null ? null : (int) $student->academic_program_id,
+            $offerings
+        );
         $registeredOfferingIds = $this->currentRegisteredOfferingIds($student);
         $hours = $this->getHoursSnapshot($student, $academicYearId, $semesterId);
         $requirementContext = $this->requirements->buildRegistrationCommitmentContext($student);

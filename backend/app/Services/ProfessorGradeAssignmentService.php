@@ -7,6 +7,7 @@ use App\Models\CourseOffering;
 use App\Models\CourseOfferingInstructor;
 use App\Models\FacultyMember;
 use App\Models\User;
+use App\Support\CourseRequirementClassification;
 use Illuminate\Support\Collection;
 
 class ProfessorGradeAssignmentService
@@ -206,6 +207,7 @@ class ProfessorGradeAssignmentService
             })
             ->orderByDesc('course_offering_id')
             ->get();
+        CourseRequirementClassification::hydrateOfferings($offerings);
 
         return $offerings
             ->map(function (CourseOffering $offering) use ($user): ?array {
@@ -223,6 +225,7 @@ class ProfessorGradeAssignmentService
                         'course_code' => $offering->course?->course_code,
                         'course_name' => $offering->course?->course_name,
                     ],
+                    'requirement_classification' => CourseRequirementClassification::forOffering($offering),
                     'academic_year' => $offering->academicYear === null ? null : [
                         'academic_year_id' => $offering->academicYear->academic_year_id,
                         'year_name' => $offering->academicYear->year_name,

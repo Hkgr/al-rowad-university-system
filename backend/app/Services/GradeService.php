@@ -18,6 +18,7 @@ use App\Models\Student;
 use App\Models\StudentCourseRegistration;
 use App\Models\StudentCourseResult;
 use App\Models\StudentGradeComponent;
+use App\Support\CourseRequirementClassification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
@@ -34,12 +35,14 @@ class GradeService
         $offering = CourseOffering::query()
             ->with(['course', 'academicYear', 'semester'])
             ->findOrFail($courseOfferingId);
+        CourseRequirementClassification::hydrateOfferings([$offering]);
 
         $registrationsQuery = $offering->studentCourseRegistrations()
             ->with([
                 'student',
                 'registrationStatus',
                 'studentCourseResult.resultStatus',
+                'courseOffering.course',
             ]);
 
         if (! $includeInactive) {
@@ -49,6 +52,9 @@ class GradeService
         $registrations = $registrationsQuery
             ->orderBy('student_course_registration_id')
             ->get();
+        CourseRequirementClassification::hydrateOfferings(
+            $registrations->map(fn (StudentCourseRegistration $registration) => $registration->courseOffering)->push($offering)
+        );
 
         $approval = GradeApproval::query()
             ->where('course_offering_id', $courseOfferingId)
@@ -61,6 +67,7 @@ class GradeService
             'course_offering_id' => $offering->course_offering_id,
             'course_code' => $offering->course?->course_code,
             'course_name' => $offering->course?->course_name,
+            'requirement_classification' => CourseRequirementClassification::forOffering($offering),
             'academic_year' => $this->compactAcademicYear($offering->academicYear),
             'semester' => $this->compactSemester($offering->semester),
             'students' => $registrations
@@ -136,6 +143,9 @@ class GradeService
             'course_id' => $course->course_id,
             'course_code' => $course->course_code,
             'course_name' => $course->course_name,
+            'program_requirement_classifications' => CourseRequirementClassification::programClassificationsForCourse(
+                tap($course, fn (Course $model) => CourseRequirementClassification::hydrateCourses([$model]))
+            ),
             'academic_year_id' => $academicYearId,
             'semester_id' => $semesterId,
             'offerings_count' => $offeringIds->count(),
@@ -367,6 +377,8 @@ class GradeService
             ->get()
             ->filter(fn (StudentCourseRegistration $registration): bool => $this->isOfficiallyVisibleAttempt($registration))
             ->values();
+        $registrations->each(fn (StudentCourseRegistration $registration) => $registration->setRelation('student', $student));
+        CourseRequirementClassification::attachStudentProgramCourses($registrations);
 
         $terms = $registrations
             ->groupBy(fn (StudentCourseRegistration $registration) => ($registration->courseOffering?->academic_year_id ?? 'none').'-'.($registration->courseOffering?->semester_id ?? 'none'))
@@ -452,6 +464,8 @@ class GradeService
             ->get()
             ->filter(fn (StudentCourseRegistration $registration): bool => $this->isOfficiallyVisibleAttempt($registration))
             ->values();
+        $registrations->each(fn (StudentCourseRegistration $registration) => $registration->setRelation('student', $student));
+        CourseRequirementClassification::attachStudentProgramCourses($registrations);
 
         $termGroups = $registrations
             ->groupBy(function (StudentCourseRegistration $registration): string {
@@ -789,6 +803,7 @@ class GradeService
                 'course_code' => $registration->courseOffering->course->course_code,
                 'course_name' => $registration->courseOffering->course->course_name,
                 'credit_hours' => $registration->courseOffering->course->credit_hours,
+                'requirement_classification' => CourseRequirementClassification::forOffering($registration->courseOffering),
             ] : null,
             'theoretical_mark' => $theoretical,
             'practical_mark' => $practical,
@@ -858,6 +873,11 @@ class GradeService
             'course_code' => $course?->course_code,
             'course_name' => $course?->course_name,
             'credit_hours' => $course?->credit_hours,
+            'requirement_classification' => CourseRequirementClassification::forStudent(
+                $registration->student?->academic_program_id === null ? null : (int) $registration->student->academic_program_id,
+                $course?->course_id === null ? null : (int) $course->course_id,
+                $registration->relationLoaded('studentProgramCourse') ? $registration->getRelation('studentProgramCourse') : null
+            ),
             'academic_year' => $this->compactAcademicYear($offering?->academicYear),
             'semester' => $this->compactSemester($offering?->semester),
             'grades' => [
@@ -969,6 +989,11 @@ class GradeService
             'course_name' => $course?->course_name,
             'credit_hours' => $creditHours,
             'registration_id' => $registration->student_course_registration_id,
+            'requirement_classification' => CourseRequirementClassification::forStudent(
+                $registration->student?->academic_program_id === null ? null : (int) $registration->student->academic_program_id,
+                $course?->course_id === null ? null : (int) $course->course_id,
+                $registration->relationLoaded('studentProgramCourse') ? $registration->getRelation('studentProgramCourse') : null
+            ),
         ];
 
         if (in_array($registrationStatus, StudentCourseRegistration::EXCLUDED_STATUSES, true)) {
@@ -1607,6 +1632,7 @@ class GradeService
                 'course_code' => $course['course_code'] ?? null,
                 'course_name' => $course['course_name'] ?? null,
                 'credit_hours' => $course['credit_hours'] ?? 0,
+                'requirement_classification' => $course['requirement_classification'] ?? null,
                 'final_mark' => $course['final_mark'] ?? null,
                 'letter_grade' => $course['letter_grade'] ?? null,
                 'grade_points' => $course['grade_points'] ?? $evaluation['grade_points'],

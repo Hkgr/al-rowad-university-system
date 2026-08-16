@@ -5,6 +5,7 @@ import FilterBar from '../../../components/table/FilterBar'
 import { exportRowsToPdf } from '../../../utils/pdfExport'
 import InstructorAssignment from '../components/InstructorAssignment'
 import { hasPermission, PERMISSIONS } from '../../auth/auth'
+import CourseRequirementBadges, { classificationPlainText } from '../../../components/academic/CourseRequirementBadges'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
@@ -150,6 +151,7 @@ export default function CourseTablePage() {
           courseName: course?.course_name ?? '—',
           creditHours: course?.credit_hours,
           courseType: pc.course_type,
+          requirement_classification: pc.requirement_classification,
           offering,
         }
       })
@@ -203,7 +205,7 @@ export default function CourseTablePage() {
           { header: 'رمز المادة', value: r => r.courseCode },
           { header: 'اسم المادة', value: r => r.courseName },
           { header: 'الساعات المعتمدة', value: r => r.creditHours },
-          { header: 'النوع', value: r => TYPE_LABEL[r.courseType] ?? r.courseType },
+          { header: 'التصنيف الأكاديمي', value: r => classificationPlainText(r.requirement_classification) || (TYPE_LABEL[r.courseType] ?? r.courseType) },
           { header: 'حالة الفتح', value: r => offeringStatusLabel(r.offering).label },
           { header: 'الأستاذ', value: r => instructorNameFor(r.offering) },
         ],
@@ -344,11 +346,9 @@ export default function CourseTablePage() {
                   { key: 'name', header: 'اسم المادة', render: r => r.courseName },
                   { key: 'hours', header: 'الساعات المعتمدة', align: 'center', render: r => r.creditHours ?? '—' },
                   {
-                    key: 'type', header: 'النوع', align: 'center', render: r => (
-                      <span className={`inline-block text-[10.5px] font-bold px-2 py-0.5 rounded-full ${r.courseType === 'mandatory' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
-                        {TYPE_LABEL[r.courseType] ?? r.courseType}
-                      </span>
-                    ),
+                    key: 'classification',
+                    header: 'التصنيف الأكاديمي',
+                    render: r => <CourseRequirementBadges classification={r.requirement_classification} compact />,
                   },
                   {
                     key: 'status', header: 'حالة الفتح', align: 'center', render: r => {

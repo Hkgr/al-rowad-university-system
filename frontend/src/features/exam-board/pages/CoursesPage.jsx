@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { FaSpinner, FaPlus, FaEdit, FaTrash, FaCheck, FaTimes, FaBook, FaStar, FaRegStar, FaLayerGroup } from 'react-icons/fa'
 import { hasPermission, PERMISSIONS } from '../../auth/auth'
+import CourseRequirementBadges, { ProgramRequirementClassifications } from '../../../components/academic/CourseRequirementBadges'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 function authHeaders() {
@@ -477,6 +478,7 @@ export default function CoursesPage() {
                   <thead>
                     <tr className="bg-[#fafaf8]">
                       <th className="px-4 py-2.5 text-right text-[11px] font-bold text-text-light" dir="rtl">المادة</th>
+                      <th className="px-3 py-2.5 text-right text-[11px] font-bold text-text-light" dir="rtl">التصنيف الأكاديمي</th>
                       <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">معتمدة</th>
                       <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">نظري</th>
                       <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">عملي</th>
@@ -496,6 +498,9 @@ export default function CoursesPage() {
                           <td className="px-4 py-3" dir="rtl">
                             <div className="font-semibold text-[13px] text-text-dark">{c.course_name}</div>
                             <div className="text-[11px] text-text-light font-mono mt-0.5">{c.course_code}</div>
+                          </td>
+                          <td className="px-3 py-3" dir="rtl">
+                            <ProgramRequirementClassifications items={c.program_requirement_classifications} />
                           </td>
                           <td className="px-3 py-3 text-center font-bold text-text-dark">{c.credit_hours}</td>
                           <td className="px-3 py-3 text-center text-text-dark">{c.theoretical_hours ?? '—'}</td>
@@ -615,6 +620,9 @@ export default function CoursesPage() {
                                 : <span className="inline-flex items-center gap-1 text-[10px] text-text-light"><FaRegStar className="text-[9px]" /> ثانوي</span>
                               }
                             </div>
+                            <div className="mt-1">
+                              <ProgramRequirementClassifications items={course?.program_requirement_classifications} />
+                            </div>
                           </div>
                           {canManage && <button
                             onClick={() => handleDvRemove(a.course_department_id)}
@@ -649,6 +657,9 @@ export default function CoursesPage() {
                         <div className="flex-1 min-w-0">
                           <div className="font-semibold text-[13px] text-text-dark truncate">{c.course_name}</div>
                           <div className="text-[11px] text-text-light font-mono">{c.course_code}</div>
+                          <div className="mt-1">
+                            <ProgramRequirementClassifications items={c.program_requirement_classifications} />
+                          </div>
                         </div>
                         {canManage && <button
                           onClick={() => handleDvAdd(c.course_id)}

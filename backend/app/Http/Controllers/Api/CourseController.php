@@ -13,6 +13,7 @@ use App\Http\Resources\ProgramCourseResource;
 use App\Models\Course;
 use App\Services\GradeService;
 use App\Services\DataScopeService;
+use App\Support\CourseRequirementClassification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -38,6 +39,16 @@ class CourseController extends ApiController
         return UpdateCourseRequest::class;
     }
 
+    public function show($id): JsonResponse
+    {
+        $model = app(DataScopeService::class)
+            ->scopeResourceQuery(Course::query(), request()->user())
+            ->findOrFail($id);
+        CourseRequirementClassification::hydrateCourses([$model]);
+
+        return $this->successResponse((new CourseResource($model))->resolve(request()));
+    }
+
     public function departments(int $id): JsonResponse
     {
         $course = app(DataScopeService::class)->scopeCourses(Course::query(), request()->user())->findOrFail($id);
@@ -54,6 +65,7 @@ class CourseController extends ApiController
             'programCourses.academicLevel',
             'programCourses.recommendedSemester',
             'programCourses.course',
+            'programCourses.requirementMapping.requirementGroup',
         ])->findOrFail($id);
 
         return $this->successResponse(ProgramCourseResource::collection($course->programCourses));

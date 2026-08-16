@@ -4,6 +4,7 @@ import {
 } from 'react-icons/fa'
 import InstructorAssignment from '../components/InstructorAssignment'
 import { hasPermission, PERMISSIONS } from '../../auth/auth'
+import CourseRequirementBadges, { ProgramRequirementClassifications, pickRequirementClassification } from '../../../components/academic/CourseRequirementBadges'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
@@ -96,11 +97,14 @@ function CourseCombobox({ courses, excludeIds, value, onChange, placeholder, cou
                   <span className="font-mono text-primary-dark font-bold">{c.course_code}</span>
                   <span className="text-text-dark"> — {c.course_name}</span>
                 </span>
-                {scope && (
-                  <span className={`flex-shrink-0 text-[9.5px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${scope.className}`}>
-                    {scope.label}
-                  </span>
-                )}
+                <span className="flex items-center gap-1.5 flex-shrink-0">
+                  <ProgramRequirementClassifications items={c.program_requirement_classifications} />
+                  {scope ? (
+                    <span className={`flex-shrink-0 text-[9.5px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${scope.className}`}>
+                      {scope.label}
+                    </span>
+                  ) : null}
+                </span>
               </button>
             )
           })}
@@ -123,6 +127,9 @@ function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen
             <span className="font-mono text-primary-dark">{course?.course_code ?? '—'}</span>
           </div>
           <div className="text-[13px] text-text-dark mt-0.5">{course?.course_name ?? '—'}</div>
+          <div className="mt-1.5">
+            <CourseRequirementBadges classification={programCourse.requirement_classification} compact />
+          </div>
         </div>
         {canManageCurriculum && (
           <button
@@ -138,9 +145,6 @@ function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen
       </div>
 
       <div className="flex items-center flex-wrap gap-1.5 mt-2.5">
-        <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full ${programCourse.course_type === 'mandatory' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
-          {programCourse.course_type === 'mandatory' ? 'إجباري' : 'اختياري'}
-        </span>
         {scope && (
           <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full ${scope.className}`}>
             {scope.label}
@@ -383,9 +387,14 @@ function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onTogg
           return (
             <div key={o.course_offering_id} className="border border-primary/10 rounded-[10px] px-3.5 py-2" dir="rtl">
               <div className="flex items-center justify-between gap-3">
-                <div className="text-[12.5px] font-bold text-text-dark">
+                <div className="text-[12.5px] font-bold text-text-dark min-w-0">
                   <span className="font-mono text-primary-dark">{course?.course_code ?? '—'}</span> — {course?.course_name ?? '—'}
                   <span className="text-[11px] text-text-light font-normal"> ({o.available_seats}/{o.capacity})</span>
+                  <div className="mt-1 font-normal">
+                    {o.academic_program_id
+                      ? <CourseRequirementBadges classification={pickRequirementClassification(o)} compact />
+                      : <ProgramRequirementClassifications items={course?.program_requirement_classifications} />}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <span className={`px-2 py-0.5 rounded-full text-[10.5px] font-bold ${isOpen ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>

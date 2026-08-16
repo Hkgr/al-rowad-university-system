@@ -11,6 +11,7 @@ use App\Models\Student;
 use App\Models\StudentAttendance;
 use App\Models\StudentCourseRegistration;
 use App\Models\StudentCourseResult;
+use App\Support\CourseRequirementClassification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
@@ -204,6 +205,9 @@ class AttendanceService
             && app(AcademicAuthorizationService::class)->isRestrictedToOfficialStudentGrades($user);
 
         $registrations = $registrationsQuery->orderBy('student_course_registration_id')->get();
+        $registrations->each(fn (StudentCourseRegistration $registration) => $registration->setRelation('student', $student));
+        CourseRequirementClassification::attachStudentProgramCourses($registrations);
+        CourseRequirementClassification::hydrateOfferings($registrations->map(fn (StudentCourseRegistration $registration) => $registration->courseOffering));
 
         return [
             'student' => [
@@ -242,6 +246,8 @@ class AttendanceService
             ->get()
             ->unique('course_offering_id')
             ->values();
+        $registrations->each(fn (StudentCourseRegistration $registration) => $registration->setRelation('student', $student));
+        CourseRequirementClassification::attachStudentProgramCourses($registrations);
 
         $offeringIds = $registrations
             ->pluck('course_offering_id')
@@ -323,6 +329,7 @@ class AttendanceService
                 'course_offering_id' => $offering->course_offering_id,
                 'course_code' => $offering->course?->course_code,
                 'course_name' => $offering->course?->course_name,
+                'requirement_classification' => CourseRequirementClassification::forOffering($offering),
                 'academic_year' => $this->compactYear($offering->academicYear),
                 'semester' => $this->compactSemester($offering->semester),
             ],
@@ -372,6 +379,7 @@ class AttendanceService
                 'course_offering_id' => $offering->course_offering_id,
                 'course_code' => $offering->course?->course_code,
                 'course_name' => $offering->course?->course_name,
+                'requirement_classification' => CourseRequirementClassification::forOffering($offering),
                 'academic_year' => $this->compactYear($offering->academicYear),
                 'semester' => $this->compactSemester($offering->semester),
             ],
@@ -585,6 +593,11 @@ class AttendanceService
                 'course_code' => $offering?->course?->course_code,
                 'course_name' => $offering?->course?->course_name,
             ],
+            'requirement_classification' => CourseRequirementClassification::forStudent(
+                $registration->student?->academic_program_id === null ? null : (int) $registration->student->academic_program_id,
+                $offering?->course?->course_id === null ? null : (int) $offering->course->course_id,
+                $registration->relationLoaded('studentProgramCourse') ? $registration->getRelation('studentProgramCourse') : null
+            ),
             'academic_year' => $this->compactYear($year),
             'semester' => $this->compactSemester($semester),
             'created_sessions_count' => $relevantSessions->count(),
@@ -746,6 +759,9 @@ class AttendanceService
             'course_offering_id' => $registration->course_offering_id,
             'course_code' => $offering?->course?->course_code,
             'course_name' => $offering?->course?->course_name,
+            'requirement_classification' => $offering
+                ? CourseRequirementClassification::forOffering($offering)
+                : null,
             'academic_year' => $this->compactYear($offering?->academicYear),
             'semester' => $this->compactSemester($offering?->semester),
             'total_sessions' => $stats['total_sessions'],

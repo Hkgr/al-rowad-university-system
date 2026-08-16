@@ -5,6 +5,7 @@ import {
   FaHourglassHalf, FaRedo, FaUniversity,
 } from 'react-icons/fa'
 import { apiRequest } from '../../../services/apiClient'
+import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 
 const SCOPE_ORDER = ['university', 'college', 'department']
 
@@ -160,6 +161,9 @@ function CourseList({ title, courses, prefix }) {
               <div className="min-w-0">
                 <p className="text-[13px] font-bold text-text-dark break-words">{course.course_name || '—'}</p>
                 <p className="text-[11px] text-text-light font-mono mt-0.5">{course.course_code || '—'}</p>
+                <div className="mt-1">
+                  <CourseRequirementBadges classification={course.requirement_classification} compact />
+                </div>
               </div>
               <span className="shrink-0 text-[12px] font-black text-text-dark tabular-nums">
                 {asNumber(course.credit_hours)} س
@@ -551,6 +555,9 @@ export default function StudentRequirements() {
                       <div className="min-w-0">
                         <p className="text-[14px] font-bold text-text-dark break-words">{course.course_name || '—'}</p>
                         <p className="text-[11.5px] text-text-light font-mono mt-0.5">{course.course_code || '—'}</p>
+                        <div className="mt-1.5">
+                          <CourseRequirementBadges classification={course.requirement_classification} compact />
+                        </div>
                       </div>
                       <span className="text-[13px] font-black text-text-dark tabular-nums">
                         {asNumber(course.credit_hours)} ساعة

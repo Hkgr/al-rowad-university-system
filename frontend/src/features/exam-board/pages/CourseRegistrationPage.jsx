@@ -4,6 +4,7 @@ import {
   FaPlus, FaMinus, FaBookOpen, FaExchangeAlt,
 } from 'react-icons/fa'
 import { hasPermission, PERMISSIONS } from '../../auth/auth'
+import CourseRequirementBadges, { pickRequirementClassification } from '../../../components/academic/CourseRequirementBadges'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
@@ -46,12 +47,6 @@ const REASON_LABELS = {
   missing_prerequisites:  { ar: 'متطلبات سابقة ناقصة',  color: 'bg-red-100 text-red-700'      },
   no_available_seats:     { ar: 'لا توجد مقاعد',        color: 'bg-orange-100 text-orange-700'},
   credit_limit_exceeded:  { ar: 'تجاوز الحد الأقصى',    color: 'bg-yellow-100 text-yellow-700'},
-}
-
-const COURSE_TYPE_LABELS = {
-  mandatory: { ar: 'إجباري',  color: 'bg-indigo-100 text-indigo-700'  },
-  elective:  { ar: 'اختياري', color: 'bg-purple-100 text-purple-700'  },
-  shared:    { ar: 'مشتركة',  color: 'bg-teal-100 text-teal-700'      },
 }
 
 // ── Student search ─────────────────────────────────────────────────────────────
@@ -181,6 +176,9 @@ function RegisteredPanel({ registrations, onDrop, dropping, canManage }) {
           <div key={r.registration_id} className="flex items-center justify-between gap-3 px-5 py-3.5" dir="rtl">
             <div className="flex-1 min-w-0">
               <div className="font-semibold text-[13px] text-text-dark truncate">{r.course_name}</div>
+              <div className="mt-1">
+                <CourseRequirementBadges classification={pickRequirementClassification(r)} compact />
+              </div>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-[11px] text-text-light font-mono">{r.course_code}</span>
                 <span className="text-[10.5px] text-primary font-bold">{r.credit_hours} ساعات</span>
@@ -220,9 +218,15 @@ function AvailablePanel({ courses, levels, programCourseMap, currentLevelId, onR
       const pc = programCourseMap.get(courseId)
       if (pc) {
         if (!byLevel.has(pc.academic_level_id)) byLevel.set(pc.academic_level_id, [])
-        byLevel.get(pc.academic_level_id).push({ ...c, _courseType: pc.course_type })
+        byLevel.get(pc.academic_level_id).push({
+          ...c,
+          requirement_classification: pc.requirement_classification || c.requirement_classification,
+        })
       } else {
-        shared.push({ ...c, _courseType: 'shared' })
+        shared.push({
+          ...c,
+          requirement_classification: c.requirement_classification || { status: 'not_linked_to_program' },
+        })
       }
     })
     return { byLevel, shared }
@@ -281,7 +285,6 @@ function CourseRow({ course, onRegister, registering, canManage }) {
   const reasons  = course.eligibility_reasons ?? []
   const seats    = course.available_seats ?? 0
   const capacity = course.capacity ?? 0
-  const typeInfo = COURSE_TYPE_LABELS[course._courseType]
 
   return (
     <div className={`flex items-start justify-between gap-3 px-5 py-3.5 transition-colors ${eligible ? 'hover:bg-primary/[0.02]' : 'opacity-70'}`} dir="rtl">
@@ -297,11 +300,7 @@ function CourseRow({ course, onRegister, registering, canManage }) {
           <span className="text-[10.5px] text-primary font-bold">{course.credit_hours} ساعات</span>
         </div>
         <div className="flex items-center gap-2 mt-1 flex-wrap">
-          {typeInfo && (
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${typeInfo.color}`}>
-              {typeInfo.ar}
-            </span>
-          )}
+          <CourseRequirementBadges classification={pickRequirementClassification(course)} compact />
           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${seats > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
             {seats}/{capacity} مقعد
           </span>

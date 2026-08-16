@@ -2,11 +2,28 @@
 
 namespace App\Http\Resources;
 
+use App\Support\CourseRequirementClassification;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 class GradePartApprovalResource extends JsonResource
 {
+    public static function collection($resource)
+    {
+        CourseRequirementClassification::hydrateOfferings(
+            CourseRequirementClassification::modelsFromResource($resource)->map(
+                fn ($item) => $item?->courseOffering
+            )
+        );
+
+        return tap(new AnonymousResourceCollection($resource, static::class), function ($collection) {
+            if (property_exists(static::class, 'preserveKeys')) {
+                $collection->preserveKeys = (new static([]))->preserveKeys === true;
+            }
+        });
+    }
+
     public function toArray(Request $request): array
     {
         return [
@@ -19,6 +36,9 @@ class GradePartApprovalResource extends JsonResource
             'reviewed_at' => $this->reviewed_at?->toISOString(), 'review_notes' => $this->review_notes,
             'course_code' => $this->courseOffering?->course?->course_code,
             'course_name' => $this->courseOffering?->course?->course_name,
+            'requirement_classification' => $this->courseOffering
+                ? CourseRequirementClassification::forOffering($this->courseOffering)
+                : null,
             'academic_year_name' => $this->courseOffering?->academicYear?->year_name,
             'semester_name' => $this->courseOffering?->semester?->semester_name,
             'section' => [

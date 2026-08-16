@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FaChartLine, FaGraduationCap } from 'react-icons/fa'
 import { apiRequest } from '../../../services/apiClient'
+import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 import GpaTrendChart from '../components/GpaTrendChart'
 
 function formatGpa(value) {
@@ -298,6 +299,7 @@ export default function StudentGPA() {
                       <thead>
                         <tr className="bg-[#fafaf8]">
                           <th className="px-4 py-2.5 text-right text-[11px] font-bold text-text-light">المقرر</th>
+                          <th className="px-3 py-2.5 text-right text-[11px] font-bold text-text-light">التصنيف الأكاديمي</th>
                           <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">الساعات</th>
                           <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">العلامة النهائية</th>
                           <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">التقدير</th>
@@ -310,6 +312,9 @@ export default function StudentGPA() {
                             <td className="px-4 py-3">
                               <div className="font-semibold text-text-dark">{course.course_name}</div>
                               <div className="text-[11px] text-text-light font-mono mt-0.5">{course.course_code}</div>
+                            </td>
+                            <td className="px-3 py-3">
+                              <CourseRequirementBadges classification={course.requirement_classification} compact />
                             </td>
                             <td className="px-3 py-3 text-center font-bold text-text-dark">{course.credit_hours ?? '—'}</td>
                             <td className="px-3 py-3 text-center font-black text-text-dark">{formatMark(course.final_mark)}</td>
@@ -325,6 +330,9 @@ export default function StudentGPA() {
                       <article key={course.registration_id} className="px-4 py-4">
                         <h4 className="font-bold text-[14px] text-text-dark">{course.course_name}</h4>
                         <p className="text-[11.5px] text-text-light font-mono mt-0.5">{course.course_code}</p>
+                        <div className="mt-1.5">
+                          <CourseRequirementBadges classification={course.requirement_classification} compact />
+                        </div>
                         <div className="mt-3 grid grid-cols-2 gap-2 text-[12px]">
                           <p className="text-text-light">الساعات: <span className="font-bold text-text-dark">{course.credit_hours ?? '—'}</span></p>
                           <p className="text-text-light">التقدير: <span className="font-black text-primary">{course.letter_grade || '—'}</span></p>

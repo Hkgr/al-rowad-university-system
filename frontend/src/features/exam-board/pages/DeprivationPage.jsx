@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { FaSpinner, FaCalendarCheck } from 'react-icons/fa'
 import StudentPicker from '../components/StudentPicker'
+import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 function authHeaders() {
@@ -84,6 +85,9 @@ export default function DeprivationPage() {
                         <div className="font-bold text-[14.5px] text-text-dark">{c.course_name}</div>
                         <div className="text-[11.5px] text-text-light font-mono mt-0.5">
                           {c.course_code} — {c.academic_year?.year_name} / {c.semester?.semester_name}
+                        </div>
+                        <div className="mt-1.5">
+                          <CourseRequirementBadges classification={c.requirement_classification} compact />
                         </div>
                       </div>
                       {deprived && <span className="flex-shrink-0 px-2.5 py-1 bg-red-500/10 border border-red-500/25 text-red-600 text-[11.5px] font-bold rounded-full">محروم</span>}

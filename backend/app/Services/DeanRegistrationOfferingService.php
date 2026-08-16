@@ -10,6 +10,7 @@ use App\Models\Department;
 use App\Models\ProgramCourse;
 use App\Models\Semester;
 use App\Models\User;
+use App\Support\CourseRequirementClassification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -286,7 +287,7 @@ class DeanRegistrationOfferingService
         $rows = ProgramCourse::query()
             ->where('academic_program_id', $program->academic_program_id)
             ->where('is_active', true)
-            ->with(['course', 'academicLevel'])
+            ->with(['course', 'academicLevel', 'requirementMapping.requirementGroup'])
             ->orderBy('academic_level_id')
             ->get()
             ->filter(fn (ProgramCourse $row) => $row->course !== null);
@@ -331,6 +332,7 @@ class DeanRegistrationOfferingService
                             'program_course_id' => $row->program_course_id,
                             'course_type' => $row->course_type,
                             'academic_level_id' => $row->academic_level_id,
+                            'requirement_classification' => CourseRequirementClassification::fromProgramCourse($row),
                             'course' => [
                                 'course_id' => $row->course->course_id,
                                 'course_code' => $row->course->course_code,

@@ -9,6 +9,7 @@ use App\Http\Resources\CourseResource;
 use App\Http\Resources\ProgramCourseResource;
 use App\Http\Resources\StudentResource;
 use App\Models\AcademicProgram;
+use App\Support\CourseRequirementClassification;
 use App\Services\DataScopeService;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Http\JsonResponse;
@@ -71,6 +72,7 @@ class AcademicProgramController extends ApiController
             'programCourses.academicLevel',
             'programCourses.recommendedSemester',
             'programCourses.academicProgram.department',
+            'programCourses.requirementMapping.requirementGroup',
         ])->findOrFail($id);
 
         $courses = $program->programCourses
@@ -89,6 +91,7 @@ class AcademicProgramController extends ApiController
             'programCourses.academicLevel',
             'programCourses.recommendedSemester',
             'programCourses.academicProgram.department',
+            'programCourses.requirementMapping.requirementGroup',
         ])->findOrFail($id);
 
         $courses = $program->programCourses
@@ -106,6 +109,7 @@ class AcademicProgramController extends ApiController
             'programCourses.course',
             'programCourses.academicLevel',
             'programCourses.recommendedSemester',
+            'programCourses.requirementMapping.requirementGroup',
         ])->findOrFail($id);
 
         $studyPlan = $program->programCourses
@@ -136,6 +140,7 @@ class AcademicProgramController extends ApiController
                             'course_name' => $programCourse->course?->course_name,
                             'credit_hours' => $programCourse->course?->credit_hours,
                             'course_type' => $programCourse->course_type,
+                            'requirement_classification' => CourseRequirementClassification::fromProgramCourse($programCourse),
                         ];
                     })->values(),
                 ];

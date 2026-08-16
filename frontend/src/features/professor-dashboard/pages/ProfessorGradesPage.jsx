@@ -5,6 +5,7 @@ import {
 } from 'react-icons/fa'
 import useMyOfferings from '../hooks/useMyOfferings'
 import { getGradePartsWorkflow, saveRegistrationGradePart, submitMyGradeParts } from '../lib/professorApi'
+import CourseRequirementBadges, { pickRequirementClassification } from '../../../components/academic/CourseRequirementBadges'
 
 const PARTS = {
   theoretical: { label: 'النظري', full: 'العلامة النظرية', other: 'practical' },
@@ -262,6 +263,7 @@ export default function ProfessorGradesPage() {
           <span className="flex-1 min-w-0">
             <span className="block font-bold text-[13.5px] text-text-dark truncate">{o.course?.course_name || `مادة #${o.course_offering_id}`}</span>
             <span className="block text-[11px] text-text-light font-mono">{o.course?.course_code}{o.section?.course_offering_id ? ` — شعبة ${o.section.course_offering_id}` : ''}</span>
+            <span className="mt-1 block"><CourseRequirementBadges classification={pickRequirementClassification(o)} compact /></span>
             <span className="mt-1 inline-flex items-center gap-1 text-[10.5px] font-bold text-primary"><BadgeIcon className="text-[10px]" />{badge.text}</span>
           </span>
           <FaChevronDown className={`text-primary/50 text-[12px] ${active ? 'rotate-180' : ''}`} />
@@ -338,6 +340,9 @@ function OfferingHeader({ offering, workflow }) {
       <div>
         <div className="font-black text-[18px] text-text-dark">{workflow.course?.course_name || '—'}</div>
         <div className="font-mono text-[12px] text-text-light mt-0.5">{workflow.course?.course_code || '—'}</div>
+        <div className="mt-1.5">
+          <CourseRequirementBadges classification={pickRequirementClassification(offering) || pickRequirementClassification(workflow)} />
+        </div>
         <div className="text-[12px] text-text-light mt-2 flex flex-wrap gap-x-3 gap-y-1">
           {year && <span>العام الدراسي: {year}</span>}
           {semester && <span>الفصل: {semester}</span>}

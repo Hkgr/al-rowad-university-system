@@ -18,6 +18,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
+use App\Support\CourseRequirementClassification;
 
 class RegistrationRequestService
 {
@@ -1190,11 +1191,22 @@ class RegistrationRequestService
 
         $items = $request->items
             ->sortBy('student_registration_request_item_id')
+            ->values();
+        $programId = $request->student?->academic_program_id === null ? null : (int) $request->student->academic_program_id;
+        $courseMap = CourseRequirementClassification::indexActiveForProgram(
+            $programId,
+            $items->map(fn (StudentRegistrationRequestItem $item) => $item->courseOffering?->course_id)
+        );
+
+        $items = $items
             ->map(function (StudentRegistrationRequestItem $item) use (
                 $includeEligibility,
-                $failureByOffering
+                $failureByOffering,
+                $programId,
+                $courseMap
             ): array {
                 $offering = $item->courseOffering;
+                $courseId = $offering?->course_id === null ? null : (int) $offering->course_id;
                 $payload = [
                     'student_registration_request_item_id' => $item->student_registration_request_item_id,
                     'course_offering_id' => $item->course_offering_id,
@@ -1205,6 +1217,11 @@ class RegistrationRequestService
                     'available_seats' => $offering?->available_seats,
                     'capacity' => $offering?->capacity,
                     'offering_status' => $offering?->status,
+                    'requirement_classification' => CourseRequirementClassification::forStudentFromMap(
+                        $programId,
+                        $courseId,
+                        $courseMap
+                    ),
                 ];
 
                 if ($includeEligibility) {
@@ -1287,13 +1304,26 @@ class RegistrationRequestService
             'academic_year' => $this->compactYear($request->academicYear),
             'semester' => $this->compactSemester($request->semester),
             'hours' => $hours,
-            'items' => $request->items->map(fn (StudentRegistrationRequestItem $item): array => [
-                'course_offering_id' => $item->course_offering_id,
-                'course_code' => $item->courseOffering?->course?->course_code,
-                'course_name' => $item->courseOffering?->course?->course_name,
-                'credit_hours' => (int) ($item->courseOffering?->course?->credit_hours ?? 0),
-                'student_course_registration_id' => $item->student_course_registration_id,
-            ])->values()->all(),
+            'items' => (function () use ($request, $student): array {
+                $programId = $student?->academic_program_id === null ? null : (int) $student->academic_program_id;
+                $courseMap = CourseRequirementClassification::indexActiveForProgram(
+                    $programId,
+                    $request->items->map(fn (StudentRegistrationRequestItem $item) => $item->courseOffering?->course_id)
+                );
+
+                return $request->items->map(fn (StudentRegistrationRequestItem $item): array => [
+                    'course_offering_id' => $item->course_offering_id,
+                    'course_code' => $item->courseOffering?->course?->course_code,
+                    'course_name' => $item->courseOffering?->course?->course_name,
+                    'credit_hours' => (int) ($item->courseOffering?->course?->credit_hours ?? 0),
+                    'student_course_registration_id' => $item->student_course_registration_id,
+                    'requirement_classification' => CourseRequirementClassification::forStudentFromMap(
+                        $programId,
+                        $item->courseOffering?->course_id === null ? null : (int) $item->courseOffering->course_id,
+                        $courseMap
+                    ),
+                ])->values()->all();
+            })(),
         ];
     }
 

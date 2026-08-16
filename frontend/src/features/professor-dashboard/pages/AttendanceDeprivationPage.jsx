@@ -6,6 +6,7 @@ import {
 } from 'react-icons/fa'
 import useMyOfferings from '../hooks/useMyOfferings'
 import { API, authHeaders } from '../lib/professorApi'
+import CourseRequirementBadges, { pickRequirementClassification } from '../../../components/academic/CourseRequirementBadges'
 
 const STATUS_OPTIONS = [
   { code: 'present', ar: 'حاضر',       color: 'bg-green-100 text-green-700 border-green-300' },
@@ -432,6 +433,9 @@ export default function AttendanceDeprivationPage() {
                   <div className="font-bold text-[13.5px] text-text-dark truncate">{o.course?.course_name || o.course_name || `مادة #${o.course_offering_id}`}</div>
                   <div className="text-[11px] text-text-light font-mono mt-0.5">
                     {o.course?.course_code}{o.section_number ? ` — شعبة ${o.section_number}` : ''}
+                  </div>
+                  <div className="mt-1">
+                    <CourseRequirementBadges classification={pickRequirementClassification(o)} compact />
                   </div>
                   <div className="text-[10.5px] text-text-light mt-0.5 truncate">
                     {o.academic_year?.year_name} {o.semester?.semester_name ? `— ${o.semester.semester_name}` : ''}

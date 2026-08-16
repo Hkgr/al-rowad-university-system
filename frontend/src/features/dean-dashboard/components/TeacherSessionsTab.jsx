@@ -8,6 +8,7 @@ import {
   formatDisplayDate,
   sessionTypeLabel,
 } from '../utils/teacherDisplay'
+import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 
 export default function TeacherSessionsTab({
   loading,
@@ -41,7 +42,14 @@ export default function TeacherSessionsTab({
       dir: 'rtl',
       render: session => {
         const label = [session.course?.course_code, session.course?.course_name].filter(Boolean).join(' — ') || '—'
-        return <span className="block max-w-[220px] truncate text-[13px] font-semibold text-text-dark" title={label}>{label}</span>
+        return (
+          <div className="min-w-0 max-w-[220px]">
+            <span className="block truncate text-[13px] font-semibold text-text-dark" title={label}>{label}</span>
+            <div className="mt-1">
+              <CourseRequirementBadges classification={session.requirement_classification} compact />
+            </div>
+          </div>
+        )
       },
     },
     {

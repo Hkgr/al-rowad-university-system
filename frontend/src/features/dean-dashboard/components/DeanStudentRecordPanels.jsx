@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { FaCheckCircle, FaClock, FaDownload, FaFolderOpen, FaGraduationCap, FaSpinner, FaTimesCircle } from 'react-icons/fa'
 import { formatDate, genderLabel } from '../utils/studentDisplay'
 import { downloadAuthorizedFile } from '../utils/authorizedDownload'
+import CourseRequirementBadges, { pickRequirementClassification } from '../../../components/academic/CourseRequirementBadges'
 
 const SEMESTER_ORDER = [
   { code: 'first', ar: 'الفصل الأول', accent: 'primary' },
@@ -167,6 +168,7 @@ export function RegistrationsTab({
             <thead>
               <tr className="bg-text-dark text-white/90">
                 <th className="px-4 py-3 text-right font-bold" dir="rtl">المقرر</th>
+                <th className="px-4 py-3 text-right font-bold" dir="rtl">التصنيف الأكاديمي</th>
                 <th className="px-4 py-3 text-center font-bold">الساعات</th>
                 <th className="px-4 py-3 text-center font-bold" dir="rtl">العام</th>
                 <th className="px-4 py-3 text-center font-bold" dir="rtl">الفصل</th>
@@ -182,6 +184,9 @@ export function RegistrationsTab({
                     <td className="px-4 py-3" dir="rtl">
                       <div className="font-semibold text-text-dark">{displayValue(course?.course_name)}</div>
                       <div className="text-[11px] text-text-light font-mono mt-0.5">{displayValue(course?.course_code)}</div>
+                    </td>
+                    <td className="px-4 py-3" dir="rtl">
+                      <CourseRequirementBadges classification={pickRequirementClassification(row)} compact />
                     </td>
                     <td className="px-4 py-3 text-center font-bold text-text-dark">{displayValue(course?.credit_hours)}</td>
                     <td className="px-4 py-3 text-center text-text-gray" dir="rtl">{displayValue(row.course_offering?.academic_year?.year_name)}</td>
@@ -240,6 +245,7 @@ function SemesterTable({ courses }) {
         <thead>
           <tr className="bg-[#fafaf9]">
             <th className="px-4 py-2.5 text-right text-[11px] font-bold text-text-light" dir="rtl">المقرر</th>
+            <th className="px-4 py-2.5 text-right text-[11px] font-bold text-text-light" dir="rtl">التصنيف الأكاديمي</th>
             <th className="px-4 py-2.5 text-center text-[11px] font-bold text-text-light">الساعات</th>
             <th className="px-4 py-2.5 text-center text-[11px] font-bold text-text-light">نظري</th>
             <th className="px-4 py-2.5 text-center text-[11px] font-bold text-text-light">عملي</th>
@@ -254,6 +260,9 @@ function SemesterTable({ courses }) {
               <td className="px-4 py-3" dir="rtl">
                 <div className="font-semibold text-text-dark">{displayValue(course.course_name)}</div>
                 <div className="text-[11px] text-text-light font-mono mt-0.5">{displayValue(course.course_code)}</div>
+              </td>
+              <td className="px-4 py-3" dir="rtl">
+                <CourseRequirementBadges classification={course.requirement_classification} compact />
               </td>
               <td className="px-4 py-3 text-center font-bold">{displayValue(course.credit_hours)}</td>
               <td className="px-4 py-3 text-center">{displayValue(course.theoretical_mark)}</td>
@@ -286,6 +295,7 @@ function SemesterTable({ courses }) {
             <td className="px-4 py-2.5 text-[11.5px] font-bold text-text-gray" dir="rtl">
               الإجمالي — {courses.length} مقرر
             </td>
+            <td />
             <td className="px-4 py-2.5 text-center text-[12px] font-extrabold text-primary-dark">{totalHours}</td>
             <td colSpan={5} />
           </tr>
@@ -430,6 +440,9 @@ export function AttendanceTab({ loading, error, attendance }) {
                   <div className="font-bold text-[14px] text-text-dark break-words">{displayValue(course.course_name)}</div>
                   <div className="text-[11.5px] text-text-light font-mono mt-0.5">
                     {displayValue(course.course_code)} — {displayValue(course.academic_year?.year_name)} / {displayValue(course.semester?.semester_name)}
+                  </div>
+                  <div className="mt-1.5">
+                    <CourseRequirementBadges classification={pickRequirementClassification(course)} compact />
                   </div>
                 </div>
                 {deprived && (

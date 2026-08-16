@@ -4,12 +4,27 @@ namespace App\Http\Resources;
 
 use App\Models\CourseOfferingInstructor;
 use App\Models\FacultyMember;
+use App\Support\CourseRequirementClassification;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /** @mixin \App\Models\CourseOffering */
 class TeachingStaffAssignmentOfferingResource extends JsonResource
 {
+    public static function collection($resource)
+    {
+        CourseRequirementClassification::hydrateOfferings(
+            CourseRequirementClassification::modelsFromResource($resource)
+        );
+
+        return tap(new AnonymousResourceCollection($resource, static::class), function ($collection) {
+            if (property_exists(static::class, 'preserveKeys')) {
+                $collection->preserveKeys = (new static([]))->preserveKeys === true;
+            }
+        });
+    }
+
     public function toArray(Request $request): array
     {
         $course = $this->course;
@@ -51,6 +66,7 @@ class TeachingStaffAssignmentOfferingResource extends JsonResource
                     'program_name' => $program->program_name,
                 ],
             ],
+            'requirement_classification' => CourseRequirementClassification::forOffering($this->resource),
             'components' => [
                 'theoretical' => $this->componentPayload(
                     (int) ($course?->theoretical_hours ?? 0) > 0,

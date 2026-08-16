@@ -2,12 +2,27 @@
 
 namespace App\Http\Resources;
 
+use App\Support\CourseRequirementClassification;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /** @mixin \App\Models\CourseOffering */
 class CourseOfferingResource extends JsonResource
 {
+    public static function collection($resource)
+    {
+        CourseRequirementClassification::hydrateOfferings(
+            CourseRequirementClassification::modelsFromResource($resource)
+        );
+
+        return tap(new AnonymousResourceCollection($resource, static::class), function ($collection) {
+            if (property_exists(static::class, 'preserveKeys')) {
+                $collection->preserveKeys = (new static([]))->preserveKeys === true;
+            }
+        });
+    }
+
     public function toArray(Request $request): array
     {
         return [
@@ -21,6 +36,7 @@ class CourseOfferingResource extends JsonResource
             'capacity' => $this->capacity,
             'available_seats' => $this->available_seats,
             'status' => $this->status,
+            'requirement_classification' => CourseRequirementClassification::forOffering($this->resource),
             'course' => CourseResource::make($this->whenLoaded('course')),
             'academic_year' => AcademicYearResource::make($this->whenLoaded('academicYear')),
             'semester' => SemesterResource::make($this->whenLoaded('semester')),

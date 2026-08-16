@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { FaSpinner } from 'react-icons/fa'
 import { apiRequest } from '../../../services/apiClient'
 import DeanConfirmDialog from '../components/DeanConfirmDialog'
+import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 
 const STATUS_LABELS = {
   draft: 'مسودة',
@@ -180,6 +181,9 @@ export default function DeanRegistrationRequestDetail() {
             <div key={item.student_registration_request_item_id} className="px-5 py-4 flex items-start justify-between gap-3">
               <div>
                 <p className="font-bold text-[14px]">{item.course_name}</p>
+                <div className="mt-1.5">
+                  <CourseRequirementBadges classification={item.requirement_classification} compact />
+                </div>
                 <p className="text-[12px] text-text-light mt-1">
                   {item.course_code} — {item.credit_hours} ساعات
                 </p>
