@@ -318,6 +318,9 @@ class AttendanceService
             ->findOrFail($courseOfferingId);
 
         $stats = $this->calculateAbsenceStats($student->student_id, $courseOfferingId);
+        $programId = $student->academic_program_id === null ? null : (int) $student->academic_program_id;
+        $courseId = $offering->course_id === null ? null : (int) $offering->course_id;
+        $courseMap = CourseRequirementClassification::indexActiveForProgram($programId, [$courseId]);
 
         return [
             'student' => [
@@ -329,7 +332,11 @@ class AttendanceService
                 'course_offering_id' => $offering->course_offering_id,
                 'course_code' => $offering->course?->course_code,
                 'course_name' => $offering->course?->course_name,
-                'requirement_classification' => CourseRequirementClassification::forOffering($offering),
+                'requirement_classification' => CourseRequirementClassification::forStudentFromMap(
+                    $programId,
+                    $courseId,
+                    $courseMap
+                ),
                 'academic_year' => $this->compactYear($offering->academicYear),
                 'semester' => $this->compactSemester($offering->semester),
             ],
@@ -760,7 +767,17 @@ class AttendanceService
             'course_code' => $offering?->course?->course_code,
             'course_name' => $offering?->course?->course_name,
             'requirement_classification' => $offering
-                ? CourseRequirementClassification::forOffering($offering)
+                ? CourseRequirementClassification::forStudent(
+                    $registration->student?->academic_program_id === null
+                        ? null
+                        : (int) $registration->student->academic_program_id,
+                    ($offering->course_id ?? $offering->course?->course_id) === null
+                        ? null
+                        : (int) ($offering->course_id ?? $offering->course?->course_id),
+                    $registration->relationLoaded('studentProgramCourse')
+                        ? $registration->getRelation('studentProgramCourse')
+                        : null
+                )
                 : null,
             'academic_year' => $this->compactYear($offering?->academicYear),
             'semester' => $this->compactSemester($offering?->semester),

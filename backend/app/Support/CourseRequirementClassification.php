@@ -26,10 +26,11 @@ class CourseRequirementClassification
     /**
      * @return array<string, mixed>
      */
-    public static function empty(?int $academicProgramId, string $status): array
+    public static function empty(?int $academicProgramId, string $status, ?string $reason = null): array
     {
         return [
             'status' => $status,
+            'reason' => $reason,
             'academic_program_id' => $academicProgramId,
             'program_course_id' => null,
             'requirement_group_id' => null,
@@ -41,43 +42,60 @@ class CourseRequirementClassification
     }
 
     /**
+     * Mirror AcademicRequirementService::classifyProgramCourse() validity rules.
+     *
      * @return array<string, mixed>
      */
     public static function fromProgramCourse(?ProgramCourse $programCourse, ?int $academicProgramId = null): array
     {
-        $programId = $programCourse?->academic_program_id !== null
-            ? (int) $programCourse->academic_program_id
-            : $academicProgramId;
+        $programId = $academicProgramId !== null
+            ? $academicProgramId
+            : ($programCourse?->academic_program_id === null ? null : (int) $programCourse->academic_program_id);
 
         if ($programCourse === null) {
             return self::empty($programId, self::STATUS_NOT_LINKED_TO_PROGRAM);
         }
 
-        $mappingLoaded = $programCourse->relationLoaded('requirementMapping');
-        $mapping = $mappingLoaded ? $programCourse->requirementMapping : null;
-        $group = null;
-        if ($mapping !== null && $mapping->relationLoaded('requirementGroup')) {
-            $group = $mapping->requirementGroup;
-        } elseif ($programCourse->relationLoaded('requirementGroup')) {
-            $group = $programCourse->requirementGroup;
-        }
+        self::hydrateProgramCourses([$programCourse]);
 
-        if ($group === null) {
-            return array_merge(self::empty($programId, self::STATUS_REQUIREMENT_MAPPING_MISSING), [
+        $mapping = $programCourse->requirementMapping;
+        if ($mapping === null) {
+            return array_merge(self::empty($programId, self::STATUS_REQUIREMENT_MAPPING_MISSING, 'requirement_mapping_missing'), [
                 'program_course_id' => $programCourse->program_course_id,
             ]);
         }
 
-        $groupType = strtolower((string) $group->requirement_type);
-        $courseType = strtolower((string) $programCourse->course_type);
-        $normalizedCourseType = $courseType === 'required' ? 'mandatory' : $courseType;
-        $status = self::STATUS_MAPPED;
-        if ($normalizedCourseType !== '' && $groupType !== '' && $normalizedCourseType !== $groupType) {
-            $status = self::STATUS_REQUIREMENT_CONFIGURATION_INVALID;
+        $group = $mapping->requirementGroup;
+        if ($group === null) {
+            return array_merge(self::empty($programId, self::STATUS_REQUIREMENT_CONFIGURATION_INVALID, 'requirement_group_missing'), [
+                'program_course_id' => $programCourse->program_course_id,
+            ]);
+        }
+
+        if ((int) $group->academic_program_id !== (int) $programId) {
+            return array_merge(self::empty($programId, self::STATUS_REQUIREMENT_CONFIGURATION_INVALID, 'requirement_group_program_mismatch'), [
+                'program_course_id' => $programCourse->program_course_id,
+                'requirement_group_id' => $group->requirement_group_id,
+            ]);
+        }
+
+        if (! $group->is_active) {
+            return array_merge(self::empty($programId, self::STATUS_REQUIREMENT_CONFIGURATION_INVALID, 'requirement_group_inactive'), [
+                'program_course_id' => $programCourse->program_course_id,
+                'requirement_group_id' => $group->requirement_group_id,
+            ]);
+        }
+
+        if (strtolower((string) $programCourse->course_type) !== strtolower((string) $group->requirement_type)) {
+            return array_merge(self::empty($programId, self::STATUS_REQUIREMENT_CONFIGURATION_INVALID, 'course_type_requirement_type_mismatch'), [
+                'program_course_id' => $programCourse->program_course_id,
+                'requirement_group_id' => $group->requirement_group_id,
+            ]);
         }
 
         return [
-            'status' => $status,
+            'status' => self::STATUS_MAPPED,
+            'reason' => null,
             'academic_program_id' => $programId,
             'program_course_id' => $programCourse->program_course_id,
             'requirement_group_id' => $group->requirement_group_id,
@@ -170,23 +188,42 @@ class CourseRequirementClassification
             return collect();
         }
 
+        return self::indexActiveForPrograms([$programId], $courseIds)
+            ->mapWithKeys(fn (ProgramCourse $programCourse): array => [
+                (int) $programCourse->course_id => $programCourse,
+            ]);
+    }
+
+    /**
+     * @param  iterable<int|null>  $academicProgramIds
+     * @param  iterable<int|null>  $courseIds
+     * @return Collection<string, ProgramCourse>
+     */
+    public static function indexActiveForPrograms(iterable $academicProgramIds, iterable $courseIds): Collection
+    {
+        $programIds = collect($academicProgramIds)
+            ->filter(fn ($id): bool => $id !== null && $id !== '')
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
         $ids = collect($courseIds)
             ->filter(fn ($id): bool => $id !== null && $id !== '')
             ->map(fn ($id): int => (int) $id)
             ->unique()
             ->values()
             ->all();
-        if ($ids === []) {
+        if ($programIds === [] || $ids === []) {
             return collect();
         }
 
         return ProgramCourse::query()
             ->where('is_active', true)
-            ->where('academic_program_id', $programId)
+            ->whereIn('academic_program_id', $programIds)
             ->whereIn('course_id', $ids)
             ->with(['requirementMapping.requirementGroup', 'academicProgram'])
             ->get()
-            ->keyBy(fn (ProgramCourse $programCourse): int => (int) $programCourse->course_id);
+            ->keyBy(fn (ProgramCourse $programCourse): string => (int) $programCourse->academic_program_id.':'.(int) $programCourse->course_id);
     }
 
     public static function hydrateProgramCourses(iterable $programCourses): void
@@ -199,7 +236,10 @@ class CourseRequirementClassification
             return;
         }
 
-        $unloaded->load(['requirementMapping.requirementGroup', 'academicProgram']);
+        (new EloquentCollection($unloaded->values()->all()))->load([
+            'requirementMapping.requirementGroup',
+            'academicProgram',
+        ]);
     }
 
     public static function hydrateCourses(iterable $courses): void
@@ -209,7 +249,7 @@ class CourseRequirementClassification
             fn (Course $course): bool => ! $course->relationLoaded('programCourses')
         );
         if ($unloaded->isNotEmpty()) {
-            $unloaded->load([
+            (new EloquentCollection($unloaded->values()->all()))->load([
                 'programCourses' => fn ($query) => $query->where('is_active', true),
                 'programCourses.requirementMapping.requirementGroup',
                 'programCourses.academicProgram',
@@ -297,6 +337,19 @@ class CourseRequirementClassification
     public static function forStudentFromMap(?int $programId, ?int $courseId, Collection $map): array
     {
         $programCourse = ($courseId === null) ? null : $map->get($courseId);
+
+        return self::forStudent($programId, $courseId, $programCourse);
+    }
+
+    /**
+     * @param  Collection<string, ProgramCourse>  $map
+     * @return array<string, mixed>
+     */
+    public static function forStudentFromPairMap(?int $programId, ?int $courseId, Collection $map): array
+    {
+        $programCourse = ($programId === null || $courseId === null)
+            ? null
+            : $map->get($programId.':'.$courseId);
 
         return self::forStudent($programId, $courseId, $programCourse);
     }
