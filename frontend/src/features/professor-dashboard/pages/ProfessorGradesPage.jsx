@@ -111,6 +111,14 @@ export default function ProfessorGradesPage() {
   }, [componentDefinitions, dirtyKeys, rows, selectedPart])
   const official = workflow?.finalization?.official_result_available === true
   const ownsBoth = requiredAssignedParts.length === 2
+  const actionableAssignedParts = useMemo(
+    () => requiredAssignedParts.filter(part => ['draft', 'returned'].includes(workflow?.parts?.[part]?.status || 'draft')),
+    [requiredAssignedParts, workflow],
+  )
+  const unchangedAssignedParts = useMemo(
+    () => requiredAssignedParts.filter(part => ['submitted', 'approved'].includes(workflow?.parts?.[part]?.status)),
+    [requiredAssignedParts, workflow],
+  )
   const busy = saving || submitting || loading
 
   const loadWorkflow = useCallback(async (offeringId, { preserveDirty = false } = {}) => {
@@ -230,10 +238,10 @@ export default function ProfessorGradesPage() {
   const partMax = componentDefinitions.reduce((sum, component) => sum + Number(component.max_mark || 0), 0)
   const completeCount = rows.filter(row => rowComplete(row)).length
   const incompleteCount = rows.filter(row => !row.is_deprived && !rowComplete(row)).length
-  const allAssignedReady = requiredAssignedParts.length > 0 && requiredAssignedParts.every(part => workflow?.parts?.[part]?.can_submit === true)
+  const actionableReady = actionableAssignedParts.length > 0 && actionableAssignedParts.every(part => workflow?.parts?.[part]?.can_submit === true)
   const canSave = !official && !refreshRequired && !loadError && !loading && partState?.can_edit === true && selectedDirtyKeys.length > 0 && !saving && !submitting
-  const canSubmit = !official && !refreshRequired && !loadError && !loading && allAssignedReady && dirtyKeys.length === 0 && !saving && !submitting
-  const submitLabel = ownsBoth ? 'إرسال العلامات إلى هيئة الامتحانات' : `إرسال علامات ${PARTS[selectedPart]?.label || ''} إلى هيئة الامتحانات`
+  const canSubmit = !official && !refreshRequired && !loadError && !loading && actionableReady && dirtyKeys.length === 0 && !saving && !submitting
+  const submitLabel = submitButtonLabel(actionableAssignedParts, workflow?.parts)
 
   return <>
     <div className="mb-5" dir="rtl">
@@ -308,7 +316,8 @@ export default function ProfessorGradesPage() {
     {confirmOpen && <ConfirmDialog
       offering={selectedOffering}
       workflow={workflow}
-      assignedParts={requiredAssignedParts}
+      partsToSubmit={actionableAssignedParts}
+      unchangedParts={unchangedAssignedParts}
       studentCount={rows.length}
       submitting={submitting}
       onCancel={() => setConfirmOpen(false)}
@@ -474,9 +483,25 @@ function OfficialResults({ workflow, rows }) {
   </div>
 }
 
-function ConfirmDialog({ offering, workflow, assignedParts, studentCount, submitting, onCancel, onConfirm }) {
+function submitButtonLabel(actionableParts, parts) {
+  if (actionableParts.length === 2) return 'إرسال العلامات إلى هيئة الامتحانات'
+  const part = actionableParts[0]
+  if (!part) return 'إرسال العلامات إلى هيئة الامتحانات'
+  const name = PARTS[part]?.label || ''
+  return parts?.[part]?.status === 'returned'
+    ? `إعادة إرسال علامات ${name} إلى هيئة الامتحانات`
+    : `إرسال علامات ${name} إلى هيئة الامتحانات`
+}
+
+function unchangedPartNote(part, status) {
+  if (status === 'approved') return `${PARTS[part].label} معتمد مسبقاً ولن يتغير.`
+  if (status === 'submitted') return `${PARTS[part].label} مرسل مسبقاً وينتظر المراجعة.`
+  return null
+}
+
+function ConfirmDialog({ offering, workflow, partsToSubmit, unchangedParts, studentCount, submitting, onCancel, onConfirm }) {
   const course = workflow?.course?.course_name || offering?.course?.course_name || '—'
-  const partsLabel = assignedParts.map(part => PARTS[part]?.label).join(' وال')
+  const submitLabel = partsToSubmit.map(part => PARTS[part]?.label).join(' وال')
   return <div className="fixed inset-0 z-50 bg-black/45 flex items-center justify-center p-4" dir="rtl" role="dialog" aria-modal="true">
     <div className="bg-white rounded-[18px] max-w-[580px] w-full p-6 shadow-2xl">
       <div className="flex gap-3">
@@ -485,13 +510,17 @@ function ConfirmDialog({ offering, workflow, assignedParts, studentCount, submit
           <h3 className="font-black text-text-dark mb-2">تأكيد إرسال العلامات</h3>
           <ul className="text-[13px] leading-7 text-text-dark list-disc pr-5">
             <li>المقرر: {course}</li>
-            <li>الأجزاء المرسلة: {partsLabel}</li>
+            <li>سيتم إرسال: {submitLabel || '—'}</li>
             <li>عدد الطلاب: {studentCount}</li>
-            {['theoretical', 'practical'].filter(part => (workflow?.required_parts ?? []).includes(part)).map(part => {
-              const complete = workflow?.parts?.[part]?.can_submit || ['submitted', 'approved'].includes(workflow?.parts?.[part]?.status)
+            {partsToSubmit.map(part => {
+              const complete = workflow?.parts?.[part]?.can_submit === true
               return <li key={part}>{PARTS[part].label}: {complete ? 'مكتمل' : 'ناقص'}</li>
             })}
           </ul>
+          {unchangedParts.map(part => {
+            const note = unchangedPartNote(part, workflow?.parts?.[part]?.status)
+            return note ? <p key={part} className="mt-2 text-[12.5px] text-text-dark">{note}</p> : null
+          })}
           <p className="mt-3 text-[12.5px] leading-7 text-amber-800 bg-amber-50 border border-amber-200 rounded-[10px] p-3">بعد الإرسال ستُقفل الأجزاء المرسلة حتى تعتمدها هيئة الامتحانات أو تعيدها للتصحيح.</p>
         </div>
       </div>
