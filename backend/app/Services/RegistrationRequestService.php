@@ -1091,7 +1091,7 @@ class RegistrationRequestService
             return 'not_current_term';
         }
         if (str_contains($message, 'program curriculum')) {
-            return 'not_on_curriculum';
+            return AcademicRequirementService::REASON_COURSE_OUTSIDE_CURRENT_CURRICULUM;
         }
         if (str_contains($message, 'not assigned to an academic program')) {
             return 'no_program';

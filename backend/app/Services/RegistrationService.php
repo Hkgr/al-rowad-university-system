@@ -617,9 +617,12 @@ class RegistrationService
         }
 
         if (! $this->courseIsOnActiveProgramCurriculum($student, (int) $offering->course_id)) {
-            throw new RegistrationException('The selected course is not part of the student program curriculum.', [
-                'course_offering_id' => ['The selected course is not part of the student program curriculum.'],
-            ]);
+            throw new RegistrationException(
+                'The selected course is not part of the student current program curriculum.',
+                ['course_offering_id' => [AcademicRequirementService::REASON_COURSE_OUTSIDE_CURRENT_CURRICULUM]],
+                422,
+                AcademicRequirementService::REASON_COURSE_OUTSIDE_CURRENT_CURRICULUM
+            );
         }
 
         $visible = $this->constrainSelfRegistrationOfferings(

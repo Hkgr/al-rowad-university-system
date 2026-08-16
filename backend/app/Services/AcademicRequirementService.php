@@ -421,16 +421,18 @@ class AcademicRequirementService
         $reason = null;
         $allowed = true;
 
-        if ($requirementType === AcademicRequirementGroup::TYPE_ELECTIVE && $delta > 0) {
+        if ($requirementType === AcademicRequirementGroup::TYPE_ELECTIVE) {
             if ($earnedHours >= $requiredHours) {
                 $allowed = false;
                 $reason = self::REASON_ELECTIVE_REQUIREMENT_COMPLETED;
-            } elseif ($committedHours >= $requiredHours) {
-                $allowed = false;
-                $reason = self::REASON_ELECTIVE_REQUIREMENT_FULLY_COMMITTED;
-            } elseif ($prospective > $requiredHours) {
-                $allowed = false;
-                $reason = self::REASON_ELECTIVE_REQUIREMENT_LIMIT_EXCEEDED;
+            } elseif ($delta > 0) {
+                if ($committedHours >= $requiredHours) {
+                    $allowed = false;
+                    $reason = self::REASON_ELECTIVE_REQUIREMENT_FULLY_COMMITTED;
+                } elseif ($prospective > $requiredHours) {
+                    $allowed = false;
+                    $reason = self::REASON_ELECTIVE_REQUIREMENT_LIMIT_EXCEEDED;
+                }
             }
         }
 
