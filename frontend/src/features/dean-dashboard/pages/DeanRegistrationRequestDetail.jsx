@@ -63,6 +63,8 @@ export default function DeanRegistrationRequestDetail() {
   }, [id])
 
   const hours = request?.hours
+  const snapshot = hours?.approved_snapshot
+  const approvedHours = request?.status === 'approved' && snapshot
   const canReview = request?.status === 'submitted'
 
   async function confirmReturn() {
@@ -143,11 +145,26 @@ export default function DeanRegistrationRequestDetail() {
 
       {hours ? (
         <section className="bg-white border border-primary/12 rounded-[16px] p-5 grid grid-cols-5 max-[900px]:grid-cols-2 gap-3">
-          <div><p className="text-[11px] text-text-light">الساعات المسجلة حالياً</p><p className="text-[20px] font-black">{hours.registered_hours}</p></div>
-          <div><p className="text-[11px] text-text-light">ساعات الطلب</p><p className="text-[20px] font-black text-primary">{hours.request_hours}</p></div>
-          <div><p className="text-[11px] text-text-light">الإجمالي بعد الاعتماد</p><p className="text-[20px] font-black">{hours.projected_hours}</p></div>
-          <div><p className="text-[11px] text-text-light">الحد الأقصى</p><p className="text-[20px] font-black">{hours.max_allowed_hours}</p></div>
-          <div><p className="text-[11px] text-text-light">المتبقي بعد الاعتماد</p><p className="text-[20px] font-black">{hours.remaining_after_approval}</p></div>
+          <div>
+            <p className="text-[11px] text-text-light">{approvedHours ? 'الساعات قبل الاعتماد' : 'الساعات المسجلة حالياً'}</p>
+            <p className="text-[20px] font-black">{approvedHours ? snapshot.registered_hours_before_approval : hours.registered_hours}</p>
+          </div>
+          <div>
+            <p className="text-[11px] text-text-light">{approvedHours ? 'ساعات الطلب المعتمدة' : 'ساعات الطلب'}</p>
+            <p className="text-[20px] font-black text-primary">{approvedHours ? snapshot.request_hours_at_approval : hours.request_hours}</p>
+          </div>
+          <div>
+            <p className="text-[11px] text-text-light">{approvedHours ? 'إجمالي الساعات بعد الاعتماد' : 'الإجمالي بعد الاعتماد'}</p>
+            <p className="text-[20px] font-black">{approvedHours ? snapshot.projected_hours_at_approval : hours.projected_hours}</p>
+          </div>
+          <div>
+            <p className="text-[11px] text-text-light">{approvedHours ? 'الحد الأقصى وقت الاعتماد' : 'الحد الأقصى'}</p>
+            <p className="text-[20px] font-black">{approvedHours ? snapshot.max_allowed_hours_at_approval : hours.max_allowed_hours}</p>
+          </div>
+          <div>
+            <p className="text-[11px] text-text-light">المتبقي بعد الاعتماد</p>
+            <p className="text-[20px] font-black">{approvedHours ? snapshot.remaining_hours_after_approval : hours.remaining_after_approval}</p>
+          </div>
         </section>
       ) : null}
 

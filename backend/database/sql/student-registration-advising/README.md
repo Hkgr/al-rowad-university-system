@@ -9,7 +9,8 @@ returns `OVERALL = READY`.
 ## What this runbook does
 
 - Creates three request-workflow tables (separate from finalized
-  `student_course_registrations`).
+  `student_course_registrations`), including historical approval-hour
+  snapshot columns on `student_registration_requests`.
 - Reuses the existing `academic_advisor` role. It does **not** create a
   second Academic Advisor role.
 - Adds `registration_requests.view` and `registration_requests.review`
@@ -23,8 +24,15 @@ returns `OVERALL = READY`.
 ## Files
 
 1. `00_preflight.sql` — read-only. Continue only when `OVERALL = READY`.
-2. `01_apply.sql` — idempotent DDL + permission grants. Fail-closed.
-3. `02_verify.sql` — read-only. Require `OVERALL = PASS`.
+2. `01_apply.sql` — idempotent DDL + permission grants. Fail-closed:
+   if `@apply_ready = 0`, every `CREATE TABLE` is a no-op `SELECT` and
+   every `INSERT` is gated. Zero DDL/DML must execute.
+3. `02_verify.sql` — read-only. Require `OVERALL = PASS`. Verifies
+   InnoDB, column types/nullability, primary keys, unique indexes, FK
+   targets, and approval-hour snapshot columns — not only column names.
+
+If an existing request table is only partially compatible, preflight
+`OVERALL = BLOCKED` and apply performs no schema or data writes.
 
 ## Fully qualified objects
 

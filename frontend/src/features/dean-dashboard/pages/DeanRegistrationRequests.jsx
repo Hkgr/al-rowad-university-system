@@ -120,9 +120,9 @@ export default function DeanRegistrationRequests() {
             { key: 'year', header: 'السنة', render: row => row.academic_year?.year_name || '—' },
             { key: 'semester', header: 'الفصل', render: row => row.semester?.semester_name || '—' },
             { key: 'version', header: 'الإصدار', render: row => row.submission_version },
-            { key: 'request_hours', header: 'ساعات الطلب', render: row => row.hours?.request_hours ?? 0 },
-            { key: 'projected', header: 'الإجمالي المتوقع', render: row => row.hours?.projected_hours ?? 0 },
-            { key: 'max', header: 'الحد الأقصى', render: row => row.hours?.max_allowed_hours ?? 0 },
+            { key: 'request_hours', header: 'ساعات الطلب', render: row => row.hours?.approved_snapshot?.request_hours_at_approval ?? row.hours?.request_hours ?? 0 },
+            { key: 'projected', header: 'الإجمالي المتوقع', render: row => row.hours?.approved_snapshot?.projected_hours_at_approval ?? row.hours?.projected_hours ?? 0 },
+            { key: 'max', header: 'الحد الأقصى', render: row => row.hours?.approved_snapshot?.max_allowed_hours_at_approval ?? row.hours?.max_allowed_hours ?? 0 },
             { key: 'submitted_at', header: 'تاريخ الإرسال', render: row => formatDateTime(row.last_submitted_at) },
             { key: 'status', header: 'الحالة', render: row => STATUS_LABELS[row.status] || row.status },
             {

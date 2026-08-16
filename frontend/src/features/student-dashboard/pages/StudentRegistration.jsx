@@ -27,7 +27,7 @@ const STATUS_LABELS = {
   draft: { ar: 'مسودة', className: 'bg-gray-100 text-text-dark border-gray-200' },
   submitted: { ar: 'بانتظار مراجعة المرشد الأكاديمي', className: 'bg-amber-100 text-amber-900 border-amber-200' },
   returned: { ar: 'أعيد للتعديل', className: 'bg-orange-100 text-orange-800 border-orange-200' },
-  approved: { ar: 'معتمد', className: 'bg-green-100 text-green-800 border-green-200' },
+  approved: { ar: 'تم اعتماد طلب التسجيل', className: 'bg-green-100 text-green-800 border-green-200' },
 }
 
 function studentRegistrationPath(semesterId) {
@@ -37,12 +37,14 @@ function studentRegistrationPath(semesterId) {
   return `/v1/student/registration${query ? `?${query}` : ''}`
 }
 
-function HoursPanel({ hours }) {
-  const registered = hours?.registered_hours ?? 0
-  const requestHours = hours?.request_hours ?? 0
-  const projected = hours?.projected_hours ?? registered + requestHours
-  const max = hours?.max_allowed_hours ?? 0
-  const remaining = hours?.remaining_after_approval ?? 0
+function HoursPanel({ hours, requestStatus }) {
+  const snapshot = hours?.approved_snapshot
+  const approved = requestStatus === 'approved' && snapshot
+  const registered = approved ? (snapshot.registered_hours_before_approval ?? 0) : (hours?.registered_hours ?? 0)
+  const requestHours = approved ? (snapshot.request_hours_at_approval ?? 0) : (hours?.request_hours ?? 0)
+  const projected = approved ? (snapshot.projected_hours_at_approval ?? registered + requestHours) : (hours?.projected_hours ?? registered + requestHours)
+  const max = approved ? (snapshot.max_allowed_hours_at_approval ?? 0) : (hours?.max_allowed_hours ?? 0)
+  const remaining = approved ? (snapshot.remaining_hours_after_approval ?? 0) : (hours?.remaining_after_approval ?? 0)
   const pct = max > 0 ? Math.min((projected / max) * 100, 100) : 0
   const color = pct >= 100 ? 'bg-red-500' : pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-primary'
 
@@ -50,23 +52,23 @@ function HoursPanel({ hours }) {
     <section className="bg-white border border-primary/12 rounded-[16px] p-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]" dir="rtl">
       <div className="grid grid-cols-5 max-[900px]:grid-cols-2 max-[520px]:grid-cols-1 gap-4 mb-4">
         <div>
-          <p className="text-[11.5px] font-semibold text-text-light mb-1">الساعات المسجلة حالياً</p>
+          <p className="text-[11.5px] font-semibold text-text-light mb-1">{approved ? 'الساعات قبل الاعتماد' : 'الساعات المسجلة حالياً'}</p>
           <p className="text-[22px] font-black text-text-dark tabular-nums">{registered}</p>
         </div>
         <div>
-          <p className="text-[11.5px] font-semibold text-text-light mb-1">ساعات الطلب</p>
+          <p className="text-[11.5px] font-semibold text-text-light mb-1">{approved ? 'ساعات الطلب المعتمدة' : 'ساعات الطلب'}</p>
           <p className="text-[22px] font-black text-primary tabular-nums">{requestHours}</p>
         </div>
         <div>
-          <p className="text-[11.5px] font-semibold text-text-light mb-1">الإجمالي بعد الاعتماد</p>
+          <p className="text-[11.5px] font-semibold text-text-light mb-1">{approved ? 'إجمالي الساعات بعد الاعتماد' : 'الإجمالي بعد الاعتماد'}</p>
           <p className="text-[22px] font-black text-text-dark tabular-nums">{projected}</p>
         </div>
         <div>
-          <p className="text-[11.5px] font-semibold text-text-light mb-1">الحد الأقصى المسموح</p>
+          <p className="text-[11.5px] font-semibold text-text-light mb-1">{approved ? 'الحد الأقصى وقت الاعتماد' : 'الحد الأقصى المسموح'}</p>
           <p className="text-[22px] font-black text-text-dark tabular-nums">{max}</p>
         </div>
         <div>
-          <p className="text-[11.5px] font-semibold text-text-light mb-1">المتبقي بعد الاعتماد</p>
+          <p className="text-[11.5px] font-semibold text-text-light mb-1">{approved ? 'المتبقي بعد الاعتماد' : 'المتبقي بعد الاعتماد'}</p>
           <p className="text-[22px] font-black text-primary tabular-nums">{remaining}</p>
         </div>
       </div>
@@ -431,7 +433,7 @@ export default function StudentRegistration() {
         <p className="px-4 py-2.5 text-[12.5px] text-red-600 bg-red-50 border border-red-200 rounded-[10px]">⚠ {error}</p>
       ) : null}
 
-      {hours ? <HoursPanel hours={hours} /> : null}
+      {hours ? <HoursPanel hours={hours} requestStatus={request ? status : null} /> : null}
 
       <p className="text-[12.5px] text-text-gray bg-primary/5 border border-primary/12 rounded-[12px] px-4 py-3">
         إرسال الطلب لا يعني حجز المقعد نهائياً. يتم تثبيت التسجيل بعد اعتماد المرشد الأكاديمي.
@@ -455,11 +457,24 @@ export default function StudentRegistration() {
           <p>تم اعتماد طلب التسجيل.</p>
           {request?.approved_at ? <p>تاريخ الاعتماد: {String(request.approved_at).slice(0, 16)}</p> : null}
           {request?.advisor?.full_name ? <p>المرشد الأكاديمي: {request.advisor.full_name}</p> : null}
-          {hours ? <p>الساعات المسجلة النهائية: {hours.registered_hours}</p> : null}
+          {hours?.approved_snapshot ? (
+            <>
+              <p>ساعات الطلب المعتمدة: {hours.approved_snapshot.request_hours_at_approval}</p>
+              <p>الساعات قبل الاعتماد: {hours.approved_snapshot.registered_hours_before_approval}</p>
+              <p>إجمالي الساعات بعد الاعتماد: {hours.approved_snapshot.projected_hours_at_approval}</p>
+              <p>الحد الأقصى وقت الاعتماد: {hours.approved_snapshot.max_allowed_hours_at_approval}</p>
+            </>
+          ) : null}
         </section>
       ) : null}
 
-      {!registrationOpen ? (
+      {!registrationOpen && request ? (
+        <section className="border border-primary/20 bg-primary/5 rounded-[16px] px-5 py-4 text-[13px] font-semibold text-text-dark">
+          انتهت فترة إضافة المقررات، ويمكنك الاطلاع على حالة طلبك.
+        </section>
+      ) : null}
+
+      {!registrationOpen && !request ? (
         <UnavailableState />
       ) : !termReady ? (
         <section className="border border-amber-200 bg-amber-50 rounded-[16px] px-5 py-4 text-[13px] font-semibold text-amber-900" dir="rtl">

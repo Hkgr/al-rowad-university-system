@@ -17,7 +17,7 @@ class AcademicAdvisingRegistrationRequestController extends Controller
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'status' => ['sometimes', 'string', 'in:draft,submitted,returned,approved'],
+            'status' => ['sometimes', 'string', 'in:submitted,returned,approved'],
         ]);
 
         return $this->successResponse(

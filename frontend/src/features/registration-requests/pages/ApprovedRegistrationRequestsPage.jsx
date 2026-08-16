@@ -89,7 +89,7 @@ export default function ApprovedRegistrationRequestsPage() {
               header: 'المقررات',
               render: row => (row.items ?? []).map(item => item.course_code).filter(Boolean).join('، ') || '—',
             },
-            { key: 'hours', header: 'إجمالي الساعات', render: row => row.hours?.registered_hours ?? row.hours?.projected_hours ?? 0 },
+            { key: 'hours', header: 'إجمالي ساعات الطلب', render: row => row.hours?.approved_snapshot?.request_hours_at_approval ?? row.hours?.request_hours_at_approval ?? 0 },
             { key: 'advisor', header: 'المرشد', render: row => row.advisor?.full_name || '—' },
             { key: 'approved_at', header: 'تاريخ الاعتماد', render: row => formatDateTime(row.approved_at) },
           ]}

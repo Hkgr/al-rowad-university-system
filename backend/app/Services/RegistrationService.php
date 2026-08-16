@@ -72,7 +72,10 @@ class RegistrationService
 
     private function performRegisterStudent(array $data, ?int $authenticatedUserId): array
     {
-        $student = Student::query()->find($data['student_id']);
+        $student = Student::query()
+            ->whereKey($data['student_id'])
+            ->lockForUpdate()
+            ->first();
         if ($student === null) {
             throw new RegistrationException('The selected student does not exist.', [
                 'student_id' => ['The selected student does not exist.'],
@@ -81,8 +84,9 @@ class RegistrationService
 
         $courseOffering = CourseOffering::query()
             ->with('course')
+            ->whereKey($data['course_offering_id'])
             ->lockForUpdate()
-            ->find($data['course_offering_id']);
+            ->first();
 
         if ($courseOffering === null) {
             throw new RegistrationException('The selected course offering does not exist.', [
@@ -95,6 +99,13 @@ class RegistrationService
                 'course_offering_id' => ['The selected course offering is not open for registration.'],
             ]);
         }
+
+        StudentCourseRegistration::query()
+            ->where('student_id', $student->student_id)
+            ->where('course_offering_id', $courseOffering->course_offering_id)
+            ->orderBy('student_course_registration_id')
+            ->lockForUpdate()
+            ->get();
 
         if ($this->registrationExists($student->student_id, $courseOffering->course_offering_id)) {
             $this->throwDuplicateRegistrationException();

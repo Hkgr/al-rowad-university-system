@@ -38,6 +38,11 @@ class StudentRegistrationRequest extends Model
         'last_submitted_at',
         'reviewed_at',
         'approved_at',
+        'registered_hours_before_approval',
+        'request_hours_at_approval',
+        'projected_hours_at_approval',
+        'max_allowed_hours_at_approval',
+        'remaining_hours_after_approval',
         'created_at',
         'updated_at',
     ];
@@ -50,6 +55,11 @@ class StudentRegistrationRequest extends Model
             'last_submitted_at' => 'datetime',
             'reviewed_at' => 'datetime',
             'approved_at' => 'datetime',
+            'registered_hours_before_approval' => 'integer',
+            'request_hours_at_approval' => 'integer',
+            'projected_hours_at_approval' => 'integer',
+            'max_allowed_hours_at_approval' => 'integer',
+            'remaining_hours_after_approval' => 'integer',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
         ];
