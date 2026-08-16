@@ -1,6 +1,7 @@
 <?php
 
 use App\Exceptions\AttendanceException;
+use App\Exceptions\DisciplinaryCaseException;
 use App\Exceptions\GradeException;
 use App\Exceptions\RegistrationException;
 use App\Exceptions\RegistrationRequestException;
@@ -61,6 +62,18 @@ return Application::configure(basePath: dirname(__DIR__))
                 'success' => false,
                 'message' => $exception->getMessage(),
                 'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (DisciplinaryCaseException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
                 'errors' => $exception->errors,
             ], $exception->status);
         });
