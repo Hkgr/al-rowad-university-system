@@ -9,11 +9,13 @@ use App\Http\Resources\StudentAcademicInfoResource;
 use App\Http\Resources\StudentCourseRegistrationResource;
 use App\Http\Resources\StudentDocumentResource;
 use App\Http\Resources\StudentProfileResource;
+use App\Http\Resources\StudentRequirementProgressResource;
 use App\Http\Resources\StudentResource;
 use App\Http\Resources\StudentRegistrationSummaryResource;
 use App\Http\Resources\StudentTranscriptResource;
 use App\Models\Student;
 use App\Models\StudentStatus;
+use App\Services\AcademicRequirementService;
 use App\Services\AttendanceService;
 use App\Services\GradeService;
 use App\Services\RegistrationService;
@@ -278,6 +280,17 @@ class StudentController extends ApiController
 
         return $this->successResponse(
             (new StudentAcademicInfoResource($student))->resolve(request())
+        );
+    }
+
+    public function requirements(Student $student, AcademicRequirementService $requirements): JsonResponse
+    {
+        Gate::authorize('view', $student);
+
+        return $this->successResponse(
+            (new StudentRequirementProgressResource(
+                $requirements->getStudentRequirementProgress($student)
+            ))->resolve(request())
         );
     }
 

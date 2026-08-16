@@ -21,6 +21,12 @@ class StudentRegistrationRequest extends Model
         self::STATUS_RETURNED,
     ];
 
+    public const OPEN_STATUSES = [
+        self::STATUS_DRAFT,
+        self::STATUS_SUBMITTED,
+        self::STATUS_RETURNED,
+    ];
+
     protected $table = 'student_registration_requests';
 
     protected $primaryKey = 'student_registration_request_id';
