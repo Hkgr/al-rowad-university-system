@@ -12,6 +12,11 @@ const REASON_LABELS = {
   missing_prerequisites: { ar: 'متطلب سابق غير محقق', tone: 'prerequisite' },
   no_available_seats: { ar: 'لا توجد مقاعد', tone: 'full' },
   credit_limit_exceeded: { ar: 'تجاوز الساعات', tone: 'hours' },
+  elective_requirement_completed: { ar: 'لقد استوفيت الساعات المطلوبة لهذا المتطلب الاختياري.', tone: 'hours' },
+  elective_requirement_fully_committed: { ar: 'تم حجز كامل الساعات المطلوبة لهذا المتطلب ضمن مقرراتك المسجلة أو طلبات التسجيل الحالية.', tone: 'hours' },
+  elective_requirement_limit_exceeded: { ar: 'إضافة هذا المقرر ستتجاوز الساعات المطلوبة لهذا المتطلب الاختياري.', tone: 'hours' },
+  course_outside_current_curriculum: { ar: 'هذا المقرر ليس ضمن خطتك الدراسية الحالية.', tone: 'prerequisite' },
+  academic_requirement_configuration_invalid: { ar: 'تعذر التحقق من متطلبات الخطة حالياً. يرجى مراجعة شؤون الطلاب.', tone: 'full' },
 }
 
 const BADGE_CLASS = {
@@ -111,6 +116,21 @@ function statusBadge(course) {
   }
   if (reasons.includes('credit_limit_exceeded')) {
     return { label: 'تجاوز الساعات', className: BADGE_CLASS.hours }
+  }
+  if (reasons.includes('elective_requirement_completed')) {
+    return { label: 'تم استيفاء الاختياري', className: BADGE_CLASS.hours }
+  }
+  if (reasons.includes('elective_requirement_fully_committed')) {
+    return { label: 'الساعات محجوزة', className: BADGE_CLASS.hours }
+  }
+  if (reasons.includes('elective_requirement_limit_exceeded')) {
+    return { label: 'تجاوز حد الاختياري', className: BADGE_CLASS.hours }
+  }
+  if (reasons.includes('course_outside_current_curriculum')) {
+    return { label: 'خارج الخطة الحالية', className: BADGE_CLASS.prerequisite }
+  }
+  if (reasons.includes('academic_requirement_configuration_invalid')) {
+    return { label: 'تعذر التحقق من الخطة', className: BADGE_CLASS.full }
   }
   return { label: 'غير مؤهل', className: 'bg-gray-100 text-text-light' }
 }
@@ -250,9 +270,11 @@ export default function StudentRegistration() {
           return
         }
         setError(
-          requestError.status === 403
-            ? 'ليس لديك صلاحية لتسجيل المواد.'
-            : (requestError.message || 'تعذّر تحميل بيانات التسجيل. يرجى المحاولة مرة أخرى.'),
+          requestError.errorCode === 'academic_requirement_configuration_invalid'
+            ? 'تعذر التحقق من متطلبات الخطة حالياً. يرجى مراجعة شؤون الطلاب.'
+            : requestError.status === 403
+              ? 'ليس لديك صلاحية لتسجيل المواد.'
+              : (requestError.message || 'تعذّر تحميل بيانات التسجيل. يرجى المحاولة مرة أخرى.'),
         )
       } finally {
         if (active && seq === requestSeq.current) {

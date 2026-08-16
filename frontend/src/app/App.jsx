@@ -26,6 +26,7 @@ import StudentGPA         from '../features/student-dashboard/pages/StudentGPA'
 import StudentAttendance  from '../features/student-dashboard/pages/StudentAttendance'
 import StudentRegistration from '../features/student-dashboard/pages/StudentRegistration'
 import StudentCalendar from '../features/student-dashboard/pages/StudentCalendar'
+import StudentRequirements from '../features/student-dashboard/pages/StudentRequirements'
 
 // ── الموارد البشرية (HR) ────────────────────────────────────────────────────
 import hrNav                from '../features/hr-dashboard/nav'
@@ -145,6 +146,7 @@ export default function App() {
           <Route path="/student/gpa"        element={<StudentGPA />}        />
           <Route path="/student/attendance"    element={<StudentAttendance />} />
           <Route path="/student/registration" element={<StudentRegistration />} />
+          <Route path="/student/requirements" element={<StudentRequirements />} />
           <Route path="/student/calendar" element={<StudentCalendar />} />
         </Route>
 
