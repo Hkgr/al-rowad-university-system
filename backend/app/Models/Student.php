@@ -91,6 +91,11 @@ class Student extends Model
         return $this->hasMany(StudentCourseRegistration::class, 'student_id', 'student_id');
     }
 
+    public function studentDisciplinaryCases(): HasMany
+    {
+        return $this->hasMany(StudentDisciplinaryCase::class, 'student_id', 'student_id');
+    }
+
     public function studentCreditLimits(): HasMany
     {
         return $this->hasMany(StudentCreditLimit::class, 'student_id', 'student_id');

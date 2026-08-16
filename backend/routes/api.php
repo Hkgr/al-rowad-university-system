@@ -30,6 +30,8 @@ use App\Http\Controllers\Api\CourseOfferingController;
 use App\Http\Controllers\Api\CourseOfferingInstructorController;
 use App\Http\Controllers\Api\CoursePrerequisiteController;
 use App\Http\Controllers\Api\DepartmentController;
+use App\Http\Controllers\Api\DisciplinaryCaseAppealController;
+use App\Http\Controllers\Api\DisciplinaryCaseController;
 use App\Http\Controllers\Api\DocumentTypeController;
 use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\EmployeePositionController;
@@ -389,6 +391,12 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::apiResource('grade-audit-logs', GradeAuditLogController::class);
     Route::apiResource('grade-components', GradeComponentController::class);
     Route::apiResource('grading-policies', GradingPolicyController::class);
+    Route::apiResource('disciplinary-cases', DisciplinaryCaseController::class)
+        ->only(['index', 'show', 'store']);
+    Route::apiResource('disciplinary-case-appeals', DisciplinaryCaseAppealController::class)
+        ->only(['index', 'show', 'store']);
+    Route::post('disciplinary-case-appeals/{id}/decide', [DisciplinaryCaseAppealController::class, 'decide']);
+    Route::get('students/{student}/disciplinary-cases', [DisciplinaryCaseController::class, 'forStudent']);
 
     /*
     |--------------------------------------------------------------------------
