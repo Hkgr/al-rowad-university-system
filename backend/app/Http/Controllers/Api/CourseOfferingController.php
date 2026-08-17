@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Exceptions\CourseOfferingContextException;
+use App\Exceptions\TeachingAssignmentException;
 use App\Http\Requests\CourseOffering\StoreCourseOfferingRequest;
 use App\Http\Requests\CourseOffering\UpdateCourseOfferingRequest;
 use App\Http\Requests\Attendance\StoreCourseOfferingAttendanceSessionRequest;
@@ -68,8 +69,8 @@ class CourseOfferingController extends ApiController
             isset($data['department_id']) ? (int) $data['department_id'] : null,
             $request->user(),
         );
+        $this->rejectExternalFacultyMemberAssignment($request);
         $offering = $this->offeringContext->createOffering($context, [
-            'faculty_member_id' => $data['faculty_member_id'] ?? null,
             'capacity' => $data['capacity'],
             'available_seats' => $data['available_seats'],
             'status' => $data['status'],
@@ -88,7 +89,9 @@ class CourseOfferingController extends ApiController
         Gate::authorize('update', $offering);
         /** @var FormRequest $request */
         $request = app($this->updateRequestClass());
+        $this->rejectExternalFacultyMemberAssignment($request, $offering);
         $data = $request->validated();
+        unset($data['faculty_member_id']);
         $identityKeys = ['course_id', 'academic_program_id', 'department_id', 'academic_year_id', 'semester_id'];
         $identityTouched = array_intersect(array_keys($data), $identityKeys) !== [];
 
@@ -285,6 +288,37 @@ class CourseOfferingController extends ApiController
         $result = $service->applyDeprivation($id, request()->user()?->user_id);
 
         return $this->successResponse($result, 'Deprivation applied successfully');
+    }
+
+    private function rejectExternalFacultyMemberAssignment(FormRequest $request, ?CourseOffering $offering = null): void
+    {
+        if (! $request->exists('faculty_member_id')) {
+            return;
+        }
+
+        $incoming = $this->normalizeOptionalFacultyMemberId($request->input('faculty_member_id'));
+
+        if ($offering === null) {
+            if ($incoming !== null) {
+                throw TeachingAssignmentException::facultyMemberAssignmentWorkflowRequired();
+            }
+
+            return;
+        }
+
+        $current = $offering->faculty_member_id === null ? null : (int) $offering->faculty_member_id;
+        if ($incoming !== $current) {
+            throw TeachingAssignmentException::facultyMemberAssignmentWorkflowRequired();
+        }
+    }
+
+    private function normalizeOptionalFacultyMemberId(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return (int) $value;
     }
 
     /**

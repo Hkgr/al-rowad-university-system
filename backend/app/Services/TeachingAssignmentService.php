@@ -106,6 +106,11 @@ class TeachingAssignmentService
         }
     }
 
+    /**
+     * Trusted internal writer for course_offerings.faculty_member_id.
+     * Called only after both VP approvals materialize an effective slot.
+     * Generic Course Offering create/update must not call this.
+     */
     public function syncLegacyFacultyPointer(CourseOffering $offering): void
     {
         $offering->loadMissing('course');

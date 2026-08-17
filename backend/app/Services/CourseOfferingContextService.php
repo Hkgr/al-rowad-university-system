@@ -137,7 +137,12 @@ class CourseOfferingContextService
     public function createOffering(CourseOfferingContext $context, array $attributes = []): CourseOffering
     {
         try {
-            return CourseOffering::query()->create(array_merge($context->offeringAttributes(), $attributes));
+            $payload = array_merge($context->offeringAttributes(), $attributes);
+            // User-facing / dean opening paths must not assign an instructor.
+            // Legacy faculty_member_id is synchronized only after dual VP approval.
+            $payload['faculty_member_id'] = null;
+
+            return CourseOffering::query()->create($payload);
         } catch (QueryException $exception) {
             if ($this->isDuplicateKey($exception)) {
                 throw CourseOfferingContextException::duplicate();
@@ -153,6 +158,7 @@ class CourseOfferingContextService
     public function updateOffering(CourseOffering $offering, array $attributes): CourseOffering
     {
         try {
+            unset($attributes['faculty_member_id']);
             $offering->update($attributes);
 
             return $offering;

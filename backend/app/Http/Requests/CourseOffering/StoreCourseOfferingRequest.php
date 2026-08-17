@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\CourseOffering;
 
+use App\Exceptions\TeachingAssignmentException;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreCourseOfferingRequest extends FormRequest
@@ -19,10 +20,20 @@ class StoreCourseOfferingRequest extends FormRequest
             'semester_id' => 'required|integer|exists:semesters,semester_id',
             'academic_program_id' => 'required|integer|exists:academic_programs,academic_program_id',
             'department_id' => 'sometimes|nullable|integer|exists:departments,department_id',
-            'faculty_member_id' => 'nullable|integer|exists:faculty_members,faculty_member_id',
             'capacity' => 'required|integer|min:1',
             'available_seats' => 'required|integer|min:0|lte:capacity',
             'status' => 'required|string|max:50',
         ];
+    }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function (): void {
+            if (! $this->filled('faculty_member_id')) {
+                return;
+            }
+
+            throw TeachingAssignmentException::facultyMemberAssignmentWorkflowRequired();
+        });
     }
 }

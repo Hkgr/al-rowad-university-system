@@ -34,6 +34,8 @@ class TeachingAssignmentException extends Exception
 
     public const MANAGE_FORBIDDEN = 'teaching_assignment_manage_forbidden';
 
+    public const FACULTY_MEMBER_ASSIGNMENT_WORKFLOW_REQUIRED = 'faculty_member_assignment_workflow_required';
+
     public function __construct(
         string $message,
         public readonly array $errors = [],
@@ -139,5 +141,12 @@ class TeachingAssignmentException extends Exception
         $message = 'ليست لديك صلاحية إدارة طلبات التكليف التدريسي.';
 
         return new self($message, ['teaching_assignment' => [$message]], 403, self::MANAGE_FORBIDDEN);
+    }
+
+    public static function facultyMemberAssignmentWorkflowRequired(): self
+    {
+        $message = 'لا يمكن تعيين مدرس الطرح مباشرة. يجب إرسال طلب عبر مسار موافقة النائب العلمي والنائب الإداري.';
+
+        return new self($message, ['faculty_member_id' => [$message]], 409, self::FACULTY_MEMBER_ASSIGNMENT_WORKFLOW_REQUIRED);
     }
 }
