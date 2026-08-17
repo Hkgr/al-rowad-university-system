@@ -1,5 +1,12 @@
 const IDENTITY_KEY = 'user'
 
+export const ROLES = Object.freeze({
+  dean: 'dean',
+  vicePresidentScientific: 'vice_president_scientific',
+  vicePresidentAdministrative: 'vice_president_administrative',
+  vicePresidentLegacy: 'vice_president',
+})
+
 export const PERMISSIONS = Object.freeze({
   registrationView: 'registration.view',
   registrationManage: 'registration.manage',
@@ -16,11 +23,15 @@ export const PERMISSIONS = Object.freeze({
   attendanceView: 'attendance.view',
   dashboardsView: 'dashboards.view',
   systemSettingsView: 'system_settings.view',
+  vicePresidencyScientificAccess: 'vice_presidency.scientific.access',
+  vicePresidencyAdministrativeAccess: 'vice_presidency.administrative.access',
 })
 
 export const ACCESS = Object.freeze({
   courseRegistration: { allPermissions: [PERMISSIONS.registrationView, PERMISSIONS.studentsView, PERMISSIONS.academicStructureView, PERMISSIONS.coursesView, PERMISSIONS.systemSettingsView] },
   courseManagement: { allPermissions: [PERMISSIONS.coursesView, PERMISSIONS.academicStructureView, PERMISSIONS.systemSettingsView] },
+  scientificVicePresident: { permissions: [PERMISSIONS.vicePresidencyScientificAccess] },
+  administrativeVicePresident: { permissions: [PERMISSIONS.vicePresidencyAdministrativeAccess] },
 })
 
 export function getIdentity() {
@@ -54,7 +65,9 @@ export function canAccess({ permissions = [], allPermissions = [], roles = [], s
 }
 export function landingRoute(user) {
   // Portal roles take precedence over permission-based staff landing pages.
-  if (hasRole('dean', user)) return '/dean'
+  if (hasRole(ROLES.dean, user)) return '/dean'
+  if (hasRole(ROLES.vicePresidentScientific, user)) return '/vp/scientific'
+  if (hasRole(ROLES.vicePresidentAdministrative, user)) return '/vp/administrative'
   if (canAll(['exams.view', 'exams.manage'], user)) return '/exam-board'
   if (canAccess(ACCESS.courseRegistration, user) && hasPermission('registration.manage', user)) return '/exam-board/course-registration'
   if (canAny(['attendance.manage', 'grades.manage'], user) && user?.employee_id) return '/professor'
@@ -62,5 +75,9 @@ export function landingRoute(user) {
   if (user?.student_id && canAny(['registration.view', 'grades.view', 'attendance.view'], user)) return '/student'
   if (hasPermission('academic_structure.view', user)) return '/academic-structure'
   if (hasPermission('students.view', user)) return '/student-affairs'
+  // Permission fallback for VP-only identities. Exclude super_admin so existing
+  // staff landings (exam board, HR, …) are not redirected to the VP shell.
+  if (!hasRole('super_admin', user) && hasPermission(PERMISSIONS.vicePresidencyScientificAccess, user)) return '/vp/scientific'
+  if (!hasRole('super_admin', user) && hasPermission(PERMISSIONS.vicePresidencyAdministrativeAccess, user)) return '/vp/administrative'
   return '/forbidden'
 }

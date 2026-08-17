@@ -6,6 +6,8 @@ const ROLE_LABELS = {
   registration_officer: 'موظف القبول والتسجيل',
   student: 'طالب',
   professor: 'عضو الهيئة التدريسية',
+  vice_president_scientific: 'نائب رئيس الجامعة للشؤون العلمية',
+  vice_president_administrative: 'نائب رئيس الجامعة للشؤون الإدارية',
 }
 
 function getUserDetails(user) {
