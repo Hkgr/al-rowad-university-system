@@ -12,6 +12,7 @@ use App\Models\Semester;
 use App\Models\User;
 use App\Support\CourseOfferingContext;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Schema;
 
 class CourseOfferingContextService
 {
@@ -179,7 +180,9 @@ class CourseOfferingContextService
             || $offering->attendanceSessions()->exists()
             || $offering->gradeApprovals()->exists()
             || $offering->gradePartApprovals()->exists()
-            || $offering->gradeComponents()->exists();
+            || $offering->gradeComponents()->exists()
+            || (Schema::hasTable('teaching_assignment_requests')
+                && $offering->teachingAssignmentRequests()->exists());
     }
 
     public function identityWouldChange(CourseOffering $offering, int $courseId, int $programId, int $yearId, int $semesterId): bool

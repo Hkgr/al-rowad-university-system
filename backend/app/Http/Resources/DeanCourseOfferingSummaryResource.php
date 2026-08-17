@@ -4,7 +4,9 @@ namespace App\Http\Resources;
 
 use App\Models\CourseOfferingInstructor;
 use App\Models\FacultyMember;
+use App\Models\TeachingAssignmentRequest;
 use App\Support\CourseRequirementClassification;
+use App\Support\TeachingAssignmentWorkflow;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -73,11 +75,13 @@ class DeanCourseOfferingSummaryResource extends JsonResource
             'teachers' => [
                 'theoretical' => $this->teacherSlot(
                     (int) ($course?->theoretical_hours ?? 0) > 0,
-                    $slots->get('theoretical')
+                    $slots->get('theoretical'),
+                    $this->currentRequestForRole('theoretical')
                 ),
                 'practical' => $this->teacherSlot(
                     (int) ($course?->practical_hours ?? 0) > 0,
-                    $slots->get('practical')
+                    $slots->get('practical'),
+                    $this->currentRequestForRole('practical')
                 ),
             ],
             'metrics' => [
@@ -91,14 +95,18 @@ class DeanCourseOfferingSummaryResource extends JsonResource
         ];
     }
 
-    private function teacherSlot(bool $available, ?CourseOfferingInstructor $slot): array
-    {
+    private function teacherSlot(
+        bool $available,
+        ?CourseOfferingInstructor $slot,
+        ?TeachingAssignmentRequest $workflow
+    ): array {
         if (! $available) {
             return [
                 'available' => false,
                 'faculty_member_id' => null,
                 'full_name' => null,
                 'academic_rank' => null,
+                'workflow' => null,
             ];
         }
 
@@ -109,6 +117,52 @@ class DeanCourseOfferingSummaryResource extends JsonResource
             'faculty_member_id' => $faculty?->faculty_member_id,
             'full_name' => $this->facultyFullName($faculty),
             'academic_rank' => $faculty?->academic_rank,
+            'workflow' => $this->workflowPayload($workflow),
+        ];
+    }
+
+    private function currentRequestForRole(string $role): ?TeachingAssignmentRequest
+    {
+        if (! $this->relationLoaded('teachingAssignmentRequests')) {
+            return null;
+        }
+
+        return $this->teachingAssignmentRequests->first(
+            fn (TeachingAssignmentRequest $request): bool => (int) $request->current_slot === 1
+                && (string) $request->instructor_role === $role
+                && $request->status !== TeachingAssignmentWorkflow::STATUS_SUPERSEDED
+        );
+    }
+
+    private function workflowPayload(?TeachingAssignmentRequest $request): ?array
+    {
+        if ($request === null) {
+            return null;
+        }
+
+        $scientific = $request->relationLoaded('reviews') ? $request->scientificReview() : null;
+        $administrative = $request->relationLoaded('reviews') ? $request->administrativeReview() : null;
+        $proposed = $request->facultyMember;
+
+        return [
+            'teaching_assignment_request_id' => $request->teaching_assignment_request_id,
+            'status' => $request->status,
+            'submission_version' => $request->submission_version,
+            'proposed_faculty_member' => $proposed === null ? null : [
+                'faculty_member_id' => $proposed->faculty_member_id,
+                'full_name' => $this->facultyFullName($proposed),
+                'academic_rank' => $proposed->academic_rank,
+            ],
+            'scientific_review' => $scientific === null ? null : [
+                'status' => $scientific->status,
+                'reason' => $scientific->reason,
+                'reviewed_at' => $scientific->reviewed_at,
+            ],
+            'administrative_review' => $administrative === null ? null : [
+                'status' => $administrative->status,
+                'reason' => $administrative->reason,
+                'reviewed_at' => $administrative->reviewed_at,
+            ],
         ];
     }
 

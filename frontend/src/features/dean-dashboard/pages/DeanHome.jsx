@@ -503,7 +503,7 @@ export default function DeanHome() {
       ) : null}
 
       <DeanQuickActions
-        canManageTeachers={hasPermission(PERMISSIONS.teachingStaffManage) || capabilities.teaching_staff_manage}
+        canManageTeachers={hasPermission(PERMISSIONS.teachingStaffManage) || hasPermission(PERMISSIONS.teachingAssignmentsManage) || capabilities.teaching_staff_manage}
         canManageRegistration={hasPermission(PERMISSIONS.courseOfferingsManage) || hasPermission(PERMISSIONS.coursesManage) || capabilities.course_offerings_manage}
       />
 

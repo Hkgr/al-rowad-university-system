@@ -7,9 +7,13 @@ import {
   displayValue,
   facultySlotName,
   firstApiErrorMessage,
+  initialComponentFacultyId,
   offeringStatusLabel,
   offeringTitle,
+  proposedFacultyId,
+  reviewStatusLabel,
   teacherChoiceLabel,
+  workflowStatusLabel,
 } from '../utils/teacherDisplay'
 
 const OFFERING_PAGE_SIZE = 8
@@ -31,6 +35,38 @@ function sameId(left, right) {
   if (left == null && right == null) return true
   if (left == null || right == null) return false
   return Number(left) === Number(right)
+}
+
+function WorkflowStatus({ title, component }) {
+  const workflow = component?.workflow
+  if (!component?.available) return null
+
+  return (
+    <div className="bg-slate-50 border border-slate-200 rounded-[12px] px-3 py-3 space-y-1.5">
+      <p className="text-[12.5px] font-bold text-text-dark">{title}</p>
+      <p className="text-[12px] text-text-dark">
+        المدرس المعتمد: <span className="font-bold">{facultySlotName(component.faculty_member)}</span>
+      </p>
+      <p className="text-[12px] text-text-dark">
+        المدرس المقترح: <span className="font-bold">{facultySlotName(workflow?.proposed_faculty_member)}</span>
+      </p>
+      <p className="text-[12px] text-text-dark">
+        موافقة النائب العلمي: <span className="font-bold">{reviewStatusLabel(workflow?.scientific_review?.status)}</span>
+      </p>
+      {workflow?.scientific_review?.status === 'returned' && workflow.scientific_review.reason && (
+        <p className="text-[12px] text-amber-800">علمي — {workflow.scientific_review.reason}</p>
+      )}
+      <p className="text-[12px] text-text-dark">
+        موافقة النائب الإداري: <span className="font-bold">{reviewStatusLabel(workflow?.administrative_review?.status)}</span>
+      </p>
+      {workflow?.administrative_review?.status === 'returned' && workflow.administrative_review.reason && (
+        <p className="text-[12px] text-amber-800">إداري — {workflow.administrative_review.reason}</p>
+      )}
+      <p className="text-[12px] text-text-dark">
+        الحالة: <span className="font-bold">{workflow ? workflowStatusLabel(workflow.status) : '—'}</span>
+      </p>
+    </div>
+  )
 }
 
 function InfoLine({ label, value }) {
@@ -133,13 +169,13 @@ export default function TeacherAssignmentManagerModal({
 
     async function loadTeachers() {
       try {
-        const first = await apiRequest(`/v1/teaching-staff?per_page=${TEACHER_PAGE_SIZE}&page=1`)
+        const first = await apiRequest(`/v1/teaching-staff/assignment-instructors?per_page=${TEACHER_PAGE_SIZE}&page=1`)
         const rows = [...paginatedRows(first)]
         const lastPage = first?.data?.meta?.last_page ?? 1
         if (lastPage > 1) {
           const rest = await Promise.all(
             Array.from({ length: lastPage - 1 }, (_, index) => (
-              apiRequest(`/v1/teaching-staff?per_page=${TEACHER_PAGE_SIZE}&page=${index + 2}`)
+              apiRequest(`/v1/teaching-staff/assignment-instructors?per_page=${TEACHER_PAGE_SIZE}&page=${index + 2}`)
             )),
           )
           rest.forEach(response => rows.push(...paginatedRows(response)))
@@ -207,8 +243,8 @@ export default function TeacherAssignmentManagerModal({
         if (!active) return
         const payload = offeringPayload(response)
         setSelected(payload)
-        setTheoreticalId(currentFacultyId(payload?.components?.theoretical) ?? '')
-        setPracticalId(currentFacultyId(payload?.components?.practical) ?? '')
+        setTheoreticalId(initialComponentFacultyId(payload?.components?.theoretical) ?? '')
+        setPracticalId(initialComponentFacultyId(payload?.components?.practical) ?? '')
       } catch (error) {
         if (!active) return
         if (error.status === 401) {
@@ -243,7 +279,7 @@ export default function TeacherAssignmentManagerModal({
   const currentPracticalId = currentFacultyId(components?.practical)
 
   const teacherOptions = useMemo(() => {
-    const options = [{ value: '', label: 'بدون مدرس' }]
+    const options = [{ value: '', label: 'اختر مدرسًا' }]
     const seen = new Set()
     teachers.forEach(teacher => {
       const id = Number(teacher.faculty_member_id)
@@ -297,9 +333,31 @@ export default function TeacherAssignmentManagerModal({
     return practicalId === '' ? null : Number(practicalId)
   }, [assignPractical, currentPracticalId, mode, practicalAvailable, practicalId, profileId])
 
-  const changed = selected != null && (
-    !sameId(desiredTheoreticalId, currentTheoreticalId)
-    || !sameId(desiredPracticalId, currentPracticalId)
+  function slotNeedsSubmit(component, desiredId) {
+    if (!component?.available || desiredId == null) return false
+    const workflow = component.workflow
+    const proposedId = proposedFacultyId(component)
+    const effectiveId = activeComponentFacultyId(component)
+    if (workflow?.status === 'returned' && sameId(desiredId, proposedId)) return true
+    if (workflow && sameId(desiredId, proposedId) && workflow.status !== 'returned') return false
+    if (!workflow && sameId(desiredId, effectiveId)) return false
+    return !sameId(desiredId, proposedId ?? effectiveId)
+  }
+
+  const theoreticalNeedsSubmit = slotNeedsSubmit(components?.theoretical, desiredTheoreticalId)
+  const practicalNeedsSubmit = slotNeedsSubmit(components?.practical, desiredPracticalId)
+  const changed = selected != null && (theoreticalNeedsSubmit || practicalNeedsSubmit)
+  const unchangedResubmit = (
+    (theoreticalNeedsSubmit && components?.theoretical?.workflow?.status === 'returned'
+      && sameId(desiredTheoreticalId, proposedFacultyId(components?.theoretical)))
+    || (practicalNeedsSubmit && components?.practical?.workflow?.status === 'returned'
+      && sameId(desiredPracticalId, proposedFacultyId(components?.practical)))
+  )
+  const materialCycle = (
+    (theoreticalNeedsSubmit && components?.theoretical?.workflow
+      && !sameId(desiredTheoreticalId, proposedFacultyId(components?.theoretical)))
+    || (practicalNeedsSubmit && components?.practical?.workflow
+      && !sameId(desiredPracticalId, proposedFacultyId(components?.practical)))
   )
 
   const replacingTheoretical = theoreticalAvailable
@@ -534,6 +592,10 @@ export default function TeacherAssignmentManagerModal({
                 </button>
               )}
               <OfferingSummary offering={offering} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {theoreticalAvailable && <WorkflowStatus title="النظري" component={components?.theoretical} />}
+                {practicalAvailable && <WorkflowStatus title="العملي" component={components?.practical} />}
+              </div>
               {offering?.status && offering.status !== 'open' && (
                 <p className="text-[12.5px] text-amber-700 bg-amber-50 border border-amber-200 rounded-[10px] px-3 py-2">
                   حالة هذا الطرح: {offeringStatusLabel(offering.status)}. راجع الحالة قبل الحفظ.
@@ -626,17 +688,28 @@ export default function TeacherAssignmentManagerModal({
 
           {selected && !selectedLoading && step === 'confirm' && (
             <div className="space-y-3">
-              <p className="text-[14px] font-black text-text-dark">سيتم حفظ التعديلات التالية:</p>
+              <p className="text-[14px] font-black text-text-dark">سيتم إرسال طلب التكليف للمراجعة:</p>
               {changeSummary().map(line => (
                 <p key={line.role} className="text-[13px] text-text-dark">
                   <span className="font-bold">{line.role}:</span> {line.from} → {line.to}
                 </p>
               ))}
+              <p className="text-[12.5px] text-text-dark bg-primary/[0.04] border border-primary/15 rounded-[10px] px-3 py-2">
+                لا يصبح المدرس المقترح نافذًا إلا بعد موافقة النائب العلمي والنائب الإداري معًا.
+              </p>
+              {unchangedResubmit && (
+                <p className="text-[12.5px] text-text-dark bg-slate-50 border border-slate-200 rounded-[10px] px-3 py-2">
+                  إعادة الإرسال بنفس المدرس تحفظ موافقة النائب الذي سبق أن وافق، وتُعيد فقط المراجعة المعادة إلى الانتظار.
+                </p>
+              )}
+              {materialCycle && (
+                <p className="text-[12.5px] text-amber-800 bg-amber-50 border border-amber-200 rounded-[10px] px-3 py-2">
+                  تغيير المدرس يبدأ دورة موافقة جديدة ولا تُنقل الموافقات السابقة.
+                </p>
+              )}
               {(replacingTheoretical || replacingPractical) && (
                 <p className="text-[12.5px] text-amber-800 bg-amber-50 border border-amber-200 rounded-[10px] px-3 py-2">
-                  {replacingTheoretical && 'سيتم استبدال مدرس الشق النظري بهذا المدرس.'}
-                  {replacingTheoretical && replacingPractical ? ' ' : ''}
-                  {replacingPractical && 'سيتم استبدال مدرس الشق العملي بهذا المدرس.'}
+                  المدرس المعتمد الحالي يبقى نافذًا إلى أن يوافق النائبان على البديل.
                 </p>
               )}
             </div>
@@ -662,7 +735,7 @@ export default function TeacherAssignmentManagerModal({
                 setStep('confirm')
               }}
             >
-              مراجعة الحفظ
+              مراجعة الإرسال
             </button>
           ) : (
             <button
@@ -672,7 +745,7 @@ export default function TeacherAssignmentManagerModal({
               onClick={save}
             >
               {saving && <FaSpinner className="animate-[spin_0.7s_linear_infinite]" aria-hidden="true" />}
-              تأكيد وحفظ
+              {unchangedResubmit && !materialCycle ? 'إعادة الإرسال' : 'إرسال للمراجعة'}
             </button>
           )}
         </div>

@@ -284,6 +284,7 @@ export default function DeanTeacherProfile() {
 
   const goBack = () => navigate('/dean/teachers')
   const canManage = hasPermission(PERMISSIONS.teachingStaffManage)
+    || hasPermission(PERMISSIONS.teachingAssignmentsManage)
 
   if (loading) {
     return (

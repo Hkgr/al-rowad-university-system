@@ -71,6 +71,7 @@ export default function DeanCourseOfferingProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
   const canManageTeachers = hasPermission(PERMISSIONS.teachingStaffManage)
+    || hasPermission(PERMISSIONS.teachingAssignmentsManage)
 
   const [offering, setOffering] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -233,7 +234,7 @@ export default function DeanCourseOfferingProfile() {
     try {
       const payload = await loadOffering()
       setOffering(payload)
-      setNotice('تم تحديث التكليف التدريسي بنجاح.')
+      setNotice('تم إرسال طلب التكليف للمراجعة. لا يصبح نافذًا قبل موافقة النائبين.')
       setManagerOpen(false)
     } catch (requestError) {
       if (requestError.status === 401) {

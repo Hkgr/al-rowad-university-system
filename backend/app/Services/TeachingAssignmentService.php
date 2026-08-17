@@ -42,6 +42,8 @@ class TeachingAssignmentService
     {
         if (! $user->hasPermission('teaching_staff.view')
             && ! $user->hasPermission('teaching_staff.manage')
+            && ! $user->hasPermission('teaching_assignments.view')
+            && ! $user->hasPermission('teaching_assignments.manage')
             && ! $user->hasPermission('courses.view')
             && ! $user->hasPermission('courses.manage')) {
             throw new AccessDeniedHttpException('You are not authorized to view teaching assignments.');
@@ -53,6 +55,7 @@ class TeachingAssignmentService
     public function assertCanManageAssignments(User $user, CourseOffering $offering): void
     {
         if (! $user->hasPermission('teaching_staff.manage')
+            && ! $user->hasPermission('teaching_assignments.manage')
             && ! $user->hasPermission('courses.manage')) {
             throw new AccessDeniedHttpException('You are not authorized to manage teaching assignments.');
         }
@@ -84,18 +87,7 @@ class TeachingAssignmentService
             ]);
         }
 
-        $college = $this->resolveOfferingCollege($offering);
-        if ($college === null || $college->organizational_unit_id === null) {
-            throw new AccessDeniedHttpException('The course offering college cannot be resolved.');
-        }
-
         $this->assertComponentExists($offering->course, $role);
-
-        if (! $this->dataScope->facultyMemberBelongsToCollege($facultyMember, $college)) {
-            throw ValidationException::withMessages([
-                'faculty_member_id' => ['The faculty member does not belong to the course offering college.'],
-            ]);
-        }
     }
 
     public function assertComponentExists(Course $course, string $role): void
@@ -172,6 +164,10 @@ class TeachingAssignmentService
             });
     }
 
+    /**
+     * Direct effective-slot writer. Dean UI no longer calls this for new assignments.
+     * Dual-approval materialization uses materializeApprovedSlot() instead.
+     */
     public function syncOfferingAssignmentSlots(
         User $user,
         CourseOffering $courseOffering,
@@ -267,6 +263,36 @@ class TeachingAssignmentService
                 'offeringInstructors.facultyMember.employee',
             ]);
         });
+    }
+
+    public function materializeApprovedSlot(
+        CourseOffering $offering,
+        string $role,
+        int $facultyMemberId
+    ): void {
+        $offering->loadMissing('course');
+        $course = $offering->course;
+        if ($course === null) {
+            throw ValidationException::withMessages([
+                'course_offering' => ['The course offering course cannot be resolved.'],
+            ]);
+        }
+
+        $facultyMember = FacultyMember::query()
+            ->with('employee.employeeStatus')
+            ->findOrFail($facultyMemberId);
+        $this->assertValidAssignment($offering, $facultyMember, $role);
+
+        $slots = CourseOfferingInstructor::query()
+            ->where('course_offering_id', $offering->course_offering_id)
+            ->lockForUpdate()
+            ->get()
+            ->keyBy(fn (CourseOfferingInstructor $slot): string => (string) $slot->instructor_role);
+
+        $this->assignSlot($offering, $course, $slots, $role, $facultyMember);
+        $this->ensureGenericCourseInstructor((int) $offering->course_id, $facultyMemberId);
+        $this->normalizePrimaryFlags($offering);
+        $this->syncLegacyFacultyPointer($offering);
     }
 
     public function offeringsInAccessibleCollegesQuery(array $collegeIds)

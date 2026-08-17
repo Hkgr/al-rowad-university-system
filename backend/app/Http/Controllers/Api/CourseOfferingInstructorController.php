@@ -13,6 +13,12 @@ use App\Services\TeachingAssignmentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * Exam-board / generic offering-instructor API.
+ * Dean assignment activation for NEW slots goes through TeachingAssignmentWorkflowService.
+ * This controller still writes the effective course_offering_instructors projection
+ * and is not the Dean teaching-assignment workflow.
+ */
 class CourseOfferingInstructorController extends Controller
 {
     public function __construct(private TeachingAssignmentService $teachingAssignments)
