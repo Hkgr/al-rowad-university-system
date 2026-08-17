@@ -143,19 +143,26 @@ function advisoryPlanLabel(course) {
   return parts.length > 0 ? parts.join(' — ') : null
 }
 
-function splitAdvisoryCourses(courses, workspaceSemesterId) {
+function splitAdvisoryCourses(courses, workspaceSemesterId, studentAcademicLevelId) {
   const recommended = []
   const other = []
   const seen = new Set()
+  const hasStudentLevel = studentAcademicLevelId != null && studentAcademicLevelId !== ''
+  const hasWorkspaceSemester = workspaceSemesterId != null && workspaceSemesterId !== ''
 
   courses.forEach(course => {
     const offeringId = course?.course_offering_id
     if (offeringId == null || seen.has(offeringId)) return
     seen.add(offeringId)
 
-    const recommendedSemesterId = course?.advisory_plan?.recommended_semester_id
-    const isRecommended = workspaceSemesterId
+    const plan = course?.advisory_plan
+    const advisoryLevelId = plan?.academic_level_id
+    const recommendedSemesterId = plan?.recommended_semester_id
+    const isRecommended = hasStudentLevel
+      && hasWorkspaceSemester
+      && advisoryLevelId != null
       && recommendedSemesterId != null
+      && Number(advisoryLevelId) === Number(studentAcademicLevelId)
       && Number(recommendedSemesterId) === Number(workspaceSemesterId)
 
     if (isRecommended) recommended.push(course)
@@ -342,9 +349,10 @@ export default function StudentRegistration() {
   const termReady = Boolean(academicYear?.academic_year_id && selectedSemesterId)
   const available = payload?.available_courses ?? []
   const workspaceSemesterId = payload?.semester?.semester_id ?? selectedSemesterId
+  const studentAcademicLevelId = payload?.summary?.student?.current_academic_level_id ?? null
   const { recommended, other } = useMemo(
-    () => splitAdvisoryCourses(available, workspaceSemesterId),
-    [available, workspaceSemesterId],
+    () => splitAdvisoryCourses(available, workspaceSemesterId, studentAcademicLevelId),
+    [available, workspaceSemesterId, studentAcademicLevelId],
   )
   const summary = payload?.summary ?? null
   const registrations = summary?.registrations ?? []
