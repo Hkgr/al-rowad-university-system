@@ -125,7 +125,7 @@ class CourseOfferingController extends ApiController
             $data = array_merge($data, $context->offeringAttributes());
         }
 
-        $offering->update($data);
+        $this->offeringContext->updateOffering($offering, $data);
 
         return $this->successResponse(
             (new CourseOfferingResource($offering->fresh()->load($this->offeringRelations())))->resolve($request)

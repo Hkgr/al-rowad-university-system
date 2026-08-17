@@ -146,14 +146,30 @@ class CourseOfferingContextService
         }
     }
 
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    public function updateOffering(CourseOffering $offering, array $attributes): CourseOffering
+    {
+        try {
+            $offering->update($attributes);
+
+            return $offering;
+        } catch (QueryException $exception) {
+            if ($this->isDuplicateKey($exception)) {
+                throw CourseOfferingContextException::duplicate();
+            }
+
+            throw $exception;
+        }
+    }
+
     public function isDuplicateKey(QueryException $exception): bool
     {
-        $sqlState = $exception->errorInfo[0] ?? null;
         $errorCode = (int) ($exception->errorInfo[1] ?? 0);
         $message = $exception->getMessage();
 
-        return $sqlState === '23000'
-            || $errorCode === 1062
+        return $errorCode === 1062
             || str_contains($message, self::UNIQUE_INDEX);
     }
 
@@ -162,6 +178,7 @@ class CourseOfferingContextService
         return $offering->studentCourseRegistrations()->exists()
             || $offering->attendanceSessions()->exists()
             || $offering->gradeApprovals()->exists()
+            || $offering->gradePartApprovals()->exists()
             || $offering->gradeComponents()->exists();
     }
 
