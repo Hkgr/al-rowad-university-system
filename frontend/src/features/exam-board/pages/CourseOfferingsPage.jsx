@@ -8,6 +8,26 @@ import CourseRequirementBadges, { ProgramRequirementClassifications, pickRequire
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
+const OFFERING_ERROR_LABELS = {
+  duplicate_offering: 'هذه المادة مفتوحة مسبقًا لهذا البرنامج في السنة والفصل المحددين.',
+  course_not_in_program: 'المادة ليست ضمن الخطة الأكاديمية لهذا البرنامج.',
+  program_department_mismatch: 'بيانات البرنامج والقسم غير متطابقة.',
+  program_context_incomplete: 'لا يمكن إنشاء طرح للمادة لأن البنية الأكاديمية للبرنامج غير مكتملة.',
+  program_outside_user_scope: 'ليس لديك صلاحية على هذا البرنامج.',
+  offering_identity_locked: 'لا يمكن تغيير هوية هذا الطرح لأنه مرتبط بتسجيلات أو حضور أو علامات.',
+}
+
+function offeringErrorMessage(json, fallback = 'تعذّر تنفيذ العملية') {
+  const code = json?.error_code
+  if (code && OFFERING_ERROR_LABELS[code]) return OFFERING_ERROR_LABELS[code]
+  const first = json?.errors && Object.values(json.errors).flat().find(value => typeof value === 'string' && value.trim())
+  if (first) return first
+  if (json?.message && json.message !== 'Validation failed' && json.message !== 'Operation completed successfully') {
+    return json.message
+  }
+  return fallback
+}
+
 function authHeaders() {
   return { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }
 }
@@ -115,7 +135,7 @@ function CourseCombobox({ courses, excludeIds, value, onChange, placeholder, cou
 }
 
 // ── One card: a curriculum course + its details + its term status ───────────
-function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen, onToggle, onInstructorUpdated, busy, canManageCurriculum, canManageOfferings, canAssignInstructors, courseDepartmentIdMap, departments, facultyMembers }) {
+function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen, onToggle, onInstructorUpdated, busy, canManageCurriculum, canManageOfferings, canAssignInstructors, courseDepartmentIdMap, departments, facultyMembers, advisorySemesterName }) {
   const [capacity, setCapacity] = useState('40')
   const scope = course ? courseScopeInfo(course.course_id, courseDepartmentIdMap, departments) : null
 
@@ -130,6 +150,9 @@ function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen
           <div className="mt-1.5">
             <CourseRequirementBadges classification={programCourse.requirement_classification} compact />
           </div>
+          {advisorySemesterName ? (
+            <p className="mt-1.5 text-[11px] text-text-light">الفصل الإرشادي: {advisorySemesterName}</p>
+          ) : null}
         </div>
         {canManageCurriculum && (
           <button
@@ -247,7 +270,7 @@ function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove,
   return (
     <div className="bg-white border border-primary/12 rounded-[14px] overflow-hidden shadow-[0_2px_8px_rgba(26,46,16,0.05)] mb-4">
       <div className="px-4 py-3 bg-primary/[0.06] border-b border-primary/10 flex items-center justify-between" dir="rtl">
-        <span className="text-[14px] font-extrabold text-text-dark">{level.level_name}</span>
+        <span className="text-[14px] font-extrabold text-text-dark">الخطة الإرشادية — {level.level_name}</span>
         <span className="text-[11px] text-text-light bg-white px-2 py-0.5 rounded-full font-bold">{rows.length} مادة</span>
       </div>
       <div className="p-4">
@@ -270,6 +293,7 @@ function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove,
                 courseDepartmentIdMap={courseDepartmentIdMap}
                 departments={departments}
                 facultyMembers={facultyMembers}
+                advisorySemesterName={programCourse.advisory_semester_name}
               />
             ))}
           </div>
@@ -344,34 +368,13 @@ function LevelColumn({ level, rows, courses, assignedCourseIds, onAdd, onRemove,
 }
 
 // ── Shared / common courses (open to every college) ──────────────────────────
-function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onToggle, onInstructorUpdated, busyIds, facultyMembers, canManageOfferings, canAssignInstructors }) {
-  const [adding, setAdding] = useState(false)
-  const [courseId, setCourseId] = useState('')
-  const [capacity, setCapacity] = useState('40')
-  const [err, setErr] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-
+function SharedCoursesSection({ courses, offerings, yearId, semId, onToggle, onInstructorUpdated, busyIds, facultyMembers, canManageOfferings, canAssignInstructors }) {
   const sharedOfferings = offerings.filter(o =>
     !o.academic_program_id && String(o.academic_year_id) === String(yearId) && String(o.semester_id) === String(semId)
   )
-  const excludeIds = useMemo(() => new Set(sharedOfferings.map(o => o.course_id)), [sharedOfferings])
   const courseMap = useMemo(() => Object.fromEntries(courses.map(c => [c.course_id, c])), [courses])
 
-  async function submit() {
-    if (!canManageOfferings) { setErr('ليس لديك صلاحية إدارة المواد'); return }
-    setErr('')
-    if (!courseId) { setErr('اختر المادة'); return }
-    if (!capacity || Number(capacity) < 1) { setErr('أدخل عدد المقاعد'); return }
-    setSubmitting(true)
-    try {
-      await onAdd(Number(courseId), Number(capacity))
-      setAdding(false); setCourseId(''); setCapacity('40')
-    } catch (e) {
-      setErr(e.message || 'فشل الإضافة')
-    } finally {
-      setSubmitting(false)
-    }
-  }
+  if (sharedOfferings.length === 0) return null
 
   return (
     <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)] mb-5">
@@ -379,6 +382,9 @@ function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onTogg
         <FaLayerGroup className="text-primary text-[13px]" />
         <span className="text-[13px] font-extrabold text-text-dark">مواد مشتركة بين كل الكليات</span>
         <span className="text-[11px] text-text-light bg-primary/10 px-2 py-0.5 rounded-full font-bold">{sharedOfferings.length}</span>
+      </div>
+      <div className="px-5 py-2 text-[11.5px] leading-6 text-text-light border-b border-primary/8" dir="rtl">
+        طروح تاريخية بلا برنامج أكاديمي. تبقى ظاهرة للقراءة، ولا يمكن إنشاء طرح جديد بدون برنامج.
       </div>
       <div className="p-4 space-y-2">
         {sharedOfferings.map(o => {
@@ -420,50 +426,6 @@ function SharedCoursesSection({ courses, offerings, yearId, semId, onAdd, onTogg
             </div>
           )
         })}
-        {sharedOfferings.length === 0 && !adding && (
-          <p className="text-center text-[12px] text-text-light py-2" dir="rtl">لا توجد مواد مشتركة مفتوحة لهذا الفصل</p>
-        )}
-
-        {canManageOfferings && (adding ? (
-          <div className="border border-primary/15 rounded-[10px] p-3 space-y-2" dir="rtl">
-            <CourseCombobox courses={courses} excludeIds={excludeIds} value={courseId} onChange={setCourseId} />
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min="1"
-                value={capacity}
-                onChange={e => setCapacity(e.target.value)}
-                className="w-20 px-2 py-1.5 border border-primary/20 rounded-[7px] text-[12px] text-center outline-none focus:border-primary"
-                placeholder="مقاعد"
-              />
-              <button
-                type="button"
-                onClick={submit}
-                disabled={submitting}
-                className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 bg-primary text-white rounded-[7px] text-[12px] font-bold hover:enabled:bg-primary-dark disabled:opacity-50 transition-colors"
-              >
-                {submitting ? <FaSpinner className="animate-spin text-[10px]" /> : <FaPlus className="text-[10px]" />}
-                إضافة
-              </button>
-              <button
-                type="button"
-                onClick={() => { setAdding(false); setErr('') }}
-                className="px-3 py-1.5 border border-primary/20 rounded-[7px] text-[12px] text-text-light hover:bg-primary/5 transition-colors"
-              >
-                إلغاء
-              </button>
-            </div>
-            {err && <p className="text-[11px] text-red-600">⚠ {err}</p>}
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setAdding(true)}
-            className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 border border-dashed border-primary/30 rounded-[7px] text-[11.5px] font-bold text-primary-dark hover:bg-primary/5 transition-colors"
-          >
-            <FaPlus className="text-[10px]" /> إضافة مادة مشتركة
-          </button>
-        ))}
       </div>
     </div>
   )
@@ -496,6 +458,7 @@ export default function CourseOfferingsPage() {
   const [programId, setProgramId] = useState('')
 
   const [toast, setToast] = useState('')
+  const [error, setError] = useState('')
   const [busyIds, setBusyIds] = useState({})
   const [previewMode, setPreviewMode] = useState(false)
 
@@ -605,7 +568,12 @@ export default function CourseOfferingsPage() {
 
   function showToast(msg) {
     setToast(msg)
+    setError('')
     setTimeout(() => setToast(''), 3000)
+  }
+
+  function showError(msg) {
+    setError(msg)
   }
 
   function handleCollegeChange(v) {
@@ -632,13 +600,15 @@ export default function CourseOfferingsPage() {
       course_id: courseId,
       academic_year_id: Number(yearId),
       semester_id: Number(semId),
-      department_id: null,
       academic_program_id: Number(programId),
       capacity,
       available_seats: capacity,
       status: 'open',
     })
-    if (ofJson.success) setOfferings(prev => [...prev, ofJson.data])
+    if (!ofJson.success) {
+      throw new Error(offeringErrorMessage(ofJson, 'تمت إضافة المادة للمنهج لكن تعذّر فتح الطرح'))
+    }
+    setOfferings(prev => [...prev, ofJson.data])
     showToast('تمت إضافة المادة وفتحها لهذا الفصل')
   }
 
@@ -663,7 +633,6 @@ export default function CourseOfferingsPage() {
         course_id: courseId,
         academic_year_id: Number(yearId),
         semester_id: Number(semId),
-        department_id: null,
         academic_program_id: Number(programId),
         capacity: Number(capacity),
         available_seats: Number(capacity),
@@ -672,6 +641,8 @@ export default function CourseOfferingsPage() {
       if (json.success) {
         setOfferings(prev => [...prev, json.data])
         showToast('تم فتح المادة لهذا الفصل')
+      } else {
+        showError(offeringErrorMessage(json, 'تعذّر فتح المادة'))
       }
     } finally {
       setBusyIds(p => ({ ...p, [`open-${courseId}`]: false }))
@@ -692,6 +663,8 @@ export default function CourseOfferingsPage() {
       if (json.success) {
         setOfferings(prev => prev.map(o => o.course_offering_id === offering.course_offering_id ? { ...o, status: nextStatus } : o))
         showToast(nextStatus === 'open' ? 'تم فتح المادة' : 'تم إغلاق المادة')
+      } else {
+        showError(offeringErrorMessage(json, 'تعذّر تحديث حالة المادة'))
       }
     } finally {
       setBusyIds(p => ({ ...p, [offering.course_offering_id]: false }))
@@ -703,23 +676,6 @@ export default function CourseOfferingsPage() {
     showToast('تم تحديث تعيين الأساتذة')
   }
 
-  async function handleAddSharedCourse(courseId, capacity) {
-    if (!canManageOfferings) throw new Error('ليس لديك صلاحية إدارة المواد')
-    const json = await post(`${API}/course-offerings`, {
-      course_id: courseId,
-      academic_year_id: Number(yearId),
-      semester_id: Number(semId),
-      department_id: null,
-      academic_program_id: null,
-      capacity,
-      available_seats: capacity,
-      status: 'open',
-    })
-    if (!json.success) throw new Error(json.message || 'فشل فتح المادة')
-    setOfferings(prev => [...prev, json.data])
-    showToast('تمت إضافة المادة المشتركة وفتحها لهذا الفصل')
-  }
-
   if (loading) {
     return <div className="flex justify-center py-16 text-primary"><FaSpinner className="animate-spin text-[28px]" /></div>
   }
@@ -728,7 +684,9 @@ export default function CourseOfferingsPage() {
     <>
       <div className="mb-5" dir="rtl">
         <h2 className="text-[20px] font-black text-text-dark mb-[3px]">فتح المواد الدراسية</h2>
-        <p className="text-[12.5px] text-text-light">Course Offerings — Open Subjects for a Semester</p>
+        <p className="text-[12.5px] text-text-light">
+          الطرح الجديد يرتبط ببرنامج أكاديمي ومادة من خطته النشطة. السنة والفصل أدناه هما الفصل الفعلي للتدريس، والخطة الإرشادية لا تقيّد الفتح.
+        </p>
       </div>
 
       {/* Year + Semester selector */}
@@ -747,7 +705,7 @@ export default function CourseOfferingsPage() {
             </select>
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-[12px] font-bold text-text-dark">الفصل الدراسي</label>
+            <label className="text-[12px] font-bold text-text-dark">الفصل الدراسي الفعلي</label>
             <select
               className="px-3 py-2.5 border border-primary/20 rounded-[10px] text-[13.5px] text-text-dark outline-none focus:border-primary disabled:opacity-50"
               value={semId}
@@ -771,13 +729,17 @@ export default function CourseOfferingsPage() {
               <FaCheckCircle className="text-green-500 flex-shrink-0" /> {toast}
             </div>
           )}
+          {error && (
+            <div className="mb-4 px-4 py-2.5 text-[12.5px] text-red-700 bg-red-50 border border-red-200 rounded-[10px]" dir="rtl">
+              ⚠ {error}
+            </div>
+          )}
 
           <SharedCoursesSection
             courses={courses}
             offerings={offerings}
             yearId={yearId}
             semId={semId}
-            onAdd={handleAddSharedCourse}
             onToggle={handleToggleStatus}
             onInstructorUpdated={handleInstructorUpdated}
             busyIds={busyIds}
@@ -837,8 +799,15 @@ export default function CourseOfferingsPage() {
               <div>
                 {curriculumLevels.map(level => {
                   const rows = programCoursesForProgram
-                    .filter(pc => pc.academic_level_id === level.academic_level_id && String(pc.recommended_semester_id) === String(semId))
-                    .map(pc => ({ programCourse: pc, course: courseMap[pc.course_id], offering: offeringFor(pc.course_id) }))
+                    .filter(pc => pc.academic_level_id === level.academic_level_id)
+                    .map(pc => ({
+                      programCourse: {
+                        ...pc,
+                        advisory_semester_name: semesters.find(s => String(s.semester_id) === String(pc.recommended_semester_id))?.semester_name,
+                      },
+                      course: courseMap[pc.course_id],
+                      offering: offeringFor(pc.course_id),
+                    }))
                   return (
                     <LevelColumn
                       key={level.academic_level_id}

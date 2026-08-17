@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\CourseOfferingContextException;
 use App\Models\AcademicProgram;
 use App\Models\AcademicYear;
 use App\Models\College;
@@ -26,7 +27,8 @@ class DeanRegistrationOfferingService
 
     public function __construct(
         private DataScopeService $dataScope,
-        private TeachingAssignmentService $teachingAssignments
+        private TeachingAssignmentService $teachingAssignments,
+        private CourseOfferingContextService $offeringContext,
     ) {
     }
 
@@ -140,18 +142,23 @@ class DeanRegistrationOfferingService
             $programCourse->load(['course', 'academicProgram.department.college']);
             $this->assertActiveCurriculumRow($programCourse);
 
-            $program = $programCourse->academicProgram;
-            if ($program === null || $program->department_id === null) {
-                throw (new ModelNotFoundException())->setModel(AcademicProgram::class);
-            }
+            $yearId = (int) $payload['academic_year_id'];
+            $semesterId = (int) $payload['semester_id'];
+            $context = $this->offeringContext->resolveFromProgramCourse(
+                $programCourse,
+                $yearId,
+                $semesterId,
+                $user,
+                false,
+            );
 
+            $program = $context->academicProgram;
             $collegeIds = $this->accessibleCollegeIdList($user);
             $this->assertProgramInAccessibleCollege($user, $program, $collegeIds);
 
-            $yearId = (int) $payload['academic_year_id'];
-            $semesterId = (int) $payload['semester_id'];
-            $courseId = (int) $programCourse->course_id;
-            $programId = (int) $program->academic_program_id;
+            $identity = $context->offeringAttributes();
+            $courseId = $identity['course_id'];
+            $programId = $identity['academic_program_id'];
 
             $offering = CourseOffering::query()
                 ->where('course_id', $courseId)
@@ -169,23 +176,38 @@ class DeanRegistrationOfferingService
                     ]);
                 }
 
-                $offering = CourseOffering::query()->create([
-                    'course_id' => $courseId,
-                    'academic_year_id' => $yearId,
-                    'semester_id' => $semesterId,
-                    'department_id' => (int) $program->department_id,
-                    'academic_program_id' => $programId,
-                    'faculty_member_id' => null,
-                    'capacity' => $capacity,
-                    'available_seats' => $capacity,
-                    'status' => self::STATUS_OPEN,
-                ]);
+                try {
+                    $offering = $this->offeringContext->createOffering($context, [
+                        'faculty_member_id' => null,
+                        'capacity' => $capacity,
+                        'available_seats' => $capacity,
+                        'status' => self::STATUS_OPEN,
+                    ]);
+                } catch (CourseOfferingContextException $exception) {
+                    if ($exception->errorCode !== CourseOfferingContextException::DUPLICATE_OFFERING) {
+                        throw $exception;
+                    }
 
-                return [
-                    'action' => 'created',
-                    'program_course_id' => $programCourse->program_course_id,
-                    'offering' => $this->offeringPayload($this->hydrateOffering($offering)),
-                ];
+                    $offering = CourseOffering::query()
+                        ->where('course_id', $courseId)
+                        ->where('academic_year_id', $yearId)
+                        ->where('semester_id', $semesterId)
+                        ->where('academic_program_id', $programId)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if ($offering === null) {
+                        throw $exception;
+                    }
+                }
+
+                if ($offering->wasRecentlyCreated) {
+                    return [
+                        'action' => 'created',
+                        'program_course_id' => $programCourse->program_course_id,
+                        'offering' => $this->offeringPayload($this->hydrateOffering($offering)),
+                    ];
+                }
             }
 
             $this->assertProgramSpecificOffering($offering);

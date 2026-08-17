@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\CourseOfferingContextException;
 use App\Http\Requests\CourseOffering\StoreCourseOfferingRequest;
 use App\Http\Requests\CourseOffering\UpdateCourseOfferingRequest;
 use App\Http\Requests\Attendance\StoreCourseOfferingAttendanceSessionRequest;
@@ -10,6 +11,7 @@ use App\Http\Resources\CourseOfferingStudentResource;
 use App\Http\Resources\StudentCourseRegistrationResource;
 use App\Models\CourseOffering;
 use App\Services\AttendanceService;
+use App\Services\CourseOfferingContextService;
 use App\Services\GradeService;
 use App\Services\AcademicAuthorizationService;
 use App\Services\DataScopeService;
@@ -17,14 +19,18 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Foundation\Http\FormRequest;
-use App\Models\AcademicProgram;
 
 class CourseOfferingController extends ApiController
 {
+    public function __construct(private CourseOfferingContextService $offeringContext)
+    {
+    }
+
     public function index(): JsonResponse
     {
         Gate::authorize('viewAny', CourseOffering::class);
         $offerings = app(DataScopeService::class)->scopeOfferings(CourseOffering::query(), request()->user())
+            ->with($this->offeringRelations())
             ->paginate(request()->integer('per_page', 15));
         return $this->successResponse(CourseOfferingResource::collection($offerings)->response(request())->getData(true));
     }
@@ -54,36 +60,83 @@ class CourseOfferingController extends ApiController
         /** @var FormRequest $request */
         $request = app($this->storeRequestClass());
         $data = $request->validated();
-        $scope = app(DataScopeService::class);
-        abort_unless($scope->canAccessDepartment($request->user(), (int) $data['department_id'])
-            && $scope->canAccessProgram($request->user(), (int) $data['academic_program_id']), 403);
-        abort_unless(AcademicProgram::query()->whereKey($data['academic_program_id'])->where('department_id', $data['department_id'])->exists(), 422);
-        $offering = CourseOffering::query()->create($data);
-        return $this->successResponse((new CourseOfferingResource($offering))->resolve($request), 'Operation completed successfully', 201);
+        $context = $this->offeringContext->resolveContext(
+            (int) $data['course_id'],
+            (int) $data['academic_program_id'],
+            (int) $data['academic_year_id'],
+            (int) $data['semester_id'],
+            isset($data['department_id']) ? (int) $data['department_id'] : null,
+            $request->user(),
+        );
+        $offering = $this->offeringContext->createOffering($context, [
+            'faculty_member_id' => $data['faculty_member_id'] ?? null,
+            'capacity' => $data['capacity'],
+            'available_seats' => $data['available_seats'],
+            'status' => $data['status'],
+        ]);
+
+        return $this->successResponse(
+            (new CourseOfferingResource($offering->load($this->offeringRelations())))->resolve($request),
+            'Operation completed successfully',
+            201
+        );
     }
 
     public function update($id): JsonResponse
     {
-        $scope = app(DataScopeService::class);
         $offering = CourseOffering::query()->findOrFail($id);
         Gate::authorize('update', $offering);
         /** @var FormRequest $request */
         $request = app($this->updateRequestClass());
         $data = $request->validated();
-        $departmentId = (int) ($data['department_id'] ?? $offering->department_id);
-        $programId = (int) ($data['academic_program_id'] ?? $offering->academic_program_id);
-        abort_unless($scope->canAccessDepartment($request->user(), $departmentId)
-            && $scope->canAccessProgram($request->user(), $programId), 403);
-        abort_unless(AcademicProgram::query()->whereKey($programId)->where('department_id', $departmentId)->exists(), 422);
+        $identityKeys = ['course_id', 'academic_program_id', 'department_id', 'academic_year_id', 'semester_id'];
+        $identityTouched = array_intersect(array_keys($data), $identityKeys) !== [];
+
+        if ($identityTouched) {
+            $courseId = isset($data['course_id']) ? (int) $data['course_id'] : (int) $offering->course_id;
+            $programId = array_key_exists('academic_program_id', $data)
+                ? (int) $data['academic_program_id']
+                : ($offering->academic_program_id === null ? null : (int) $offering->academic_program_id);
+            $yearId = isset($data['academic_year_id']) ? (int) $data['academic_year_id'] : (int) $offering->academic_year_id;
+            $semesterId = isset($data['semester_id']) ? (int) $data['semester_id'] : (int) $offering->semester_id;
+            $departmentId = array_key_exists('department_id', $data)
+                ? (int) $data['department_id']
+                : ($offering->department_id === null ? null : (int) $offering->department_id);
+
+            if ($programId === null) {
+                throw CourseOfferingContextException::programContextIncomplete();
+            }
+
+            if ($this->offeringContext->identityWouldChange($offering, $courseId, $programId, $yearId, $semesterId)
+                && $this->offeringContext->hasHistoricalDependents($offering)) {
+                throw CourseOfferingContextException::identityLocked();
+            }
+
+            $context = $this->offeringContext->resolveContext(
+                $courseId,
+                $programId,
+                $yearId,
+                $semesterId,
+                $departmentId,
+                $request->user(),
+                true,
+                (int) $offering->course_offering_id,
+            );
+            $data = array_merge($data, $context->offeringAttributes());
+        }
+
         $offering->update($data);
-        return $this->successResponse((new CourseOfferingResource($offering->fresh()))->resolve($request));
+
+        return $this->successResponse(
+            (new CourseOfferingResource($offering->fresh()->load($this->offeringRelations())))->resolve($request)
+        );
     }
 
     public function open(): JsonResponse
     {
         Gate::authorize('viewAny', CourseOffering::class);
         $offerings = app(DataScopeService::class)->scopeOfferings(CourseOffering::query(), request()->user())
-            ->with(['course', 'academicYear', 'semester', 'department', 'academicProgram', 'facultyMember'])
+            ->with($this->offeringRelations())
             ->withCount('studentCourseRegistrations')
             ->where('status', 'open')
             ->orderBy('course_offering_id', 'desc')
@@ -95,7 +148,7 @@ class CourseOfferingController extends ApiController
     public function details(int $id): JsonResponse
     {
         $offering = CourseOffering::query()
-            ->with(['course', 'academicYear', 'semester', 'department', 'academicProgram', 'facultyMember'])
+            ->with($this->offeringRelations())
             ->withCount('studentCourseRegistrations')
             ->findOrFail($id);
         Gate::authorize('view', $offering);
@@ -147,7 +200,7 @@ class CourseOfferingController extends ApiController
         ]);
 
         $offerings = app(DataScopeService::class)->scopeOfferings(CourseOffering::query(), $request->user())
-            ->with(['course', 'academicYear', 'semester', 'department', 'academicProgram', 'facultyMember'])
+            ->with($this->offeringRelations())
             ->withCount('studentCourseRegistrations')
             ->where('academic_year_id', $validated['academic_year_id'])
             ->where('semester_id', $validated['semester_id'])
@@ -170,7 +223,7 @@ class CourseOfferingController extends ApiController
         ]);
 
         $offerings = app(DataScopeService::class)->scopeOfferings(CourseOffering::query(), $request->user())
-            ->with(['course', 'academicYear', 'semester', 'department', 'academicProgram', 'facultyMember'])
+            ->with($this->offeringRelations())
             ->withCount('studentCourseRegistrations')
             ->where('academic_program_id', $program_id)
             ->when($validated['academic_year_id'] ?? null, fn ($query, $academicYearId) => $query->where('academic_year_id', $academicYearId))
@@ -232,5 +285,20 @@ class CourseOfferingController extends ApiController
         $result = $service->applyDeprivation($id, request()->user()?->user_id);
 
         return $this->successResponse($result, 'Deprivation applied successfully');
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function offeringRelations(): array
+    {
+        return [
+            'course',
+            'academicYear',
+            'semester',
+            'department.college',
+            'academicProgram.department.college',
+            'facultyMember',
+        ];
     }
 }
