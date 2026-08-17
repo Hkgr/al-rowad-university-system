@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\TeachingAssignmentException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\TeachingStaff\SyncOfferingAssignmentSlotsRequest;
 use App\Http\Resources\TeachingStaffAssignmentOfferingResource;
 use App\Http\Resources\TeachingStaffResource;
 use App\Models\CourseOffering;
+use App\Models\CourseOfferingInstructor;
 use App\Models\FacultyMember;
 use App\Models\User;
 use App\Services\DataScopeService;
@@ -129,9 +131,7 @@ class TeachingStaffAssignmentOfferingController extends Controller
         $user = $request->user();
         if ($user === null
             || (! $user->hasPermission(TeachingAssignmentWorkflow::PERMISSION_MANAGE)
-                && ! $user->hasPermission(TeachingAssignmentWorkflow::PERMISSION_VIEW)
-                && ! $user->hasPermission('teaching_staff.manage')
-                && ! $user->hasPermission('teaching_staff.view'))) {
+                && ! $user->hasPermission(TeachingAssignmentWorkflow::PERMISSION_VIEW))) {
             throw new AccessDeniedHttpException('You are not authorized to view teaching staff.');
         }
 
@@ -203,21 +203,40 @@ class TeachingStaffAssignmentOfferingController extends Controller
         // partial payloads.
         $validated = $request->validated();
         $user = $request->user();
+        $offering = CourseOffering::query()
+            ->whereKey($courseOffering->course_offering_id)
+            ->with(['offeringInstructors', 'course'])
+            ->firstOrFail();
+
+        $this->assertNullIsNotUnassignment(
+            $offering,
+            'theoretical',
+            $validated['theoretical_faculty_member_id']
+        );
+        $this->assertNullIsNotUnassignment(
+            $offering,
+            'practical',
+            $validated['practical_faculty_member_id']
+        );
+
+        $submitted = false;
         if ($validated['theoretical_faculty_member_id'] !== null) {
             $this->workflow->proposeSlot(
                 $user,
-                $courseOffering,
+                $offering,
                 'theoretical',
                 (int) $validated['theoretical_faculty_member_id']
             );
+            $submitted = true;
         }
         if ($validated['practical_faculty_member_id'] !== null) {
             $this->workflow->proposeSlot(
                 $user,
-                $courseOffering,
+                $offering,
                 'practical',
                 (int) $validated['practical_faculty_member_id']
             );
+            $submitted = true;
         }
 
         $offering = CourseOffering::query()
@@ -227,7 +246,9 @@ class TeachingStaffAssignmentOfferingController extends Controller
 
         return $this->successResponse(
             (new TeachingStaffAssignmentOfferingResource($offering))->resolve($request),
-            'تم إرسال طلب التكليف للمراجعة.'
+            $submitted
+                ? 'تم إرسال طلب التكليف للمراجعة.'
+                : 'لم يُرسل طلب تكليف.'
         );
     }
 
@@ -261,6 +282,24 @@ class TeachingStaffAssignmentOfferingController extends Controller
         }
 
         return $relations;
+    }
+
+    private function assertNullIsNotUnassignment(
+        CourseOffering $offering,
+        string $role,
+        mixed $facultyMemberId
+    ): void {
+        if ($facultyMemberId !== null) {
+            return;
+        }
+
+        $active = $offering->offeringInstructors->first(
+            fn (CourseOfferingInstructor $slot): bool => $slot->is_active
+                && (string) $slot->instructor_role === $role
+        );
+        if ($active !== null) {
+            throw TeachingAssignmentException::unassignmentUnsupported();
+        }
     }
 
     private function likeContains(string $term): string

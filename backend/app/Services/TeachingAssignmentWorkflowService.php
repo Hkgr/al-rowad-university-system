@@ -34,7 +34,6 @@ class TeachingAssignmentWorkflowService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $this->assignments->assertCanManageAssignments($user, $lockedOffering);
             $this->assertOfferingInDeanScope($user, $lockedOffering);
 
             $facultyMember = FacultyMember::query()
@@ -84,8 +83,7 @@ class TeachingAssignmentWorkflowService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $this->assignments->assertCanManageAssignments($user, $offering);
-            $this->assertOfferingInDeanScope($user, $offering);
+            $this->assertCanManage($user, $offering);
 
             if (! $current->isCurrent()) {
                 throw TeachingAssignmentException::notCurrent();
@@ -114,8 +112,7 @@ class TeachingAssignmentWorkflowService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $this->assignments->assertCanManageAssignments($user, $offering);
-            $this->assertOfferingInDeanScope($user, $offering);
+            $this->assertCanManage($user, $offering);
 
             if (! $current->isCurrent()) {
                 throw TeachingAssignmentException::notCurrent();
@@ -270,14 +267,42 @@ class TeachingAssignmentWorkflowService
                 throw TeachingAssignmentException::notCurrent();
             }
 
+            if ($current->status === TeachingAssignmentWorkflow::STATUS_APPROVED) {
+                if ($decision === TeachingAssignmentWorkflow::REVIEW_APPROVED
+                    && $own->status === TeachingAssignmentWorkflow::REVIEW_APPROVED) {
+                    return $this->loadRequest((int) $current->teaching_assignment_request_id);
+                }
+
+                throw TeachingAssignmentException::alreadyEffective();
+            }
+
+            if ($own->status === TeachingAssignmentWorkflow::REVIEW_APPROVED) {
+                if ($decision === TeachingAssignmentWorkflow::REVIEW_APPROVED) {
+                    return $this->loadRequest((int) $current->teaching_assignment_request_id);
+                }
+
+                throw TeachingAssignmentException::reviewLocked();
+            }
+
+            if ($own->status === TeachingAssignmentWorkflow::REVIEW_RETURNED) {
+                $trimmed = trim((string) $reason);
+                if ($decision === TeachingAssignmentWorkflow::REVIEW_RETURNED
+                    && $trimmed !== ''
+                    && trim((string) $own->reason) === $trimmed) {
+                    return $this->loadRequest((int) $current->teaching_assignment_request_id);
+                }
+
+                throw TeachingAssignmentException::reviewLocked();
+            }
+
+            if ($own->status !== TeachingAssignmentWorkflow::REVIEW_PENDING) {
+                throw TeachingAssignmentException::reviewLocked();
+            }
+
             if ($decision === TeachingAssignmentWorkflow::REVIEW_RETURNED) {
                 $trimmed = trim((string) $reason);
                 if ($trimmed === '') {
                     throw TeachingAssignmentException::returnReasonRequired();
-                }
-                if ($own->status === TeachingAssignmentWorkflow::REVIEW_RETURNED
-                    && trim((string) $own->reason) === $trimmed) {
-                    return $this->loadRequest((int) $current->teaching_assignment_request_id);
                 }
                 $own->status = TeachingAssignmentWorkflow::REVIEW_RETURNED;
                 $own->reason = $trimmed;
@@ -293,9 +318,6 @@ class TeachingAssignmentWorkflowService
                     $trimmed
                 );
             } else {
-                if ($own->status === TeachingAssignmentWorkflow::REVIEW_APPROVED) {
-                    return $this->loadRequest((int) $current->teaching_assignment_request_id);
-                }
                 $own->status = TeachingAssignmentWorkflow::REVIEW_APPROVED;
                 $own->reason = null;
                 $own->reviewed_by_user_id = $user->user_id;
@@ -521,9 +543,8 @@ class TeachingAssignmentWorkflowService
 
     private function assertCanManage(User $user, CourseOffering $offering): void
     {
-        if (! $user->hasPermission(TeachingAssignmentWorkflow::PERMISSION_MANAGE)
-            && ! $user->hasPermission('teaching_staff.manage')) {
-            throw TeachingAssignmentException::offeringOutsideScope();
+        if (! $user->hasPermission(TeachingAssignmentWorkflow::PERMISSION_MANAGE)) {
+            throw TeachingAssignmentException::manageForbidden();
         }
         $this->assertOfferingInDeanScope($user, $offering);
     }
@@ -533,9 +554,7 @@ class TeachingAssignmentWorkflowService
         if (! $user->hasPermission(TeachingAssignmentWorkflow::PERMISSION_VIEW)
             && ! $user->hasPermission(TeachingAssignmentWorkflow::PERMISSION_MANAGE)
             && ! $user->hasPermission(TeachingAssignmentWorkflow::PERMISSION_REVIEW_SCIENTIFIC)
-            && ! $user->hasPermission(TeachingAssignmentWorkflow::PERMISSION_REVIEW_ADMINISTRATIVE)
-            && ! $user->hasPermission('teaching_staff.view')
-            && ! $user->hasPermission('teaching_staff.manage')) {
+            && ! $user->hasPermission(TeachingAssignmentWorkflow::PERMISSION_REVIEW_ADMINISTRATIVE)) {
             throw TeachingAssignmentException::offeringOutsideScope();
         }
     }

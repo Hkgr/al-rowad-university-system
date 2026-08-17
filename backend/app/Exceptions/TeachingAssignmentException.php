@@ -26,6 +26,14 @@ class TeachingAssignmentException extends Exception
 
     public const DUPLICATE_CURRENT = 'teaching_assignment_duplicate_current';
 
+    public const WORKFLOW_REQUIRED = 'teaching_assignment_workflow_required';
+
+    public const REVIEW_LOCKED = 'teaching_assignment_review_locked';
+
+    public const UNASSIGNMENT_UNSUPPORTED = 'teaching_assignment_unassignment_unsupported';
+
+    public const MANAGE_FORBIDDEN = 'teaching_assignment_manage_forbidden';
+
     public function __construct(
         string $message,
         public readonly array $errors = [],
@@ -103,5 +111,33 @@ class TeachingAssignmentException extends Exception
         $message = 'يوجد طلب تكليف حالي لنفس الطرح والشق.';
 
         return new self($message, ['teaching_assignment' => [$message]], 409, self::DUPLICATE_CURRENT);
+    }
+
+    public static function workflowRequired(): self
+    {
+        $message = 'لا يمكن تعديل التكليف النافذ مباشرة. يجب إرسال طلب عبر مسار موافقة النائب العلمي والنائب الإداري.';
+
+        return new self($message, ['teaching_assignment' => [$message]], 409, self::WORKFLOW_REQUIRED);
+    }
+
+    public static function reviewLocked(): self
+    {
+        $message = 'لا يمكن تغيير قرار المراجعة الحالي إلا بعد إعادة إرسال العميد.';
+
+        return new self($message, ['teaching_assignment' => [$message]], 409, self::REVIEW_LOCKED);
+    }
+
+    public static function unassignmentUnsupported(): self
+    {
+        $message = 'إلغاء التكليف النافذ غير مدعوم من هذا المسار. المدرس المعتمد يبقى كما هو إلى أن يُعتمد بديل عبر موافقة النائبين.';
+
+        return new self($message, ['teaching_assignment' => [$message]], 422, self::UNASSIGNMENT_UNSUPPORTED);
+    }
+
+    public static function manageForbidden(): self
+    {
+        $message = 'ليست لديك صلاحية إدارة طلبات التكليف التدريسي.';
+
+        return new self($message, ['teaching_assignment' => [$message]], 403, self::MANAGE_FORBIDDEN);
     }
 }
