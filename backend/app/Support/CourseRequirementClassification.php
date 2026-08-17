@@ -223,7 +223,12 @@ class CourseRequirementClassification
             ->where('is_active', true)
             ->whereIn('academic_program_id', $programIds)
             ->whereIn('course_id', $ids)
-            ->with(['requirementMapping.requirementGroup', 'academicProgram'])
+            ->with([
+                'requirementMapping.requirementGroup',
+                'academicProgram',
+                'academicLevel',
+                'recommendedSemester',
+            ])
             ->get()
             ->keyBy(fn (ProgramCourse $programCourse): string => (int) $programCourse->academic_program_id.':'.(int) $programCourse->course_id);
     }
@@ -241,6 +246,8 @@ class CourseRequirementClassification
         (new EloquentCollection($unloaded->values()->all()))->load([
             'requirementMapping.requirementGroup',
             'academicProgram',
+            'academicLevel',
+            'recommendedSemester',
         ]);
     }
 
