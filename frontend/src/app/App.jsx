@@ -78,6 +78,10 @@ import DeanRegistrationRequestDetail from '../features/dean-dashboard/pages/Dean
 import DeanReports         from '../features/dean-dashboard/pages/DeanReports'
 import DeanCalendar        from '../features/dean-dashboard/pages/DeanCalendar'
 
+// ── نيابة رئاسة الجامعة (Vice Presidency shells) ───────────────────────────
+import { administrativeVicePresidentNav, scientificVicePresidentNav } from '../features/vice-presidency/nav'
+import VicePresidentShell from '../features/vice-presidency/pages/VicePresidentShell'
+
 function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], studentIdentity = false, employeeIdentity = false }) {
   const token = localStorage.getItem('token')
   const [identity, setIdentity] = useState(getIdentity())
@@ -245,6 +249,28 @@ export default function App() {
           <Route path="/dean/registration-requests/:id" element={<DeanRegistrationRequestDetail />} />
           <Route path="/dean/reports"       element={<DeanReports />} />
           <Route path="/dean/calendar"      element={<DeanCalendar />} />
+        </Route>
+
+        {/* ── نيابة الشؤون العلمية ── */}
+        <Route
+          element={
+            <ProtectedRoute {...ACCESS.scientificVicePresident}>
+              <DashboardLayout nav={scientificVicePresidentNav} appTitle="نيابة الشؤون العلمية" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/vp/scientific" element={<VicePresidentShell office="scientific" />} />
+        </Route>
+
+        {/* ── نيابة الشؤون الإدارية ── */}
+        <Route
+          element={
+            <ProtectedRoute {...ACCESS.administrativeVicePresident}>
+              <DashboardLayout nav={administrativeVicePresidentNav} appTitle="نيابة الشؤون الإدارية" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/vp/administrative" element={<VicePresidentShell office="administrative" />} />
         </Route>
 
         {/* Default redirect */}

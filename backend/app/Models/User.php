@@ -2,6 +2,7 @@
 
 namespace App\Models;
 use Laravel\Sanctum\HasApiTokens;
+use App\Support\VicePresidency;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -227,6 +228,21 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return $this->effectivePermissions()->contains($permission)
             || $this->effectiveRoles()->contains('super_admin');
+    }
+
+    public function hasRoleCode(string $roleCode): bool
+    {
+        return $this->effectiveRoles()->contains($roleCode);
+    }
+
+    public function isScientificVicePresident(): bool
+    {
+        return $this->hasRoleCode(VicePresidency::ROLE_SCIENTIFIC);
+    }
+
+    public function isAdministrativeVicePresident(): bool
+    {
+        return $this->hasRoleCode(VicePresidency::ROLE_ADMINISTRATIVE);
     }
 
 }
