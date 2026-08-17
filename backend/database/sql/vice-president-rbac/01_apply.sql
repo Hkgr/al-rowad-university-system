@@ -2,14 +2,19 @@
 -- Fully qualified objects: do not depend on phpMyAdmin's selected database.
 -- Do not use DATABASE(), stored procedures, DELIMITER, or SIGNAL.
 -- Independently recomputes the same critical safety conditions as 00_preflight.sql.
+-- Does not depend on session variables left over from 00_preflight.sql.
 --
--- Creates only missing RBAC building blocks:
---   system_modules.vice_presidency (if missing)
---   vice_presidency.scientific.access
---   vice_presidency.administrative.access
---   vice_president_scientific
---   vice_president_administrative
---   role_permission mappings for those two roles only
+-- Target object states (computed here):
+--   ABSENT     → create
+--   COMPATIBLE → reuse, do not rewrite
+--   CONFLICT   → no Phase 3 writes
+--
+-- Created rows are stamped with description token [phase3-vp-rbac]
+-- so 03_rollback.sql can prove Phase 3 ownership.
+--
+-- DML only on InnoDB tables. Wrapped in a transaction.
+-- APPLIED is reported only after COMMIT when both permissions, both roles,
+-- and both intended role_permission mappings are complete.
 --
 -- Does NOT:
 --   create organizational units
@@ -18,8 +23,11 @@
 --   insert or update user_access_scopes
 --   modify generic vice_president
 --   modify other roles' permissions
+--   rewrite conflicting existing objects
 
 SET @apply_ready := 0;
+SET @phase3_complete := 0;
+SET @apply_status := 'BLOCKED';
 
 SET @db_ready := IF(
     EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'alrowad_uni_rust'),
@@ -183,32 +191,138 @@ SET @administrative_unit_count := IF(
     0
 );
 
-SET @scientific_role_conflict := IF(
+SET @vp_module_rows := IF(
+    @structure_ok = 1,
+    (SELECT COUNT(*) FROM `alrowad_uni_rust`.`system_modules` WHERE module_code = 'vice_presidency'),
+    0
+);
+SET @vp_module_compatible_rows := IF(
+    @structure_ok = 1,
+    (
+        SELECT COUNT(*)
+        FROM `alrowad_uni_rust`.`system_modules`
+        WHERE module_code = 'vice_presidency'
+          AND is_active = 1
+          AND (
+              module_name = 'Vice Presidency'
+              OR module_name LIKE '%Vice Presidenc%'
+              OR COALESCE(description, '') LIKE '%[phase3-vp-rbac]%'
+          )
+    ),
+    0
+);
+SET @vp_module_state := IF(
+    @vp_module_rows = 0,
+    'ABSENT',
+    IF(@vp_module_rows = 1 AND @vp_module_compatible_rows = 1, 'COMPATIBLE', 'CONFLICT')
+);
+
+SET @sci_perm_rows := IF(
+    @structure_ok = 1,
+    (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'vice_presidency.scientific.access'),
+    0
+);
+SET @sci_perm_compatible_rows := IF(
+    @structure_ok = 1,
+    (
+        SELECT COUNT(*)
+        FROM `alrowad_uni_rust`.`permissions` p
+        JOIN `alrowad_uni_rust`.`system_modules` sm ON sm.module_id = p.module_id
+        WHERE p.permission_code = 'vice_presidency.scientific.access'
+          AND p.is_active = 1
+          AND p.permission_name IN (
+              'Scientific vice presidency access',
+              'Scientific Vice Presidency Access'
+          )
+          AND sm.module_code = 'vice_presidency'
+          AND sm.is_active = 1
+    ),
+    0
+);
+SET @sci_perm_state := IF(
+    @sci_perm_rows = 0,
+    'ABSENT',
+    IF(@sci_perm_rows = 1 AND @sci_perm_compatible_rows = 1, 'COMPATIBLE', 'CONFLICT')
+);
+
+SET @adm_perm_rows := IF(
+    @structure_ok = 1,
+    (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'vice_presidency.administrative.access'),
+    0
+);
+SET @adm_perm_compatible_rows := IF(
+    @structure_ok = 1,
+    (
+        SELECT COUNT(*)
+        FROM `alrowad_uni_rust`.`permissions` p
+        JOIN `alrowad_uni_rust`.`system_modules` sm ON sm.module_id = p.module_id
+        WHERE p.permission_code = 'vice_presidency.administrative.access'
+          AND p.is_active = 1
+          AND p.permission_name IN (
+              'Administrative vice presidency access',
+              'Administrative Vice Presidency Access'
+          )
+          AND sm.module_code = 'vice_presidency'
+          AND sm.is_active = 1
+    ),
+    0
+);
+SET @adm_perm_state := IF(
+    @adm_perm_rows = 0,
+    'ABSENT',
+    IF(@adm_perm_rows = 1 AND @adm_perm_compatible_rows = 1, 'COMPATIBLE', 'CONFLICT')
+);
+
+SET @sci_role_rows := IF(
+    @structure_ok = 1,
+    (SELECT COUNT(*) FROM `alrowad_uni_rust`.`roles` WHERE role_code = 'vice_president_scientific'),
+    0
+);
+SET @sci_role_compatible_rows := IF(
     @structure_ok = 1,
     (
         SELECT COUNT(*)
         FROM `alrowad_uni_rust`.`roles`
         WHERE role_code = 'vice_president_scientific'
-          AND role_name NOT IN (
+          AND role_name IN (
               'نائب رئيس الجامعة للشؤون العلمية',
               'Vice President for Scientific Affairs'
           )
+          AND is_active = 1
+          AND is_system_role = 1
     ),
     0
 );
+SET @sci_role_state := IF(
+    @sci_role_rows = 0,
+    'ABSENT',
+    IF(@sci_role_rows = 1 AND @sci_role_compatible_rows = 1, 'COMPATIBLE', 'CONFLICT')
+);
 
-SET @administrative_role_conflict := IF(
+SET @adm_role_rows := IF(
+    @structure_ok = 1,
+    (SELECT COUNT(*) FROM `alrowad_uni_rust`.`roles` WHERE role_code = 'vice_president_administrative'),
+    0
+);
+SET @adm_role_compatible_rows := IF(
     @structure_ok = 1,
     (
         SELECT COUNT(*)
         FROM `alrowad_uni_rust`.`roles`
         WHERE role_code = 'vice_president_administrative'
-          AND role_name NOT IN (
+          AND role_name IN (
               'نائب رئيس الجامعة للشؤون الإدارية',
               'Vice President for Administrative Affairs'
           )
+          AND is_active = 1
+          AND is_system_role = 1
     ),
     0
+);
+SET @adm_role_state := IF(
+    @adm_role_rows = 0,
+    'ABSENT',
+    IF(@adm_role_rows = 1 AND @adm_role_compatible_rows = 1, 'COMPATIBLE', 'CONFLICT')
 );
 
 SET @scientific_name_on_other_code := IF(
@@ -239,30 +353,27 @@ SET @administrative_name_on_other_code := IF(
     0
 );
 
-SET @scientific_permission_conflict := IF(
+SET @sci_mapping_existed := IF(
     @structure_ok = 1,
     (
         SELECT COUNT(*)
-        FROM `alrowad_uni_rust`.`permissions`
-        WHERE permission_code = 'vice_presidency.scientific.access'
-          AND permission_name NOT IN (
-              'Scientific vice presidency access',
-              'Scientific Vice Presidency Access'
-          )
+        FROM `alrowad_uni_rust`.`roles` r
+        JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+        JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+        WHERE r.role_code = 'vice_president_scientific'
+          AND p.permission_code = 'vice_presidency.scientific.access'
     ),
     0
 );
-
-SET @administrative_permission_conflict := IF(
+SET @adm_mapping_existed := IF(
     @structure_ok = 1,
     (
         SELECT COUNT(*)
-        FROM `alrowad_uni_rust`.`permissions`
-        WHERE permission_code = 'vice_presidency.administrative.access'
-          AND permission_name NOT IN (
-              'Administrative vice presidency access',
-              'Administrative Vice Presidency Access'
-          )
+        FROM `alrowad_uni_rust`.`roles` r
+        JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+        JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+        WHERE r.role_code = 'vice_president_administrative'
+          AND p.permission_code = 'vice_presidency.administrative.access'
     ),
     0
 );
@@ -278,15 +389,18 @@ SET @apply_ready := IF(
     AND @pres_unit_count = 1
     AND @scientific_unit_count = 1
     AND @administrative_unit_count = 1
-    AND @scientific_role_conflict = 0
-    AND @administrative_role_conflict = 0
+    AND @vp_module_state IN ('ABSENT', 'COMPATIBLE')
+    AND @sci_perm_state IN ('ABSENT', 'COMPATIBLE')
+    AND @adm_perm_state IN ('ABSENT', 'COMPATIBLE')
+    AND @sci_role_state IN ('ABSENT', 'COMPATIBLE')
+    AND @adm_role_state IN ('ABSENT', 'COMPATIBLE')
     AND @scientific_name_on_other_code = 0
-    AND @administrative_name_on_other_code = 0
-    AND @scientific_permission_conflict = 0
-    AND @administrative_permission_conflict = 0,
+    AND @administrative_name_on_other_code = 0,
     1,
     0
 );
+
+START TRANSACTION;
 
 INSERT INTO `alrowad_uni_rust`.`system_modules` (
     module_code,
@@ -299,11 +413,12 @@ INSERT INTO `alrowad_uni_rust`.`system_modules` (
 SELECT
     'vice_presidency',
     'Vice Presidency',
-    'Dedicated access identities for Scientific and Administrative Vice Presidents',
+    'Dedicated access identities for Scientific and Administrative Vice Presidents [phase3-vp-rbac]',
     1,
     CURRENT_TIMESTAMP,
     CURRENT_TIMESTAMP
 WHERE @apply_ready = 1
+  AND @vp_module_state = 'ABSENT'
   AND NOT EXISTS (
       SELECT 1
       FROM `alrowad_uni_rust`.`system_modules` existing
@@ -323,12 +438,13 @@ SELECT
     sm.module_id,
     'vice_presidency.scientific.access',
     'Scientific vice presidency access',
-    'Base identity for the Scientific Vice President. Does not grant workflow actions.',
+    'Base identity for the Scientific Vice President. Does not grant workflow actions. [phase3-vp-rbac]',
     1,
     CURRENT_TIMESTAMP,
     CURRENT_TIMESTAMP
 FROM `alrowad_uni_rust`.`system_modules` sm
 WHERE @apply_ready = 1
+  AND @sci_perm_state = 'ABSENT'
   AND sm.module_code = 'vice_presidency'
   AND sm.is_active = 1
   AND NOT EXISTS (
@@ -350,12 +466,13 @@ SELECT
     sm.module_id,
     'vice_presidency.administrative.access',
     'Administrative vice presidency access',
-    'Base identity for the Administrative Vice President. Does not grant workflow actions.',
+    'Base identity for the Administrative Vice President. Does not grant workflow actions. [phase3-vp-rbac]',
     1,
     CURRENT_TIMESTAMP,
     CURRENT_TIMESTAMP
 FROM `alrowad_uni_rust`.`system_modules` sm
 WHERE @apply_ready = 1
+  AND @adm_perm_state = 'ABSENT'
   AND sm.module_code = 'vice_presidency'
   AND sm.is_active = 1
   AND NOT EXISTS (
@@ -376,12 +493,13 @@ INSERT INTO `alrowad_uni_rust`.`roles` (
 SELECT
     'vice_president_scientific',
     'نائب رئيس الجامعة للشؤون العلمية',
-    'University-level Scientific Vice President. Distinct from generic vice_president.',
+    'University-level Scientific Vice President. Distinct from generic vice_president. [phase3-vp-rbac]',
     1,
     1,
     CURRENT_TIMESTAMP,
     CURRENT_TIMESTAMP
 WHERE @apply_ready = 1
+  AND @sci_role_state = 'ABSENT'
   AND NOT EXISTS (
       SELECT 1
       FROM `alrowad_uni_rust`.`roles` existing
@@ -400,12 +518,13 @@ INSERT INTO `alrowad_uni_rust`.`roles` (
 SELECT
     'vice_president_administrative',
     'نائب رئيس الجامعة للشؤون الإدارية',
-    'University-level Administrative Vice President. Distinct from generic vice_president.',
+    'University-level Administrative Vice President. Distinct from generic vice_president. [phase3-vp-rbac]',
     1,
     1,
     CURRENT_TIMESTAMP,
     CURRENT_TIMESTAMP
 WHERE @apply_ready = 1
+  AND @adm_role_state = 'ABSENT'
   AND NOT EXISTS (
       SELECT 1
       FROM `alrowad_uni_rust`.`roles` existing
@@ -426,6 +545,7 @@ JOIN `alrowad_uni_rust`.`permissions` p
     ON p.permission_code = 'vice_presidency.scientific.access'
 WHERE @apply_ready = 1
   AND r.role_code = 'vice_president_scientific'
+  AND r.is_active = 1
   AND p.is_active = 1
   AND NOT EXISTS (
       SELECT 1
@@ -448,6 +568,7 @@ JOIN `alrowad_uni_rust`.`permissions` p
     ON p.permission_code = 'vice_presidency.administrative.access'
 WHERE @apply_ready = 1
   AND r.role_code = 'vice_president_administrative'
+  AND r.is_active = 1
   AND p.is_active = 1
   AND NOT EXISTS (
       SELECT 1
@@ -456,25 +577,164 @@ WHERE @apply_ready = 1
         AND existing.permission_id = p.permission_id
   );
 
-SELECT IF(@apply_ready = 1, 'APPLIED', 'BLOCKED') AS apply_status,
+SET @phase3_complete := IF(
+    @apply_ready = 1
+    AND (
+        SELECT COUNT(*)
+        FROM `alrowad_uni_rust`.`system_modules`
+        WHERE module_code = 'vice_presidency' AND is_active = 1
+    ) = 1
+    AND (
+        SELECT COUNT(*)
+        FROM `alrowad_uni_rust`.`permissions` p
+        JOIN `alrowad_uni_rust`.`system_modules` sm ON sm.module_id = p.module_id
+        WHERE p.permission_code = 'vice_presidency.scientific.access'
+          AND p.is_active = 1
+          AND sm.module_code = 'vice_presidency'
+          AND sm.is_active = 1
+    ) = 1
+    AND (
+        SELECT COUNT(*)
+        FROM `alrowad_uni_rust`.`permissions` p
+        JOIN `alrowad_uni_rust`.`system_modules` sm ON sm.module_id = p.module_id
+        WHERE p.permission_code = 'vice_presidency.administrative.access'
+          AND p.is_active = 1
+          AND sm.module_code = 'vice_presidency'
+          AND sm.is_active = 1
+    ) = 1
+    AND (
+        SELECT COUNT(*)
+        FROM `alrowad_uni_rust`.`roles`
+        WHERE role_code = 'vice_president_scientific'
+          AND is_active = 1
+          AND is_system_role = 1
+    ) = 1
+    AND (
+        SELECT COUNT(*)
+        FROM `alrowad_uni_rust`.`roles`
+        WHERE role_code = 'vice_president_administrative'
+          AND is_active = 1
+          AND is_system_role = 1
+    ) = 1
+    AND EXISTS (
+        SELECT 1
+        FROM `alrowad_uni_rust`.`roles` r
+        JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+        JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+        WHERE r.role_code = 'vice_president_scientific'
+          AND p.permission_code = 'vice_presidency.scientific.access'
+    )
+    AND EXISTS (
+        SELECT 1
+        FROM `alrowad_uni_rust`.`roles` r
+        JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+        JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+        WHERE r.role_code = 'vice_president_administrative'
+          AND p.permission_code = 'vice_presidency.administrative.access'
+    )
+    AND NOT EXISTS (
+        SELECT 1
+        FROM `alrowad_uni_rust`.`roles` r
+        JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+        JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+        WHERE r.role_code = 'vice_president_scientific'
+          AND p.permission_code = 'vice_presidency.administrative.access'
+    )
+    AND NOT EXISTS (
+        SELECT 1
+        FROM `alrowad_uni_rust`.`roles` r
+        JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+        JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+        WHERE r.role_code = 'vice_president_administrative'
+          AND p.permission_code = 'vice_presidency.scientific.access'
+    ),
+    1,
+    0
+);
+
+-- If this run cannot finish the full RBAC set, undo only objects this run added.
+-- Pre-existing COMPATIBLE rows are left untouched. Then COMMIT so a partial
+-- apply is never persisted or reported as APPLIED.
+DELETE rp
+FROM `alrowad_uni_rust`.`role_permissions` rp
+JOIN `alrowad_uni_rust`.`roles` r ON r.role_id = rp.role_id
+JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+WHERE @phase3_complete = 0
+  AND @sci_mapping_existed = 0
+  AND r.role_code = 'vice_president_scientific'
+  AND p.permission_code = 'vice_presidency.scientific.access';
+
+DELETE rp
+FROM `alrowad_uni_rust`.`role_permissions` rp
+JOIN `alrowad_uni_rust`.`roles` r ON r.role_id = rp.role_id
+JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+WHERE @phase3_complete = 0
+  AND @adm_mapping_existed = 0
+  AND r.role_code = 'vice_president_administrative'
+  AND p.permission_code = 'vice_presidency.administrative.access';
+
+DELETE rp
+FROM `alrowad_uni_rust`.`role_permissions` rp
+JOIN `alrowad_uni_rust`.`roles` r ON r.role_id = rp.role_id
+WHERE @phase3_complete = 0
+  AND @sci_role_state = 'ABSENT'
+  AND r.role_code = 'vice_president_scientific'
+  AND COALESCE(r.description, '') LIKE '%[phase3-vp-rbac]%';
+
+DELETE FROM `alrowad_uni_rust`.`roles`
+WHERE @phase3_complete = 0
+  AND @sci_role_state = 'ABSENT'
+  AND role_code = 'vice_president_scientific'
+  AND COALESCE(description, '') LIKE '%[phase3-vp-rbac]%';
+
+DELETE rp
+FROM `alrowad_uni_rust`.`role_permissions` rp
+JOIN `alrowad_uni_rust`.`roles` r ON r.role_id = rp.role_id
+WHERE @phase3_complete = 0
+  AND @adm_role_state = 'ABSENT'
+  AND r.role_code = 'vice_president_administrative'
+  AND COALESCE(r.description, '') LIKE '%[phase3-vp-rbac]%';
+
+DELETE FROM `alrowad_uni_rust`.`roles`
+WHERE @phase3_complete = 0
+  AND @adm_role_state = 'ABSENT'
+  AND role_code = 'vice_president_administrative'
+  AND COALESCE(description, '') LIKE '%[phase3-vp-rbac]%';
+
+DELETE FROM `alrowad_uni_rust`.`permissions`
+WHERE @phase3_complete = 0
+  AND @sci_perm_state = 'ABSENT'
+  AND permission_code = 'vice_presidency.scientific.access'
+  AND COALESCE(description, '') LIKE '%[phase3-vp-rbac]%';
+
+DELETE FROM `alrowad_uni_rust`.`permissions`
+WHERE @phase3_complete = 0
+  AND @adm_perm_state = 'ABSENT'
+  AND permission_code = 'vice_presidency.administrative.access'
+  AND COALESCE(description, '') LIKE '%[phase3-vp-rbac]%';
+
+DELETE FROM `alrowad_uni_rust`.`system_modules`
+WHERE @phase3_complete = 0
+  AND @vp_module_state = 'ABSENT'
+  AND module_code = 'vice_presidency'
+  AND COALESCE(description, '') LIKE '%[phase3-vp-rbac]%';
+
+COMMIT;
+
+SET @apply_status := IF(
+    @apply_ready = 0,
+    'BLOCKED',
+    IF(@phase3_complete = 1, 'APPLIED', 'BLOCKED_INCOMPLETE')
+);
+
+SELECT @apply_status AS apply_status,
+       @apply_ready AS apply_ready,
+       @phase3_complete AS phase3_complete,
+       @vp_module_state AS vp_module_state,
+       @sci_perm_state AS sci_perm_state,
+       @adm_perm_state AS adm_perm_state,
+       @sci_role_state AS sci_role_state,
+       @adm_role_state AS adm_role_state,
        @missing_required_columns AS missing_required_columns,
        @scientific_unit_count AS scientific_unit_count,
-       @administrative_unit_count AS administrative_unit_count,
-       (
-           SELECT COUNT(*)
-           FROM `alrowad_uni_rust`.`roles`
-           WHERE role_code = 'vice_president_scientific'
-       ) AS scientific_role_rows,
-       (
-           SELECT COUNT(*)
-           FROM `alrowad_uni_rust`.`roles`
-           WHERE role_code = 'vice_president_administrative'
-       ) AS administrative_role_rows,
-       (
-           SELECT COUNT(*)
-           FROM `alrowad_uni_rust`.`permissions`
-           WHERE permission_code IN (
-               'vice_presidency.scientific.access',
-               'vice_presidency.administrative.access'
-           )
-       ) AS dedicated_permission_rows;
+       @administrative_unit_count AS administrative_unit_count;

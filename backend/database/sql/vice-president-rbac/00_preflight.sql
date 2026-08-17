@@ -4,6 +4,10 @@
 -- SET user variables and temporary reporting tables only.
 -- Do not use DATABASE().
 -- Numeric organizational_unit_id values are reported from live rows; never hard-code them in application code.
+--
+-- Target RBAC objects are classified ABSENT / COMPATIBLE / CONFLICT.
+-- Existing inactive, wrong-module, or semantically incompatible rows are CONFLICT.
+-- OVERALL is BLOCKED when any target object is CONFLICT.
 
 SET @db_ready := IF(
     EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'alrowad_uni_rust'),
@@ -53,8 +57,10 @@ SET @missing_required_columns := IF(
             UNION ALL SELECT 'system_modules', 'module_id'
             UNION ALL SELECT 'system_modules', 'module_code'
             UNION ALL SELECT 'system_modules', 'module_name'
+            UNION ALL SELECT 'system_modules', 'description'
             UNION ALL SELECT 'system_modules', 'is_active'
             UNION ALL SELECT 'users', 'user_id'
+            UNION ALL SELECT 'users', 'username'
         ) required_columns
         LEFT JOIN information_schema.columns existing
             ON existing.table_schema = 'alrowad_uni_rust'
@@ -387,33 +393,142 @@ SET @administrative_unit_count := IF(
     0
 );
 
-SET @scientific_role_conflict := IF(
+SET @vp_module_rows := IF(
+    @structure_ok = 1,
+    (SELECT COUNT(*) FROM `alrowad_uni_rust`.`system_modules` WHERE module_code = 'vice_presidency'),
+    0
+);
+SET @vp_module_compatible_rows := IF(
+    @structure_ok = 1,
+    (
+        SELECT COUNT(*)
+        FROM `alrowad_uni_rust`.`system_modules`
+        WHERE module_code = 'vice_presidency'
+          AND is_active = 1
+          AND (
+              module_name = 'Vice Presidency'
+              OR module_name LIKE '%Vice Presidenc%'
+              OR COALESCE(description, '') LIKE '%[phase3-vp-rbac]%'
+          )
+    ),
+    0
+);
+SET @vp_module_state := IF(
+    @vp_module_rows = 0,
+    'ABSENT',
+    IF(@vp_module_rows = 1 AND @vp_module_compatible_rows = 1, 'COMPATIBLE', 'CONFLICT')
+);
+
+SET @sci_perm_rows := IF(
+    @structure_ok = 1,
+    (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'vice_presidency.scientific.access'),
+    0
+);
+SET @sci_perm_compatible_rows := IF(
+    @structure_ok = 1,
+    (
+        SELECT COUNT(*)
+        FROM `alrowad_uni_rust`.`permissions` p
+        JOIN `alrowad_uni_rust`.`system_modules` sm ON sm.module_id = p.module_id
+        WHERE p.permission_code = 'vice_presidency.scientific.access'
+          AND p.is_active = 1
+          AND p.permission_name IN (
+              'Scientific vice presidency access',
+              'Scientific Vice Presidency Access'
+          )
+          AND sm.module_code = 'vice_presidency'
+          AND sm.is_active = 1
+    ),
+    0
+);
+SET @sci_perm_state := IF(
+    @sci_perm_rows = 0,
+    'ABSENT',
+    IF(@sci_perm_rows = 1 AND @sci_perm_compatible_rows = 1, 'COMPATIBLE', 'CONFLICT')
+);
+
+SET @adm_perm_rows := IF(
+    @structure_ok = 1,
+    (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'vice_presidency.administrative.access'),
+    0
+);
+SET @adm_perm_compatible_rows := IF(
+    @structure_ok = 1,
+    (
+        SELECT COUNT(*)
+        FROM `alrowad_uni_rust`.`permissions` p
+        JOIN `alrowad_uni_rust`.`system_modules` sm ON sm.module_id = p.module_id
+        WHERE p.permission_code = 'vice_presidency.administrative.access'
+          AND p.is_active = 1
+          AND p.permission_name IN (
+              'Administrative vice presidency access',
+              'Administrative Vice Presidency Access'
+          )
+          AND sm.module_code = 'vice_presidency'
+          AND sm.is_active = 1
+    ),
+    0
+);
+SET @adm_perm_state := IF(
+    @adm_perm_rows = 0,
+    'ABSENT',
+    IF(@adm_perm_rows = 1 AND @adm_perm_compatible_rows = 1, 'COMPATIBLE', 'CONFLICT')
+);
+
+SET @sci_role_rows := IF(
+    @structure_ok = 1,
+    (SELECT COUNT(*) FROM `alrowad_uni_rust`.`roles` WHERE role_code = 'vice_president_scientific'),
+    0
+);
+SET @sci_role_compatible_rows := IF(
     @structure_ok = 1,
     (
         SELECT COUNT(*)
         FROM `alrowad_uni_rust`.`roles`
         WHERE role_code = 'vice_president_scientific'
-          AND role_name NOT IN (
+          AND role_name IN (
               'نائب رئيس الجامعة للشؤون العلمية',
               'Vice President for Scientific Affairs'
           )
+          AND is_active = 1
+          AND is_system_role = 1
     ),
     0
 );
+SET @sci_role_state := IF(
+    @sci_role_rows = 0,
+    'ABSENT',
+    IF(@sci_role_rows = 1 AND @sci_role_compatible_rows = 1, 'COMPATIBLE', 'CONFLICT')
+);
 
-SET @administrative_role_conflict := IF(
+SET @adm_role_rows := IF(
+    @structure_ok = 1,
+    (SELECT COUNT(*) FROM `alrowad_uni_rust`.`roles` WHERE role_code = 'vice_president_administrative'),
+    0
+);
+SET @adm_role_compatible_rows := IF(
     @structure_ok = 1,
     (
         SELECT COUNT(*)
         FROM `alrowad_uni_rust`.`roles`
         WHERE role_code = 'vice_president_administrative'
-          AND role_name NOT IN (
+          AND role_name IN (
               'نائب رئيس الجامعة للشؤون الإدارية',
               'Vice President for Administrative Affairs'
           )
+          AND is_active = 1
+          AND is_system_role = 1
     ),
     0
 );
+SET @adm_role_state := IF(
+    @adm_role_rows = 0,
+    'ABSENT',
+    IF(@adm_role_rows = 1 AND @adm_role_compatible_rows = 1, 'COMPATIBLE', 'CONFLICT')
+);
+
+SET @scientific_role_conflict := IF(@sci_role_state = 'CONFLICT', 1, 0);
+SET @administrative_role_conflict := IF(@adm_role_state = 'CONFLICT', 1, 0);
 
 SET @scientific_name_on_other_code := IF(
     @structure_ok = 1,
@@ -443,33 +558,9 @@ SET @administrative_name_on_other_code := IF(
     0
 );
 
-SET @scientific_permission_conflict := IF(
-    @structure_ok = 1,
-    (
-        SELECT COUNT(*)
-        FROM `alrowad_uni_rust`.`permissions`
-        WHERE permission_code = 'vice_presidency.scientific.access'
-          AND permission_name NOT IN (
-              'Scientific vice presidency access',
-              'Scientific Vice Presidency Access'
-          )
-    ),
-    0
-);
-
-SET @administrative_permission_conflict := IF(
-    @structure_ok = 1,
-    (
-        SELECT COUNT(*)
-        FROM `alrowad_uni_rust`.`permissions`
-        WHERE permission_code = 'vice_presidency.administrative.access'
-          AND permission_name NOT IN (
-              'Administrative vice presidency access',
-              'Administrative Vice Presidency Access'
-          )
-    ),
-    0
-);
+SET @scientific_permission_conflict := IF(@sci_perm_state = 'CONFLICT', 1, 0);
+SET @administrative_permission_conflict := IF(@adm_perm_state = 'CONFLICT', 1, 0);
+SET @vp_module_conflict := IF(@vp_module_state = 'CONFLICT', 1, 0);
 
 SELECT 'G_resolved_scientific_unit' AS report_section,
        u.organizational_unit_id, u.unit_code, u.unit_name, t.type_code,
@@ -505,6 +596,12 @@ WHERE @structure_ok = 1
 SELECT 'J_code_audit_note' AS report_section,
        'Application code has no hasRole(vice_president) authorization checks. Keep the generic role. It must not satisfy the new VP identities.' AS note;
 
+SELECT 'K_target_object_state' AS report_section, 'vice_presidency' AS object_code, 'module' AS object_kind, @vp_module_state AS state, @vp_module_rows AS row_count;
+SELECT 'K_target_object_state' AS report_section, 'vice_presidency.scientific.access' AS object_code, 'permission' AS object_kind, @sci_perm_state AS state, @sci_perm_rows AS row_count;
+SELECT 'K_target_object_state' AS report_section, 'vice_presidency.administrative.access' AS object_code, 'permission' AS object_kind, @adm_perm_state AS state, @adm_perm_rows AS row_count;
+SELECT 'K_target_object_state' AS report_section, 'vice_president_scientific' AS object_code, 'role' AS object_kind, @sci_role_state AS state, @sci_role_rows AS row_count;
+SELECT 'K_target_object_state' AS report_section, 'vice_president_administrative' AS object_code, 'role' AS object_kind, @adm_role_state AS state, @adm_role_rows AS row_count;
+
 SELECT 'blocker_flags' AS report_section,
        @db_ready AS db_ready,
        @missing_required_columns AS missing_required_columns,
@@ -516,12 +613,18 @@ SELECT 'blocker_flags' AS report_section,
        @pres_unit_count AS pres_unit_count,
        @scientific_unit_count AS scientific_unit_count,
        @administrative_unit_count AS administrative_unit_count,
+       @vp_module_state AS vp_module_state,
+       @sci_perm_state AS sci_perm_state,
+       @adm_perm_state AS adm_perm_state,
+       @sci_role_state AS sci_role_state,
+       @adm_role_state AS adm_role_state,
        @scientific_role_conflict AS scientific_role_conflict,
        @administrative_role_conflict AS administrative_role_conflict,
        @scientific_name_on_other_code AS scientific_name_on_other_code,
        @administrative_name_on_other_code AS administrative_name_on_other_code,
        @scientific_permission_conflict AS scientific_permission_conflict,
-       @administrative_permission_conflict AS administrative_permission_conflict;
+       @administrative_permission_conflict AS administrative_permission_conflict,
+       @vp_module_conflict AS vp_module_conflict;
 
 SELECT 'OVERALL' AS report_section,
        IF(
@@ -535,12 +638,13 @@ SELECT 'OVERALL' AS report_section,
            AND @pres_unit_count = 1
            AND @scientific_unit_count = 1
            AND @administrative_unit_count = 1
-           AND @scientific_role_conflict = 0
-           AND @administrative_role_conflict = 0
+           AND @vp_module_state IN ('ABSENT', 'COMPATIBLE')
+           AND @sci_perm_state IN ('ABSENT', 'COMPATIBLE')
+           AND @adm_perm_state IN ('ABSENT', 'COMPATIBLE')
+           AND @sci_role_state IN ('ABSENT', 'COMPATIBLE')
+           AND @adm_role_state IN ('ABSENT', 'COMPATIBLE')
            AND @scientific_name_on_other_code = 0
-           AND @administrative_name_on_other_code = 0
-           AND @scientific_permission_conflict = 0
-           AND @administrative_permission_conflict = 0,
+           AND @administrative_name_on_other_code = 0,
            'READY',
            'BLOCKED'
        ) AS result;

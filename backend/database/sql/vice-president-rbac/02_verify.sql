@@ -8,13 +8,21 @@ SET @db_ready := IF(
     0
 );
 
+SELECT 'vice_presidency_module_exactly_once_active' AS check_name,
+       IF(COUNT(*) = 1, 'PASS', 'FAIL') AS result,
+       COUNT(*) AS actual
+FROM `alrowad_uni_rust`.`system_modules`
+WHERE module_code = 'vice_presidency'
+  AND is_active = 1;
+
 SELECT 'scientific_role_exactly_once' AS check_name,
        IF(COUNT(*) = 1, 'PASS', 'FAIL') AS result,
        COUNT(*) AS actual
 FROM `alrowad_uni_rust`.`roles`
 WHERE role_code = 'vice_president_scientific'
   AND role_name = 'نائب رئيس الجامعة للشؤون العلمية'
-  AND is_active = 1;
+  AND is_active = 1
+  AND is_system_role = 1;
 
 SELECT 'administrative_role_exactly_once' AS check_name,
        IF(COUNT(*) = 1, 'PASS', 'FAIL') AS result,
@@ -22,7 +30,8 @@ SELECT 'administrative_role_exactly_once' AS check_name,
 FROM `alrowad_uni_rust`.`roles`
 WHERE role_code = 'vice_president_administrative'
   AND role_name = 'نائب رئيس الجامعة للشؤون الإدارية'
-  AND is_active = 1;
+  AND is_active = 1
+  AND is_system_role = 1;
 
 SELECT 'generic_vice_president_unchanged' AS check_name,
        IF(COUNT(*) = 1, 'PASS', 'FAIL') AS result,
@@ -53,6 +62,26 @@ SELECT 'administrative_permission_exactly_once' AS check_name,
 FROM `alrowad_uni_rust`.`permissions`
 WHERE permission_code = 'vice_presidency.administrative.access'
   AND is_active = 1;
+
+SELECT 'scientific_permission_on_vice_presidency_module' AS check_name,
+       IF(COUNT(*) = 1, 'PASS', 'FAIL') AS result,
+       COUNT(*) AS actual
+FROM `alrowad_uni_rust`.`permissions` p
+JOIN `alrowad_uni_rust`.`system_modules` sm ON sm.module_id = p.module_id
+WHERE p.permission_code = 'vice_presidency.scientific.access'
+  AND p.is_active = 1
+  AND sm.module_code = 'vice_presidency'
+  AND sm.is_active = 1;
+
+SELECT 'administrative_permission_on_vice_presidency_module' AS check_name,
+       IF(COUNT(*) = 1, 'PASS', 'FAIL') AS result,
+       COUNT(*) AS actual
+FROM `alrowad_uni_rust`.`permissions` p
+JOIN `alrowad_uni_rust`.`system_modules` sm ON sm.module_id = p.module_id
+WHERE p.permission_code = 'vice_presidency.administrative.access'
+  AND p.is_active = 1
+  AND sm.module_code = 'vice_presidency'
+  AND sm.is_active = 1;
 
 SELECT 'scientific_role_has_own_access_only' AS check_name,
        IF(
@@ -115,6 +144,33 @@ WHERE p.permission_code IN (
       'vice_president_administrative'
   );
 
+SELECT 'vp_org_units_still_unique' AS check_name,
+       IF(
+           (
+               SELECT COUNT(*)
+               FROM `alrowad_uni_rust`.`organizational_units` u
+               WHERE u.is_active = 1
+                 AND (
+                     u.unit_code = 'VP_SCI'
+                     OR u.unit_name IN (
+                         'نائب رئيس الجامعة للشؤون العلمية',
+                         'Vice President for Scientific Affairs'
+                     )
+                 )
+           ) = 1
+           AND (
+               SELECT COUNT(*)
+               FROM `alrowad_uni_rust`.`organizational_units` u
+               WHERE u.is_active = 1
+                 AND (
+                     u.unit_code IN ('7', 'VP_ADMIN')
+                     OR u.unit_name = 'نائب رئيس الجامعة للشؤون الإدارية'
+                 )
+           ) = 1,
+           'PASS',
+           'FAIL'
+       ) AS result;
+
 SELECT 'scientific_org_unit_unique' AS check_name,
        IF(COUNT(*) = 1, 'PASS', 'FAIL') AS result,
        COUNT(*) AS actual
@@ -162,12 +218,31 @@ WHERE r.role_code IN (
 SELECT 'OVERALL' AS check_name,
        IF(
            @db_ready = 1
-           AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`roles` WHERE role_code = 'vice_president_scientific' AND role_name = 'نائب رئيس الجامعة للشؤون العلمية' AND is_active = 1) = 1
-           AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`roles` WHERE role_code = 'vice_president_administrative' AND role_name = 'نائب رئيس الجامعة للشؤون الإدارية' AND is_active = 1) = 1
+           AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`system_modules` WHERE module_code = 'vice_presidency' AND is_active = 1) = 1
+           AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`roles` WHERE role_code = 'vice_president_scientific' AND role_name = 'نائب رئيس الجامعة للشؤون العلمية' AND is_active = 1 AND is_system_role = 1) = 1
+           AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`roles` WHERE role_code = 'vice_president_administrative' AND role_name = 'نائب رئيس الجامعة للشؤون الإدارية' AND is_active = 1 AND is_system_role = 1) = 1
            AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`roles` WHERE role_code = 'vice_president') = 1
            AND NOT EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`roles` GROUP BY role_code HAVING COUNT(*) > 1)
            AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'vice_presidency.scientific.access' AND is_active = 1) = 1
            AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'vice_presidency.administrative.access' AND is_active = 1) = 1
+           AND (
+               SELECT COUNT(*)
+               FROM `alrowad_uni_rust`.`permissions` p
+               JOIN `alrowad_uni_rust`.`system_modules` sm ON sm.module_id = p.module_id
+               WHERE p.permission_code = 'vice_presidency.scientific.access'
+                 AND p.is_active = 1
+                 AND sm.module_code = 'vice_presidency'
+                 AND sm.is_active = 1
+           ) = 1
+           AND (
+               SELECT COUNT(*)
+               FROM `alrowad_uni_rust`.`permissions` p
+               JOIN `alrowad_uni_rust`.`system_modules` sm ON sm.module_id = p.module_id
+               WHERE p.permission_code = 'vice_presidency.administrative.access'
+                 AND p.is_active = 1
+                 AND sm.module_code = 'vice_presidency'
+                 AND sm.is_active = 1
+           ) = 1
            AND (
                SELECT SUM(p.permission_code = 'vice_presidency.scientific.access') = 1
                   AND SUM(p.permission_code = 'vice_presidency.administrative.access') = 0

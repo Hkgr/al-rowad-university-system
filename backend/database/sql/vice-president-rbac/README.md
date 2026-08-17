@@ -74,10 +74,23 @@ script; do not fold it into this runbook.
 ## Files
 
 1. `00_preflight.sql` — read-only. Continue only when `OVERALL = READY`.
-2. `01_apply.sql` — idempotent inserts. Fail-closed when `@apply_ready = 0`.
+   Each target module / permission / role is classified `ABSENT`,
+   `COMPATIBLE`, or `CONFLICT`. Inactive, wrong-module, or semantically
+   incompatible existing rows are `CONFLICT` and block apply.
+2. `01_apply.sql` — independently recomputes the same guards. Writes only
+   when `@apply_ready = 1`. `ABSENT` rows are created with description
+   token `[phase3-vp-rbac]`. `COMPATIBLE` rows are reused and not rewritten.
+   `CONFLICT` performs no Phase 3 writes. DML runs in one InnoDB
+   transaction. If the full set is not complete, this run's inserts are
+   undone and the script still `COMMIT`s the restored state.
+   `APPLIED` is reported only when both permissions, both roles, and both
+   intended mappings are complete.
 3. `02_verify.sql` — read-only. Require `OVERALL = PASS`.
-4. `03_rollback.sql` — removes only this phase's unused RBAC rows.
-   Assigned roles are `BLOCKED / SKIP`, not deleted.
+4. `03_rollback.sql` — deletes a role / permission / module only when its
+   description contains `[phase3-vp-rbac]`. Compatible pre-existing objects
+   are `SKIPPED_NOT_PROVABLY_PHASE_OWNED`. Assigned roles are
+   `BLOCKED / SKIP`. Never deletes users, `user_roles`,
+   `user_access_scopes`, organizational units, or generic `vice_president`.
 
 ## Permissions reused
 
