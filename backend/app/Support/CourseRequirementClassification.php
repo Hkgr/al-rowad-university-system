@@ -5,6 +5,8 @@ namespace App\Support;
 use App\Models\Course;
 use App\Models\CourseOffering;
 use App\Models\ProgramCourse;
+use App\Models\User;
+use App\Services\DataScopeService;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Pagination\AbstractCursorPaginator;
@@ -242,18 +244,58 @@ class CourseRequirementClassification
         ]);
     }
 
-    public static function hydrateCourses(iterable $courses): void
+    public static function hydrateCourses(iterable $courses, ?User $user = null): void
+    {
+        if ($user !== null) {
+            self::hydrateCoursesForUser($courses, $user);
+
+            return;
+        }
+
+        self::loadProgramCourses($courses, null);
+    }
+
+    /**
+     * Batch-load active ProgramCourse rows visible to the user via DataScopeService.
+     *
+     * Used by generic CourseResource so program_requirement_classifications[]
+     * never includes programs outside the current user's scope.
+     */
+    public static function hydrateCoursesForUser(iterable $courses, User $user): void
+    {
+        self::loadProgramCourses($courses, $user);
+    }
+
+    /**
+     * @param  iterable<mixed>  $courses
+     */
+    private static function loadProgramCourses(iterable $courses, ?User $user): void
     {
         $collection = collect($courses)->filter(fn ($item): bool => $item instanceof Course);
-        $unloaded = $collection->filter(
-            fn (Course $course): bool => ! $course->relationLoaded('programCourses')
-        );
-        if ($unloaded->isNotEmpty()) {
-            (new EloquentCollection($unloaded->values()->all()))->load([
-                'programCourses' => fn ($query) => $query->where('is_active', true),
-                'programCourses.requirementMapping.requirementGroup',
-                'programCourses.academicProgram',
-            ]);
+        if ($collection->isEmpty()) {
+            return;
+        }
+
+        $userId = $user?->getAuthIdentifier();
+        $needsLoad = $collection->filter(function (Course $course) use ($user, $userId): bool {
+            if (! $course->relationLoaded('programCourses')) {
+                return true;
+            }
+
+            if ($user === null) {
+                return false;
+            }
+
+            return $course->getAttribute('_program_courses_scoped_for_user_id') !== $userId;
+        });
+
+        if ($needsLoad->isNotEmpty()) {
+            (new EloquentCollection($needsLoad->values()->all()))->load(self::programCourseEagerLoad($user));
+            if ($user !== null) {
+                foreach ($needsLoad as $course) {
+                    $course->setAttribute('_program_courses_scoped_for_user_id', $userId);
+                }
+            }
         }
 
         self::hydrateProgramCourses(
@@ -261,6 +303,23 @@ class CourseRequirementClassification
                 ->filter(fn (Course $course): bool => $course->relationLoaded('programCourses'))
                 ->flatMap(fn (Course $course) => $course->programCourses)
         );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function programCourseEagerLoad(?User $user): array
+    {
+        return [
+            'programCourses' => function ($query) use ($user): void {
+                $query->where('is_active', true);
+                if ($user !== null) {
+                    app(DataScopeService::class)->scopeResourceQuery($query, $user);
+                }
+            },
+            'programCourses.requirementMapping.requirementGroup',
+            'programCourses.academicProgram',
+        ];
     }
 
     /**

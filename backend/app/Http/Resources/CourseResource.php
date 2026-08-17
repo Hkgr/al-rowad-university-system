@@ -13,9 +13,13 @@ class CourseResource extends JsonResource
 {
     public static function collection($resource)
     {
-        CourseRequirementClassification::hydrateCourses(
-            CourseRequirementClassification::modelsFromResource($resource)
-        );
+        $user = request()->user();
+        if ($user !== null) {
+            CourseRequirementClassification::hydrateCoursesForUser(
+                CourseRequirementClassification::modelsFromResource($resource),
+                $user
+            );
+        }
 
         return tap(new AnonymousResourceCollection($resource, static::class), function ($collection) {
             if (property_exists(static::class, 'preserveKeys')) {
@@ -38,7 +42,9 @@ class CourseResource extends JsonResource
             'description' => $this->description,
             'is_active' => $this->is_active,
             'program_requirement_classifications' => $this->when(
-                $this->relationLoaded('programCourses'),
+                $this->relationLoaded('programCourses')
+                    && $request->user() !== null
+                    && $this->resource->getAttribute('_program_courses_scoped_for_user_id') === $request->user()->getAuthIdentifier(),
                 CourseRequirementClassification::programClassificationsForCourse($this->resource)
             ),
             'departments' => $this->relationLoaded('departments') ? DepartmentResource::collection($this->departments) : null,
@@ -53,13 +59,18 @@ class CourseResource extends JsonResource
     /**
      * Hydrate classification for a single Course without duplicating CRUD authorization.
      *
-     * Query-free when programCourses is already loaded (including collection() batching).
+     * Query-free when programCourses is already scoped for this user (including collection() batching).
      * Nested CourseResource::make() inside offerings does not auto-load programCourses.
      */
     private function hydrateClassification(Request $request): void
     {
+        $user = $request->user();
+        if ($user === null) {
+            return;
+        }
+
         if ($this->relationLoaded('programCourses')) {
-            CourseRequirementClassification::hydrateCourses([$this->resource]);
+            CourseRequirementClassification::hydrateCoursesForUser([$this->resource], $user);
 
             return;
         }
@@ -71,7 +82,7 @@ class CourseResource extends JsonResource
             $controller instanceof CourseController
             && in_array($action, ['index', 'show', 'store', 'update'], true)
         ) {
-            CourseRequirementClassification::hydrateCourses([$this->resource]);
+            CourseRequirementClassification::hydrateCoursesForUser([$this->resource], $user);
         }
     }
 }

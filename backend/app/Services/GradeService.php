@@ -144,7 +144,15 @@ class GradeService
             'course_code' => $course->course_code,
             'course_name' => $course->course_name,
             'program_requirement_classifications' => CourseRequirementClassification::programClassificationsForCourse(
-                tap($course, fn (Course $model) => CourseRequirementClassification::hydrateCourses([$model]))
+                tap($course, function (Course $model) use ($user): void {
+                    if ($user !== null) {
+                        CourseRequirementClassification::hydrateCoursesForUser([$model], $user);
+
+                        return;
+                    }
+
+                    CourseRequirementClassification::hydrateCourses([$model]);
+                })
             ),
             'academic_year_id' => $academicYearId,
             'semester_id' => $semesterId,
