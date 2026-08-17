@@ -136,6 +136,66 @@ function HoursPanel({ hours, requestStatus }) {
   )
 }
 
+function advisoryPlanLabel(course) {
+  const plan = course?.advisory_plan
+  if (!plan) return null
+  const parts = [plan.academic_level_name, plan.recommended_semester_name].filter(Boolean)
+  return parts.length > 0 ? parts.join(' — ') : null
+}
+
+function splitAdvisoryCourses(courses, workspaceSemesterId, studentAcademicLevelId) {
+  const recommended = []
+  const other = []
+  const seen = new Set()
+  const hasStudentLevel = studentAcademicLevelId != null && studentAcademicLevelId !== ''
+  const hasWorkspaceSemester = workspaceSemesterId != null && workspaceSemesterId !== ''
+
+  courses.forEach(course => {
+    const offeringId = course?.course_offering_id
+    if (offeringId == null || seen.has(offeringId)) return
+    seen.add(offeringId)
+
+    const plan = course?.advisory_plan
+    const advisoryLevelId = plan?.academic_level_id
+    const recommendedSemesterId = plan?.recommended_semester_id
+    const isRecommended = hasStudentLevel
+      && hasWorkspaceSemester
+      && advisoryLevelId != null
+      && recommendedSemesterId != null
+      && Number(advisoryLevelId) === Number(studentAcademicLevelId)
+      && Number(recommendedSemesterId) === Number(workspaceSemesterId)
+
+    if (isRecommended) recommended.push(course)
+    else other.push(course)
+  })
+
+  return { recommended, other }
+}
+
+function AvailableCourseSection({ title, helper, count, children, empty }) {
+  return (
+    <section className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
+      <div className="px-5 py-3 bg-primary/[0.05] border-b border-primary/10">
+        <div className="flex items-center gap-2">
+          <span className="text-[13px] font-extrabold text-text-dark">{title}</span>
+          <span className="text-[11px] text-text-light bg-primary/10 px-2 py-0.5 rounded-full font-bold">{count}</span>
+        </div>
+        {helper ? (
+          <p className="mt-1.5 text-[11.5px] leading-6 text-text-light">{helper}</p>
+        ) : null}
+      </div>
+      {empty ? (
+        <div className="flex flex-col items-center py-8 gap-2 px-5">
+          <FaBookOpen className="text-[28px] text-primary/15" />
+          <p className="text-[12.5px] text-text-light text-center">{empty}</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-primary/8">{children}</div>
+      )}
+    </section>
+  )
+}
+
 function UnavailableState() {
   return (
     <section className="bg-white border border-primary/12 rounded-[18px] px-6 py-14 text-center shadow-[0_2px_12px_rgba(26,46,16,0.05)]" dir="rtl">
@@ -187,7 +247,7 @@ function statusBadge(course) {
   return { label: 'غير مؤهل', className: 'bg-gray-100 text-text-light' }
 }
 
-function CourseRow({ course, onAdd, adding, canEdit }) {
+function CourseRow({ course, onAdd, adding, canEdit, advisoryMode }) {
   const eligible = course.eligibility_status === 'eligible'
   const reasons = course.eligibility_reasons ?? []
   const missing = course.missing_prerequisites ?? []
@@ -195,6 +255,7 @@ function CourseRow({ course, onAdd, adding, canEdit }) {
   const capacity = course.capacity ?? 0
   const badge = statusBadge(course)
   const busy = Boolean(adding[course.course_offering_id])
+  const planLabel = advisoryPlanLabel(course)
 
   return (
     <article className={`px-5 py-4 ${eligible ? 'bg-white' : 'bg-primary/[0.015]'}`} dir="rtl">
@@ -203,10 +264,18 @@ function CourseRow({ course, onAdd, adding, canEdit }) {
           <div className="flex items-center gap-2 flex-wrap">
             <h4 className="font-bold text-[14px] text-text-dark">{course.course_name}</h4>
             <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${badge.className}`}>{badge.label}</span>
+            {advisoryMode === 'recommended' ? (
+              <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary-dark border border-primary/20">
+                موصى به لهذا الفصل
+              </span>
+            ) : null}
           </div>
           <div className="mt-1.5">
             <CourseRequirementBadges classification={course.requirement_classification} compact />
           </div>
+          {advisoryMode === 'other' && planLabel ? (
+            <p className="mt-1.5 text-[11px] text-text-light">الخطة الإرشادية: {planLabel}</p>
+          ) : null}
           <div className="flex items-center gap-2 mt-1 flex-wrap text-[11.5px] text-text-light">
             <span className="font-mono">{course.course_code}</span>
             <span className="text-primary font-bold">{course.credit_hours} ساعات</span>
@@ -279,6 +348,12 @@ export default function StudentRegistration() {
   const registrationOpen = payload?.registration_open === true
   const termReady = Boolean(academicYear?.academic_year_id && selectedSemesterId)
   const available = payload?.available_courses ?? []
+  const workspaceSemesterId = payload?.semester?.semester_id ?? selectedSemesterId
+  const studentAcademicLevelId = payload?.summary?.student?.current_academic_level_id ?? null
+  const { recommended, other } = useMemo(
+    () => splitAdvisoryCourses(available, workspaceSemesterId, studentAcademicLevelId),
+    [available, workspaceSemesterId, studentAcademicLevelId],
+  )
   const summary = payload?.summary ?? null
   const registrations = summary?.registrations ?? []
   const request = payload?.request ?? null
@@ -463,7 +538,8 @@ export default function StudentRegistration() {
         <p className="text-[12px] font-bold text-primary mb-1">بوابة الطالب</p>
         <h1 className="text-[22px] font-black text-text-dark">تسجيل المواد</h1>
         <p className="mt-2 text-[13.5px] text-text-light leading-7">
-          ابنِ طلب التسجيل ثم أرسله إلى المرشد الأكاديمي. إرسال الطلب لا يعني حجز المقعد نهائياً.
+          ابنِ طلب التسجيل ثم أرسله إلى المرشد الأكاديمي. الخطة الدراسية إرشادية فقط، ويمكنك طلب أي مقرر مفتوح ومستوفٍ للمتطلبات.
+          إرسال الطلب لا يعني حجز المقعد نهائياً.
         </p>
         <div className="mt-4 flex flex-wrap items-end gap-3">
           <div className="min-w-[200px]">
@@ -560,30 +636,57 @@ export default function StudentRegistration() {
         </section>
       ) : (
         <div className="grid grid-cols-2 max-[1100px]:grid-cols-1 gap-5">
-          <section className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
-            <div className="flex items-center gap-2 px-5 py-3 bg-primary/[0.05] border-b border-primary/10">
-              <span className="text-[13px] font-extrabold text-text-dark">المواد المتاحة من الكلية</span>
-              <span className="text-[11px] text-text-light bg-primary/10 px-2 py-0.5 rounded-full font-bold">{available.length}</span>
-            </div>
+          <div className="space-y-5 min-w-0">
             {available.length === 0 ? (
-              <div className="flex flex-col items-center py-12 gap-2 px-5">
-                <FaBookOpen className="text-[32px] text-primary/15" />
-                <p className="text-[13px] font-bold text-text-dark">لا توجد مواد مفتوحة حالياً</p>
-              </div>
+              <section className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
+                <div className="flex items-center gap-2 px-5 py-3 bg-primary/[0.05] border-b border-primary/10">
+                  <span className="text-[13px] font-extrabold text-text-dark">المواد المتاحة</span>
+                </div>
+                <div className="flex flex-col items-center py-12 gap-2 px-5">
+                  <FaBookOpen className="text-[32px] text-primary/15" />
+                  <p className="text-[13px] font-bold text-text-dark">لا توجد مواد مفتوحة حالياً</p>
+                </div>
+              </section>
             ) : (
-              <div className="divide-y divide-primary/8">
-                {available.map(course => (
-                  <CourseRow
-                    key={course.course_offering_id}
-                    course={course}
-                    onAdd={addCourse}
-                    adding={adding}
-                    canEdit={canEdit}
-                  />
-                ))}
-              </div>
+              <>
+                <AvailableCourseSection
+                  title="المواد الموصى بها لهذا الفصل"
+                  helper="المقررات المقترحة لك وفق الخطة الإرشادية. يمكنك أيضًا تسجيل مقررات أخرى متاحة إذا استوفيت متطلباتها."
+                  count={recommended.length}
+                  empty={recommended.length === 0 ? 'لا توجد مقررات موصى بها متاحة حاليًا.' : null}
+                >
+                  {recommended.map(course => (
+                    <CourseRow
+                      key={course.course_offering_id}
+                      course={course}
+                      onAdd={addCourse}
+                      adding={adding}
+                      canEdit={canEdit}
+                      advisoryMode="recommended"
+                    />
+                  ))}
+                </AvailableCourseSection>
+                {other.length > 0 ? (
+                  <AvailableCourseSection
+                    title="مواد أخرى متاحة لك"
+                    helper="مقررات مطروحة حاليًا ويمكنك التقدم لتسجيلها عند استيفاء المتطلبات، حتى لو كانت موصى بها في سنة أو فصل مختلف."
+                    count={other.length}
+                  >
+                    {other.map(course => (
+                      <CourseRow
+                        key={course.course_offering_id}
+                        course={course}
+                        onAdd={addCourse}
+                        adding={adding}
+                        canEdit={canEdit}
+                        advisoryMode="other"
+                      />
+                    ))}
+                  </AvailableCourseSection>
+                ) : null}
+              </>
             )}
-          </section>
+          </div>
 
           <section className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
             <div className="flex items-center gap-2 px-5 py-3 bg-primary/[0.05] border-b border-primary/10">

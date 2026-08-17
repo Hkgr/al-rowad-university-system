@@ -204,11 +204,8 @@ function RegisteredPanel({ registrations, onDrop, dropping, canManage }) {
   )
 }
 
-// ── Available courses panel ───────────────────────────────────────────────────
-// Courses are grouped by the academic level they belong to (Year 1..5, per the
-// program_courses curriculum mapping) purely for organization — a course from
-// any year can be registered for any student as long as it has no missing
-// prerequisites. Courses with no curriculum mapping show under "مشتركة".
+// Courses are grouped by advisory academic level (program_courses) for display only.
+// A course from any advisory year can be registered if genuine eligibility rules pass.
 function AvailablePanel({ courses, levels, programCourseMap, currentLevelId, onRegister, registering, canManage }) {
   const groups = useMemo(() => {
     const byLevel = new Map()
@@ -247,13 +244,16 @@ function AvailablePanel({ courses, levels, programCourseMap, currentLevelId, onR
   return (
     <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
       <PanelHeader title="المواد المتاحة للتسجيل" count={courses.length} />
+      <p className="px-5 py-2 text-[11.5px] leading-6 text-text-light border-b border-primary/8" dir="rtl">
+        التجميع حسب السنة الإرشادية للخطة فقط. لا يمنع تسجيل مقرر من سنة إرشادية مختلفة إذا استوفيت المتطلبات.
+      </p>
       <div className="max-h-[600px] overflow-y-auto">
         {orderedLevels.map(level => (
           <div key={level.academic_level_id}>
             <div className="flex items-center gap-2 px-5 py-2 bg-gray-50 border-b border-t border-primary/6 first:border-t-0" dir="rtl">
-              <span className="text-[11.5px] font-extrabold text-text-dark">{level.level_name}</span>
+              <span className="text-[11.5px] font-extrabold text-text-dark">الخطة الإرشادية — {level.level_name}</span>
               {String(level.academic_level_id) === String(currentLevelId) && (
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary-dark">سنة الطالب الحالية</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary-dark">السنة الإرشادية الحالية للطالب</span>
               )}
             </div>
             <div className="divide-y divide-primary/6">

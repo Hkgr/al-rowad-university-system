@@ -200,7 +200,7 @@ export default function CourseTablePage() {
         title: 'جدول المواد الدراسية',
         subtitle: `${scopeName || ''} — ${filteredRows.length} مادة`,
         columns: [
-          { header: 'المستوى', value: r => r.levelName },
+          { header: 'السنة الإرشادية', value: r => r.levelName },
           { header: 'البرنامج / التخصص', value: r => r.programName },
           { header: 'رمز المادة', value: r => r.courseCode },
           { header: 'اسم المادة', value: r => r.courseName },
@@ -225,7 +225,9 @@ export default function CourseTablePage() {
     <>
       <div className="mb-5" dir="rtl">
         <h2 className="text-[20px] font-black text-text-dark mb-[3px]">جدول المواد الدراسية</h2>
-        <p className="text-[12.5px] text-text-light">Course Table — Curriculum by College, Department &amp; Program</p>
+        <p className="text-[12.5px] text-text-light">
+          عرض الخطة الإرشادية للفصل المختار. هذا العرض لا يقيّد أهلية التسجيل.
+        </p>
       </div>
 
       <div className="bg-white border border-primary/12 rounded-[16px] p-5 mb-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
@@ -243,7 +245,7 @@ export default function CourseTablePage() {
             </select>
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-[12px] font-bold text-text-dark">الفصل الدراسي</label>
+            <label className="text-[12px] font-bold text-text-dark">الفصل الإرشادي</label>
             <select
               className="px-3 py-2.5 border border-primary/20 rounded-[10px] text-[13.5px] text-text-dark outline-none focus:border-primary disabled:opacity-50"
               value={semId}
@@ -259,7 +261,7 @@ export default function CourseTablePage() {
       </div>
 
       {!semId ? (
-        <p className="text-center text-[13px] text-text-light py-8" dir="rtl">اختر السنة والفصل الدراسي أولاً</p>
+        <p className="text-center text-[13px] text-text-light py-8" dir="rtl">اختر السنة الدراسية والفصل الإرشادي أولاً</p>
       ) : (
         <>
           <div className="bg-white border border-primary/12 rounded-[16px] p-5 mb-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
@@ -315,7 +317,7 @@ export default function CourseTablePage() {
                     search={{ value: search, onChange: setSearch, placeholder: 'ابحث برمز المادة أو اسمها أو البرنامج…' }}
                     filters={[
                       {
-                        key: 'level', value: levelFilter, onChange: setLevelFilter, placeholder: 'كل المستويات', minWidth: 140,
+                        key: 'level', value: levelFilter, onChange: setLevelFilter, placeholder: 'كل السنوات الإرشادية', minWidth: 180,
                         options: activeLevels.map(l => ({ value: l.academic_level_id, label: l.level_name })),
                       },
                       {
@@ -340,7 +342,7 @@ export default function CourseTablePage() {
 
               <DataTable
                 columns={[
-                  { key: 'level', header: 'المستوى', align: 'center', render: r => r.levelName },
+                  { key: 'level', header: 'السنة الإرشادية', align: 'center', render: r => r.levelName },
                   { key: 'program', header: 'البرنامج / التخصص', render: r => r.programName },
                   { key: 'code', header: 'رمز المادة', render: r => <span className="font-mono text-primary-dark font-bold">{r.courseCode}</span> },
                   { key: 'name', header: 'اسم المادة', render: r => r.courseName },

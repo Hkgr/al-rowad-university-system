@@ -376,12 +376,13 @@ export default function DeanRegistrationOfferings() {
       <div className="mb-5">
         <h2 className="text-[20px] font-black text-text-dark mb-[3px]">فتح المواد للتسجيل</h2>
         <p className="text-[12.5px] text-text-light">
-          إدارة المواد المتاحة لتسجيل الطلاب ضمن برامج الكلية
+          الخطة أدناه خطة إرشادية حسب السنة المقترحة. يمكنك فتح المقرر في الفصل الفعلي المحدد حتى إن اختلف عن السنة أو الفصل الإرشادي.
         </p>
       </div>
 
-      <div className="bg-primary/[0.05] border border-primary/15 rounded-[14px] px-4 py-3 mb-5 text-[13px] text-text-dark">
-        فتح المادة يجعلها متاحة للتسجيل للطلاب المؤهلين ضمن البرنامج المحدد.
+      <div className="bg-primary/[0.05] border border-primary/15 rounded-[14px] px-4 py-3 mb-5 text-[13px] text-text-dark leading-7">
+        فتح المادة يجعلها متاحة للتسجيل للطلاب المؤهلين ضمن البرنامج المحدد في السنة والفصل الفعليين المختارين أعلاه.
+        تجميع المواد حسب السنة الإرشادية للخطة فقط، ولا يمنع فتح مقرر موصى به لسنة أو فصل مختلف.
       </div>
 
       {college?.college_name && (
@@ -488,7 +489,7 @@ export default function DeanRegistrationOfferings() {
 
       {!yearId || !semesterId || !programId ? (
         <p className="text-[13.5px] text-text-light bg-white border border-primary/12 rounded-[14px] px-4 py-8 text-center">
-          اختر السنة الدراسية والفصل والبرنامج لعرض مواد الخطة.
+          اختر السنة الدراسية والفصل والبرنامج لعرض مواد الخطة الإرشادية.
         </p>
       ) : loading ? (
         <div className="flex flex-col items-center justify-center gap-3 py-16 text-primary-light">
@@ -504,7 +505,9 @@ export default function DeanRegistrationOfferings() {
           {filteredLevels.map(level => (
             <section key={level.academic_level_id ?? level.level_name} className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
               <div className="flex items-center justify-between px-4 py-3 bg-primary/[0.05] border-b border-primary/10">
-                <h3 className="text-[14px] font-extrabold text-text-dark">{level.level_name}</h3>
+                <h3 className="text-[14px] font-extrabold text-text-dark">
+                  الخطة الإرشادية — {level.level_name}
+                </h3>
                 <span className="text-[11px] font-bold text-text-light bg-white px-2 py-0.5 rounded-full">
                   {(level.courses ?? []).length} مادة
                 </span>
