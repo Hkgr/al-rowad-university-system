@@ -197,6 +197,9 @@ export default function DeanRegistrationOfferings() {
       return fallback
     }
     if (requestError.status === 403) {
+      if (requestError.errorCode === 'program_outside_user_scope') {
+        return requestError.message || 'ليس لديك صلاحية على هذا البرنامج.'
+      }
       return requestError.message || 'ليس لديك صلاحية لإدارة إتاحة هذه المادة.'
     }
     if (requestError.status === 404) {

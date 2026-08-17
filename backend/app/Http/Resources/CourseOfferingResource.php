@@ -42,10 +42,36 @@ class CourseOfferingResource extends JsonResource
             'semester' => SemesterResource::make($this->whenLoaded('semester')),
             'department' => DepartmentResource::make($this->whenLoaded('department')),
             'academic_program' => AcademicProgramResource::make($this->whenLoaded('academicProgram')),
+            'college' => $this->loadedCollege(),
             'faculty_member' => FacultyMemberResource::make($this->whenLoaded('facultyMember')),
             'registered_students_count' => $this->student_course_registrations_count ?? null,
+            'legacy_context_incomplete' => $this->academic_program_id === null || $this->department_id === null,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];
+    }
+
+    private function loadedCollege(): mixed
+    {
+        $fromProgram = null;
+        if ($this->relationLoaded('academicProgram') && $this->academicProgram) {
+            $program = $this->academicProgram;
+            if ($program->relationLoaded('department') && $program->department?->relationLoaded('college')) {
+                $fromProgram = $program->department->college;
+            }
+        }
+
+        $fromDepartment = null;
+        if ($this->relationLoaded('department') && $this->department?->relationLoaded('college')) {
+            $fromDepartment = $this->department->college;
+        }
+
+        if ($fromProgram && $fromDepartment && (int) $fromProgram->college_id !== (int) $fromDepartment->college_id) {
+            return null;
+        }
+
+        $college = $fromProgram ?? $fromDepartment;
+
+        return $college ? CollegeResource::make($college) : null;
     }
 }
