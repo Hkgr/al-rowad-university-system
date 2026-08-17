@@ -9,6 +9,7 @@ import {
   offeringStatusLabel,
   ownedRoleBadge,
 } from '../utils/teacherDisplay'
+import CourseRequirementBadges, { pickRequirementClassification } from '../../../components/academic/CourseRequirementBadges'
 
 function ComponentCell({ hours, slot }) {
   const state = componentState(hours, slot)
@@ -60,6 +61,9 @@ export default function TeacherAssignmentsTab({
         return (
           <div className="min-w-0 max-w-[220px]">
             <span className="block truncate text-[13px] font-semibold text-text-dark" title={label}>{label}</span>
+            <div className="mt-1">
+              <CourseRequirementBadges classification={pickRequirementClassification(group.offering)} compact />
+            </div>
             <span className="inline-block mt-1 px-2 py-[2px] rounded-full text-[10.5px] font-bold bg-primary/8 text-primary-dark border border-primary/15">
               {ownedRoleBadge(group)}
             </span>

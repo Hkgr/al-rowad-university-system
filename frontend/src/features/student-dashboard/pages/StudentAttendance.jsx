@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FaCalendarCheck, FaChevronDown, FaRedo } from 'react-icons/fa'
 import { apiRequest } from '../../../services/apiClient'
+import CourseRequirementBadges, { pickRequirementClassification } from '../../../components/academic/CourseRequirementBadges'
 
 const STATUS_LABELS = {
   present: { text: 'حاضر', className: 'bg-green-100 text-green-800 border-green-200' },
@@ -413,6 +414,9 @@ export default function StudentAttendance() {
                         {course.academic_year?.year_name ? ` · ${course.academic_year.year_name}` : ''}
                         {course.semester?.semester_name ? ` · ${course.semester.semester_name}` : ''}
                       </p>
+                      <div className="mt-1.5">
+                        <CourseRequirementBadges classification={pickRequirementClassification(course)} compact />
+                      </div>
                     </div>
                     <span className={`shrink-0 px-2.5 py-1 rounded-full text-[11.5px] font-bold border ${badge.className}`}>
                       {badge.text}

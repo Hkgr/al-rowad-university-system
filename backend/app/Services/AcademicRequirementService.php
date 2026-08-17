@@ -13,6 +13,7 @@ use App\Models\Student;
 use App\Models\StudentCourseRegistration;
 use App\Models\StudentRegistrationRequest;
 use App\Models\StudentRegistrationRequestItem;
+use App\Support\CourseRequirementClassification;
 use Illuminate\Support\Collection;
 
 class AcademicRequirementService
@@ -217,6 +218,7 @@ class AcademicRequirementService
                     'registration_status' => $registration->registrationStatus?->status_code,
                     'result_status' => 'passed',
                     'final_mark' => $this->officialFinalMark($registration),
+                    'requirement_classification' => CourseRequirementClassification::fromProgramCourse($classified['program_course']),
                 ]);
             }
         }
@@ -243,6 +245,7 @@ class AcademicRequirementService
                 'registration_status' => $registration->registrationStatus?->status_code,
                 'result_status' => $this->officialResultStatus($registration),
                 'final_mark' => $this->officialFinalMark($registration),
+                'requirement_classification' => CourseRequirementClassification::fromProgramCourse($classified['program_course']),
             ]);
         }
 
@@ -265,6 +268,7 @@ class AcademicRequirementService
                 'student_registration_request_item_id' => $item->student_registration_request_item_id,
                 'course_offering_id' => $item->course_offering_id,
                 'request_status' => $item->request?->status,
+                'requirement_classification' => CourseRequirementClassification::fromProgramCourse($classified['program_course']),
             ]);
         }
 
@@ -811,6 +815,7 @@ class AcademicRequirementService
                 'course_name' => $course?->course_name,
                 'credit_hours' => (int) ($course?->credit_hours ?? 0),
                 'course_type' => $programCourse->course_type,
+                'requirement_classification' => CourseRequirementClassification::fromProgramCourse($programCourse),
             ];
         })->values();
     }
@@ -876,6 +881,10 @@ class AcademicRequirementService
             'result_status' => $this->officialResultStatus($registration),
             'final_mark' => $this->officialFinalMark($registration),
             'classification' => self::CLASSIFICATION_OUTSIDE_CURRENT_CURRICULUM,
+            'requirement_classification' => CourseRequirementClassification::empty(
+                $registration->student?->academic_program_id === null ? null : (int) $registration->student->academic_program_id,
+                CourseRequirementClassification::STATUS_OUTSIDE_CURRENT_CURRICULUM
+            ),
         ];
     }
 

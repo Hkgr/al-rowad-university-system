@@ -4,6 +4,7 @@ import {
   FaBookOpen, FaCheckCircle, FaClock, FaPlus, FaMinus, FaSpinner,
 } from 'react-icons/fa'
 import { apiRequest } from '../../../services/apiClient'
+import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 import StudentConfirmDialog from '../components/StudentConfirmDialog'
 
 const REASON_LABELS = {
@@ -202,6 +203,9 @@ function CourseRow({ course, onAdd, adding, canEdit }) {
           <div className="flex items-center gap-2 flex-wrap">
             <h4 className="font-bold text-[14px] text-text-dark">{course.course_name}</h4>
             <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${badge.className}`}>{badge.label}</span>
+          </div>
+          <div className="mt-1.5">
+            <CourseRequirementBadges classification={course.requirement_classification} compact />
           </div>
           <div className="flex items-center gap-2 mt-1 flex-wrap text-[11.5px] text-text-light">
             <span className="font-mono">{course.course_code}</span>
@@ -599,6 +603,9 @@ export default function StudentRegistration() {
                     <div key={item.student_registration_request_item_id} className="flex items-center justify-between gap-3 px-5 py-4">
                       <div className="min-w-0">
                         <p className="font-bold text-[13.5px] text-text-dark truncate">{item.course_name}</p>
+                        <div className="mt-1.5">
+                          <CourseRequirementBadges classification={item.requirement_classification} compact />
+                        </div>
                         <div className="flex items-center gap-2 mt-1 flex-wrap text-[11.5px] text-text-light">
                           <span className="font-mono">{item.course_code}</span>
                           <span className="text-primary font-bold">{item.credit_hours} ساعات</span>
@@ -663,6 +670,9 @@ export default function StudentRegistration() {
             {registrations.map(registration => (
               <div key={registration.registration_id} className="px-5 py-4">
                 <p className="font-bold text-[13.5px] text-text-dark">{registration.course_name}</p>
+                <div className="mt-1.5">
+                  <CourseRequirementBadges classification={registration.requirement_classification} compact />
+                </div>
                 <div className="flex items-center gap-2 mt-1 text-[11.5px] text-text-light">
                   <span className="font-mono">{registration.course_code}</span>
                   <span className="text-primary font-bold">{registration.credit_hours} ساعات</span>

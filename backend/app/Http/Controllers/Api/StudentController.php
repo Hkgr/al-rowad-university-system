@@ -352,6 +352,7 @@ class StudentController extends ApiController
         $user = request()->user();
         $registrationsQuery = app(DataScopeService::class)->scopeRegistrations($student->studentCourseRegistrations(), $user)
             ->with([
+                'student',
                 'courseOffering.course',
                 'courseOffering.academicYear',
                 'courseOffering.semester',

@@ -15,6 +15,7 @@ import {
   teacherSlotRank,
 } from '../utils/courseOfferingDisplay'
 import { displayValue } from '../utils/teacherDisplay'
+import CourseRequirementBadges, { pickRequirementClassification } from '../../../components/academic/CourseRequirementBadges'
 
 const PAGE_SIZE = 15
 const SEARCH_DEBOUNCE_MS = 400
@@ -272,6 +273,15 @@ export default function DeanCourses() {
           </span>
         )
       },
+    },
+    {
+      key: 'classification',
+      header: 'التصنيف الأكاديمي',
+      align: 'right',
+      dir: 'rtl',
+      render: offering => (
+        <CourseRequirementBadges classification={pickRequirementClassification(offering)} compact />
+      ),
     },
     {
       key: 'year',

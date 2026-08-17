@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { FaSpinner, FaChalkboardTeacher, FaCalendarCheck, FaExclamationCircle, FaBook } from 'react-icons/fa'
 import useMyOfferings from '../hooks/useMyOfferings'
+import CourseRequirementBadges, { pickRequirementClassification } from '../../../components/academic/CourseRequirementBadges'
 
 const RANK_AR = {
   'Professor': 'أستاذ', 'Associate Professor': 'أستاذ مشارك',
@@ -88,6 +89,9 @@ export default function ProfessorHome() {
                   <div className="flex-1 min-w-0">
                     <div className="font-bold text-[13.5px] text-text-dark truncate">{o.course?.course_name || `مادة #${o.course_offering_id}`}</div>
                     <div className="text-[11px] text-text-light font-mono mt-0.5">{o.course?.course_code}</div>
+                    <div className="mt-1">
+                      <CourseRequirementBadges classification={pickRequirementClassification(o)} compact />
+                    </div>
                     <div className="text-[10.5px] text-text-light mt-0.5">
                       {o.academic_year?.year_name} {o.semester?.semester_name ? `— ${o.semester.semester_name}` : ''}
                     </div>

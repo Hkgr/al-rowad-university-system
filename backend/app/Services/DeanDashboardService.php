@@ -12,6 +12,7 @@ use App\Models\Student;
 use App\Models\StudentCourseRegistration;
 use App\Models\StudentCourseResult;
 use App\Models\User;
+use App\Support\CourseRequirementClassification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -496,7 +497,7 @@ class DeanDashboardService
             ];
         }
 
-        $recent = (clone $base)
+        $recentRows = (clone $base)
             ->join(
                 'course_offerings as dean_dash_session_offerings',
                 'dean_dash_session_offerings.course_offering_id',
@@ -518,8 +519,30 @@ class DeanDashboardService
                 'attendance_sessions.session_type',
                 'dean_dash_session_courses.course_code as course_code',
                 'dean_dash_session_courses.course_name as course_name',
-            ])
-            ->map(function ($row): array {
+                'dean_dash_session_offerings.course_offering_id as course_offering_id',
+                'dean_dash_session_offerings.course_id as course_id',
+                'dean_dash_session_offerings.academic_program_id as academic_program_id',
+            ]);
+
+        $proxyOfferings = $recentRows->map(function ($row): CourseOffering {
+            $offering = new CourseOffering();
+            $offering->course_offering_id = $row->course_offering_id;
+            $offering->course_id = $row->course_id;
+            $offering->academic_program_id = $row->academic_program_id;
+            $offering->exists = true;
+
+            return $offering;
+        });
+        CourseRequirementClassification::hydrateOfferings($proxyOfferings);
+        $classifications = $proxyOfferings
+            ->values()
+            ->mapWithKeys(fn (CourseOffering $offering, int $index): array => [
+                $index => CourseRequirementClassification::forOffering($offering),
+            ]);
+
+        $recent = $recentRows
+            ->values()
+            ->map(function ($row, int $index) use ($classifications): array {
                 $type = strtolower(trim((string) $row->session_type));
                 $label = match ($type) {
                     'theoretical', 'lecture' => 'نظري',
@@ -534,6 +557,7 @@ class DeanDashboardService
                     'session_type_label' => $label,
                     'course_code' => $row->course_code,
                     'course_name' => $row->course_name,
+                    'requirement_classification' => $classifications->get($index),
                 ];
             })
             ->all();

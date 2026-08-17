@@ -54,6 +54,7 @@ class CourseController extends ApiController
             'programCourses.academicLevel',
             'programCourses.recommendedSemester',
             'programCourses.course',
+            'programCourses.requirementMapping.requirementGroup',
         ])->findOrFail($id);
 
         return $this->successResponse(ProgramCourseResource::collection($course->programCourses));

@@ -18,6 +18,7 @@ import {
 } from '../utils/deanDashboardPreferences'
 import { deanHomeWelcome } from '../utils/deanPortalCopy'
 import { formatDisplayDate } from '../utils/teacherDisplay'
+import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 
 const TERM_SELECTION_MESSAGE = 'اختر السنة الدراسية والفصل لعرض مؤشرات الفصل'
 
@@ -378,9 +379,14 @@ export default function DeanHome() {
             <h4 className="text-[13px] font-black text-text-dark mb-3">أحدث جلسات الحضور</h4>
             <ul className="space-y-2">
               {recentActivity.map(item => (
-                <li key={item.attendance_session_id} className="flex items-center justify-between gap-3 text-[12.5px]">
-                  <span className="font-semibold text-text-dark truncate">
-                    {[item.course_code, item.course_name].filter(Boolean).join(' — ') || 'مادة'}
+                <li key={item.attendance_session_id} className="flex items-center justify-between gap-3 text-[12.5px] flex-wrap">
+                  <span className="min-w-0">
+                    <span className="font-semibold text-text-dark truncate block">
+                      {[item.course_code, item.course_name].filter(Boolean).join(' — ') || 'مادة'}
+                    </span>
+                    <span className="mt-1 block">
+                      <CourseRequirementBadges classification={item.requirement_classification} compact />
+                    </span>
                   </span>
                   <span className="text-text-light shrink-0">
                     {item.session_type_label} · {formatDisplayDate(item.session_date)}

@@ -3,12 +3,27 @@
 namespace App\Http\Resources;
 
 use App\Services\AcademicAuthorizationService;
+use App\Support\CourseRequirementClassification;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /** @mixin \App\Models\StudentCourseRegistration */
 class StudentCourseRegistrationResource extends JsonResource
 {
+    public static function collection($resource)
+    {
+        $models = CourseRequirementClassification::modelsFromResource($resource);
+        CourseRequirementClassification::hydrateOfferings($models->map(fn ($item) => $item?->courseOffering));
+        CourseRequirementClassification::attachStudentProgramCourses($models);
+
+        return tap(new AnonymousResourceCollection($resource, static::class), function ($collection) {
+            if (property_exists(static::class, 'preserveKeys')) {
+                $collection->preserveKeys = (new static([]))->preserveKeys === true;
+            }
+        });
+    }
+
     public function toArray(Request $request): array
     {
         $exposeOfficialResult = $this->shouldExposeOfficialResult($request);
@@ -27,6 +42,7 @@ class StudentCourseRegistrationResource extends JsonResource
             'grade_entry_blocked_reason' => $this->allowsGradeEntry()
                 ? null
                 : 'Historical or inactive registrations are read-only.',
+            'requirement_classification' => $this->requirementClassification(),
             'student' => StudentResource::make($this->whenLoaded('student')),
             'course_offering' => CourseOfferingResource::make($this->whenLoaded('courseOffering')),
             'registration_status' => RegistrationStatusResource::make($this->whenLoaded('registrationStatus')),
@@ -41,6 +57,34 @@ class StudentCourseRegistrationResource extends JsonResource
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function requirementClassification(): array
+    {
+        $programId = $this->relationLoaded('student') && $this->student?->academic_program_id !== null
+            ? (int) $this->student->academic_program_id
+            : null;
+        $courseId = $this->relationLoaded('courseOffering')
+            ? ($this->courseOffering?->course_id ?? $this->courseOffering?->course?->course_id)
+            : null;
+        $courseId = $courseId === null ? null : (int) $courseId;
+
+        if ($programId !== null) {
+            $programCourse = $this->relationLoaded('studentProgramCourse')
+                ? $this->getRelation('studentProgramCourse')
+                : CourseRequirementClassification::indexActiveForProgram($programId, [$courseId])->get($courseId);
+
+            return CourseRequirementClassification::forStudent($programId, $courseId, $programCourse);
+        }
+
+        if ($this->relationLoaded('courseOffering') && $this->courseOffering !== null) {
+            return CourseRequirementClassification::forOffering($this->courseOffering);
+        }
+
+        return CourseRequirementClassification::empty($programId, CourseRequirementClassification::STATUS_NOT_LINKED_TO_PROGRAM);
     }
 
     private function shouldExposeOfficialResult(Request $request): bool

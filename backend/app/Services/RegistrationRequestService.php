@@ -18,6 +18,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
+use App\Support\CourseRequirementClassification;
 
 class RegistrationRequestService
 {
@@ -572,8 +573,19 @@ class RegistrationRequestService
             ])
             ->orderByDesc('approved_at')
             ->orderByDesc('student_registration_request_id')
-            ->get()
-            ->map(fn (StudentRegistrationRequest $request) => $this->presentApprovedListItem($request))
+            ->get();
+
+        $courseMap = CourseRequirementClassification::indexActiveForPrograms(
+            $requests->map(fn (StudentRegistrationRequest $request) => $request->student?->academic_program_id),
+            $requests->flatMap(
+                fn (StudentRegistrationRequest $request) => $request->items->map(
+                    fn (StudentRegistrationRequestItem $item) => $item->courseOffering?->course_id
+                )
+            )
+        );
+
+        $requests = $requests
+            ->map(fn (StudentRegistrationRequest $request) => $this->presentApprovedListItem($request, $courseMap))
             ->values()
             ->all();
 
@@ -1190,11 +1202,22 @@ class RegistrationRequestService
 
         $items = $request->items
             ->sortBy('student_registration_request_item_id')
+            ->values();
+        $programId = $request->student?->academic_program_id === null ? null : (int) $request->student->academic_program_id;
+        $courseMap = CourseRequirementClassification::indexActiveForProgram(
+            $programId,
+            $items->map(fn (StudentRegistrationRequestItem $item) => $item->courseOffering?->course_id)
+        );
+
+        $items = $items
             ->map(function (StudentRegistrationRequestItem $item) use (
                 $includeEligibility,
-                $failureByOffering
+                $failureByOffering,
+                $programId,
+                $courseMap
             ): array {
                 $offering = $item->courseOffering;
+                $courseId = $offering?->course_id === null ? null : (int) $offering->course_id;
                 $payload = [
                     'student_registration_request_item_id' => $item->student_registration_request_item_id,
                     'course_offering_id' => $item->course_offering_id,
@@ -1205,6 +1228,11 @@ class RegistrationRequestService
                     'available_seats' => $offering?->available_seats,
                     'capacity' => $offering?->capacity,
                     'offering_status' => $offering?->status,
+                    'requirement_classification' => CourseRequirementClassification::forStudentFromMap(
+                        $programId,
+                        $courseId,
+                        $courseMap
+                    ),
                 ];
 
                 if ($includeEligibility) {
@@ -1268,7 +1296,10 @@ class RegistrationRequestService
         ];
     }
 
-    private function presentApprovedListItem(StudentRegistrationRequest $request): array
+    /**
+     * @param  Collection<string, \App\Models\ProgramCourse>  $courseMap
+     */
+    private function presentApprovedListItem(StudentRegistrationRequest $request, Collection $courseMap): array
     {
         $student = $request->student;
         $hours = $this->hoursFor(
@@ -1277,6 +1308,7 @@ class RegistrationRequestService
             (int) $request->semester_id,
             $request
         );
+        $programId = $student?->academic_program_id === null ? null : (int) $student->academic_program_id;
 
         return [
             'student_registration_request_id' => $request->student_registration_request_id,
@@ -1293,6 +1325,11 @@ class RegistrationRequestService
                 'course_name' => $item->courseOffering?->course?->course_name,
                 'credit_hours' => (int) ($item->courseOffering?->course?->credit_hours ?? 0),
                 'student_course_registration_id' => $item->student_course_registration_id,
+                'requirement_classification' => CourseRequirementClassification::forStudentFromPairMap(
+                    $programId,
+                    $item->courseOffering?->course_id === null ? null : (int) $item->courseOffering->course_id,
+                    $courseMap
+                ),
             ])->values()->all(),
         ];
     }

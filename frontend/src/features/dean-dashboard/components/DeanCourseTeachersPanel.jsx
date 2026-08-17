@@ -1,5 +1,6 @@
 import { academicRankLabel, displayValue } from '../utils/teacherDisplay'
 import { teacherSlotLabel } from '../utils/courseOfferingDisplay'
+import CourseRequirementBadges, { pickRequirementClassification } from '../../../components/academic/CourseRequirementBadges'
 
 function SlotCard({ title, slot }) {
   const available = Boolean(slot?.available)
@@ -57,6 +58,9 @@ export default function DeanCourseTeachersPanel({ offering, canManage, onManage 
       <p className="text-[11.5px] text-text-light mt-3">
         {displayValue(offering?.course?.course_code)} — الساعات النظرية: {displayValue(offering?.course?.theoretical_hours)}، الساعات العملية: {displayValue(offering?.course?.practical_hours)}
       </p>
+      <div className="mt-2">
+        <CourseRequirementBadges classification={pickRequirementClassification(offering)} compact />
+      </div>
     </section>
   )
 }

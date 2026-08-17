@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FaPrint, FaGraduationCap } from 'react-icons/fa'
 import { apiRequest } from '../../../services/apiClient'
+import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 
 const STATUS_LABELS = {
   passed: { ar: 'ناجح', className: 'bg-green-100 text-green-800 border-green-200' },
@@ -90,6 +91,7 @@ function CourseTable({ courses }) {
           <thead>
             <tr className="bg-[#fafaf8]">
               <th className="px-4 py-2.5 text-right text-[11px] font-bold text-text-light">المقرر</th>
+              <th className="px-3 py-2.5 text-right text-[11px] font-bold text-text-light">التصنيف الأكاديمي</th>
               <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">الساعات</th>
               <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">العملي</th>
               <th className="px-3 py-2.5 text-center text-[11px] font-bold text-text-light">النظري</th>
@@ -106,6 +108,9 @@ function CourseTable({ courses }) {
                   <td className="px-4 py-3">
                     <div className="font-semibold text-text-dark">{course.course_name}</div>
                     <div className="text-[11px] text-text-light font-mono mt-0.5">{course.course_code}</div>
+                  </td>
+                  <td className="px-3 py-3">
+                    <CourseRequirementBadges classification={course.requirement_classification} compact />
                   </td>
                   <td className="px-3 py-3 text-center font-bold text-text-dark">{course.credit_hours ?? '—'}</td>
                   <td className="px-3 py-3 text-center text-text-gray">{formatMark(course.practical_mark)}</td>
@@ -132,6 +137,9 @@ function CourseTable({ courses }) {
                 <div>
                   <h4 className="font-bold text-[14px] text-text-dark">{course.course_name}</h4>
                   <p className="text-[11.5px] text-text-light font-mono mt-0.5">{course.course_code}</p>
+                  <div className="mt-1.5">
+                    <CourseRequirementBadges classification={course.requirement_classification} compact />
+                  </div>
                 </div>
                 <span className={`shrink-0 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${status.className}`}>
                   {status.ar}

@@ -2,12 +2,29 @@
 
 namespace App\Http\Resources;
 
+use App\Support\CourseRequirementClassification;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /** @mixin \App\Models\GradeApproval */
 class GradeApprovalResource extends JsonResource
 {
+    public static function collection($resource)
+    {
+        CourseRequirementClassification::hydrateOfferings(
+            CourseRequirementClassification::modelsFromResource($resource)->map(
+                fn ($item) => $item?->courseOffering
+            )
+        );
+
+        return tap(new AnonymousResourceCollection($resource, static::class), function ($collection) {
+            if (property_exists(static::class, 'preserveKeys')) {
+                $collection->preserveKeys = (new static([]))->preserveKeys === true;
+            }
+        });
+    }
+
     public function toArray(Request $request): array
     {
         return [
@@ -18,6 +35,9 @@ class GradeApprovalResource extends JsonResource
             'course_id' => $this->courseOffering?->course_id,
             'course_code' => $this->courseOffering?->course?->course_code,
             'course_name' => $this->courseOffering?->course?->course_name,
+            'requirement_classification' => $this->courseOffering
+                ? CourseRequirementClassification::forOffering($this->courseOffering)
+                : null,
             'department_id' => $this->courseOffering?->department_id,
             'department_name' => $this->courseOffering?->department?->department_name,
             'academic_year_id' => $this->courseOffering?->academic_year_id,

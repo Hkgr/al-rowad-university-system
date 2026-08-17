@@ -15,6 +15,7 @@ use App\Models\StudentCourseRegistration;
 use App\Models\StudentCourseResult;
 use App\Models\StudentGradeComponent;
 use App\Models\User;
+use App\Support\CourseRequirementClassification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -89,7 +90,9 @@ class GradePartWorkflowService
                 'course_id' => $offering->course_id,
                 'course_code' => $offering->course?->course_code,
                 'course_name' => $offering->course?->course_name,
+                'requirement_classification' => CourseRequirementClassification::forOffering($offering),
             ],
+            'requirement_classification' => CourseRequirementClassification::forOffering($offering),
             'academic_year' => $offering->academicYear === null ? null : [
                 'academic_year_id' => $offering->academicYear->academic_year_id,
                 'year_name' => $offering->academicYear->year_name,

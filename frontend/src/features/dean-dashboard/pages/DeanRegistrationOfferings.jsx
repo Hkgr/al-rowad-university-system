@@ -6,6 +6,7 @@ import { apiRequest } from '../../../services/apiClient'
 import { hasPermission, PERMISSIONS } from '../../auth/auth'
 import DeanConfirmDialog from '../components/DeanConfirmDialog'
 import { firstApiErrorMessage, offeringStatusLabel, displayValue } from '../utils/teacherDisplay'
+import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 
 const DEFAULT_CAPACITY = 40
 
@@ -25,12 +26,6 @@ function SummaryCard({ label, value }) {
       <p className="text-[20px] font-black text-text-dark tabular-nums">{value}</p>
     </div>
   )
-}
-
-function courseTypeLabel(type) {
-  if (type === 'mandatory') return 'إجباري'
-  if (type === 'elective') return 'اختياري'
-  return displayValue(type)
 }
 
 function registrationState(offering) {
@@ -84,12 +79,7 @@ function CourseCard({
       </div>
 
       <div className="flex items-center flex-wrap gap-1.5 mt-2.5">
-        <span className={`inline-block text-[10.5px] font-bold px-2 py-0.5 rounded-full ${
-          row.course_type === 'mandatory' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
-        }`}
-        >
-          {courseTypeLabel(row.course_type)}
-        </span>
+        <CourseRequirementBadges classification={row.requirement_classification} compact />
         <span className={`inline-block text-[10.5px] font-bold px-2 py-0.5 rounded-full border ${state.className}`}>
           {state.label}
         </span>

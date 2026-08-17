@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { FaSpinner, FaGraduationCap } from 'react-icons/fa'
 import StudentPicker from '../components/StudentPicker'
+import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 function authHeaders() {
@@ -100,6 +101,7 @@ export default function GradeSheetPage() {
                       <thead>
                         <tr className="bg-[#fafaf8]">
                           <th className="px-4 py-2.5 text-right text-[11px] font-bold text-text-light" dir="rtl">المقرر</th>
+                          <th className="px-4 py-2.5 text-right text-[11px] font-bold text-text-light" dir="rtl">التصنيف الأكاديمي</th>
                           <th className="px-4 py-2.5 text-center text-[11px] font-bold text-text-light">الساعات</th>
                           <th className="px-4 py-2.5 text-center text-[11px] font-bold text-text-light">نظري</th>
                           <th className="px-4 py-2.5 text-center text-[11px] font-bold text-text-light">عملي</th>
@@ -114,6 +116,9 @@ export default function GradeSheetPage() {
                             <td className="px-4 py-3" dir="rtl">
                               <div className="font-semibold text-text-dark">{c.course_name}</div>
                               <div className="text-[11px] text-text-light font-mono mt-0.5">{c.course_code}</div>
+                            </td>
+                            <td className="px-4 py-3" dir="rtl">
+                              <CourseRequirementBadges classification={c.requirement_classification} compact />
                             </td>
                             <td className="px-4 py-3 text-center font-bold text-text-dark">{c.credit_hours}</td>
                             <td className="px-4 py-3 text-center text-text-gray">{c.theoretical_mark ?? '—'}</td>

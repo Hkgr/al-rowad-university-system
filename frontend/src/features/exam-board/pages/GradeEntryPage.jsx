@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { FaSpinner, FaCheck, FaSave, FaUsers, FaUserEdit } from 'react-icons/fa'
 import StudentPicker from '../components/StudentPicker'
+import CourseRequirementBadges, { classificationOptionSuffix, pickRequirementClassification } from '../../../components/academic/CourseRequirementBadges'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 function authHeaders() {
@@ -246,16 +247,21 @@ function BulkMode() {
               <option value="">اختر المادة</option>
               {offerings.map(o => (
                 <option key={o.course_offering_id} value={o.course_offering_id}>
+                  {o.course?.course_code ? `${o.course.course_code} — ` : ''}
                   {o.course?.course_name || o.course_name || `Offering #${o.course_offering_id}`}
                   {o.section_number ? ` — شعبة ${o.section_number}` : ''}
+                  {classificationOptionSuffix(pickRequirementClassification(o))}
                 </option>
               ))}
             </select>
+            {offeringId ? (
+              <div className="mt-2">
+                <CourseRequirementBadges
+                  classification={pickRequirementClassification(offerings.find(o => String(o.course_offering_id) === String(offeringId)))}
+                />
+              </div>
+            ) : null}
           </div>
-        </div>
-      </div>
-
-      {/* Grade sheet table */}
       {loadingGs && <div className="flex justify-center py-12 text-primary"><FaSpinner className="animate-spin text-[24px]" /></div>}
 
       {gradeSheet && !loadingGs && (
@@ -379,13 +385,20 @@ function IndividualMode() {
             <option value="">— اختر مادة —</option>
             {regs.map(r => (
               <option key={r.student_course_registration_id} value={r.student_course_registration_id}>
+                {r.course_offering?.course?.course_code ? `${r.course_offering.course.course_code} — ` : ''}
                 {r.course_offering?.course?.course_name || `Registration #${r.student_course_registration_id}`}
-                {r.course_offering?.course?.course_code ? ` (${r.course_offering.course.course_code})` : ''}
+                {classificationOptionSuffix(pickRequirementClassification(r))}
               </option>
             ))}
           </select>
+          {regId ? (
+            <div className="mt-2" dir="rtl">
+              <CourseRequirementBadges
+                classification={pickRequirementClassification(regs.find(r => String(r.student_course_registration_id) === String(regId)))}
+              />
+            </div>
+          ) : null}
         </div>
-      )}
 
       {loadGrade && <div className="flex justify-center py-8 text-primary"><FaSpinner className="animate-spin text-[22px]" /></div>}
 

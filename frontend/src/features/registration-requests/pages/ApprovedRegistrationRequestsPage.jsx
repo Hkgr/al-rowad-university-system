@@ -4,6 +4,7 @@ import { FaSpinner } from 'react-icons/fa'
 import DataTable from '../../../components/table/DataTable'
 import FilterBar from '../../../components/table/FilterBar'
 import { apiRequest } from '../../../services/apiClient'
+import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 
 function formatDateTime(value) {
   if (!value) return '—'
@@ -87,7 +88,20 @@ export default function ApprovedRegistrationRequestsPage() {
             {
               key: 'courses',
               header: 'المقررات',
-              render: row => (row.items ?? []).map(item => item.course_code).filter(Boolean).join('، ') || '—',
+              render: row => (
+                <div className="space-y-1.5" dir="rtl">
+                  {(row.items ?? []).map(item => (
+                    <div key={`${row.student_registration_request_id}-${item.course_offering_id || item.course_code}`} className="min-w-0">
+                      <div className="text-[12.5px] font-semibold text-text-dark">
+                        {[item.course_code, item.course_name].filter(Boolean).join(' — ') || '—'}
+                      </div>
+                      <div className="mt-0.5">
+                        <CourseRequirementBadges classification={item.requirement_classification} compact />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ),
             },
             { key: 'hours', header: 'إجمالي ساعات الطلب', render: row => row.hours?.approved_snapshot?.request_hours_at_approval ?? row.hours?.request_hours_at_approval ?? 0 },
             { key: 'advisor', header: 'المرشد', render: row => row.advisor?.full_name || '—' },

@@ -16,6 +16,7 @@ import {
   statusBadgeClass,
 } from '../utils/courseOfferingDisplay'
 import { displayValue } from '../utils/teacherDisplay'
+import { CourseRequirementMeta, pickRequirementClassification } from '../../../components/academic/CourseRequirementBadges'
 
 const TABS = [
   { id: 'overview', ar: 'نظرة عامة', Icon: FaBookOpen },
@@ -306,6 +307,9 @@ export default function DeanCourseOfferingProfile() {
               <span className={`inline-block px-2.5 py-[3px] rounded-full text-[11.5px] font-bold ${statusBadgeClass(offering.status)}`}>
                 {offeringStatusText(offering.status)}
               </span>
+            </div>
+            <div className="mt-1.5 mb-1">
+              <CourseRequirementMeta classification={pickRequirementClassification(offering)} />
             </div>
             <div className="flex items-center gap-2.5 flex-wrap text-[12.5px] text-text-gray">
               <span>{displayValue(offering.academic_year?.year_name)}</span>

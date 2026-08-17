@@ -2,14 +2,31 @@
 
 namespace App\Http\Resources;
 
+use App\Support\CourseRequirementClassification;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /** @mixin \App\Models\ProgramCourse */
 class ProgramCourseResource extends JsonResource
 {
+    public static function collection($resource)
+    {
+        CourseRequirementClassification::hydrateProgramCourses(
+            CourseRequirementClassification::modelsFromResource($resource)
+        );
+
+        return tap(new AnonymousResourceCollection($resource, static::class), function ($collection) {
+            if (property_exists(static::class, 'preserveKeys')) {
+                $collection->preserveKeys = (new static([]))->preserveKeys === true;
+            }
+        });
+    }
+
     public function toArray(Request $request): array
     {
+        CourseRequirementClassification::hydrateProgramCourses([$this->resource]);
+
         return [
             'program_course_id' => $this->program_course_id,
             'academic_program_id' => $this->academic_program_id,
@@ -18,6 +35,10 @@ class ProgramCourseResource extends JsonResource
             'recommended_semester_id' => $this->recommended_semester_id,
             'course_type' => $this->course_type,
             'is_active' => $this->is_active,
+            'requirement_classification' => CourseRequirementClassification::fromProgramCourse(
+                $this->resource,
+                $this->academic_program_id === null ? null : (int) $this->academic_program_id
+            ),
             'academic_program' => $this->relationLoaded('academicProgram') ? new AcademicProgramResource($this->academicProgram) : null,
             'course' => $this->relationLoaded('course') ? new CourseResource($this->course) : null,
             'academic_level' => $this->relationLoaded('academicLevel') ? new AcademicLevelResource($this->academicLevel) : null,
