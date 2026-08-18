@@ -18,8 +18,10 @@ class CourseOfferingOpeningService
 
     public const STATUS_CLOSED = 'closed';
 
-    public function __construct(private CourseOfferingInstructorCoverageService $coverage)
-    {
+    public function __construct(
+        private CourseOfferingInstructorCoverageService $coverage,
+        private CourseOfferingExceptionInvalidationService $exceptionInvalidation,
+    ) {
     }
 
     /**
@@ -57,7 +59,7 @@ class CourseOfferingOpeningService
         bool $ensureOpen,
         ?User $actor = null,
     ): CourseOffering {
-        return $this->withLockedOffering($offering, function (CourseOffering $locked) use ($mutate, $ensureOpen): CourseOffering {
+        return $this->withLockedOffering($offering, function (CourseOffering $locked) use ($mutate, $ensureOpen, $actor): CourseOffering {
             $originalCourseId = (int) $locked->course_id;
             $originalStatus = (string) $locked->status;
 
@@ -69,6 +71,7 @@ class CourseOfferingOpeningService
                 $originalCourseId,
                 $originalStatus,
                 $ensureOpen,
+                $actor,
             );
         });
     }
@@ -172,6 +175,7 @@ class CourseOfferingOpeningService
         int $originalCourseId,
         string $originalStatus,
         bool $ensureOpen,
+        ?User $actor,
     ): CourseOffering {
         $this->reloadCoverageGraph($locked);
 
@@ -200,6 +204,8 @@ class CourseOfferingOpeningService
 
         $locked->status = self::STATUS_OPEN;
         $locked->save();
+
+        $this->exceptionInvalidation->supersedeCurrentForNormalOpen($locked, $actor);
 
         return $locked;
     }

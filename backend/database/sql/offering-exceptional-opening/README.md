@@ -62,3 +62,28 @@ Administrative VP does not receive scientific review.
 - No fake workflow requests or VP approvals
 - No retroactive closure of existing OPEN offerings
 - No weakening of Phase 5 normal-opening coverage
+
+## Normal opening consumes pending exceptions
+
+No schema change. Existing `status`, `current_slot`, `superseded_at`,
+`superseded_reason`, and event `event_type` columns are sufficient.
+
+When `CourseOfferingOpeningService` performs a true Phase 5
+`CLOSED → OPEN` (after coverage validation, inside the same locked
+transaction):
+
+1. The Offering row is already locked.
+2. If Phase 6 tables are present, the current unmaterialized exceptional
+   request (`current_slot = 1`, `materialized_at IS NULL`) is locked.
+3. It is superseded with:
+   - `superseded_reason = offering_opened_normally`
+   - event `superseded_offering_opened_normally`
+   - `current_slot = NULL`
+4. Opening and supersede commit together.
+
+If Phase 6 tables are absent (`Schema::hasTable` false), normal Phase 5
+opening continues unchanged. Arbitrary database errors are not swallowed
+when the tables exist.
+
+Idempotent updates of an already OPEN Offering do not touch exceptional
+history.

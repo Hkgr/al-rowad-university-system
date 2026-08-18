@@ -19,6 +19,7 @@ class CourseOfferingExceptionWorkflowService
         private DataScopeService $dataScope,
         private CourseOfferingInstructorCoverageService $coverage,
         private CourseOfferingOpeningService $opening,
+        private CourseOfferingExceptionInvalidationService $invalidation,
     ) {
     }
 
@@ -483,12 +484,7 @@ class CourseOfferingExceptionWorkflowService
         string $reasonCode,
         string $eventType
     ): void {
-        $current->status = ExceptionalOpeningWorkflow::STATUS_SUPERSEDED;
-        $current->current_slot = null;
-        $current->superseded_at = now();
-        $current->superseded_reason = $reasonCode;
-        $current->save();
-        $this->recordEvent($current, $eventType, $user, $reasonCode);
+        $this->invalidation->markSuperseded($current, $user, $reasonCode, $eventType);
     }
 
     private function createPendingReviews(CourseOfferingExceptionRequest $request, int $version): void
