@@ -68,9 +68,47 @@ class CourseOfferingClosureRequest extends Model
     public function identityMatches(CourseOffering $offering): bool
     {
         return (int) $offering->course_id === (int) $this->course_id_snapshot
-            && (int) $offering->academic_program_id === (int) $this->academic_program_id_snapshot
+            && $this->sameNullableProgramId(
+                $this->rawAttribute($offering, 'academic_program_id'),
+                $this->rawAttribute($this, 'academic_program_id_snapshot')
+            )
             && (int) $offering->academic_year_id === (int) $this->academic_year_id_snapshot
             && (int) $offering->semester_id === (int) $this->semester_id_snapshot;
+    }
+
+    /**
+     * Canonical academic_program identity is NULL-safe for legacy Offerings.
+     * Department snapshot is audit-only and is not compared here.
+     */
+    private function sameNullableProgramId(mixed $offeringProgramId, mixed $snapshotProgramId): bool
+    {
+        $offeringNull = $this->isNullProgramId($offeringProgramId);
+        $snapshotNull = $this->isNullProgramId($snapshotProgramId);
+
+        if ($offeringNull && $snapshotNull) {
+            return true;
+        }
+
+        if ($offeringNull || $snapshotNull) {
+            return false;
+        }
+
+        return (int) $offeringProgramId === (int) $snapshotProgramId;
+    }
+
+    private function isNullProgramId(mixed $value): bool
+    {
+        return $value === null || $value === '';
+    }
+
+    private function rawAttribute(Model $model, string $attribute): mixed
+    {
+        $attributes = $model->getAttributes();
+        if (array_key_exists($attribute, $attributes)) {
+            return $attributes[$attribute];
+        }
+
+        return $model->getAttribute($attribute);
     }
 
     public function courseOffering(): BelongsTo

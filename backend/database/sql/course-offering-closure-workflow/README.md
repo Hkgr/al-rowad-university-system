@@ -43,6 +43,7 @@ Preflight and apply use the **same** structural COMPATIBLE contract:
 - expected column counts (20 / 10 / 7)
 - InnoDB + primary key
 - `types_ok` (signed ints, status length, review_authority enum/varchar)
+- `academic_program_id_snapshot` is `INT NULL` (legacy `course_offerings.academic_program_id IS NULL`)
 - unique index exact column lists
 - named foreign keys via `key_column_usage` (constraint + column + referenced table/column)
 - queue indexes with exact `GROUP_CONCAT` column lists
@@ -144,6 +145,13 @@ Semantic OPEN → CLOSED exists only through this Phase 7 workflow:
 4. two distinct `reviewed_by_user_id` values
 5. same Offering identity as the request snapshot
 
+Canonical identity is `course_id` + `academic_program_id` + `academic_year_id` +
+`semester_id`. `academic_program_id_snapshot` is nullable so a legacy Offering
+with `academic_program_id IS NULL` can be submitted and closed. NULL snapshot
+vs a later assigned program (or the reverse) is an identity change: the
+current request is superseded and must not materialize. Department snapshot
+is audit-only.
+
 Generic `CourseOfferingController::update()` and Dean registration
 `close` must not write OPEN → CLOSED.
 
@@ -157,3 +165,5 @@ Generic `CourseOfferingController::update()` and Dean registration
 - SQL-CLOSE-06 — unexpected RBAC post-write failure → ROLLBACK, no partial RBAC inserts
 - SQL-CLOSE-07 — rerun apply → idempotent
 - SQL-CLOSE-08 — verify clean result → OVERALL PASS
+- SQL-CLOSE-09 — clean apply → `academic_program_id_snapshot INT NULL`
+- SQL-CLOSE-10 — legacy `course_offerings.academic_program_id IS NULL` → preflight still READY; rows appear only in informational `LEGACY_NULL_PROGRAM_OFFERINGS`

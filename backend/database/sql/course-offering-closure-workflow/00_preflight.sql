@@ -9,6 +9,8 @@
 -- Structural COMPATIBLE matches 01_apply.sql (column types, named FK shape, queue index columns).
 -- OVERALL is BLOCKED when any target object is CONFLICT, a prerequisite is missing,
 -- or @rbac_matrix_conflict = 1.
+-- academic_program_id_snapshot is INT NULL for legacy course_offerings.academic_program_id IS NULL.
+-- LEGACY_NULL_PROGRAM_OFFERINGS is informational only and does not affect OVERALL.
 
 SET @db_ready := IF(
     EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'alrowad_uni_rust'),
@@ -196,7 +198,7 @@ SET @requests_types_ok := IF(
             UNION ALL SELECT 'submission_version', 'int', 'NO'
             UNION ALL SELECT 'current_slot', 'tinyint', 'YES'
             UNION ALL SELECT 'course_id_snapshot', 'int', 'NO'
-            UNION ALL SELECT 'academic_program_id_snapshot', 'int', 'NO'
+            UNION ALL SELECT 'academic_program_id_snapshot', 'int', 'YES'
             UNION ALL SELECT 'academic_year_id_snapshot', 'int', 'NO'
             UNION ALL SELECT 'semester_id_snapshot', 'int', 'NO'
             UNION ALL SELECT 'request_reason', 'text', 'NO'
@@ -635,3 +637,29 @@ SELECT 'OVERALL' AS report_section,
        @offering_identity_index AS offering_identity_index,
        @engines_ok AS engines_ok,
        @offering_status_ok AS offering_status_ok;
+
+-- Informational only. Legacy NULL academic_program_id does not block Phase 7.
+SET @sql := IF(
+    @db_ready = 1 AND @structure_ok = 1,
+    'SELECT ''LEGACY_NULL_PROGRAM_OFFERINGS'' AS report_section,
+            course_offering_id,
+            course_id,
+            department_id,
+            academic_year_id,
+            semester_id,
+            status
+     FROM `alrowad_uni_rust`.`course_offerings`
+     WHERE academic_program_id IS NULL
+     ORDER BY course_offering_id',
+    'SELECT ''LEGACY_NULL_PROGRAM_OFFERINGS'' AS report_section,
+            CAST(NULL AS SIGNED) AS course_offering_id,
+            CAST(NULL AS SIGNED) AS course_id,
+            CAST(NULL AS SIGNED) AS department_id,
+            CAST(NULL AS SIGNED) AS academic_year_id,
+            CAST(NULL AS SIGNED) AS semester_id,
+            CAST(NULL AS CHAR) AS status
+     WHERE 0'
+);
+PREPARE phase7_legacy_null_program_stmt FROM @sql;
+EXECUTE phase7_legacy_null_program_stmt;
+DEALLOCATE PREPARE phase7_legacy_null_program_stmt;

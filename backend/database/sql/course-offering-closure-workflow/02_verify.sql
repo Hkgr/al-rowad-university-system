@@ -196,7 +196,7 @@ SET @cols_ok := IF(
             UNION ALL SELECT 'submission_version', 'int', 'NO'
             UNION ALL SELECT 'current_slot', 'tinyint', 'YES'
             UNION ALL SELECT 'course_id_snapshot', 'int', 'NO'
-            UNION ALL SELECT 'academic_program_id_snapshot', 'int', 'NO'
+            UNION ALL SELECT 'academic_program_id_snapshot', 'int', 'YES'
             UNION ALL SELECT 'academic_year_id_snapshot', 'int', 'NO'
             UNION ALL SELECT 'semester_id_snapshot', 'int', 'NO'
             UNION ALL SELECT 'materialized_at', 'timestamp', 'YES'
@@ -274,6 +274,17 @@ SELECT 'review_version_unique' AS check_name, IF(@uq_review_version = 1, 'PASS',
 SELECT 'foreign_keys' AS check_name, IF(@fk_ok = 1, 'PASS', 'FAIL') AS result;
 SELECT 'queue_indexes' AS check_name, IF(@queue_ok = 1, 'PASS', 'FAIL') AS result;
 SELECT 'required_columns' AS check_name, IF(@cols_ok = 1, 'PASS', 'FAIL') AS result;
+SET @program_snapshot_nullable := IF(
+    @requests_exist = 1 AND (
+        SELECT is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = 'alrowad_uni_rust'
+          AND table_name = 'course_offering_closure_requests'
+          AND column_name = 'academic_program_id_snapshot'
+    ) <=> 'YES',
+    1, 0
+);
+SELECT 'academic_program_id_snapshot_nullable' AS check_name, IF(@program_snapshot_nullable = 1, 'PASS', 'FAIL') AS result;
 SELECT 'permissions' AS check_name, IF(@perm_ok = 1, 'PASS', 'FAIL') AS result;
 SELECT 'role_permission_matrix' AS check_name, IF(@matrix_ok = 1, 'PASS', 'FAIL') AS result;
 SELECT 'cross_authority_isolation' AS check_name, IF(@isolation_ok = 1, 'PASS', 'FAIL') AS result;
@@ -353,7 +364,7 @@ SELECT 'current_review_state' AS check_name, IF(@current_review_state_ok = 1, 'P
 SET @overall := IF(
     @tables_ok = 1 AND @innodb_ok = 1 AND @pk_requests = 1 AND @pk_reviews = 1 AND @pk_events = 1
     AND @uq_current_slot = 1 AND @uq_review_version = 1 AND @fk_ok = 1 AND @queue_ok = 1
-    AND @cols_ok = 1 AND @perm_ok = 1 AND @matrix_ok = 1 AND @isolation_ok = 1
+    AND @cols_ok = 1 AND @program_snapshot_nullable = 1 AND @perm_ok = 1 AND @matrix_ok = 1 AND @isolation_ok = 1
     AND @generic_vp_none = 1 AND @super_admin_none = 1 AND @dean_no_reviews = 1
     AND @current_slot_dup_ok = 1 AND @current_review_state_ok = 1,
     'PASS',

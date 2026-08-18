@@ -401,6 +401,7 @@ class CourseOfferingClosureWorkflowService
                 'submission_version' => 1,
                 'current_slot' => 1,
                 'course_id_snapshot' => $offering->course_id,
+                // Legacy Offerings may have academic_program_id IS NULL. Store NULL as NULL.
                 'academic_program_id_snapshot' => $offering->academic_program_id,
                 'academic_year_id_snapshot' => $offering->academic_year_id,
                 'semester_id_snapshot' => $offering->semester_id,

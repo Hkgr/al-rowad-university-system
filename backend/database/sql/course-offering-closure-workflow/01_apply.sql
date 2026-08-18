@@ -17,6 +17,8 @@
 --   grant review permissions to generic vice_president or dean
 --   insert RBAC when apply_ready = 0 (including rbac_matrix_conflict = 1)
 --   insert Phase 7 mappings for super_admin
+-- academic_program_id_snapshot is INT NULL so legacy Offerings with
+-- course_offerings.academic_program_id IS NULL can be closed. Do not backfill.
 
 SET @apply_ready := 0;
 SET @phase7_complete := 0;
@@ -177,7 +179,7 @@ SET @requests_types_ok := IF(
             UNION ALL SELECT 'submission_version', 'int', 'NO'
             UNION ALL SELECT 'current_slot', 'tinyint', 'YES'
             UNION ALL SELECT 'course_id_snapshot', 'int', 'NO'
-            UNION ALL SELECT 'academic_program_id_snapshot', 'int', 'NO'
+            UNION ALL SELECT 'academic_program_id_snapshot', 'int', 'YES'
             UNION ALL SELECT 'academic_year_id_snapshot', 'int', 'NO'
             UNION ALL SELECT 'semester_id_snapshot', 'int', 'NO'
             UNION ALL SELECT 'request_reason', 'text', 'NO'
@@ -626,7 +628,7 @@ SET @sql := IF(
         `submission_version` INT NOT NULL DEFAULT 1,
         `current_slot` TINYINT NULL,
         `course_id_snapshot` INT NOT NULL,
-        `academic_program_id_snapshot` INT NOT NULL,
+        `academic_program_id_snapshot` INT NULL,
         `academic_year_id_snapshot` INT NOT NULL,
         `semester_id_snapshot` INT NOT NULL,
         `department_id_snapshot` INT NULL,
