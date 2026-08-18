@@ -1,4 +1,9 @@
-import { academicRankLabel, displayValue } from '../utils/teacherDisplay'
+import {
+  academicRankLabel,
+  displayValue,
+  reviewStatusLabel,
+  workflowStatusLabel,
+} from '../utils/teacherDisplay'
 import { teacherSlotLabel } from '../utils/courseOfferingDisplay'
 import CourseRequirementBadges, { pickRequirementClassification } from '../../../components/academic/CourseRequirementBadges'
 
@@ -7,21 +12,55 @@ function SlotCard({ title, slot }) {
   const assigned = Boolean(slot?.faculty_member_id || slot?.full_name)
   const name = teacherSlotLabel(slot)
   const rank = available && assigned ? academicRankLabel(slot.academic_rank) : ''
+  const workflow = slot?.workflow
+  const proposed = workflow?.proposed_faculty_member
 
   return (
     <div className="min-w-0 bg-primary/[0.03] border border-primary/10 rounded-[14px] px-4 py-3.5">
       <p className="text-[11.5px] text-text-light font-semibold mb-1.5">{title}</p>
       {!available ? (
         <p className="text-[14px] font-bold text-text-light">غير موجود</p>
-      ) : assigned ? (
-        <>
-          <p className="text-[15px] font-extrabold text-text-dark break-words">{name}</p>
-          {rank && rank !== '—' ? (
-            <p className="text-[12px] text-text-gray mt-0.5">{rank}</p>
-          ) : null}
-        </>
       ) : (
-        <p className="text-[14px] font-bold text-amber-700">بدون مدرس</p>
+        <div className="space-y-2">
+          <div>
+            <p className="text-[11px] text-text-light font-semibold">المدرس المعتمد</p>
+            {assigned ? (
+              <>
+                <p className="text-[15px] font-extrabold text-text-dark break-words">{name}</p>
+                {rank && rank !== '—' ? (
+                  <p className="text-[12px] text-text-gray mt-0.5">{rank}</p>
+                ) : null}
+              </>
+            ) : (
+              <p className="text-[14px] font-bold text-amber-700">بدون مدرس</p>
+            )}
+          </div>
+          {workflow && (
+            <>
+              <div>
+                <p className="text-[11px] text-text-light font-semibold">المدرس المقترح</p>
+                <p className="text-[13.5px] font-bold text-text-dark">
+                  {proposed?.full_name || '—'}
+                </p>
+              </div>
+              <p className="text-[12px] text-text-dark">
+                موافقة النائب العلمي: <span className="font-bold">{reviewStatusLabel(workflow.scientific_review?.status)}</span>
+              </p>
+              <p className="text-[12px] text-text-dark">
+                موافقة النائب الإداري: <span className="font-bold">{reviewStatusLabel(workflow.administrative_review?.status)}</span>
+              </p>
+              <p className="text-[12px] text-text-dark">
+                الحالة: <span className="font-bold">{workflowStatusLabel(workflow.status)}</span>
+              </p>
+              {workflow.scientific_review?.status === 'returned' && workflow.scientific_review?.reason && (
+                <p className="text-[12px] text-amber-800">علمي: {workflow.scientific_review.reason}</p>
+              )}
+              {workflow.administrative_review?.status === 'returned' && workflow.administrative_review?.reason && (
+                <p className="text-[12px] text-amber-800">إداري: {workflow.administrative_review.reason}</p>
+              )}
+            </>
+          )}
+        </div>
       )}
     </div>
   )
@@ -34,7 +73,7 @@ export default function DeanCourseTeachersPanel({ offering, canManage, onManage 
         <div>
           <h3 className="text-[15px] font-extrabold text-text-dark">الكادر التدريسي</h3>
           <p className="text-[12px] text-text-light mt-0.5">
-            التكليف النظري والعملي لهذه المادة المطروحة
+            التكليف يصبح نافذًا بعد موافقة النائب العلمي والنائب الإداري معًا
           </p>
         </div>
         {canManage && (

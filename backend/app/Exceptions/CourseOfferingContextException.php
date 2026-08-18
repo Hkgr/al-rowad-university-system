@@ -64,7 +64,7 @@ class CourseOfferingContextException extends Exception
 
     public static function identityLocked(): self
     {
-        $message = 'لا يمكن تغيير هوية هذا الطرح لأنه مرتبط بتسجيلات أو حضور أو علامات.';
+        $message = 'لا يمكن تغيير هوية هذا الطرح لأنه مرتبط بتسجيلات أو حضور أو علامات أو تكليفات تدريسية.';
 
         return new self($message, ['course_offering' => [$message]], 422, self::OFFERING_IDENTITY_LOCKED);
     }

@@ -227,7 +227,36 @@ export function teacherChoiceLabel(teacher) {
   const name = teacher.full_name || fullTeacherName(teacher)
   const number = teacher.employee_number || teacher.employee?.employee_number
   const rank = academicRankLabel(teacher.academic_rank)
-  return [name, number, rank === '—' ? null : rank].filter(Boolean).join(' — ')
+  const home = teacher.home_unit?.unit_name || teacher.employee?.organizational_unit?.unit_name
+  return [name, number, rank === '—' ? null : rank, home].filter(Boolean).join(' — ')
+}
+
+export function workflowStatusLabel(status) {
+  if (status === 'submitted') return 'بانتظار الموافقة'
+  if (status === 'returned') return 'معاد للتعديل'
+  if (status === 'approved') return 'معتمد'
+  if (status === 'superseded') return 'مستبدل'
+  return displayValue(status)
+}
+
+export function reviewStatusLabel(status) {
+  if (status === 'pending') return 'بانتظار الموافقة'
+  if (status === 'approved') return 'موافق'
+  if (status === 'returned') return 'معاد للتعديل'
+  return displayValue(status)
+}
+
+export function proposedFacultyId(component) {
+  const id = component?.workflow?.proposed_faculty_member?.faculty_member_id
+  return id == null ? null : Number(id)
+}
+
+export function initialComponentFacultyId(component) {
+  const proposed = proposedFacultyId(component)
+  if (component?.workflow && component.workflow.status !== 'approved' && proposed != null) {
+    return proposed
+  }
+  return activeComponentFacultyId(component)
 }
 
 export function activeComponentFacultyId(component) {

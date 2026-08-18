@@ -55,6 +55,11 @@ class CourseOffering extends Model
         return $this->hasMany(CourseOfferingInstructor::class, 'course_offering_id', 'course_offering_id');
     }
 
+    public function teachingAssignmentRequests(): HasMany
+    {
+        return $this->hasMany(TeachingAssignmentRequest::class, 'course_offering_id', 'course_offering_id');
+    }
+
     public function academicProgram(): BelongsTo
     {
         return $this->belongsTo(AcademicProgram::class, 'academic_program_id', 'academic_program_id');

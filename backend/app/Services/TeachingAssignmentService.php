@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\TeachingAssignmentException;
 use App\Models\College;
 use App\Models\Course;
 use App\Models\CourseInstructor;
@@ -42,6 +43,8 @@ class TeachingAssignmentService
     {
         if (! $user->hasPermission('teaching_staff.view')
             && ! $user->hasPermission('teaching_staff.manage')
+            && ! $user->hasPermission('teaching_assignments.view')
+            && ! $user->hasPermission('teaching_assignments.manage')
             && ! $user->hasPermission('courses.view')
             && ! $user->hasPermission('courses.manage')) {
             throw new AccessDeniedHttpException('You are not authorized to view teaching assignments.');
@@ -53,6 +56,7 @@ class TeachingAssignmentService
     public function assertCanManageAssignments(User $user, CourseOffering $offering): void
     {
         if (! $user->hasPermission('teaching_staff.manage')
+            && ! $user->hasPermission('teaching_assignments.manage')
             && ! $user->hasPermission('courses.manage')) {
             throw new AccessDeniedHttpException('You are not authorized to manage teaching assignments.');
         }
@@ -84,18 +88,7 @@ class TeachingAssignmentService
             ]);
         }
 
-        $college = $this->resolveOfferingCollege($offering);
-        if ($college === null || $college->organizational_unit_id === null) {
-            throw new AccessDeniedHttpException('The course offering college cannot be resolved.');
-        }
-
         $this->assertComponentExists($offering->course, $role);
-
-        if (! $this->dataScope->facultyMemberBelongsToCollege($facultyMember, $college)) {
-            throw ValidationException::withMessages([
-                'faculty_member_id' => ['The faculty member does not belong to the course offering college.'],
-            ]);
-        }
     }
 
     public function assertComponentExists(Course $course, string $role): void
@@ -113,6 +106,11 @@ class TeachingAssignmentService
         }
     }
 
+    /**
+     * Trusted internal writer for course_offerings.faculty_member_id.
+     * Called only after both VP approvals materialize an effective slot.
+     * Generic Course Offering create/update must not call this.
+     */
     public function syncLegacyFacultyPointer(CourseOffering $offering): void
     {
         $offering->loadMissing('course');
@@ -172,101 +170,47 @@ class TeachingAssignmentService
             });
     }
 
+    /**
+     * Retired Dean/direct writer. Must not mutate course_offering_instructors.
+     * Dual-approval materialization uses materializeApprovedSlot() instead.
+     */
     public function syncOfferingAssignmentSlots(
         User $user,
         CourseOffering $courseOffering,
         ?int $theoreticalFacultyMemberId,
         ?int $practicalFacultyMemberId
     ): CourseOffering {
-        return DB::transaction(function () use (
-            $user,
-            $courseOffering,
-            $theoreticalFacultyMemberId,
-            $practicalFacultyMemberId
-        ): CourseOffering {
-            $offering = CourseOffering::query()
-                ->whereKey($courseOffering->course_offering_id)
-                ->lockForUpdate()
-                ->firstOrFail();
+        throw TeachingAssignmentException::workflowRequired();
+    }
 
-            $offering->loadMissing('course');
-            $this->assertCanManageAssignments($user, $offering);
-            $this->assertOfferingInAccessibleColleges($user, $offering);
-
-            $course = $offering->course;
-            if ($course === null) {
-                throw ValidationException::withMessages([
-                    'course_offering' => ['The course offering course cannot be resolved.'],
-                ]);
-            }
-
-            $theoreticalAvailable = (int) $course->theoretical_hours > 0;
-            $practicalAvailable = (int) $course->practical_hours > 0;
-
-            if (! $theoreticalAvailable && $theoreticalFacultyMemberId !== null) {
-                throw ValidationException::withMessages([
-                    'theoretical_faculty_member_id' => ['هذا المقرر لا يحتوي على شق نظري'],
-                ]);
-            }
-
-            if (! $practicalAvailable && $practicalFacultyMemberId !== null) {
-                throw ValidationException::withMessages([
-                    'practical_faculty_member_id' => ['هذا المقرر لا يحتوي على شق عملي'],
-                ]);
-            }
-
-            $slots = CourseOfferingInstructor::query()
-                ->where('course_offering_id', $offering->course_offering_id)
-                ->lockForUpdate()
-                ->get()
-                ->keyBy(fn (CourseOfferingInstructor $slot): string => (string) $slot->instructor_role);
-
-            if ($theoreticalAvailable) {
-                $this->assignOrDeactivateSlot(
-                    $offering,
-                    $course,
-                    $slots,
-                    'theoretical',
-                    $theoreticalFacultyMemberId,
-                    'theoretical_faculty_member_id'
-                );
-            }
-
-            if ($practicalAvailable) {
-                $this->assignOrDeactivateSlot(
-                    $offering,
-                    $course,
-                    $slots,
-                    'practical',
-                    $practicalFacultyMemberId,
-                    'practical_faculty_member_id'
-                );
-            }
-
-            $activeFacultyIds = CourseOfferingInstructor::query()
-                ->where('course_offering_id', $offering->course_offering_id)
-                ->where('is_active', true)
-                ->pluck('faculty_member_id')
-                ->filter()
-                ->unique()
-                ->map(fn ($id): int => (int) $id);
-
-            foreach ($activeFacultyIds as $facultyMemberId) {
-                $this->ensureGenericCourseInstructor((int) $offering->course_id, $facultyMemberId);
-            }
-
-            $this->normalizePrimaryFlags($offering);
-            $this->syncLegacyFacultyPointer($offering);
-
-            return $offering->fresh([
-                'course',
-                'academicYear',
-                'semester',
-                'department',
-                'academicProgram',
-                'offeringInstructors.facultyMember.employee',
+    public function materializeApprovedSlot(
+        CourseOffering $offering,
+        string $role,
+        int $facultyMemberId
+    ): void {
+        $offering->loadMissing('course');
+        $course = $offering->course;
+        if ($course === null) {
+            throw ValidationException::withMessages([
+                'course_offering' => ['The course offering course cannot be resolved.'],
             ]);
-        });
+        }
+
+        $facultyMember = FacultyMember::query()
+            ->with('employee.employeeStatus')
+            ->findOrFail($facultyMemberId);
+        $this->assertValidAssignment($offering, $facultyMember, $role);
+
+        $slots = CourseOfferingInstructor::query()
+            ->where('course_offering_id', $offering->course_offering_id)
+            ->lockForUpdate()
+            ->get()
+            ->keyBy(fn (CourseOfferingInstructor $slot): string => (string) $slot->instructor_role);
+
+        $this->assignSlot($offering, $course, $slots, $role, $facultyMember);
+        $this->ensureGenericCourseInstructor((int) $offering->course_id, $facultyMemberId);
+        $this->normalizePrimaryFlags($offering);
+        $this->syncLegacyFacultyPointer($offering);
     }
 
     public function offeringsInAccessibleCollegesQuery(array $collegeIds)
@@ -280,51 +224,6 @@ class TeachingAssignmentService
             static fn ($id): int => (int) $id,
             $this->dataScope->accessibleCollegeIds($user)
         )));
-    }
-
-    private function assignOrDeactivateSlot(
-        CourseOffering $offering,
-        Course $course,
-        Collection $slots,
-        string $role,
-        ?int $desiredFacultyMemberId,
-        string $attribute
-    ): void {
-        $slot = $slots->get($role);
-        $currentActiveId = ($slot !== null && $slot->is_active)
-            ? (int) $slot->faculty_member_id
-            : null;
-        $desiredId = $desiredFacultyMemberId === null ? null : (int) $desiredFacultyMemberId;
-
-        if ($desiredId === null) {
-            $this->deactivateSlot($slot);
-
-            return;
-        }
-
-        if ($currentActiveId === $desiredId) {
-            return;
-        }
-
-        $facultyMember = FacultyMember::query()
-            ->with('employee.employeeStatus')
-            ->find($desiredId);
-
-        if ($facultyMember === null) {
-            throw ValidationException::withMessages([
-                $attribute => ['The selected faculty member is invalid.'],
-            ]);
-        }
-
-        try {
-            $this->assertValidAssignment($offering, $facultyMember, $role);
-        } catch (ValidationException $exception) {
-            throw ValidationException::withMessages([
-                $attribute => collect($exception->errors())->flatten()->all(),
-            ]);
-        }
-
-        $this->assignSlot($offering, $course, $slots, $role, $facultyMember);
     }
 
     private function assignSlot(
@@ -368,29 +267,6 @@ class TeachingAssignmentService
 
         if ($dirty) {
             $slot->save();
-        }
-    }
-
-    private function deactivateSlot(?CourseOfferingInstructor $slot): void
-    {
-        if ($slot === null || ! $slot->is_active) {
-            return;
-        }
-
-        $slot->is_active = false;
-        $slot->save();
-    }
-
-    private function assertOfferingInAccessibleColleges(User $user, CourseOffering $offering): void
-    {
-        $collegeIds = $this->accessibleCollegeIdList($user);
-        $allowed = CourseOffering::query()
-            ->whereKey($offering->course_offering_id)
-            ->whereIn('course_offering_id', $this->offeringsInAccessibleCollegesQuery($collegeIds))
-            ->exists();
-
-        if (! $allowed) {
-            throw new AccessDeniedHttpException('You are not authorized to access this course offering.');
         }
     }
 

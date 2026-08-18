@@ -21,6 +21,7 @@ use App\Services\TeachingAssignmentService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
@@ -529,7 +530,7 @@ class DeanCourseOfferingController extends Controller
 
     private function offeringDisplayRelations(): array
     {
-        return [
+        $relations = [
             'course',
             'academicYear',
             'semester',
@@ -539,6 +540,14 @@ class DeanCourseOfferingController extends Controller
                 ->where('is_active', true)
                 ->with('facultyMember.employee'),
         ];
+
+        if (Schema::hasTable('teaching_assignment_requests')) {
+            $relations['teachingAssignmentRequests'] = fn ($requests) => $requests
+                ->where('current_slot', 1)
+                ->with(['reviews', 'facultyMember.employee']);
+        }
+
+        return $relations;
     }
 
     private function scopedOfferingIdsQuery(User $user): Builder

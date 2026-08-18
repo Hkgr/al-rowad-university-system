@@ -25,6 +25,10 @@ export const PERMISSIONS = Object.freeze({
   systemSettingsView: 'system_settings.view',
   vicePresidencyScientificAccess: 'vice_presidency.scientific.access',
   vicePresidencyAdministrativeAccess: 'vice_presidency.administrative.access',
+  teachingAssignmentsView: 'teaching_assignments.view',
+  teachingAssignmentsManage: 'teaching_assignments.manage',
+  teachingAssignmentsReviewScientific: 'teaching_assignments.review_scientific',
+  teachingAssignmentsReviewAdministrative: 'teaching_assignments.review_administrative',
 })
 
 export const ACCESS = Object.freeze({

@@ -12,6 +12,7 @@ use App\Models\Semester;
 use App\Models\User;
 use App\Support\CourseOfferingContext;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Schema;
 
 class CourseOfferingContextService
 {
@@ -136,7 +137,12 @@ class CourseOfferingContextService
     public function createOffering(CourseOfferingContext $context, array $attributes = []): CourseOffering
     {
         try {
-            return CourseOffering::query()->create(array_merge($context->offeringAttributes(), $attributes));
+            $payload = array_merge($context->offeringAttributes(), $attributes);
+            // User-facing / dean opening paths must not assign an instructor.
+            // Legacy faculty_member_id is synchronized only after dual VP approval.
+            $payload['faculty_member_id'] = null;
+
+            return CourseOffering::query()->create($payload);
         } catch (QueryException $exception) {
             if ($this->isDuplicateKey($exception)) {
                 throw CourseOfferingContextException::duplicate();
@@ -152,6 +158,7 @@ class CourseOfferingContextService
     public function updateOffering(CourseOffering $offering, array $attributes): CourseOffering
     {
         try {
+            unset($attributes['faculty_member_id']);
             $offering->update($attributes);
 
             return $offering;
@@ -179,7 +186,9 @@ class CourseOfferingContextService
             || $offering->attendanceSessions()->exists()
             || $offering->gradeApprovals()->exists()
             || $offering->gradePartApprovals()->exists()
-            || $offering->gradeComponents()->exists();
+            || $offering->gradeComponents()->exists()
+            || (Schema::hasTable('teaching_assignment_requests')
+                && $offering->teachingAssignmentRequests()->exists());
     }
 
     public function identityWouldChange(CourseOffering $offering, int $courseId, int $programId, int $yearId, int $semesterId): bool

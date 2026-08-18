@@ -81,6 +81,8 @@ import DeanCalendar        from '../features/dean-dashboard/pages/DeanCalendar'
 // ── نيابة رئاسة الجامعة (Vice Presidency shells) ───────────────────────────
 import { administrativeVicePresidentNav, scientificVicePresidentNav } from '../features/vice-presidency/nav'
 import VicePresidentShell from '../features/vice-presidency/pages/VicePresidentShell'
+import TeachingAssignmentQueue from '../features/vice-presidency/pages/TeachingAssignmentQueue'
+import TeachingAssignmentDetail from '../features/vice-presidency/pages/TeachingAssignmentDetail'
 
 function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], studentIdentity = false, employeeIdentity = false }) {
   const token = localStorage.getItem('token')
@@ -260,6 +262,8 @@ export default function App() {
           }
         >
           <Route path="/vp/scientific" element={<VicePresidentShell office="scientific" />} />
+          <Route path="/vp/scientific/teaching-assignments" element={<TeachingAssignmentQueue office="scientific" />} />
+          <Route path="/vp/scientific/teaching-assignments/:id" element={<TeachingAssignmentDetail office="scientific" />} />
         </Route>
 
         {/* ── نيابة الشؤون الإدارية ── */}
@@ -271,6 +275,8 @@ export default function App() {
           }
         >
           <Route path="/vp/administrative" element={<VicePresidentShell office="administrative" />} />
+          <Route path="/vp/administrative/teaching-assignments" element={<TeachingAssignmentQueue office="administrative" />} />
+          <Route path="/vp/administrative/teaching-assignments/:id" element={<TeachingAssignmentDetail office="administrative" />} />
         </Route>
 
         {/* Default redirect */}

@@ -19,7 +19,6 @@ class UpdateCourseOfferingRequest extends FormRequest
             'semester_id' => 'sometimes|integer|exists:semesters,semester_id',
             'department_id' => 'sometimes|integer|exists:departments,department_id',
             'academic_program_id' => 'sometimes|integer|exists:academic_programs,academic_program_id',
-            'faculty_member_id' => 'sometimes|nullable|integer|exists:faculty_members,faculty_member_id',
             'capacity' => 'sometimes|nullable|integer|min:1',
             'available_seats' => 'sometimes|nullable|integer|min:0',
             'status' => 'sometimes|nullable|string|max:50',

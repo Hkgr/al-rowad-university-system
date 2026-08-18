@@ -32,6 +32,12 @@ class TeachingStaffResource extends JsonResource
                     ]
                     : null,
             ],
+            'home_unit' => $employee?->relationLoaded('organizationalUnit') && $employee->organizationalUnit !== null
+                ? [
+                    'unit_code' => $employee->organizationalUnit->unit_code,
+                    'unit_name' => $employee->organizationalUnit->unit_name,
+                ]
+                : null,
             'colleges' => $this->when(
                 $this->relationLoaded('colleges'),
                 fn () => $this->colleges->map(fn ($college) => [

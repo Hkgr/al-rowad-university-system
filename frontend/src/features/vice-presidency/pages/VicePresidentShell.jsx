@@ -1,20 +1,21 @@
+import { Link } from 'react-router-dom'
 import { getIdentity } from '../../auth/auth'
 
 const OFFICES = {
   scientific: {
     title: 'نائب رئيس الجامعة للشؤون العلمية',
-    scopeNote: 'نطاق العمل: الجامعة كاملة. الصلاحيات تُحدد لاحقاً لكل إجراء على حدة.',
+    scopeNote: 'نطاق العمل: الجامعة كاملة. الصلاحيات تُحدد لكل إجراء على حدة.',
+    assignmentsPath: '/vp/scientific/teaching-assignments',
     futureSections: [
-      'مراجعة التكليفات التدريسية (علمية)',
       'السلطة العلمية للفتح الاستثنائي للشعب',
       'الموافقة العلمية على إغلاق الشعب',
     ],
   },
   administrative: {
     title: 'نائب رئيس الجامعة للشؤون الإدارية',
-    scopeNote: 'نطاق العمل: الجامعة كاملة. الصلاحيات تُحدد لاحقاً لكل إجراء على حدة.',
+    scopeNote: 'نطاق العمل: الجامعة كاملة. الصلاحيات تُحدد لكل إجراء على حدة.',
+    assignmentsPath: '/vp/administrative/teaching-assignments',
     futureSections: [
-      'مراجعة التكليفات التدريسية (إدارية)',
       'الموافقة الإدارية على الفتح الاستثنائي',
     ],
   },
@@ -64,6 +65,14 @@ export default function VicePresidentShell({ office }) {
           </div>
         </dl>
       </div>
+
+      <Link
+        to={copy.assignmentsPath}
+        className="bg-white border border-primary/15 rounded-[16px] p-5 shadow-sm hover:border-primary/40"
+      >
+        <p className="text-[15px] font-black text-text-dark">تكليفات المدرسين</p>
+        <p className="text-[13px] text-text-light mt-1">مراجعة طلبات تكليف المدرسين ضمن صلاحية هذه النيابة فقط.</p>
+      </Link>
 
       <div className="bg-white border border-dashed border-primary/25 rounded-[16px] p-5">
         <p className="text-[12px] font-bold text-text-light mb-3">أقسام لاحقة — غير مفعّلة في هذه المرحلة</p>

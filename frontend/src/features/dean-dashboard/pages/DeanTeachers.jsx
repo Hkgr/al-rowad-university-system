@@ -371,7 +371,7 @@ export default function DeanTeachers() {
                 ? `عدد المدرسين: ${filteredTeachers.length} من أصل ${allTeachers.length}`
                 : `عدد المدرسين: ${allTeachers.length}`}
           </p>
-          {hasPermission(PERMISSIONS.teachingStaffManage) && (
+          {(hasPermission(PERMISSIONS.teachingStaffManage) || hasPermission(PERMISSIONS.teachingAssignmentsManage)) && (
             <p className="text-[12px] text-primary-dark mt-1 font-semibold">
               يمكن إدارة التكليفات التدريسية من ملف المدرس
             </p>

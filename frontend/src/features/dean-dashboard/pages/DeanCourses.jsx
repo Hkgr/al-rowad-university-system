@@ -82,6 +82,7 @@ function buildQuery({
 export default function DeanCourses() {
   const navigate = useNavigate()
   const canManageTeachers = hasPermission(PERMISSIONS.teachingStaffManage)
+    || hasPermission(PERMISSIONS.teachingAssignmentsManage)
 
   const [rows, setRows] = useState([])
   const [summary, setSummary] = useState(null)
