@@ -50,6 +50,36 @@ export function offeringStatusText(status) {
   return offeringStatusLabel(status)
 }
 
+export const INSTRUCTOR_ROLE_LABELS = {
+  theoretical: 'النظري',
+  practical: 'العملي',
+}
+
+export function instructorCoverageSummary(coverage) {
+  if (!coverage) return '—'
+  if (coverage.components_defined === false) {
+    return 'مكونات التدريس غير محددة'
+  }
+  if (coverage.complete) return 'مكتمل'
+
+  const missing = Array.isArray(coverage.missing_roles) ? coverage.missing_roles : []
+  const hasTheory = missing.includes('theoretical')
+  const hasPractical = missing.includes('practical')
+  if (hasTheory && hasPractical) return 'ناقص مدرس النظري والعملي'
+  if (hasTheory) return 'ناقص مدرس النظري'
+  if (hasPractical) return 'ناقص مدرس العملي'
+  return 'غير مكتمل'
+}
+
+export function instructorCoverageComplete(coverage) {
+  return Boolean(coverage?.complete)
+}
+
+export function instructorRoleTeacherName(coverage, role) {
+  const name = coverage?.roles?.[role]?.name
+  return name && String(name).trim() !== '' ? name : null
+}
+
 export function registrationStatusLabel(status) {
   const code = String(status?.status_code ?? '').toLowerCase()
   if (code === 'registered') return status?.status_name || 'مسجّل'

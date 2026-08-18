@@ -9,6 +9,8 @@ import {
   OFFERING_STATUS_FILTER_FALLBACK,
   TEACHER_ASSIGNMENT_FILTER_OPTIONS,
   formatAverageMark,
+  instructorCoverageSummary,
+  instructorCoverageComplete,
   offeringStatusText,
   statusBadgeClass,
   teacherSlotLabel,
@@ -377,6 +379,21 @@ export default function DeanCourses() {
           {formatAverageMark(offering.metrics?.average_final_mark)}
         </span>
       ),
+    },
+    {
+      key: 'coverage',
+      header: 'اكتمال المدرسين',
+      align: 'right',
+      dir: 'rtl',
+      render: offering => {
+        const coverage = offering.instructor_coverage
+        const complete = instructorCoverageComplete(coverage)
+        return (
+          <span className={`inline-block px-2.5 py-[3px] rounded-full text-[11.5px] font-bold ${complete ? 'bg-green-500/10 text-green-700' : 'bg-amber-500/10 text-amber-800'}`}>
+            {instructorCoverageSummary(coverage)}
+          </span>
+        )
+      },
     },
     {
       key: 'status',

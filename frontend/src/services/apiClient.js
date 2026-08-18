@@ -23,6 +23,7 @@ export async function apiRequest(path, options = {}) {
     error.errorCode = data?.error_code;
     error.details = data?.errors ?? data?.data ?? {};
     error.itemFailures = data?.item_failures ?? [];
+    error.coverage = data?.coverage ?? null;
     throw error;
   }
 

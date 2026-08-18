@@ -7,6 +7,11 @@ import { hasPermission, PERMISSIONS } from '../../auth/auth'
 import DeanConfirmDialog from '../components/DeanConfirmDialog'
 import { firstApiErrorMessage, offeringStatusLabel, displayValue } from '../utils/teacherDisplay'
 import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
+import {
+  instructorCoverageComplete,
+  instructorCoverageSummary,
+  instructorRoleTeacherName,
+} from '../utils/courseOfferingDisplay'
 
 const DEFAULT_CAPACITY = 40
 
@@ -44,6 +49,13 @@ function registrationState(offering) {
     }
   }
   if (offering.status === 'closed') {
+    if (offering.instructor_coverage && !instructorCoverageComplete(offering.instructor_coverage)) {
+      return {
+        key: 'pending_coverage',
+        label: 'بانتظار استكمال تكليف المدرسين',
+        className: 'bg-amber-500/10 text-amber-800 border-amber-500/20',
+      }
+    }
     return {
       key: 'closed',
       label: 'مغلقة للتسجيل',
@@ -66,10 +78,16 @@ function CourseCard({
   onOpen,
   onReopen,
   onClose,
+  onManageInstructors,
 }) {
   const course = row.course
   const offering = row.offering
   const state = registrationState(offering)
+  const coverage = offering?.instructor_coverage
+  const coverageLabel = instructorCoverageSummary(coverage)
+  const theoryName = instructorRoleTeacherName(coverage, 'theoretical')
+  const practicalName = instructorRoleTeacherName(coverage, 'practical')
+  const requiredRoles = coverage?.required_roles ?? []
 
   return (
     <article className="border border-primary/12 rounded-[14px] bg-white px-4 py-3.5 flex flex-col min-h-[210px] shadow-[0_1px_8px_rgba(26,46,16,0.04)]">
@@ -101,6 +119,24 @@ function CourseCard({
         </p>
       )}
 
+      {offering && coverage && (
+        <div className="mt-2 text-[12px]">
+          <p className={`font-bold ${instructorCoverageComplete(coverage) ? 'text-green-700' : 'text-amber-800'}`}>
+            اكتمال المدرسين: {coverageLabel}
+          </p>
+          {requiredRoles.includes('theoretical') && (
+            <p className="text-[11.5px] text-text-gray mt-0.5">
+              مدرس النظري: {theoryName || '—'}
+            </p>
+          )}
+          {requiredRoles.includes('practical') && (
+            <p className="text-[11.5px] text-text-gray mt-0.5">
+              مدرس العملي: {practicalName || '—'}
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="mt-auto pt-3">
         {!canManage ? null : state.key === 'missing' ? (
           <div className="flex items-center gap-2">
@@ -120,11 +156,11 @@ function CourseCard({
               className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-primary text-white rounded-[10px] text-[12.5px] font-bold hover:enabled:bg-primary-dark disabled:opacity-40"
               onClick={() => onOpen(row)}
               disabled={busy || !capacity || Number(capacity) < 1}
-              aria-label="إتاحة للتسجيل"
-              title="إتاحة للتسجيل"
+              aria-label="إنشاء طرح المادة"
+              title="إنشاء طرح المادة"
             >
               {busy ? <FaSpinner className="animate-spin text-[11px]" aria-hidden="true" /> : <FaLockOpen className="text-[11px]" aria-hidden="true" />}
-              إتاحة للتسجيل
+              إنشاء طرح المادة
             </button>
           </div>
         ) : state.key === 'closed' ? (
@@ -133,12 +169,27 @@ function CourseCard({
             className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-primary text-white rounded-[10px] text-[12.5px] font-bold hover:enabled:bg-primary-dark disabled:opacity-40"
             onClick={() => onReopen(row)}
             disabled={busy}
-            aria-label="إعادة فتح التسجيل"
-            title="إعادة فتح التسجيل"
+            aria-label="فتح المادة"
+            title="فتح المادة"
           >
             {busy ? <FaSpinner className="animate-spin text-[11px]" aria-hidden="true" /> : <FaLockOpen className="text-[11px]" aria-hidden="true" />}
-            إعادة فتح التسجيل
+            فتح المادة
           </button>
+        ) : state.key === 'pending_coverage' ? (
+          <div className="space-y-2">
+            <p className="text-[12px] text-amber-800 font-semibold">
+              لا يمكن فتح المادة قبل اعتماد المدرسين المطلوبين
+            </p>
+            <button
+              type="button"
+              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-primary/15 text-primary-dark rounded-[10px] text-[12.5px] font-bold hover:bg-primary/22"
+              onClick={() => onManageInstructors(offering.course_offering_id)}
+              aria-label="إدارة تكليف المدرسين"
+              title="إدارة تكليف المدرسين"
+            >
+              إدارة تكليف المدرسين
+            </button>
+          </div>
         ) : state.key === 'open' ? (
           <button
             type="button"
@@ -206,9 +257,15 @@ export default function DeanRegistrationOfferings() {
       return 'تعذّر الوصول إلى المادة المطلوبة.'
     }
     if (requestError.status === 409) {
+      if (requestError.errorCode === 'offering_instructor_coverage_incomplete') {
+        return requestError.message || 'لا يمكن فتح المادة قبل استكمال تكليف المدرسين المعتمدين.'
+      }
       return 'تعذّر تنفيذ العملية بسبب تغير حالة المادة. أعد تحميل البيانات وحاول مجددًا.'
     }
     if (requestError.status === 422) {
+      if (requestError.errorCode === 'offering_teaching_components_undefined') {
+        return requestError.message || 'لا يمكن فتح المادة لأن مكونات التدريس للمقرر غير محددة.'
+      }
       return firstApiErrorMessage(requestError, fallback)
     }
     return fallback
@@ -385,7 +442,7 @@ export default function DeanRegistrationOfferings() {
 
       <div className="bg-primary/[0.05] border border-primary/15 rounded-[14px] px-4 py-3 mb-5 text-[13px] text-text-dark leading-7">
         فتح المادة يجعلها متاحة للتسجيل للطلاب المؤهلين ضمن البرنامج المحدد في السنة والفصل الفعليين المختارين أعلاه.
-        تجميع المواد حسب السنة الإرشادية للخطة فقط، ولا يمنع فتح مقرر موصى به لسنة أو فصل مختلف.
+        لا تُفتح المادة قبل اكتمال تكليف المدرسين المعتمدين. تجميع المواد حسب السنة الإرشادية للخطة فقط، ولا يمنع فتح مقرر موصى به لسنة أو فصل مختلف.
       </div>
 
       {college?.college_name && (
@@ -539,6 +596,7 @@ export default function DeanRegistrationOfferings() {
                       key: `off-${item.offering.course_offering_id}`,
                       row: item,
                     })}
+                    onManageInstructors={id => navigate(`/dean/courses/${id}`)}
                   />
                 ))}
               </div>
@@ -551,23 +609,23 @@ export default function DeanRegistrationOfferings() {
         <DeanConfirmDialog
           title={
             confirm.type === 'open'
-              ? 'تأكيد إتاحة المادة للتسجيل'
+              ? 'تأكيد إنشاء طرح المادة'
               : confirm.type === 'reopen'
-                ? 'تأكيد إعادة فتح التسجيل'
+                ? 'تأكيد فتح المادة'
                 : 'تأكيد إغلاق التسجيل'
           }
           warning={
             confirm.type === 'open'
-              ? 'بعد التأكيد ستصبح المادة متاحة لتسجيل الطلاب المؤهلين ضمن هذا البرنامج.'
+              ? 'سيتم إنشاء طرح المادة مغلقًا. يجب استكمال تكليف المدرسين المعتمدين قبل فتحها.'
               : confirm.type === 'reopen'
-                ? 'سيتم السماح للطلاب المؤهلين بالتسجيل في المادة مجددًا.'
+                ? 'سيتم فتح المادة للتسجيل بعد التحقق من اكتمال تكليف المدرسين المعتمدين.'
                 : 'سيؤدي الإغلاق إلى منع تسجيل طلاب جدد في هذه المادة. لن يتم حذف تسجيلات الطلاب الحالية.'
           }
           confirmLabel={
             confirm.type === 'open'
-              ? 'تأكيد الإتاحة'
+              ? 'تأكيد الإنشاء'
               : confirm.type === 'reopen'
-                ? 'تأكيد إعادة الفتح'
+                ? 'تأكيد الفتح'
                 : 'تأكيد الإغلاق'
           }
           confirmTone={confirm.type === 'close' ? 'danger' : 'primary'}
@@ -589,7 +647,7 @@ export default function DeanRegistrationOfferings() {
                   }),
                 }),
                 row.program_course_id,
-                'تمت إتاحة المادة للتسجيل بنجاح.',
+                'تم إنشاء طرح المادة. يجب استكمال تكليف المدرسين المعتمدين قبل فتحها.',
               )
               return
             }

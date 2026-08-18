@@ -91,6 +91,29 @@ class TeachingAssignmentService
         $this->assertComponentExists($offering->course, $role);
     }
 
+    public function isEffectiveFacultyValid(?FacultyMember $facultyMember): bool
+    {
+        if ($facultyMember === null) {
+            return false;
+        }
+
+        $facultyMember->loadMissing('employee.employeeStatus');
+
+        if (! $facultyMember->is_active) {
+            return false;
+        }
+
+        $employee = $facultyMember->employee;
+        if ($employee === null
+            || $employee->employeeStatus === null
+            || $employee->employeeStatus->status_code !== 'active'
+            || ! $employee->employeeStatus->is_active) {
+            return false;
+        }
+
+        return true;
+    }
+
     public function assertComponentExists(Course $course, string $role): void
     {
         if ($role === 'theoretical' && (int) $course->theoretical_hours <= 0) {
@@ -270,7 +293,7 @@ class TeachingAssignmentService
         }
     }
 
-    private function primaryRoleForCourse(?Course $course): ?string
+    public function primaryRoleForCourse(?Course $course): ?string
     {
         if ($course === null) {
             return null;

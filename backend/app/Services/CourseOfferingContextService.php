@@ -141,6 +141,10 @@ class CourseOfferingContextService
             // User-facing / dean opening paths must not assign an instructor.
             // Legacy faculty_member_id is synchronized only after dual VP approval.
             $payload['faculty_member_id'] = null;
+            // New offerings cannot be created OPEN: instructor coverage requires an
+            // existing offering_id for Phase 4 assignment requests. Persist closed
+            // and let CourseOfferingOpeningService perform the later open.
+            $payload['status'] = CourseOfferingOpeningService::STATUS_CLOSED;
 
             return CourseOffering::query()->create($payload);
         } catch (QueryException $exception) {
@@ -159,6 +163,12 @@ class CourseOfferingContextService
     {
         try {
             unset($attributes['faculty_member_id']);
+            // Opening is an academic invariant owned by CourseOfferingOpeningService.
+            // Generic update must not write status=open even for courses.manage / super_admin.
+            if (array_key_exists('status', $attributes)
+                && (string) $attributes['status'] === CourseOfferingOpeningService::STATUS_OPEN) {
+                unset($attributes['status']);
+            }
             $offering->update($attributes);
 
             return $offering;

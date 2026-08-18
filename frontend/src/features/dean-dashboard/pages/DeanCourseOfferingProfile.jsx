@@ -11,6 +11,8 @@ import DeanCourseTeachersPanel from '../components/DeanCourseTeachersPanel'
 import TeacherAssignmentManagerModal from '../components/TeacherAssignmentManagerModal'
 import {
   formatAverageMark,
+  instructorCoverageComplete,
+  instructorCoverageSummary,
   offeringCodeName,
   offeringStatusText,
   statusBadgeClass,
@@ -308,6 +310,11 @@ export default function DeanCourseOfferingProfile() {
               <span className={`inline-block px-2.5 py-[3px] rounded-full text-[11.5px] font-bold ${statusBadgeClass(offering.status)}`}>
                 {offeringStatusText(offering.status)}
               </span>
+              {offering.instructor_coverage && (
+                <span className={`inline-block px-2.5 py-[3px] rounded-full text-[11.5px] font-bold ${instructorCoverageComplete(offering.instructor_coverage) ? 'bg-green-500/10 text-green-700' : 'bg-amber-500/10 text-amber-800'}`}>
+                  اكتمال المدرسين: {instructorCoverageSummary(offering.instructor_coverage)}
+                </span>
+              )}
             </div>
             <div className="mt-1.5 mb-1">
               <CourseRequirementMeta classification={pickRequirementClassification(offering)} />

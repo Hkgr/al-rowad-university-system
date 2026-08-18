@@ -15,6 +15,7 @@ use App\Models\Semester;
 use App\Models\StudentCourseRegistration;
 use App\Models\StudentCourseResult;
 use App\Models\User;
+use App\Services\CourseOfferingInstructorCoverageService;
 use App\Services\DataScopeService;
 use App\Services\GradeService;
 use App\Services\TeachingAssignmentService;
@@ -530,16 +531,18 @@ class DeanCourseOfferingController extends Controller
 
     private function offeringDisplayRelations(): array
     {
-        $relations = [
-            'course',
-            'academicYear',
-            'semester',
-            'department',
-            'academicProgram',
-            'offeringInstructors' => fn ($instructors) => $instructors
-                ->where('is_active', true)
-                ->with('facultyMember.employee'),
-        ];
+        $relations = array_merge(
+            CourseOfferingInstructorCoverageService::eagerLoadRelations(),
+            [
+                'academicYear',
+                'semester',
+                'department',
+                'academicProgram',
+                'offeringInstructors' => fn ($instructors) => $instructors
+                    ->where('is_active', true)
+                    ->with('facultyMember.employee.employeeStatus'),
+            ]
+        );
 
         if (Schema::hasTable('teaching_assignment_requests')) {
             $relations['teachingAssignmentRequests'] = fn ($requests) => $requests

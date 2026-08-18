@@ -5,6 +5,7 @@ import {
 import InstructorAssignment from '../components/InstructorAssignment'
 import { hasPermission, PERMISSIONS } from '../../auth/auth'
 import CourseRequirementBadges, { ProgramRequirementClassifications, pickRequirementClassification } from '../../../components/academic/CourseRequirementBadges'
+import { instructorCoverageComplete, instructorCoverageSummary } from '../../dean-dashboard/utils/courseOfferingDisplay'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
@@ -15,6 +16,8 @@ const OFFERING_ERROR_LABELS = {
   program_context_incomplete: 'لا يمكن إنشاء طرح للمادة لأن البنية الأكاديمية للبرنامج غير مكتملة.',
   program_outside_user_scope: 'ليس لديك صلاحية على هذا البرنامج.',
   offering_identity_locked: 'لا يمكن تغيير هوية هذا الطرح لأنه مرتبط بتسجيلات أو حضور أو علامات.',
+  offering_instructor_coverage_incomplete: 'لا يمكن فتح المادة قبل استكمال تكليف المدرسين المعتمدين.',
+  offering_teaching_components_undefined: 'لا يمكن فتح المادة لأن مكونات التدريس للمقرر غير محددة.',
 }
 
 function offeringErrorMessage(json, fallback = 'تعذّر تنفيذ العملية') {
@@ -138,6 +141,9 @@ function CourseCombobox({ courses, excludeIds, value, onChange, placeholder, cou
 function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen, onToggle, onInstructorUpdated, busy, canManageCurriculum, canManageOfferings, canAssignInstructors, courseDepartmentIdMap, departments, facultyMembers, advisorySemesterName }) {
   const [capacity, setCapacity] = useState('40')
   const scope = course ? courseScopeInfo(course.course_id, courseDepartmentIdMap, departments) : null
+  const coverage = offering?.instructor_coverage
+  const coverageComplete = instructorCoverageComplete(coverage)
+  const canOpen = offering?.status !== 'open' && coverageComplete
 
   return (
     <div className="border border-primary/12 rounded-[12px] px-4 py-3.5 bg-white hover:shadow-[0_2px_10px_rgba(26,46,16,0.06)] transition-shadow" dir="rtl">
@@ -191,20 +197,28 @@ function CurriculumCourseRow({ course, programCourse, offering, onRemove, onOpen
 
       <div className="mt-3">
         {offering ? (
-          <div className="flex items-center justify-between gap-2">
-            <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${offering.status === 'open' ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
-              {offering.status === 'open' ? `مفتوحة (${offering.available_seats}/${offering.capacity})` : 'مغلقة'}
-            </span>
-            {canManageOfferings && (
-              <button
-                type="button"
-                onClick={() => onToggle(offering)}
-                disabled={busy}
-                className="flex items-center gap-1 px-2 py-1 border border-primary/25 rounded-[7px] text-[10.5px] font-bold text-primary-dark hover:bg-primary/7 disabled:opacity-40 transition-colors"
-              >
-                {offering.status === 'open' ? <FaLock className="text-[9px]" /> : <FaLockOpen className="text-[9px]" />}
-                {offering.status === 'open' ? 'إغلاق' : 'فتح'}
-              </button>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${offering.status === 'open' ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'}`}>
+                {offering.status === 'open' ? `مفتوحة (${offering.available_seats}/${offering.capacity})` : 'مغلقة'}
+              </span>
+              {canManageOfferings && (
+                <button
+                  type="button"
+                  onClick={() => onToggle(offering)}
+                  disabled={busy || (offering.status !== 'open' && !canOpen)}
+                  className="flex items-center gap-1 px-2 py-1 border border-primary/25 rounded-[7px] text-[10.5px] font-bold text-primary-dark hover:bg-primary/7 disabled:opacity-40 transition-colors"
+                  title={offering.status === 'open' ? 'إغلاق' : (canOpen ? 'فتح' : 'لا يمكن فتح المادة قبل اعتماد المدرسين المطلوبين')}
+                >
+                  {offering.status === 'open' ? <FaLock className="text-[9px]" /> : <FaLockOpen className="text-[9px]" />}
+                  {offering.status === 'open' ? 'إغلاق' : 'فتح'}
+                </button>
+              )}
+            </div>
+            {coverage && (
+              <p className={`text-[10.5px] font-bold ${coverageComplete ? 'text-green-700' : 'text-amber-800'}`}>
+                اكتمال المدرسين: {instructorCoverageSummary(coverage)}
+              </p>
             )}
           </div>
         ) : !canManageOfferings ? (
@@ -606,10 +620,14 @@ export default function CourseOfferingsPage() {
       status: 'open',
     })
     if (!ofJson.success) {
-      throw new Error(offeringErrorMessage(ofJson, 'تمت إضافة المادة للمنهج لكن تعذّر فتح الطرح'))
+      throw new Error(offeringErrorMessage(ofJson, 'تمت إضافة المادة للمنهج لكن تعذّر إنشاء طرح المادة'))
     }
     setOfferings(prev => [...prev, ofJson.data])
-    showToast('تمت إضافة المادة وفتحها لهذا الفصل')
+    showToast(
+      ofJson.data?.status === 'open'
+        ? 'تمت إضافة المادة وفتحها لهذا الفصل'
+        : (ofJson.message || 'تم إنشاء طرح المادة. يجب استكمال تكليف المدرسين المعتمدين قبل فتحها.')
+    )
   }
 
   async function handleRemoveCurriculumCourse(programCourseId) {
@@ -640,9 +658,13 @@ export default function CourseOfferingsPage() {
       })
       if (json.success) {
         setOfferings(prev => [...prev, json.data])
-        showToast('تم فتح المادة لهذا الفصل')
+        showToast(
+          json.data?.status === 'open'
+            ? 'تم فتح المادة لهذا الفصل'
+            : (json.message || 'تم إنشاء طرح المادة. يجب استكمال تكليف المدرسين المعتمدين قبل فتحها.')
+        )
       } else {
-        showError(offeringErrorMessage(json, 'تعذّر فتح المادة'))
+        showError(offeringErrorMessage(json, 'تعذّر إنشاء طرح المادة'))
       }
     } finally {
       setBusyIds(p => ({ ...p, [`open-${courseId}`]: false }))
@@ -661,8 +683,9 @@ export default function CourseOfferingsPage() {
       })
       const json = await res.json()
       if (json.success) {
-        setOfferings(prev => prev.map(o => o.course_offering_id === offering.course_offering_id ? { ...o, status: nextStatus } : o))
-        showToast(nextStatus === 'open' ? 'تم فتح المادة' : 'تم إغلاق المادة')
+        const persistedStatus = json.data?.status ?? nextStatus
+        setOfferings(prev => prev.map(o => o.course_offering_id === offering.course_offering_id ? { ...o, ...json.data, status: persistedStatus } : o))
+        showToast(persistedStatus === 'open' ? 'تم فتح المادة' : 'تم إغلاق المادة')
       } else {
         showError(offeringErrorMessage(json, 'تعذّر تحديث حالة المادة'))
       }
