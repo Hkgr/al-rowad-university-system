@@ -24,25 +24,48 @@ class CourseOfferingOpeningService
      */
     public function normalOpen(CourseOffering $offering, ?User $actor = null): CourseOffering
     {
-        return $this->withLockedOffering(
-            $offering,
-            fn (CourseOffering $locked): CourseOffering => $this->openLocked($locked),
-        );
+        return $this->applyThenGuardOpenCoverage($offering, static function (): void {}, true, $actor);
     }
 
     /**
-     * Apply Offering metadata inside the same locked opening transaction.
-     * If normal opening then fails, every metadata change is rolled back.
+     * Apply Offering metadata inside the same locked opening transaction,
+     * then ensure the Offering ends OPEN with complete coverage.
      *
      * @param  callable(CourseOffering): void  $mutate
      */
     public function applyThenNormalOpen(CourseOffering $offering, callable $mutate, ?User $actor = null): CourseOffering
     {
-        return $this->withLockedOffering($offering, function (CourseOffering $locked) use ($mutate): CourseOffering {
+        return $this->applyThenGuardOpenCoverage($offering, $mutate, true, $actor);
+    }
+
+    /**
+     * Apply Offering metadata inside one locked transaction.
+     * If the Offering remains or becomes OPEN, coverage is enforced against
+     * the FINAL Course whenever this request is a true open transition or
+     * the coverage-driving course_id changed. Unchanged already-open
+     * Offerings stay idempotent and are not retroactively rejected.
+     *
+     * @param  callable(CourseOffering): void  $mutate
+     */
+    public function applyThenGuardOpenCoverage(
+        CourseOffering $offering,
+        callable $mutate,
+        bool $ensureOpen,
+        ?User $actor = null,
+    ): CourseOffering {
+        return $this->withLockedOffering($offering, function (CourseOffering $locked) use ($mutate, $ensureOpen): CourseOffering {
+            $originalCourseId = (int) $locked->course_id;
+            $originalStatus = (string) $locked->status;
+
             $mutate($locked);
             $this->forgetCoverageGraph($locked);
 
-            return $this->openLocked($locked);
+            return $this->finalizeLockedOpenInvariant(
+                $locked,
+                $originalCourseId,
+                $originalStatus,
+                $ensureOpen,
+            );
         });
     }
 
@@ -66,11 +89,28 @@ class CourseOfferingOpeningService
         });
     }
 
-    private function openLocked(CourseOffering $locked): CourseOffering
-    {
+    private function finalizeLockedOpenInvariant(
+        CourseOffering $locked,
+        int $originalCourseId,
+        string $originalStatus,
+        bool $ensureOpen,
+    ): CourseOffering {
         $this->reloadCoverageGraph($locked);
 
+        $courseIdentityChanged = (int) $locked->course_id !== $originalCourseId;
+
         if ($locked->status === self::STATUS_OPEN) {
+            $unchangedOpen = $originalStatus === self::STATUS_OPEN && ! $courseIdentityChanged;
+            if ($unchangedOpen) {
+                return $locked;
+            }
+
+            $this->coverage->assertCompleteForNormalOpening($locked);
+
+            return $locked;
+        }
+
+        if (! $ensureOpen) {
             return $locked;
         }
 

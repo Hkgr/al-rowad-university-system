@@ -105,21 +105,18 @@ class CourseOfferingController extends ApiController
         $requestedOpen = array_key_exists('status', $data)
             && (string) $data['status'] === CourseOfferingOpeningService::STATUS_OPEN;
 
-        if ($requestedOpen) {
-            $offering = $this->opening->applyThenNormalOpen(
-                $offering,
-                function (CourseOffering $locked) use ($data, $request): void {
-                    $attributes = $this->attributesForOfferingUpdate($locked, $data, $request);
+        $offering = $this->opening->applyThenGuardOpenCoverage(
+            $offering,
+            function (CourseOffering $locked) use ($data, $request, $requestedOpen): void {
+                $attributes = $this->attributesForOfferingUpdate($locked, $data, $request);
+                if ($requestedOpen) {
                     unset($attributes['status']);
-                    $this->offeringContext->updateOffering($locked, $attributes);
-                },
-                $request->user(),
-            );
-        } else {
-            $attributes = $this->attributesForOfferingUpdate($offering, $data, $request);
-            $this->offeringContext->updateOffering($offering, $attributes);
-            $offering = $offering->fresh();
-        }
+                }
+                $this->offeringContext->updateOffering($locked, $attributes);
+            },
+            $requestedOpen,
+            $request->user(),
+        );
 
         return $this->successResponse(
             (new CourseOfferingResource($offering->fresh()->load($this->offeringRelations())))->resolve($request)
