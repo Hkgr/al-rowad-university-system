@@ -26,6 +26,10 @@ class DeanTeachingAssignmentController extends Controller
                 TeachingAssignmentWorkflow::STATUS_RETURNED,
                 TeachingAssignmentWorkflow::STATUS_APPROVED,
             ])],
+            'action_type' => ['sometimes', Rule::in([
+                TeachingAssignmentWorkflow::ACTION_ASSIGN,
+                TeachingAssignmentWorkflow::ACTION_REMOVE,
+            ])],
             'course_offering_id' => ['sometimes', 'integer', 'min:1'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
         ]);
@@ -39,6 +43,9 @@ class DeanTeachingAssignmentController extends Controller
         }
         if (isset($validated['course_offering_id'])) {
             $query->where('course_offering_id', (int) $validated['course_offering_id']);
+        }
+        if (isset($validated['action_type']) && TeachingAssignmentWorkflow::schemaReady()) {
+            $query->where('action_type', $validated['action_type']);
         }
 
         $rows = $query->paginate((int) ($validated['per_page'] ?? 20));
@@ -74,11 +81,52 @@ class DeanTeachingAssignmentController extends Controller
 
     public function resubmit(Request $request, TeachingAssignmentRequest $teachingAssignmentRequest): JsonResponse
     {
-        $updated = $this->workflow->resubmit($request->user(), $teachingAssignmentRequest);
+        $validated = $request->validate([
+            'reason' => ['sometimes', 'nullable', 'string', 'max:2000'],
+        ]);
+
+        $updated = $this->workflow->resubmit(
+            $request->user(),
+            $teachingAssignmentRequest,
+            $validated['reason'] ?? null
+        );
 
         return $this->ok(
             (new TeachingAssignmentRequestResource($updated))->resolve($request),
             'تم إعادة إرسال طلب التكليف.'
+        );
+    }
+
+    public function requestRemoval(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'course_offering_id' => ['required', 'integer', 'min:1', 'exists:course_offerings,course_offering_id'],
+            'instructor_role' => ['required', Rule::in(['theoretical', 'practical'])],
+            'reason' => ['required', 'string', 'max:2000'],
+        ]);
+
+        $offering = CourseOffering::query()->findOrFail((int) $validated['course_offering_id']);
+        $created = $this->workflow->requestRemoval(
+            $request->user(),
+            $offering,
+            $validated['instructor_role'],
+            $validated['reason']
+        );
+
+        return $this->ok(
+            (new TeachingAssignmentRequestResource($created))->resolve($request),
+            'تم إرسال طلب إزالة المدرس للمراجعة.',
+            201
+        );
+    }
+
+    public function withdrawRemoval(Request $request, TeachingAssignmentRequest $teachingAssignmentRequest): JsonResponse
+    {
+        $updated = $this->workflow->withdrawRemoval($request->user(), $teachingAssignmentRequest);
+
+        return $this->ok(
+            (new TeachingAssignmentRequestResource($updated))->resolve($request),
+            'تم سحب طلب إزالة المدرس.'
         );
     }
 

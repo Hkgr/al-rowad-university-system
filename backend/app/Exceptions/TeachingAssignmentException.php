@@ -38,6 +38,20 @@ class TeachingAssignmentException extends Exception
 
     public const FACULTY_MEMBER_ASSIGNMENT_WORKFLOW_REQUIRED = 'faculty_member_assignment_workflow_required';
 
+    public const REMOVAL_REASON_REQUIRED = 'teaching_assignment_removal_reason_required';
+
+    public const REMOVAL_NOT_REQUIRED = 'teaching_assignment_removal_not_required';
+
+    public const REMOVAL_REQUIRES_CLOSED_OFFERING = 'teaching_assignment_removal_requires_closed_offering';
+
+    public const REMOVAL_STALE = 'teaching_assignment_removal_stale';
+
+    public const REMOVAL_PENDING = 'teaching_assignment_removal_pending';
+
+    public const REMOVAL_WITHDRAW_FORBIDDEN = 'teaching_assignment_removal_withdraw_forbidden';
+
+    public const ACTION_INVALID = 'teaching_assignment_action_invalid';
+
     public function __construct(
         string $message,
         public readonly array $errors = [],
@@ -140,7 +154,7 @@ class TeachingAssignmentException extends Exception
 
     public static function unassignmentUnsupported(): self
     {
-        $message = 'إلغاء التكليف النافذ غير مدعوم من هذا المسار. المدرس المعتمد يبقى كما هو إلى أن يُعتمد بديل عبر موافقة النائبين.';
+        $message = 'إلغاء التكليف النافذ غير مدعوم من هذا المسار. استخدم مسار الإزالة الرسمي بعد إغلاق طرح المادة، أو اعتمد بديلاً عبر موافقة النائبين.';
 
         return new self($message, ['teaching_assignment' => [$message]], 422, self::UNASSIGNMENT_UNSUPPORTED);
     }
@@ -157,5 +171,54 @@ class TeachingAssignmentException extends Exception
         $message = 'لا يمكن تعيين مدرس الطرح مباشرة. يجب إرسال طلب عبر مسار موافقة النائب العلمي والنائب الإداري.';
 
         return new self($message, ['faculty_member_id' => [$message]], 409, self::FACULTY_MEMBER_ASSIGNMENT_WORKFLOW_REQUIRED);
+    }
+
+    public static function removalReasonRequired(): self
+    {
+        $message = 'سبب طلب إزالة المدرس مطلوب.';
+
+        return new self($message, ['reason' => [$message]], 422, self::REMOVAL_REASON_REQUIRED);
+    }
+
+    public static function removalNotRequired(): self
+    {
+        $message = 'لا يوجد تكليف نافذ لإزالته لهذا الشق.';
+
+        return new self($message, ['teaching_assignment' => [$message]], 409, self::REMOVAL_NOT_REQUIRED);
+    }
+
+    public static function removalRequiresClosedOffering(): self
+    {
+        $message = 'لا يمكن طلب أو اعتماد إزالة مدرس إلا بعد إغلاق طرح المادة رسمياً.';
+
+        return new self($message, ['teaching_assignment' => [$message]], 409, self::REMOVAL_REQUIRES_CLOSED_OFFERING);
+    }
+
+    public static function removalStale(): self
+    {
+        $message = 'تغير التكليف النافذ المستهدف. لا يمكن تنفيذ طلب الإزالة الحالي.';
+
+        return new self($message, ['teaching_assignment' => [$message]], 409, self::REMOVAL_STALE);
+    }
+
+    public static function removalPending(): self
+    {
+        $message = 'يوجد طلب إزالة مدرس قيد المراجعة. لا يمكن فتح طرح المادة قبل سحب الطلب أو اكتمال الإزالة.';
+
+        return new self($message, ['teaching_assignment' => [$message]], 409, self::REMOVAL_PENDING);
+    }
+
+    public static function removalWithdrawForbidden(): self
+    {
+        $message = 'لا يمكن سحب طلب الإزالة بعد اعتماده.';
+
+        return new self($message, ['teaching_assignment' => [$message]], 409, self::REMOVAL_WITHDRAW_FORBIDDEN);
+    }
+
+    public static function actionInvalid(): self
+    {
+        $message = 'نوع إجراء التكليف غير صالح لهذه العملية.';
+
+        return new self($message, ['teaching_assignment' => [$message]], 409, self::ACTION_INVALID);
     }
 }

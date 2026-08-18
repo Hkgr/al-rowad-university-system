@@ -9,6 +9,7 @@ use App\Models\CourseInstructor;
 use App\Models\CourseOffering;
 use App\Models\CourseOfferingInstructor;
 use App\Models\FacultyMember;
+use App\Models\TeachingAssignmentRequest;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -232,6 +233,50 @@ class TeachingAssignmentService
 
         $this->assignSlot($offering, $course, $slots, $role, $facultyMember);
         $this->ensureGenericCourseInstructor((int) $offering->course_id, $facultyMemberId);
+        $this->normalizePrimaryFlags($offering);
+        $this->syncLegacyFacultyPointer($offering);
+    }
+
+    /**
+     * Trusted internal writer for formal instructor removal.
+     * Soft-deactivates one exact effective slot. Never DELETEs.
+     * Never mutates course_instructors history.
+     * Must run inside the caller's already-open transaction.
+     */
+    public function materializeApprovedRemoval(
+        CourseOffering $offering,
+        TeachingAssignmentRequest $request
+    ): void {
+        if (DB::transactionLevel() < 1) {
+            throw TeachingAssignmentException::actionInvalid();
+        }
+
+        if (! $request->isRemoval()) {
+            throw TeachingAssignmentException::actionInvalid();
+        }
+
+        $targetId = $request->target_course_offering_instructor_id;
+        if ($targetId === null) {
+            throw TeachingAssignmentException::removalStale();
+        }
+
+        $slot = CourseOfferingInstructor::query()
+            ->whereKey($targetId)
+            ->lockForUpdate()
+            ->first();
+
+        if ($slot === null
+            || (int) $slot->course_offering_id !== (int) $offering->course_offering_id
+            || (int) $slot->course_offering_id !== (int) $request->course_offering_id
+            || (string) $slot->instructor_role !== (string) $request->instructor_role
+            || (int) $slot->faculty_member_id !== (int) $request->faculty_member_id
+            || ! $slot->is_active) {
+            throw TeachingAssignmentException::removalStale();
+        }
+
+        $slot->is_active = false;
+        $slot->save();
+
         $this->normalizePrimaryFlags($offering);
         $this->syncLegacyFacultyPointer($offering);
     }

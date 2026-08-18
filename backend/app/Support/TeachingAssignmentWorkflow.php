@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use Illuminate\Support\Facades\Schema;
+
 final class TeachingAssignmentWorkflow
 {
     public const PERMISSION_VIEW = 'teaching_assignments.view';
@@ -47,4 +49,22 @@ final class TeachingAssignmentWorkflow
     public const EVENT_EFFECTIVE_CREATED = 'effective_assignment_created';
 
     public const EVENT_EFFECTIVE_CHANGED = 'effective_assignment_changed';
+
+    public const ACTION_ASSIGN = 'assign';
+
+    public const ACTION_REMOVE = 'remove';
+
+    public const EVENT_EFFECTIVE_REMOVED = 'effective_assignment_removed';
+
+    public const EVENT_REMOVAL_WITHDRAWN = 'removal_withdrawn';
+
+    public const EVENT_REMOVAL_STALE = 'removal_stale';
+
+    public static function schemaReady(): bool
+    {
+        return Schema::hasTable('teaching_assignment_requests')
+            && Schema::hasColumn('teaching_assignment_requests', 'action_type')
+            && Schema::hasColumn('teaching_assignment_requests', 'action_reason')
+            && Schema::hasColumn('teaching_assignment_requests', 'target_course_offering_instructor_id');
+    }
 }

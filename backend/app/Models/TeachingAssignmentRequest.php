@@ -25,6 +25,9 @@ class TeachingAssignmentRequest extends Model
         'approved_at',
         'superseded_at',
         'superseded_by_request_id',
+        'action_type',
+        'action_reason',
+        'target_course_offering_instructor_id',
         'created_at',
         'updated_at',
     ];
@@ -34,6 +37,7 @@ class TeachingAssignmentRequest extends Model
         return [
             'submission_version' => 'integer',
             'current_slot' => 'integer',
+            'target_course_offering_instructor_id' => 'integer',
             'submitted_at' => 'datetime',
             'approved_at' => 'datetime',
             'superseded_at' => 'datetime',
@@ -46,6 +50,32 @@ class TeachingAssignmentRequest extends Model
     {
         return (int) $this->current_slot === 1
             && $this->status !== TeachingAssignmentWorkflow::STATUS_SUPERSEDED;
+    }
+
+    public function isRemoval(): bool
+    {
+        return TeachingAssignmentWorkflow::schemaReady()
+            && (string) $this->action_type === TeachingAssignmentWorkflow::ACTION_REMOVE;
+    }
+
+    public function isAssign(): bool
+    {
+        if (! TeachingAssignmentWorkflow::schemaReady()) {
+            return true;
+        }
+
+        return (string) $this->action_type === TeachingAssignmentWorkflow::ACTION_ASSIGN
+            || $this->action_type === null
+            || $this->action_type === '';
+    }
+
+    public function targetInstructor(): BelongsTo
+    {
+        return $this->belongsTo(
+            CourseOfferingInstructor::class,
+            'target_course_offering_instructor_id',
+            'course_offering_instructor_id'
+        );
     }
 
     public function courseOffering(): BelongsTo

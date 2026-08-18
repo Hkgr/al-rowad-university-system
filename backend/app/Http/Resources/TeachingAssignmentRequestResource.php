@@ -27,6 +27,13 @@ class TeachingAssignmentRequestResource extends JsonResource
             'status' => $this->status,
             'submission_version' => $this->submission_version,
             'instructor_role' => $this->instructor_role,
+            'action_type' => TeachingAssignmentWorkflow::schemaReady()
+                ? ($this->action_type ?: TeachingAssignmentWorkflow::ACTION_ASSIGN)
+                : TeachingAssignmentWorkflow::ACTION_ASSIGN,
+            'action_reason' => TeachingAssignmentWorkflow::schemaReady() ? $this->action_reason : null,
+            'target_course_offering_instructor_id' => TeachingAssignmentWorkflow::schemaReady()
+                ? $this->target_course_offering_instructor_id
+                : null,
             'submitted_at' => $this->submitted_at,
             'approved_at' => $this->approved_at,
             'superseded_at' => $this->superseded_at,
