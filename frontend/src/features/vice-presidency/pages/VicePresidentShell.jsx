@@ -6,8 +6,8 @@ const OFFICES = {
     title: 'نائب رئيس الجامعة للشؤون العلمية',
     scopeNote: 'نطاق العمل: الجامعة كاملة. الصلاحيات تُحدد لكل إجراء على حدة.',
     assignmentsPath: '/vp/scientific/teaching-assignments',
+    exceptionalPath: '/vp/scientific/exceptional-openings',
     futureSections: [
-      'السلطة العلمية للفتح الاستثنائي للشعب',
       'الموافقة العلمية على إغلاق الشعب',
     ],
   },
@@ -15,9 +15,8 @@ const OFFICES = {
     title: 'نائب رئيس الجامعة للشؤون الإدارية',
     scopeNote: 'نطاق العمل: الجامعة كاملة. الصلاحيات تُحدد لكل إجراء على حدة.',
     assignmentsPath: '/vp/administrative/teaching-assignments',
-    futureSections: [
-      'الموافقة الإدارية على الفتح الاستثنائي',
-    ],
+    exceptionalPath: '/vp/administrative/exceptional-openings',
+    futureSections: [],
   },
 }
 
@@ -74,6 +73,15 @@ export default function VicePresidentShell({ office }) {
         <p className="text-[13px] text-text-light mt-1">مراجعة طلبات تكليف المدرسين ضمن صلاحية هذه النيابة فقط.</p>
       </Link>
 
+      <Link
+        to={copy.exceptionalPath}
+        className="bg-white border border-primary/15 rounded-[16px] p-5 shadow-sm hover:border-primary/40"
+      >
+        <p className="text-[15px] font-black text-text-dark">الفتح الاستثنائي للشعب</p>
+        <p className="text-[13px] text-text-light mt-1">مراجعة طلبات فتح الشعب استثنائيًا عند نقص تكليف المدرسين ضمن صلاحية هذه النيابة فقط.</p>
+      </Link>
+
+      {copy.futureSections.length > 0 && (
       <div className="bg-white border border-dashed border-primary/25 rounded-[16px] p-5">
         <p className="text-[12px] font-bold text-text-light mb-3">أقسام لاحقة — غير مفعّلة في هذه المرحلة</p>
         <ul className="flex flex-col gap-2 text-[13px] text-text-dark">
@@ -82,6 +90,7 @@ export default function VicePresidentShell({ office }) {
           ))}
         </ul>
       </div>
+      )}
     </div>
   )
 }

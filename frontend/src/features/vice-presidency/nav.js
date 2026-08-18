@@ -1,4 +1,4 @@
-import { FaChalkboardTeacher, FaHome } from 'react-icons/fa'
+import { FaChalkboardTeacher, FaHome, FaUnlock } from 'react-icons/fa'
 
 import { PERMISSIONS } from '../auth/auth'
 
@@ -20,6 +20,13 @@ export const scientificVicePresidentNav = [
         ar: 'تكليفات المدرسين',
         en: 'Teaching assignments',
         permissions: [PERMISSIONS.teachingAssignmentsView],
+      },
+      {
+        to: '/vp/scientific/exceptional-openings',
+        Icon: FaUnlock,
+        ar: 'الفتح الاستثنائي',
+        en: 'Exceptional opening',
+        permissions: [PERMISSIONS.exceptionalOpenView],
       },
     ],
   },
@@ -43,6 +50,13 @@ export const administrativeVicePresidentNav = [
         ar: 'تكليفات المدرسين',
         en: 'Teaching assignments',
         permissions: [PERMISSIONS.teachingAssignmentsView],
+      },
+      {
+        to: '/vp/administrative/exceptional-openings',
+        Icon: FaUnlock,
+        ar: 'الفتح الاستثنائي',
+        en: 'Exceptional opening',
+        permissions: [PERMISSIONS.exceptionalOpenView],
       },
     ],
   },

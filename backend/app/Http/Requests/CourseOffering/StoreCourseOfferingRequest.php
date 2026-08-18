@@ -23,6 +23,10 @@ class StoreCourseOfferingRequest extends FormRequest
             'capacity' => 'required|integer|min:1',
             'available_seats' => 'required|integer|min:0|lte:capacity',
             'status' => 'required|string|max:50',
+            'exceptional' => 'prohibited',
+            'force' => 'prohibited',
+            'skip_coverage' => 'prohibited',
+            'bypass' => 'prohibited',
         ];
     }
 

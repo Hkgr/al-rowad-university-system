@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\DB;
 
 class CourseOffering extends Model
@@ -58,6 +59,17 @@ class CourseOffering extends Model
     public function teachingAssignmentRequests(): HasMany
     {
         return $this->hasMany(TeachingAssignmentRequest::class, 'course_offering_id', 'course_offering_id');
+    }
+
+    public function exceptionRequests(): HasMany
+    {
+        return $this->hasMany(CourseOfferingExceptionRequest::class, 'course_offering_id', 'course_offering_id');
+    }
+
+    public function currentExceptionRequest(): HasOne
+    {
+        return $this->hasOne(CourseOfferingExceptionRequest::class, 'course_offering_id', 'course_offering_id')
+            ->where('current_slot', 1);
     }
 
     public function academicProgram(): BelongsTo

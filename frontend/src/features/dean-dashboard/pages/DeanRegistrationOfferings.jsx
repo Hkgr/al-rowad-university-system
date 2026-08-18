@@ -12,6 +12,10 @@ import {
   instructorCoverageSummary,
   instructorRoleTeacherName,
 } from '../utils/courseOfferingDisplay'
+import {
+  requestStatusLabel,
+  reviewStatusLabel,
+} from '../../vice-presidency/utils/exceptionalOpeningLabels'
 
 const DEFAULT_CAPACITY = 40
 
@@ -72,6 +76,7 @@ function registrationState(offering) {
 function CourseCard({
   row,
   canManage,
+  canRequestException,
   busy,
   capacity,
   onCapacityChange,
@@ -79,6 +84,8 @@ function CourseCard({
   onReopen,
   onClose,
   onManageInstructors,
+  onRequestException,
+  onResubmitException,
 }) {
   const course = row.course
   const offering = row.offering
@@ -88,6 +95,13 @@ function CourseCard({
   const theoryName = instructorRoleTeacherName(coverage, 'theoretical')
   const practicalName = instructorRoleTeacherName(coverage, 'practical')
   const requiredRoles = coverage?.required_roles ?? []
+  const exceptionRequest = offering?.exceptional_opening_request
+  const exceptionStatus = exceptionRequest?.status
+  const showExceptionRequest = canRequestException && state.key === 'pending_coverage'
+    && (!exceptionRequest || exceptionStatus === 'returned' || exceptionStatus === 'superseded')
+  const showExceptionStatus = Boolean(exceptionRequest)
+    && state.key === 'pending_coverage'
+    && exceptionStatus !== 'superseded'
 
   return (
     <article className="border border-primary/12 rounded-[14px] bg-white px-4 py-3.5 flex flex-col min-h-[210px] shadow-[0_1px_8px_rgba(26,46,16,0.04)]">
@@ -178,8 +192,21 @@ function CourseCard({
         ) : state.key === 'pending_coverage' ? (
           <div className="space-y-2">
             <p className="text-[12px] text-amber-800 font-semibold">
-              لا يمكن فتح المادة قبل اعتماد المدرسين المطلوبين
+              لا يمكن فتح المادة اعتياديًا قبل اعتماد المدرسين المطلوبين
             </p>
+            {showExceptionStatus && (
+              <div className="rounded-[10px] border border-primary/15 bg-primary/[0.04] px-3 py-2 text-[12px] text-text-dark space-y-1">
+                <p className="font-bold">طلب الفتح الاستثنائي: {requestStatusLabel(exceptionStatus)}</p>
+                <p className="text-text-gray">نسخة الإرسال: {exceptionRequest.submission_version ?? '—'}</p>
+                <p>علمي: {reviewStatusLabel(exceptionRequest.scientific_review?.status)}</p>
+                <p>إداري: {reviewStatusLabel(exceptionRequest.administrative_review?.status)}</p>
+                {exceptionStatus === 'returned' && (exceptionRequest.scientific_review?.notes || exceptionRequest.administrative_review?.notes) && (
+                  <p className="text-amber-800 whitespace-pre-wrap">
+                    {exceptionRequest.scientific_review?.notes || exceptionRequest.administrative_review?.notes}
+                  </p>
+                )}
+              </div>
+            )}
             <button
               type="button"
               className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-primary/15 text-primary-dark rounded-[10px] text-[12.5px] font-bold hover:bg-primary/22"
@@ -189,6 +216,16 @@ function CourseCard({
             >
               إدارة تكليف المدرسين
             </button>
+            {showExceptionRequest && (
+              <button
+                type="button"
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 border border-primary/30 text-primary-dark rounded-[10px] text-[12.5px] font-bold hover:bg-primary/8"
+                onClick={() => (exceptionStatus === 'returned' ? onResubmitException(row) : onRequestException(row))}
+                disabled={busy}
+              >
+                {exceptionStatus === 'returned' ? 'إعادة إرسال طلب الفتح الاستثنائي' : 'طلب فتح استثنائي'}
+              </button>
+            )}
           </div>
         ) : state.key === 'open' ? (
           <button
@@ -216,6 +253,8 @@ export default function DeanRegistrationOfferings() {
   const navigate = useNavigate()
   const canManageLocal = hasPermission(PERMISSIONS.courseOfferingsManage)
     || hasPermission(PERMISSIONS.coursesManage)
+  const canRequestException = hasPermission(PERMISSIONS.exceptionalOpenRequest)
+  const [exceptionReason, setExceptionReason] = useState('')
 
   const [options, setOptions] = useState({
     academic_years: [],
@@ -260,7 +299,16 @@ export default function DeanRegistrationOfferings() {
       if (requestError.errorCode === 'offering_instructor_coverage_incomplete') {
         return requestError.message || 'لا يمكن فتح المادة قبل استكمال تكليف المدرسين المعتمدين.'
       }
-      return 'تعذّر تنفيذ العملية بسبب تغير حالة المادة. أعد تحميل البيانات وحاول مجددًا.'
+      if (requestError.errorCode === 'exceptional_opening_not_required') {
+        return requestError.message || 'تكليف المدرسين مكتمل. استخدم الفتح الاعتيادي.'
+      }
+      if (requestError.errorCode === 'exceptional_opening_duplicate_current') {
+        return requestError.message || 'يوجد طلب فتح استثنائي حالي لنفس الطرح.'
+      }
+      if (requestError.errorCode === 'normal_opening_available') {
+        return requestError.message || 'أصبح الفتح الاعتيادي متاحًا. استخدم فتح المادة الاعتيادي.'
+      }
+      return requestError.message || 'تعذّر تنفيذ العملية بسبب تغير حالة المادة. أعد تحميل البيانات وحاول مجددًا.'
     }
     if (requestError.status === 422) {
       if (requestError.errorCode === 'offering_teaching_components_undefined') {
@@ -408,6 +456,37 @@ export default function DeanRegistrationOfferings() {
       setConfirm(null)
     } catch (requestError) {
       setError(handleRequestError(requestError, 'تعذّر تحديث إتاحة المادة للتسجيل.'))
+    } finally {
+      savingRef.current = false
+      setBusyIds(current => {
+        const next = { ...current }
+        delete next[key]
+        return next
+      })
+    }
+  }
+
+  async function runException(key, request, programCourseId, successFallback) {
+    if (savingRef.current) return
+    savingRef.current = true
+    setBusyIds(current => ({ ...current, [key]: true }))
+    setError('')
+    try {
+      const response = await request()
+      const exceptionRequest = response?.data ?? null
+      setLevels(current => current.map(level => ({
+        ...level,
+        courses: (level.courses ?? []).map(row => (
+          row.program_course_id === programCourseId && row.offering
+            ? { ...row, offering: { ...row.offering, exceptional_opening_request: exceptionRequest } }
+            : row
+        )),
+      })))
+      setNotice(response?.message || successFallback)
+      setConfirm(null)
+      setExceptionReason('')
+    } catch (requestError) {
+      setError(handleRequestError(requestError, 'تعذّر إرسال طلب الفتح الاستثنائي.'))
     } finally {
       savingRef.current = false
       setBusyIds(current => {
@@ -578,6 +657,7 @@ export default function DeanRegistrationOfferings() {
                     key={row.program_course_id}
                     row={row}
                     canManage={canManageLocal}
+                    canRequestException={canRequestException}
                     busy={Boolean(busyIds[`pc-${row.program_course_id}`] || (row.offering && busyIds[`off-${row.offering.course_offering_id}`]))}
                     capacity={capacityFor(row.program_course_id)}
                     onCapacityChange={(id, value) => setCapacities(current => ({ ...current, [id]: value }))}
@@ -597,6 +677,22 @@ export default function DeanRegistrationOfferings() {
                       row: item,
                     })}
                     onManageInstructors={id => navigate(`/dean/courses/${id}`)}
+                    onRequestException={item => {
+                      setExceptionReason('')
+                      setConfirm({
+                        type: 'exception',
+                        key: `ex-${item.offering.course_offering_id}`,
+                        row: item,
+                      })
+                    }}
+                    onResubmitException={item => {
+                      setExceptionReason(item.offering?.exceptional_opening_request?.reason || '')
+                      setConfirm({
+                        type: 'exception-resubmit',
+                        key: `ex-${item.offering.course_offering_id}`,
+                        row: item,
+                      })
+                    }}
                   />
                 ))}
               </div>
@@ -612,25 +708,34 @@ export default function DeanRegistrationOfferings() {
               ? 'تأكيد إنشاء طرح المادة'
               : confirm.type === 'reopen'
                 ? 'تأكيد فتح المادة'
-                : 'تأكيد إغلاق التسجيل'
+                : confirm.type === 'exception' || confirm.type === 'exception-resubmit'
+                  ? 'طلب فتح استثنائي'
+                  : 'تأكيد إغلاق التسجيل'
           }
           warning={
             confirm.type === 'open'
               ? 'سيتم إنشاء طرح المادة مغلقًا. يجب استكمال تكليف المدرسين المعتمدين قبل فتحها.'
               : confirm.type === 'reopen'
                 ? 'سيتم فتح المادة للتسجيل بعد التحقق من اكتمال تكليف المدرسين المعتمدين.'
-                : 'سيؤدي الإغلاق إلى منع تسجيل طلاب جدد في هذه المادة. لن يتم حذف تسجيلات الطلاب الحالية.'
+                : confirm.type === 'exception' || confirm.type === 'exception-resubmit'
+                  ? 'لن تُفتح المادة من هذه الشاشة. يبقى الطرح مغلقًا إلى أن يوافق النائب العلمي والنائب الإداري معًا.'
+                  : 'سيؤدي الإغلاق إلى منع تسجيل طلاب جدد في هذه المادة. لن يتم حذف تسجيلات الطلاب الحالية.'
           }
           confirmLabel={
             confirm.type === 'open'
               ? 'تأكيد الإنشاء'
               : confirm.type === 'reopen'
                 ? 'تأكيد الفتح'
-                : 'تأكيد الإغلاق'
+                : confirm.type === 'exception'
+                  ? 'إرسال الطلب'
+                  : confirm.type === 'exception-resubmit'
+                    ? 'إعادة الإرسال'
+                    : 'تأكيد الإغلاق'
           }
           confirmTone={confirm.type === 'close' ? 'danger' : 'primary'}
           busy={confirmBusy}
-          onCancel={() => { if (!confirmBusy) setConfirm(null) }}
+          disabled={(confirm.type === 'exception' || confirm.type === 'exception-resubmit') && !exceptionReason.trim()}
+          onCancel={() => { if (!confirmBusy) { setConfirm(null); setExceptionReason('') } }}
           onConfirm={() => {
             const row = confirm.row
             if (confirm.type === 'open') {
@@ -662,6 +767,36 @@ export default function DeanRegistrationOfferings() {
               )
               return
             }
+            if (confirm.type === 'exception') {
+              runException(
+                confirm.key,
+                () => apiRequest('/v1/dean/course-offering-exceptions', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    course_offering_id: row.offering.course_offering_id,
+                    reason: exceptionReason.trim(),
+                  }),
+                }),
+                row.program_course_id,
+                'تم إرسال طلب الفتح الاستثنائي. يبقى الطرح مغلقًا.',
+              )
+              return
+            }
+            if (confirm.type === 'exception-resubmit') {
+              const requestId = row.offering.exceptional_opening_request?.course_offering_exception_request_id
+              runException(
+                confirm.key,
+                () => apiRequest(`/v1/dean/course-offering-exceptions/${requestId}/resubmit`, {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    reason: exceptionReason.trim(),
+                  }),
+                }),
+                row.program_course_id,
+                'تم إعادة إرسال طلب الفتح الاستثنائي.',
+              )
+              return
+            }
             runMutation(
               confirm.key,
               () => apiRequest(`/v1/dean/registration-offerings/${row.offering.course_offering_id}/close`, {
@@ -679,6 +814,17 @@ export default function DeanRegistrationOfferings() {
             <InfoLine label="الفصل" value={context.semester?.semester_name || options.semesters.find(semester => String(semester.semester_id) === String(semesterId))?.semester_name} />
             {confirm.type === 'open' && (
               <InfoLine label="السعة" value={capacityFor(confirm.row.program_course_id)} />
+            )}
+            {(confirm.type === 'exception' || confirm.type === 'exception-resubmit') && (
+              <label className="sm:col-span-2 flex flex-col gap-1.5">
+                <span className="text-[11px] text-text-light font-semibold">سبب الفتح الاستثنائي</span>
+                <textarea
+                  className="w-full min-h-[96px] py-2.5 px-3 border-[1.5px] border-primary/20 rounded-[10px] text-[13px]"
+                  value={exceptionReason}
+                  onChange={event => setExceptionReason(event.target.value)}
+                  required
+                />
+              </label>
             )}
             {confirm.row.offering && (
               <>

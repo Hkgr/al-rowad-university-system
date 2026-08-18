@@ -83,6 +83,8 @@ import { administrativeVicePresidentNav, scientificVicePresidentNav } from '../f
 import VicePresidentShell from '../features/vice-presidency/pages/VicePresidentShell'
 import TeachingAssignmentQueue from '../features/vice-presidency/pages/TeachingAssignmentQueue'
 import TeachingAssignmentDetail from '../features/vice-presidency/pages/TeachingAssignmentDetail'
+import ExceptionalOpeningQueue from '../features/vice-presidency/pages/ExceptionalOpeningQueue'
+import ExceptionalOpeningDetail from '../features/vice-presidency/pages/ExceptionalOpeningDetail'
 
 function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], studentIdentity = false, employeeIdentity = false }) {
   const token = localStorage.getItem('token')
@@ -264,6 +266,8 @@ export default function App() {
           <Route path="/vp/scientific" element={<VicePresidentShell office="scientific" />} />
           <Route path="/vp/scientific/teaching-assignments" element={<TeachingAssignmentQueue office="scientific" />} />
           <Route path="/vp/scientific/teaching-assignments/:id" element={<TeachingAssignmentDetail office="scientific" />} />
+          <Route path="/vp/scientific/exceptional-openings" element={<ExceptionalOpeningQueue office="scientific" />} />
+          <Route path="/vp/scientific/exceptional-openings/:id" element={<ExceptionalOpeningDetail office="scientific" />} />
         </Route>
 
         {/* ── نيابة الشؤون الإدارية ── */}
@@ -277,6 +281,8 @@ export default function App() {
           <Route path="/vp/administrative" element={<VicePresidentShell office="administrative" />} />
           <Route path="/vp/administrative/teaching-assignments" element={<TeachingAssignmentQueue office="administrative" />} />
           <Route path="/vp/administrative/teaching-assignments/:id" element={<TeachingAssignmentDetail office="administrative" />} />
+          <Route path="/vp/administrative/exceptional-openings" element={<ExceptionalOpeningQueue office="administrative" />} />
+          <Route path="/vp/administrative/exceptional-openings/:id" element={<ExceptionalOpeningDetail office="administrative" />} />
         </Route>
 
         {/* Default redirect */}
