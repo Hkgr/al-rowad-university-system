@@ -6,9 +6,9 @@
 
 ## Introduction
 
-هذا الوحدة تدير **نظام العقوبات التأديبية** وفق الفصل العاشر من اللائحة (المواد 68–73): تسجيل مخالفات الطلاب، ربطها بأنواع العقوبات، تطبيق عقوبة صفر المقرر والمقررات اللاحقة عند الحاجة، وتقديم الطعون والبت فيها.
+This module documents the disciplinary penalties workflow (Chapter 10, Articles 68-73): case registration, penalty assignment, course-grade impact, and appeal decisions.
 
-This module manages student disciplinary cases: create cases with a penalty type, optionally cascade zero marks to the trigger course and subsequent same-term offerings (by theoretical exam date), and handle appeals (submit / accept / reject with mark restore on accept).
+This module manages student disciplinary cases and appeals: create case records, optionally apply zeroing to trigger/subsequent courses, submit appeals, and decide appeals with automatic grade restoration when accepted.
 
 ## Authentication Requirements
 
@@ -24,11 +24,29 @@ Content-Type: application/json
 
 | Rule | Detail |
 |------|--------|
-| Case statuses | `active`, `appealed`, `overturned`, `served`, `expired` |
-| Investigation | If penalty type `requires_investigation`, case is created with `investigation_status = pending` (tracked only; not enforced synchronously) |
-| `zero_and_subsequent` | Requires `trigger_course_offering_id`; zeros trigger + same year/semester offerings whose theoretical `exam_date` ≥ trigger exam date |
-| Appeal accept | Restores previous marks from `disciplinary_case_affected_courses` and sets case to `overturned` |
-| Appeal reject | Sets parent case `case_status` back to `active` |
+| Case creation status | New cases are created with `case_status = active` |
+| Investigation flag | If selected penalty type has `requires_investigation = true`, the service sets `investigation_status = pending` |
+| `zero_and_subsequent` guard 1 | Requires `trigger_course_offering_id`; otherwise API returns 422 with service exception message |
+| `zero_and_subsequent` guard 2 | Trigger offering must have a theoretical `grade_components.exam_date`; otherwise API returns 422 |
+| Zeroing behavior | Matching same-student, same-year, same-semester offerings with theoretical exam date `>=` trigger date are zeroed and tracked in `disciplinary_case_affected_courses` |
+| Appeal submit behavior | Creates appeal with `appeal_status = submitted` and sets parent case `case_status = appealed` |
+| Appeal decide behavior | `accepted` automatically calls revert logic and sets case `overturned`; `rejected` sets case back to `active` |
+
+### Penalty Type Codes (by severity order)
+
+| severity_order | penalty_code |
+|---:|---|
+| 1 | `warning` |
+| 2 | `deprive_services` |
+| 3 | `ban_attendance_month` |
+| 4 | `suspend_college_month` |
+| 5 | `ban_exam_specific_courses` |
+| 6 | `zero_specific_courses` |
+| 6 | `zero_and_subsequent` |
+| 7 | `suspend_college_semester` |
+| 8 | `ban_exam_full_semester` |
+| 9 | `suspend_college_over_semester` |
+| 10 | `expel_university` |
 
 ---
 
@@ -36,51 +54,62 @@ Content-Type: application/json
 
 | Method | URL | Purpose |
 |--------|-----|---------|
-| GET | `/api/v1/disciplinary-cases` | List disciplinary cases |
+| GET | `/api/v1/disciplinary-cases` | List cases (paginated) |
 | GET | `/api/v1/disciplinary-cases/{id}` | Show one case |
 | POST | `/api/v1/disciplinary-cases` | Create a disciplinary case |
-| GET | `/api/v1/students/{student}/disciplinary-cases` | Cases for one student |
-| GET | `/api/v1/disciplinary-case-appeals` | List appeals |
+| GET | `/api/v1/students/{student}/disciplinary-cases` | List all cases for one student |
+| GET | `/api/v1/disciplinary-case-appeals` | List appeals (paginated) |
 | GET | `/api/v1/disciplinary-case-appeals/{id}` | Show one appeal |
-| POST | `/api/v1/disciplinary-case-appeals` | Submit an appeal |
-| POST | `/api/v1/disciplinary-case-appeals/{id}/decide` | Accept or reject an appeal |
+| POST | `/api/v1/disciplinary-case-appeals` | Submit appeal |
+| POST | `/api/v1/disciplinary-case-appeals/{id}/decide` | Decide appeal (`accepted` or `rejected`) |
 
 ---
 
 ## GET /api/v1/disciplinary-cases
 
-**Purpose:** Paginated list of disciplinary cases.
+**Purpose:** Retrieve paginated disciplinary cases.
 
 **Request body:** None
 
-### Success response (200)
+### Success response example (200)
 
 ```json
 {
   "success": true,
   "message": "Operation completed successfully",
   "data": {
+    "current_page": 1,
     "data": [
       {
-        "case_id": 1,
-        "student_id": 10,
+        "case_id": 3,
+        "student_id": 15,
         "violation_type_id": 2,
-        "trigger_course_offering_id": 5,
-        "violation_description": "Cheating during theoretical exam",
-        "violation_date": "2026-01-10",
-        "penalty_type_id": 7,
-        "case_status": "active",
+        "trigger_course_offering_id": 44,
+        "violation_description": "Cheating in final exam",
+        "violation_date": "2026-01-12",
+        "reported_by_user_id": 7,
+        "investigation_status": "pending",
+        "investigation_date": null,
+        "investigation_notes": null,
         "decided_by_authority": "disciplinary_council",
-        "decision_date": "2026-01-15"
+        "decided_by_user_id": 7,
+        "decision_number": "DC-2026-014",
+        "decision_date": "2026-01-20",
+        "penalty_type_id": 7,
+        "penalty_start_date": "2026-01-21",
+        "penalty_end_date": null,
+        "is_in_absentia": false,
+        "guardian_notified_at": null,
+        "case_status": "active",
+        "created_at": "2026-01-20T10:00:00.000000Z",
+        "updated_at": "2026-01-20T10:00:00.000000Z"
       }
-    ],
-    "links": {},
-    "meta": {}
+    ]
   }
 }
 ```
 
-### Error response (401)
+### Error response example (401)
 
 ```json
 {
@@ -91,49 +120,49 @@ Content-Type: application/json
 
 ### Frontend notes
 
-- Use for admin/registry case lists; filter client-side or via future query params if needed.
+- Use this for admin/disciplinary case queue pages.
+- Response is paginated by default (`per_page` query is supported by shared CRUD trait).
 
 ---
 
 ## GET /api/v1/disciplinary-cases/{id}
 
-**Purpose:** Retrieve a single disciplinary case by `case_id`.
+**Purpose:** Retrieve one disciplinary case by `case_id`.
 
-**URL parameter:** `{id}` = `case_id`
-
-**Request body:** None
-
-### Success response (200)
+### Success response example (200)
 
 ```json
 {
   "success": true,
   "message": "Operation completed successfully",
   "data": {
-    "case_id": 1,
-    "student_id": 10,
+    "case_id": 3,
+    "student_id": 15,
     "violation_type_id": 2,
-    "trigger_course_offering_id": 5,
-    "violation_description": "Cheating during theoretical exam",
-    "violation_date": "2026-01-10",
-    "reported_by_user_id": 3,
+    "trigger_course_offering_id": 44,
+    "violation_description": "Cheating in final exam",
+    "violation_date": "2026-01-12",
+    "reported_by_user_id": 7,
     "investigation_status": "pending",
+    "investigation_date": null,
+    "investigation_notes": null,
     "decided_by_authority": "disciplinary_council",
-    "decided_by_user_id": 3,
+    "decided_by_user_id": 7,
     "decision_number": "DC-2026-014",
-    "decision_date": "2026-01-15",
+    "decision_date": "2026-01-20",
     "penalty_type_id": 7,
-    "penalty_start_date": "2026-01-15",
+    "penalty_start_date": "2026-01-21",
     "penalty_end_date": null,
     "is_in_absentia": false,
+    "guardian_notified_at": null,
     "case_status": "active",
-    "created_at": "2026-01-15T10:00:00.000000Z",
-    "updated_at": "2026-01-15T10:00:00.000000Z"
+    "created_at": "2026-01-20T10:00:00.000000Z",
+    "updated_at": "2026-01-20T10:00:00.000000Z"
   }
 }
 ```
 
-### Error response (404)
+### Error response example (404)
 
 ```json
 {
@@ -145,27 +174,27 @@ Content-Type: application/json
 
 ### Frontend notes
 
-- Load violation/penalty type labels from lookup tables for display.
+- Use this endpoint as detail source after selecting an item from the list.
 
 ---
 
 ## POST /api/v1/disciplinary-cases
 
-**Purpose:** Create a disciplinary case and, when the penalty cascades, apply zero marks to the trigger offering and subsequent same-term offerings.
+**Purpose:** Create a disciplinary case. If selected penalty cascades to subsequent courses, zeroing is applied in the same transaction.
 
 ### Request body example
 
 ```json
 {
-  "student_id": 10,
+  "student_id": 15,
   "violation_type_id": 2,
-  "trigger_course_offering_id": 5,
-  "violation_description": "Cheating during theoretical exam",
-  "violation_date": "2026-01-10",
+  "trigger_course_offering_id": 44,
+  "violation_description": "Cheating in final exam",
+  "violation_date": "2026-01-12",
   "decision_number": "DC-2026-014",
-  "decision_date": "2026-01-15",
+  "decision_date": "2026-01-20",
   "penalty_type_id": 7,
-  "penalty_start_date": "2026-01-15",
+  "penalty_start_date": "2026-01-21",
   "penalty_end_date": null,
   "is_in_absentia": false,
   "decided_by_authority": "disciplinary_council"
@@ -189,23 +218,23 @@ Content-Type: application/json
 | `is_in_absentia` | `boolean` |
 | `decided_by_authority` | `required\|string\|in:instructor,dean_or_institute_director,university_president,disciplinary_council` |
 
-### Success response (201)
+### Success response example (201)
 
 ```json
 {
   "success": true,
   "message": "Operation completed successfully",
   "data": {
-    "case_id": 1,
-    "student_id": 10,
+    "case_id": 3,
+    "student_id": 15,
     "penalty_type_id": 7,
     "case_status": "active",
-    "investigation_status": null
+    "investigation_status": "pending"
   }
 }
 ```
 
-### Error response (422)
+### Error response examples (422)
 
 ```json
 {
@@ -215,23 +244,26 @@ Content-Type: application/json
 }
 ```
 
+```json
+{
+  "success": false,
+  "message": "No exam_date is configured on theoretical grade components for the trigger course offering.",
+  "errors": {}
+}
+```
+
 ### Frontend notes
 
-- Choosing the penalty type whose code is **`zero_and_subsequent`** (typically `cascades_to_subsequent_courses = 1`) **requires** `trigger_course_offering_id` to be set.
-- The endpoint returns **422** if that ID is missing, or if the trigger course offering has **no theoretical `exam_date`** configured on its grade components yet — configure the exam date before applying this penalty.
-- Other penalty types may omit `trigger_course_offering_id` unless your workflow still wants it for record-keeping.
+- If user selects penalty code `zero_and_subsequent`, enforce `trigger_course_offering_id` in UI.
+- Make sure trigger offering has a theoretical exam date before submit; otherwise backend returns 422.
 
 ---
 
 ## GET /api/v1/students/{student}/disciplinary-cases
 
-**Purpose:** List all disciplinary cases for one student (profile page).
+**Purpose:** Retrieve all disciplinary cases for one student (non-paginated list).
 
-**URL parameter:** `{student}` = `student_id`
-
-**Request body:** None
-
-### Success response (200)
+### Success response example (200)
 
 ```json
 {
@@ -239,17 +271,17 @@ Content-Type: application/json
   "message": "Operation completed successfully",
   "data": [
     {
-      "case_id": 1,
-      "student_id": 10,
+      "case_id": 3,
+      "student_id": 15,
+      "penalty_type_id": 7,
       "case_status": "active",
-      "violation_date": "2026-01-10",
-      "penalty_type_id": 7
+      "violation_date": "2026-01-12"
     }
   ]
 }
 ```
 
-### Error response (404)
+### Error response example (404)
 
 ```json
 {
@@ -261,39 +293,41 @@ Content-Type: application/json
 
 ### Frontend notes
 
-- Use on the student profile under a “Disciplinary cases” section.
+- Intended for student profile timeline/history sections.
 
 ---
 
 ## GET /api/v1/disciplinary-case-appeals
 
-**Purpose:** Paginated list of disciplinary case appeals.
+**Purpose:** Retrieve paginated appeal records.
 
-**Request body:** None
-
-### Success response (200)
+### Success response example (200)
 
 ```json
 {
   "success": true,
   "message": "Operation completed successfully",
   "data": {
+    "current_page": 1,
     "data": [
       {
-        "appeal_id": 1,
-        "case_id": 1,
-        "appeal_reason": "Procedural error in investigation",
+        "appeal_id": 12,
+        "case_id": 3,
+        "submitted_at": "2026-01-25T09:00:00.000000Z",
+        "appeal_reason": "Procedural issue",
         "appeal_status_id": 1,
-        "submitted_at": "2026-01-20T09:00:00.000000Z"
+        "reviewed_by_user_id": null,
+        "decision_date": null,
+        "decision_notes": null,
+        "created_at": "2026-01-25T09:00:00.000000Z",
+        "updated_at": "2026-01-25T09:00:00.000000Z"
       }
-    ],
-    "links": {},
-    "meta": {}
+    ]
   }
 }
 ```
 
-### Error response (401)
+### Error response example (401)
 
 ```json
 {
@@ -304,7 +338,7 @@ Content-Type: application/json
 
 ### Frontend notes
 
-- Pair with `appeal-statuses` lookup for status labels.
+- Pair with `appeal_statuses` lookup to display status labels.
 
 ---
 
@@ -312,30 +346,28 @@ Content-Type: application/json
 
 **Purpose:** Retrieve one appeal by `appeal_id`.
 
-**URL parameter:** `{id}` = `appeal_id`
-
-**Request body:** None
-
-### Success response (200)
+### Success response example (200)
 
 ```json
 {
   "success": true,
   "message": "Operation completed successfully",
   "data": {
-    "appeal_id": 1,
-    "case_id": 1,
-    "submitted_at": "2026-01-20T09:00:00.000000Z",
-    "appeal_reason": "Procedural error in investigation",
+    "appeal_id": 12,
+    "case_id": 3,
+    "submitted_at": "2026-01-25T09:00:00.000000Z",
+    "appeal_reason": "Procedural issue",
     "appeal_status_id": 1,
     "reviewed_by_user_id": null,
     "decision_date": null,
-    "decision_notes": null
+    "decision_notes": null,
+    "created_at": "2026-01-25T09:00:00.000000Z",
+    "updated_at": "2026-01-25T09:00:00.000000Z"
   }
 }
 ```
 
-### Error response (404)
+### Error response example (404)
 
 ```json
 {
@@ -347,20 +379,20 @@ Content-Type: application/json
 
 ### Frontend notes
 
-- Show linked case details via `GET /disciplinary-cases/{case_id}` when needed.
+- Use this for detailed review and decision screens.
 
 ---
 
 ## POST /api/v1/disciplinary-case-appeals
 
-**Purpose:** Submit an appeal against a disciplinary case; sets parent case status to `appealed`.
+**Purpose:** Submit an appeal for a disciplinary case.
 
 ### Request body example
 
 ```json
 {
-  "case_id": 1,
-  "appeal_reason": "Procedural error in investigation"
+  "case_id": 3,
+  "appeal_reason": "Procedural issue"
 }
 ```
 
@@ -371,52 +403,55 @@ Content-Type: application/json
 | `case_id` | `required\|integer\|exists:student_disciplinary_cases,case_id` |
 | `appeal_reason` | `required\|string` |
 
-### Success response (201)
+### Success response example (201)
 
 ```json
 {
   "success": true,
   "message": "Operation completed successfully",
   "data": {
-    "appeal_id": 1,
-    "case_id": 1,
-    "appeal_status_id": 1,
-    "submitted_at": "2026-01-20T09:00:00.000000Z",
-    "appeal_reason": "Procedural error in investigation"
+    "appeal_id": 12,
+    "case_id": 3,
+    "submitted_at": "2026-01-25T09:00:00.000000Z",
+    "appeal_reason": "Procedural issue",
+    "appeal_status_id": 1
   }
 }
 ```
 
-### Error response (422)
+### Error response example (422)
 
 ```json
 {
   "success": false,
   "message": "Validation failed",
   "errors": {
-    "case_id": ["The selected case id is invalid."]
+    "case_id": [
+      "The selected case id is invalid."
+    ]
   }
 }
 ```
 
 ### Frontend notes
 
-- Initial appeal status is the `submitted` row in `appeal_statuses`.
+- Submit route sets case status to `appealed` automatically.
 
 ---
 
 ## POST /api/v1/disciplinary-case-appeals/{id}/decide
 
-**Purpose:** Accept or reject an appeal. Accepting restores affected course marks and sets the case to `overturned`; rejecting sets the case back to `active`.
+**Purpose:** Decide an appeal status.
 
-**URL parameter:** `{id}` = `appeal_id`
+- `status_code = accepted`: backend automatically reverts affected course grades and sets case `overturned`.
+- `status_code = rejected`: backend sets case back to `active`.
 
 ### Request body example
 
 ```json
 {
   "status_code": "accepted",
-  "notes": "Appeal upheld — marks restored"
+  "notes": "Appeal approved after review"
 }
 ```
 
@@ -427,36 +462,46 @@ Content-Type: application/json
 | `status_code` | `required\|string\|in:accepted,rejected` |
 | `notes` | `nullable\|string` |
 
-### Success response (200)
+### Success response example (200)
 
 ```json
 {
   "success": true,
   "message": "Operation completed successfully",
   "data": {
-    "appeal_id": 1,
-    "case_id": 1,
+    "appeal_id": 12,
+    "case_id": 3,
     "appeal_status_id": 3,
-    "decision_date": "2026-01-25",
-    "decision_notes": "Appeal upheld — marks restored",
-    "reviewed_by_user_id": 4
+    "reviewed_by_user_id": 9,
+    "decision_date": "2026-01-27",
+    "decision_notes": "Appeal approved after review"
   }
 }
 ```
 
-### Error response (422)
+### Error response examples (422)
 
 ```json
 {
   "success": false,
   "message": "Validation failed",
   "errors": {
-    "status_code": ["The selected status code is invalid."]
+    "status_code": [
+      "The selected status code is invalid."
+    ]
   }
+}
+```
+
+```json
+{
+  "success": false,
+  "message": "Appeal status \"accepted\" was not found in appeal_statuses.",
+  "errors": {}
 }
 ```
 
 ### Frontend notes
 
-- Use `accepted` / `rejected` only (matches seeded `appeal_statuses`).
-- After accept, re-fetch the case and grade sheet to confirm restored marks.
+- Only send `accepted` or `rejected`.
+- After an accepted decision, refresh case details and grade-related screens to reflect restored values.
