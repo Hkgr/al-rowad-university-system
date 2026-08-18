@@ -64,6 +64,29 @@ class TeachingAssignmentLifecycleContractTest extends TestCase
         );
     }
 
+    public function test_phase7_open_to_closed_remains_formal_workflow_only(): void
+    {
+        $exceptionPath = dirname(__DIR__, 2).'/app/Exceptions/CourseOfferingClosureException.php';
+        if (! is_file($exceptionPath)) {
+            self::markTestSkipped('Phase 7 is not in the current base; rebase onto merged PR #76 first.');
+        }
+
+        $opening = self::source('app/Services/CourseOfferingOpeningService.php');
+        self::assertStringContainsString('CourseOfferingClosureException::workflowRequired()', $opening);
+        self::assertStringContainsString('assertNoPendingInstructorRemoval(', $opening);
+
+        $controller = self::source('app/Http/Controllers/Api/CourseOfferingController.php');
+        self::assertStringContainsString('CourseOfferingClosureException::workflowRequired()', $controller);
+
+        $context = self::source('app/Services/CourseOfferingContextService.php');
+        self::assertStringContainsString('CourseOfferingClosureException::workflowRequired()', $context);
+
+        $dean = self::source('app/Services/DeanRegistrationOfferingService.php');
+        $closeOffering = self::extractMethod($dean, 'closeOffering');
+        self::assertStringContainsString('CourseOfferingClosureException::workflowRequired()', $closeOffering);
+        self::assertStringNotContainsString('$offering->status = self::STATUS_CLOSED;', $closeOffering);
+    }
+
     public function test_sql_package_layout_is_unchanged(): void
     {
         $dir = dirname(__DIR__, 2).'/database/sql/teaching-assignment-lifecycle';
