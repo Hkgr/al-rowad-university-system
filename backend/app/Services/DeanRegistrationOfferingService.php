@@ -25,10 +25,14 @@ class DeanRegistrationOfferingService
 
     public const STATUS_CLOSED = 'closed';
 
+    public const ACTION_CREATED_PENDING_COVERAGE = 'created_pending_coverage';
+
     public function __construct(
         private DataScopeService $dataScope,
         private TeachingAssignmentService $teachingAssignments,
         private CourseOfferingContextService $offeringContext,
+        private CourseOfferingOpeningService $opening,
+        private CourseOfferingInstructorCoverageService $coverage,
     ) {
     }
 
@@ -181,7 +185,7 @@ class DeanRegistrationOfferingService
                         'faculty_member_id' => null,
                         'capacity' => $capacity,
                         'available_seats' => $capacity,
-                        'status' => self::STATUS_OPEN,
+                        'status' => self::STATUS_CLOSED,
                     ]);
                 } catch (CourseOfferingContextException $exception) {
                     if ($exception->errorCode !== CourseOfferingContextException::DUPLICATE_OFFERING) {
@@ -203,7 +207,7 @@ class DeanRegistrationOfferingService
 
                 if ($offering->wasRecentlyCreated) {
                     return [
-                        'action' => 'created',
+                        'action' => self::ACTION_CREATED_PENDING_COVERAGE,
                         'program_course_id' => $programCourse->program_course_id,
                         'offering' => $this->offeringPayload($this->hydrateOffering($offering)),
                     ];
@@ -225,8 +229,7 @@ class DeanRegistrationOfferingService
                 throw new ConflictHttpException('تعذّر تنفيذ العملية بسبب تغير حالة المادة. أعد تحميل البيانات وحاول مجددًا.');
             }
 
-            $offering->status = self::STATUS_OPEN;
-            $offering->save();
+            $offering = $this->opening->normalOpen($offering, $user);
 
             return [
                 'action' => 'reopened',
@@ -254,8 +257,7 @@ class DeanRegistrationOfferingService
                 throw new ConflictHttpException('تعذّر تنفيذ العملية بسبب تغير حالة المادة. أعد تحميل البيانات وحاول مجددًا.');
             }
 
-            $offering->status = self::STATUS_OPEN;
-            $offering->save();
+            $offering = $this->opening->normalOpen($offering, $user);
 
             return [
                 'action' => 'reopened',
@@ -404,6 +406,7 @@ class DeanRegistrationOfferingService
             ->where('course_offerings.academic_program_id', $program->academic_program_id)
             ->whereNotNull('course_offerings.academic_program_id')
             ->whereIn('course_offerings.course_id', $courseIds)
+            ->with(CourseOfferingInstructorCoverageService::eagerLoadRelations())
             ->withCount([
                 'studentCourseRegistrations as registered_students_count' => fn (Builder $registrations) => $registrations->current(),
             ])
@@ -438,6 +441,7 @@ class DeanRegistrationOfferingService
 
     private function hydrateOffering(CourseOffering $offering): CourseOffering
     {
+        $offering->load(CourseOfferingInstructorCoverageService::eagerLoadRelations());
         $offering->loadCount([
             'studentCourseRegistrations as registered_students_count' => fn (Builder $registrations) => $registrations->current(),
         ]);
@@ -453,6 +457,7 @@ class DeanRegistrationOfferingService
             'capacity' => $offering->capacity,
             'available_seats' => $offering->available_seats,
             'registered_students_count' => (int) ($offering->registered_students_count ?? 0),
+            'instructor_coverage' => $this->coverage->describe($offering),
         ];
     }
 

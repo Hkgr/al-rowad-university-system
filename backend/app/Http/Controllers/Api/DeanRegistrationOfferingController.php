@@ -64,7 +64,7 @@ class DeanRegistrationOfferingController extends Controller
     private function successMessage(?string $action): string
     {
         return match ($action) {
-            'created' => 'تمت إتاحة المادة للتسجيل بنجاح.',
+            'created', 'created_pending_coverage', 'created_closed' => 'تم إنشاء طرح المادة. يجب استكمال تكليف المدرسين المعتمدين قبل فتحها.',
             'reopened' => 'تمت إعادة فتح التسجيل للمادة بنجاح.',
             'closed' => 'تم إغلاق التسجيل للمادة بنجاح.',
             default => 'تمت إتاحة المادة للتسجيل بنجاح.',

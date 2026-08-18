@@ -4,7 +4,7 @@ import {
   reviewStatusLabel,
   workflowStatusLabel,
 } from '../utils/teacherDisplay'
-import { teacherSlotLabel } from '../utils/courseOfferingDisplay'
+import { teacherSlotLabel, instructorCoverageComplete, instructorCoverageSummary } from '../utils/courseOfferingDisplay'
 import CourseRequirementBadges, { pickRequirementClassification } from '../../../components/academic/CourseRequirementBadges'
 
 function SlotCard({ title, slot }) {
@@ -67,6 +67,9 @@ function SlotCard({ title, slot }) {
 }
 
 export default function DeanCourseTeachersPanel({ offering, canManage, onManage }) {
+  const coverage = offering?.instructor_coverage
+  const complete = instructorCoverageComplete(coverage)
+
   return (
     <section>
       <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
@@ -75,16 +78,21 @@ export default function DeanCourseTeachersPanel({ offering, canManage, onManage 
           <p className="text-[12px] text-text-light mt-0.5">
             التكليف يصبح نافذًا بعد موافقة النائب العلمي والنائب الإداري معًا
           </p>
+          {coverage && (
+            <p className={`text-[12.5px] font-bold mt-1.5 ${complete ? 'text-green-700' : 'text-amber-800'}`}>
+              اكتمال المدرسين: {instructorCoverageSummary(coverage)}
+            </p>
+          )}
         </div>
         {canManage && (
           <button
             type="button"
             className="px-4 py-2 bg-primary text-white rounded-[10px] text-[13px] font-bold hover:bg-primary-dark transition-colors"
             onClick={onManage}
-            aria-label="إدارة التكليف"
-            title="إدارة التكليف"
+            aria-label="إدارة تكليف المدرسين"
+            title="إدارة تكليف المدرسين"
           >
-            إدارة التكليف
+            إدارة تكليف المدرسين
           </button>
         )}
       </div>

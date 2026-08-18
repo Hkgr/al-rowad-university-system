@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Services\CourseOfferingInstructorCoverageService;
 use App\Support\CourseRequirementClassification;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -37,6 +38,10 @@ class CourseOfferingResource extends JsonResource
             'available_seats' => $this->available_seats,
             'status' => $this->status,
             'requirement_classification' => CourseRequirementClassification::forOffering($this->resource),
+            'instructor_coverage' => $this->when(
+                $this->relationLoaded('course'),
+                fn () => app(CourseOfferingInstructorCoverageService::class)->describe($this->resource)
+            ),
             'course' => CourseResource::make($this->whenLoaded('course')),
             'academic_year' => AcademicYearResource::make($this->whenLoaded('academicYear')),
             'semester' => SemesterResource::make($this->whenLoaded('semester')),

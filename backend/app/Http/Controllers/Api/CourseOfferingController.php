@@ -13,6 +13,8 @@ use App\Http\Resources\StudentCourseRegistrationResource;
 use App\Models\CourseOffering;
 use App\Services\AttendanceService;
 use App\Services\CourseOfferingContextService;
+use App\Services\CourseOfferingInstructorCoverageService;
+use App\Services\CourseOfferingOpeningService;
 use App\Services\GradeService;
 use App\Services\AcademicAuthorizationService;
 use App\Services\DataScopeService;
@@ -23,8 +25,10 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class CourseOfferingController extends ApiController
 {
-    public function __construct(private CourseOfferingContextService $offeringContext)
-    {
+    public function __construct(
+        private CourseOfferingContextService $offeringContext,
+        private CourseOfferingOpeningService $opening,
+    ) {
     }
 
     public function index(): JsonResponse
@@ -70,15 +74,20 @@ class CourseOfferingController extends ApiController
             $request->user(),
         );
         $this->rejectExternalFacultyMemberAssignment($request);
+        $requestedOpen = (string) ($data['status'] ?? '') === CourseOfferingOpeningService::STATUS_OPEN;
         $offering = $this->offeringContext->createOffering($context, [
             'capacity' => $data['capacity'],
             'available_seats' => $data['available_seats'],
-            'status' => $data['status'],
+            'status' => CourseOfferingOpeningService::STATUS_CLOSED,
         ]);
+
+        $message = $requestedOpen
+            ? 'تم إنشاء طرح المادة مغلقًا. يجب استكمال تكليف المدرسين المعتمدين قبل فتحها.'
+            : 'تم إنشاء طرح المادة. يجب استكمال تكليف المدرسين المعتمدين قبل فتحها.';
 
         return $this->successResponse(
             (new CourseOfferingResource($offering->load($this->offeringRelations())))->resolve($request),
-            'Operation completed successfully',
+            $message,
             201
         );
     }
@@ -128,7 +137,17 @@ class CourseOfferingController extends ApiController
             $data = array_merge($data, $context->offeringAttributes());
         }
 
+        $requestedOpen = array_key_exists('status', $data)
+            && (string) $data['status'] === CourseOfferingOpeningService::STATUS_OPEN;
+        if ($requestedOpen) {
+            unset($data['status']);
+        }
+
         $this->offeringContext->updateOffering($offering, $data);
+
+        if ($requestedOpen) {
+            $offering = $this->opening->normalOpen($offering->fresh(), $request->user());
+        }
 
         return $this->successResponse(
             (new CourseOfferingResource($offering->fresh()->load($this->offeringRelations())))->resolve($request)
@@ -326,13 +345,13 @@ class CourseOfferingController extends ApiController
      */
     private function offeringRelations(): array
     {
-        return [
+        return array_values(array_unique(array_merge([
             'course',
             'academicYear',
             'semester',
             'department.college',
             'academicProgram.department.college',
             'facultyMember',
-        ];
+        ], CourseOfferingInstructorCoverageService::eagerLoadRelations())));
     }
 }
