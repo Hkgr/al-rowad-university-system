@@ -20,6 +20,8 @@ class TeachingAssignmentException extends Exception
 
     public const ADMINISTRATIVE_REVIEW_FORBIDDEN = 'administrative_review_forbidden';
 
+    public const SAME_REVIEWER_FORBIDDEN = 'teaching_assignment_same_reviewer_forbidden';
+
     public const RETURN_REASON_REQUIRED = 'return_reason_required';
 
     public const MATERIAL_CHANGE_REQUIRES_NEW_CYCLE = 'material_change_requires_new_cycle';
@@ -92,6 +94,13 @@ class TeachingAssignmentException extends Exception
         $message = 'ليست لديك صلاحية المراجعة الإدارية.';
 
         return new self($message, ['teaching_assignment' => [$message]], 403, self::ADMINISTRATIVE_REVIEW_FORBIDDEN);
+    }
+
+    public static function sameReviewerForbidden(): self
+    {
+        $message = 'لا يجوز أن يوافق نفس المستخدم على المراجعة العلمية والمراجعة الإدارية لنفس طلب التكليف.';
+
+        return new self($message, ['teaching_assignment' => [$message]], 409, self::SAME_REVIEWER_FORBIDDEN);
     }
 
     public static function returnReasonRequired(): self

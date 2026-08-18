@@ -5,7 +5,8 @@
 -- Do not use DATABASE().
 --
 -- Target workflow tables and RBAC objects are classified ABSENT / COMPATIBLE / CONFLICT.
--- OVERALL is BLOCKED when any target object is CONFLICT or a prerequisite is missing.
+-- OVERALL is BLOCKED when any target object is CONFLICT, a prerequisite is missing,
+-- or @rbac_matrix_conflict = 1 (forbidden VP-review mapping).
 -- Existing legacy course_offering_instructors rows are informational and are NOT a blocker.
 
 SET @db_ready := IF(
@@ -771,9 +772,62 @@ SET @permissions_code_unique := IF(
     0
 );
 
+SET @rbac_matrix_conflict := IF(
+    @structure_ok = 1,
+    (
+        SELECT IF(COUNT(*) > 0, 1, 0)
+        FROM `alrowad_uni_rust`.`roles` r
+        JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+        JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+        WHERE p.permission_code IN (
+            'teaching_assignments.review_scientific',
+            'teaching_assignments.review_administrative'
+        )
+          AND NOT (
+              (
+                  p.permission_code = 'teaching_assignments.review_scientific'
+                  AND r.role_code = 'vice_president_scientific'
+              )
+              OR (
+                  p.permission_code = 'teaching_assignments.review_administrative'
+                  AND r.role_code = 'vice_president_administrative'
+              )
+          )
+    ),
+    0
+);
+
+SET @sql := IF(
+    @structure_ok = 1,
+    'SELECT DISTINCT ''RBAC_MATRIX_CONFLICT'' AS report_section, r.role_code, p.permission_code
+     FROM `alrowad_uni_rust`.`roles` r
+     JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+     JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+     WHERE p.permission_code IN (
+         ''teaching_assignments.review_scientific'',
+         ''teaching_assignments.review_administrative''
+     )
+       AND NOT (
+           (
+               p.permission_code = ''teaching_assignments.review_scientific''
+               AND r.role_code = ''vice_president_scientific''
+           )
+           OR (
+               p.permission_code = ''teaching_assignments.review_administrative''
+               AND r.role_code = ''vice_president_administrative''
+           )
+       )
+     ORDER BY r.role_code, p.permission_code',
+    'SELECT ''RBAC_MATRIX_CONFLICT'' AS report_section, CAST(NULL AS CHAR) AS role_code, CAST(NULL AS CHAR) AS permission_code WHERE 0'
+);
+PREPARE phase4_rbac_conflict_stmt FROM @sql;
+EXECUTE phase4_rbac_conflict_stmt;
+DEALLOCATE PREPARE phase4_rbac_conflict_stmt;
+
 SET @overall := IF(
     @db_ready = 1
     AND @missing_required_columns = 0
+    AND @rbac_matrix_conflict = 0
     AND @requests_state IN ('ABSENT', 'COMPATIBLE')
     AND @reviews_state IN ('ABSENT', 'COMPATIBLE')
     AND @events_state IN ('ABSENT', 'COMPATIBLE')
@@ -799,6 +853,7 @@ SET @overall := IF(
 SELECT 'OVERALL' AS report_section,
        @overall AS result,
        @missing_required_columns AS missing_required_columns,
+       @rbac_matrix_conflict AS rbac_matrix_conflict,
        @requests_state AS requests_state,
        @reviews_state AS reviews_state,
        @events_state AS events_state,

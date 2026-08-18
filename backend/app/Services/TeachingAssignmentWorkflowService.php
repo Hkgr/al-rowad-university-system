@@ -184,9 +184,9 @@ class TeachingAssignmentWorkflowService
     public function reviewQueueQuery(User $user, string $authority)
     {
         if ($authority === TeachingAssignmentWorkflow::AUTHORITY_SCIENTIFIC) {
-            $this->assertScientificReviewer($user);
+            $this->assertCanReadScientificQueue($user);
         } else {
-            $this->assertAdministrativeReviewer($user);
+            $this->assertCanReadAdministrativeQueue($user);
         }
 
         $query = TeachingAssignmentRequest::query()
@@ -297,6 +297,10 @@ class TeachingAssignmentWorkflowService
 
             if ($own->status !== TeachingAssignmentWorkflow::REVIEW_PENDING) {
                 throw TeachingAssignmentException::reviewLocked();
+            }
+
+            if ($decision === TeachingAssignmentWorkflow::REVIEW_APPROVED) {
+                $this->assertDistinctApprover($user, $reviews, $authority);
             }
 
             if ($decision === TeachingAssignmentWorkflow::REVIEW_RETURNED) {
@@ -559,17 +563,65 @@ class TeachingAssignmentWorkflowService
         }
     }
 
-    private function assertScientificReviewer(User $user): void
+    private function assertCanReadScientificQueue(User $user): void
     {
         if (! $user->hasPermission(TeachingAssignmentWorkflow::PERMISSION_REVIEW_SCIENTIFIC)) {
             throw TeachingAssignmentException::scientificReviewForbidden();
         }
     }
 
-    private function assertAdministrativeReviewer(User $user): void
+    private function assertCanReadAdministrativeQueue(User $user): void
     {
         if (! $user->hasPermission(TeachingAssignmentWorkflow::PERMISSION_REVIEW_ADMINISTRATIVE)) {
             throw TeachingAssignmentException::administrativeReviewForbidden();
+        }
+    }
+
+    private function assertScientificReviewer(User $user): void
+    {
+        if (! $user->isScientificVicePresident()
+            || ! $this->holdsAssignedPermission($user, TeachingAssignmentWorkflow::PERMISSION_REVIEW_SCIENTIFIC)) {
+            throw TeachingAssignmentException::scientificReviewForbidden();
+        }
+    }
+
+    private function assertAdministrativeReviewer(User $user): void
+    {
+        if (! $user->isAdministrativeVicePresident()
+            || ! $this->holdsAssignedPermission($user, TeachingAssignmentWorkflow::PERMISSION_REVIEW_ADMINISTRATIVE)) {
+            throw TeachingAssignmentException::administrativeReviewForbidden();
+        }
+    }
+
+    /**
+     * Assigned role_permissions only. Super Admin virtual grants from
+     * User::hasPermission() must not impersonate academic authorities.
+     */
+    private function holdsAssignedPermission(User $user, string $permission): bool
+    {
+        return $user->effectivePermissions()->contains($permission);
+    }
+
+    /**
+     * The two approvals that materialize a teaching assignment cannot come
+     * from the same user_id on the current request cycle.
+     *
+     * @param  Collection<string, TeachingAssignmentReview>  $reviews
+     */
+    private function assertDistinctApprover(User $user, Collection $reviews, string $authority): void
+    {
+        $otherAuthority = $authority === TeachingAssignmentWorkflow::AUTHORITY_SCIENTIFIC
+            ? TeachingAssignmentWorkflow::AUTHORITY_ADMINISTRATIVE
+            : TeachingAssignmentWorkflow::AUTHORITY_SCIENTIFIC;
+        $other = $reviews->get($otherAuthority);
+        if ($other === null
+            || (string) $other->status !== TeachingAssignmentWorkflow::REVIEW_APPROVED
+            || $other->reviewed_by_user_id === null) {
+            return;
+        }
+
+        if ((int) $other->reviewed_by_user_id === (int) $user->user_id) {
+            throw TeachingAssignmentException::sameReviewerForbidden();
         }
     }
 

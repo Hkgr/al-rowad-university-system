@@ -2,15 +2,21 @@
 -- Fully qualified objects: do not depend on phpMyAdmin's selected database.
 -- DDL commits implicitly in MariaDB; table CREATE statements are not wrapped
 -- in a transaction. RBAC DML is transactional.
+-- COMMIT only when post-write RBAC verification succeeds (@phase4_complete = 1).
+-- ROLLBACK on unexpected post-write failure so this transaction's permission /
+-- role_permission inserts do not persist. Do not DELETE-then-COMMIT leftover RBAC.
 -- Do not use stored procedures, DELIMITER, or SIGNAL.
--- Independently recomputes the same critical safety conditions as 00_preflight.sql.
+-- Independently recomputes the same critical safety conditions as 00_preflight.sql,
+-- including the pre-write VP-review forbidden-matrix audit (@rbac_matrix_conflict).
 --
 -- Does NOT:
 --   modify course_offering_instructors rows
 --   create users, user_roles, or user_access_scopes
 --   create fake workflow requests or approvals
 --   modify organizational units
---   grant review permissions to generic vice_president
+--   grant review permissions to generic vice_president or dean
+--   insert RBAC when apply_ready = 0 (including rbac_matrix_conflict = 1)
+--   insert Phase 4 review mappings for super_admin
 
 SET @apply_ready := 0;
 SET @phase4_complete := 0;
@@ -483,9 +489,62 @@ SET @permissions_code_unique := IF(
     0
 );
 
+SET @rbac_matrix_conflict := IF(
+    @structure_ok = 1,
+    (
+        SELECT IF(COUNT(*) > 0, 1, 0)
+        FROM `alrowad_uni_rust`.`roles` r
+        JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+        JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+        WHERE p.permission_code IN (
+            'teaching_assignments.review_scientific',
+            'teaching_assignments.review_administrative'
+        )
+          AND NOT (
+              (
+                  p.permission_code = 'teaching_assignments.review_scientific'
+                  AND r.role_code = 'vice_president_scientific'
+              )
+              OR (
+                  p.permission_code = 'teaching_assignments.review_administrative'
+                  AND r.role_code = 'vice_president_administrative'
+              )
+          )
+    ),
+    0
+);
+
+SET @sql := IF(
+    @structure_ok = 1,
+    'SELECT DISTINCT ''RBAC_MATRIX_CONFLICT'' AS report_section, r.role_code, p.permission_code
+     FROM `alrowad_uni_rust`.`roles` r
+     JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+     JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+     WHERE p.permission_code IN (
+         ''teaching_assignments.review_scientific'',
+         ''teaching_assignments.review_administrative''
+     )
+       AND NOT (
+           (
+               p.permission_code = ''teaching_assignments.review_scientific''
+               AND r.role_code = ''vice_president_scientific''
+           )
+           OR (
+               p.permission_code = ''teaching_assignments.review_administrative''
+               AND r.role_code = ''vice_president_administrative''
+           )
+       )
+     ORDER BY r.role_code, p.permission_code',
+    'SELECT ''RBAC_MATRIX_CONFLICT'' AS report_section, CAST(NULL AS CHAR) AS role_code, CAST(NULL AS CHAR) AS permission_code WHERE 0'
+);
+PREPARE phase4_rbac_conflict_stmt FROM @sql;
+EXECUTE phase4_rbac_conflict_stmt;
+DEALLOCATE PREPARE phase4_rbac_conflict_stmt;
+
 SET @apply_ready := IF(
     @db_ready = 1
     AND @missing_required_columns = 0
+    AND @rbac_matrix_conflict = 0
     AND @requests_state IN ('ABSENT', 'COMPATIBLE')
     AND @reviews_state IN ('ABSENT', 'COMPATIBLE')
     AND @events_state IN ('ABSENT', 'COMPATIBLE')
@@ -509,6 +568,8 @@ SET @apply_ready := IF(
 
 SELECT 'APPLY_GUARD' AS report_section,
        IF(@apply_ready = 1, 'READY', 'BLOCKED') AS result,
+       @apply_ready AS apply_ready,
+       @rbac_matrix_conflict AS rbac_matrix_conflict,
        @requests_state AS requests_state,
        @reviews_state AS reviews_state,
        @events_state AS events_state;
@@ -591,11 +652,6 @@ SET @sql := IF(
 PREPARE phase4_tae_stmt FROM @sql;
 EXECUTE phase4_tae_stmt;
 DEALLOCATE PREPARE phase4_tae_stmt;
-
-SET @view_existed := @view_perm_rows;
-SET @manage_existed := @manage_perm_rows;
-SET @sci_review_existed := @sci_review_perm_rows;
-SET @adm_review_existed := @adm_review_perm_rows;
 
 START TRANSACTION;
 
@@ -716,8 +772,9 @@ WHERE @apply_ready = 1
   );
 
 SET @phase4_complete := IF(
-    @apply_ready = 1
-    AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_requests' AND table_type = 'BASE TABLE')
+    @apply_ready = 1,
+    IF(
+        EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_requests' AND table_type = 'BASE TABLE')
     AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_reviews' AND table_type = 'BASE TABLE')
     AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_events' AND table_type = 'BASE TABLE')
     AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'teaching_assignments.view') = 1
@@ -803,59 +860,33 @@ SET @phase4_complete := IF(
         JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
         WHERE p.permission_code = 'teaching_assignments.review_administrative'
           AND r.role_code <> 'vice_president_administrative'
+        ),
+        1,
+        0
     ),
-    1,
     0
 );
 
-DELETE rp
-FROM `alrowad_uni_rust`.`role_permissions` rp
-JOIN `alrowad_uni_rust`.`roles` r ON r.role_id = rp.role_id
-JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
-WHERE @phase4_complete = 0
-  AND p.permission_code IN (
-      'teaching_assignments.view',
-      'teaching_assignments.manage',
-      'teaching_assignments.review_scientific',
-      'teaching_assignments.review_administrative'
-  )
-  AND COALESCE(p.description, '') LIKE '%[phase4-teaching-assignment-workflow]%';
-
-DELETE FROM `alrowad_uni_rust`.`permissions`
-WHERE @phase4_complete = 0
-  AND @view_existed = 0
-  AND permission_code = 'teaching_assignments.view'
-  AND COALESCE(description, '') LIKE '%[phase4-teaching-assignment-workflow]%';
-
-DELETE FROM `alrowad_uni_rust`.`permissions`
-WHERE @phase4_complete = 0
-  AND @manage_existed = 0
-  AND permission_code = 'teaching_assignments.manage'
-  AND COALESCE(description, '') LIKE '%[phase4-teaching-assignment-workflow]%';
-
-DELETE FROM `alrowad_uni_rust`.`permissions`
-WHERE @phase4_complete = 0
-  AND @sci_review_existed = 0
-  AND permission_code = 'teaching_assignments.review_scientific'
-  AND COALESCE(description, '') LIKE '%[phase4-teaching-assignment-workflow]%';
-
-DELETE FROM `alrowad_uni_rust`.`permissions`
-WHERE @phase4_complete = 0
-  AND @adm_review_existed = 0
-  AND permission_code = 'teaching_assignments.review_administrative'
-  AND COALESCE(description, '') LIKE '%[phase4-teaching-assignment-workflow]%';
-
-COMMIT;
+SET @sql := IF(
+    @apply_ready = 1 AND @phase4_complete = 1,
+    'COMMIT',
+    'ROLLBACK'
+);
+PREPARE phase4_txn_end_stmt FROM @sql;
+EXECUTE phase4_txn_end_stmt;
+DEALLOCATE PREPARE phase4_txn_end_stmt;
 
 SET @apply_status := IF(
     @apply_ready = 0,
     'BLOCKED',
-    IF(@phase4_complete = 1, 'APPLIED', 'BLOCKED_INCOMPLETE')
+    IF(@phase4_complete = 1, 'APPLIED', 'ROLLED_BACK')
 );
 
-SELECT @apply_status AS apply_status,
+SELECT 'APPLY_RESULT' AS report_section,
+       @apply_status AS apply_status,
        @apply_ready AS apply_ready,
        @phase4_complete AS phase4_complete,
+       @rbac_matrix_conflict AS rbac_matrix_conflict,
        @requests_state AS requests_state,
        @reviews_state AS reviews_state,
        @events_state AS events_state,

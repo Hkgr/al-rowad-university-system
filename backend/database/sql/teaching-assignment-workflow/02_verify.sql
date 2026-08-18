@@ -115,6 +115,27 @@ WHERE p.permission_code IN (
 )
 ORDER BY r.role_code, p.permission_code;
 
+SELECT DISTINCT 'RBAC_MATRIX_CONFLICT' AS report_section, r.role_code, p.permission_code
+FROM `alrowad_uni_rust`.`roles` r
+JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+WHERE @db_ready = 1
+  AND p.permission_code IN (
+      'teaching_assignments.review_scientific',
+      'teaching_assignments.review_administrative'
+  )
+  AND NOT (
+      (
+          p.permission_code = 'teaching_assignments.review_scientific'
+          AND r.role_code = 'vice_president_scientific'
+      )
+      OR (
+          p.permission_code = 'teaching_assignments.review_administrative'
+          AND r.role_code = 'vice_president_administrative'
+      )
+  )
+ORDER BY r.role_code, p.permission_code;
+
 -- ---------------------------------------------------------------------------
 -- Structural contract
 -- ---------------------------------------------------------------------------
