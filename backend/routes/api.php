@@ -51,6 +51,7 @@ use App\Http\Controllers\Api\LibraryBorrowingController;
 use App\Http\Controllers\Api\LibraryCategoryController;
 use App\Http\Controllers\Api\LoginAuditLogController;
 use App\Http\Controllers\Api\MeetingAttendeeController;
+use App\Http\Controllers\Api\MinistryPlacementController;
 use App\Http\Controllers\Api\OrganizationalUnitController;
 use App\Http\Controllers\Api\OrganizationalUnitTypeController;
 use App\Http\Controllers\Api\PasswordResetTokenController;
@@ -339,6 +340,12 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::apiResource('admission-applications', AdmissionApplicationController::class);
     Route::apiResource('applicants', ApplicantController::class);
     Route::apiResource('document-types', DocumentTypeController::class);
+    Route::post('ministry-placements/import', [MinistryPlacementController::class, 'store']);
+    Route::get('ministry-placements', [MinistryPlacementController::class, 'index']);
+    Route::get('ministry-placements/{id}', [MinistryPlacementController::class, 'show']);
+    Route::get('ministry-placements/{id}/records', [MinistryPlacementController::class, 'records']);
+    Route::post('ministry-placement-records/{id}/match-program', [MinistryPlacementController::class, 'matchProgram']);
+    Route::post('ministry-placement-records/{id}/convert-to-applicant', [MinistryPlacementController::class, 'convertToApplicant']);
 
     /*
     |--------------------------------------------------------------------------
