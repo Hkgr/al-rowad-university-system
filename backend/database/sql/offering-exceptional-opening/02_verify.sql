@@ -103,6 +103,37 @@ WHERE p.permission_code IN (
 )
 ORDER BY r.role_code, p.permission_code;
 
+SELECT DISTINCT 'RBAC_MATRIX_CONFLICT' AS report_section, r.role_code, p.permission_code
+FROM `alrowad_uni_rust`.`roles` r
+JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+WHERE @db_ready = 1
+  AND p.permission_code IN (
+      'course_offerings.exceptional_open.view',
+      'course_offerings.exceptional_open.request',
+      'course_offerings.exceptional_open.review_scientific',
+      'course_offerings.exceptional_open.review_administrative'
+  )
+  AND NOT (
+      (
+          p.permission_code = 'course_offerings.exceptional_open.view'
+          AND r.role_code IN ('dean', 'vice_president_scientific', 'vice_president_administrative')
+      )
+      OR (
+          p.permission_code = 'course_offerings.exceptional_open.request'
+          AND r.role_code = 'dean'
+      )
+      OR (
+          p.permission_code = 'course_offerings.exceptional_open.review_scientific'
+          AND r.role_code = 'vice_president_scientific'
+      )
+      OR (
+          p.permission_code = 'course_offerings.exceptional_open.review_administrative'
+          AND r.role_code = 'vice_president_administrative'
+      )
+  )
+ORDER BY r.role_code, p.permission_code;
+
 SET @tables_ok := IF(@requests_exist = 1 AND @reviews_exist = 1 AND @events_exist = 1, 1, 0);
 SET @innodb_ok := IF(
     @db_ready = 1 AND (
@@ -194,19 +225,44 @@ SET @matrix_ok := IF(
     @db_ready = 1
     AND EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`roles` r JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id WHERE r.role_code = 'dean' AND p.permission_code = 'course_offerings.exceptional_open.view')
     AND EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`roles` r JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id WHERE r.role_code = 'dean' AND p.permission_code = 'course_offerings.exceptional_open.request')
+    AND EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`roles` r JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id WHERE r.role_code = 'vice_president_scientific' AND p.permission_code = 'course_offerings.exceptional_open.view')
     AND EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`roles` r JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id WHERE r.role_code = 'vice_president_scientific' AND p.permission_code = 'course_offerings.exceptional_open.review_scientific')
+    AND EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`roles` r JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id WHERE r.role_code = 'vice_president_administrative' AND p.permission_code = 'course_offerings.exceptional_open.view')
     AND EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`roles` r JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id WHERE r.role_code = 'vice_president_administrative' AND p.permission_code = 'course_offerings.exceptional_open.review_administrative'),
     1, 0
 );
 
 SET @isolation_ok := IF(
     @db_ready = 1
-    AND NOT EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`roles` r JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id WHERE r.role_code = 'dean' AND p.permission_code IN ('course_offerings.exceptional_open.review_scientific', 'course_offerings.exceptional_open.review_administrative'))
-    AND NOT EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`roles` r JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id WHERE r.role_code = 'vice_president_scientific' AND p.permission_code = 'course_offerings.exceptional_open.review_administrative')
-    AND NOT EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`roles` r JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id WHERE r.role_code = 'vice_president_administrative' AND p.permission_code = 'course_offerings.exceptional_open.review_scientific')
-    AND NOT EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`roles` r JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id WHERE r.role_code = 'vice_president' AND p.permission_code IN ('course_offerings.exceptional_open.review_scientific', 'course_offerings.exceptional_open.review_administrative'))
-    AND NOT EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`roles` r JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id WHERE p.permission_code = 'course_offerings.exceptional_open.review_scientific' AND r.role_code <> 'vice_president_scientific')
-    AND NOT EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`roles` r JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id WHERE p.permission_code = 'course_offerings.exceptional_open.review_administrative' AND r.role_code <> 'vice_president_administrative'),
+    AND NOT EXISTS (
+        SELECT 1 FROM `alrowad_uni_rust`.`roles` r
+        JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+        JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+        WHERE p.permission_code IN (
+            'course_offerings.exceptional_open.view',
+            'course_offerings.exceptional_open.request',
+            'course_offerings.exceptional_open.review_scientific',
+            'course_offerings.exceptional_open.review_administrative'
+        )
+          AND NOT (
+              (
+                  p.permission_code = 'course_offerings.exceptional_open.view'
+                  AND r.role_code IN ('dean', 'vice_president_scientific', 'vice_president_administrative')
+              )
+              OR (
+                  p.permission_code = 'course_offerings.exceptional_open.request'
+                  AND r.role_code = 'dean'
+              )
+              OR (
+                  p.permission_code = 'course_offerings.exceptional_open.review_scientific'
+                  AND r.role_code = 'vice_president_scientific'
+              )
+              OR (
+                  p.permission_code = 'course_offerings.exceptional_open.review_administrative'
+                  AND r.role_code = 'vice_president_administrative'
+              )
+          )
+    ),
     1, 0
 );
 

@@ -4,6 +4,8 @@ namespace App\Support;
 
 final class ExceptionalOpeningWorkflow
 {
+    public const ROLE_DEAN = 'dean';
+
     public const PERMISSION_VIEW = 'course_offerings.exceptional_open.view';
 
     public const PERMISSION_REQUEST = 'course_offerings.exceptional_open.request';

@@ -123,9 +123,9 @@ class CourseOfferingExceptionWorkflowService
     public function reviewQueueQuery(User $user, string $authority)
     {
         if ($authority === ExceptionalOpeningWorkflow::AUTHORITY_SCIENTIFIC) {
-            $this->assertScientificReviewer($user);
+            $this->assertCanReadScientificQueue($user);
         } else {
-            $this->assertAdministrativeReviewer($user);
+            $this->assertCanReadAdministrativeQueue($user);
         }
 
         return CourseOfferingExceptionRequest::query()
@@ -556,7 +556,7 @@ class CourseOfferingExceptionWorkflowService
 
     private function assertCanRequest(User $user): void
     {
-        if (! $user->hasPermission(ExceptionalOpeningWorkflow::PERMISSION_REQUEST)) {
+        if (! $user->isDean() || ! $this->holdsAssignedPermission($user, ExceptionalOpeningWorkflow::PERMISSION_REQUEST)) {
             throw ExceptionalOpeningException::requestForbidden();
         }
     }
@@ -571,18 +571,43 @@ class CourseOfferingExceptionWorkflowService
         }
     }
 
-    private function assertScientificReviewer(User $user): void
+    private function assertCanReadScientificQueue(User $user): void
     {
         if (! $user->hasPermission(ExceptionalOpeningWorkflow::PERMISSION_REVIEW_SCIENTIFIC)) {
             throw ExceptionalOpeningException::scientificReviewForbidden();
         }
     }
 
-    private function assertAdministrativeReviewer(User $user): void
+    private function assertCanReadAdministrativeQueue(User $user): void
     {
         if (! $user->hasPermission(ExceptionalOpeningWorkflow::PERMISSION_REVIEW_ADMINISTRATIVE)) {
             throw ExceptionalOpeningException::administrativeReviewForbidden();
         }
+    }
+
+    private function assertScientificReviewer(User $user): void
+    {
+        if (! $user->isScientificVicePresident()
+            || ! $this->holdsAssignedPermission($user, ExceptionalOpeningWorkflow::PERMISSION_REVIEW_SCIENTIFIC)) {
+            throw ExceptionalOpeningException::scientificReviewForbidden();
+        }
+    }
+
+    private function assertAdministrativeReviewer(User $user): void
+    {
+        if (! $user->isAdministrativeVicePresident()
+            || ! $this->holdsAssignedPermission($user, ExceptionalOpeningWorkflow::PERMISSION_REVIEW_ADMINISTRATIVE)) {
+            throw ExceptionalOpeningException::administrativeReviewForbidden();
+        }
+    }
+
+    /**
+     * Assigned role_permissions only. Super Admin virtual grants from
+     * User::hasPermission() must not impersonate academic authorities.
+     */
+    private function holdsAssignedPermission(User $user, string $permission): bool
+    {
+        return $user->effectivePermissions()->contains($permission);
     }
 
     private function assertOfferingInDeanScope(User $user, CourseOffering $offering): void

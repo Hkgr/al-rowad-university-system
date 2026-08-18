@@ -57,8 +57,10 @@ violate the dual-VP isolation matrix:
 - `review_scientific` granted to any role other than `vice_president_scientific`
 - `review_administrative` granted to any role other than `vice_president_administrative`
 
-That covers dean review mappings, cross-VP review mappings, and generic
-`vice_president` review mappings.
+That covers dean review mappings, cross-VP review mappings, generic
+`vice_president` receiving any Phase 6 permission, `request` on a
+non-dean role, `view` on an unrelated role, and explicit `super_admin`
+Phase 6 mappings.
 
 If any exist: `@rbac_matrix_conflict = 1`, preflight `OVERALL = BLOCKED`,
 apply `apply_ready = 0`. phpMyAdmin result set `RBAC_MATRIX_CONFLICT`
@@ -92,16 +94,27 @@ Permissions:
 - `course_offerings.exceptional_open.review_scientific`
 - `course_offerings.exceptional_open.review_administrative`
 
-Role mappings:
+Role mappings — exact allowed set only. `super_admin` is **not** granted
+these rows (its runtime permission bypass is separate and must not
+impersonate academic authorities):
 
 - `dean` → view + request
 - `vice_president_scientific` → view + review_scientific
 - `vice_president_administrative` → view + review_administrative
 
-Generic `vice_president` does not receive review permissions.
-Dean does not receive either review permission.
-Scientific VP does not receive administrative review.
-Administrative VP does not receive scientific review.
+Any other `role_permissions` row for these four codes is a matrix
+conflict, including:
+
+- generic `vice_president` → any of the four
+- unrelated roles → any of the four
+- dean → either review permission
+- scientific VP → request or administrative review
+- administrative VP → request or scientific review
+- `super_admin` → any explicit Phase 6 mapping
+
+Runtime mutating actions additionally require the dedicated actual role
+plus the assigned permission (`effectivePermissions()`, not the Super
+Admin virtual grant from `User::hasPermission()`).
 
 ## What this phase does not do
 
