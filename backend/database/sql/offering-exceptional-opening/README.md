@@ -19,13 +19,63 @@ new module.
 ## Files
 
 1. `00_preflight.sql` — READ ONLY. Continue only when `OVERALL = READY`.
-2. `01_apply.sql` — idempotent create of missing compatible workflow tables and RBAC.
+   `OVERALL` is `BLOCKED` when any target object is `CONFLICT`, a
+   prerequisite column is missing, or `rbac_matrix_conflict = 1`.
+2. `01_apply.sql` — idempotent create of missing compatible workflow tables
+   and RBAC. Independently recomputes the same guards as preflight.
+   `apply_ready = 0` when `rbac_matrix_conflict = 1` (no RBAC INSERT).
+   RBAC DML `COMMIT`s only after post-write verification succeeds;
+   unexpected post-write failure `ROLLBACK`s this transaction's permission /
+   role_permission inserts. DDL `CREATE TABLE` still auto-commits in MariaDB.
 3. `02_verify.sql` — READ ONLY. Continue only when `OVERALL = PASS`.
 4. `03_rollback.sql` — conservative. Drops a workflow table only when its
    `TABLE_COMMENT` contains `[phase6-offering-exceptional-opening]` **and**
    no workflow business rows exist. Same-named empty tables without that
    marker are `SKIPPED_NOT_PROVABLY_PHASE_OWNED` and are never dropped.
    `BLOCKED_IN_USE` if any workflow business rows exist.
+
+## SQL safety guards
+
+Preflight and apply use the **same** structural COMPATIBLE contract:
+
+- expected column counts (20 / 10 / 7)
+- InnoDB + primary key
+- `types_ok` (signed ints, status length, review_authority enum/varchar)
+- unique index exact column lists
+- named foreign keys via `key_column_usage` (constraint + column + referenced table/column)
+- queue indexes with exact `GROUP_CONCAT` column lists
+
+Prerequisite-column lists are identical in preflight (including the
+`B_missing_required_columns` report) and apply. The union includes
+`course_offerings.department_id` and `user_access_scopes.user_id`.
+
+### Pre-write forbidden-matrix audit
+
+Before any RBAC INSERT, both files detect existing `role_permissions` that
+violate the dual-VP isolation matrix:
+
+- `review_scientific` granted to any role other than `vice_president_scientific`
+- `review_administrative` granted to any role other than `vice_president_administrative`
+
+That covers dean review mappings, cross-VP review mappings, and generic
+`vice_president` review mappings.
+
+If any exist: `@rbac_matrix_conflict = 1`, preflight `OVERALL = BLOCKED`,
+apply `apply_ready = 0`. phpMyAdmin result set `RBAC_MATRIX_CONFLICT`
+lists offending `role_code` / `permission_code`. ABSENT Phase 6
+permissions cannot have mappings, so conflict is 0 and apply may proceed.
+
+### Apply transaction outcome
+
+| `apply_status` | Meaning |
+|---|---|
+| `BLOCKED` | `apply_ready = 0` (including forbidden-matrix conflict). No RBAC DML. |
+| `APPLIED` | Post-write matrix PASS. RBAC transaction `COMMIT`ted. |
+| `ROLLED_BACK` | `apply_ready = 1` but post-write verification failed. RBAC INSERT from this transaction did not persist. |
+
+Compatible existing tables/permissions are not modified. Non-owned RBAC
+is never deleted. This phase does not create users, `user_roles`, or
+`user_access_scopes`.
 
 ## What this phase creates
 

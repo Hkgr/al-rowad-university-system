@@ -5,7 +5,9 @@
 -- Do not use DATABASE().
 --
 -- Target workflow tables and RBAC objects are classified ABSENT / COMPATIBLE / CONFLICT.
--- OVERALL is BLOCKED when any target object is CONFLICT or a prerequisite is missing.
+-- Structural COMPATIBLE matches 01_apply.sql (column types, named FK shape, queue index columns).
+-- OVERALL is BLOCKED when any target object is CONFLICT, a prerequisite is missing,
+-- or @rbac_matrix_conflict = 1.
 
 SET @db_ready := IF(
     EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'alrowad_uni_rust'),
@@ -79,18 +81,33 @@ FROM (
     UNION ALL SELECT 'course_offerings', 'academic_program_id'
     UNION ALL SELECT 'course_offerings', 'academic_year_id'
     UNION ALL SELECT 'course_offerings', 'semester_id'
+    UNION ALL SELECT 'course_offerings', 'department_id'
     UNION ALL SELECT 'course_offerings', 'status'
     UNION ALL SELECT 'courses', 'course_id'
     UNION ALL SELECT 'academic_programs', 'academic_program_id'
+    UNION ALL SELECT 'academic_programs', 'department_id'
     UNION ALL SELECT 'departments', 'department_id'
+    UNION ALL SELECT 'departments', 'college_id'
     UNION ALL SELECT 'colleges', 'college_id'
     UNION ALL SELECT 'users', 'user_id'
+    UNION ALL SELECT 'roles', 'role_id'
     UNION ALL SELECT 'roles', 'role_code'
+    UNION ALL SELECT 'roles', 'is_active'
+    UNION ALL SELECT 'permissions', 'permission_id'
+    UNION ALL SELECT 'permissions', 'module_id'
     UNION ALL SELECT 'permissions', 'permission_code'
+    UNION ALL SELECT 'permissions', 'permission_name'
+    UNION ALL SELECT 'permissions', 'description'
+    UNION ALL SELECT 'permissions', 'is_active'
+    UNION ALL SELECT 'role_permissions', 'role_id'
     UNION ALL SELECT 'role_permissions', 'permission_id'
+    UNION ALL SELECT 'system_modules', 'module_id'
     UNION ALL SELECT 'system_modules', 'module_code'
+    UNION ALL SELECT 'system_modules', 'is_active'
     UNION ALL SELECT 'user_roles', 'user_id'
+    UNION ALL SELECT 'user_roles', 'role_id'
     UNION ALL SELECT 'user_access_scopes', 'scope_type'
+    UNION ALL SELECT 'user_access_scopes', 'user_id'
 ) required_columns
 LEFT JOIN information_schema.columns existing
     ON existing.table_schema = 'alrowad_uni_rust'
@@ -167,68 +184,251 @@ SET @requests_pk_ok := IF(@requests_rows = 1 AND (SELECT GROUP_CONCAT(column_nam
 SET @reviews_pk_ok := IF(@reviews_rows = 1 AND (SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'course_offering_exception_reviews' AND index_name = 'PRIMARY') <=> 'course_offering_exception_review_id', 1, 0);
 SET @events_pk_ok := IF(@events_rows = 1 AND (SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'course_offering_exception_events' AND index_name = 'PRIMARY') <=> 'course_offering_exception_event_id', 1, 0);
 
+SET @requests_types_ok := IF(
+    @requests_rows = 1 AND (
+        SELECT COUNT(*)
+        FROM (
+            SELECT 'course_offering_exception_request_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable
+            UNION ALL SELECT 'course_offering_id', 'int', 'NO'
+            UNION ALL SELECT 'requested_by_user_id', 'int', 'NO'
+            UNION ALL SELECT 'status', 'varchar', 'NO'
+            UNION ALL SELECT 'submission_version', 'int', 'NO'
+            UNION ALL SELECT 'current_slot', 'tinyint', 'YES'
+            UNION ALL SELECT 'snapshot_course_id', 'int', 'NO'
+            UNION ALL SELECT 'snapshot_academic_program_id', 'int', 'NO'
+            UNION ALL SELECT 'snapshot_academic_year_id', 'int', 'NO'
+            UNION ALL SELECT 'snapshot_semester_id', 'int', 'NO'
+            UNION ALL SELECT 'reason', 'text', 'NO'
+        ) required
+        LEFT JOIN information_schema.columns c
+            ON c.table_schema = 'alrowad_uni_rust'
+           AND c.table_name = 'course_offering_exception_requests'
+           AND c.column_name = required.column_name
+        WHERE c.column_name IS NULL
+           OR c.is_nullable <> required.is_nullable
+           OR LOWER(c.data_type) <> required.data_type
+           OR (required.data_type IN ('int', 'tinyint') AND LOWER(c.column_type) LIKE '%unsigned%')
+           OR (required.column_name = 'status' AND IFNULL(c.character_maximum_length, 0) < 32)
+    ) = 0,
+    1,
+    0
+);
+SET @reviews_types_ok := IF(
+    @reviews_rows = 1 AND (
+        SELECT COUNT(*)
+        FROM (
+            SELECT 'course_offering_exception_review_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable
+            UNION ALL SELECT 'course_offering_exception_request_id', 'int', 'NO'
+            UNION ALL SELECT 'submission_version', 'int', 'NO'
+            UNION ALL SELECT 'status', 'varchar', 'NO'
+            UNION ALL SELECT 'reviewed_by_user_id', 'int', 'YES'
+            UNION ALL SELECT 'review_authority', 'enum', 'NO'
+        ) required
+        LEFT JOIN information_schema.columns c
+            ON c.table_schema = 'alrowad_uni_rust'
+           AND c.table_name = 'course_offering_exception_reviews'
+           AND c.column_name = required.column_name
+        WHERE c.column_name IS NULL
+           OR c.is_nullable <> required.is_nullable
+           OR (
+               required.column_name = 'review_authority'
+               AND NOT (
+                   (LOWER(c.data_type) = 'enum' AND LOWER(c.column_type) LIKE '%scientific%' AND LOWER(c.column_type) LIKE '%administrative%')
+                   OR (LOWER(c.data_type) IN ('varchar', 'char') AND IFNULL(c.character_maximum_length, 0) >= 14)
+               )
+           )
+           OR (
+               required.column_name <> 'review_authority'
+               AND (
+                   LOWER(c.data_type) <> required.data_type
+                   OR (required.data_type = 'int' AND LOWER(c.column_type) LIKE '%unsigned%')
+                   OR (required.column_name = 'status' AND IFNULL(c.character_maximum_length, 0) < 32)
+               )
+           )
+    ) = 0,
+    1,
+    0
+);
+SET @events_types_ok := IF(
+    @events_rows = 1 AND (
+        SELECT COUNT(*)
+        FROM (
+            SELECT 'course_offering_exception_event_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable
+            UNION ALL SELECT 'course_offering_exception_request_id', 'int', 'NO'
+            UNION ALL SELECT 'event_type', 'varchar', 'NO'
+            UNION ALL SELECT 'actor_user_id', 'int', 'YES'
+            UNION ALL SELECT 'created_at', 'timestamp', 'NO'
+        ) required
+        LEFT JOIN information_schema.columns c
+            ON c.table_schema = 'alrowad_uni_rust'
+           AND c.table_name = 'course_offering_exception_events'
+           AND c.column_name = required.column_name
+        WHERE c.column_name IS NULL
+           OR (
+               required.column_name <> 'created_at'
+               AND c.is_nullable <> required.is_nullable
+           )
+           OR (
+               required.column_name = 'created_at'
+               AND LOWER(c.data_type) NOT IN ('timestamp', 'datetime')
+           )
+           OR (
+               required.column_name <> 'created_at'
+               AND (
+                   LOWER(c.data_type) <> required.data_type
+                   OR (required.data_type = 'int' AND LOWER(c.column_type) LIKE '%unsigned%')
+                   OR (required.column_name = 'event_type' AND IFNULL(c.character_maximum_length, 0) < 64)
+               )
+           )
+    ) = 0,
+    1,
+    0
+);
+
 SET @requests_unique_ok := IF(@requests_rows = 1 AND (SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'course_offering_exception_requests' AND index_name = 'uq_coer_current_slot' AND non_unique = 0) <=> 'course_offering_id,current_slot', 1, 0);
 SET @reviews_unique_ok := IF(@reviews_rows = 1 AND (SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'course_offering_exception_reviews' AND index_name = 'uq_coerv_request_authority_version' AND non_unique = 0) <=> 'course_offering_exception_request_id,review_authority,submission_version', 1, 0);
 
 SET @requests_fk_ok := IF(
     @requests_rows = 1 AND (
-        SELECT COUNT(*) FROM (
-            SELECT 'fk_coer_course_offering' AS constraint_name UNION ALL SELECT 'fk_coer_requested_by' UNION ALL SELECT 'fk_coer_superseded_by'
+        SELECT COUNT(*)
+        FROM (
+            SELECT 'fk_coer_course_offering' AS constraint_name, 'course_offering_id' AS column_name, 'course_offerings' AS ref_table, 'course_offering_id' AS ref_column
+            UNION ALL SELECT 'fk_coer_requested_by', 'requested_by_user_id', 'users', 'user_id'
+            UNION ALL SELECT 'fk_coer_superseded_by', 'superseded_by_request_id', 'course_offering_exception_requests', 'course_offering_exception_request_id'
         ) required
-        LEFT JOIN information_schema.table_constraints k
+        LEFT JOIN information_schema.key_column_usage k
             ON k.table_schema = 'alrowad_uni_rust'
            AND k.table_name = 'course_offering_exception_requests'
            AND k.constraint_name = required.constraint_name
-           AND k.constraint_type = 'FOREIGN KEY'
-        WHERE k.constraint_name IS NULL
-    ) = 0, 1, 0
+           AND k.column_name = required.column_name
+           AND k.referenced_table_schema = 'alrowad_uni_rust'
+           AND k.referenced_table_name = required.ref_table
+           AND k.referenced_column_name = required.ref_column
+        WHERE k.column_name IS NULL
+    ) = 0,
+    1,
+    0
 );
 SET @reviews_fk_ok := IF(
     @reviews_rows = 1 AND (
-        SELECT COUNT(*) FROM (
-            SELECT 'fk_coerv_request' AS constraint_name UNION ALL SELECT 'fk_coerv_reviewer'
+        SELECT COUNT(*)
+        FROM (
+            SELECT 'fk_coerv_request' AS constraint_name, 'course_offering_exception_request_id' AS column_name, 'course_offering_exception_requests' AS ref_table, 'course_offering_exception_request_id' AS ref_column
+            UNION ALL SELECT 'fk_coerv_reviewer', 'reviewed_by_user_id', 'users', 'user_id'
         ) required
-        LEFT JOIN information_schema.table_constraints k
+        LEFT JOIN information_schema.key_column_usage k
             ON k.table_schema = 'alrowad_uni_rust'
            AND k.table_name = 'course_offering_exception_reviews'
            AND k.constraint_name = required.constraint_name
-           AND k.constraint_type = 'FOREIGN KEY'
-        WHERE k.constraint_name IS NULL
-    ) = 0, 1, 0
+           AND k.column_name = required.column_name
+           AND k.referenced_table_schema = 'alrowad_uni_rust'
+           AND k.referenced_table_name = required.ref_table
+           AND k.referenced_column_name = required.ref_column
+        WHERE k.column_name IS NULL
+    ) = 0,
+    1,
+    0
 );
 SET @events_fk_ok := IF(
     @events_rows = 1 AND (
-        SELECT COUNT(*) FROM (
-            SELECT 'fk_coee_request' AS constraint_name UNION ALL SELECT 'fk_coee_actor'
+        SELECT COUNT(*)
+        FROM (
+            SELECT 'fk_coee_request' AS constraint_name, 'course_offering_exception_request_id' AS column_name, 'course_offering_exception_requests' AS ref_table, 'course_offering_exception_request_id' AS ref_column
+            UNION ALL SELECT 'fk_coee_actor', 'actor_user_id', 'users', 'user_id'
         ) required
-        LEFT JOIN information_schema.table_constraints k
+        LEFT JOIN information_schema.key_column_usage k
             ON k.table_schema = 'alrowad_uni_rust'
            AND k.table_name = 'course_offering_exception_events'
            AND k.constraint_name = required.constraint_name
-           AND k.constraint_type = 'FOREIGN KEY'
-        WHERE k.constraint_name IS NULL
-    ) = 0, 1, 0
+           AND k.column_name = required.column_name
+           AND k.referenced_table_schema = 'alrowad_uni_rust'
+           AND k.referenced_table_name = required.ref_table
+           AND k.referenced_column_name = required.ref_column
+        WHERE k.column_name IS NULL
+    ) = 0,
+    1,
+    0
 );
 
 SET @requests_queue_ok := IF(
     @requests_rows = 1 AND (
-        SELECT COUNT(*) FROM (
-            SELECT 'idx_coer_status' AS index_name UNION ALL SELECT 'idx_coer_requested_by'
-            UNION ALL SELECT 'idx_coer_submitted_at' UNION ALL SELECT 'idx_coer_offering_status'
+        SELECT COUNT(*)
+        FROM (
+            SELECT 'idx_coer_status' AS index_name, 'status' AS columns
+            UNION ALL SELECT 'idx_coer_requested_by', 'requested_by_user_id'
+            UNION ALL SELECT 'idx_coer_submitted_at', 'submitted_at'
+            UNION ALL SELECT 'idx_coer_offering_status', 'course_offering_id,status'
         ) required
-        JOIN information_schema.statistics existing
-            ON existing.table_schema = 'alrowad_uni_rust'
-           AND existing.table_name = 'course_offering_exception_requests'
-           AND existing.index_name = required.index_name
-        GROUP BY required.index_name
-    ) = 4, 1, 0
+        JOIN (
+            SELECT index_name, GROUP_CONCAT(column_name ORDER BY seq_in_index) AS columns
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'course_offering_exception_requests'
+            GROUP BY index_name
+        ) existing
+            ON existing.index_name = required.index_name
+           AND existing.columns = required.columns
+    ) = 4,
+    1,
+    0
 );
-SET @reviews_queue_ok := IF(@reviews_rows = 1 AND EXISTS (SELECT 1 FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'course_offering_exception_reviews' AND index_name = 'idx_coerv_authority_status'), 1, 0);
-SET @events_queue_ok := IF(@events_rows = 1 AND EXISTS (SELECT 1 FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'course_offering_exception_events' AND index_name = 'idx_coee_request_created'), 1, 0);
+SET @reviews_queue_ok := IF(
+    @reviews_rows = 1
+    AND (SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'course_offering_exception_reviews' AND index_name = 'idx_coerv_authority_status') <=> 'review_authority,status',
+    1,
+    0
+);
+SET @events_queue_ok := IF(
+    @events_rows = 1
+    AND (SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'course_offering_exception_events' AND index_name = 'idx_coee_request_created') <=> 'course_offering_exception_request_id,created_at',
+    1,
+    0
+);
 
-SET @requests_state := IF(@requests_rows = 0, 'ABSENT', IF(@requests_expected_cols = 20 AND @requests_engine_ok = 1 AND @requests_pk_ok = 1 AND @requests_unique_ok = 1 AND @requests_fk_ok = 1 AND @requests_queue_ok = 1, 'COMPATIBLE', 'CONFLICT'));
-SET @reviews_state := IF(@reviews_rows = 0, 'ABSENT', IF(@reviews_expected_cols = 10 AND @reviews_engine_ok = 1 AND @reviews_pk_ok = 1 AND @reviews_unique_ok = 1 AND @reviews_fk_ok = 1 AND @reviews_queue_ok = 1, 'COMPATIBLE', 'CONFLICT'));
-SET @events_state := IF(@events_rows = 0, 'ABSENT', IF(@events_expected_cols = 7 AND @events_engine_ok = 1 AND @events_pk_ok = 1 AND @events_fk_ok = 1 AND @events_queue_ok = 1, 'COMPATIBLE', 'CONFLICT'));
+SET @requests_state := IF(
+    @requests_rows = 0,
+    'ABSENT',
+    IF(
+        @requests_expected_cols = 20
+        AND @requests_engine_ok = 1
+        AND @requests_pk_ok = 1
+        AND @requests_types_ok = 1
+        AND @requests_unique_ok = 1
+        AND @requests_fk_ok = 1
+        AND @requests_queue_ok = 1,
+        'COMPATIBLE',
+        'CONFLICT'
+    )
+);
+SET @reviews_state := IF(
+    @reviews_rows = 0,
+    'ABSENT',
+    IF(
+        @reviews_expected_cols = 10
+        AND @reviews_engine_ok = 1
+        AND @reviews_pk_ok = 1
+        AND @reviews_types_ok = 1
+        AND @reviews_unique_ok = 1
+        AND @reviews_fk_ok = 1
+        AND @reviews_queue_ok = 1,
+        'COMPATIBLE',
+        'CONFLICT'
+    )
+);
+SET @events_state := IF(
+    @events_rows = 0,
+    'ABSENT',
+    IF(
+        @events_expected_cols = 7
+        AND @events_engine_ok = 1
+        AND @events_pk_ok = 1
+        AND @events_types_ok = 1
+        AND @events_fk_ok = 1
+        AND @events_queue_ok = 1,
+        'COMPATIBLE',
+        'CONFLICT'
+    )
+);
 
 SELECT 'D_target_classification' AS report_section,
        @requests_state AS requests_state,
@@ -302,9 +502,50 @@ SELECT 'F_roles_modules' AS report_section,
        @courses_module_ok AS courses_module_ok,
        @offering_identity_index AS offering_identity_index;
 
+SET @rbac_matrix_conflict := IF(
+    @structure_ok = 1,
+    (
+        SELECT IF(COUNT(*) > 0, 1, 0)
+        FROM `alrowad_uni_rust`.`roles` r
+        JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+        JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+        WHERE (
+            p.permission_code = 'course_offerings.exceptional_open.review_scientific'
+            AND r.role_code <> 'vice_president_scientific'
+        )
+           OR (
+            p.permission_code = 'course_offerings.exceptional_open.review_administrative'
+            AND r.role_code <> 'vice_president_administrative'
+        )
+    ),
+    0
+);
+
+SET @sql := IF(
+    @structure_ok = 1,
+    'SELECT DISTINCT ''RBAC_MATRIX_CONFLICT'' AS report_section, r.role_code, p.permission_code
+     FROM `alrowad_uni_rust`.`roles` r
+     JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+     JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+     WHERE (
+         p.permission_code = ''course_offerings.exceptional_open.review_scientific''
+         AND r.role_code <> ''vice_president_scientific''
+     )
+        OR (
+         p.permission_code = ''course_offerings.exceptional_open.review_administrative''
+         AND r.role_code <> ''vice_president_administrative''
+     )
+     ORDER BY r.role_code, p.permission_code',
+    'SELECT ''RBAC_MATRIX_CONFLICT'' AS report_section, CAST(NULL AS CHAR) AS role_code, CAST(NULL AS CHAR) AS permission_code WHERE 0'
+);
+PREPARE phase6_rbac_conflict_stmt FROM @sql;
+EXECUTE phase6_rbac_conflict_stmt;
+DEALLOCATE PREPARE phase6_rbac_conflict_stmt;
+
 SET @overall := IF(
     @db_ready = 1
     AND @missing_required_columns = 0
+    AND @rbac_matrix_conflict = 0
     AND @requests_state IN ('ABSENT', 'COMPATIBLE')
     AND @reviews_state IN ('ABSENT', 'COMPATIBLE')
     AND @events_state IN ('ABSENT', 'COMPATIBLE')
@@ -328,6 +569,7 @@ SET @overall := IF(
 SELECT 'OVERALL' AS report_section,
        @overall AS result,
        @missing_required_columns AS missing_required_columns,
+       @rbac_matrix_conflict AS rbac_matrix_conflict,
        @requests_state AS requests_state,
        @reviews_state AS reviews_state,
        @events_state AS events_state,
