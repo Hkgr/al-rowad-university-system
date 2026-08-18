@@ -2,9 +2,13 @@
 
 namespace App\Services;
 
+use App\Exceptions\ExceptionalOpeningException;
 use App\Models\CourseOffering;
+use App\Models\CourseOfferingExceptionRequest;
+use App\Models\CourseOfferingExceptionReview;
 use App\Models\CourseOfferingInstructor;
 use App\Models\User;
+use App\Support\ExceptionalOpeningWorkflow;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 
@@ -67,6 +71,80 @@ class CourseOfferingOpeningService
                 $ensureOpen,
             );
         });
+    }
+
+    /**
+     * One-time CLOSED → OPEN from a locked, current, dual-approved
+     * exceptional-opening request. Not a generic bypass: callers must
+     * already hold the Offering, request, and both current-version review
+     * rows inside a transaction. Coverage is intentionally not required.
+     */
+    public function openFromApprovedException(
+        CourseOffering $lockedOffering,
+        CourseOfferingExceptionRequest $lockedRequest,
+        CourseOfferingExceptionReview $scientificReview,
+        CourseOfferingExceptionReview $administrativeReview,
+    ): CourseOffering {
+        if (DB::transactionLevel() < 1) {
+            throw ExceptionalOpeningException::transactionRequired();
+        }
+
+        if (! $lockedRequest->isCurrent()
+            || $lockedRequest->isMaterialized()
+            || (int) $lockedRequest->course_offering_id !== (int) $lockedOffering->course_offering_id
+        ) {
+            throw ExceptionalOpeningException::proofInvalid();
+        }
+
+        if ((string) $lockedOffering->status !== self::STATUS_CLOSED) {
+            throw ExceptionalOpeningException::proofInvalid();
+        }
+
+        if (! $lockedRequest->identityMatches($lockedOffering)) {
+            throw ExceptionalOpeningException::requestStale();
+        }
+
+        $version = (int) $lockedRequest->submission_version;
+        $this->assertCurrentApprovedReview(
+            $scientificReview,
+            $lockedRequest,
+            ExceptionalOpeningWorkflow::AUTHORITY_SCIENTIFIC,
+            $version
+        );
+        $this->assertCurrentApprovedReview(
+            $administrativeReview,
+            $lockedRequest,
+            ExceptionalOpeningWorkflow::AUTHORITY_ADMINISTRATIVE,
+            $version
+        );
+
+        if ($lockedRequest->status !== ExceptionalOpeningWorkflow::STATUS_APPROVED) {
+            $lockedRequest->status = ExceptionalOpeningWorkflow::STATUS_APPROVED;
+            $lockedRequest->approved_at = $lockedRequest->approved_at ?? now();
+        }
+
+        $lockedOffering->status = self::STATUS_OPEN;
+        $lockedOffering->save();
+
+        $lockedRequest->materialized_at = now();
+        $lockedRequest->save();
+
+        return $lockedOffering;
+    }
+
+    private function assertCurrentApprovedReview(
+        CourseOfferingExceptionReview $review,
+        CourseOfferingExceptionRequest $request,
+        string $authority,
+        int $version,
+    ): void {
+        if ((int) $review->course_offering_exception_request_id !== (int) $request->course_offering_exception_request_id
+            || (string) $review->review_authority !== $authority
+            || (int) $review->submission_version !== $version
+            || (string) $review->status !== ExceptionalOpeningWorkflow::REVIEW_APPROVED
+        ) {
+            throw ExceptionalOpeningException::proofInvalid();
+        }
     }
 
     /**

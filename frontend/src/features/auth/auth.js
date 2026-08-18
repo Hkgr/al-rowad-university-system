@@ -29,6 +29,10 @@ export const PERMISSIONS = Object.freeze({
   teachingAssignmentsManage: 'teaching_assignments.manage',
   teachingAssignmentsReviewScientific: 'teaching_assignments.review_scientific',
   teachingAssignmentsReviewAdministrative: 'teaching_assignments.review_administrative',
+  exceptionalOpenView: 'course_offerings.exceptional_open.view',
+  exceptionalOpenRequest: 'course_offerings.exceptional_open.request',
+  exceptionalOpenReviewScientific: 'course_offerings.exceptional_open.review_scientific',
+  exceptionalOpenReviewAdministrative: 'course_offerings.exceptional_open.review_administrative',
 })
 
 export const ACCESS = Object.freeze({

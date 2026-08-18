@@ -24,6 +24,10 @@ class OpenDeanRegistrationOfferingRequest extends FormRequest
             'department_id' => ['prohibited'],
             'faculty_member_id' => ['prohibited'],
             'status' => ['prohibited'],
+            'exceptional' => ['prohibited'],
+            'force' => ['prohibited'],
+            'skip_coverage' => ['prohibited'],
+            'bypass' => ['prohibited'],
         ];
     }
 }

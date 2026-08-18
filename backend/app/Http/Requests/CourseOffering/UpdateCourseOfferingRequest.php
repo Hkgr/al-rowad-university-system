@@ -22,6 +22,10 @@ class UpdateCourseOfferingRequest extends FormRequest
             'capacity' => 'sometimes|nullable|integer|min:1',
             'available_seats' => 'sometimes|nullable|integer|min:0',
             'status' => 'sometimes|nullable|string|max:50',
+            'exceptional' => 'prohibited',
+            'force' => 'prohibited',
+            'skip_coverage' => 'prohibited',
+            'bypass' => 'prohibited',
         ];
     }
 }

@@ -47,6 +47,12 @@ class DeanRegistrationOfferingController extends Controller
     public function reopen(Request $request, CourseOffering $courseOffering): JsonResponse
     {
         $this->assertCanView($request);
+        $request->validate([
+            'exceptional' => ['prohibited'],
+            'force' => ['prohibited'],
+            'skip_coverage' => ['prohibited'],
+            'bypass' => ['prohibited'],
+        ]);
         $result = $this->registrationOfferings->reopenOffering($request->user(), $courseOffering);
         $action = ($result['action'] ?? null) === 'unchanged' ? 'reopened' : ($result['action'] ?? 'reopened');
 

@@ -33,6 +33,7 @@ class DeanRegistrationOfferingService
         private CourseOfferingContextService $offeringContext,
         private CourseOfferingOpeningService $opening,
         private CourseOfferingInstructorCoverageService $coverage,
+        private CourseOfferingExceptionWorkflowService $exceptionWorkflow,
     ) {
     }
 
@@ -406,7 +407,13 @@ class DeanRegistrationOfferingService
             ->where('course_offerings.academic_program_id', $program->academic_program_id)
             ->whereNotNull('course_offerings.academic_program_id')
             ->whereIn('course_offerings.course_id', $courseIds)
-            ->with(CourseOfferingInstructorCoverageService::eagerLoadRelations())
+            ->with(array_merge(
+                CourseOfferingInstructorCoverageService::eagerLoadRelations(),
+                array_map(
+                    static fn (string $relation): string => 'currentExceptionRequest.'.$relation,
+                    $this->exceptionWorkflow->deanCardRelations()
+                )
+            ))
             ->withCount([
                 'studentCourseRegistrations as registered_students_count' => fn (Builder $registrations) => $registrations->current(),
             ])
@@ -441,7 +448,13 @@ class DeanRegistrationOfferingService
 
     private function hydrateOffering(CourseOffering $offering): CourseOffering
     {
-        $offering->load(CourseOfferingInstructorCoverageService::eagerLoadRelations());
+        $offering->load(array_merge(
+            CourseOfferingInstructorCoverageService::eagerLoadRelations(),
+            array_map(
+                static fn (string $relation): string => 'currentExceptionRequest.'.$relation,
+                $this->exceptionWorkflow->deanCardRelations()
+            )
+        ));
         $offering->loadCount([
             'studentCourseRegistrations as registered_students_count' => fn (Builder $registrations) => $registrations->current(),
         ]);
@@ -458,6 +471,11 @@ class DeanRegistrationOfferingService
             'available_seats' => $offering->available_seats,
             'registered_students_count' => (int) ($offering->registered_students_count ?? 0),
             'instructor_coverage' => $this->coverage->describe($offering),
+            'exceptional_opening_request' => $this->exceptionWorkflow->cardSummary(
+                $offering->relationLoaded('currentExceptionRequest')
+                    ? $offering->currentExceptionRequest
+                    : null
+            ),
         ];
     }
 
