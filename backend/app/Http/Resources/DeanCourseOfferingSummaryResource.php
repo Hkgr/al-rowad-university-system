@@ -85,7 +85,10 @@ class DeanCourseOfferingSummaryResource extends JsonResource
                     $this->currentRequestForRole('practical')
                 ),
             ],
-            'instructor_coverage' => app(CourseOfferingInstructorCoverageService::class)->describe($this->resource),
+            'instructor_coverage' => $this->when(
+                CourseOfferingInstructorCoverageService::relationsLoadedForDescription($this->resource),
+                fn () => app(CourseOfferingInstructorCoverageService::class)->describe($this->resource)
+            ),
             'metrics' => [
                 'registered_students_count' => (int) ($this->registered_students_count ?? 0),
                 'attendance_sessions_count' => (int) ($this->attendance_sessions_count ?? 0),

@@ -33,6 +33,49 @@ class CourseOfferingInstructorCoverageService
         ];
     }
 
+    /**
+     * True when describe() can run without issuing relation queries.
+     */
+    public static function relationsLoadedForDescription(CourseOffering $offering): bool
+    {
+        if (! $offering->relationLoaded('course')
+            || ! $offering->relationLoaded('offeringInstructors')
+            || ! $offering->relationLoaded('facultyMember')) {
+            return false;
+        }
+
+        if (! self::facultyGraphLoaded($offering->facultyMember)) {
+            return false;
+        }
+
+        foreach ($offering->offeringInstructors as $slot) {
+            if (! $slot->relationLoaded('facultyMember')
+                || ! self::facultyGraphLoaded($slot->facultyMember)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static function facultyGraphLoaded(?FacultyMember $facultyMember): bool
+    {
+        if ($facultyMember === null) {
+            return true;
+        }
+
+        if (! $facultyMember->relationLoaded('employee')) {
+            return false;
+        }
+
+        $employee = $facultyMember->employee;
+        if ($employee === null) {
+            return true;
+        }
+
+        return $employee->relationLoaded('employeeStatus');
+    }
+
     public function __construct(private TeachingAssignmentService $teachingAssignments)
     {
     }

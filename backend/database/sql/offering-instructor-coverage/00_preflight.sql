@@ -98,12 +98,24 @@ SET @role_index := IF(@db_ready = 1, (
     ) idx
 ), 0);
 SET @identity_index := IF(@db_ready = 1, (
-    SELECT COUNT(*) FROM information_schema.statistics
-    WHERE table_schema = 'alrowad_uni_rust'
-      AND table_name = 'course_offerings'
-      AND index_name = 'uq_course_offering_program_term'
-      AND non_unique = 0
+    SELECT COUNT(*) FROM (
+        SELECT index_name
+        FROM information_schema.statistics
+        WHERE table_schema = 'alrowad_uni_rust'
+          AND table_name = 'course_offerings'
+          AND index_name = 'uq_course_offering_program_term'
+          AND non_unique = 0
+        GROUP BY index_name
+        HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index SEPARATOR ',') = 'course_id,academic_program_id,academic_year_id,semester_id'
+    ) idx
 ), 0);
+SET @coi_offering_id_col := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'course_offering_instructors' AND column_name = 'course_offering_id'), 0);
+SET @coi_faculty_col := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'course_offering_instructors' AND column_name = 'faculty_member_id'), 0);
+SET @faculty_is_active_col := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'faculty_members' AND column_name = 'is_active'), 0);
+SET @faculty_employee_id_col := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'faculty_members' AND column_name = 'employee_id'), 0);
+SET @employee_status_id_col := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'employees' AND column_name = 'employee_status_id'), 0);
+SET @es_status_code_col := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'employee_statuses' AND column_name = 'status_code'), 0);
+SET @es_is_active_col := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'employee_statuses' AND column_name = 'is_active'), 0);
 
 SELECT '1_total_offerings' AS report_section,
        IF(@offerings_exist = 1, (SELECT COUNT(*) FROM `alrowad_uni_rust`.`course_offerings`), NULL) AS offering_count;
@@ -289,10 +301,26 @@ SELECT '14_phase4_tables' AS report_section,
        @events_exist AS teaching_assignment_events;
 
 SELECT '15_uq_course_offering_role' AS report_section,
-       IF(@role_index = 1, 'PRESENT', 'MISSING') AS result;
+       IF(@role_index = 1, 'PRESENT', 'MISSING') AS result,
+       'course_offering_id,instructor_role' AS expected_columns;
 
 SELECT '16_uq_course_offering_program_term' AS report_section,
-       IF(@identity_index >= 1, 'PRESENT', 'MISSING') AS result;
+       IF(@identity_index = 1, 'PRESENT', 'MISSING') AS result,
+       'course_id,academic_program_id,academic_year_id,semester_id' AS expected_columns,
+       IFNULL((
+           SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index SEPARATOR ',')
+           FROM information_schema.statistics
+           WHERE table_schema = 'alrowad_uni_rust'
+             AND table_name = 'course_offerings'
+             AND index_name = 'uq_course_offering_program_term'
+       ), '') AS actual_columns,
+       IFNULL((
+           SELECT IF(MAX(non_unique) = 0, 'UNIQUE', 'NON_UNIQUE')
+           FROM information_schema.statistics
+           WHERE table_schema = 'alrowad_uni_rust'
+             AND table_name = 'course_offerings'
+             AND index_name = 'uq_course_offering_program_term'
+       ), 'ABSENT') AS uniqueness;
 
 SELECT 'structural_prerequisites' AS report_section,
        CASE
@@ -310,10 +338,17 @@ SELECT 'structural_prerequisites' AS report_section,
             AND @practical_hours_col = 1
             AND @offering_status_col = 1
             AND @offering_faculty_col = 1
+            AND @coi_offering_id_col = 1
+            AND @coi_faculty_col = 1
             AND @coi_role_col = 1
             AND @coi_active_col = 1
+            AND @faculty_is_active_col = 1
+            AND @faculty_employee_id_col = 1
+            AND @employee_status_id_col = 1
+            AND @es_status_code_col = 1
+            AND @es_is_active_col = 1
             AND @role_index = 1
-            AND @identity_index >= 1
+            AND @identity_index = 1
                THEN 'READY'
            ELSE 'BLOCKED'
        END AS result;
@@ -335,10 +370,17 @@ SELECT
          AND @practical_hours_col = 1
          AND @offering_status_col = 1
          AND @offering_faculty_col = 1
+         AND @coi_offering_id_col = 1
+         AND @coi_faculty_col = 1
          AND @coi_role_col = 1
          AND @coi_active_col = 1
+         AND @faculty_is_active_col = 1
+         AND @faculty_employee_id_col = 1
+         AND @employee_status_id_col = 1
+         AND @es_status_code_col = 1
+         AND @es_is_active_col = 1
          AND @role_index = 1
-         AND @identity_index >= 1
+         AND @identity_index = 1
             THEN 'READY'
         ELSE 'BLOCKED'
     END AS result;

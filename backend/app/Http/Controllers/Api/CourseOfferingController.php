@@ -101,52 +101,24 @@ class CourseOfferingController extends ApiController
         $this->rejectExternalFacultyMemberAssignment($request, $offering);
         $data = $request->validated();
         unset($data['faculty_member_id']);
-        $identityKeys = ['course_id', 'academic_program_id', 'department_id', 'academic_year_id', 'semester_id'];
-        $identityTouched = array_intersect(array_keys($data), $identityKeys) !== [];
-
-        if ($identityTouched) {
-            $courseId = isset($data['course_id']) ? (int) $data['course_id'] : (int) $offering->course_id;
-            $programId = array_key_exists('academic_program_id', $data)
-                ? (int) $data['academic_program_id']
-                : ($offering->academic_program_id === null ? null : (int) $offering->academic_program_id);
-            $yearId = isset($data['academic_year_id']) ? (int) $data['academic_year_id'] : (int) $offering->academic_year_id;
-            $semesterId = isset($data['semester_id']) ? (int) $data['semester_id'] : (int) $offering->semester_id;
-            $departmentId = array_key_exists('department_id', $data)
-                ? (int) $data['department_id']
-                : ($offering->department_id === null ? null : (int) $offering->department_id);
-
-            if ($programId === null) {
-                throw CourseOfferingContextException::programContextIncomplete();
-            }
-
-            if ($this->offeringContext->identityWouldChange($offering, $courseId, $programId, $yearId, $semesterId)
-                && $this->offeringContext->hasHistoricalDependents($offering)) {
-                throw CourseOfferingContextException::identityLocked();
-            }
-
-            $context = $this->offeringContext->resolveContext(
-                $courseId,
-                $programId,
-                $yearId,
-                $semesterId,
-                $departmentId,
-                $request->user(),
-                true,
-                (int) $offering->course_offering_id,
-            );
-            $data = array_merge($data, $context->offeringAttributes());
-        }
 
         $requestedOpen = array_key_exists('status', $data)
             && (string) $data['status'] === CourseOfferingOpeningService::STATUS_OPEN;
-        if ($requestedOpen) {
-            unset($data['status']);
-        }
-
-        $this->offeringContext->updateOffering($offering, $data);
 
         if ($requestedOpen) {
-            $offering = $this->opening->normalOpen($offering->fresh(), $request->user());
+            $offering = $this->opening->applyThenNormalOpen(
+                $offering,
+                function (CourseOffering $locked) use ($data, $request): void {
+                    $attributes = $this->attributesForOfferingUpdate($locked, $data, $request);
+                    unset($attributes['status']);
+                    $this->offeringContext->updateOffering($locked, $attributes);
+                },
+                $request->user(),
+            );
+        } else {
+            $attributes = $this->attributesForOfferingUpdate($offering, $data, $request);
+            $this->offeringContext->updateOffering($offering, $attributes);
+            $offering = $offering->fresh();
         }
 
         return $this->successResponse(
@@ -338,6 +310,53 @@ class CourseOfferingController extends ApiController
         }
 
         return (int) $value;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function attributesForOfferingUpdate(CourseOffering $offering, array $data, FormRequest $request): array
+    {
+        unset($data['faculty_member_id']);
+        $identityKeys = ['course_id', 'academic_program_id', 'department_id', 'academic_year_id', 'semester_id'];
+        $identityTouched = array_intersect(array_keys($data), $identityKeys) !== [];
+
+        if (! $identityTouched) {
+            return $data;
+        }
+
+        $courseId = isset($data['course_id']) ? (int) $data['course_id'] : (int) $offering->course_id;
+        $programId = array_key_exists('academic_program_id', $data)
+            ? (int) $data['academic_program_id']
+            : ($offering->academic_program_id === null ? null : (int) $offering->academic_program_id);
+        $yearId = isset($data['academic_year_id']) ? (int) $data['academic_year_id'] : (int) $offering->academic_year_id;
+        $semesterId = isset($data['semester_id']) ? (int) $data['semester_id'] : (int) $offering->semester_id;
+        $departmentId = array_key_exists('department_id', $data)
+            ? (int) $data['department_id']
+            : ($offering->department_id === null ? null : (int) $offering->department_id);
+
+        if ($programId === null) {
+            throw CourseOfferingContextException::programContextIncomplete();
+        }
+
+        if ($this->offeringContext->identityWouldChange($offering, $courseId, $programId, $yearId, $semesterId)
+            && $this->offeringContext->hasHistoricalDependents($offering)) {
+            throw CourseOfferingContextException::identityLocked();
+        }
+
+        $context = $this->offeringContext->resolveContext(
+            $courseId,
+            $programId,
+            $yearId,
+            $semesterId,
+            $departmentId,
+            $request->user(),
+            true,
+            (int) $offering->course_offering_id,
+        );
+
+        return array_merge($data, $context->offeringAttributes());
     }
 
     /**

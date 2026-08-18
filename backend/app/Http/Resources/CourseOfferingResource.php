@@ -39,7 +39,7 @@ class CourseOfferingResource extends JsonResource
             'status' => $this->status,
             'requirement_classification' => CourseRequirementClassification::forOffering($this->resource),
             'instructor_coverage' => $this->when(
-                $this->relationLoaded('course'),
+                CourseOfferingInstructorCoverageService::relationsLoadedForDescription($this->resource),
                 fn () => app(CourseOfferingInstructorCoverageService::class)->describe($this->resource)
             ),
             'course' => CourseResource::make($this->whenLoaded('course')),

@@ -28,8 +28,17 @@ Existing objects used by application coverage logic:
 - `course_offering_instructors` (canonical effective coverage)
 - Phase 4 workflow tables (`teaching_assignment_requests`, `teaching_assignment_reviews`, `teaching_assignment_events`)
 - Unique indexes:
-  - `uq_course_offering_role` on `course_offering_instructors (course_offering_id, instructor_role)`
-  - `uq_course_offering_program_term` on `course_offerings` (Phase 2 offering identity)
+  - `uq_course_offering_role` UNIQUE on `course_offering_instructors (course_offering_id, instructor_role)`
+  - `uq_course_offering_program_term` UNIQUE on `course_offerings (course_id, academic_program_id, academic_year_id, semester_id)` in that exact order
+
+`02_verify.sql` also visibly PASS/FAIL-checks the columns used by coverage:
+
+- `courses.theoretical_hours`, `courses.practical_hours`
+- `course_offerings.status`, `course_offerings.faculty_member_id`
+- `course_offering_instructors.course_offering_id`, `faculty_member_id`, `instructor_role`, `is_active`
+- `faculty_members.is_active`, `faculty_members.employee_id`
+- `employees.employee_status_id`
+- `employee_statuses.status_code`, `employee_statuses.is_active`
 
 ## What SQL cannot verify
 
