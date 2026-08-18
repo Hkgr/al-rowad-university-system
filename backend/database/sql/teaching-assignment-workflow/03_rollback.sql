@@ -2,7 +2,17 @@
 -- Fully qualified objects: do not depend on phpMyAdmin's selected database.
 -- Do not use DATABASE(), stored procedures, DELIMITER, or SIGNAL.
 --
--- If ANY workflow business rows exist, do not drop tables. Return BLOCKED_IN_USE.
+-- Tables are dropped ONLY when:
+--   1. information_schema.tables.TABLE_COMMENT contains
+--      [phase4-teaching-assignment-workflow]
+--   2. no workflow business rows exist in any of the three tables
+--
+-- A same-named empty table that lacks the ownership marker is
+-- SKIPPED_NOT_PROVABLY_PHASE_OWNED and is never dropped.
+-- If ANY business rows exist, return BLOCKED_IN_USE and drop nothing.
+--
+-- Drop order: events, reviews, requests.
+--
 -- Remove only Phase-4-owned RBAC mappings/permissions
 -- (description contains [phase4-teaching-assignment-workflow]).
 --
@@ -20,9 +30,43 @@ SET @db_ready := IF(
     0
 );
 
-SET @requests_exist := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_requests'), 0);
-SET @reviews_exist := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_reviews'), 0);
-SET @events_exist := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_events'), 0);
+SET @requests_exist := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_requests' AND table_type = 'BASE TABLE'), 0);
+SET @reviews_exist := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_reviews' AND table_type = 'BASE TABLE'), 0);
+SET @events_exist := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_events' AND table_type = 'BASE TABLE'), 0);
+
+SET @requests_owned := IF(
+    @requests_exist = 1,
+    IF((
+        SELECT COALESCE(table_comment, '')
+        FROM information_schema.tables
+        WHERE table_schema = 'alrowad_uni_rust'
+          AND table_name = 'teaching_assignment_requests'
+          AND table_type = 'BASE TABLE'
+    ) LIKE '%[phase4-teaching-assignment-workflow]%', 1, 0),
+    0
+);
+SET @reviews_owned := IF(
+    @reviews_exist = 1,
+    IF((
+        SELECT COALESCE(table_comment, '')
+        FROM information_schema.tables
+        WHERE table_schema = 'alrowad_uni_rust'
+          AND table_name = 'teaching_assignment_reviews'
+          AND table_type = 'BASE TABLE'
+    ) LIKE '%[phase4-teaching-assignment-workflow]%', 1, 0),
+    0
+);
+SET @events_owned := IF(
+    @events_exist = 1,
+    IF((
+        SELECT COALESCE(table_comment, '')
+        FROM information_schema.tables
+        WHERE table_schema = 'alrowad_uni_rust'
+          AND table_name = 'teaching_assignment_events'
+          AND table_type = 'BASE TABLE'
+    ) LIKE '%[phase4-teaching-assignment-workflow]%', 1, 0),
+    0
+);
 
 SET @request_rows := IF(@requests_exist = 1, (SELECT COUNT(*) FROM `alrowad_uni_rust`.`teaching_assignment_requests`), 0);
 SET @review_rows := IF(@reviews_exist = 1, (SELECT COUNT(*) FROM `alrowad_uni_rust`.`teaching_assignment_reviews`), 0);
@@ -40,30 +84,108 @@ SELECT 'ROLLBACK_GUARD' AS report_section,
        @rollback_status AS result,
        @request_rows AS request_rows,
        @review_rows AS review_rows,
-       @event_rows AS event_rows;
+       @event_rows AS event_rows,
+       @events_owned AS events_owned,
+       @reviews_owned AS reviews_owned,
+       @requests_owned AS requests_owned;
+
+SELECT 'ROLLBACK_TABLE' AS report_section,
+       'teaching_assignment_events' AS table_name,
+       CASE
+           WHEN @events_exist = 0 THEN 'ABSENT'
+           WHEN @in_use = 1 THEN 'BLOCKED_IN_USE'
+           WHEN @events_owned = 0 THEN 'SKIPPED_NOT_PROVABLY_PHASE_OWNED'
+           WHEN @rollback_status = 'READY' THEN 'WILL_DROP'
+           ELSE 'BLOCKED'
+       END AS result,
+       IF(@events_exist = 1, (
+           SELECT COALESCE(table_comment, '')
+           FROM information_schema.tables
+           WHERE table_schema = 'alrowad_uni_rust'
+             AND table_name = 'teaching_assignment_events'
+             AND table_type = 'BASE TABLE'
+       ), NULL) AS table_comment;
+
+SELECT 'ROLLBACK_TABLE' AS report_section,
+       'teaching_assignment_reviews' AS table_name,
+       CASE
+           WHEN @reviews_exist = 0 THEN 'ABSENT'
+           WHEN @in_use = 1 THEN 'BLOCKED_IN_USE'
+           WHEN @reviews_owned = 0 THEN 'SKIPPED_NOT_PROVABLY_PHASE_OWNED'
+           WHEN @rollback_status = 'READY' THEN 'WILL_DROP'
+           ELSE 'BLOCKED'
+       END AS result,
+       IF(@reviews_exist = 1, (
+           SELECT COALESCE(table_comment, '')
+           FROM information_schema.tables
+           WHERE table_schema = 'alrowad_uni_rust'
+             AND table_name = 'teaching_assignment_reviews'
+             AND table_type = 'BASE TABLE'
+       ), NULL) AS table_comment;
+
+SELECT 'ROLLBACK_TABLE' AS report_section,
+       'teaching_assignment_requests' AS table_name,
+       CASE
+           WHEN @requests_exist = 0 THEN 'ABSENT'
+           WHEN @in_use = 1 THEN 'BLOCKED_IN_USE'
+           WHEN @requests_owned = 0 THEN 'SKIPPED_NOT_PROVABLY_PHASE_OWNED'
+           WHEN @rollback_status = 'READY' THEN 'WILL_DROP'
+           ELSE 'BLOCKED'
+       END AS result,
+       IF(@requests_exist = 1, (
+           SELECT COALESCE(table_comment, '')
+           FROM information_schema.tables
+           WHERE table_schema = 'alrowad_uni_rust'
+             AND table_name = 'teaching_assignment_requests'
+             AND table_type = 'BASE TABLE'
+       ), NULL) AS table_comment;
 
 SET @sql := IF(
-    @rollback_status = 'READY' AND @events_exist = 1,
+    @rollback_status = 'READY' AND @events_exist = 1 AND @events_owned = 1,
     'DROP TABLE `alrowad_uni_rust`.`teaching_assignment_events`',
-    'SELECT ''SKIPPED_DROP_EVENTS'' AS rollback_result'
+    IF(
+        @events_exist = 1 AND @events_owned = 0,
+        'SELECT ''SKIPPED_NOT_PROVABLY_PHASE_OWNED'' AS rollback_result, ''teaching_assignment_events'' AS table_name',
+        IF(
+            @in_use = 1 AND @events_exist = 1,
+            'SELECT ''BLOCKED_IN_USE'' AS rollback_result, ''teaching_assignment_events'' AS table_name',
+            'SELECT ''SKIPPED_DROP_EVENTS'' AS rollback_result'
+        )
+    )
 );
 PREPARE phase4_drop_events FROM @sql;
 EXECUTE phase4_drop_events;
 DEALLOCATE PREPARE phase4_drop_events;
 
 SET @sql := IF(
-    @rollback_status = 'READY' AND @reviews_exist = 1,
+    @rollback_status = 'READY' AND @reviews_exist = 1 AND @reviews_owned = 1,
     'DROP TABLE `alrowad_uni_rust`.`teaching_assignment_reviews`',
-    'SELECT ''SKIPPED_DROP_REVIEWS'' AS rollback_result'
+    IF(
+        @reviews_exist = 1 AND @reviews_owned = 0,
+        'SELECT ''SKIPPED_NOT_PROVABLY_PHASE_OWNED'' AS rollback_result, ''teaching_assignment_reviews'' AS table_name',
+        IF(
+            @in_use = 1 AND @reviews_exist = 1,
+            'SELECT ''BLOCKED_IN_USE'' AS rollback_result, ''teaching_assignment_reviews'' AS table_name',
+            'SELECT ''SKIPPED_DROP_REVIEWS'' AS rollback_result'
+        )
+    )
 );
 PREPARE phase4_drop_reviews FROM @sql;
 EXECUTE phase4_drop_reviews;
 DEALLOCATE PREPARE phase4_drop_reviews;
 
 SET @sql := IF(
-    @rollback_status = 'READY' AND @requests_exist = 1,
+    @rollback_status = 'READY' AND @requests_exist = 1 AND @requests_owned = 1,
     'DROP TABLE `alrowad_uni_rust`.`teaching_assignment_requests`',
-    'SELECT ''SKIPPED_DROP_REQUESTS'' AS rollback_result'
+    IF(
+        @requests_exist = 1 AND @requests_owned = 0,
+        'SELECT ''SKIPPED_NOT_PROVABLY_PHASE_OWNED'' AS rollback_result, ''teaching_assignment_requests'' AS table_name',
+        IF(
+            @in_use = 1 AND @requests_exist = 1,
+            'SELECT ''BLOCKED_IN_USE'' AS rollback_result, ''teaching_assignment_requests'' AS table_name',
+            'SELECT ''SKIPPED_DROP_REQUESTS'' AS rollback_result'
+        )
+    )
 );
 PREPARE phase4_drop_requests FROM @sql;
 EXECUTE phase4_drop_requests;
@@ -98,4 +220,7 @@ COMMIT;
 SELECT IF(@in_use = 1, 'BLOCKED_IN_USE', IF(@rollback_status = 'READY', 'ROLLED_BACK', 'BLOCKED')) AS rollback_status,
        @request_rows AS request_rows,
        @review_rows AS review_rows,
-       @event_rows AS event_rows;
+       @event_rows AS event_rows,
+       @events_owned AS events_owned,
+       @reviews_owned AS reviews_owned,
+       @requests_owned AS requests_owned;

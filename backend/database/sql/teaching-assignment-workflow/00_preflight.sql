@@ -139,17 +139,17 @@ HAVING COUNT(DISTINCT instructor_role) > 1;
 -- ---------------------------------------------------------------------------
 SET @requests_rows := IF(
     @db_ready = 1,
-    (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_requests'),
+    (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_requests' AND table_type = 'BASE TABLE'),
     0
 );
 SET @reviews_rows := IF(
     @db_ready = 1,
-    (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_reviews'),
+    (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_reviews' AND table_type = 'BASE TABLE'),
     0
 );
 SET @events_rows := IF(
     @db_ready = 1,
-    (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_events'),
+    (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_events' AND table_type = 'BASE TABLE'),
     0
 );
 
@@ -223,48 +223,290 @@ SET @events_expected_cols := IF(
     0
 );
 
-SET @requests_unique_ok := IF(
-    @requests_rows = 1,
-    (
+SET @requests_engine_ok := IF(@requests_rows = 1, IF((SELECT engine FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_requests' AND table_type = 'BASE TABLE') <=> 'InnoDB', 1, 0), 0);
+SET @reviews_engine_ok := IF(@reviews_rows = 1, IF((SELECT engine FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_reviews' AND table_type = 'BASE TABLE') <=> 'InnoDB', 1, 0), 0);
+SET @events_engine_ok := IF(@events_rows = 1, IF((SELECT engine FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_events' AND table_type = 'BASE TABLE') <=> 'InnoDB', 1, 0), 0);
+
+SET @requests_pk_ok := IF(@requests_rows = 1 AND (SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_requests' AND index_name = 'PRIMARY') <=> 'teaching_assignment_request_id', 1, 0);
+SET @reviews_pk_ok := IF(@reviews_rows = 1 AND (SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_reviews' AND index_name = 'PRIMARY') <=> 'teaching_assignment_review_id', 1, 0);
+SET @events_pk_ok := IF(@events_rows = 1 AND (SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_events' AND index_name = 'PRIMARY') <=> 'teaching_assignment_event_id', 1, 0);
+
+SET @requests_types_ok := IF(
+    @requests_rows = 1 AND (
         SELECT COUNT(*)
-        FROM information_schema.statistics
-        WHERE table_schema = 'alrowad_uni_rust'
-          AND table_name = 'teaching_assignment_requests'
-          AND index_name = 'uq_tar_current_slot'
-          AND non_unique = 0
-          AND (
-              (seq_in_index = 1 AND column_name = 'course_offering_id')
-           OR (seq_in_index = 2 AND column_name = 'instructor_role')
-           OR (seq_in_index = 3 AND column_name = 'current_slot')
-          )
-    ) = 3,
+        FROM (
+            SELECT 'teaching_assignment_request_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable
+            UNION ALL SELECT 'course_offering_id', 'int', 'NO'
+            UNION ALL SELECT 'faculty_member_id', 'int', 'NO'
+            UNION ALL SELECT 'status', 'varchar', 'NO'
+            UNION ALL SELECT 'submission_version', 'int', 'NO'
+            UNION ALL SELECT 'current_slot', 'tinyint', 'YES'
+            UNION ALL SELECT 'requested_by_user_id', 'int', 'NO'
+            UNION ALL SELECT 'superseded_by_request_id', 'int', 'YES'
+            UNION ALL SELECT 'instructor_role', 'enum', 'NO'
+        ) required
+        LEFT JOIN information_schema.columns c
+            ON c.table_schema = 'alrowad_uni_rust'
+           AND c.table_name = 'teaching_assignment_requests'
+           AND c.column_name = required.column_name
+        WHERE c.column_name IS NULL
+           OR c.is_nullable <> required.is_nullable
+           OR (
+               required.column_name = 'instructor_role'
+               AND NOT (
+                   (LOWER(c.data_type) = 'enum' AND LOWER(c.column_type) LIKE '%theoretical%' AND LOWER(c.column_type) LIKE '%practical%')
+                   OR (LOWER(c.data_type) IN ('varchar', 'char') AND IFNULL(c.character_maximum_length, 0) >= 12)
+               )
+           )
+           OR (
+               required.column_name <> 'instructor_role'
+               AND (
+                   LOWER(c.data_type) <> required.data_type
+                   OR (required.data_type IN ('int', 'tinyint') AND LOWER(c.column_type) LIKE '%unsigned%')
+                   OR (required.column_name = 'status' AND IFNULL(c.character_maximum_length, 0) < 32)
+               )
+           )
+    ) = 0,
+    1,
     0
 );
-SET @reviews_unique_ok := IF(
-    @reviews_rows = 1,
-    (
+SET @reviews_types_ok := IF(
+    @reviews_rows = 1 AND (
         SELECT COUNT(*)
-        FROM information_schema.statistics
-        WHERE table_schema = 'alrowad_uni_rust'
-          AND table_name = 'teaching_assignment_reviews'
-          AND index_name = 'uq_tarv_request_authority'
-          AND non_unique = 0
-          AND (
-              (seq_in_index = 1 AND column_name = 'teaching_assignment_request_id')
-           OR (seq_in_index = 2 AND column_name = 'review_authority')
-          )
-    ) = 2,
+        FROM (
+            SELECT 'teaching_assignment_review_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable
+            UNION ALL SELECT 'teaching_assignment_request_id', 'int', 'NO'
+            UNION ALL SELECT 'status', 'varchar', 'NO'
+            UNION ALL SELECT 'reviewed_by_user_id', 'int', 'YES'
+            UNION ALL SELECT 'review_authority', 'enum', 'NO'
+        ) required
+        LEFT JOIN information_schema.columns c
+            ON c.table_schema = 'alrowad_uni_rust'
+           AND c.table_name = 'teaching_assignment_reviews'
+           AND c.column_name = required.column_name
+        WHERE c.column_name IS NULL
+           OR c.is_nullable <> required.is_nullable
+           OR (
+               required.column_name = 'review_authority'
+               AND NOT (
+                   (LOWER(c.data_type) = 'enum' AND LOWER(c.column_type) LIKE '%scientific%' AND LOWER(c.column_type) LIKE '%administrative%')
+                   OR (LOWER(c.data_type) IN ('varchar', 'char') AND IFNULL(c.character_maximum_length, 0) >= 14)
+               )
+           )
+           OR (
+               required.column_name <> 'review_authority'
+               AND (
+                   LOWER(c.data_type) <> required.data_type
+                   OR (required.data_type = 'int' AND LOWER(c.column_type) LIKE '%unsigned%')
+                   OR (required.column_name = 'status' AND IFNULL(c.character_maximum_length, 0) < 32)
+               )
+           )
+    ) = 0,
+    1,
+    0
+);
+SET @events_types_ok := IF(
+    @events_rows = 1 AND (
+        SELECT COUNT(*)
+        FROM (
+            SELECT 'teaching_assignment_event_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable
+            UNION ALL SELECT 'teaching_assignment_request_id', 'int', 'NO'
+            UNION ALL SELECT 'event_type', 'varchar', 'NO'
+            UNION ALL SELECT 'actor_user_id', 'int', 'YES'
+            UNION ALL SELECT 'created_at', 'timestamp', 'NO'
+        ) required
+        LEFT JOIN information_schema.columns c
+            ON c.table_schema = 'alrowad_uni_rust'
+           AND c.table_name = 'teaching_assignment_events'
+           AND c.column_name = required.column_name
+        WHERE c.column_name IS NULL
+           OR (
+               required.column_name <> 'created_at'
+               AND c.is_nullable <> required.is_nullable
+           )
+           OR (
+               required.column_name = 'created_at'
+               AND LOWER(c.data_type) NOT IN ('timestamp', 'datetime')
+           )
+           OR (
+               required.column_name <> 'created_at'
+               AND (
+                   LOWER(c.data_type) <> required.data_type
+                   OR (required.data_type = 'int' AND LOWER(c.column_type) LIKE '%unsigned%')
+                   OR (required.column_name = 'event_type' AND IFNULL(c.character_maximum_length, 0) < 64)
+               )
+           )
+    ) = 0,
+    1,
     0
 );
 
-SET @requests_state := IF(@requests_rows = 0, 'ABSENT', IF(@requests_expected_cols = 14 AND @requests_unique_ok = 1, 'COMPATIBLE', 'CONFLICT'));
-SET @reviews_state := IF(@reviews_rows = 0, 'ABSENT', IF(@reviews_expected_cols = 9 AND @reviews_unique_ok = 1, 'COMPATIBLE', 'CONFLICT'));
-SET @events_state := IF(@events_rows = 0, 'ABSENT', IF(@events_expected_cols = 7, 'COMPATIBLE', 'CONFLICT'));
+SET @requests_unique_ok := IF(
+    @requests_rows = 1
+    AND (SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_requests' AND index_name = 'uq_tar_current_slot' AND non_unique = 0) <=> 'course_offering_id,instructor_role,current_slot',
+    1,
+    0
+);
+SET @reviews_unique_ok := IF(
+    @reviews_rows = 1
+    AND (SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_reviews' AND index_name = 'uq_tarv_request_authority' AND non_unique = 0) <=> 'teaching_assignment_request_id,review_authority',
+    1,
+    0
+);
+
+SET @requests_fk_ok := IF(
+    @requests_rows = 1 AND (
+        SELECT COUNT(*)
+        FROM (
+            SELECT 'fk_tar_course_offering' AS constraint_name, 'course_offering_id' AS column_name, 'course_offerings' AS ref_table, 'course_offering_id' AS ref_column
+            UNION ALL SELECT 'fk_tar_faculty_member', 'faculty_member_id', 'faculty_members', 'faculty_member_id'
+            UNION ALL SELECT 'fk_tar_requested_by', 'requested_by_user_id', 'users', 'user_id'
+            UNION ALL SELECT 'fk_tar_superseded_by', 'superseded_by_request_id', 'teaching_assignment_requests', 'teaching_assignment_request_id'
+        ) required
+        LEFT JOIN information_schema.key_column_usage k
+            ON k.table_schema = 'alrowad_uni_rust'
+           AND k.table_name = 'teaching_assignment_requests'
+           AND k.constraint_name = required.constraint_name
+           AND k.column_name = required.column_name
+           AND k.referenced_table_schema = 'alrowad_uni_rust'
+           AND k.referenced_table_name = required.ref_table
+           AND k.referenced_column_name = required.ref_column
+        WHERE k.column_name IS NULL
+    ) = 0,
+    1,
+    0
+);
+SET @reviews_fk_ok := IF(
+    @reviews_rows = 1 AND (
+        SELECT COUNT(*)
+        FROM (
+            SELECT 'fk_tarv_request' AS constraint_name, 'teaching_assignment_request_id' AS column_name, 'teaching_assignment_requests' AS ref_table, 'teaching_assignment_request_id' AS ref_column
+            UNION ALL SELECT 'fk_tarv_reviewer', 'reviewed_by_user_id', 'users', 'user_id'
+        ) required
+        LEFT JOIN information_schema.key_column_usage k
+            ON k.table_schema = 'alrowad_uni_rust'
+           AND k.table_name = 'teaching_assignment_reviews'
+           AND k.constraint_name = required.constraint_name
+           AND k.column_name = required.column_name
+           AND k.referenced_table_schema = 'alrowad_uni_rust'
+           AND k.referenced_table_name = required.ref_table
+           AND k.referenced_column_name = required.ref_column
+        WHERE k.column_name IS NULL
+    ) = 0,
+    1,
+    0
+);
+SET @events_fk_ok := IF(
+    @events_rows = 1 AND (
+        SELECT COUNT(*)
+        FROM (
+            SELECT 'fk_tae_request' AS constraint_name, 'teaching_assignment_request_id' AS column_name, 'teaching_assignment_requests' AS ref_table, 'teaching_assignment_request_id' AS ref_column
+            UNION ALL SELECT 'fk_tae_actor', 'actor_user_id', 'users', 'user_id'
+        ) required
+        LEFT JOIN information_schema.key_column_usage k
+            ON k.table_schema = 'alrowad_uni_rust'
+           AND k.table_name = 'teaching_assignment_events'
+           AND k.constraint_name = required.constraint_name
+           AND k.column_name = required.column_name
+           AND k.referenced_table_schema = 'alrowad_uni_rust'
+           AND k.referenced_table_name = required.ref_table
+           AND k.referenced_column_name = required.ref_column
+        WHERE k.column_name IS NULL
+    ) = 0,
+    1,
+    0
+);
+
+SET @requests_queue_ok := IF(
+    @requests_rows = 1 AND (
+        SELECT COUNT(*)
+        FROM (
+            SELECT 'idx_tar_status' AS index_name, 'status' AS columns
+            UNION ALL SELECT 'idx_tar_faculty_member', 'faculty_member_id'
+            UNION ALL SELECT 'idx_tar_requested_by', 'requested_by_user_id'
+            UNION ALL SELECT 'idx_tar_submitted_at', 'submitted_at'
+        ) required
+        JOIN (
+            SELECT index_name, GROUP_CONCAT(column_name ORDER BY seq_in_index) AS columns
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'teaching_assignment_requests'
+            GROUP BY index_name
+        ) existing
+            ON existing.index_name = required.index_name
+           AND existing.columns = required.columns
+    ) = 4,
+    1,
+    0
+);
+SET @reviews_queue_ok := IF(
+    @reviews_rows = 1
+    AND (SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_reviews' AND index_name = 'idx_tarv_authority_status') <=> 'review_authority,status',
+    1,
+    0
+);
+SET @events_queue_ok := IF(
+    @events_rows = 1
+    AND (SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_events' AND index_name = 'idx_tae_request_created') <=> 'teaching_assignment_request_id,created_at',
+    1,
+    0
+);
+
+SET @requests_state := IF(
+    @requests_rows = 0,
+    'ABSENT',
+    IF(
+        @requests_expected_cols = 14
+        AND @requests_engine_ok = 1
+        AND @requests_pk_ok = 1
+        AND @requests_types_ok = 1
+        AND @requests_unique_ok = 1
+        AND @requests_fk_ok = 1
+        AND @requests_queue_ok = 1,
+        'COMPATIBLE',
+        'CONFLICT'
+    )
+);
+SET @reviews_state := IF(
+    @reviews_rows = 0,
+    'ABSENT',
+    IF(
+        @reviews_expected_cols = 9
+        AND @reviews_engine_ok = 1
+        AND @reviews_pk_ok = 1
+        AND @reviews_types_ok = 1
+        AND @reviews_unique_ok = 1
+        AND @reviews_fk_ok = 1
+        AND @reviews_queue_ok = 1,
+        'COMPATIBLE',
+        'CONFLICT'
+    )
+);
+SET @events_state := IF(
+    @events_rows = 0,
+    'ABSENT',
+    IF(
+        @events_expected_cols = 7
+        AND @events_engine_ok = 1
+        AND @events_pk_ok = 1
+        AND @events_types_ok = 1
+        AND @events_fk_ok = 1
+        AND @events_queue_ok = 1,
+        'COMPATIBLE',
+        'CONFLICT'
+    )
+);
 
 SELECT 'C_workflow_table_states' AS report_section,
        @requests_state AS teaching_assignment_requests,
        @reviews_state AS teaching_assignment_reviews,
-       @events_state AS teaching_assignment_events;
+       @events_state AS teaching_assignment_events,
+       @requests_engine_ok AS requests_innodb,
+       @requests_pk_ok AS requests_pk,
+       @requests_unique_ok AS requests_unique,
+       @requests_fk_ok AS requests_fk,
+       @reviews_fk_ok AS reviews_fk,
+       @events_fk_ok AS events_fk;
 
 -- ---------------------------------------------------------------------------
 -- D. FACULTY STRUCTURE
@@ -356,21 +598,16 @@ ORDER BY p.permission_code;
 -- H. COURSE OFFERING CONTEXT
 -- ---------------------------------------------------------------------------
 SET @offering_identity_index := IF(
-    @structure_ok = 1,
-    (
-        SELECT COUNT(*)
+    @structure_ok = 1
+    AND (
+        SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index)
         FROM information_schema.statistics
         WHERE table_schema = 'alrowad_uni_rust'
           AND table_name = 'course_offerings'
           AND index_name = 'uq_course_offering_program_term'
           AND non_unique = 0
-          AND (
-              (seq_in_index = 1 AND column_name = 'course_id')
-           OR (seq_in_index = 2 AND column_name = 'academic_program_id')
-           OR (seq_in_index = 3 AND column_name = 'academic_year_id')
-           OR (seq_in_index = 4 AND column_name = 'semester_id')
-          )
-    ) = 4,
+    ) <=> 'course_id,academic_program_id,academic_year_id,semester_id',
+    1,
     0
 );
 
@@ -454,6 +691,8 @@ SET @view_perm_compatible := IF(
         WHERE p.permission_code = 'teaching_assignments.view'
           AND p.is_active = 1
           AND sm.module_code = 'hr'
+          AND LOWER(p.permission_name) LIKE '%teaching%'
+          AND LOWER(p.permission_name) LIKE '%view%'
     ),
     0
 );
@@ -466,6 +705,8 @@ SET @manage_perm_compatible := IF(
         WHERE p.permission_code = 'teaching_assignments.manage'
           AND p.is_active = 1
           AND sm.module_code = 'hr'
+          AND LOWER(p.permission_name) LIKE '%teaching%'
+          AND LOWER(p.permission_name) LIKE '%manage%'
     ),
     0
 );
@@ -478,6 +719,8 @@ SET @sci_review_perm_compatible := IF(
         WHERE p.permission_code = 'teaching_assignments.review_scientific'
           AND p.is_active = 1
           AND sm.module_code = 'hr'
+          AND LOWER(p.permission_name) LIKE '%scientific%'
+          AND LOWER(p.permission_name) LIKE '%review%'
     ),
     0
 );
@@ -490,6 +733,8 @@ SET @adm_review_perm_compatible := IF(
         WHERE p.permission_code = 'teaching_assignments.review_administrative'
           AND p.is_active = 1
           AND sm.module_code = 'hr'
+          AND LOWER(p.permission_name) LIKE '%administrative%'
+          AND LOWER(p.permission_name) LIKE '%review%'
     ),
     0
 );
@@ -500,19 +745,16 @@ SET @sci_review_perm_state := IF(@sci_review_perm_rows = 0, 'ABSENT', IF(@sci_re
 SET @adm_review_perm_state := IF(@adm_review_perm_rows = 0, 'ABSENT', IF(@adm_review_perm_rows = 1 AND @adm_review_perm_compatible = 1, 'COMPATIBLE', 'CONFLICT'));
 
 SET @coi_unique_ok := IF(
-    @structure_ok = 1,
-    (
-        SELECT COUNT(*)
+    @structure_ok = 1
+    AND (
+        SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index)
         FROM information_schema.statistics
         WHERE table_schema = 'alrowad_uni_rust'
           AND table_name = 'course_offering_instructors'
           AND index_name = 'uq_course_offering_role'
           AND non_unique = 0
-          AND (
-              (seq_in_index = 1 AND column_name = 'course_offering_id')
-           OR (seq_in_index = 2 AND column_name = 'instructor_role')
-          )
-    ) = 2,
+    ) <=> 'course_offering_id,instructor_role',
+    1,
     0
 );
 
