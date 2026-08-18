@@ -48,6 +48,31 @@ A current unmaterialized REMOVE request (`current_slot = 1`,
 `status IN ('submitted','returned')`) blocks Phase 5 normal opening and
 Phase 6 exceptional opening with `teaching_assignment_removal_pending`.
 
+## Stale removal persistence (commit then 409)
+
+When a REMOVE request becomes stale during final VP approval, the
+workflow **must not** throw inside `DB::transaction()`. Laravel would
+roll back the supersede. The service returns an outcome from the
+transaction, **commits**, then raises HTTP 409.
+
+Target mismatch (`TA8-23`, `TA8-24`, `TA8-37`):
+
+- do not deactivate any instructor
+- persist `status = superseded`, `current_slot = NULL`, `superseded_at`
+- persist `removal_stale` event
+- commit
+- then HTTP 409 `teaching_assignment_removal_stale`
+
+Offering became OPEN before materialization (`TA8-38`):
+
+- do not remove the instructor
+- persist the same superseded / `current_slot` NULL / audit state
+- commit
+- then HTTP 409 `teaching_assignment_removal_requires_closed_offering`
+
+The superseded request can never materialize later. After it is no
+longer current, Dean may open a fresh action for that role (`TA8-39`).
+
 ## Files / deployment order
 
 1. `00_preflight.sql` — READ ONLY. Continue only when `OVERALL = READY`.
@@ -96,3 +121,17 @@ This package does not run an unrelated data backfill.
 - SQL-TA8-10 — rollback before any remove history → conservative rollback possible
 - SQL-TA8-11 — rollback after remove request/history → BLOCKED_IN_USE, no history deletion
 - SQL-TA8-12 — rollback on fully absent Phase 8 schema → no missing-column SQL error
+
+## Application acceptance (stale commit-before-409)
+
+- TA8-37 — Removal target becomes stale before second VP approval.
+  Second approval returns 409 `teaching_assignment_removal_stale`.
+  Request is persisted `superseded`, `current_slot` is NULL, effective
+  slot unchanged. Retrying the same request cannot materialize it.
+- TA8-38 — Removal request exists on CLOSED Offering. Offering becomes
+  OPEN before final approval. No instructor is removed. Request is
+  persisted `superseded` with `current_slot` NULL. HTTP 409
+  `teaching_assignment_removal_requires_closed_offering`. Request cannot
+  later reactivate or materialize.
+- TA8-39 — After a stale removal is superseded, Dean may create a fresh
+  valid action for that role.

@@ -264,28 +264,52 @@ class TeachingAssignmentWorkflowService
     {
         $this->assertScientificReviewer($user);
 
-        return $this->decide($user, $request, TeachingAssignmentWorkflow::AUTHORITY_SCIENTIFIC, TeachingAssignmentWorkflow::REVIEW_APPROVED, null);
+        return $this->finishDecision($this->decide(
+            $user,
+            $request,
+            TeachingAssignmentWorkflow::AUTHORITY_SCIENTIFIC,
+            TeachingAssignmentWorkflow::REVIEW_APPROVED,
+            null
+        ));
     }
 
     public function returnScientific(User $user, TeachingAssignmentRequest $request, string $reason): TeachingAssignmentRequest
     {
         $this->assertScientificReviewer($user);
 
-        return $this->decide($user, $request, TeachingAssignmentWorkflow::AUTHORITY_SCIENTIFIC, TeachingAssignmentWorkflow::REVIEW_RETURNED, $reason);
+        return $this->finishDecision($this->decide(
+            $user,
+            $request,
+            TeachingAssignmentWorkflow::AUTHORITY_SCIENTIFIC,
+            TeachingAssignmentWorkflow::REVIEW_RETURNED,
+            $reason
+        ));
     }
 
     public function approveAdministrative(User $user, TeachingAssignmentRequest $request): TeachingAssignmentRequest
     {
         $this->assertAdministrativeReviewer($user);
 
-        return $this->decide($user, $request, TeachingAssignmentWorkflow::AUTHORITY_ADMINISTRATIVE, TeachingAssignmentWorkflow::REVIEW_APPROVED, null);
+        return $this->finishDecision($this->decide(
+            $user,
+            $request,
+            TeachingAssignmentWorkflow::AUTHORITY_ADMINISTRATIVE,
+            TeachingAssignmentWorkflow::REVIEW_APPROVED,
+            null
+        ));
     }
 
     public function returnAdministrative(User $user, TeachingAssignmentRequest $request, string $reason): TeachingAssignmentRequest
     {
         $this->assertAdministrativeReviewer($user);
 
-        return $this->decide($user, $request, TeachingAssignmentWorkflow::AUTHORITY_ADMINISTRATIVE, TeachingAssignmentWorkflow::REVIEW_RETURNED, $reason);
+        return $this->finishDecision($this->decide(
+            $user,
+            $request,
+            TeachingAssignmentWorkflow::AUTHORITY_ADMINISTRATIVE,
+            TeachingAssignmentWorkflow::REVIEW_RETURNED,
+            $reason
+        ));
     }
 
     public function deanRequestsQuery(User $user)
@@ -351,14 +375,17 @@ class TeachingAssignmentWorkflowService
         return $relations;
     }
 
+    /**
+     * @return array{request: TeachingAssignmentRequest, outcome: ?string}
+     */
     private function decide(
         User $user,
         TeachingAssignmentRequest $request,
         string $authority,
         string $decision,
         ?string $reason
-    ): TeachingAssignmentRequest {
-        return DB::transaction(function () use ($user, $request, $authority, $decision, $reason): TeachingAssignmentRequest {
+    ): array {
+        return DB::transaction(function () use ($user, $request, $authority, $decision, $reason): array {
             [$offering, $current] = $this->lockOfferingThenRequest(
                 (int) $request->teaching_assignment_request_id
             );
@@ -387,7 +414,7 @@ class TeachingAssignmentWorkflowService
             if ($current->status === TeachingAssignmentWorkflow::STATUS_APPROVED) {
                 if ($decision === TeachingAssignmentWorkflow::REVIEW_APPROVED
                     && $own->status === TeachingAssignmentWorkflow::REVIEW_APPROVED) {
-                    return $this->loadRequest((int) $current->teaching_assignment_request_id);
+                    return $this->decisionOk($current);
                 }
 
                 throw TeachingAssignmentException::alreadyEffective();
@@ -395,7 +422,7 @@ class TeachingAssignmentWorkflowService
 
             if ($own->status === TeachingAssignmentWorkflow::REVIEW_APPROVED) {
                 if ($decision === TeachingAssignmentWorkflow::REVIEW_APPROVED) {
-                    return $this->loadRequest((int) $current->teaching_assignment_request_id);
+                    return $this->decisionOk($current);
                 }
 
                 throw TeachingAssignmentException::reviewLocked();
@@ -406,7 +433,7 @@ class TeachingAssignmentWorkflowService
                 if ($decision === TeachingAssignmentWorkflow::REVIEW_RETURNED
                     && $trimmed !== ''
                     && trim((string) $own->reason) === $trimmed) {
-                    return $this->loadRequest((int) $current->teaching_assignment_request_id);
+                    return $this->decisionOk($current);
                 }
 
                 throw TeachingAssignmentException::reviewLocked();
@@ -454,10 +481,39 @@ class TeachingAssignmentWorkflowService
                 );
             }
 
-            $this->refreshAggregateAndMaterialize($user, $offering, $current, $reviews);
+            $outcome = $this->refreshAggregateAndMaterialize($user, $offering, $current, $reviews);
 
-            return $this->loadRequest((int) $current->teaching_assignment_request_id);
+            return [
+                'request' => $this->loadRequest((int) $current->teaching_assignment_request_id),
+                'outcome' => $outcome,
+            ];
         });
+    }
+
+    /**
+     * HTTP conflicts for stale removal must be raised AFTER the supersede
+     * transaction commits. Genuine DB exceptions still abort and roll back.
+     *
+     * @param  array{request: TeachingAssignmentRequest, outcome: ?string}  $result
+     */
+    private function finishDecision(array $result): TeachingAssignmentRequest
+    {
+        return match ($result['outcome'] ?? null) {
+            TeachingAssignmentException::REMOVAL_STALE => throw TeachingAssignmentException::removalStale(),
+            TeachingAssignmentException::REMOVAL_REQUIRES_CLOSED_OFFERING => throw TeachingAssignmentException::removalRequiresClosedOffering(),
+            default => $result['request'],
+        };
+    }
+
+    /**
+     * @return array{request: TeachingAssignmentRequest, outcome: null}
+     */
+    private function decisionOk(TeachingAssignmentRequest $current): array
+    {
+        return [
+            'request' => $this->loadRequest((int) $current->teaching_assignment_request_id),
+            'outcome' => null,
+        ];
     }
 
     /**
@@ -468,11 +524,11 @@ class TeachingAssignmentWorkflowService
         CourseOffering $offering,
         TeachingAssignmentRequest $request,
         Collection $reviews
-    ): void {
+    ): ?string {
         $scientific = $reviews->get(TeachingAssignmentWorkflow::AUTHORITY_SCIENTIFIC);
         $administrative = $reviews->get(TeachingAssignmentWorkflow::AUTHORITY_ADMINISTRATIVE);
         if ($scientific === null || $administrative === null) {
-            return;
+            return null;
         }
 
         $scientific->refresh();
@@ -484,7 +540,7 @@ class TeachingAssignmentWorkflowService
             $request->approved_at = null;
             $request->save();
 
-            return;
+            return null;
         }
 
         if ($scientific->status === TeachingAssignmentWorkflow::REVIEW_APPROVED
@@ -494,28 +550,28 @@ class TeachingAssignmentWorkflowService
             $request->approved_at = $request->approved_at ?? now();
             $request->save();
             if (! $wasApproved) {
-                $this->materializeEffective($user, $offering, $request);
+                return $this->materializeEffective($user, $offering, $request);
             }
 
-            return;
+            return null;
         }
 
         $request->status = TeachingAssignmentWorkflow::STATUS_SUBMITTED;
         $request->approved_at = null;
         $request->save();
+
+        return null;
     }
 
     private function materializeEffective(
         User $user,
         CourseOffering $offering,
         TeachingAssignmentRequest $request
-    ): void {
+    ): ?string {
         $offering->loadMissing('course');
 
         if ($request->isRemoval()) {
-            $this->materializeRemoval($user, $offering, $request);
-
-            return;
+            return $this->materializeRemoval($user, $offering, $request);
         }
 
         $previous = CourseOfferingInstructor::query()
@@ -542,13 +598,15 @@ class TeachingAssignmentWorkflowService
             $user,
             null
         );
+
+        return null;
     }
 
     private function materializeRemoval(
         User $user,
         CourseOffering $offering,
         TeachingAssignmentRequest $request
-    ): void {
+    ): ?string {
         if ((string) $offering->status !== CourseOfferingOpeningService::STATUS_CLOSED) {
             $this->supersedeUnlocked(
                 $user,
@@ -557,7 +615,7 @@ class TeachingAssignmentWorkflowService
                 'offering_opened'
             );
 
-            throw TeachingAssignmentException::removalRequiresClosedOffering();
+            return TeachingAssignmentException::REMOVAL_REQUIRES_CLOSED_OFFERING;
         }
 
         try {
@@ -570,6 +628,8 @@ class TeachingAssignmentWorkflowService
                     TeachingAssignmentWorkflow::EVENT_REMOVAL_STALE,
                     'target_mismatch'
                 );
+
+                return TeachingAssignmentException::REMOVAL_STALE;
             }
 
             throw $exception;
@@ -581,6 +641,8 @@ class TeachingAssignmentWorkflowService
             $user,
             null
         );
+
+        return null;
     }
 
     private function createAssignRequest(
