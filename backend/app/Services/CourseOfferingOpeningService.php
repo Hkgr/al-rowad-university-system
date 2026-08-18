@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\CourseOfferingClosureException;
 use App\Exceptions\ExceptionalOpeningException;
 use App\Models\CourseOffering;
 use App\Models\CourseOfferingExceptionRequest;
@@ -65,6 +66,14 @@ class CourseOfferingOpeningService
 
             $mutate($locked);
             $this->forgetCoverageGraph($locked);
+
+            // Phase 7: generic mutation must never be a semantic OPEN → CLOSED.
+            // Formal closure materializes inside CourseOfferingClosureWorkflowService
+            // and must not call this function.
+            if ($originalStatus === self::STATUS_OPEN
+                && (string) $locked->status === self::STATUS_CLOSED) {
+                throw CourseOfferingClosureException::workflowRequired();
+            }
 
             return $this->finalizeLockedOpenInvariant(
                 $locked,
