@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\CourseOfferingClosureException;
 use App\Exceptions\CourseOfferingContextException;
 use App\Models\AcademicProgram;
 use App\Models\AcademicYear;
@@ -167,6 +168,16 @@ class CourseOfferingContextService
             // Generic update must not write status=open even for courses.manage / super_admin.
             if (array_key_exists('status', $attributes)
                 && (string) $attributes['status'] === CourseOfferingOpeningService::STATUS_OPEN) {
+                unset($attributes['status']);
+            }
+            // Semantic OPEN → CLOSED is owned by Phase 7 closure materialization.
+            // CLOSED → CLOSED is not a transition and may be stripped so unrelated
+            // metadata updates still succeed.
+            if (array_key_exists('status', $attributes)
+                && (string) $attributes['status'] === CourseOfferingOpeningService::STATUS_CLOSED) {
+                if ((string) $offering->status === CourseOfferingOpeningService::STATUS_OPEN) {
+                    throw CourseOfferingClosureException::workflowRequired();
+                }
                 unset($attributes['status']);
             }
             $offering->update($attributes);
