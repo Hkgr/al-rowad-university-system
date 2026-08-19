@@ -21,8 +21,12 @@ trait HandlesApiCrud
     public function index(): JsonResponse
     {
         $this->authorizeIfPolicyExists('viewAny', $this->modelClass());
+        $perPage = \App\Support\AcademicQueuePagination::perPage(
+            request()->has('per_page') ? request()->integer('per_page') : null,
+            15
+        );
         $models = app(DataScopeService::class)->scopeResourceQuery($this->modelClass()::query(), request()->user())
-            ->paginate(request()->integer('per_page', 15));
+            ->paginate($perPage);
 
         $payload = $this->resourceClass()::collection($models)
             ->response(request())

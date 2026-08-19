@@ -27,6 +27,7 @@ use App\Support\AcademicRecordWorkflow;
 use App\Services\RegistrationService;
 use App\Services\AcademicAuthorizationService;
 use App\Services\DataScopeService;
+use App\Services\StudentPermanentDeleteGuard;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -230,61 +231,25 @@ class StudentController extends ApiController
         return $this->successResponse(new \stdClass, 'Student restored successfully.');
     }
 
-    public function forceDestroy(int $id): JsonResponse
+    public function forceDestroy(int $id, StudentPermanentDeleteGuard $guard): JsonResponse
     {
         $student = Student::withTrashed()->findOrFail($id);
         Gate::authorize('forceDelete', $student);
-        $relatedRecords = $this->getBlockingRelatedRecords($student);
+        $blockingCategories = $guard->blockingCategories($student);
 
-        if ($relatedRecords !== []) {
-            return $this->errorResponse(
-                'Student cannot be permanently deleted because academic records exist.',
-                ['related_records' => $relatedRecords],
-                409
-            );
+        if ($blockingCategories !== []) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Student cannot be permanently deleted because academic or workflow history exists.',
+                'error_code' => StudentPermanentDeleteGuard::ERROR_CODE,
+                'blocking_categories' => $blockingCategories,
+                'errors' => ['blocking_categories' => $blockingCategories],
+            ], 409);
         }
 
         $student->forceDelete();
 
         return $this->successResponse(null, 'Student permanently deleted successfully.');
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function getBlockingRelatedRecords(Student $student): array
-    {
-        $related = [];
-
-        if ($student->studentCourseRegistrations()->exists()) {
-            $related[] = 'student_course_registrations';
-        }
-
-        if ($student->studentAttendances()->exists()) {
-            $related[] = 'student_attendance';
-        }
-
-        if ($student->studentDocuments()->exists()) {
-            $related[] = 'student_documents';
-        }
-
-        if ($student->studentAcademicTerms()->exists()) {
-            $related[] = 'student_academic_terms';
-        }
-
-        $registrationIds = $student->studentCourseRegistrations()->pluck('student_course_registration_id');
-
-        if ($registrationIds->isNotEmpty()) {
-            if (DB::table('student_course_results')->whereIn('student_course_registration_id', $registrationIds)->exists()) {
-                $related[] = 'student_course_results';
-            }
-
-            if (DB::table('student_grade_components')->whereIn('student_course_registration_id', $registrationIds)->exists()) {
-                $related[] = 'student_grade_components';
-            }
-        }
-
-        return array_values(array_unique($related));
     }
 
     public function search(Request $request): JsonResponse

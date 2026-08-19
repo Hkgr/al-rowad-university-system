@@ -20,7 +20,7 @@ class UpdateCourseOfferingRequest extends FormRequest
             'department_id' => 'sometimes|integer|exists:departments,department_id',
             'academic_program_id' => 'sometimes|integer|exists:academic_programs,academic_program_id',
             'capacity' => 'sometimes|nullable|integer|min:1',
-            'available_seats' => 'sometimes|nullable|integer|min:0',
+            'available_seats' => 'prohibited',
             'status' => 'sometimes|nullable|string|max:50',
             'exceptional' => 'prohibited',
             'force' => 'prohibited',

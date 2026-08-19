@@ -78,7 +78,7 @@ class CourseOfferingController extends ApiController
         $requestedOpen = (string) ($data['status'] ?? '') === CourseOfferingOpeningService::STATUS_OPEN;
         $offering = $this->offeringContext->createOffering($context, [
             'capacity' => $data['capacity'],
-            'available_seats' => $data['available_seats'],
+            'available_seats' => (int) $data['capacity'],
             'status' => CourseOfferingOpeningService::STATUS_CLOSED,
         ]);
 
@@ -110,16 +110,13 @@ class CourseOfferingController extends ApiController
 
         $offering = $this->opening->applyThenGuardOpenCoverage(
             $offering,
-            function (CourseOffering $locked) use ($data, $request, $requestedOpen, $requestedClosed): void {
+            function (CourseOffering $locked) use ($data, $request, $requestedClosed): void {
                 $attributes = $this->attributesForOfferingUpdate($locked, $data, $request);
-                if ($requestedOpen) {
-                    unset($attributes['status']);
-                }
+                unset($attributes['status'], $attributes['available_seats']);
                 if ($requestedClosed) {
                     if ((string) $locked->status === CourseOfferingOpeningService::STATUS_OPEN) {
                         throw CourseOfferingClosureException::workflowRequired();
                     }
-                    unset($attributes['status']);
                 }
                 $this->offeringContext->updateOffering($locked, $attributes);
             },
@@ -325,6 +322,7 @@ class CourseOfferingController extends ApiController
     private function attributesForOfferingUpdate(CourseOffering $offering, array $data, FormRequest $request): array
     {
         unset($data['faculty_member_id']);
+        unset($data['status'], $data['available_seats']);
         $identityKeys = ['course_id', 'academic_program_id', 'department_id', 'academic_year_id', 'semester_id'];
         $identityTouched = array_intersect(array_keys($data), $identityKeys) !== [];
 

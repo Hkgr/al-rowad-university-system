@@ -11,6 +11,7 @@ use App\Models\StudentGraduationEvent;
 use App\Models\StudentStatus;
 use App\Models\User;
 use App\Support\AcademicRecordWorkflow;
+use App\Support\AcademicQueuePagination;
 use App\Support\GraduationGpaPolicy;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -26,7 +27,7 @@ class GraduationDecisionService
     ) {
     }
 
-    public function index(User $user, ?string $status = null, ?int $studentId = null): array
+    public function index(User $user, ?string $status = null, ?int $studentId = null, ?int $perPage = null): array
     {
         $this->assertCanView($user);
         $this->assertSchemaReady();
@@ -44,11 +45,14 @@ class GraduationDecisionService
             $query->where('student_id', $studentId);
         }
 
+        $paginator = $query->paginate(AcademicQueuePagination::perPage($perPage));
+
         return [
-            'decisions' => $query->get()
+            'decisions' => $paginator->getCollection()
                 ->map(fn (StudentGraduationDecision $decision): array => $this->present($decision))
                 ->values()
                 ->all(),
+            'meta' => AcademicQueuePagination::meta($paginator),
         ];
     }
 

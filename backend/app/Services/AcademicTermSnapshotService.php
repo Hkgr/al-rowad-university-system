@@ -9,6 +9,7 @@ use App\Models\Student;
 use App\Models\StudentAcademicTerm;
 use App\Models\User;
 use App\Support\AcademicRecordWorkflow;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
@@ -132,8 +133,12 @@ class AcademicTermSnapshotService
                     'semester_id' => $semesterId,
                     'is_finalized' => false,
                 ]));
-            } catch (\Illuminate\Database\QueryException $exception) {
-                throw AcademicRecordException::academicTermIdentityConflict();
+            } catch (QueryException $exception) {
+                if ($this->isDuplicateTermIdentity($exception)) {
+                    throw AcademicRecordException::academicTermIdentityConflict();
+                }
+
+                throw $exception;
             }
         } elseif ($term->isFinalized()) {
             throw AcademicRecordException::academicTermFinalized();
@@ -226,5 +231,13 @@ class AcademicTermSnapshotService
         if (! $this->dataScopes->canAccessStudent($user, $student)) {
             throw new AccessDeniedHttpException('You are not authorized to access this student.');
         }
+    }
+
+    private function isDuplicateTermIdentity(QueryException $exception): bool
+    {
+        $errorCode = (int) ($exception->errorInfo[1] ?? 0);
+
+        return $errorCode === 1062
+            || str_contains($exception->getMessage(), 'uq_student_term');
     }
 }
