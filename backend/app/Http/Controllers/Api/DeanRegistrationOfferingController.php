@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Dean\BulkPrepareDeanRegistrationOfferingRequest;
 use App\Http\Requests\Dean\OpenDeanRegistrationOfferingRequest;
 use App\Models\CourseOffering;
 use App\Services\DeanRegistrationOfferingService;
@@ -44,6 +45,17 @@ class DeanRegistrationOfferingController extends Controller
         return $this->successResponse($result, $this->successMessage($result['action'] ?? null));
     }
 
+    public function bulkPrepare(BulkPrepareDeanRegistrationOfferingRequest $request): JsonResponse
+    {
+        $this->assertCanView($request);
+        $result = $this->registrationOfferings->bulkPrepare(
+            $request->user(),
+            $request->validated()
+        );
+
+        return $this->successResponse($result, $this->bulkSuccessMessage($result));
+    }
+
     public function reopen(Request $request, CourseOffering $courseOffering): JsonResponse
     {
         $this->assertCanView($request);
@@ -75,6 +87,18 @@ class DeanRegistrationOfferingController extends Controller
             'closed' => 'تم إغلاق التسجيل للمادة بنجاح.',
             default => 'تمت إتاحة المادة للتسجيل بنجاح.',
         };
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     */
+    private function bulkSuccessMessage(array $result): string
+    {
+        $created = (int) ($result['created_count'] ?? 0);
+        $existing = (int) ($result['existing_count'] ?? 0);
+        $failed = (int) ($result['failed_count'] ?? 0);
+
+        return "تم تجهيز {$created} طروحات. {$existing} كانت موجودة مسبقًا. {$failed} أخطاء.";
     }
 
     private function assertCanView(Request $request): void

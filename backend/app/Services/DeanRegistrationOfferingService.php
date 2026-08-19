@@ -136,86 +136,35 @@ class DeanRegistrationOfferingService
         $this->assertCanManage($user);
 
         return DB::transaction(function () use ($user, $payload): array {
-            $programCourse = ProgramCourse::query()
-                ->whereKey((int) $payload['program_course_id'])
-                ->lockForUpdate()
-                ->first();
-
-            if ($programCourse === null) {
-                throw (new ModelNotFoundException())->setModel(ProgramCourse::class, [(int) $payload['program_course_id']]);
-            }
-
-            $programCourse->load(['course', 'academicProgram.department.college']);
-            $this->assertActiveCurriculumRow($programCourse);
+            $programCourse = $this->lockProgramCourse((int) $payload['program_course_id']);
 
             $yearId = (int) $payload['academic_year_id'];
             $semesterId = (int) $payload['semester_id'];
+            $capacity = (int) ($payload['capacity'] ?? 40);
+            if ($capacity < 1) {
+                throw ValidationException::withMessages([
+                    'capacity' => ['السعة يجب أن تكون 1 على الأقل.'],
+                ]);
+            }
+
             // Actual offering identity uses the Dean-selected year/semester.
             // ProgramCourse.recommended_semester_id is advisory metadata only.
-            $context = $this->offeringContext->resolveFromProgramCourse(
+            $resolved = $this->findOrCreateClosedOffering(
+                $user,
                 $programCourse,
                 $yearId,
                 $semesterId,
-                $user,
-                false,
+                $capacity,
             );
-
-            $program = $context->academicProgram;
+            $offering = $resolved['offering'];
             $collegeIds = $this->accessibleCollegeIdList($user);
-            $this->assertProgramInAccessibleCollege($user, $program, $collegeIds);
 
-            $identity = $context->offeringAttributes();
-            $courseId = $identity['course_id'];
-            $programId = $identity['academic_program_id'];
-
-            $offering = CourseOffering::query()
-                ->where('course_id', $courseId)
-                ->where('academic_year_id', $yearId)
-                ->where('semester_id', $semesterId)
-                ->where('academic_program_id', $programId)
-                ->lockForUpdate()
-                ->first();
-
-            if ($offering === null) {
-                $capacity = (int) ($payload['capacity'] ?? 40);
-                if ($capacity < 1) {
-                    throw ValidationException::withMessages([
-                        'capacity' => ['السعة يجب أن تكون 1 على الأقل.'],
-                    ]);
-                }
-
-                try {
-                    $offering = $this->offeringContext->createOffering($context, [
-                        'faculty_member_id' => null,
-                        'capacity' => $capacity,
-                        'available_seats' => $capacity,
-                        'status' => self::STATUS_CLOSED,
-                    ]);
-                } catch (CourseOfferingContextException $exception) {
-                    if ($exception->errorCode !== CourseOfferingContextException::DUPLICATE_OFFERING) {
-                        throw $exception;
-                    }
-
-                    $offering = CourseOffering::query()
-                        ->where('course_id', $courseId)
-                        ->where('academic_year_id', $yearId)
-                        ->where('semester_id', $semesterId)
-                        ->where('academic_program_id', $programId)
-                        ->lockForUpdate()
-                        ->first();
-
-                    if ($offering === null) {
-                        throw $exception;
-                    }
-                }
-
-                if ($offering->wasRecentlyCreated) {
-                    return [
-                        'action' => self::ACTION_CREATED_PENDING_COVERAGE,
-                        'program_course_id' => $programCourse->program_course_id,
-                        'offering' => $this->offeringPayload($this->hydrateOffering($offering)),
-                    ];
-                }
+            if ($resolved['created']) {
+                return [
+                    'action' => self::ACTION_CREATED_PENDING_COVERAGE,
+                    'program_course_id' => $programCourse->program_course_id,
+                    'offering' => $this->offeringPayload($this->hydrateOffering($offering)),
+                ];
             }
 
             $this->assertProgramSpecificOffering($offering);
@@ -241,6 +190,333 @@ class DeanRegistrationOfferingService
                 'offering' => $this->offeringPayload($this->hydrateOffering($offering)),
             ];
         });
+    }
+
+    /**
+     * Prepare missing CourseOfferings as CLOSED for the selected actual term.
+     * Does not open offerings, assign instructors, or change existing status.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public function bulkPrepare(User $user, array $payload): array
+    {
+        $this->assertCanManage($user);
+
+        $programId = (int) $payload['academic_program_id'];
+        $yearId = (int) $payload['academic_year_id'];
+        $semesterId = (int) $payload['semester_id'];
+        $mode = (string) $payload['mode'];
+
+        $collegeIds = $this->accessibleCollegeIdList($user);
+        $program = AcademicProgram::query()
+            ->with('department.college')
+            ->find($programId);
+
+        if ($program === null) {
+            throw (new ModelNotFoundException())->setModel(AcademicProgram::class, [$programId]);
+        }
+
+        $this->assertProgramInAccessibleCollege($user, $program, $collegeIds);
+
+        $programCourses = $this->selectProgramCoursesForBulkPrepare(
+            $mode,
+            $program,
+            $semesterId,
+            isset($payload['academic_level_id']) ? (int) $payload['academic_level_id'] : null,
+            $payload['program_course_ids'] ?? [],
+        );
+
+        $items = [];
+        foreach ($programCourses as $programCourse) {
+            $items[] = $this->prepareOneClosedOffering(
+                $user,
+                $programCourse,
+                $yearId,
+                $semesterId,
+            );
+        }
+
+        $createdCount = 0;
+        $existingCount = 0;
+        $failedCount = 0;
+        foreach ($items as $item) {
+            if ($item['result'] === 'created') {
+                $createdCount++;
+            } elseif ($item['result'] === 'existing') {
+                $existingCount++;
+            } else {
+                $failedCount++;
+            }
+        }
+
+        return [
+            'selected_count' => count($items),
+            'created_count' => $createdCount,
+            'existing_count' => $existingCount,
+            'failed_count' => $failedCount,
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * Create a missing offering as CLOSED, or return the existing row unchanged.
+     *
+     * @return array{offering: CourseOffering, created: bool}
+     */
+    private function findOrCreateClosedOffering(
+        User $user,
+        ProgramCourse $programCourse,
+        int $yearId,
+        int $semesterId,
+        int $capacity,
+    ): array {
+        $programCourse->load(['course', 'academicProgram.department.college']);
+        $this->assertActiveCurriculumRow($programCourse);
+
+        // Actual offering identity uses the Dean-selected year/semester.
+        // ProgramCourse.recommended_semester_id is advisory metadata only.
+        $context = $this->offeringContext->resolveFromProgramCourse(
+            $programCourse,
+            $yearId,
+            $semesterId,
+            $user,
+            false,
+        );
+
+        $program = $context->academicProgram;
+        $collegeIds = $this->accessibleCollegeIdList($user);
+        $this->assertProgramInAccessibleCollege($user, $program, $collegeIds);
+
+        $identity = $context->offeringAttributes();
+        $courseId = $identity['course_id'];
+        $programId = $identity['academic_program_id'];
+
+        $offering = CourseOffering::query()
+            ->where('course_id', $courseId)
+            ->where('academic_year_id', $yearId)
+            ->where('semester_id', $semesterId)
+            ->where('academic_program_id', $programId)
+            ->lockForUpdate()
+            ->first();
+
+        if ($offering !== null) {
+            return [
+                'offering' => $offering,
+                'created' => false,
+            ];
+        }
+
+        try {
+            $offering = $this->offeringContext->createOffering($context, [
+                'faculty_member_id' => null,
+                'capacity' => $capacity,
+                'available_seats' => $capacity,
+                'status' => self::STATUS_CLOSED,
+            ]);
+        } catch (CourseOfferingContextException $exception) {
+            if ($exception->errorCode !== CourseOfferingContextException::DUPLICATE_OFFERING) {
+                throw $exception;
+            }
+
+            $offering = CourseOffering::query()
+                ->where('course_id', $courseId)
+                ->where('academic_year_id', $yearId)
+                ->where('semester_id', $semesterId)
+                ->where('academic_program_id', $programId)
+                ->lockForUpdate()
+                ->first();
+
+            if ($offering === null) {
+                throw $exception;
+            }
+
+            return [
+                'offering' => $offering,
+                'created' => false,
+            ];
+        }
+
+        return [
+            'offering' => $offering,
+            'created' => (bool) $offering->wasRecentlyCreated,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function prepareOneClosedOffering(
+        User $user,
+        ProgramCourse $programCourse,
+        int $yearId,
+        int $semesterId,
+    ): array {
+        $base = [
+            'program_course_id' => (int) $programCourse->program_course_id,
+            'course_id' => $programCourse->course_id === null ? null : (int) $programCourse->course_id,
+            'course_code' => $programCourse->course?->course_code,
+            'course_name' => $programCourse->course?->course_name,
+            'course_offering_id' => null,
+            'result' => 'failed',
+            'error_code' => null,
+        ];
+
+        try {
+            $resolved = DB::transaction(function () use ($user, $programCourse, $yearId, $semesterId): array {
+                $locked = $this->lockProgramCourse((int) $programCourse->program_course_id);
+
+                return $this->findOrCreateClosedOffering(
+                    $user,
+                    $locked,
+                    $yearId,
+                    $semesterId,
+                    40,
+                );
+            });
+        } catch (CourseOfferingContextException $exception) {
+            $base['error_code'] = $exception->errorCode ?? 'prepare_failed';
+
+            return $base;
+        } catch (ValidationException) {
+            $base['error_code'] = 'invalid_program_course';
+
+            return $base;
+        } catch (ModelNotFoundException) {
+            $base['error_code'] = 'not_found';
+
+            return $base;
+        } catch (ConflictHttpException) {
+            $base['error_code'] = 'conflict';
+
+            return $base;
+        }
+
+        $offering = $resolved['offering'];
+
+        return [
+            ...$base,
+            'course_offering_id' => (int) $offering->course_offering_id,
+            'result' => $resolved['created'] ? 'created' : 'existing',
+            'error_code' => null,
+        ];
+    }
+
+    /**
+     * @param  list<mixed>  $programCourseIds
+     * @return \Illuminate\Support\Collection<int, ProgramCourse>
+     */
+    private function selectProgramCoursesForBulkPrepare(
+        string $mode,
+        AcademicProgram $program,
+        int $semesterId,
+        ?int $academicLevelId,
+        array $programCourseIds,
+    ) {
+        $programId = (int) $program->academic_program_id;
+
+        if ($mode === 'selected') {
+            return $this->selectedProgramCoursesForBulkPrepare($programId, $programCourseIds);
+        }
+
+        $query = ProgramCourse::query()
+            ->with('course')
+            ->where('academic_program_id', $programId)
+            ->where('is_active', true)
+            ->orderBy('program_course_id');
+
+        if ($mode === 'advisory_semester') {
+            $query->where('recommended_semester_id', $semesterId);
+        } elseif ($mode === 'advisory_level') {
+            if ($academicLevelId === null) {
+                throw ValidationException::withMessages([
+                    'academic_level_id' => ['المستوى الدراسي مطلوب لتجهيز مستوى واحد.'],
+                ]);
+            }
+
+            $levelInProgram = ProgramCourse::query()
+                ->where('academic_program_id', $programId)
+                ->where('academic_level_id', $academicLevelId)
+                ->exists();
+
+            if (! $levelInProgram) {
+                throw ValidationException::withMessages([
+                    'academic_level_id' => ['المستوى الدراسي المحدد ليس ضمن خطة هذا البرنامج.'],
+                ]);
+            }
+
+            $query->where('academic_level_id', $academicLevelId)
+                ->where('recommended_semester_id', $semesterId);
+        } elseif ($mode !== 'all_curriculum') {
+            throw ValidationException::withMessages([
+                'mode' => ['وضع التجهيز الجماعي غير معروف.'],
+            ]);
+        }
+
+        return $query->get();
+    }
+
+    /**
+     * @param  list<mixed>  $programCourseIds
+     * @return \Illuminate\Support\Collection<int, ProgramCourse>
+     */
+    private function selectedProgramCoursesForBulkPrepare(int $programId, array $programCourseIds)
+    {
+        $requested = array_values(array_unique(array_map(
+            static fn ($id): int => (int) $id,
+            $programCourseIds
+        )));
+
+        if ($requested === []) {
+            throw ValidationException::withMessages([
+                'program_course_ids' => ['يجب تحديد مادة واحدة على الأقل.'],
+            ]);
+        }
+
+        $rows = ProgramCourse::query()
+            ->with('course')
+            ->whereIn('program_course_id', $requested)
+            ->get()
+            ->keyBy(fn (ProgramCourse $row): int => (int) $row->program_course_id);
+
+        foreach ($requested as $id) {
+            $row = $rows->get($id);
+            if ($row === null) {
+                throw ValidationException::withMessages([
+                    'program_course_ids' => ['بعض المواد المحددة غير موجودة.'],
+                ]);
+            }
+
+            if ((int) $row->academic_program_id !== $programId) {
+                throw ValidationException::withMessages([
+                    'program_course_ids' => ['لا يمكن تجهيز مادة من برنامج أكاديمي آخر.'],
+                ]);
+            }
+
+            if (! $row->is_active) {
+                throw ValidationException::withMessages([
+                    'program_course_ids' => ['بعض المواد المحددة غير نشطة في خطة البرنامج.'],
+                ]);
+            }
+        }
+
+        return $rows
+            ->sortBy(fn (ProgramCourse $row): int => (int) $row->program_course_id)
+            ->values();
+    }
+
+    private function lockProgramCourse(int $programCourseId): ProgramCourse
+    {
+        $programCourse = ProgramCourse::query()
+            ->whereKey($programCourseId)
+            ->lockForUpdate()
+            ->first();
+
+        if ($programCourse === null) {
+            throw (new ModelNotFoundException())->setModel(ProgramCourse::class, [$programCourseId]);
+        }
+
+        return $programCourse;
     }
 
     public function reopenOffering(User $user, CourseOffering $courseOffering): array

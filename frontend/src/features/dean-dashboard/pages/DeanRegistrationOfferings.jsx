@@ -41,6 +41,46 @@ function splitDeanCoursesByAdvisorySemester(courses, selectedSemesterId) {
   return { recommended, other }
 }
 
+function flattenDeanCatalogCourses(levels) {
+  return (levels ?? []).flatMap(level => (level.courses ?? []).map(row => ({
+    ...row,
+    academic_level_id: row.academic_level_id ?? level.academic_level_id,
+  })))
+}
+
+function recommendedSemesterMatches(row, selectedSemesterId) {
+  const recommendedId = row?.advisory_plan?.recommended_semester_id
+  if (recommendedId == null || recommendedId === '') return false
+  return Number(recommendedId) === Number(selectedSemesterId)
+}
+
+function bulkMatchingCourses(levels, mode, selectedSemesterId, extra = {}) {
+  const all = flattenDeanCatalogCourses(levels)
+  if (mode === 'advisory_semester') {
+    return all.filter(row => recommendedSemesterMatches(row, selectedSemesterId))
+  }
+  if (mode === 'advisory_level') {
+    return all.filter(row => (
+      Number(row.academic_level_id) === Number(extra.academic_level_id)
+      && recommendedSemesterMatches(row, selectedSemesterId)
+    ))
+  }
+  if (mode === 'all_curriculum') return all
+  if (mode === 'selected') {
+    const idSet = new Set((extra.programCourseIds ?? []).map(Number))
+    return all.filter(row => idSet.has(Number(row.program_course_id)))
+  }
+  return []
+}
+
+function bulkPreviewCounts(courses) {
+  return {
+    matching: courses.length,
+    existing: courses.filter(row => row.offering).length,
+    missing: courses.filter(row => !row.offering).length,
+  }
+}
+
 function deanOpenAdvisoryNote(row, selectedSemesterId, actualSemesterName, yearName) {
   const recommendedId = row?.advisory_plan?.recommended_semester_id
   if (recommendedId == null || recommendedId === '') return null
@@ -115,6 +155,9 @@ function CourseCard({
   canRequestException,
   busy,
   capacity,
+  selectionMode = false,
+  selected = false,
+  onToggleSelect,
   onCapacityChange,
   onOpen,
   onReopen,
@@ -147,9 +190,20 @@ function CourseCard({
 
   return (
     <article className="border border-primary/12 rounded-[14px] bg-white px-4 py-3.5 flex flex-col min-h-[210px] shadow-[0_1px_8px_rgba(26,46,16,0.04)]">
-      <div className="min-w-0">
-        <p className="font-mono text-[13px] font-black text-primary-dark">{displayValue(course?.course_code)}</p>
-        <h4 className="text-[14px] font-extrabold text-text-dark mt-0.5 break-words">{displayValue(course?.course_name)}</h4>
+      <div className="min-w-0 flex items-start gap-2">
+        {selectionMode ? (
+          <input
+            type="checkbox"
+            className="mt-1.5 h-4 w-4 shrink-0 accent-primary"
+            checked={selected}
+            onChange={() => onToggleSelect?.(row.program_course_id)}
+            aria-label={`تحديد ${displayValue(course?.course_code)}`}
+          />
+        ) : null}
+        <div className="min-w-0">
+          <p className="font-mono text-[13px] font-black text-primary-dark">{displayValue(course?.course_code)}</p>
+          <h4 className="text-[14px] font-extrabold text-text-dark mt-0.5 break-words">{displayValue(course?.course_name)}</h4>
+        </div>
       </div>
 
       <div className="flex items-center flex-wrap gap-1.5 mt-2.5">
@@ -322,6 +376,9 @@ export default function DeanRegistrationOfferings() {
   const [busyIds, setBusyIds] = useState({})
   const [capacities, setCapacities] = useState({})
   const [confirm, setConfirm] = useState(null)
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState([])
+  const [bulkLevelId, setBulkLevelId] = useState('')
   const savingRef = useRef(false)
 
   const goToLogin = useCallback(() => navigate('/login', { replace: true }), [navigate])
@@ -436,6 +493,12 @@ export default function DeanRegistrationOfferings() {
     return () => { active = false }
   }, [handleRequestError, programId, semesterId, yearId])
 
+  useEffect(() => {
+    setSelectionMode(false)
+    setSelectedIds([])
+    setBulkLevelId('')
+  }, [programId, semesterId, yearId])
+
   const programs = useMemo(() => {
     const all = options.academic_programs ?? []
     if (!departmentId) return all
@@ -473,6 +536,28 @@ export default function DeanRegistrationOfferings() {
     }
   }, [filteredLevels])
 
+  const visibleCourseIds = useMemo(
+    () => filteredLevels.flatMap(level => (level.courses ?? []).map(row => row.program_course_id)),
+    [filteredLevels],
+  )
+
+  const yearName = context.academic_year?.year_name
+    || options.academic_years.find(year => String(year.academic_year_id) === String(yearId))?.year_name
+  const semesterName = context.semester?.semester_name
+    || options.semesters.find(semester => String(semester.semester_id) === String(semesterId))?.semester_name
+  const confirmLevelName = (levels ?? []).find(level => (
+    String(level.academic_level_id) === String(confirm?.academic_level_id)
+  ))?.level_name
+
+  const bulkConfirmPreview = useMemo(() => {
+    if (confirm?.type !== 'bulk') return null
+    const matching = bulkMatchingCourses(levels, confirm.mode, semesterId, {
+      academic_level_id: confirm.academic_level_id,
+      programCourseIds: confirm.program_course_ids,
+    })
+    return bulkPreviewCounts(matching)
+  }, [confirm, levels, semesterId])
+
   function patchOffering(programCourseId, offering) {
     setLevels(current => current.map(level => ({
       ...level,
@@ -495,8 +580,13 @@ export default function DeanRegistrationOfferings() {
         selectedSemesterId={semesterId}
         canManage={canManageLocal}
         canRequestException={canRequestException}
-        busy={Boolean(busyIds[`pc-${row.program_course_id}`] || (row.offering && busyIds[`off-${row.offering.course_offering_id}`]))}
+        busy={Boolean(busyIds[`pc-${row.program_course_id}`] || (row.offering && busyIds[`off-${row.offering.course_offering_id}`]) || busyIds.bulk)}
         capacity={capacityFor(row.program_course_id)}
+        selectionMode={selectionMode}
+        selected={selectedIds.includes(row.program_course_id)}
+        onToggleSelect={id => setSelectedIds(current => (
+          current.includes(id) ? current.filter(item => item !== id) : [...current, id]
+        ))}
         onCapacityChange={(id, value) => setCapacities(current => ({ ...current, [id]: value }))}
         onOpen={item => setConfirm({
           type: 'open',
@@ -584,6 +674,53 @@ export default function DeanRegistrationOfferings() {
       setBusyIds(current => {
         const next = { ...current }
         delete next[key]
+        return next
+      })
+    }
+  }
+
+  async function reloadCatalog() {
+    if (!yearId || !semesterId || !programId) return
+    const params = new URLSearchParams({
+      academic_year_id: yearId,
+      semester_id: semesterId,
+      academic_program_id: programId,
+    })
+    const response = await apiRequest(`/v1/dean/registration-offerings?${params.toString()}`)
+    const data = response?.data ?? {}
+    setLevels(data.levels ?? [])
+    setCollege(data.college ?? null)
+    setContext({
+      academic_year: data.academic_year ?? null,
+      semester: data.semester ?? null,
+    })
+  }
+
+  async function runBulkPrepare(payload) {
+    if (savingRef.current) return
+    savingRef.current = true
+    setBusyIds(current => ({ ...current, bulk: true }))
+    setError('')
+    try {
+      const response = await apiRequest('/v1/dean/registration-offerings/bulk-prepare', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+      const result = response?.data ?? {}
+      const created = result.created_count ?? 0
+      const existing = result.existing_count ?? 0
+      const failed = result.failed_count ?? 0
+      setNotice(response?.message || `تم تجهيز ${created} طروحات. ${existing} كانت موجودة مسبقًا. ${failed} أخطاء.`)
+      setConfirm(null)
+      setSelectedIds([])
+      await reloadCatalog()
+    } catch (requestError) {
+      setError(handleRequestError(requestError, 'تعذّر تجهيز طروحات المواد.'))
+    } finally {
+      savingRef.current = false
+      setBusyIds(current => {
+        const next = { ...current }
+        delete next.bulk
         return next
       })
     }
@@ -693,6 +830,111 @@ export default function DeanRegistrationOfferings() {
             <SummaryCard label="غير مضافة للتسجيل" value={visibleSummary?.missing_count ?? 0} />
           </div>
 
+          {canManageLocal && (
+            <section className="bg-white border border-primary/12 rounded-[16px] p-4 mb-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
+              <h3 className="text-[14px] font-extrabold text-text-dark mb-3">إجراءات جماعية</h3>
+              <p className="text-[12px] text-text-light leading-6 mb-3">
+                التجهيز ينشئ الطروحات المفقودة بحالة مغلقة في السنة والفصل الفعليين المختارين. لا يفتح التسجيل ولا يتجاوز تكليف المدرسين.
+              </p>
+              <div className="flex flex-wrap items-end gap-2">
+                <button
+                  type="button"
+                  className="px-3 py-2 bg-primary text-white rounded-[10px] text-[12.5px] font-bold hover:enabled:bg-primary-dark disabled:opacity-40"
+                  disabled={loading || Boolean(busyIds.bulk)}
+                  onClick={() => setConfirm({ type: 'bulk', mode: 'advisory_semester', key: 'bulk' })}
+                >
+                  تجهيز الفصل حسب الخطة الإرشادية
+                </button>
+                <label className="flex flex-col gap-1 min-w-[180px]">
+                  <span className="text-[11px] font-bold text-text-dark">تجهيز مستوى دراسي</span>
+                  <select
+                    className="px-3 py-2 border border-primary/20 rounded-[10px] text-[13px] outline-none focus:border-primary"
+                    value={bulkLevelId}
+                    onChange={event => setBulkLevelId(event.target.value)}
+                    disabled={loading || Boolean(busyIds.bulk)}
+                  >
+                    <option value="">اختر المستوى</option>
+                    {(levels ?? []).filter(level => level.academic_level_id != null).map(level => (
+                      <option key={level.academic_level_id} value={level.academic_level_id}>
+                        {level.level_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="px-3 py-2 bg-primary/15 text-primary-dark rounded-[10px] text-[12.5px] font-bold hover:enabled:bg-primary/22 disabled:opacity-40"
+                  disabled={loading || Boolean(busyIds.bulk) || !bulkLevelId}
+                  onClick={() => setConfirm({
+                    type: 'bulk',
+                    mode: 'advisory_level',
+                    academic_level_id: Number(bulkLevelId),
+                    key: 'bulk',
+                  })}
+                >
+                  تجهيز مستوى دراسي
+                </button>
+                <button
+                  type="button"
+                  className="px-3 py-2 border border-amber-400 text-amber-900 bg-amber-50 rounded-[10px] text-[12.5px] font-bold hover:enabled:bg-amber-100 disabled:opacity-40"
+                  disabled={loading || Boolean(busyIds.bulk)}
+                  onClick={() => setConfirm({ type: 'bulk', mode: 'all_curriculum', key: 'bulk' })}
+                >
+                  تجهيز جميع مواد البرنامج
+                </button>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <label className="inline-flex items-center gap-2 text-[13px] font-bold text-text-dark cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-primary"
+                    checked={selectionMode}
+                    onChange={event => {
+                      const enabled = event.target.checked
+                      setSelectionMode(enabled)
+                      if (!enabled) setSelectedIds([])
+                    }}
+                  />
+                  تحديد المواد يدويًا
+                </label>
+                {selectionMode && (
+                  <>
+                    <span className="text-[12.5px] font-semibold text-text-dark">
+                      {selectedIds.length} مواد محددة
+                    </span>
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 border border-primary/20 rounded-[10px] text-[12px] font-bold text-text-dark hover:bg-primary/5"
+                      onClick={() => setSelectedIds(visibleCourseIds)}
+                    >
+                      تحديد الكل
+                    </button>
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 border border-primary/20 rounded-[10px] text-[12px] font-bold text-text-gray hover:bg-primary/5"
+                      onClick={() => setSelectedIds([])}
+                    >
+                      إلغاء التحديد
+                    </button>
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 bg-primary text-white rounded-[10px] text-[12px] font-bold hover:enabled:bg-primary-dark disabled:opacity-40"
+                      disabled={selectedIds.length === 0 || Boolean(busyIds.bulk)}
+                      onClick={() => setConfirm({
+                        type: 'bulk',
+                        mode: 'selected',
+                        program_course_ids: selectedIds,
+                        key: 'bulk',
+                      })}
+                    >
+                      تجهيز المواد المحددة
+                    </button>
+                  </>
+                )}
+              </div>
+            </section>
+          )}
+
           <FilterBar
             search={{
               value: search,
@@ -775,39 +1017,76 @@ export default function DeanRegistrationOfferings() {
       {confirm && (
         <DeanConfirmDialog
           title={
-            confirm.type === 'open'
-              ? 'تأكيد إنشاء طرح المادة'
-              : confirm.type === 'reopen'
-                ? 'تأكيد فتح المادة'
-                : confirm.type === 'exception' || confirm.type === 'exception-resubmit'
-                  ? 'طلب فتح استثنائي'
-                  : 'تأكيد إغلاق التسجيل'
+            confirm.type === 'bulk'
+              ? (confirm.mode === 'advisory_semester'
+                ? 'تجهيز الفصل حسب الخطة الإرشادية'
+                : confirm.mode === 'advisory_level'
+                  ? 'تجهيز مستوى دراسي'
+                  : confirm.mode === 'all_curriculum'
+                    ? 'تجهيز جميع مواد البرنامج'
+                    : 'تجهيز المواد المحددة')
+              : confirm.type === 'open'
+                ? 'تأكيد إنشاء طرح المادة'
+                : confirm.type === 'reopen'
+                  ? 'تأكيد فتح المادة'
+                  : confirm.type === 'exception' || confirm.type === 'exception-resubmit'
+                    ? 'طلب فتح استثنائي'
+                    : 'تأكيد إغلاق التسجيل'
           }
           warning={
-            confirm.type === 'open'
-              ? 'سيتم إنشاء طرح المادة مغلقًا. يجب استكمال تكليف المدرسين المعتمدين قبل فتحها.'
-              : confirm.type === 'reopen'
-                ? 'سيتم فتح المادة للتسجيل بعد التحقق من اكتمال تكليف المدرسين المعتمدين.'
-                : confirm.type === 'exception' || confirm.type === 'exception-resubmit'
-                  ? 'لن تُفتح المادة من هذه الشاشة. يبقى الطرح مغلقًا إلى أن يوافق النائب العلمي والنائب الإداري معًا.'
-                  : 'سيؤدي الإغلاق إلى منع تسجيل طلاب جدد في هذه المادة. لن يتم حذف تسجيلات الطلاب الحالية.'
+            confirm.type === 'bulk'
+              ? (confirm.mode === 'all_curriculum'
+                ? `سيتم تجهيز جميع مواد البرنامج في الفصل الفعلي المحدد، بما فيها المواد الموصى بها إرشاديًا لفصول أخرى. سيتم إنشاء الطروحات المفقودة فقط وبحالة مغلقة ضمن ${semesterName || 'الفصل المحدد'} / ${yearName || 'العام المحدد'}.`
+                : confirm.mode === 'advisory_level'
+                  ? `سيتم تجهيز طروحات المواد الموصى بها إرشاديًا لـ${semesterName || 'الفصل المحدد'} في ${confirmLevelName || 'المستوى المحدد'} ضمن ${yearName || 'العام المحدد'}. سيتم إنشاء الطروحات المفقودة فقط وبحالة مغلقة.`
+                  : confirm.mode === 'selected'
+                    ? `سيتم تجهيز المواد المحددة في ${semesterName || 'الفصل الفعلي'} ضمن ${yearName || 'العام المحدد'}. سيتم إنشاء الطروحات المفقودة فقط وبحالة مغلقة.`
+                    : `سيتم تجهيز طروحات المواد الموصى بها إرشاديًا لـ${semesterName || 'الفصل المحدد'} ضمن ${yearName || 'العام المحدد'}. سيتم إنشاء الطروحات المفقودة فقط وبحالة مغلقة.`)
+              : confirm.type === 'open'
+                ? 'سيتم إنشاء طرح المادة مغلقًا. يجب استكمال تكليف المدرسين المعتمدين قبل فتحها.'
+                : confirm.type === 'reopen'
+                  ? 'سيتم فتح المادة للتسجيل بعد التحقق من اكتمال تكليف المدرسين المعتمدين.'
+                  : confirm.type === 'exception' || confirm.type === 'exception-resubmit'
+                    ? 'لن تُفتح المادة من هذه الشاشة. يبقى الطرح مغلقًا إلى أن يوافق النائب العلمي والنائب الإداري معًا.'
+                    : 'سيؤدي الإغلاق إلى منع تسجيل طلاب جدد في هذه المادة. لن يتم حذف تسجيلات الطلاب الحالية.'
           }
           confirmLabel={
-            confirm.type === 'open'
-              ? 'تأكيد الإنشاء'
-              : confirm.type === 'reopen'
-                ? 'تأكيد الفتح'
-                : confirm.type === 'exception'
-                  ? 'إرسال الطلب'
-                  : confirm.type === 'exception-resubmit'
-                    ? 'إعادة الإرسال'
-                    : 'تأكيد الإغلاق'
+            confirm.type === 'bulk'
+              ? 'تأكيد التجهيز'
+              : confirm.type === 'open'
+                ? 'تأكيد الإنشاء'
+                : confirm.type === 'reopen'
+                  ? 'تأكيد الفتح'
+                  : confirm.type === 'exception'
+                    ? 'إرسال الطلب'
+                    : confirm.type === 'exception-resubmit'
+                      ? 'إعادة الإرسال'
+                      : 'تأكيد الإغلاق'
           }
           confirmTone={confirm.type === 'close' ? 'danger' : 'primary'}
           busy={confirmBusy}
-          disabled={(confirm.type === 'exception' || confirm.type === 'exception-resubmit') && !exceptionReason.trim()}
+          disabled={
+            ((confirm.type === 'exception' || confirm.type === 'exception-resubmit') && !exceptionReason.trim())
+            || (confirm.type === 'bulk' && (bulkConfirmPreview?.matching ?? 0) < 1)
+          }
           onCancel={() => { if (!confirmBusy) { setConfirm(null); setExceptionReason('') } }}
           onConfirm={() => {
+            if (confirm.type === 'bulk') {
+              const payload = {
+                academic_program_id: Number(programId),
+                academic_year_id: Number(yearId),
+                semester_id: Number(semesterId),
+                mode: confirm.mode,
+              }
+              if (confirm.mode === 'advisory_level') {
+                payload.academic_level_id = Number(confirm.academic_level_id)
+              }
+              if (confirm.mode === 'selected') {
+                payload.program_course_ids = confirm.program_course_ids
+              }
+              runBulkPrepare(payload)
+              return
+            }
             const row = confirm.row
             if (confirm.type === 'open') {
               const capacity = Number(capacityFor(row.program_course_id))
@@ -878,6 +1157,23 @@ export default function DeanRegistrationOfferings() {
             )
           }}
         >
+          {confirm.type === 'bulk' ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <InfoLine label="البرنامج" value={selectedProgram?.program_name} />
+                <InfoLine label="السنة الدراسية" value={yearName} />
+                <InfoLine label="الفصل الفعلي للطرح" value={semesterName} />
+                {confirm.mode === 'advisory_level' ? (
+                  <InfoLine label="المستوى الإرشادي" value={confirmLevelName} />
+                ) : null}
+              </div>
+              <div className="rounded-[12px] border border-primary/15 bg-primary/[0.04] px-3.5 py-3 text-[13px] text-text-dark leading-7">
+                <p>{bulkConfirmPreview?.matching ?? 0} مادة مطابقة</p>
+                <p>{bulkConfirmPreview?.existing ?? 0} طروحات موجودة</p>
+                <p>{bulkConfirmPreview?.missing ?? 0} طروحات سيتم إنشاؤها</p>
+              </div>
+            </div>
+          ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <InfoLine label="المادة" value={[confirm.row.course?.course_code, confirm.row.course?.course_name].filter(Boolean).join(' — ')} />
             <InfoLine label="البرنامج" value={selectedProgram?.program_name} />
@@ -925,6 +1221,7 @@ export default function DeanRegistrationOfferings() {
               </>
             )}
           </div>
+          )}
         </DeanConfirmDialog>
       )}
     </div>
