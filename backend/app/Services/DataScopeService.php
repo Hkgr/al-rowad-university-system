@@ -98,9 +98,24 @@ class DataScopeService
         if ($table === 'program_courses') {
             return $query->whereHas('academicProgram', fn (Builder $program) => $this->scopePrograms($program, $user));
         }
-        if (in_array($table, ['student_academic_terms', 'student_credit_limits', 'student_documents', 'student_attendance', 'grade_appeals', 'student_registration_requests'], true)
+        if (in_array($table, [
+            'student_academic_terms',
+            'student_credit_limits',
+            'student_documents',
+            'student_attendance',
+            'grade_appeals',
+            'student_registration_requests',
+            'student_progression_decisions',
+            'student_graduation_decisions',
+        ], true)
             && Schema::hasColumn($table, 'student_id')) {
             return $query->whereHas('student', fn (Builder $student) => $this->scopeStudents($student, $user));
+        }
+        if (in_array($table, ['student_progression_events'], true)) {
+            return $query->whereHas('decision', fn (Builder $decision) => $this->scopeResourceQuery($decision, $user));
+        }
+        if (in_array($table, ['student_graduation_events'], true)) {
+            return $query->whereHas('decision', fn (Builder $decision) => $this->scopeResourceQuery($decision, $user));
         }
         if (in_array($table, ['student_registration_request_items', 'student_registration_request_events'], true)) {
             return $query->whereHas('request', fn (Builder $request) => $this->scopeResourceQuery($request, $user));

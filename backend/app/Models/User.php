@@ -245,6 +245,11 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasRoleCode('academic_advisor');
     }
 
+    public function isRegistrationOfficer(): bool
+    {
+        return $this->hasRoleCode('registration_officer');
+    }
+
     public function isScientificVicePresident(): bool
     {
         return $this->hasRoleCode(VicePresidency::ROLE_SCIENTIFIC);

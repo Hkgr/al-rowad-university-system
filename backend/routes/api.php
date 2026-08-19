@@ -81,7 +81,10 @@ use App\Http\Controllers\Api\StudentSelfRequirementController;
 use App\Http\Controllers\Api\StudentSelfTranscriptController;
 use App\Http\Controllers\Api\AcademicAdvisingRegistrationRequestController;
 use App\Http\Controllers\Api\AcademicAdvisingRegistrationWithdrawalController;
+use App\Http\Controllers\Api\AcademicProgressionController;
+use App\Http\Controllers\Api\AcademicRecordTermController;
 use App\Http\Controllers\Api\ApprovedRegistrationRequestController;
+use App\Http\Controllers\Api\GraduationDecisionController;
 use App\Http\Controllers\Api\StudentAcademicTermController;
 use App\Http\Controllers\Api\StudentCourseRegistrationController;
 use App\Http\Controllers\Api\StudentCourseResultController;
@@ -282,6 +285,33 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('students/{student}/attendance', [StudentController::class, 'attendance']);
     Route::get('students/{student}/absence-percentage', [StudentController::class, 'absencePercentage']);
 
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':academic_records.view')->group(function (): void {
+        Route::get('academic-records/students/{student}/terms', [AcademicRecordTermController::class, 'index']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':academic_records.finalize')->group(function (): void {
+        Route::post('academic-records/students/{student}/terms/{academicYear}/{semester}/recalculate', [AcademicRecordTermController::class, 'recalculate']);
+        Route::post('academic-records/students/{student}/terms/{academicYear}/{semester}/finalize', [AcademicRecordTermController::class, 'finalize']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':academic_progression.view')->group(function (): void {
+        Route::get('academic-progression/students/{student}/evaluate', [AcademicProgressionController::class, 'evaluate']);
+        Route::get('academic-progression', [AcademicProgressionController::class, 'index']);
+        Route::get('academic-progression/{progressionDecision}', [AcademicProgressionController::class, 'show']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':academic_progression.review')->group(function (): void {
+        Route::post('academic-progression/{student}/submit', [AcademicProgressionController::class, 'submit']);
+        Route::post('academic-progression/{progressionDecision}/return', [AcademicProgressionController::class, 'returnForModification']);
+        Route::post('academic-progression/{progressionDecision}/approve', [AcademicProgressionController::class, 'approve']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':graduation_decisions.view')->group(function (): void {
+        Route::get('graduation-decisions', [GraduationDecisionController::class, 'index']);
+        Route::get('graduation-decisions/{graduationDecision}', [GraduationDecisionController::class, 'show']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':graduation_decisions.review')->group(function (): void {
+        Route::post('graduation-decisions/{student}/submit', [GraduationDecisionController::class, 'submit']);
+        Route::post('graduation-decisions/{graduationDecision}/return', [GraduationDecisionController::class, 'returnForModification']);
+        Route::post('graduation-decisions/{graduationDecision}/approve', [GraduationDecisionController::class, 'approve']);
+    });
+
     /*
     |--------------------------------------------------------------------------
     | Academic Structure Relations
@@ -425,7 +455,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     */
 
     Route::apiResource('students', StudentController::class);
-    Route::apiResource('student-academic-terms', StudentAcademicTermController::class);
+    Route::apiResource('student-academic-terms', StudentAcademicTermController::class)
+        ->only(['index', 'show', 'store', 'update', 'destroy']);
     Route::apiResource('student-course-registrations', StudentCourseRegistrationController::class)
         ->only(['index', 'show']);
     // Result mutations must go through GradeController/GradeService so registration
