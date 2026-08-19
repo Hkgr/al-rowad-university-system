@@ -2,7 +2,9 @@
 -- Fully qualified objects: do not depend on phpMyAdmin's selected database.
 -- DDL (ALTER TABLE) commits implicitly in MariaDB; each object is added
 -- independently so a retry after partial compatible DDL remains recoverable.
--- Independently recomputes the same critical safety conditions as 00_preflight.sql.
+-- Independently recomputes the same critical safety conditions as 00_preflight.sql,
+including Phase 7 closure tables and a READ-ONLY Teaching Assignment RBAC guard.
+Does not INSERT/DELETE permissions or role_permissions.
 -- No RBAC inserts. No data backfill beyond the column DEFAULT 'assign'.
 -- Do not use stored procedures, DELIMITER, or SIGNAL.
 --
@@ -37,6 +39,9 @@ SET @missing_required_columns := IF(
             UNION ALL SELECT 'course_offering_instructors', 'course_offering_instructor_id'
             UNION ALL SELECT 'course_offerings', 'course_offering_id'
             UNION ALL SELECT 'course_offerings', 'status'
+            UNION ALL SELECT 'roles', 'role_code'
+            UNION ALL SELECT 'permissions', 'permission_code'
+            UNION ALL SELECT 'role_permissions', 'role_id'
         ) required_columns
         LEFT JOIN information_schema.columns existing
             ON existing.table_schema = 'alrowad_uni_rust'
@@ -134,9 +139,21 @@ SET @idx_exists := IF(
        AND index_name = 'idx_tar_action_status'),
     0
 );
+SET @idx_non_unique := IF(
+    @idx_exists = 1
+    AND (
+        SELECT MIN(non_unique)
+        FROM information_schema.statistics
+        WHERE table_schema = 'alrowad_uni_rust'
+          AND table_name = 'teaching_assignment_requests'
+          AND index_name = 'idx_tar_action_status'
+    ) = 1,
+    1, 0
+);
 SET @idx_state := CASE
     WHEN @idx_exists = 0 THEN 'ABSENT'
     WHEN @idx_exists = 1
+     AND @idx_non_unique = 1
      AND (SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index)
           FROM information_schema.statistics
           WHERE table_schema = 'alrowad_uni_rust'
@@ -145,6 +162,58 @@ SET @idx_state := CASE
     THEN 'COMPATIBLE'
     ELSE 'CONFLICT'
 END;
+
+SET @rbac_matrix_conflict := IF(
+    @structure_ok = 1,
+    (
+        SELECT IF(COUNT(*) > 0, 1, 0)
+        FROM `alrowad_uni_rust`.`roles` r
+        JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+        JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+        WHERE p.permission_code IN (
+            'teaching_assignments.review_scientific',
+            'teaching_assignments.review_administrative'
+        )
+          AND NOT (
+              (
+                  p.permission_code = 'teaching_assignments.review_scientific'
+                  AND r.role_code = 'vice_president_scientific'
+              )
+              OR (
+                  p.permission_code = 'teaching_assignments.review_administrative'
+                  AND r.role_code = 'vice_president_administrative'
+              )
+          )
+    ),
+    0
+);
+
+SET @rbac_ok := IF(
+    @structure_ok = 1
+    AND @rbac_matrix_conflict = 0
+    AND EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'teaching_assignments.manage' AND is_active = 1)
+    AND EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'teaching_assignments.review_scientific' AND is_active = 1)
+    AND EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'teaching_assignments.review_administrative' AND is_active = 1)
+    AND EXISTS (
+        SELECT 1 FROM `alrowad_uni_rust`.`roles` r
+        JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+        JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+        WHERE r.role_code = 'dean' AND p.permission_code = 'teaching_assignments.manage'
+    )
+    AND EXISTS (
+        SELECT 1 FROM `alrowad_uni_rust`.`roles` r
+        JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+        JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+        WHERE r.role_code = 'vice_president_scientific' AND p.permission_code = 'teaching_assignments.review_scientific'
+    )
+    AND EXISTS (
+        SELECT 1 FROM `alrowad_uni_rust`.`roles` r
+        JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+        JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+        WHERE r.role_code = 'vice_president_administrative' AND p.permission_code = 'teaching_assignments.review_administrative'
+    ),
+    1, 0
+);
 
 SET @phase8_conflict := IF(
     @action_type_state = 'CONFLICT'
@@ -159,6 +228,8 @@ SET @apply_ready := IF(
     @structure_ok = 1
     AND @uq_current_slot = 1
     AND @phase7_ok = 1
+    AND @rbac_ok = 1
+    AND @rbac_matrix_conflict = 0
     AND @phase8_conflict = 0,
     1, 0
 );
@@ -168,6 +239,8 @@ SELECT 'APPLY_GUARDS' AS report_section,
        @phase8_conflict AS phase8_conflict,
        @phase7_ok AS phase7_ok,
        @uq_current_slot AS uq_tar_current_slot,
+       @rbac_ok AS rbac_ok,
+       @rbac_matrix_conflict AS rbac_matrix_conflict,
        @action_type_state AS action_type_state,
        @action_reason_state AS action_reason_state,
        @target_slot_state AS target_slot_state,
@@ -271,6 +344,18 @@ SET @idx_exists := IF(
     0
 );
 
+SET @idx_non_unique := IF(
+    @idx_exists = 1
+    AND (
+        SELECT MIN(non_unique)
+        FROM information_schema.statistics
+        WHERE table_schema = 'alrowad_uni_rust'
+          AND table_name = 'teaching_assignment_requests'
+          AND index_name = 'idx_tar_action_status'
+    ) = 1,
+    1, 0
+);
+
 SET @action_type_compat := IF(
     @action_type_exists = 1
     AND (SELECT LOWER(data_type) FROM information_schema.columns WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'teaching_assignment_requests' AND column_name = 'action_type') = 'varchar'
@@ -295,7 +380,8 @@ SET @apply_status := IF(
     AND @action_reason_compat = 1
     AND @target_slot_compat = 1
     AND @fk_exists = 1
-    AND @idx_exists = 1,
+    AND @idx_exists = 1
+    AND @idx_non_unique = 1,
     'APPLIED',
     'BLOCKED'
 );
@@ -306,4 +392,6 @@ SELECT 'APPLY_RESULT' AS report_section,
        @action_reason_exists AS action_reason_exists,
        @target_slot_exists AS target_slot_exists,
        @fk_exists AS fk_exists,
-       @idx_exists AS idx_exists;
+       @idx_exists AS idx_exists,
+       @idx_non_unique AS idx_non_unique,
+       @rbac_ok AS rbac_ok;

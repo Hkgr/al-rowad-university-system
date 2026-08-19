@@ -3,6 +3,8 @@
 -- Do not CREATE/INSERT/UPDATE/DELETE application data.
 -- Do not use DATABASE().
 -- Business-row checks against optional Phase 8 columns use guarded dynamic SQL.
+-- OVERALL PASS requires Phase 7 closure BASE TABLES and idx_tar_action_status
+-- as NON-UNIQUE (action_type, status). Does not inspect Phase 7 business rows.
 
 SET @db_ready := IF(
     EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'alrowad_uni_rust'),
@@ -52,13 +54,21 @@ SET @fk_ok := IF(
     1, 0
 );
 SET @idx_ok := IF(
-    @db_ready = 1 AND (
+    @db_ready = 1
+    AND (
         SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index)
         FROM information_schema.statistics
         WHERE table_schema = 'alrowad_uni_rust'
           AND table_name = 'teaching_assignment_requests'
           AND index_name = 'idx_tar_action_status'
-    ) <=> 'action_type,status',
+    ) <=> 'action_type,status'
+    AND (
+        SELECT MIN(non_unique)
+        FROM information_schema.statistics
+        WHERE table_schema = 'alrowad_uni_rust'
+          AND table_name = 'teaching_assignment_requests'
+          AND index_name = 'idx_tar_action_status'
+    ) = 1,
     1, 0
 );
 SET @uq_current_slot := IF(
@@ -119,8 +129,50 @@ SET @unknown_action_ok := IF(@unknown_action = 0, 1, 0);
 SET @remove_rows_ok := IF(@invalid_remove = 0, 1, 0);
 SET @current_dup_ok := IF(@current_dup = 0, 1, 0);
 
-SET @rbac_ok := IF(
+SET @phase7_requests := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'course_offering_closure_requests' AND table_type = 'BASE TABLE'), 0);
+SET @phase7_reviews := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'course_offering_closure_reviews' AND table_type = 'BASE TABLE'), 0);
+SET @phase7_events := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'course_offering_closure_events' AND table_type = 'BASE TABLE'), 0);
+SET @phase7_ok := IF(@phase7_requests = 1 AND @phase7_reviews = 1 AND @phase7_events = 1, 1, 0);
+
+SET @rbac_tables_ok := IF(
     @db_ready = 1
+    AND (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'roles' AND table_type = 'BASE TABLE') = 1
+    AND (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'permissions' AND table_type = 'BASE TABLE') = 1
+    AND (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'role_permissions' AND table_type = 'BASE TABLE') = 1,
+    1, 0
+);
+
+SET @rbac_matrix_conflict := IF(
+    @rbac_tables_ok = 1,
+    (
+        SELECT IF(COUNT(*) > 0, 1, 0)
+        FROM `alrowad_uni_rust`.`roles` r
+        JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+        JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+        WHERE p.permission_code IN (
+            'teaching_assignments.review_scientific',
+            'teaching_assignments.review_administrative'
+        )
+          AND NOT (
+              (
+                  p.permission_code = 'teaching_assignments.review_scientific'
+                  AND r.role_code = 'vice_president_scientific'
+              )
+              OR (
+                  p.permission_code = 'teaching_assignments.review_administrative'
+                  AND r.role_code = 'vice_president_administrative'
+              )
+          )
+    ),
+    1
+);
+
+SET @rbac_ok := IF(
+    @rbac_tables_ok = 1
+    AND @rbac_matrix_conflict = 0
+    AND EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'teaching_assignments.manage' AND is_active = 1)
+    AND EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'teaching_assignments.review_scientific' AND is_active = 1)
+    AND EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'teaching_assignments.review_administrative' AND is_active = 1)
     AND EXISTS (
         SELECT 1 FROM `alrowad_uni_rust`.`roles` r
         JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
@@ -138,31 +190,12 @@ SET @rbac_ok := IF(
         JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
         JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
         WHERE r.role_code = 'vice_president_administrative' AND p.permission_code = 'teaching_assignments.review_administrative'
-    )
-    AND NOT EXISTS (
-        SELECT 1 FROM `alrowad_uni_rust`.`roles` r
-        JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
-        JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
-        WHERE r.role_code = 'vice_president'
-          AND p.permission_code IN (
-              'teaching_assignments.review_scientific',
-              'teaching_assignments.review_administrative'
-          )
-    )
-    AND NOT EXISTS (
-        SELECT 1 FROM `alrowad_uni_rust`.`roles` r
-        JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
-        JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
-        WHERE r.role_code = 'super_admin'
-          AND p.permission_code IN (
-              'teaching_assignments.review_scientific',
-              'teaching_assignments.review_administrative'
-          )
     ),
     1, 0
 );
 
 SELECT 'tables_present' AS check_name, IF(@requests_exist = 1 AND @reviews_exist = 1 AND @events_exist = 1 AND @coi_exist = 1, 'PASS', 'FAIL') AS result;
+SELECT 'phase7_closure_infrastructure' AS check_name, IF(@phase7_ok = 1, 'PASS', 'FAIL') AS result;
 SELECT 'action_type_not_null_default_assign' AS check_name, IF(@action_type_ok = 1, 'PASS', 'FAIL') AS result;
 SELECT 'action_reason_nullable' AS check_name, IF(@action_reason_ok = 1, 'PASS', 'FAIL') AS result;
 SELECT 'target_slot_nullable' AS check_name, IF(@target_slot_ok = 1, 'PASS', 'FAIL') AS result;
@@ -177,6 +210,7 @@ SELECT 'teaching_assignment_rbac' AS check_name, IF(@rbac_ok = 1, 'PASS', 'FAIL'
 
 SET @overall := IF(
     @requests_exist = 1 AND @reviews_exist = 1 AND @events_exist = 1 AND @coi_exist = 1
+    AND @phase7_ok = 1
     AND @action_type_ok = 1 AND @action_reason_ok = 1 AND @target_slot_ok = 1
     AND @fk_ok = 1 AND @idx_ok = 1 AND @uq_current_slot = 1 AND @phase4_fk_ok = 1
     AND @unknown_action_ok = 1 AND @remove_rows_ok = 1 AND @current_dup_ok = 1

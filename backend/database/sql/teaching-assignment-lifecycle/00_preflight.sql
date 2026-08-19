@@ -138,9 +138,21 @@ SET @idx_exists := IF(
        AND index_name = 'idx_tar_action_status'),
     0
 );
+SET @idx_non_unique := IF(
+    @idx_exists = 1
+    AND (
+        SELECT MIN(non_unique)
+        FROM information_schema.statistics
+        WHERE table_schema = 'alrowad_uni_rust'
+          AND table_name = 'teaching_assignment_requests'
+          AND index_name = 'idx_tar_action_status'
+    ) = 1,
+    1, 0
+);
 SET @idx_state := CASE
     WHEN @idx_exists = 0 THEN 'ABSENT'
     WHEN @idx_exists = 1
+     AND @idx_non_unique = 1
      AND (SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index)
           FROM information_schema.statistics
           WHERE table_schema = 'alrowad_uni_rust'
@@ -150,8 +162,34 @@ SET @idx_state := CASE
     ELSE 'CONFLICT'
 END;
 
+SET @rbac_matrix_conflict := IF(
+    @structure_ok = 1,
+    (
+        SELECT IF(COUNT(*) > 0, 1, 0)
+        FROM `alrowad_uni_rust`.`roles` r
+        JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+        JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
+        WHERE p.permission_code IN (
+            'teaching_assignments.review_scientific',
+            'teaching_assignments.review_administrative'
+        )
+          AND NOT (
+              (
+                  p.permission_code = 'teaching_assignments.review_scientific'
+                  AND r.role_code = 'vice_president_scientific'
+              )
+              OR (
+                  p.permission_code = 'teaching_assignments.review_administrative'
+                  AND r.role_code = 'vice_president_administrative'
+              )
+          )
+    ),
+    0
+);
+
 SET @rbac_ok := IF(
     @structure_ok = 1
+    AND @rbac_matrix_conflict = 0
     AND EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'teaching_assignments.manage' AND is_active = 1)
     AND EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'teaching_assignments.review_scientific' AND is_active = 1)
     AND EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'teaching_assignments.review_administrative' AND is_active = 1)
@@ -259,6 +297,7 @@ SELECT 'OVERALL' AS report_section,
        @uq_current_slot AS uq_tar_current_slot,
        @phase7_ok AS phase7_ok,
        @rbac_ok AS rbac_ok,
+       @rbac_matrix_conflict AS rbac_matrix_conflict,
        @phase8_conflict AS phase8_conflict,
        @action_type_state AS action_type_state,
        @action_reason_state AS action_reason_state,

@@ -76,7 +76,9 @@ longer current, Dean may open a fresh action for that role (`TA8-39`).
 ## Files / deployment order
 
 1. `00_preflight.sql` — READ ONLY. Continue only when `OVERALL = READY`.
-2. `01_apply.sql` — add only missing compatible schema objects.
+2. `01_apply.sql` — independently recomputes preflight guards, including
+   Phase 7 tables and a READ-ONLY Teaching Assignment RBAC matrix.
+   `apply_ready = 0` when RBAC prerequisites are invalid; no Phase 8 DDL.
    Continue only when `apply_status = APPLIED`.
    MariaDB `ALTER TABLE` DDL auto-commits; this is documented and each
    object is added independently so a retry after partial DDL remains
@@ -94,7 +96,8 @@ On `teaching_assignment_requests`:
 - `action_reason TEXT NULL` (required at application level for remove)
 - `target_course_offering_instructor_id INT NULL`
   FK `fk_tar_target_instructor` → `course_offering_instructors.course_offering_instructor_id`
-- index `idx_tar_action_status (action_type, status)`
+- index `idx_tar_action_status (action_type, status)` — **NON-UNIQUE** (`NON_UNIQUE = 1`).
+  A UNIQUE index with the same name/columns is CONFLICT / FAIL.
 
 Existing rows receive `action_type = 'assign'` from the column default.
 This package does not run an unrelated data backfill.
@@ -121,6 +124,15 @@ This package does not run an unrelated data backfill.
 - SQL-TA8-10 — rollback before any remove history → conservative rollback possible
 - SQL-TA8-11 — rollback after remove request/history → BLOCKED_IN_USE, no history deletion
 - SQL-TA8-12 — rollback on fully absent Phase 8 schema → no missing-column SQL error
+- SQL-TA8-13 — preflight READY, then Teaching Assignment RBAC becomes invalid
+  before `01_apply` → apply independently returns BLOCKED (`apply_ready = 0`);
+  no Phase 8 DDL executes
+- SQL-TA8-14 — Phase 8 objects valid but Phase 7 closure tables missing at
+  verify time → `02_verify` OVERALL = FAIL (`phase7_closure_infrastructure`)
+- SQL-TA8-15 — `idx_tar_action_status` exists as UNIQUE(action_type,status)
+  → preflight BLOCKED / index CONFLICT; apply BLOCKED; verify FAIL
+- SQL-TA8-16 — `idx_tar_action_status` exists as normal NON-UNIQUE
+  (action_type,status) (`NON_UNIQUE = 1`) → COMPATIBLE / PASS
 
 ## Application acceptance (stale commit-before-409)
 
