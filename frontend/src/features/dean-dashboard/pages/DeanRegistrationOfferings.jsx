@@ -19,6 +19,41 @@ import {
 
 const DEFAULT_CAPACITY = 40
 
+function deanAdvisoryBadge(row, selectedSemesterId) {
+  const recommendedId = row?.advisory_plan?.recommended_semester_id
+  if (recommendedId == null || recommendedId === '') {
+    return { kind: 'unspecified', label: 'الفصل الإرشادي غير محدد' }
+  }
+  if (selectedSemesterId != null && selectedSemesterId !== '' && Number(recommendedId) === Number(selectedSemesterId)) {
+    return { kind: 'match', label: 'موصى بها لهذا الفصل' }
+  }
+  const name = row?.advisory_plan?.recommended_semester_name
+  return { kind: 'other', label: name ? `إرشاديًا: ${name}` : 'إرشاديًا: فصل آخر' }
+}
+
+function splitDeanCoursesByAdvisorySemester(courses, selectedSemesterId) {
+  const recommended = []
+  const other = []
+  ;(courses ?? []).forEach(row => {
+    if (deanAdvisoryBadge(row, selectedSemesterId).kind === 'match') recommended.push(row)
+    else other.push(row)
+  })
+  return { recommended, other }
+}
+
+function deanOpenAdvisoryNote(row, selectedSemesterId, actualSemesterName, yearName) {
+  const recommendedId = row?.advisory_plan?.recommended_semester_id
+  if (recommendedId == null || recommendedId === '') return null
+  if (selectedSemesterId != null && selectedSemesterId !== '' && Number(recommendedId) === Number(selectedSemesterId)) {
+    return null
+  }
+  return {
+    recommendedName: row?.advisory_plan?.recommended_semester_name,
+    actualSemesterName,
+    yearName,
+  }
+}
+
 function InfoLine({ label, value }) {
   return (
     <div className="min-w-0">
@@ -75,6 +110,7 @@ function registrationState(offering) {
 
 function CourseCard({
   row,
+  selectedSemesterId,
   canManage,
   canRequestException,
   busy,
@@ -102,6 +138,12 @@ function CourseCard({
   const showExceptionStatus = Boolean(exceptionRequest)
     && state.key === 'pending_coverage'
     && exceptionStatus !== 'superseded'
+  const advisory = deanAdvisoryBadge(row, selectedSemesterId)
+  const advisoryClass = advisory.kind === 'match'
+    ? 'bg-primary/10 text-primary-dark border-primary/20'
+    : advisory.kind === 'unspecified'
+      ? 'bg-slate-500/10 text-slate-600 border-slate-500/20'
+      : 'bg-amber-500/10 text-amber-800 border-amber-500/20'
 
   return (
     <article className="border border-primary/12 rounded-[14px] bg-white px-4 py-3.5 flex flex-col min-h-[210px] shadow-[0_1px_8px_rgba(26,46,16,0.04)]">
@@ -114,6 +156,9 @@ function CourseCard({
         <CourseRequirementBadges classification={row.requirement_classification} compact />
         <span className={`inline-block text-[10.5px] font-bold px-2 py-0.5 rounded-full border ${state.className}`}>
           {state.label}
+        </span>
+        <span className={`inline-block text-[10.5px] font-bold px-2 py-0.5 rounded-full border ${advisoryClass}`}>
+          {advisory.label}
         </span>
       </div>
 
@@ -442,6 +487,53 @@ export default function DeanRegistrationOfferings() {
     return value === undefined ? String(DEFAULT_CAPACITY) : value
   }
 
+  function courseCard(row) {
+    return (
+      <CourseCard
+        key={row.program_course_id}
+        row={row}
+        selectedSemesterId={semesterId}
+        canManage={canManageLocal}
+        canRequestException={canRequestException}
+        busy={Boolean(busyIds[`pc-${row.program_course_id}`] || (row.offering && busyIds[`off-${row.offering.course_offering_id}`]))}
+        capacity={capacityFor(row.program_course_id)}
+        onCapacityChange={(id, value) => setCapacities(current => ({ ...current, [id]: value }))}
+        onOpen={item => setConfirm({
+          type: 'open',
+          key: `pc-${item.program_course_id}`,
+          row: item,
+        })}
+        onReopen={item => setConfirm({
+          type: 'reopen',
+          key: `off-${item.offering.course_offering_id}`,
+          row: item,
+        })}
+        onClose={item => setConfirm({
+          type: 'close',
+          key: `off-${item.offering.course_offering_id}`,
+          row: item,
+        })}
+        onManageInstructors={id => navigate(`/dean/courses/${id}`)}
+        onRequestException={item => {
+          setExceptionReason('')
+          setConfirm({
+            type: 'exception',
+            key: `ex-${item.offering.course_offering_id}`,
+            row: item,
+          })
+        }}
+        onResubmitException={item => {
+          setExceptionReason(item.offering?.exceptional_opening_request?.reason || '')
+          setConfirm({
+            type: 'exception-resubmit',
+            key: `ex-${item.offering.course_offering_id}`,
+            row: item,
+          })
+        }}
+      />
+    )
+  }
+
   async function runMutation(key, request, programCourseId, successFallback) {
     if (savingRef.current) return
     savingRef.current = true
@@ -515,7 +607,7 @@ export default function DeanRegistrationOfferings() {
       <div className="mb-5">
         <h2 className="text-[20px] font-black text-text-dark mb-[3px]">فتح المواد للتسجيل</h2>
         <p className="text-[12.5px] text-text-light">
-          الخطة أدناه خطة إرشادية حسب السنة المقترحة. يمكنك فتح المقرر في الفصل الفعلي المحدد حتى إن اختلف عن السنة أو الفصل الإرشادي.
+          الفلاتر أعلاه هي الفصل الفعلي للطرح. الخطة الإرشادية توصي بفصل، لكنها لا تمنع الفتح في الفصل المختار.
         </p>
       </div>
 
@@ -546,7 +638,7 @@ export default function DeanRegistrationOfferings() {
             </select>
           </label>
           <label className="flex flex-col gap-1.5 min-w-0">
-            <span className="text-[12px] font-bold text-text-dark">الفصل الدراسي</span>
+            <span className="text-[12px] font-bold text-text-dark">الفصل الفعلي للطرح</span>
             <select
               className="px-3 py-2.5 border border-primary/20 rounded-[10px] text-[13.5px] outline-none focus:border-primary disabled:opacity-50"
               value={semesterId}
@@ -641,7 +733,9 @@ export default function DeanRegistrationOfferings() {
         </p>
       ) : (
         <div className="space-y-4">
-          {filteredLevels.map(level => (
+          {filteredLevels.map(level => {
+            const grouped = splitDeanCoursesByAdvisorySemester(level.courses ?? [], semesterId)
+            return (
             <section key={level.academic_level_id ?? level.level_name} className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
               <div className="flex items-center justify-between px-4 py-3 bg-primary/[0.05] border-b border-primary/10">
                 <h3 className="text-[14px] font-extrabold text-text-dark">
@@ -651,53 +745,30 @@ export default function DeanRegistrationOfferings() {
                   {(level.courses ?? []).length} مادة
                 </span>
               </div>
-              <div className="p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                {(level.courses ?? []).map(row => (
-                  <CourseCard
-                    key={row.program_course_id}
-                    row={row}
-                    canManage={canManageLocal}
-                    canRequestException={canRequestException}
-                    busy={Boolean(busyIds[`pc-${row.program_course_id}`] || (row.offering && busyIds[`off-${row.offering.course_offering_id}`]))}
-                    capacity={capacityFor(row.program_course_id)}
-                    onCapacityChange={(id, value) => setCapacities(current => ({ ...current, [id]: value }))}
-                    onOpen={item => setConfirm({
-                      type: 'open',
-                      key: `pc-${item.program_course_id}`,
-                      row: item,
-                    })}
-                    onReopen={item => setConfirm({
-                      type: 'reopen',
-                      key: `off-${item.offering.course_offering_id}`,
-                      row: item,
-                    })}
-                    onClose={item => setConfirm({
-                      type: 'close',
-                      key: `off-${item.offering.course_offering_id}`,
-                      row: item,
-                    })}
-                    onManageInstructors={id => navigate(`/dean/courses/${id}`)}
-                    onRequestException={item => {
-                      setExceptionReason('')
-                      setConfirm({
-                        type: 'exception',
-                        key: `ex-${item.offering.course_offering_id}`,
-                        row: item,
-                      })
-                    }}
-                    onResubmitException={item => {
-                      setExceptionReason(item.offering?.exceptional_opening_request?.reason || '')
-                      setConfirm({
-                        type: 'exception-resubmit',
-                        key: `ex-${item.offering.course_offering_id}`,
-                        row: item,
-                      })
-                    }}
-                  />
-                ))}
+              <div className="p-4 space-y-5">
+                {grouped.recommended.length > 0 ? (
+                  <div>
+                    <h4 className="text-[12.5px] font-extrabold text-text-dark mb-3">مواد موصى بها لهذا الفصل</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                      {grouped.recommended.map(row => courseCard(row))}
+                    </div>
+                  </div>
+                ) : null}
+                {grouped.other.length > 0 ? (
+                  <div>
+                    <h4 className="text-[12.5px] font-extrabold text-text-dark mb-1">مواد أخرى من الخطة يمكن فتحها في هذا الفصل</h4>
+                    <p className="text-[11.5px] text-text-light leading-6 mb-3">
+                      هذه المواد ضمن الخطة ويمكن فتحها في الفصل الفعلي المختار. اختلاف الفصل الإرشادي ليس خطأ ولا يتطلب فتحًا استثنائيًا.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                      {grouped.other.map(row => courseCard(row))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </section>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -811,7 +882,28 @@ export default function DeanRegistrationOfferings() {
             <InfoLine label="المادة" value={[confirm.row.course?.course_code, confirm.row.course?.course_name].filter(Boolean).join(' — ')} />
             <InfoLine label="البرنامج" value={selectedProgram?.program_name} />
             <InfoLine label="السنة الدراسية" value={context.academic_year?.year_name || options.academic_years.find(year => String(year.academic_year_id) === String(yearId))?.year_name} />
-            <InfoLine label="الفصل" value={context.semester?.semester_name || options.semesters.find(semester => String(semester.semester_id) === String(semesterId))?.semester_name} />
+            <InfoLine label="الفصل الفعلي للطرح" value={context.semester?.semester_name || options.semesters.find(semester => String(semester.semester_id) === String(semesterId))?.semester_name} />
+            {confirm.row.advisory_plan?.recommended_semester_name ? (
+              <InfoLine label="الفصل الإرشادي" value={confirm.row.advisory_plan.recommended_semester_name} />
+            ) : confirm.row.advisory_plan && confirm.row.advisory_plan.recommended_semester_id == null ? (
+              <InfoLine label="الفصل الإرشادي" value="غير محدد" />
+            ) : null}
+            {confirm.type === 'open' && deanOpenAdvisoryNote(
+              confirm.row,
+              semesterId,
+              context.semester?.semester_name || options.semesters.find(semester => String(semester.semester_id) === String(semesterId))?.semester_name,
+              context.academic_year?.year_name || options.academic_years.find(year => String(year.academic_year_id) === String(yearId))?.year_name,
+            ) ? (
+              <div className="sm:col-span-2 rounded-[12px] border border-primary/15 bg-primary/[0.04] px-3.5 py-3 text-[13px] text-text-dark leading-7">
+                <p>
+                  الخطة الإرشادية توصي بهذه المادة في {confirm.row.advisory_plan?.recommended_semester_name || 'فصل آخر'}.
+                </p>
+                <p>
+                  سيتم إنشاء الطرح فعليًا في {context.semester?.semester_name || options.semesters.find(semester => String(semester.semester_id) === String(semesterId))?.semester_name} للعام {context.academic_year?.year_name || options.academic_years.find(year => String(year.academic_year_id) === String(yearId))?.year_name}.
+                </p>
+                <p>هذا مسموح ولا يغير الخطة الإرشادية.</p>
+              </div>
+            ) : null}
             {confirm.type === 'open' && (
               <InfoLine label="السعة" value={capacityFor(confirm.row.program_course_id)} />
             )}
