@@ -148,17 +148,19 @@ class StudentAcademicProgressionContractTest extends TestCase
         $finish = self::extractMethod($progression, 'finishDecision');
         self::assertStringNotContainsString('DB::transaction', $finish);
         $termGpa = self::extractMethod($progression, 'officialTermGpa');
+        self::assertStringContainsString('latestOfficialSemesterIdForYear(', $termGpa);
         self::assertStringContainsString('isFinalized()', $termGpa);
         self::assertStringContainsString('officialTermMetrics(', $termGpa);
-        self::assertStringContainsString('getGpaOverview(', $termGpa);
+        self::assertStringNotContainsString("orderByDesc('semester_id')", $termGpa);
+        self::assertStringNotContainsString('getGpaOverview(', $termGpa);
         self::assertTrue(
-            strpos($termGpa, 'isFinalized()') < strpos($termGpa, '$latestTerm->term_gpa')
+            strpos($termGpa, 'latestOfficialSemesterIdForYear(') < strpos($termGpa, "where('semester_id', \$semesterId)")
         );
         self::assertTrue(
-            strpos($termGpa, '$latestTerm->term_gpa') < strpos($termGpa, 'officialTermMetrics(')
+            strpos($termGpa, 'isFinalized()') < strpos($termGpa, '$term->term_gpa')
         );
         self::assertTrue(
-            strpos($termGpa, 'isFinalized()') < strpos($termGpa, 'officialTermMetrics(')
+            strpos($termGpa, '$term->term_gpa') < strpos($termGpa, 'officialTermMetrics(')
         );
 
         $graduation = self::source('app/Services/GraduationDecisionService.php');
@@ -231,7 +233,7 @@ class StudentAcademicProgressionContractTest extends TestCase
         }
 
         $readme = self::source('database/sql/student-academic-progression/README.md');
-        foreach (['AC10-01', 'AC10-21', 'AC10-40', 'AC10-41', 'AC10-46', 'SQL-AC10', 'SQL-AC10-17', 'SQL-AC10-22', 'BLOCKED_IN_USE', 'registration_officer', 'graduated', '4.0', 'retained_no_provenance'] as $needle) {
+        foreach (['AC10-01', 'AC10-21', 'AC10-40', 'AC10-41', 'AC10-46', 'AC10-47', 'AC10-48', 'SQL-AC10', 'SQL-AC10-17', 'SQL-AC10-22', 'SQL-AC10-23', 'SQL-AC10-26', 'BLOCKED_IN_USE', 'registration_officer', 'graduated', '4.0', 'retained_no_provenance'] as $needle) {
             self::assertStringContainsString($needle, $readme);
         }
 
@@ -335,20 +337,45 @@ class StudentAcademicProgressionContractTest extends TestCase
     public function test_ac10_43_and_44_progression_term_gpa_uses_finalized_snapshot_only(): void
     {
         $termGpa = self::extractMethod(self::source('app/Services/AcademicProgressionService.php'), 'officialTermGpa');
-        self::assertStringContainsString('$latestTerm !== null && $latestTerm->isFinalized()', $termGpa);
+        self::assertStringContainsString('$term !== null && $term->isFinalized()', $termGpa);
         self::assertStringContainsString('officialTermMetrics(', $termGpa);
-        self::assertGreaterThanOrEqual(1, substr_count($termGpa, '$latestTerm->term_gpa'));
-        self::assertTrue(strpos($termGpa, 'isFinalized()') < strpos($termGpa, '$latestTerm->term_gpa'));
+        self::assertGreaterThanOrEqual(1, substr_count($termGpa, '$term->term_gpa'));
+        self::assertTrue(strpos($termGpa, 'isFinalized()') < strpos($termGpa, '$term->term_gpa'));
 
         $build = self::extractMethod(self::source('app/Services/AcademicProgressionService.php'), 'buildEvidence');
         self::assertStringContainsString('officialTermGpa(', $build);
-        self::assertStringNotContainsString('$term->term_gpa', $build);
 
         $decide = self::extractMethod(self::source('app/Services/AcademicProgressionService.php'), 'decide');
         self::assertStringContainsString('buildEvidence(', $decide);
         self::assertStringContainsString('lockStudentAcademicGraph(', $decide);
         self::assertTrue(
             strpos($decide, 'lockStudentAcademicGraph(') < strpos($decide, 'buildEvidence(')
+        );
+    }
+
+    public function test_ac10_47_and_48_latest_term_uses_grade_service_chronology(): void
+    {
+        $grades = self::source('app/Services/GradeService.php');
+        self::assertStringContainsString('public function latestOfficialSemesterIdForYear(', $grades);
+        $latest = self::extractMethod($grades, 'latestOfficialSemesterIdForYear');
+        self::assertStringContainsString('loadOfficialVisibleAttempts(', $latest);
+        self::assertStringContainsString('officialTermChronologyKey(', $latest);
+        self::assertStringContainsString('$offering?->academic_year_id', $latest);
+        self::assertStringNotContainsString('studentAcademicTerms(', $latest);
+        self::assertStringNotContainsString("orderByDesc('semester_id')", $latest);
+
+        $termGpa = self::extractMethod(self::source('app/Services/AcademicProgressionService.php'), 'officialTermGpa');
+        self::assertTrue(
+            strpos($termGpa, 'latestOfficialSemesterIdForYear(') < strpos($termGpa, 'studentAcademicTerms(')
+        );
+        self::assertStringContainsString("where('academic_year_id', \$academicYearId)", $termGpa);
+        self::assertStringContainsString("where('semester_id', \$semesterId)", $termGpa);
+        self::assertStringNotContainsString("orderByDesc('semester_id')", $termGpa);
+        self::assertTrue(
+            strpos($termGpa, "where('semester_id', \$semesterId)") < strpos($termGpa, 'isFinalized()')
+        );
+        self::assertTrue(
+            strpos($termGpa, 'isFinalized()') < strpos($termGpa, 'officialTermMetrics($student, $academicYearId, $semesterId)')
         );
     }
 
@@ -384,6 +411,12 @@ class StudentAcademicProgressionContractTest extends TestCase
             self::assertStringContainsString("referenced_column_name = 'user_id'", $sql);
             self::assertStringContainsString("constraint_name = 'fk_sat_finalized_by'", $sql);
             self::assertStringContainsString("AND constraint_type = 'FOREIGN KEY') = 7", $sql);
+            self::assertStringContainsString("required.dflt IS NULL AND required.is_nullable = 'NO' AND c.column_default IS NOT NULL", $sql);
+            self::assertStringContainsString("required.onupd = 1 AND LOWER(IFNULL(c.extra, '')) NOT LIKE '%on update current_timestamp%'", $sql);
+            self::assertStringContainsString("required.onupd = 0 AND LOWER(IFNULL(c.extra, '')) LIKE '%on update current_timestamp%'", $sql);
+            self::assertStringContainsString("required.autoinc = 0 AND LOWER(IFNULL(c.extra, '')) LIKE '%auto_increment%'", $sql);
+            self::assertMatchesRegularExpression("/SELECT 'submitted_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP'.*0, 0/s", $sql);
+            self::assertMatchesRegularExpression("/SELECT 'updated_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP'.*0, 1/s", $sql);
             self::assertMatchesRegularExpression("/index_name = 'idx_spd_reviewer'\\s*AND non_unique = 1/s", $sql);
             self::assertMatchesRegularExpression("/index_name = 'idx_spe_decision'\\s*AND non_unique = 1/s", $sql);
             self::assertMatchesRegularExpression("/index_name = 'idx_sge_actor'\\s*AND non_unique = 1/s", $sql);

@@ -113,8 +113,15 @@ program level. No skip, no backward move, no fake next level at the end.
 
 Term GPA for formal progression:
 
-- a **finalized** `StudentAcademicTerm` may be used as the official immutable snapshot
-- an **unfinalized** or missing term row must never override GradeService official results
+- latest real semester in the requested year comes from GradeService official
+  attempt chronology (`officialTermChronologyKey`), not from
+  `student_academic_terms.semester_id DESC`
+- a **finalized** `StudentAcademicTerm` may be used only for that exact
+  student / academic year / semester identity
+- an **unfinalized** or missing term row must never override GradeService
+  official results for that same identity
+- a finalized earlier semester must never override a later semester that has
+  official academic activity
 - approval revalidates the same canonical evidence under lock
 
 ## Term finalization
@@ -242,6 +249,8 @@ AC10-43 unfinalized `StudentAcademicTerm` has stale `term_gpa` after later offic
 AC10-44 finalized `StudentAcademicTerm` may be used as the immutable official term snapshot for formal progression
 AC10-45 graduated student generic PATCH of phone (or address) is allowed
 AC10-46 graduated student generic PATCH of `student_status_id` to active is blocked by formal graduation workflow protection
+AC10-47 academic year has finalized Semester 1 snapshot and official Semester 2 results with no snapshot → progression `term_gpa` uses Semester 2 GradeService chronology, not the newest `student_academic_terms` row
+AC10-48 Semester 2 has a finalized `StudentAcademicTerm` → that exact snapshot is used
 
 SQL-AC10: clean READY; partial compatible READY; conflict BLOCKED; apply APPLIED;
 rerun idempotent; verify PASS; legacy duplicate term BLOCKED; missing graduation
@@ -255,6 +264,10 @@ SQL-AC10-19 `fk_sat_finalized_by` wrong target → 00 BLOCKED, 01 BLOCKED, 02 FA
 SQL-AC10-20 Phase 10 required infrastructure table missing → 00 OVERALL BLOCKED, no #1146
 SQL-AC10-21 pre-existing compatible unused term finalization columns → rollback does not delete them without provenance (`retained_no_provenance`)
 SQL-AC10-22 named NON-UNIQUE Phase 10 index exists as UNIQUE → 00 CONFLICT, 01 BLOCKED, 02 FAIL
+SQL-AC10-23 `student_progression_decisions.student_id` INT NOT NULL DEFAULT 1 → 00 CONFLICT/BLOCKED, 01 BLOCKED, 02 FAIL
+SQL-AC10-24 `updated_at` missing ON UPDATE CURRENT_TIMESTAMP → 00 BLOCKED, 01 BLOCKED, 02 FAIL
+SQL-AC10-25 `submitted_at` unexpectedly has ON UPDATE CURRENT_TIMESTAMP → 00 BLOCKED, 01 BLOCKED, 02 FAIL
+SQL-AC10-26 timestamp/default/extra definitions match intended DDL → compatible / APPLIED / PASS
 
 Exact compatibility (00/01 CONFLICT, 02 FAIL) covers column names, data types,
 lengths/precision/scale, nullability, defaults, AUTO_INCREMENT, primary key,

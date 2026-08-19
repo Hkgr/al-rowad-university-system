@@ -1190,6 +1190,34 @@ class GradeService
     }
 
     /**
+     * Latest official academic semester in a year, using transcript chronology.
+     *
+     * Official attempts are ordered by officialTermChronologyKey()
+     * (academic year start_date, then semester_order). This is independent of
+     * student_academic_terms row presence.
+     */
+    public function latestOfficialSemesterIdForYear(Student $student, int $academicYearId): ?int
+    {
+        $latestSemesterId = null;
+        $latestKey = null;
+
+        foreach ($this->loadOfficialVisibleAttempts($student) as $registration) {
+            $offering = $registration->courseOffering;
+            if ((int) ($offering?->academic_year_id ?? 0) !== $academicYearId) {
+                continue;
+            }
+
+            $key = $this->officialTermChronologyKey($offering?->academicYear, $offering?->semester);
+            if ($latestKey === null || $key > $latestKey) {
+                $latestKey = $key;
+                $latestSemesterId = $offering?->semester_id === null ? null : (int) $offering->semester_id;
+            }
+        }
+
+        return $latestSemesterId;
+    }
+
+    /**
      * Cumulative official metrics reused by progression and graduation.
      *
      * @return array<string, mixed>

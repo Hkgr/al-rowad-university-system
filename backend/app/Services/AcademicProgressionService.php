@@ -460,36 +460,30 @@ class AcademicProgressionService
     }
 
     /**
-     * Finalized StudentAcademicTerm rows are the official immutable snapshot.
-     * Unfinalized provisional rows must never override GradeService evidence.
+     * Latest official semester comes from GradeService chronology, not from
+     * whichever StudentAcademicTerm row happens to exist.
+     *
+     * A finalized snapshot is authoritative only for that exact
+     * student/year/semester identity. An earlier finalized term must never
+     * override a later semester that has official academic activity.
      */
     private function officialTermGpa(Student $student, int $academicYearId): ?float
     {
-        $latestTerm = $student->studentAcademicTerms()
+        $semesterId = $this->grades->latestOfficialSemesterIdForYear($student, $academicYearId);
+        if ($semesterId === null) {
+            return null;
+        }
+
+        $term = $student->studentAcademicTerms()
             ->where('academic_year_id', $academicYearId)
-            ->orderByDesc('semester_id')
+            ->where('semester_id', $semesterId)
             ->first();
 
-        if ($latestTerm !== null && $latestTerm->isFinalized()) {
-            return $latestTerm->term_gpa !== null ? (float) $latestTerm->term_gpa : null;
+        if ($term !== null && $term->isFinalized()) {
+            return $term->term_gpa !== null ? (float) $term->term_gpa : null;
         }
 
-        if ($latestTerm !== null) {
-            return $this->grades->officialTermMetrics(
-                $student,
-                $academicYearId,
-                (int) $latestTerm->semester_id
-            )['term_gpa'];
-        }
-
-        $overview = $this->grades->getGpaOverview($student);
-        foreach (array_reverse($overview['timeline'] ?? []) as $point) {
-            if ((int) ($point['academic_year_id'] ?? 0) === $academicYearId) {
-                return $point['term_gpa'] !== null ? (float) $point['term_gpa'] : null;
-            }
-        }
-
-        return null;
+        return $this->grades->officialTermMetrics($student, $academicYearId, $semesterId)['term_gpa'];
     }
 
     private function candidateNextLevel(Student $student): ?AcademicLevel

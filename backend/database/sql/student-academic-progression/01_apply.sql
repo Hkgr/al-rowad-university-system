@@ -7,6 +7,8 @@
 -- Do NOT execute from application code, seeders, or Laravel migrations.
 -- CREATE TABLE IF NOT EXISTS never repairs an incompatible existing table: apply_ready is 0 on CONFLICT.
 -- Guarded queries use role_code = 'registration_officer' and status_code = 'graduated'.
+-- Exact column extras: NOT NULL without DEFAULT rejects unexpected defaults;
+-- updated_at requires ON UPDATE CURRENT_TIMESTAMP; submitted_at/created_at must not.
 
 SET @db_ready := IF(
     EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'alrowad_uni_rust'),
@@ -273,31 +275,31 @@ SET @sge_exists := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.ta
 
 SET @spd_columns_ok := IF(@spd_exists = 0, 1, IF((
     SELECT COUNT(*) FROM (
-        SELECT 'student_progression_decision_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable, CAST(NULL AS CHAR) AS dflt, CAST(NULL AS UNSIGNED) AS maxlen, CAST(NULL AS UNSIGNED) AS prec, CAST(NULL AS UNSIGNED) AS scale, 1 AS autoinc
-        UNION ALL SELECT 'student_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'academic_program_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'academic_year_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'from_academic_level_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'to_academic_level_id', 'int', 'YES', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'status', 'varchar', 'NO', NULL, 40, NULL, NULL, 0
-        UNION ALL SELECT 'decision_result', 'varchar', 'YES', NULL, 40, NULL, NULL, 0
-        UNION ALL SELECT 'current_slot', 'tinyint', 'YES', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'term_gpa_snapshot', 'decimal', 'YES', NULL, NULL, 4, 2, 0
-        UNION ALL SELECT 'cumulative_gpa_snapshot', 'decimal', 'YES', NULL, NULL, 4, 2, 0
-        UNION ALL SELECT 'earned_hours_snapshot', 'int', 'NO', '0', NULL, NULL, NULL, 0
-        UNION ALL SELECT 'attempted_hours_snapshot', 'int', 'NO', '0', NULL, NULL, NULL, 0
-        UNION ALL SELECT 'failed_courses_count_snapshot', 'int', 'NO', '0', NULL, NULL, NULL, 0
-        UNION ALL SELECT 'evidence_snapshot', 'text', 'YES', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'submitted_by_user_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'submitted_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, NULL, NULL, 0
-        UNION ALL SELECT 'reviewed_by_user_id', 'int', 'YES', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'reviewed_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'review_notes', 'text', 'YES', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'approved_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'materialized_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'superseded_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'created_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, NULL, NULL, 0
-        UNION ALL SELECT 'updated_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, NULL, NULL, 0
+        SELECT 'student_progression_decision_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable, CAST(NULL AS CHAR) AS dflt, CAST(NULL AS UNSIGNED) AS maxlen, CAST(NULL AS UNSIGNED) AS prec, CAST(NULL AS UNSIGNED) AS scale, 1 AS autoinc, 0 AS onupd
+        UNION ALL SELECT 'student_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'academic_program_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'academic_year_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'from_academic_level_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'to_academic_level_id', 'int', 'YES', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'status', 'varchar', 'NO', NULL, 40, NULL, NULL, 0, 0
+        UNION ALL SELECT 'decision_result', 'varchar', 'YES', NULL, 40, NULL, NULL, 0, 0
+        UNION ALL SELECT 'current_slot', 'tinyint', 'YES', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'term_gpa_snapshot', 'decimal', 'YES', NULL, NULL, 4, 2, 0, 0
+        UNION ALL SELECT 'cumulative_gpa_snapshot', 'decimal', 'YES', NULL, NULL, 4, 2, 0, 0
+        UNION ALL SELECT 'earned_hours_snapshot', 'int', 'NO', '0', NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'attempted_hours_snapshot', 'int', 'NO', '0', NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'failed_courses_count_snapshot', 'int', 'NO', '0', NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'evidence_snapshot', 'text', 'YES', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'submitted_by_user_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'submitted_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'reviewed_by_user_id', 'int', 'YES', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'reviewed_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'review_notes', 'text', 'YES', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'approved_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'materialized_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'superseded_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'created_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'updated_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, NULL, NULL, 0, 1
     ) required
     LEFT JOIN information_schema.columns c
         ON c.table_schema = 'alrowad_uni_rust' AND c.table_name = 'student_progression_decisions' AND c.column_name = required.column_name
@@ -308,21 +310,25 @@ SET @spd_columns_ok := IF(@spd_exists = 0, 1, IF((
        OR (required.maxlen IS NOT NULL AND IFNULL(c.character_maximum_length, 0) <> required.maxlen)
        OR (required.prec IS NOT NULL AND (IFNULL(c.numeric_precision, 0) <> required.prec OR IFNULL(c.numeric_scale, 0) <> required.scale))
        OR (required.autoinc = 1 AND LOWER(IFNULL(c.extra, '')) NOT LIKE '%auto_increment%')
+       OR (required.autoinc = 0 AND LOWER(IFNULL(c.extra, '')) LIKE '%auto_increment%')
+       OR (required.onupd = 1 AND LOWER(IFNULL(c.extra, '')) NOT LIKE '%on update current_timestamp%')
+       OR (required.onupd = 0 AND LOWER(IFNULL(c.extra, '')) LIKE '%on update current_timestamp%')
        OR (required.dflt = '0' AND TRIM(BOTH '''' FROM IFNULL(c.column_default, '')) NOT IN ('0', '0.0'))
        OR (required.dflt = 'CURRENT_TIMESTAMP' AND LOWER(IFNULL(c.column_default, '')) NOT LIKE 'current_timestamp%')
        OR (required.dflt IS NULL AND required.is_nullable = 'YES' AND c.column_default IS NOT NULL AND LOWER(c.column_default) <> 'null')
+       OR (required.dflt IS NULL AND required.is_nullable = 'NO' AND c.column_default IS NOT NULL)
 ) = 0 AND (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_progression_decisions') = 25, 1, 0));
 
 SET @spe_columns_ok := IF(@spe_exists = 0, 1, IF((
     SELECT COUNT(*) FROM (
-        SELECT 'student_progression_event_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable, CAST(NULL AS CHAR) AS dflt, CAST(NULL AS UNSIGNED) AS maxlen, 1 AS autoinc
-        UNION ALL SELECT 'student_progression_decision_id', 'int', 'NO', NULL, NULL, 0
-        UNION ALL SELECT 'event_type', 'varchar', 'NO', NULL, 40, 0
-        UNION ALL SELECT 'actor_user_id', 'int', 'YES', NULL, NULL, 0
-        UNION ALL SELECT 'from_status', 'varchar', 'YES', NULL, 40, 0
-        UNION ALL SELECT 'to_status', 'varchar', 'YES', NULL, 40, 0
-        UNION ALL SELECT 'notes', 'text', 'YES', NULL, NULL, 0
-        UNION ALL SELECT 'created_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, 0
+        SELECT 'student_progression_event_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable, CAST(NULL AS CHAR) AS dflt, CAST(NULL AS UNSIGNED) AS maxlen, 1 AS autoinc, 0 AS onupd
+        UNION ALL SELECT 'student_progression_decision_id', 'int', 'NO', NULL, NULL, 0, 0
+        UNION ALL SELECT 'event_type', 'varchar', 'NO', NULL, 40, 0, 0
+        UNION ALL SELECT 'actor_user_id', 'int', 'YES', NULL, NULL, 0, 0
+        UNION ALL SELECT 'from_status', 'varchar', 'YES', NULL, 40, 0, 0
+        UNION ALL SELECT 'to_status', 'varchar', 'YES', NULL, 40, 0, 0
+        UNION ALL SELECT 'notes', 'text', 'YES', NULL, NULL, 0, 0
+        UNION ALL SELECT 'created_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, 0, 0
     ) required
     LEFT JOIN information_schema.columns c
         ON c.table_schema = 'alrowad_uni_rust' AND c.table_name = 'student_progression_events' AND c.column_name = required.column_name
@@ -332,33 +338,37 @@ SET @spe_columns_ok := IF(@spe_exists = 0, 1, IF((
        OR (required.data_type = 'int' AND LOWER(c.column_type) LIKE '%unsigned%')
        OR (required.maxlen IS NOT NULL AND IFNULL(c.character_maximum_length, 0) <> required.maxlen)
        OR (required.autoinc = 1 AND LOWER(IFNULL(c.extra, '')) NOT LIKE '%auto_increment%')
+       OR (required.autoinc = 0 AND LOWER(IFNULL(c.extra, '')) LIKE '%auto_increment%')
+       OR (required.onupd = 1 AND LOWER(IFNULL(c.extra, '')) NOT LIKE '%on update current_timestamp%')
+       OR (required.onupd = 0 AND LOWER(IFNULL(c.extra, '')) LIKE '%on update current_timestamp%')
        OR (required.dflt = 'CURRENT_TIMESTAMP' AND LOWER(IFNULL(c.column_default, '')) NOT LIKE 'current_timestamp%')
        OR (required.dflt IS NULL AND required.is_nullable = 'YES' AND c.column_default IS NOT NULL AND LOWER(c.column_default) <> 'null')
+       OR (required.dflt IS NULL AND required.is_nullable = 'NO' AND c.column_default IS NOT NULL)
 ) = 0 AND (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_progression_events') = 8, 1, 0));
 
 SET @sgd_columns_ok := IF(@sgd_exists = 0, 1, IF((
     SELECT COUNT(*) FROM (
-        SELECT 'student_graduation_decision_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable, CAST(NULL AS CHAR) AS dflt, CAST(NULL AS UNSIGNED) AS maxlen, CAST(NULL AS UNSIGNED) AS prec, CAST(NULL AS UNSIGNED) AS scale, 1 AS autoinc
-        UNION ALL SELECT 'student_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'academic_program_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'current_academic_level_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'status', 'varchar', 'NO', NULL, 40, NULL, NULL, 0
-        UNION ALL SELECT 'decision_result', 'varchar', 'YES', NULL, 40, NULL, NULL, 0
-        UNION ALL SELECT 'current_slot', 'tinyint', 'YES', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'cumulative_gpa_snapshot', 'decimal', 'YES', NULL, NULL, 4, 2, 0
-        UNION ALL SELECT 'earned_hours_snapshot', 'int', 'NO', '0', NULL, NULL, NULL, 0
-        UNION ALL SELECT 'required_hours_snapshot', 'int', 'NO', '0', NULL, NULL, NULL, 0
-        UNION ALL SELECT 'eligibility_snapshot', 'text', 'YES', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'submitted_by_user_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'submitted_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, NULL, NULL, 0
-        UNION ALL SELECT 'reviewed_by_user_id', 'int', 'YES', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'reviewed_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'review_notes', 'text', 'YES', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'approved_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'materialized_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'superseded_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0
-        UNION ALL SELECT 'created_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, NULL, NULL, 0
-        UNION ALL SELECT 'updated_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, NULL, NULL, 0
+        SELECT 'student_graduation_decision_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable, CAST(NULL AS CHAR) AS dflt, CAST(NULL AS UNSIGNED) AS maxlen, CAST(NULL AS UNSIGNED) AS prec, CAST(NULL AS UNSIGNED) AS scale, 1 AS autoinc, 0 AS onupd
+        UNION ALL SELECT 'student_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'academic_program_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'current_academic_level_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'status', 'varchar', 'NO', NULL, 40, NULL, NULL, 0, 0
+        UNION ALL SELECT 'decision_result', 'varchar', 'YES', NULL, 40, NULL, NULL, 0, 0
+        UNION ALL SELECT 'current_slot', 'tinyint', 'YES', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'cumulative_gpa_snapshot', 'decimal', 'YES', NULL, NULL, 4, 2, 0, 0
+        UNION ALL SELECT 'earned_hours_snapshot', 'int', 'NO', '0', NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'required_hours_snapshot', 'int', 'NO', '0', NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'eligibility_snapshot', 'text', 'YES', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'submitted_by_user_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'submitted_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'reviewed_by_user_id', 'int', 'YES', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'reviewed_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'review_notes', 'text', 'YES', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'approved_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'materialized_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'superseded_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'created_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, NULL, NULL, 0, 0
+        UNION ALL SELECT 'updated_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, NULL, NULL, 0, 1
     ) required
     LEFT JOIN information_schema.columns c
         ON c.table_schema = 'alrowad_uni_rust' AND c.table_name = 'student_graduation_decisions' AND c.column_name = required.column_name
@@ -369,21 +379,25 @@ SET @sgd_columns_ok := IF(@sgd_exists = 0, 1, IF((
        OR (required.maxlen IS NOT NULL AND IFNULL(c.character_maximum_length, 0) <> required.maxlen)
        OR (required.prec IS NOT NULL AND (IFNULL(c.numeric_precision, 0) <> required.prec OR IFNULL(c.numeric_scale, 0) <> required.scale))
        OR (required.autoinc = 1 AND LOWER(IFNULL(c.extra, '')) NOT LIKE '%auto_increment%')
+       OR (required.autoinc = 0 AND LOWER(IFNULL(c.extra, '')) LIKE '%auto_increment%')
+       OR (required.onupd = 1 AND LOWER(IFNULL(c.extra, '')) NOT LIKE '%on update current_timestamp%')
+       OR (required.onupd = 0 AND LOWER(IFNULL(c.extra, '')) LIKE '%on update current_timestamp%')
        OR (required.dflt = '0' AND TRIM(BOTH '''' FROM IFNULL(c.column_default, '')) NOT IN ('0', '0.0'))
        OR (required.dflt = 'CURRENT_TIMESTAMP' AND LOWER(IFNULL(c.column_default, '')) NOT LIKE 'current_timestamp%')
        OR (required.dflt IS NULL AND required.is_nullable = 'YES' AND c.column_default IS NOT NULL AND LOWER(c.column_default) <> 'null')
+       OR (required.dflt IS NULL AND required.is_nullable = 'NO' AND c.column_default IS NOT NULL)
 ) = 0 AND (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_graduation_decisions') = 21, 1, 0));
 
 SET @sge_columns_ok := IF(@sge_exists = 0, 1, IF((
     SELECT COUNT(*) FROM (
-        SELECT 'student_graduation_event_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable, CAST(NULL AS CHAR) AS dflt, CAST(NULL AS UNSIGNED) AS maxlen, 1 AS autoinc
-        UNION ALL SELECT 'student_graduation_decision_id', 'int', 'NO', NULL, NULL, 0
-        UNION ALL SELECT 'event_type', 'varchar', 'NO', NULL, 40, 0
-        UNION ALL SELECT 'actor_user_id', 'int', 'YES', NULL, NULL, 0
-        UNION ALL SELECT 'from_status', 'varchar', 'YES', NULL, 40, 0
-        UNION ALL SELECT 'to_status', 'varchar', 'YES', NULL, 40, 0
-        UNION ALL SELECT 'notes', 'text', 'YES', NULL, NULL, 0
-        UNION ALL SELECT 'created_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, 0
+        SELECT 'student_graduation_event_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable, CAST(NULL AS CHAR) AS dflt, CAST(NULL AS UNSIGNED) AS maxlen, 1 AS autoinc, 0 AS onupd
+        UNION ALL SELECT 'student_graduation_decision_id', 'int', 'NO', NULL, NULL, 0, 0
+        UNION ALL SELECT 'event_type', 'varchar', 'NO', NULL, 40, 0, 0
+        UNION ALL SELECT 'actor_user_id', 'int', 'YES', NULL, NULL, 0, 0
+        UNION ALL SELECT 'from_status', 'varchar', 'YES', NULL, 40, 0, 0
+        UNION ALL SELECT 'to_status', 'varchar', 'YES', NULL, 40, 0, 0
+        UNION ALL SELECT 'notes', 'text', 'YES', NULL, NULL, 0, 0
+        UNION ALL SELECT 'created_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, 0, 0
     ) required
     LEFT JOIN information_schema.columns c
         ON c.table_schema = 'alrowad_uni_rust' AND c.table_name = 'student_graduation_events' AND c.column_name = required.column_name
@@ -393,8 +407,12 @@ SET @sge_columns_ok := IF(@sge_exists = 0, 1, IF((
        OR (required.data_type = 'int' AND LOWER(c.column_type) LIKE '%unsigned%')
        OR (required.maxlen IS NOT NULL AND IFNULL(c.character_maximum_length, 0) <> required.maxlen)
        OR (required.autoinc = 1 AND LOWER(IFNULL(c.extra, '')) NOT LIKE '%auto_increment%')
+       OR (required.autoinc = 0 AND LOWER(IFNULL(c.extra, '')) LIKE '%auto_increment%')
+       OR (required.onupd = 1 AND LOWER(IFNULL(c.extra, '')) NOT LIKE '%on update current_timestamp%')
+       OR (required.onupd = 0 AND LOWER(IFNULL(c.extra, '')) LIKE '%on update current_timestamp%')
        OR (required.dflt = 'CURRENT_TIMESTAMP' AND LOWER(IFNULL(c.column_default, '')) NOT LIKE 'current_timestamp%')
        OR (required.dflt IS NULL AND required.is_nullable = 'YES' AND c.column_default IS NOT NULL AND LOWER(c.column_default) <> 'null')
+       OR (required.dflt IS NULL AND required.is_nullable = 'NO' AND c.column_default IS NOT NULL)
 ) = 0 AND (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_graduation_events') = 8, 1, 0));
 
 SET @spd_engine_ok := IF(@spd_exists = 0, 1, IF((SELECT LOWER(engine) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_progression_decisions') = 'innodb', 1, 0));
