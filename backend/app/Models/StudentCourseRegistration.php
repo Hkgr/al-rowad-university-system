@@ -12,9 +12,15 @@ class StudentCourseRegistration extends Model
 {
     public const CURRENT_STATUS = 'registered';
 
+    public const DROPPED_STATUS = 'dropped';
+
+    public const WITHDRAWN_STATUS = 'withdrawn';
+
     public const HISTORICAL_ATTEMPT_STATUSES = ['registered', 'completed'];
 
     public const EXCLUDED_STATUSES = ['dropped', 'withdrawn'];
+
+    public const REACTIVATABLE_STATUSES = ['dropped'];
 
     protected $table = 'student_course_registrations';
 
@@ -85,6 +91,15 @@ class StudentCourseRegistration extends Model
     public function studentCourseResult(): HasOne
     {
         return $this->hasOne(StudentCourseResult::class, 'student_course_registration_id', 'student_course_registration_id');
+    }
+
+    public function withdrawalRequests(): HasMany
+    {
+        return $this->hasMany(
+            StudentRegistrationWithdrawalRequest::class,
+            'student_course_registration_id',
+            'student_course_registration_id'
+        );
     }
 
     public function studentGradeComponents(): HasMany

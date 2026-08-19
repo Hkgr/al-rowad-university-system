@@ -7,10 +7,15 @@ use App\Http\Resources\AcademicYearResource;
 use App\Http\Resources\AvailableCourseOfferingResource;
 use App\Http\Resources\SemesterResource;
 use App\Http\Resources\StudentRegistrationSummaryResource;
+use App\Http\Resources\StudentCourseRegistrationResource;
 use App\Models\CourseOffering;
 use App\Models\Student;
+use App\Models\StudentCourseRegistration;
 use App\Models\StudentRegistrationRequestItem;
+use App\Models\StudentRegistrationWithdrawalRequest;
 use App\Services\RegistrationRequestService;
+use App\Services\RegistrationService;
+use App\Services\RegistrationWithdrawalService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -112,6 +117,62 @@ class StudentSelfRegistrationController extends Controller
             ['request' => $this->requests->studentRequestView($student, $result)],
             'تم إرسال طلب التسجيل إلى المرشد الأكاديمي.'
         );
+    }
+
+    public function drop(Request $request, StudentCourseRegistration $registration, RegistrationService $registrations): JsonResponse
+    {
+        $student = $this->authenticatedStudent($request);
+        $updated = $registrations->selfDrop($student, $registration);
+
+        return $this->successResponse(
+            ['registration' => (new StudentCourseRegistrationResource($updated))->resolve($request)],
+            'تم إسقاط المقرر.'
+        );
+    }
+
+    public function submitWithdrawal(
+        Request $request,
+        StudentCourseRegistration $registration,
+        RegistrationWithdrawalService $withdrawals
+    ): JsonResponse {
+        $student = $this->authenticatedStudent($request);
+        $validated = $request->validate([
+            'request_reason' => ['required', 'string', 'max:2000'],
+        ]);
+
+        return $this->successResponse(
+            ['withdrawal' => $withdrawals->submit($student, $request->user(), $registration, $validated['request_reason'])],
+            'تم إرسال طلب الانسحاب إلى المرشد الأكاديمي.',
+            201
+        );
+    }
+
+    public function resubmitWithdrawal(
+        Request $request,
+        StudentRegistrationWithdrawalRequest $withdrawalRequest,
+        RegistrationWithdrawalService $withdrawals
+    ): JsonResponse {
+        $student = $this->authenticatedStudent($request);
+        $validated = $request->validate([
+            'request_reason' => ['required', 'string', 'max:2000'],
+        ]);
+
+        return $this->successResponse(
+            ['withdrawal' => $withdrawals->resubmit(
+                $student,
+                $request->user(),
+                $withdrawalRequest,
+                $validated['request_reason']
+            )],
+            'تم إعادة إرسال طلب الانسحاب.'
+        );
+    }
+
+    public function withdrawals(Request $request, RegistrationWithdrawalService $withdrawals): JsonResponse
+    {
+        $student = $this->authenticatedStudent($request);
+
+        return $this->successResponse($withdrawals->studentIndex($student));
     }
 
     private function authenticatedStudent(Request $request): Student
