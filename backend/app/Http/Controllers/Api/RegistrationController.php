@@ -26,6 +26,8 @@ class RegistrationController extends Controller
 
     public function registerStudent(RegisterStudentRequest $request, RegistrationService $service): JsonResponse
     {
+        // Retained for historical callers. Live-semester registration must
+        // go through StudentRegistrationRequest -> Academic Advisor approval.
         $scope = app(DataScopeService::class);
         $student = Student::query()->findOrFail($request->integer('student_id'));
         $offering = CourseOffering::query()->findOrFail($request->integer('course_offering_id'));
@@ -44,6 +46,7 @@ class RegistrationController extends Controller
 
     public function drop(int $id, RegistrationService $service): JsonResponse
     {
+        // Retained for historical callers. Live add/drop uses student self-drop.
         $registration = $service->findOrFail($id);
         $this->authorizeRegistration($registration);
         $updatedRegistration = $service->dropRegistration($registration);
@@ -56,6 +59,7 @@ class RegistrationController extends Controller
 
     public function withdraw(int $id, RegistrationService $service): JsonResponse
     {
+        // Retained for historical callers. Live withdrawal uses the formal request.
         $registration = $service->findOrFail($id);
         $this->authorizeRegistration($registration);
         $updatedRegistration = $service->withdrawRegistration($registration);

@@ -24,6 +24,12 @@ class RegistrationService
 {
     public const DEFAULT_MAX_CREDIT_HOURS = 18;
 
+    /**
+     * Canonical lock order: Student -> CourseOffering (ascending id) ->
+     * StudentCourseRegistration (ascending id) -> current withdrawal request.
+     * See RegistrationLifecycle.
+     */
+
     private const UNSATISFACTORY_RESULT_STATUSES = ['deprived', 'withdrawn', 'incomplete', 'failed'];
 
     public function __construct(private AcademicRequirementService $requirements)
@@ -47,10 +53,13 @@ class RegistrationService
 
     public function registerStudent(array $data, ?int $authenticatedUserId = null): array
     {
+        throw RegistrationException::liveWorkflowRequired();
+    }
+
+    public function registerStudentWithinTransaction(array $data, ?int $authenticatedUserId = null): array
+    {
         try {
-            return DB::transaction(function () use ($data, $authenticatedUserId): array {
-                return $this->performRegisterStudent($data, $authenticatedUserId);
-            });
+            return $this->performRegisterStudent($data, $authenticatedUserId);
         } catch (QueryException $exception) {
             if ($this->isDuplicateRegistrationQueryException($exception)) {
                 $this->throwDuplicateRegistrationException();
@@ -58,11 +67,6 @@ class RegistrationService
 
             throw $exception;
         }
-    }
-
-    public function registerStudentWithinTransaction(array $data, ?int $authenticatedUserId = null): array
-    {
-        return $this->performRegisterStudent($data, $authenticatedUserId);
     }
 
     public function hoursSnapshot(Student $student, int $academicYearId, int $semesterId): array
@@ -114,6 +118,15 @@ class RegistrationService
 
         if ($this->registrationExists($student->student_id, $courseOffering->course_offering_id)) {
             $this->throwDuplicateRegistrationException();
+        }
+
+        $existing = $this->lockedRegistrationForOffering(
+            $student->student_id,
+            $courseOffering->course_offering_id
+        );
+        if ($existing !== null
+            && $existing->registrationStatus?->status_code === StudentCourseRegistration::WITHDRAWN_STATUS) {
+            throw RegistrationException::withdrawnNotReactivatable();
         }
 
         if ((int) $courseOffering->available_seats <= 0) {
@@ -190,8 +203,7 @@ class RegistrationService
             ]);
         }
 
-        $courseOffering->decrement('available_seats');
-        $courseOffering->refresh();
+        $this->decrementAvailableSeats($courseOffering);
 
         $registration->load([
             'student',
@@ -231,12 +243,23 @@ class RegistrationService
     private function findReactivatableRegistration(int $studentId, int $courseOfferingId): ?StudentCourseRegistration
     {
         return StudentCourseRegistration::query()
+            ->with('registrationStatus')
             ->where('student_id', $studentId)
             ->where('course_offering_id', $courseOfferingId)
             ->whereHas(
                 'registrationStatus',
-                fn (Builder $query) => $query->whereIn('status_code', StudentCourseRegistration::EXCLUDED_STATUSES)
+                fn (Builder $query) => $query->whereIn('status_code', StudentCourseRegistration::REACTIVATABLE_STATUSES)
             )
+            ->first();
+    }
+
+    private function lockedRegistrationForOffering(int $studentId, int $courseOfferingId): ?StudentCourseRegistration
+    {
+        return StudentCourseRegistration::query()
+            ->with('registrationStatus')
+            ->where('student_id', $studentId)
+            ->where('course_offering_id', $courseOfferingId)
+            ->orderBy('student_course_registration_id')
             ->first();
     }
 
@@ -260,34 +283,45 @@ class RegistrationService
 
     public function dropRegistration(StudentCourseRegistration $registration): StudentCourseRegistration
     {
-        return DB::transaction(function () use ($registration): StudentCourseRegistration {
-            $registration = StudentCourseRegistration::query()
-                ->with(['registrationStatus', 'courseOffering'])
-                ->lockForUpdate()
-                ->findOrFail($registration->student_course_registration_id);
+        throw RegistrationException::liveWorkflowRequired();
+    }
 
-            $statusCode = $registration->registrationStatus?->status_code;
+    public function withdrawRegistration(StudentCourseRegistration $registration): StudentCourseRegistration
+    {
+        throw RegistrationException::liveWorkflowRequired();
+    }
 
-            if ($statusCode === 'dropped') {
-                throw new RegistrationException('Registration is already dropped.');
+    public function selfDrop(Student $student, StudentCourseRegistration $registration): StudentCourseRegistration
+    {
+        return DB::transaction(function () use ($student, $registration): StudentCourseRegistration {
+            $this->lockStudent((int) $student->student_id);
+            $offering = $this->lockOffering((int) $registration->course_offering_id);
+            $locked = $this->lockRegistration((int) $registration->student_course_registration_id);
+            $locked->load(['registrationStatus', 'courseOffering']);
+
+            if ((int) $locked->student_id !== (int) $student->student_id) {
+                throw RegistrationException::notOwned();
             }
 
-            $droppedStatusId = $this->registrationStatusId('dropped');
-            if ($droppedStatusId === null) {
-                throw new ModelNotFoundException('Registration status "dropped" was not found.');
+            $statusCode = $locked->registrationStatus?->status_code;
+            if (in_array($statusCode, [
+                StudentCourseRegistration::DROPPED_STATUS,
+                StudentCourseRegistration::WITHDRAWN_STATUS,
+            ], true)) {
+                throw RegistrationException::notCurrent();
             }
 
-            if ($statusCode === StudentCourseRegistration::CURRENT_STATUS) {
-                CourseOffering::query()
-                    ->whereKey($registration->course_offering_id)
-                    ->lockForUpdate()
-                    ->first()
-                    ?->increment('available_seats');
+            if ($statusCode !== StudentCourseRegistration::CURRENT_STATUS) {
+                throw RegistrationException::notCurrent();
             }
 
-            $registration->update(['registration_status_id' => $droppedStatusId]);
+            if ($offering->status !== 'open') {
+                throw RegistrationException::selfDropClosed();
+            }
 
-            return $registration->fresh()->load([
+            $this->transitionRegisteredToDropped($locked, $offering);
+
+            return $locked->fresh()->load([
                 'student',
                 'courseOffering.course',
                 'courseOffering.academicYear',
@@ -298,48 +332,65 @@ class RegistrationService
         });
     }
 
-    public function withdrawRegistration(StudentCourseRegistration $registration): StudentCourseRegistration
+    public function transitionRegisteredToDropped(
+        StudentCourseRegistration $lockedRegistration,
+        CourseOffering $lockedOffering
+    ): void {
+        $this->assertLockedRegistrationIsRegistered($lockedRegistration);
+        $droppedStatusId = $this->registrationStatusId(StudentCourseRegistration::DROPPED_STATUS);
+        if ($droppedStatusId === null) {
+            throw new ModelNotFoundException('Registration status "dropped" was not found.');
+        }
+
+        $lockedRegistration->update(['registration_status_id' => $droppedStatusId]);
+        $this->incrementAvailableSeats($lockedOffering);
+    }
+
+    public function transitionRegisteredToWithdrawn(
+        StudentCourseRegistration $lockedRegistration,
+        CourseOffering $lockedOffering
+    ): void {
+        $this->assertLockedRegistrationIsRegistered($lockedRegistration);
+        $withdrawnStatusId = $this->registrationStatusId(StudentCourseRegistration::WITHDRAWN_STATUS);
+        if ($withdrawnStatusId === null) {
+            throw new ModelNotFoundException('Registration status "withdrawn" was not found.');
+        }
+
+        $lockedRegistration->update(['registration_status_id' => $withdrawnStatusId]);
+        $this->incrementAvailableSeats($lockedOffering);
+    }
+
+    public function lockStudent(int $studentId): Student
     {
-        return DB::transaction(function () use ($registration): StudentCourseRegistration {
-            $registration = StudentCourseRegistration::query()
-                ->with(['registrationStatus', 'courseOffering'])
-                ->lockForUpdate()
-                ->findOrFail($registration->student_course_registration_id);
-
-            $statusCode = $registration->registrationStatus?->status_code;
-
-            if ($statusCode === 'withdrawn') {
-                throw new RegistrationException('Registration is already withdrawn.');
-            }
-
-            if ($statusCode === 'dropped') {
-                throw new RegistrationException('Registration is already dropped.');
-            }
-
-            $withdrawnStatusId = $this->registrationStatusId('withdrawn');
-            if ($withdrawnStatusId === null) {
-                throw new ModelNotFoundException('Registration status "withdrawn" was not found.');
-            }
-
-            if ($statusCode === StudentCourseRegistration::CURRENT_STATUS) {
-                CourseOffering::query()
-                    ->whereKey($registration->course_offering_id)
-                    ->lockForUpdate()
-                    ->first()
-                    ?->increment('available_seats');
-            }
-
-            $registration->update(['registration_status_id' => $withdrawnStatusId]);
-
-            return $registration->fresh()->load([
-                'student',
-                'courseOffering.course',
-                'courseOffering.academicYear',
-                'courseOffering.semester',
-                'registrationStatus',
-                'resultStatus',
+        $student = Student::query()->whereKey($studentId)->lockForUpdate()->first();
+        if ($student === null) {
+            throw new RegistrationException('The selected student does not exist.', [
+                'student_id' => ['The selected student does not exist.'],
             ]);
-        });
+        }
+
+        return $student;
+    }
+
+    public function lockOffering(int $offeringId): CourseOffering
+    {
+        $offering = CourseOffering::query()->whereKey($offeringId)->lockForUpdate()->first();
+        if ($offering === null) {
+            throw new RegistrationException('The selected course offering does not exist.', [
+                'course_offering_id' => ['The selected course offering does not exist.'],
+            ]);
+        }
+
+        return $offering;
+    }
+
+    public function lockRegistration(int $registrationId): StudentCourseRegistration
+    {
+        return StudentCourseRegistration::query()
+            ->with('registrationStatus')
+            ->whereKey($registrationId)
+            ->lockForUpdate()
+            ->firstOrFail();
     }
 
     public function getRegisteredHours(Student $student, int $academicYearId, int $semesterId): array
@@ -652,23 +703,24 @@ class RegistrationService
     public function assertSelfDropAllowed(Student $student, StudentCourseRegistration $registration): void
     {
         if ((int) $registration->student_id !== (int) $student->student_id) {
-            throw new RegistrationException('You can only drop your own course registration.', [
-                'registration' => ['You can only drop your own course registration.'],
-            ], 403);
+            throw RegistrationException::notOwned();
         }
 
         $registration->loadMissing(['registrationStatus', 'courseOffering']);
 
+        if (in_array($registration->registrationStatus?->status_code, [
+            StudentCourseRegistration::DROPPED_STATUS,
+            StudentCourseRegistration::WITHDRAWN_STATUS,
+        ], true)) {
+            throw RegistrationException::notCurrent();
+        }
+
         if ($registration->registrationStatus?->status_code !== StudentCourseRegistration::CURRENT_STATUS) {
-            throw new RegistrationException('Only a current registration can be dropped.', [
-                'registration' => ['Only a current registration can be dropped.'],
-            ]);
+            throw RegistrationException::notCurrent();
         }
 
         if ($registration->courseOffering?->status !== 'open') {
-            throw new RegistrationException('Self-drop is not allowed after registration has closed for this offering.', [
-                'registration' => ['Self-drop is not allowed after registration has closed for this offering.'],
-            ]);
+            throw RegistrationException::selfDropClosed();
         }
     }
 
@@ -835,5 +887,42 @@ class RegistrationService
         return RegistrationStatus::query()
             ->where('status_code', $statusCode)
             ->value('registration_status_id');
+    }
+
+    private function assertLockedRegistrationIsRegistered(StudentCourseRegistration $registration): void
+    {
+        $registration->loadMissing('registrationStatus');
+        if ($registration->registrationStatus?->status_code !== StudentCourseRegistration::CURRENT_STATUS) {
+            throw RegistrationException::notCurrent();
+        }
+    }
+
+    private function decrementAvailableSeats(CourseOffering $offering): void
+    {
+        $affected = CourseOffering::query()
+            ->whereKey($offering->course_offering_id)
+            ->where('available_seats', '>', 0)
+            ->update(['available_seats' => DB::raw('available_seats - 1')]);
+
+        if ($affected !== 1) {
+            throw new RegistrationException('No available seats remain for the selected course offering.', [
+                'course_offering_id' => ['No available seats remain for the selected course offering.'],
+            ]);
+        }
+
+        $offering->refresh();
+        if ((int) $offering->available_seats < 0) {
+            throw new RegistrationException('No available seats remain for the selected course offering.', [
+                'course_offering_id' => ['No available seats remain for the selected course offering.'],
+            ]);
+        }
+    }
+
+    private function incrementAvailableSeats(CourseOffering $offering): void
+    {
+        CourseOffering::query()
+            ->whereKey($offering->course_offering_id)
+            ->update(['available_seats' => DB::raw('available_seats + 1')]);
+        $offering->refresh();
     }
 }
