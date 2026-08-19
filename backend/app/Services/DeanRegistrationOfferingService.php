@@ -570,8 +570,14 @@ class DeanRegistrationOfferingService
 
     public function canManage(User $user): bool
     {
-        return $user->hasPermission('course_offerings.manage')
-            || $user->hasPermission('courses.manage');
+        if (! $user->isDean()) {
+            return false;
+        }
+
+        $permissions = $user->effectivePermissions();
+
+        return $permissions->contains('course_offerings.manage')
+            || $permissions->contains('courses.manage');
     }
 
     private function curriculumLevels(
