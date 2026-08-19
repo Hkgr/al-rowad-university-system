@@ -122,6 +122,13 @@ class StudentRegistrationLifecycleContractTest extends TestCase
         $readme = self::source('database/sql/student-registration-lifecycle/README.md');
         self::assertStringContainsString('REG9-36', $readme);
         self::assertStringContainsString('SQL-REG9', $readme);
+        self::assertStringContainsString('SQL-REG9-37', $readme);
+        self::assertStringContainsString('SQL-REG9-38', $readme);
+        self::assertStringContainsString('SQL-REG9-39', $readme);
+        self::assertStringContainsString('SQL-REG9-40', $readme);
+        self::assertStringContainsString('SQL-REG9-41', $readme);
+        self::assertStringContainsString('SQL-REG9-42', $readme);
+        self::assertStringContainsString('SQL-REG9-RB1', $readme);
         self::assertStringContainsString('BLOCKED_IN_USE', $readme);
         self::assertStringContainsString('students', $readme);
         self::assertStringContainsString('course_offerings', $readme);
@@ -133,7 +140,39 @@ class StudentRegistrationLifecycleContractTest extends TestCase
         $rollback = self::source('database/sql/student-registration-lifecycle/03_rollback.sql');
         self::assertStringContainsString('PREPARE stmt FROM @sql', $rollback);
         self::assertStringContainsString('BLOCKED_IN_USE', $rollback);
+        self::assertStringContainsString('retained_no_provenance', $rollback);
         self::assertStringNotContainsString('DROP TABLE `alrowad_uni_rust`.`student_course_registrations`', $rollback);
+        self::assertStringNotContainsString(
+            "DELETE FROM `alrowad_uni_rust`.`permissions`",
+            $rollback
+        );
+        self::assertStringNotContainsString(
+            'DELETE rp FROM `alrowad_uni_rust`.`role_permissions`',
+            $rollback
+        );
+
+        $verify = self::source('database/sql/student-registration-lifecycle/02_verify.sql');
+        self::assertStringContainsString('wr.student_id <> scr.student_id', $verify);
+        self::assertStringContainsString("status_code <> ''withdrawn''", $verify);
+        self::assertStringContainsString("index_name = 'idx_srwr_student_status'", $verify);
+        self::assertStringContainsString("ENGINE FROM information_schema.tables", $verify);
+        self::assertStringContainsString('academic_advisor', $verify);
+        self::assertStringContainsString("column_name = 'submission_version'", $verify);
+
+        foreach (['00_preflight.sql', '01_apply.sql', '02_verify.sql'] as $shared) {
+            $sql = self::source('database/sql/student-registration-lifecycle/'.$shared);
+            self::assertStringContainsString("index_name = 'idx_srwr_student_status'", $sql);
+            self::assertStringContainsString("index_name = 'uq_srwr_current_slot'", $sql);
+            self::assertMatchesRegularExpression(
+                "/index_name = 'idx_srwr_student_status'\\s*\\)\\s*= 1/s",
+                $sql,
+                $shared.' must require idx_srwr_student_status NON_UNIQUE = 1.'
+            );
+            self::assertDoesNotMatchRegularExpression(
+                "/index_name = 'idx_srwr_student_status'\\s*\\)\\s*= 0/s",
+                $sql
+            );
+        }
     }
 
     public function test_no_laravel_migration_was_added_for_phase9(): void

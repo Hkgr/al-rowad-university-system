@@ -160,6 +160,11 @@ Statuses: `submitted`, `returned`, `approved`, `superseded`.
 4. `03_rollback.sql` — unused/absent/partial safe. `BLOCKED_IN_USE` when
    withdrawal history exists. Never drops original registration tables.
    Optional tables are never referenced inside statically parsed `IF()`.
+   Permissions `registration_withdrawals.view` / `review` and their
+   `role_permissions` are **retained**: preflight treats a pre-existing
+   compatible permission as COMPATIBLE, and rollback cannot prove Phase 9
+   ownership of those rows. Leaving unused RBAC is safer than deleting
+   pre-existing grants.
 
 Fully qualify `alrowad_uni_rust`. Never use `DATABASE()`.
 
@@ -215,3 +220,33 @@ SQL-REG9:
 - rollback after history -> BLOCKED_IN_USE
 - RBAC drift between preflight/apply -> apply BLOCKED
 - optional table absent rollback -> no `#1146` error
+
+SQL-REG9-RB1 / SQL-REG9-42
+Pre-existing compatible `registration_withdrawals.view` / `review` and
+Academic Advisor grants exist before Phase 9. Run preflight/apply/rollback
+with no withdrawal history. Expected: pre-existing RBAC remains untouched.
+
+SQL-REG9-37
+Withdrawal request `student_id` differs from the target registration
+`student_id`. Expected: `02_verify` `OVERALL = FAIL`.
+
+SQL-REG9-38
+Withdrawal request is approved + materialized but the target registration
+status is still `registered` (or anything other than `withdrawn`).
+Expected: `02_verify` `OVERALL = FAIL`.
+
+SQL-REG9-39
+All Phase 9 indexes exist exactly as created by `01_apply.sql`
+(`uq_srwr_current_slot` UNIQUE; `idx_srwr_student_status`,
+`idx_srwr_reviewer`, `idx_srwe_request`, `idx_srwe_actor` NON-UNIQUE).
+Expected: PASS.
+
+SQL-REG9-40
+`idx_srwr_student_status` (or another intended NON-UNIQUE index) exists
+as UNIQUE instead of NON-UNIQUE. Expected: preflight/apply classify the
+existing table as CONFLICT (not silently COMPATIBLE); verify FAIL.
+
+SQL-REG9-41
+Phase 9 tables exist with a storage engine other than InnoDB.
+Expected: verify FAIL. Preflight/apply treat an existing wrong engine as
+CONFLICT.

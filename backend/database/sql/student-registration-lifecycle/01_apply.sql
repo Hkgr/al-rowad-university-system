@@ -3,6 +3,7 @@
 -- DDL (CREATE TABLE) commits implicitly in MariaDB; do not wrap this file in one transaction.
 -- Independently recomputes the same critical safety conditions as 00_preflight.sql,
 -- including the exact Phase 9 RBAC matrix, before any write.
+-- Named NON-UNIQUE indexes that already exist as UNIQUE are CONFLICT.
 -- RBAC DML runs in its own transaction and COMMITs only when post-write
 -- verification of that matrix succeeds; otherwise ROLLBACK.
 -- Do not use stored procedures, DELIMITER, SIGNAL, or DATABASE().
@@ -162,6 +163,7 @@ SET @srwr_columns_ok := IF(
            OR c.is_nullable <> required.is_nullable
            OR (required.data_type IN ('int', 'tinyint') AND LOWER(c.column_type) LIKE '%unsigned%')
            OR (required.column_name = 'status' AND IFNULL(c.character_maximum_length, 0) < 40)
+           OR (required.column_name = 'submission_version' AND TRIM(BOTH '''' FROM IFNULL(c.column_default, '')) <> '1')
     ) = 0, 1, 0)
 );
 
@@ -207,19 +209,113 @@ SET @srwe_engine_ok := IF(
     IF((SELECT ENGINE FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_registration_withdrawal_events') = 'InnoDB', 1, 0)
 );
 
-SET @srwr_uq_ok := IF(
+SET @idx_srwr_current_slot_ok := IF(
     @srwr_exists = 0,
     1,
-    IF(EXISTS (
-        SELECT 1 FROM information_schema.statistics
-        WHERE table_schema = 'alrowad_uni_rust'
-          AND table_name = 'student_registration_withdrawal_requests'
-          AND non_unique = 0
-          AND index_name <> 'PRIMARY'
-        GROUP BY index_name
-        HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'student_course_registration_id,current_slot'
-    ), 1, 0)
+    IF(
+        (
+            SELECT MIN(non_unique)
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'student_registration_withdrawal_requests'
+              AND index_name = 'uq_srwr_current_slot'
+        ) = 0
+        AND (
+            SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index)
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'student_registration_withdrawal_requests'
+              AND index_name = 'uq_srwr_current_slot'
+        ) <=> 'student_course_registration_id,current_slot',
+        1, 0
+    )
 );
+SET @idx_srwr_student_status_ok := IF(
+    @srwr_exists = 0,
+    1,
+    IF(
+        (
+            SELECT MIN(non_unique)
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'student_registration_withdrawal_requests'
+              AND index_name = 'idx_srwr_student_status'
+        ) = 1
+        AND (
+            SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index)
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'student_registration_withdrawal_requests'
+              AND index_name = 'idx_srwr_student_status'
+        ) <=> 'student_id,status',
+        1, 0
+    )
+);
+SET @idx_srwr_reviewer_ok := IF(
+    @srwr_exists = 0,
+    1,
+    IF(
+        (
+            SELECT MIN(non_unique)
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'student_registration_withdrawal_requests'
+              AND index_name = 'idx_srwr_reviewer'
+        ) = 1
+        AND (
+            SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index)
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'student_registration_withdrawal_requests'
+              AND index_name = 'idx_srwr_reviewer'
+        ) <=> 'reviewed_by_user_id',
+        1, 0
+    )
+);
+SET @idx_srwe_request_ok := IF(
+    @srwe_exists = 0,
+    1,
+    IF(
+        (
+            SELECT MIN(non_unique)
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'student_registration_withdrawal_events'
+              AND index_name = 'idx_srwe_request'
+        ) = 1
+        AND (
+            SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index)
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'student_registration_withdrawal_events'
+              AND index_name = 'idx_srwe_request'
+        ) <=> 'student_registration_withdrawal_request_id,created_at',
+        1, 0
+    )
+);
+SET @idx_srwe_actor_ok := IF(
+    @srwe_exists = 0,
+    1,
+    IF(
+        (
+            SELECT MIN(non_unique)
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'student_registration_withdrawal_events'
+              AND index_name = 'idx_srwe_actor'
+        ) = 1
+        AND (
+            SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index)
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'student_registration_withdrawal_events'
+              AND index_name = 'idx_srwe_actor'
+        ) <=> 'actor_user_id',
+        1, 0
+    )
+);
+
+SET @srwr_uq_ok := @idx_srwr_current_slot_ok;
 
 SET @srwr_fk_ok := IF(
     @srwr_exists = 0,
@@ -321,8 +417,21 @@ SET @rbac_extra_grants := IF(
 );
 
 SET @phase9_conflict := IF(
-    (@srwr_exists = 1 AND (@srwr_columns_ok = 0 OR @srwr_engine_ok = 0 OR @srwr_uq_ok = 0 OR @srwr_fk_ok = 0))
-    OR (@srwe_exists = 1 AND (@srwe_columns_ok = 0 OR @srwe_engine_ok = 0 OR @srwe_fk_ok = 0))
+    (@srwr_exists = 1 AND (
+        @srwr_columns_ok = 0
+        OR @srwr_engine_ok = 0
+        OR @idx_srwr_current_slot_ok = 0
+        OR @idx_srwr_student_status_ok = 0
+        OR @idx_srwr_reviewer_ok = 0
+        OR @srwr_fk_ok = 0
+    ))
+    OR (@srwe_exists = 1 AND (
+        @srwe_columns_ok = 0
+        OR @srwe_engine_ok = 0
+        OR @idx_srwe_request_ok = 0
+        OR @idx_srwe_actor_ok = 0
+        OR @srwe_fk_ok = 0
+    ))
     OR @perm_view_ok = 0
     OR @perm_review_ok = 0
     OR @rbac_extra_grants > 0,

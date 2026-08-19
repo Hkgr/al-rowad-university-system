@@ -5,6 +5,7 @@
 -- Compatibility predicates below must stay equivalent in 01_apply.sql and 02_verify.sql.
 -- Missing Phase 9 tables/permissions are READY (apply will create them).
 -- Partial or conflicting Phase 9 objects are BLOCKED.
+-- An existing intended NON-UNIQUE index that is UNIQUE is CONFLICT.
 -- Do not grant registration_withdrawals.* to dean, student, vice_president, or super_admin.
 
 SET @db_ready := IF(
@@ -158,6 +159,7 @@ SET @srwr_columns_ok := IF(
            OR c.is_nullable <> required.is_nullable
            OR (required.data_type IN ('int', 'tinyint') AND LOWER(c.column_type) LIKE '%unsigned%')
            OR (required.column_name = 'status' AND IFNULL(c.character_maximum_length, 0) < 40)
+           OR (required.column_name = 'submission_version' AND TRIM(BOTH '''' FROM IFNULL(c.column_default, '')) <> '1')
     ) = 0, 1, 0)
 );
 
@@ -203,19 +205,113 @@ SET @srwe_engine_ok := IF(
     IF((SELECT ENGINE FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_registration_withdrawal_events') = 'InnoDB', 1, 0)
 );
 
-SET @srwr_uq_ok := IF(
+SET @idx_srwr_current_slot_ok := IF(
     @srwr_exists = 0,
     1,
-    IF(EXISTS (
-        SELECT 1 FROM information_schema.statistics
-        WHERE table_schema = 'alrowad_uni_rust'
-          AND table_name = 'student_registration_withdrawal_requests'
-          AND non_unique = 0
-          AND index_name <> 'PRIMARY'
-        GROUP BY index_name
-        HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'student_course_registration_id,current_slot'
-    ), 1, 0)
+    IF(
+        (
+            SELECT MIN(non_unique)
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'student_registration_withdrawal_requests'
+              AND index_name = 'uq_srwr_current_slot'
+        ) = 0
+        AND (
+            SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index)
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'student_registration_withdrawal_requests'
+              AND index_name = 'uq_srwr_current_slot'
+        ) <=> 'student_course_registration_id,current_slot',
+        1, 0
+    )
 );
+SET @idx_srwr_student_status_ok := IF(
+    @srwr_exists = 0,
+    1,
+    IF(
+        (
+            SELECT MIN(non_unique)
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'student_registration_withdrawal_requests'
+              AND index_name = 'idx_srwr_student_status'
+        ) = 1
+        AND (
+            SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index)
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'student_registration_withdrawal_requests'
+              AND index_name = 'idx_srwr_student_status'
+        ) <=> 'student_id,status',
+        1, 0
+    )
+);
+SET @idx_srwr_reviewer_ok := IF(
+    @srwr_exists = 0,
+    1,
+    IF(
+        (
+            SELECT MIN(non_unique)
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'student_registration_withdrawal_requests'
+              AND index_name = 'idx_srwr_reviewer'
+        ) = 1
+        AND (
+            SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index)
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'student_registration_withdrawal_requests'
+              AND index_name = 'idx_srwr_reviewer'
+        ) <=> 'reviewed_by_user_id',
+        1, 0
+    )
+);
+SET @idx_srwe_request_ok := IF(
+    @srwe_exists = 0,
+    1,
+    IF(
+        (
+            SELECT MIN(non_unique)
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'student_registration_withdrawal_events'
+              AND index_name = 'idx_srwe_request'
+        ) = 1
+        AND (
+            SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index)
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'student_registration_withdrawal_events'
+              AND index_name = 'idx_srwe_request'
+        ) <=> 'student_registration_withdrawal_request_id,created_at',
+        1, 0
+    )
+);
+SET @idx_srwe_actor_ok := IF(
+    @srwe_exists = 0,
+    1,
+    IF(
+        (
+            SELECT MIN(non_unique)
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'student_registration_withdrawal_events'
+              AND index_name = 'idx_srwe_actor'
+        ) = 1
+        AND (
+            SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index)
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'student_registration_withdrawal_events'
+              AND index_name = 'idx_srwe_actor'
+        ) <=> 'actor_user_id',
+        1, 0
+    )
+);
+
+SET @srwr_uq_ok := @idx_srwr_current_slot_ok;
 
 SET @srwr_fk_ok := IF(
     @srwr_exists = 0,
@@ -318,12 +414,12 @@ SET @rbac_extra_grants := IF(
 
 SET @requests_state := CASE
     WHEN @srwr_exists = 0 THEN 'ABSENT'
-    WHEN @srwr_columns_ok = 1 AND @srwr_engine_ok = 1 AND @srwr_uq_ok = 1 AND @srwr_fk_ok = 1 THEN 'COMPATIBLE'
+    WHEN @srwr_columns_ok = 1 AND @srwr_engine_ok = 1 AND @idx_srwr_current_slot_ok = 1 AND @idx_srwr_student_status_ok = 1 AND @idx_srwr_reviewer_ok = 1 AND @srwr_fk_ok = 1 THEN 'COMPATIBLE'
     ELSE 'CONFLICT'
 END;
 SET @events_state := CASE
     WHEN @srwe_exists = 0 THEN 'ABSENT'
-    WHEN @srwe_columns_ok = 1 AND @srwe_engine_ok = 1 AND @srwe_fk_ok = 1 THEN 'COMPATIBLE'
+    WHEN @srwe_columns_ok = 1 AND @srwe_engine_ok = 1 AND @idx_srwe_request_ok = 1 AND @idx_srwe_actor_ok = 1 AND @srwe_fk_ok = 1 THEN 'COMPATIBLE'
     ELSE 'CONFLICT'
 END;
 SET @perm_view_state := CASE
