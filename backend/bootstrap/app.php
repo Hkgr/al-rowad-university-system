@@ -5,6 +5,7 @@ use App\Exceptions\AttendanceException;
 use App\Exceptions\CourseOfferingContextException;
 use App\Exceptions\DisciplinaryCaseException;
 use App\Exceptions\GradeException;
+use App\Exceptions\CourseOfferingClosureException;
 use App\Exceptions\ExceptionalOpeningException;
 use App\Exceptions\GraduationEligibilityException;
 use App\Exceptions\OfferingInstructorCoverageException;
@@ -165,6 +166,19 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->render(function (ExceptionalOpeningException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (CourseOfferingClosureException $exception, Request $request) {
             if (! $request->is('api/*')) {
                 return null;
             }

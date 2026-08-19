@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\CourseOfferingClosureException;
 use App\Exceptions\CourseOfferingContextException;
 use App\Exceptions\TeachingAssignmentException;
 use App\Http\Requests\CourseOffering\StoreCourseOfferingRequest;
@@ -104,12 +105,20 @@ class CourseOfferingController extends ApiController
 
         $requestedOpen = array_key_exists('status', $data)
             && (string) $data['status'] === CourseOfferingOpeningService::STATUS_OPEN;
+        $requestedClosed = array_key_exists('status', $data)
+            && (string) $data['status'] === CourseOfferingOpeningService::STATUS_CLOSED;
 
         $offering = $this->opening->applyThenGuardOpenCoverage(
             $offering,
-            function (CourseOffering $locked) use ($data, $request, $requestedOpen): void {
+            function (CourseOffering $locked) use ($data, $request, $requestedOpen, $requestedClosed): void {
                 $attributes = $this->attributesForOfferingUpdate($locked, $data, $request);
                 if ($requestedOpen) {
+                    unset($attributes['status']);
+                }
+                if ($requestedClosed) {
+                    if ((string) $locked->status === CourseOfferingOpeningService::STATUS_OPEN) {
+                        throw CourseOfferingClosureException::workflowRequired();
+                    }
                     unset($attributes['status']);
                 }
                 $this->offeringContext->updateOffering($locked, $attributes);

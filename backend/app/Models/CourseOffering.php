@@ -72,6 +72,17 @@ class CourseOffering extends Model
             ->where('current_slot', 1);
     }
 
+    public function closureRequests(): HasMany
+    {
+        return $this->hasMany(CourseOfferingClosureRequest::class, 'course_offering_id', 'course_offering_id');
+    }
+
+    public function currentClosureRequest(): HasOne
+    {
+        return $this->hasOne(CourseOfferingClosureRequest::class, 'course_offering_id', 'course_offering_id')
+            ->where('current_slot', 1);
+    }
+
     public function academicProgram(): BelongsTo
     {
         return $this->belongsTo(AcademicProgram::class, 'academic_program_id', 'academic_program_id');

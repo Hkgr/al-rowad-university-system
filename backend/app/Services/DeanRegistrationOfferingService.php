@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\CourseOfferingClosureException;
 use App\Exceptions\CourseOfferingContextException;
 use App\Models\AcademicProgram;
 use App\Models\AcademicYear;
@@ -285,13 +286,7 @@ class DeanRegistrationOfferingService
                 throw new ConflictHttpException('تعذّر تنفيذ العملية بسبب تغير حالة المادة. أعد تحميل البيانات وحاول مجددًا.');
             }
 
-            $offering->status = self::STATUS_CLOSED;
-            $offering->save();
-
-            return [
-                'action' => 'closed',
-                'offering' => $this->offeringPayload($this->hydrateOffering($offering)),
-            ];
+            throw CourseOfferingClosureException::workflowRequired();
         });
     }
 
