@@ -28,6 +28,7 @@ use App\Services\RegistrationService;
 use App\Services\AcademicAuthorizationService;
 use App\Services\DataScopeService;
 use App\Services\StudentPermanentDeleteGuard;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -233,23 +234,51 @@ class StudentController extends ApiController
 
     public function forceDestroy(int $id, StudentPermanentDeleteGuard $guard): JsonResponse
     {
-        $student = Student::withTrashed()->findOrFail($id);
-        Gate::authorize('forceDelete', $student);
-        $blockingCategories = $guard->blockingCategories($student);
+        return DB::transaction(function () use ($id, $guard): JsonResponse {
+            $student = Student::withTrashed()
+                ->whereKey($id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            Gate::authorize('forceDelete', $student);
 
-        if ($blockingCategories !== []) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Student cannot be permanently deleted because academic or workflow history exists.',
-                'error_code' => StudentPermanentDeleteGuard::ERROR_CODE,
-                'blocking_categories' => $blockingCategories,
-                'errors' => ['blocking_categories' => $blockingCategories],
-            ], 409);
-        }
+            if (! $student->trashed()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'A student must be archived before permanent deletion.',
+                    'error_code' => StudentPermanentDeleteGuard::REQUIRES_ARCHIVE,
+                    'errors' => [],
+                ], 409);
+            }
 
-        $student->forceDelete();
+            $blockingCategories = $guard->blockingCategories($student);
+            if ($blockingCategories !== []) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Student cannot be permanently deleted because academic or workflow history exists.',
+                    'error_code' => StudentPermanentDeleteGuard::ERROR_CODE,
+                    'blocking_categories' => $blockingCategories,
+                    'errors' => ['blocking_categories' => $blockingCategories],
+                ], 409);
+            }
 
-        return $this->successResponse(null, 'Student permanently deleted successfully.');
+            try {
+                $student->forceDelete();
+            } catch (QueryException $exception) {
+                if (! $guard->isRestrictedForeignKey($exception)) {
+                    throw $exception;
+                }
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Student cannot be permanently deleted because academic or workflow history exists.',
+                    'error_code' => StudentPermanentDeleteGuard::ERROR_CODE,
+                    'blocking_categories' => ['related_history'],
+                    'errors' => ['blocking_categories' => ['related_history']],
+                ], 409);
+            }
+
+            return $this->successResponse(null, 'Student permanently deleted successfully.');
+        });
     }
 
     public function search(Request $request): JsonResponse

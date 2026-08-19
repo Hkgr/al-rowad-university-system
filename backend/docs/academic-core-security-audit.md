@@ -23,8 +23,10 @@ student deletion.
 | BLOCKER | `POST /api/login` had no throttle | `throttle:login` — 5/minute per normalized email + IP |
 | BLOCKER | Login did not write `login_audit_logs` | `LoginAuditService` records success / failed / inactive |
 | BLOCKER | API catch-all `Throwable` turned 401/403/429 into HTTP 500 | Explicit `AuthenticationException`, `AuthorizationException`, `ThrottleRequestsException`, HTTP exceptions |
-| BLOCKER | `forceDestroy` ignored Phase 9/10 history | `StudentPermanentDeleteGuard` blocks on workflow history; HTTP 409 `student_permanent_delete_blocked` |
+| BLOCKER | `forceDestroy` ignored Phase 9/10 history and could delete an active unused student | Archive is required first (`student_permanent_delete_requires_archive`); history still HTTP 409 `student_permanent_delete_blocked`; decision is `lockForUpdate` + transactional |
 | SHOULD HARDEN | Generic offering update could write non-open/closed `status` and `available_seats` | Status and seats stripped; `available_seats` prohibited on update; create seats = capacity |
+| SHOULD HARDEN | PATCH `capacity` could desync `available_seats` | Offering-first lock; occupied = current registered rows; `available_seats = capacity - occupied`; HTTP 409 `course_offering_capacity_below_occupied` |
+| SHOULD HARDEN | Login skipped bcrypt when the email was unknown | Constant-cost `Hash::check` against a dummy bcrypt hash; success audit only after `createToken` |
 | SHOULD HARDEN | Academic queues loaded unbounded result sets | Bounded pagination (`per_page` max 100) on progression, graduation, registration, and withdrawal queues |
 | SHOULD HARDEN | Term identity `QueryException` catch-all hid real DB errors | Convert only MariaDB 1062 / `uq_student_term` |
 | SHOULD HARDEN | Registration duplicate detector treated every SQLSTATE `23000` as duplicate | Convert only 1062 / `uq_student_course_offering` |
@@ -78,6 +80,13 @@ Object-level `DataScopeService` remains the only scope framework.
 ## Destructive-operation safeguards
 
 Permanent student delete is allowed only for an unused archived shell.
+An active/non-trashed student is rejected with HTTP 409
+`student_permanent_delete_requires_archive`. The request never archives and
+force-deletes in one step. The destroy path locks `Student::withTrashed()`
+with `lockForUpdate()`, then checks archive + blocking history before
+`forceDelete()`. A remaining MariaDB parent-row FK race (errno 1451) maps
+to `student_permanent_delete_blocked` without leaking SQLSTATE.
+
 Blocking categories (safe names, never SQL constraint names):
 
 `registrations`, `attendance`, `documents`, `academic_terms`,
@@ -115,7 +124,10 @@ workflows.
 
 - Login throttle: 5 attempts / minute / (`strtolower(email)` + IP)
 - HTTP 429 `too_many_requests` (does not reveal whether the email exists)
-- Invalid credentials remain the generic 422 message
+- Invalid credentials remain the generic 422 message for unknown email and
+  wrong password. One bcrypt `Hash::check` always runs; missing users are
+  checked against a dummy hash constant, never a plaintext credential.
+- `login_status = success` is recorded only after `createToken` succeeds
 - Audit rows: `user_id`, `username_attempted`, `login_status`, `ip_address`,
   `user_agent`, `attempted_at` — never password, token, or hash
 - If `login_audit_logs` is missing, login still succeeds and the write is
@@ -133,6 +145,12 @@ workflows.
 
 See `backend/docs/production-academic-core-checklist.md` and
 `backend/database/sql/system-hardening-audit/`.
+
+The Phase 11 SQL audit is **READ ONLY**. Missing required tables or
+required columns yield `OVERALL = FAIL` without `#1146` / `#1054`. It
+reuses the exact Phase 8–10 current-slot UNIQUE index contracts and the
+existing academic-governance mutation permission codes. It does not
+apply schema.
 
 ## Known out-of-scope risks
 

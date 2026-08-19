@@ -10,6 +10,7 @@ use App\Models\Course;
 use App\Models\CourseOffering;
 use App\Models\ProgramCourse;
 use App\Models\Semester;
+use App\Models\StudentCourseRegistration;
 use App\Models\User;
 use App\Support\CourseOfferingContext;
 use Illuminate\Database\QueryException;
@@ -164,6 +165,7 @@ class CourseOfferingContextService
     {
         try {
             unset($attributes['faculty_member_id']);
+            $this->applyCapacityChange($offering, $attributes);
             // Opening is an academic invariant owned by CourseOfferingOpeningService.
             // Generic update must not write status=open even for courses.manage / super_admin.
             if (array_key_exists('status', $attributes)
@@ -199,6 +201,44 @@ class CourseOfferingContextService
 
         return $errorCode === 1062
             || str_contains($message, self::UNIQUE_INDEX);
+    }
+
+    /**
+     * Offering-first lock, then current registered rows. Compatible with
+     * RegistrationService seat mutation. Client never supplies available_seats.
+     *
+     * occupied = current StudentCourseRegistration rows with status_code registered.
+     * available_seats = new_capacity - occupied.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    public function applyCapacityChange(CourseOffering $offering, array &$attributes): void
+    {
+        unset($attributes['available_seats']);
+        if (! array_key_exists('capacity', $attributes)) {
+            return;
+        }
+
+        CourseOffering::query()
+            ->whereKey($offering->course_offering_id)
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        $occupied = StudentCourseRegistration::query()
+            ->where('course_offering_id', $offering->course_offering_id)
+            ->current()
+            ->orderBy('student_course_registration_id')
+            ->lockForUpdate()
+            ->count();
+        // occupied current registrations = current registered rows (status_code registered).
+
+        $newCapacity = (int) $attributes['capacity'];
+        if ($newCapacity < $occupied) {
+            throw CourseOfferingContextException::capacityBelowOccupied();
+        }
+
+        $attributes['capacity'] = $newCapacity;
+        $attributes['available_seats'] = $newCapacity - $occupied;
     }
 
     public function hasHistoricalDependents(CourseOffering $offering): bool

@@ -37,7 +37,39 @@ requires a repair script.
 - Does not use `DATABASE()`
 - No `INSERT` / `UPDATE` / `DELETE` / `ALTER` / `CREATE` / `DROP` / `TRUNCATE`
 - Missing infrastructure yields `FAIL`, not SQL error `#1146` / `#1054`
-- Optional cross-phase objects are queried only after `information_schema` guards
+- A required **table present with a required column missing** yields `FAIL`
+  (`required_core_columns`) without querying that object
+- Phase 8/9/10 workflow queries run only after both TABLE and COLUMN guards
+- `teaching_assignment_requests.action_type` missing is `FAIL`
+- Current-slot UNIQUE indexes reuse the exact Phase 8/9/10 contracts:
+  `uq_tar_current_slot`, `uq_srwr_current_slot`, `uq_spd_current_slot`,
+  `uq_sgd_current_slot`
+- Course Offering `status` must be `open` or `closed`
+- `capacity >= 1`, `available_seats` between 0 and `capacity`
+- Seat occupancy: `available_seats = capacity - count(registered)` using
+  `registration_statuses.status_code = 'registered'` only (dropped/withdrawn
+  are not occupied). `student_course_registrations` has no `current_slot`;
+  registered status is the current-row definition. If this FAILs, the seat
+  counter drifted; repair is a DBA operation, not a Phase 11 apply script.
+- Generic `vice_president` must not hold dedicated academic mutation review
+  authority from Phases 6–10 (teaching assignment, exceptional opening,
+  closure, withdrawal, academic-record finalize, progression, graduation)
+- `super_admin` must not hold those explicit mutation mappings either
+
+## Acceptance cases (SQL-HARD11)
+
+| Id | Condition | Expected |
+|---|---|---|
+| SQL-HARD11-01 | Required table exists, required referenced column missing | `OVERALL = FAIL`, no `#1054` |
+| SQL-HARD11-02 | `action_type` missing | `teaching_assignment_action_types` / OVERALL FAIL |
+| SQL-HARD11-03 | `uq_srwr_current_slot` missing | `withdrawal_current_slot_unique` FAIL |
+| SQL-HARD11-04 | `uq_spd_current_slot` missing | `progression_current_slot_unique` FAIL |
+| SQL-HARD11-05 | `uq_sgd_current_slot` missing | `graduation_current_slot_unique` FAIL |
+| SQL-HARD11-06 | CourseOffering `status='banana'` | `course_offering_canonical_status` FAIL |
+| SQL-HARD11-07 | `available_seats > capacity` | `course_offering_available_seats_bounds` FAIL |
+| SQL-HARD11-08 | generic `vice_president` has dedicated academic review mutation | `generic_vp_without_dedicated_reviews` FAIL |
+| SQL-HARD11-09 | `super_admin` has explicit forbidden academic mutation mapping | `super_admin_without_explicit_academic_mutations` FAIL |
+| SQL-HARD11-10 | Clean fully applied Phase 8–10 database | `OVERALL = PASS` |
 
 ## Result meaning
 

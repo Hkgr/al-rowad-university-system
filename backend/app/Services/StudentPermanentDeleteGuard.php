@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Student;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -13,6 +14,8 @@ use Illuminate\Support\Facades\Schema;
 class StudentPermanentDeleteGuard
 {
     public const ERROR_CODE = 'student_permanent_delete_blocked';
+
+    public const REQUIRES_ARCHIVE = 'student_permanent_delete_requires_archive';
 
     /**
      * Safe category names. Never return SQL constraint names.
@@ -87,5 +90,14 @@ class StudentPermanentDeleteGuard
         }
 
         return DB::table($table)->where('student_id', $student->student_id)->exists();
+    }
+
+    /**
+     * Recognized MariaDB parent-row FK restriction only (errno 1451).
+     * Does not convert arbitrary QueryException or SQLSTATE 23000.
+     */
+    public function isRestrictedForeignKey(QueryException $exception): bool
+    {
+        return (int) ($exception->errorInfo[1] ?? 0) === 1451;
     }
 }

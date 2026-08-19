@@ -79,9 +79,15 @@ grades, progression, graduation) must not run against a half-applied schema.
 
 - `POST /api/login` is throttled: 5 attempts per minute per normalized
   email + client IP (`throttle:login`)
+- Login password verification is constant-cost: unknown emails still run
+  `Hash::check` against a dummy bcrypt hash. The public 422 contract does
+  not reveal whether the account exists. Success audit is written only
+  after token issuance.
 - Inactive accounts cannot obtain a token; `EnsureActiveAccount` revokes the
   current token if an already-issued token is used after deactivation
 - Logout revokes the **current** token only
+- Permanent student delete requires a prior archive; capacity changes
+  recompute `available_seats` from current registered occupancy
 
 ## 6. Out of scope for this gate
 
