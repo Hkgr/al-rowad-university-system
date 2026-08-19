@@ -75,9 +75,12 @@ class StudentController extends ApiController
                     ->value('status_code');
             }
 
-            if ($targetStatusCode === AcademicRecordWorkflow::GRADUATED_STATUS
-                && $locked->studentStatus?->status_code !== AcademicRecordWorkflow::GRADUATED_STATUS) {
-                throw AcademicRecordException::graduationDecisionWorkflowRequired();
+            $currentStatusCode = $locked->studentStatus?->status_code;
+            if ($targetStatusCode !== null && $targetStatusCode !== $currentStatusCode) {
+                if ($targetStatusCode === AcademicRecordWorkflow::GRADUATED_STATUS
+                    || $currentStatusCode === AcademicRecordWorkflow::GRADUATED_STATUS) {
+                    throw AcademicRecordException::graduationDecisionWorkflowRequired();
+                }
             }
 
             $programChanged = array_key_exists('academic_program_id', $data)

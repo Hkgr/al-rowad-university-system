@@ -1250,11 +1250,38 @@ class GradeService
     /**
      * Current or historical academic work that is not yet an official visible attempt.
      *
+     * Academic attempts are the existing HISTORICAL_ATTEMPT_STATUSES
+     * (`registered` / `completed`). Dropped and withdrawn registrations are
+     * excluded by that canonical scope and do not require a final result.
+     *
      * @return list<array<string, mixed>>
      */
     public function unfinalizedAcademicWork(Student $student): array
     {
-        $registrations = StudentCourseRegistration::query()
+        return $this->collectUnfinalizedAcademicWork($student);
+    }
+
+    /**
+     * Unfinalized academic attempts for one student/year/semester.
+     *
+     * Reuses the same official-result definition as unfinalizedAcademicWork().
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function unfinalizedAcademicWorkForTerm(Student $student, int $academicYearId, int $semesterId): array
+    {
+        return $this->collectUnfinalizedAcademicWork($student, $academicYearId, $semesterId);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function collectUnfinalizedAcademicWork(
+        Student $student,
+        ?int $academicYearId = null,
+        ?int $semesterId = null
+    ): array {
+        $query = StudentCourseRegistration::query()
             ->where('student_id', $student->student_id)
             ->academicAttempts(requireResult: false)
             ->with([
@@ -1263,11 +1290,17 @@ class GradeService
                 'studentCourseResult.resultStatus',
                 'registrationStatus',
             ])
-            ->orderBy('student_course_registration_id')
-            ->get();
+            ->orderBy('student_course_registration_id');
+
+        if ($academicYearId !== null && $semesterId !== null) {
+            $query->whereHas('courseOffering', function ($offering) use ($academicYearId, $semesterId): void {
+                $offering->where('academic_year_id', $academicYearId)
+                    ->where('semester_id', $semesterId);
+            });
+        }
 
         $items = [];
-        foreach ($registrations as $registration) {
+        foreach ($query->get() as $registration) {
             if ($this->isOfficiallyVisibleAttempt($registration)) {
                 continue;
             }
@@ -1276,6 +1309,8 @@ class GradeService
             $items[] = [
                 'student_course_registration_id' => $registration->student_course_registration_id,
                 'course_offering_id' => $registration->course_offering_id,
+                'academic_year_id' => $offering?->academic_year_id,
+                'semester_id' => $offering?->semester_id,
                 'course_id' => $offering?->course_id ?? $offering?->course?->course_id,
                 'course_code' => $offering?->course?->course_code,
                 'registration_status' => $registration->registrationStatus?->status_code,

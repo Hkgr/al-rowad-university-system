@@ -1,10 +1,12 @@
 -- Manual, idempotent, fail-closed apply for Phase 10 academic record / progression / graduation.
 -- Fully qualified objects: do not depend on phpMyAdmin's selected database.
 -- Do not use the DATABASE function, stored procedures, DELIMITER, or SIGNAL.
--- Independently recomputes the same critical guards as 00_preflight.sql.
+-- Independently recomputes the same exact compatibility contract as 00_preflight.sql.
 -- DDL uses guarded dynamic SQL because MariaDB DDL causes implicit commits.
--- RBAC DML is transactional and rolled back on post-write mismatch.
+-- RBAC DML is transactional, executed only when apply_ready = 1, and rolled back on mismatch.
 -- Do NOT execute from application code, seeders, or Laravel migrations.
+-- CREATE TABLE IF NOT EXISTS never repairs an incompatible existing table: apply_ready is 0 on CONFLICT.
+-- Guarded queries use role_code = 'registration_officer' and status_code = 'graduated'.
 
 SET @db_ready := IF(
     EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'alrowad_uni_rust'),
@@ -36,6 +38,8 @@ SET @missing_required_columns := IF(
             UNION ALL SELECT 'academic_levels', 'level_order'
             UNION ALL SELECT 'academic_levels', 'is_active'
             UNION ALL SELECT 'academic_programs', 'academic_program_id'
+            UNION ALL SELECT 'academic_years', 'academic_year_id'
+            UNION ALL SELECT 'semesters', 'semester_id'
             UNION ALL SELECT 'program_courses', 'program_course_id'
             UNION ALL SELECT 'program_courses', 'academic_program_id'
             UNION ALL SELECT 'program_courses', 'academic_level_id'
@@ -75,108 +79,107 @@ SET @missing_required_columns := IF(
     1
 );
 
-SET @registration_officer_active := IF(
-    @db_ready = 1
-    AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`roles` WHERE role_code = 'registration_officer' AND is_active = 1) = 1,
-    1, 0
-);
+SET @registration_officer_active := 0;
+SET @graduated_status_ok := 0;
+SET @students_module_ok := 0;
+SET @permission_code_unique_ok := 0;
+SET @role_permissions_unique_ok := 0;
+SET @legacy_term_duplicates := 1;
+SET @legacy_term_null_identity := 1;
+SET @legacy_invalid_levels := 1;
+SET @legacy_malformed_gpa := 1;
+SET @perm_view_records_exists := 0;
+SET @perm_finalize_exists := 0;
+SET @perm_prog_view_exists := 0;
+SET @perm_prog_review_exists := 0;
+SET @perm_grad_view_exists := 0;
+SET @perm_grad_review_exists := 0;
+SET @perm_module_ok := 0;
+SET @rbac_extra_grants := 1;
 
-SET @graduated_status_ok := IF(
-    @db_ready = 1
-    AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`student_statuses` WHERE status_code = 'graduated' AND is_active = 1) = 1,
-    1, 0
+SET @sql := IF(
+    @missing_required_columns = 0,
+    'SELECT @registration_officer_active := IF((SELECT COUNT(*) FROM `alrowad_uni_rust`.`roles` WHERE role_code = ''registration_officer'' AND is_active = 1) = 1, 1, 0)',
+    'SELECT @registration_officer_active := 0'
 );
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
-SET @students_module_ok := IF(
-    @db_ready = 1
-    AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`system_modules` WHERE module_code = 'students' AND is_active = 1) = 1,
-    1, 0
+SET @sql := IF(
+    @missing_required_columns = 0,
+    'SELECT @graduated_status_ok := IF((SELECT COUNT(*) FROM `alrowad_uni_rust`.`student_statuses` WHERE status_code = ''graduated'' AND is_active = 1) = 1, 1, 0)',
+    'SELECT @graduated_status_ok := 0'
 );
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
-SET @permission_code_unique_ok := IF(
-    @db_ready = 1
-    AND EXISTS (
-        SELECT 1 FROM information_schema.statistics
-        WHERE table_schema = 'alrowad_uni_rust'
-          AND table_name = 'permissions'
-          AND non_unique = 0
-          AND index_name <> 'PRIMARY'
-        GROUP BY index_name
-        HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'permission_code'
-    )
-    AND NOT EXISTS (
-        SELECT permission_code
-        FROM `alrowad_uni_rust`.`permissions`
-        WHERE permission_code IN (
-            'academic_records.view', 'academic_records.finalize',
-            'academic_progression.view', 'academic_progression.review',
-            'graduation_decisions.view', 'graduation_decisions.review'
-        )
-        GROUP BY permission_code
-        HAVING COUNT(*) > 1
-    ),
-    1, 0
+SET @sql := IF(
+    @missing_required_columns = 0,
+    'SELECT @students_module_ok := IF((SELECT COUNT(*) FROM `alrowad_uni_rust`.`system_modules` WHERE module_code = ''students'' AND is_active = 1) = 1, 1, 0)',
+    'SELECT @students_module_ok := 0'
 );
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
-SET @role_permissions_unique_ok := IF(
-    @db_ready = 1
-    AND EXISTS (
-        SELECT 1 FROM information_schema.statistics
-        WHERE table_schema = 'alrowad_uni_rust'
-          AND table_name = 'role_permissions'
-          AND non_unique = 0
-          AND index_name <> 'PRIMARY'
-        GROUP BY index_name
-        HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) IN ('role_id,permission_id', 'permission_id,role_id')
-    ),
-    1, 0
+SET @sql := IF(
+    @missing_required_columns = 0,
+    'SELECT @permission_code_unique_ok := IF(EXISTS (SELECT 1 FROM information_schema.statistics WHERE table_schema = ''alrowad_uni_rust'' AND table_name = ''permissions'' AND non_unique = 0 AND index_name <> ''PRIMARY'' GROUP BY index_name HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = ''permission_code'') AND NOT EXISTS (SELECT permission_code FROM `alrowad_uni_rust`.`permissions` WHERE permission_code IN (''academic_records.view'', ''academic_records.finalize'', ''academic_progression.view'', ''academic_progression.review'', ''graduation_decisions.view'', ''graduation_decisions.review'') GROUP BY permission_code HAVING COUNT(*) > 1), 1, 0)',
+    'SELECT @permission_code_unique_ok := 0'
 );
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
-SET @legacy_term_duplicates := IF(
-    @db_ready = 1 AND @missing_required_columns = 0,
-    (
-        SELECT COUNT(*) FROM (
-            SELECT student_id, academic_year_id, semester_id
-            FROM `alrowad_uni_rust`.`student_academic_terms`
-            GROUP BY student_id, academic_year_id, semester_id
-            HAVING COUNT(*) > 1
-        ) d
-    ),
-    1
+SET @sql := IF(
+    @missing_required_columns = 0,
+    'SELECT @role_permissions_unique_ok := IF(EXISTS (SELECT 1 FROM information_schema.statistics WHERE table_schema = ''alrowad_uni_rust'' AND table_name = ''role_permissions'' AND non_unique = 0 AND index_name <> ''PRIMARY'' GROUP BY index_name HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) IN (''role_id,permission_id'', ''permission_id,role_id'')), 1, 0)',
+    'SELECT @role_permissions_unique_ok := 0'
 );
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
-SET @legacy_term_null_identity := IF(
-    @db_ready = 1 AND @missing_required_columns = 0,
-    (
-        SELECT COUNT(*)
-        FROM `alrowad_uni_rust`.`student_academic_terms`
-        WHERE student_id IS NULL OR academic_year_id IS NULL OR semester_id IS NULL OR academic_level_id IS NULL
-    ),
-    1
+SET @sql := IF(
+    @missing_required_columns = 0,
+    'SELECT @legacy_term_duplicates := (SELECT COUNT(*) FROM (SELECT student_id, academic_year_id, semester_id FROM `alrowad_uni_rust`.`student_academic_terms` GROUP BY student_id, academic_year_id, semester_id HAVING COUNT(*) > 1) d)',
+    'SELECT @legacy_term_duplicates := 1'
 );
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
-SET @legacy_invalid_levels := IF(
-    @db_ready = 1 AND @missing_required_columns = 0,
-    (
-        SELECT COUNT(*)
-        FROM `alrowad_uni_rust`.`student_academic_terms` t
-        LEFT JOIN `alrowad_uni_rust`.`academic_levels` l
-            ON l.academic_level_id = t.academic_level_id
-        WHERE l.academic_level_id IS NULL
-    ),
-    1
+SET @sql := IF(
+    @missing_required_columns = 0,
+    'SELECT @legacy_term_null_identity := (SELECT COUNT(*) FROM `alrowad_uni_rust`.`student_academic_terms` WHERE student_id IS NULL OR academic_year_id IS NULL OR semester_id IS NULL OR academic_level_id IS NULL)',
+    'SELECT @legacy_term_null_identity := 1'
 );
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
-SET @legacy_malformed_gpa := IF(
-    @db_ready = 1 AND @missing_required_columns = 0,
-    (
-        SELECT COUNT(*)
-        FROM `alrowad_uni_rust`.`student_academic_terms`
-        WHERE (term_gpa IS NOT NULL AND (term_gpa < 0 OR term_gpa > 4.00))
-           OR (cumulative_gpa IS NOT NULL AND (cumulative_gpa < 0 OR cumulative_gpa > 4.00))
-    ),
-    1
+SET @sql := IF(
+    @missing_required_columns = 0,
+    'SELECT @legacy_invalid_levels := (SELECT COUNT(*) FROM `alrowad_uni_rust`.`student_academic_terms` t LEFT JOIN `alrowad_uni_rust`.`academic_levels` l ON l.academic_level_id = t.academic_level_id WHERE l.academic_level_id IS NULL)',
+    'SELECT @legacy_invalid_levels := 1'
 );
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+    @missing_required_columns = 0,
+    'SELECT @legacy_malformed_gpa := (SELECT COUNT(*) FROM `alrowad_uni_rust`.`student_academic_terms` WHERE (term_gpa IS NOT NULL AND (term_gpa < 0 OR term_gpa > 4.00)) OR (cumulative_gpa IS NOT NULL AND (cumulative_gpa < 0 OR cumulative_gpa > 4.00)))',
+    'SELECT @legacy_malformed_gpa := 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+    @missing_required_columns = 0,
+    'SELECT @perm_view_records_exists := (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = ''academic_records.view''), @perm_finalize_exists := (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = ''academic_records.finalize''), @perm_prog_view_exists := (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = ''academic_progression.view''), @perm_prog_review_exists := (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = ''academic_progression.review''), @perm_grad_view_exists := (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = ''graduation_decisions.view''), @perm_grad_review_exists := (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = ''graduation_decisions.review'')',
+    'SELECT @perm_view_records_exists := 0'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+    @missing_required_columns = 0,
+    'SELECT @perm_module_ok := IF((SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` p JOIN `alrowad_uni_rust`.`system_modules` sm ON sm.module_id = p.module_id WHERE p.permission_code IN (''academic_records.view'', ''academic_records.finalize'', ''academic_progression.view'', ''academic_progression.review'', ''graduation_decisions.view'', ''graduation_decisions.review'') AND NOT (p.is_active = 1 AND sm.module_code = ''students'')) = 0, 1, 0)',
+    'SELECT @perm_module_ok := 0'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+    @missing_required_columns = 0,
+    'SELECT @rbac_extra_grants := (SELECT COUNT(*) FROM `alrowad_uni_rust`.`roles` r JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id WHERE p.permission_code IN (''academic_records.view'', ''academic_records.finalize'', ''academic_progression.view'', ''academic_progression.review'', ''graduation_decisions.view'', ''graduation_decisions.review'') AND r.role_code <> ''registration_officer'')',
+    'SELECT @rbac_extra_grants := 1'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 SET @uq_student_term_ok := IF(
     @db_ready = 1
@@ -213,28 +216,55 @@ SET @col_attempted_hours := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_
 SET @col_is_finalized_ok := IF(@col_is_finalized = 0, 1, IF((
     SELECT COUNT(*) FROM information_schema.columns
     WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_academic_terms' AND column_name = 'is_finalized'
-      AND data_type = 'tinyint' AND is_nullable = 'NO' AND column_default IN ('0', '0.0')
-) = 1, 1, 0));
-SET @col_finalized_at_ok := IF(@col_finalized_at = 0, 1, IF((
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_academic_terms' AND column_name = 'finalized_at'
-      AND data_type = 'timestamp' AND is_nullable = 'YES'
-) = 1, 1, 0));
-SET @col_finalized_by_ok := IF(@col_finalized_by = 0, 1, IF((
-    SELECT COUNT(*) FROM information_schema.columns
-    WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_academic_terms' AND column_name = 'finalized_by_user_id'
-      AND data_type = 'int' AND is_nullable = 'YES'
+      AND LOWER(data_type) = 'tinyint' AND LOWER(column_type) = 'tinyint(1)' AND is_nullable = 'NO'
+      AND TRIM(BOTH '''' FROM IFNULL(column_default, '')) IN ('0', '0.0')
 ) = 1, 1, 0));
 SET @col_earned_hours_ok := IF(@col_earned_hours = 0, 1, IF((
     SELECT COUNT(*) FROM information_schema.columns
     WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_academic_terms' AND column_name = 'earned_hours'
-      AND data_type = 'int' AND is_nullable = 'NO'
+      AND LOWER(data_type) = 'int' AND LOWER(column_type) NOT LIKE '%unsigned%' AND is_nullable = 'NO'
+      AND TRIM(BOTH '''' FROM IFNULL(column_default, '')) IN ('0', '0.0')
 ) = 1, 1, 0));
 SET @col_attempted_hours_ok := IF(@col_attempted_hours = 0, 1, IF((
     SELECT COUNT(*) FROM information_schema.columns
     WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_academic_terms' AND column_name = 'attempted_hours'
-      AND data_type = 'int' AND is_nullable = 'NO'
+      AND LOWER(data_type) = 'int' AND LOWER(column_type) NOT LIKE '%unsigned%' AND is_nullable = 'NO'
+      AND TRIM(BOTH '''' FROM IFNULL(column_default, '')) IN ('0', '0.0')
 ) = 1, 1, 0));
+SET @col_finalized_at_ok := IF(@col_finalized_at = 0, 1, IF((
+    SELECT COUNT(*) FROM information_schema.columns
+    WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_academic_terms' AND column_name = 'finalized_at'
+      AND LOWER(data_type) = 'timestamp' AND is_nullable = 'YES'
+      AND (column_default IS NULL OR LOWER(column_default) = 'null')
+) = 1, 1, 0));
+SET @col_finalized_by_ok := IF(@col_finalized_by = 0, 1, IF((
+    SELECT COUNT(*) FROM information_schema.columns
+    WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_academic_terms' AND column_name = 'finalized_by_user_id'
+      AND LOWER(data_type) = 'int' AND LOWER(column_type) NOT LIKE '%unsigned%' AND is_nullable = 'YES'
+      AND (column_default IS NULL OR LOWER(column_default) = 'null')
+) = 1, 1, 0));
+
+SET @fk_sat_exists := IF(
+    @db_ready = 1,
+    (SELECT COUNT(*) FROM information_schema.table_constraints
+     WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_academic_terms'
+       AND constraint_name = 'fk_sat_finalized_by' AND constraint_type = 'FOREIGN KEY'),
+    0
+);
+SET @fk_sat_ok := IF(
+    @fk_sat_exists = 0,
+    1,
+    IF((
+        SELECT COUNT(*) FROM information_schema.key_column_usage
+        WHERE table_schema = 'alrowad_uni_rust'
+          AND table_name = 'student_academic_terms'
+          AND constraint_name = 'fk_sat_finalized_by'
+          AND column_name = 'finalized_by_user_id'
+          AND referenced_table_schema = 'alrowad_uni_rust'
+          AND referenced_table_name = 'users'
+          AND referenced_column_name = 'user_id'
+    ) = 1, 1, 0)
+);
 
 SET @spd_exists := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_progression_decisions' AND table_type = 'BASE TABLE'), 0);
 SET @spe_exists := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_progression_events' AND table_type = 'BASE TABLE'), 0);
@@ -243,149 +273,214 @@ SET @sge_exists := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.ta
 
 SET @spd_columns_ok := IF(@spd_exists = 0, 1, IF((
     SELECT COUNT(*) FROM (
-        SELECT 'student_progression_decision_id' AS column_name UNION ALL SELECT 'student_id' UNION ALL SELECT 'academic_program_id'
-        UNION ALL SELECT 'academic_year_id' UNION ALL SELECT 'from_academic_level_id' UNION ALL SELECT 'to_academic_level_id'
-        UNION ALL SELECT 'status' UNION ALL SELECT 'decision_result' UNION ALL SELECT 'current_slot'
-        UNION ALL SELECT 'term_gpa_snapshot' UNION ALL SELECT 'cumulative_gpa_snapshot'
-        UNION ALL SELECT 'earned_hours_snapshot' UNION ALL SELECT 'attempted_hours_snapshot'
-        UNION ALL SELECT 'failed_courses_count_snapshot' UNION ALL SELECT 'evidence_snapshot'
-        UNION ALL SELECT 'submitted_by_user_id' UNION ALL SELECT 'submitted_at'
-        UNION ALL SELECT 'reviewed_by_user_id' UNION ALL SELECT 'reviewed_at' UNION ALL SELECT 'review_notes'
-        UNION ALL SELECT 'approved_at' UNION ALL SELECT 'materialized_at' UNION ALL SELECT 'superseded_at'
-        UNION ALL SELECT 'created_at' UNION ALL SELECT 'updated_at'
+        SELECT 'student_progression_decision_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable, CAST(NULL AS CHAR) AS dflt, CAST(NULL AS UNSIGNED) AS maxlen, CAST(NULL AS UNSIGNED) AS prec, CAST(NULL AS UNSIGNED) AS scale, 1 AS autoinc
+        UNION ALL SELECT 'student_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'academic_program_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'academic_year_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'from_academic_level_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'to_academic_level_id', 'int', 'YES', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'status', 'varchar', 'NO', NULL, 40, NULL, NULL, 0
+        UNION ALL SELECT 'decision_result', 'varchar', 'YES', NULL, 40, NULL, NULL, 0
+        UNION ALL SELECT 'current_slot', 'tinyint', 'YES', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'term_gpa_snapshot', 'decimal', 'YES', NULL, NULL, 4, 2, 0
+        UNION ALL SELECT 'cumulative_gpa_snapshot', 'decimal', 'YES', NULL, NULL, 4, 2, 0
+        UNION ALL SELECT 'earned_hours_snapshot', 'int', 'NO', '0', NULL, NULL, NULL, 0
+        UNION ALL SELECT 'attempted_hours_snapshot', 'int', 'NO', '0', NULL, NULL, NULL, 0
+        UNION ALL SELECT 'failed_courses_count_snapshot', 'int', 'NO', '0', NULL, NULL, NULL, 0
+        UNION ALL SELECT 'evidence_snapshot', 'text', 'YES', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'submitted_by_user_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'submitted_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, NULL, NULL, 0
+        UNION ALL SELECT 'reviewed_by_user_id', 'int', 'YES', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'reviewed_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'review_notes', 'text', 'YES', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'approved_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'materialized_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'superseded_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'created_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, NULL, NULL, 0
+        UNION ALL SELECT 'updated_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, NULL, NULL, 0
     ) required
     LEFT JOIN information_schema.columns c
         ON c.table_schema = 'alrowad_uni_rust' AND c.table_name = 'student_progression_decisions' AND c.column_name = required.column_name
     WHERE c.column_name IS NULL
-) = 0, 1, 0));
+       OR LOWER(c.data_type) <> required.data_type
+       OR c.is_nullable <> required.is_nullable
+       OR (required.data_type IN ('int', 'tinyint') AND LOWER(c.column_type) LIKE '%unsigned%')
+       OR (required.maxlen IS NOT NULL AND IFNULL(c.character_maximum_length, 0) <> required.maxlen)
+       OR (required.prec IS NOT NULL AND (IFNULL(c.numeric_precision, 0) <> required.prec OR IFNULL(c.numeric_scale, 0) <> required.scale))
+       OR (required.autoinc = 1 AND LOWER(IFNULL(c.extra, '')) NOT LIKE '%auto_increment%')
+       OR (required.dflt = '0' AND TRIM(BOTH '''' FROM IFNULL(c.column_default, '')) NOT IN ('0', '0.0'))
+       OR (required.dflt = 'CURRENT_TIMESTAMP' AND LOWER(IFNULL(c.column_default, '')) NOT LIKE 'current_timestamp%')
+       OR (required.dflt IS NULL AND required.is_nullable = 'YES' AND c.column_default IS NOT NULL AND LOWER(c.column_default) <> 'null')
+) = 0 AND (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_progression_decisions') = 25, 1, 0));
 
 SET @spe_columns_ok := IF(@spe_exists = 0, 1, IF((
     SELECT COUNT(*) FROM (
-        SELECT 'student_progression_event_id' AS column_name UNION ALL SELECT 'student_progression_decision_id'
-        UNION ALL SELECT 'event_type' UNION ALL SELECT 'actor_user_id' UNION ALL SELECT 'from_status'
-        UNION ALL SELECT 'to_status' UNION ALL SELECT 'notes' UNION ALL SELECT 'created_at'
+        SELECT 'student_progression_event_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable, CAST(NULL AS CHAR) AS dflt, CAST(NULL AS UNSIGNED) AS maxlen, 1 AS autoinc
+        UNION ALL SELECT 'student_progression_decision_id', 'int', 'NO', NULL, NULL, 0
+        UNION ALL SELECT 'event_type', 'varchar', 'NO', NULL, 40, 0
+        UNION ALL SELECT 'actor_user_id', 'int', 'YES', NULL, NULL, 0
+        UNION ALL SELECT 'from_status', 'varchar', 'YES', NULL, 40, 0
+        UNION ALL SELECT 'to_status', 'varchar', 'YES', NULL, 40, 0
+        UNION ALL SELECT 'notes', 'text', 'YES', NULL, NULL, 0
+        UNION ALL SELECT 'created_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, 0
     ) required
     LEFT JOIN information_schema.columns c
         ON c.table_schema = 'alrowad_uni_rust' AND c.table_name = 'student_progression_events' AND c.column_name = required.column_name
     WHERE c.column_name IS NULL
-) = 0, 1, 0));
+       OR LOWER(c.data_type) <> required.data_type
+       OR c.is_nullable <> required.is_nullable
+       OR (required.data_type = 'int' AND LOWER(c.column_type) LIKE '%unsigned%')
+       OR (required.maxlen IS NOT NULL AND IFNULL(c.character_maximum_length, 0) <> required.maxlen)
+       OR (required.autoinc = 1 AND LOWER(IFNULL(c.extra, '')) NOT LIKE '%auto_increment%')
+       OR (required.dflt = 'CURRENT_TIMESTAMP' AND LOWER(IFNULL(c.column_default, '')) NOT LIKE 'current_timestamp%')
+       OR (required.dflt IS NULL AND required.is_nullable = 'YES' AND c.column_default IS NOT NULL AND LOWER(c.column_default) <> 'null')
+) = 0 AND (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_progression_events') = 8, 1, 0));
 
 SET @sgd_columns_ok := IF(@sgd_exists = 0, 1, IF((
     SELECT COUNT(*) FROM (
-        SELECT 'student_graduation_decision_id' AS column_name UNION ALL SELECT 'student_id'
-        UNION ALL SELECT 'academic_program_id' UNION ALL SELECT 'current_academic_level_id'
-        UNION ALL SELECT 'status' UNION ALL SELECT 'decision_result' UNION ALL SELECT 'current_slot'
-        UNION ALL SELECT 'cumulative_gpa_snapshot' UNION ALL SELECT 'earned_hours_snapshot'
-        UNION ALL SELECT 'required_hours_snapshot' UNION ALL SELECT 'eligibility_snapshot'
-        UNION ALL SELECT 'submitted_by_user_id' UNION ALL SELECT 'submitted_at'
-        UNION ALL SELECT 'reviewed_by_user_id' UNION ALL SELECT 'reviewed_at' UNION ALL SELECT 'review_notes'
-        UNION ALL SELECT 'approved_at' UNION ALL SELECT 'materialized_at' UNION ALL SELECT 'superseded_at'
-        UNION ALL SELECT 'created_at' UNION ALL SELECT 'updated_at'
+        SELECT 'student_graduation_decision_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable, CAST(NULL AS CHAR) AS dflt, CAST(NULL AS UNSIGNED) AS maxlen, CAST(NULL AS UNSIGNED) AS prec, CAST(NULL AS UNSIGNED) AS scale, 1 AS autoinc
+        UNION ALL SELECT 'student_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'academic_program_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'current_academic_level_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'status', 'varchar', 'NO', NULL, 40, NULL, NULL, 0
+        UNION ALL SELECT 'decision_result', 'varchar', 'YES', NULL, 40, NULL, NULL, 0
+        UNION ALL SELECT 'current_slot', 'tinyint', 'YES', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'cumulative_gpa_snapshot', 'decimal', 'YES', NULL, NULL, 4, 2, 0
+        UNION ALL SELECT 'earned_hours_snapshot', 'int', 'NO', '0', NULL, NULL, NULL, 0
+        UNION ALL SELECT 'required_hours_snapshot', 'int', 'NO', '0', NULL, NULL, NULL, 0
+        UNION ALL SELECT 'eligibility_snapshot', 'text', 'YES', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'submitted_by_user_id', 'int', 'NO', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'submitted_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, NULL, NULL, 0
+        UNION ALL SELECT 'reviewed_by_user_id', 'int', 'YES', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'reviewed_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'review_notes', 'text', 'YES', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'approved_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'materialized_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'superseded_at', 'timestamp', 'YES', NULL, NULL, NULL, NULL, 0
+        UNION ALL SELECT 'created_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, NULL, NULL, 0
+        UNION ALL SELECT 'updated_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, NULL, NULL, 0
     ) required
     LEFT JOIN information_schema.columns c
         ON c.table_schema = 'alrowad_uni_rust' AND c.table_name = 'student_graduation_decisions' AND c.column_name = required.column_name
     WHERE c.column_name IS NULL
-) = 0, 1, 0));
+       OR LOWER(c.data_type) <> required.data_type
+       OR c.is_nullable <> required.is_nullable
+       OR (required.data_type IN ('int', 'tinyint') AND LOWER(c.column_type) LIKE '%unsigned%')
+       OR (required.maxlen IS NOT NULL AND IFNULL(c.character_maximum_length, 0) <> required.maxlen)
+       OR (required.prec IS NOT NULL AND (IFNULL(c.numeric_precision, 0) <> required.prec OR IFNULL(c.numeric_scale, 0) <> required.scale))
+       OR (required.autoinc = 1 AND LOWER(IFNULL(c.extra, '')) NOT LIKE '%auto_increment%')
+       OR (required.dflt = '0' AND TRIM(BOTH '''' FROM IFNULL(c.column_default, '')) NOT IN ('0', '0.0'))
+       OR (required.dflt = 'CURRENT_TIMESTAMP' AND LOWER(IFNULL(c.column_default, '')) NOT LIKE 'current_timestamp%')
+       OR (required.dflt IS NULL AND required.is_nullable = 'YES' AND c.column_default IS NOT NULL AND LOWER(c.column_default) <> 'null')
+) = 0 AND (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_graduation_decisions') = 21, 1, 0));
 
 SET @sge_columns_ok := IF(@sge_exists = 0, 1, IF((
     SELECT COUNT(*) FROM (
-        SELECT 'student_graduation_event_id' AS column_name UNION ALL SELECT 'student_graduation_decision_id'
-        UNION ALL SELECT 'event_type' UNION ALL SELECT 'actor_user_id' UNION ALL SELECT 'from_status'
-        UNION ALL SELECT 'to_status' UNION ALL SELECT 'notes' UNION ALL SELECT 'created_at'
+        SELECT 'student_graduation_event_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable, CAST(NULL AS CHAR) AS dflt, CAST(NULL AS UNSIGNED) AS maxlen, 1 AS autoinc
+        UNION ALL SELECT 'student_graduation_decision_id', 'int', 'NO', NULL, NULL, 0
+        UNION ALL SELECT 'event_type', 'varchar', 'NO', NULL, 40, 0
+        UNION ALL SELECT 'actor_user_id', 'int', 'YES', NULL, NULL, 0
+        UNION ALL SELECT 'from_status', 'varchar', 'YES', NULL, 40, 0
+        UNION ALL SELECT 'to_status', 'varchar', 'YES', NULL, 40, 0
+        UNION ALL SELECT 'notes', 'text', 'YES', NULL, NULL, 0
+        UNION ALL SELECT 'created_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP', NULL, 0
     ) required
     LEFT JOIN information_schema.columns c
         ON c.table_schema = 'alrowad_uni_rust' AND c.table_name = 'student_graduation_events' AND c.column_name = required.column_name
     WHERE c.column_name IS NULL
-) = 0, 1, 0));
+       OR LOWER(c.data_type) <> required.data_type
+       OR c.is_nullable <> required.is_nullable
+       OR (required.data_type = 'int' AND LOWER(c.column_type) LIKE '%unsigned%')
+       OR (required.maxlen IS NOT NULL AND IFNULL(c.character_maximum_length, 0) <> required.maxlen)
+       OR (required.autoinc = 1 AND LOWER(IFNULL(c.extra, '')) NOT LIKE '%auto_increment%')
+       OR (required.dflt = 'CURRENT_TIMESTAMP' AND LOWER(IFNULL(c.column_default, '')) NOT LIKE 'current_timestamp%')
+       OR (required.dflt IS NULL AND required.is_nullable = 'YES' AND c.column_default IS NOT NULL AND LOWER(c.column_default) <> 'null')
+) = 0 AND (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_graduation_events') = 8, 1, 0));
 
 SET @spd_engine_ok := IF(@spd_exists = 0, 1, IF((SELECT LOWER(engine) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_progression_decisions') = 'innodb', 1, 0));
 SET @spe_engine_ok := IF(@spe_exists = 0, 1, IF((SELECT LOWER(engine) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_progression_events') = 'innodb', 1, 0));
 SET @sgd_engine_ok := IF(@sgd_exists = 0, 1, IF((SELECT LOWER(engine) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_graduation_decisions') = 'innodb', 1, 0));
 SET @sge_engine_ok := IF(@sge_exists = 0, 1, IF((SELECT LOWER(engine) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_graduation_events') = 'innodb', 1, 0));
 
-SET @idx_spd_current_ok := IF(@spd_exists = 0, 1, IF((
-    SELECT COUNT(*) FROM (
-        SELECT index_name FROM information_schema.statistics
-        WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_progression_decisions'
-          AND index_name = 'uq_spd_current_slot' AND non_unique = 0
-        GROUP BY index_name
-        HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'student_id,academic_year_id,current_slot'
-    ) x
-) = 1, 1, 0));
-SET @idx_spd_status_ok := IF(@spd_exists = 0, 1, IF((
-    SELECT COUNT(*) FROM (
-        SELECT index_name FROM information_schema.statistics
-        WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_progression_decisions'
-          AND index_name = 'idx_spd_student_status' AND non_unique = 1
-        GROUP BY index_name
-        HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'student_id,status'
-    ) x
-) = 1, 1, 0));
-SET @idx_sgd_current_ok := IF(@sgd_exists = 0, 1, IF((
-    SELECT COUNT(*) FROM (
-        SELECT index_name FROM information_schema.statistics
-        WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_graduation_decisions'
-          AND index_name = 'uq_sgd_current_slot' AND non_unique = 0
-        GROUP BY index_name
-        HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'student_id,current_slot'
-    ) x
-) = 1, 1, 0));
-SET @idx_sgd_status_ok := IF(@sgd_exists = 0, 1, IF((
-    SELECT COUNT(*) FROM (
-        SELECT index_name FROM information_schema.statistics
-        WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_graduation_decisions'
-          AND index_name = 'idx_sgd_student_status' AND non_unique = 1
-        GROUP BY index_name
-        HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'student_id,status'
-    ) x
-) = 1, 1, 0));
+SET @idx_spd_pk_ok := IF(@spd_exists = 0, 1, IF((SELECT COUNT(*) FROM (SELECT index_name FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_progression_decisions' AND index_name = 'PRIMARY' AND non_unique = 0 GROUP BY index_name HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'student_progression_decision_id') x) = 1, 1, 0));
+SET @idx_spe_pk_ok := IF(@spe_exists = 0, 1, IF((SELECT COUNT(*) FROM (SELECT index_name FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_progression_events' AND index_name = 'PRIMARY' AND non_unique = 0 GROUP BY index_name HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'student_progression_event_id') x) = 1, 1, 0));
+SET @idx_sgd_pk_ok := IF(@sgd_exists = 0, 1, IF((SELECT COUNT(*) FROM (SELECT index_name FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_graduation_decisions' AND index_name = 'PRIMARY' AND non_unique = 0 GROUP BY index_name HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'student_graduation_decision_id') x) = 1, 1, 0));
+SET @idx_sge_pk_ok := IF(@sge_exists = 0, 1, IF((SELECT COUNT(*) FROM (SELECT index_name FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_graduation_events' AND index_name = 'PRIMARY' AND non_unique = 0 GROUP BY index_name HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'student_graduation_event_id') x) = 1, 1, 0));
 
-SET @perm_codes := '''academic_records.view'',''academic_records.finalize'',''academic_progression.view'',''academic_progression.review'',''graduation_decisions.view'',''graduation_decisions.review''';
+SET @idx_spd_current_ok := IF(@spd_exists = 0, 1, IF((SELECT COUNT(*) FROM (SELECT index_name FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_progression_decisions' AND index_name = 'uq_spd_current_slot' AND non_unique = 0 GROUP BY index_name HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'student_id,academic_year_id,current_slot') x) = 1, 1, 0));
+SET @idx_spd_status_ok := IF(@spd_exists = 0, 1, IF((SELECT COUNT(*) FROM (SELECT index_name FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_progression_decisions' AND index_name = 'idx_spd_student_status' AND non_unique = 1 GROUP BY index_name HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'student_id,status') x) = 1, 1, 0));
+SET @idx_spd_reviewer_ok := IF(@spd_exists = 0, 1, IF((SELECT COUNT(*) FROM (SELECT index_name FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_progression_decisions' AND index_name = 'idx_spd_reviewer' AND non_unique = 1 GROUP BY index_name HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'reviewed_by_user_id') x) = 1, 1, 0));
+SET @idx_spe_decision_ok := IF(@spe_exists = 0, 1, IF((SELECT COUNT(*) FROM (SELECT index_name FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_progression_events' AND index_name = 'idx_spe_decision' AND non_unique = 1 GROUP BY index_name HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'student_progression_decision_id,created_at') x) = 1, 1, 0));
+SET @idx_spe_actor_ok := IF(@spe_exists = 0, 1, IF((SELECT COUNT(*) FROM (SELECT index_name FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_progression_events' AND index_name = 'idx_spe_actor' AND non_unique = 1 GROUP BY index_name HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'actor_user_id') x) = 1, 1, 0));
+SET @idx_sgd_current_ok := IF(@sgd_exists = 0, 1, IF((SELECT COUNT(*) FROM (SELECT index_name FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_graduation_decisions' AND index_name = 'uq_sgd_current_slot' AND non_unique = 0 GROUP BY index_name HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'student_id,current_slot') x) = 1, 1, 0));
+SET @idx_sgd_status_ok := IF(@sgd_exists = 0, 1, IF((SELECT COUNT(*) FROM (SELECT index_name FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_graduation_decisions' AND index_name = 'idx_sgd_student_status' AND non_unique = 1 GROUP BY index_name HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'student_id,status') x) = 1, 1, 0));
+SET @idx_sgd_reviewer_ok := IF(@sgd_exists = 0, 1, IF((SELECT COUNT(*) FROM (SELECT index_name FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_graduation_decisions' AND index_name = 'idx_sgd_reviewer' AND non_unique = 1 GROUP BY index_name HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'reviewed_by_user_id') x) = 1, 1, 0));
+SET @idx_sge_decision_ok := IF(@sge_exists = 0, 1, IF((SELECT COUNT(*) FROM (SELECT index_name FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_graduation_events' AND index_name = 'idx_sge_decision' AND non_unique = 1 GROUP BY index_name HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'student_graduation_decision_id,created_at') x) = 1, 1, 0));
+SET @idx_sge_actor_ok := IF(@sge_exists = 0, 1, IF((SELECT COUNT(*) FROM (SELECT index_name FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_graduation_events' AND index_name = 'idx_sge_actor' AND non_unique = 1 GROUP BY index_name HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'actor_user_id') x) = 1, 1, 0));
 
-SET @perm_view_records_exists := IF(@db_ready = 1, (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'academic_records.view'), 0);
-SET @perm_finalize_exists := IF(@db_ready = 1, (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'academic_records.finalize'), 0);
-SET @perm_prog_view_exists := IF(@db_ready = 1, (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'academic_progression.view'), 0);
-SET @perm_prog_review_exists := IF(@db_ready = 1, (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'academic_progression.review'), 0);
-SET @perm_grad_view_exists := IF(@db_ready = 1, (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'graduation_decisions.view'), 0);
-SET @perm_grad_review_exists := IF(@db_ready = 1, (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'graduation_decisions.review'), 0);
-
-SET @perm_module_ok := IF(
-    @db_ready = 1,
-    IF((
-        SELECT COUNT(*)
-        FROM `alrowad_uni_rust`.`permissions` p
-        JOIN `alrowad_uni_rust`.`system_modules` sm ON sm.module_id = p.module_id
-        WHERE p.permission_code IN (
-            'academic_records.view', 'academic_records.finalize',
-            'academic_progression.view', 'academic_progression.review',
-            'graduation_decisions.view', 'graduation_decisions.review'
-        )
-          AND NOT (p.is_active = 1 AND sm.module_code = 'students')
-    ) = 0, 1, 0),
-    0
-);
-
-SET @rbac_extra_grants := IF(
-    @db_ready = 1,
-    (
-        SELECT COUNT(*)
-        FROM `alrowad_uni_rust`.`roles` r
-        JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
-        JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
-        WHERE p.permission_code IN (
-            'academic_records.view', 'academic_records.finalize',
-            'academic_progression.view', 'academic_progression.review',
-            'graduation_decisions.view', 'graduation_decisions.review'
-        )
-          AND r.role_code <> 'registration_officer'
-    ),
-    1
-);
+SET @spd_fk_ok := IF(@spd_exists = 0, 1, IF((
+    SELECT COUNT(*) FROM (
+        SELECT 'fk_spd_student' AS constraint_name, 'student_id' AS column_name, 'students' AS ref_table, 'student_id' AS ref_column
+        UNION ALL SELECT 'fk_spd_program', 'academic_program_id', 'academic_programs', 'academic_program_id'
+        UNION ALL SELECT 'fk_spd_year', 'academic_year_id', 'academic_years', 'academic_year_id'
+        UNION ALL SELECT 'fk_spd_from_level', 'from_academic_level_id', 'academic_levels', 'academic_level_id'
+        UNION ALL SELECT 'fk_spd_to_level', 'to_academic_level_id', 'academic_levels', 'academic_level_id'
+        UNION ALL SELECT 'fk_spd_submitted_by', 'submitted_by_user_id', 'users', 'user_id'
+        UNION ALL SELECT 'fk_spd_reviewed_by', 'reviewed_by_user_id', 'users', 'user_id'
+    ) required
+    LEFT JOIN information_schema.key_column_usage k
+        ON k.table_schema = 'alrowad_uni_rust' AND k.table_name = 'student_progression_decisions'
+       AND k.constraint_name = required.constraint_name AND k.column_name = required.column_name
+       AND k.referenced_table_schema = 'alrowad_uni_rust' AND k.referenced_table_name = required.ref_table
+       AND k.referenced_column_name = required.ref_column
+    WHERE k.column_name IS NULL
+) = 0 AND (SELECT COUNT(*) FROM information_schema.table_constraints WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_progression_decisions' AND constraint_type = 'FOREIGN KEY') = 7, 1, 0));
+SET @spe_fk_ok := IF(@spe_exists = 0, 1, IF((
+    SELECT COUNT(*) FROM (
+        SELECT 'fk_spe_decision' AS constraint_name, 'student_progression_decision_id' AS column_name, 'student_progression_decisions' AS ref_table, 'student_progression_decision_id' AS ref_column
+        UNION ALL SELECT 'fk_spe_actor', 'actor_user_id', 'users', 'user_id'
+    ) required
+    LEFT JOIN information_schema.key_column_usage k
+        ON k.table_schema = 'alrowad_uni_rust' AND k.table_name = 'student_progression_events'
+       AND k.constraint_name = required.constraint_name AND k.column_name = required.column_name
+       AND k.referenced_table_schema = 'alrowad_uni_rust' AND k.referenced_table_name = required.ref_table
+       AND k.referenced_column_name = required.ref_column
+    WHERE k.column_name IS NULL
+) = 0 AND (SELECT COUNT(*) FROM information_schema.table_constraints WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_progression_events' AND constraint_type = 'FOREIGN KEY') = 2, 1, 0));
+SET @sgd_fk_ok := IF(@sgd_exists = 0, 1, IF((
+    SELECT COUNT(*) FROM (
+        SELECT 'fk_sgd_student' AS constraint_name, 'student_id' AS column_name, 'students' AS ref_table, 'student_id' AS ref_column
+        UNION ALL SELECT 'fk_sgd_program', 'academic_program_id', 'academic_programs', 'academic_program_id'
+        UNION ALL SELECT 'fk_sgd_level', 'current_academic_level_id', 'academic_levels', 'academic_level_id'
+        UNION ALL SELECT 'fk_sgd_submitted_by', 'submitted_by_user_id', 'users', 'user_id'
+        UNION ALL SELECT 'fk_sgd_reviewed_by', 'reviewed_by_user_id', 'users', 'user_id'
+    ) required
+    LEFT JOIN information_schema.key_column_usage k
+        ON k.table_schema = 'alrowad_uni_rust' AND k.table_name = 'student_graduation_decisions'
+       AND k.constraint_name = required.constraint_name AND k.column_name = required.column_name
+       AND k.referenced_table_schema = 'alrowad_uni_rust' AND k.referenced_table_name = required.ref_table
+       AND k.referenced_column_name = required.ref_column
+    WHERE k.column_name IS NULL
+) = 0 AND (SELECT COUNT(*) FROM information_schema.table_constraints WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_graduation_decisions' AND constraint_type = 'FOREIGN KEY') = 5, 1, 0));
+SET @sge_fk_ok := IF(@sge_exists = 0, 1, IF((
+    SELECT COUNT(*) FROM (
+        SELECT 'fk_sge_decision' AS constraint_name, 'student_graduation_decision_id' AS column_name, 'student_graduation_decisions' AS ref_table, 'student_graduation_decision_id' AS ref_column
+        UNION ALL SELECT 'fk_sge_actor', 'actor_user_id', 'users', 'user_id'
+    ) required
+    LEFT JOIN information_schema.key_column_usage k
+        ON k.table_schema = 'alrowad_uni_rust' AND k.table_name = 'student_graduation_events'
+       AND k.constraint_name = required.constraint_name AND k.column_name = required.column_name
+       AND k.referenced_table_schema = 'alrowad_uni_rust' AND k.referenced_table_name = required.ref_table
+       AND k.referenced_column_name = required.ref_column
+    WHERE k.column_name IS NULL
+) = 0 AND (SELECT COUNT(*) FROM information_schema.table_constraints WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_graduation_events' AND constraint_type = 'FOREIGN KEY') = 2, 1, 0));
 
 SET @terms_columns_state := CASE
+    WHEN @fk_sat_ok = 0 THEN 'CONFLICT'
     WHEN @col_is_finalized_ok = 1 AND @col_finalized_at_ok = 1 AND @col_finalized_by_ok = 1 AND @col_earned_hours_ok = 1 AND @col_attempted_hours_ok = 1
-        AND (@col_is_finalized + @col_finalized_at + @col_finalized_by + @col_earned_hours + @col_attempted_hours) = 0 THEN 'ABSENT'
-    WHEN @col_is_finalized_ok = 1 AND @col_finalized_at_ok = 1 AND @col_finalized_by_ok = 1 AND @col_earned_hours_ok = 1 AND @col_attempted_hours_ok = 1 THEN 'COMPATIBLE'
+        AND (@col_is_finalized + @col_finalized_at + @col_finalized_by + @col_earned_hours + @col_attempted_hours) = 0
+        AND @fk_sat_exists = 0 THEN 'ABSENT'
+    WHEN @col_is_finalized_ok = 1 AND @col_finalized_at_ok = 1 AND @col_finalized_by_ok = 1 AND @col_earned_hours_ok = 1 AND @col_attempted_hours_ok = 1 AND @fk_sat_ok = 1 THEN 'COMPATIBLE'
     ELSE 'CONFLICT'
 END;
 SET @uq_term_state := CASE
@@ -393,10 +488,10 @@ SET @uq_term_state := CASE
     WHEN @uq_student_term_ok = 1 THEN 'COMPATIBLE'
     ELSE 'ABSENT'
 END;
-SET @spd_state := CASE WHEN @spd_exists = 0 THEN 'ABSENT' WHEN @spd_columns_ok = 1 AND @spd_engine_ok = 1 AND @idx_spd_current_ok = 1 AND @idx_spd_status_ok = 1 THEN 'COMPATIBLE' ELSE 'CONFLICT' END;
-SET @spe_state := CASE WHEN @spe_exists = 0 THEN 'ABSENT' WHEN @spe_columns_ok = 1 AND @spe_engine_ok = 1 THEN 'COMPATIBLE' ELSE 'CONFLICT' END;
-SET @sgd_state := CASE WHEN @sgd_exists = 0 THEN 'ABSENT' WHEN @sgd_columns_ok = 1 AND @sgd_engine_ok = 1 AND @idx_sgd_current_ok = 1 AND @idx_sgd_status_ok = 1 THEN 'COMPATIBLE' ELSE 'CONFLICT' END;
-SET @sge_state := CASE WHEN @sge_exists = 0 THEN 'ABSENT' WHEN @sge_columns_ok = 1 AND @sge_engine_ok = 1 THEN 'COMPATIBLE' ELSE 'CONFLICT' END;
+SET @spd_state := CASE WHEN @spd_exists = 0 THEN 'ABSENT' WHEN @spd_columns_ok = 1 AND @spd_engine_ok = 1 AND @idx_spd_pk_ok = 1 AND @idx_spd_current_ok = 1 AND @idx_spd_status_ok = 1 AND @idx_spd_reviewer_ok = 1 AND @spd_fk_ok = 1 THEN 'COMPATIBLE' ELSE 'CONFLICT' END;
+SET @spe_state := CASE WHEN @spe_exists = 0 THEN 'ABSENT' WHEN @spe_columns_ok = 1 AND @spe_engine_ok = 1 AND @idx_spe_pk_ok = 1 AND @idx_spe_decision_ok = 1 AND @idx_spe_actor_ok = 1 AND @spe_fk_ok = 1 THEN 'COMPATIBLE' ELSE 'CONFLICT' END;
+SET @sgd_state := CASE WHEN @sgd_exists = 0 THEN 'ABSENT' WHEN @sgd_columns_ok = 1 AND @sgd_engine_ok = 1 AND @idx_sgd_pk_ok = 1 AND @idx_sgd_current_ok = 1 AND @idx_sgd_status_ok = 1 AND @idx_sgd_reviewer_ok = 1 AND @sgd_fk_ok = 1 THEN 'COMPATIBLE' ELSE 'CONFLICT' END;
+SET @sge_state := CASE WHEN @sge_exists = 0 THEN 'ABSENT' WHEN @sge_columns_ok = 1 AND @sge_engine_ok = 1 AND @idx_sge_pk_ok = 1 AND @idx_sge_decision_ok = 1 AND @idx_sge_actor_ok = 1 AND @sge_fk_ok = 1 THEN 'COMPATIBLE' ELSE 'CONFLICT' END;
 SET @perm_records_view_state := CASE WHEN @perm_view_records_exists = 0 THEN 'ABSENT' WHEN @perm_view_records_exists = 1 AND @perm_module_ok = 1 THEN 'COMPATIBLE' ELSE 'CONFLICT' END;
 SET @perm_records_finalize_state := CASE WHEN @perm_finalize_exists = 0 THEN 'ABSENT' WHEN @perm_finalize_exists = 1 AND @perm_module_ok = 1 THEN 'COMPATIBLE' ELSE 'CONFLICT' END;
 SET @perm_prog_view_state := CASE WHEN @perm_prog_view_exists = 0 THEN 'ABSENT' WHEN @perm_prog_view_exists = 1 AND @perm_module_ok = 1 THEN 'COMPATIBLE' ELSE 'CONFLICT' END;
@@ -626,106 +721,51 @@ SET @sql := IF(
 );
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
-START TRANSACTION;
+SET @sql := IF(@apply_ready = 1, 'START TRANSACTION', 'SELECT ''skip_rbac_transaction'' AS apply_step');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
-INSERT INTO `alrowad_uni_rust`.`permissions` (
-    module_id, permission_code, permission_name, description, is_active, created_at, updated_at
-)
-SELECT sm.module_id, codes.permission_code, codes.permission_name, codes.description, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-FROM `alrowad_uni_rust`.`system_modules` sm
-JOIN (
-    SELECT 'academic_records.view' AS permission_code, 'View academic records' AS permission_name, 'View official student academic term snapshots.' AS description
-    UNION ALL SELECT 'academic_records.finalize', 'Finalize academic records', 'Recalculate and finalize official student academic term snapshots.'
-    UNION ALL SELECT 'academic_progression.view', 'View academic progression', 'View formal academic progression decisions and evidence.'
-    UNION ALL SELECT 'academic_progression.review', 'Review academic progression', 'Submit, return, or approve formal academic progression decisions.'
-    UNION ALL SELECT 'graduation_decisions.view', 'View graduation decisions', 'View formal graduation decisions and snapshots.'
-    UNION ALL SELECT 'graduation_decisions.review', 'Review graduation decisions', 'Submit, return, or approve formal graduation decisions.'
-) codes
-WHERE @apply_ready = 1
-  AND sm.module_code = 'students'
-  AND sm.is_active = 1
-  AND NOT EXISTS (
-      SELECT 1 FROM `alrowad_uni_rust`.`permissions` existing
-      WHERE existing.permission_code = codes.permission_code
-  );
-
-INSERT INTO `alrowad_uni_rust`.`role_permissions` (role_id, permission_id, granted_at)
-SELECT r.role_id, p.permission_id, CURRENT_TIMESTAMP
-FROM `alrowad_uni_rust`.`roles` r
-CROSS JOIN `alrowad_uni_rust`.`permissions` p
-WHERE @apply_ready = 1
-  AND r.role_code = 'registration_officer'
-  AND r.is_active = 1
-  AND p.permission_code IN (
-      'academic_records.view', 'academic_records.finalize',
-      'academic_progression.view', 'academic_progression.review',
-      'graduation_decisions.view', 'graduation_decisions.review'
-  )
-  AND p.is_active = 1
-  AND NOT EXISTS (
-      SELECT 1 FROM `alrowad_uni_rust`.`role_permissions` existing
-      WHERE existing.role_id = r.role_id AND existing.permission_id = p.permission_id
-  );
-
-SET @rbac_post_extra := IF(
+SET @sql := IF(
     @apply_ready = 1,
-    (
-        SELECT COUNT(*)
-        FROM `alrowad_uni_rust`.`roles` r
-        JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
-        JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
-        WHERE p.permission_code IN (
-            'academic_records.view', 'academic_records.finalize',
-            'academic_progression.view', 'academic_progression.review',
-            'graduation_decisions.view', 'graduation_decisions.review'
-        )
-          AND r.role_code <> 'registration_officer'
-    ),
-    1
+    'INSERT INTO `alrowad_uni_rust`.`permissions` (module_id, permission_code, permission_name, description, is_active, created_at, updated_at) SELECT sm.module_id, codes.permission_code, codes.permission_name, codes.description, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP FROM `alrowad_uni_rust`.`system_modules` sm JOIN (SELECT ''academic_records.view'' AS permission_code, ''View academic records'' AS permission_name, ''View official student academic term snapshots.'' AS description UNION ALL SELECT ''academic_records.finalize'', ''Finalize academic records'', ''Recalculate and finalize official student academic term snapshots.'' UNION ALL SELECT ''academic_progression.view'', ''View academic progression'', ''View formal academic progression decisions and evidence.'' UNION ALL SELECT ''academic_progression.review'', ''Review academic progression'', ''Submit, return, or approve formal academic progression decisions.'' UNION ALL SELECT ''graduation_decisions.view'', ''View graduation decisions'', ''View formal graduation decisions and snapshots.'' UNION ALL SELECT ''graduation_decisions.review'', ''Review graduation decisions'', ''Submit, return, or approve formal graduation decisions.'') codes WHERE sm.module_code = ''students'' AND sm.is_active = 1 AND NOT EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`permissions` existing WHERE existing.permission_code = codes.permission_code)',
+    'SELECT ''skip_permissions'' AS apply_step'
 );
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
-SET @rbac_post_officer := IF(
-    @apply_ready = 1
-    AND (
-        SELECT COUNT(*)
-        FROM `alrowad_uni_rust`.`roles` r
-        JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
-        JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id
-        WHERE r.role_code = 'registration_officer'
-          AND r.is_active = 1
-          AND p.permission_code IN (
-              'academic_records.view', 'academic_records.finalize',
-              'academic_progression.view', 'academic_progression.review',
-              'graduation_decisions.view', 'graduation_decisions.review'
-          )
-          AND p.is_active = 1
-    ) = 6,
-    1, 0
+SET @sql := IF(
+    @apply_ready = 1,
+    'INSERT INTO `alrowad_uni_rust`.`role_permissions` (role_id, permission_id, granted_at) SELECT r.role_id, p.permission_id, CURRENT_TIMESTAMP FROM `alrowad_uni_rust`.`roles` r CROSS JOIN `alrowad_uni_rust`.`permissions` p WHERE r.role_code = ''registration_officer'' AND r.is_active = 1 AND p.permission_code IN (''academic_records.view'', ''academic_records.finalize'', ''academic_progression.view'', ''academic_progression.review'', ''graduation_decisions.view'', ''graduation_decisions.review'') AND p.is_active = 1 AND NOT EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`role_permissions` existing WHERE existing.role_id = r.role_id AND existing.permission_id = p.permission_id)',
+    'SELECT ''skip_role_permissions'' AS apply_step'
 );
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
-SET @rbac_post_module := IF(
-    @apply_ready = 1
-    AND (
-        SELECT COUNT(*)
-        FROM `alrowad_uni_rust`.`permissions` p
-        JOIN `alrowad_uni_rust`.`system_modules` sm ON sm.module_id = p.module_id
-        WHERE p.permission_code IN (
-            'academic_records.view', 'academic_records.finalize',
-            'academic_progression.view', 'academic_progression.review',
-            'graduation_decisions.view', 'graduation_decisions.review'
-        )
-          AND p.is_active = 1
-          AND sm.module_code = 'students'
-    ) = 6,
-    1, 0
+SET @rbac_post_extra := 1;
+SET @rbac_post_officer := 0;
+SET @rbac_post_module := 0;
+SET @sql := IF(
+    @apply_ready = 1,
+    'SELECT @rbac_post_extra := (SELECT COUNT(*) FROM `alrowad_uni_rust`.`roles` r JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id WHERE p.permission_code IN (''academic_records.view'', ''academic_records.finalize'', ''academic_progression.view'', ''academic_progression.review'', ''graduation_decisions.view'', ''graduation_decisions.review'') AND r.role_code <> ''registration_officer'')',
+    'SELECT @rbac_post_extra := 1'
 );
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+SET @sql := IF(
+    @apply_ready = 1,
+    'SELECT @rbac_post_officer := IF((SELECT COUNT(*) FROM `alrowad_uni_rust`.`roles` r JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id WHERE r.role_code = ''registration_officer'' AND r.is_active = 1 AND p.permission_code IN (''academic_records.view'', ''academic_records.finalize'', ''academic_progression.view'', ''academic_progression.review'', ''graduation_decisions.view'', ''graduation_decisions.review'') AND p.is_active = 1) = 6, 1, 0)',
+    'SELECT @rbac_post_officer := 0'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+SET @sql := IF(
+    @apply_ready = 1,
+    'SELECT @rbac_post_module := IF((SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` p JOIN `alrowad_uni_rust`.`system_modules` sm ON sm.module_id = p.module_id WHERE p.permission_code IN (''academic_records.view'', ''academic_records.finalize'', ''academic_progression.view'', ''academic_progression.review'', ''graduation_decisions.view'', ''graduation_decisions.review'') AND p.is_active = 1 AND sm.module_code = ''students'') = 6, 1, 0)',
+    'SELECT @rbac_post_module := 0'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 SET @rbac_post_ok := IF(@apply_ready = 1 AND @rbac_post_extra = 0 AND @rbac_post_officer = 1 AND @rbac_post_module = 1, 1, 0);
 
 SET @sql := IF(
     @apply_ready = 1 AND @rbac_post_ok = 1,
     'COMMIT',
-    IF(@apply_ready = 1, 'ROLLBACK', 'COMMIT')
+    IF(@apply_ready = 1, 'ROLLBACK', 'SELECT ''skip_rbac_commit'' AS apply_step')
 );
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 

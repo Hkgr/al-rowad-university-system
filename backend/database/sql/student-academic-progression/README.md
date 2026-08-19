@@ -50,8 +50,11 @@ without conversion.
 | `POST/PUT/PATCH/DELETE /api/v1/student-academic-terms` | Generic CRUD including client `term_gpa` / `cumulative_gpa` / `academic_level_id` | `academic_term_workflow_required`; finalized rows `academic_term_finalized` |
 | `PUT/PATCH /api/v1/students/{student}` `current_academic_level_id` | Direct write | `academic_level_progression_workflow_required` |
 | `PUT/PATCH /api/v1/students/{student}` into `graduated` | Eligibility check then write | `graduation_decision_workflow_required` |
+| `PUT/PATCH /api/v1/students/{student}` out of `graduated` | Generic status write | `graduation_decision_workflow_required` |
 
-Safe profile fields (name, phone, address, etc.) remain writable.
+Generic Student mutation rejects **both** entering and leaving `graduated`.
+Phase 10 does not implement graduation reversal. Safe profile fields
+(name, phone, address, etc.) remain writable for a graduated student.
 `academic_program_id` is still a generic update (program transfer is out
 of scope). A program change supersedes any current progression/graduation
 decision.
@@ -108,16 +111,33 @@ No guessed promotion thresholds. The authorized actor submits
 `promoted` or `retained`. Next level must be the immediately next active
 program level. No skip, no backward move, no fake next level at the end.
 
+Term GPA for formal progression:
+
+- a **finalized** `StudentAcademicTerm` may be used as the official immutable snapshot
+- an **unfinalized** or missing term row must never override GradeService official results
+- approval revalidates the same canonical evidence under lock
+
 ## Term finalization
 
 `student_academic_terms` is a system-computed snapshot. New columns:
 
-- `is_finalized`, `finalized_at`, `finalized_by_user_id`
-- `earned_hours`, `attempted_hours`
+- `is_finalized` TINYINT(1) NOT NULL DEFAULT 0
+- `earned_hours` / `attempted_hours` INT NOT NULL DEFAULT 0
+- `finalized_at` TIMESTAMP NULL DEFAULT NULL
+- `finalized_by_user_id` INT NULL DEFAULT NULL, `fk_sat_finalized_by` → `users.user_id`
 
 Existing unique key `uq_student_term (student_id, academic_year_id, semester_id)`
 is required. Preflight BLOCKED on duplicate identity; apply never
 deduplicates.
+
+Finalization is allowed only after `AcademicRecordGraphLocker` and only when
+`GradeService::unfinalizedAcademicWorkForTerm()` is empty for that exact
+student / academic year / semester. That helper reuses the canonical
+`unfinalizedAcademicWork()` official-result definition (academic-attempt
+registrations: `registered` / `completed`). Dropped or withdrawn
+registrations do not require a final result. Recalculation may still write a
+provisional snapshot. Incomplete official work returns HTTP 409
+`academic_results_not_final` and must not set `is_finalized = 1`.
 
 ## Canonical graduation student status
 
@@ -216,6 +236,12 @@ AC10-37 legacy student without Phase 10 decision remains readable
 AC10-38 duplicate term identity → preflight BLOCKED, no destructive dedupe
 AC10-39 concurrent grade finalization vs progression: lock offerings first, recheck official state
 AC10-40 concurrent graduation approvals materialize exactly once
+AC10-41 one approved and one non-final result in the target term → finalize HTTP 409 `academic_results_not_final`; no `is_finalized` mutation
+AC10-42 all relevant target-term academic attempts have official final results → finalize succeeds and snapshots official term evidence
+AC10-43 unfinalized `StudentAcademicTerm` has stale `term_gpa` after later official grades → progression evidence ignores the mutable snapshot and uses GradeService
+AC10-44 finalized `StudentAcademicTerm` may be used as the immutable official term snapshot for formal progression
+AC10-45 graduated student generic PATCH of phone (or address) is allowed
+AC10-46 graduated student generic PATCH of `student_status_id` to active is blocked by formal graduation workflow protection
 
 SQL-AC10: clean READY; partial compatible READY; conflict BLOCKED; apply APPLIED;
 rerun idempotent; verify PASS; legacy duplicate term BLOCKED; missing graduation
@@ -223,6 +249,22 @@ status BLOCKED; wrong authority matrix BLOCKED; RBAC drift apply BLOCKED;
 wrong UNIQUE/NON-UNIQUE fail; wrong engine fail; rollback absent safe;
 rollback unused safe; rollback after history BLOCKED_IN_USE; optional table
 absent rollback no #1146; pre-existing compatible RBAC survives rollback.
+SQL-AC10-17 existing progression table has correct column names but wrong type → 00 BLOCKED/CONFLICT, 01 BLOCKED, 02 FAIL
+SQL-AC10-18 FK has correct constraint name but wrong referenced target → 00 BLOCKED/CONFLICT, 01 BLOCKED, 02 FAIL
+SQL-AC10-19 `fk_sat_finalized_by` wrong target → 00 BLOCKED, 01 BLOCKED, 02 FAIL
+SQL-AC10-20 Phase 10 required infrastructure table missing → 00 OVERALL BLOCKED, no #1146
+SQL-AC10-21 pre-existing compatible unused term finalization columns → rollback does not delete them without provenance (`retained_no_provenance`)
+SQL-AC10-22 named NON-UNIQUE Phase 10 index exists as UNIQUE → 00 CONFLICT, 01 BLOCKED, 02 FAIL
+
+Exact compatibility (00/01 CONFLICT, 02 FAIL) covers column names, data types,
+lengths/precision/scale, nullability, defaults, AUTO_INCREMENT, primary key,
+InnoDB, named indexes and column order, UNIQUE vs NON-UNIQUE, and every FK
+source column plus referenced table/column. `CREATE TABLE IF NOT EXISTS` never
+repairs an incompatible existing table. Missing required tables are detected
+from `information_schema` first; business-table queries use guarded
+PREPARE/EXECUTE so OVERALL is BLOCKED/FAIL rather than SQL error #1146.
+Rollback never drops Phase 10 tables/columns or `fk_sat_finalized_by` because
+provenance cannot be proven.
 
 ## Validation
 

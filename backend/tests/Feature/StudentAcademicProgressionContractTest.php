@@ -40,11 +40,19 @@ class StudentAcademicProgressionContractTest extends TestCase
 
         self::assertStringContainsString('academicLevelProgressionWorkflowRequired()', $update);
         self::assertStringContainsString('graduationDecisionWorkflowRequired()', $update);
+        self::assertGreaterThanOrEqual(2, substr_count($update, 'AcademicRecordWorkflow::GRADUATED_STATUS'));
+        self::assertStringContainsString('$targetStatusCode !== $currentStatusCode', $update);
         self::assertStringContainsString('AcademicRecordWorkflow::GRADUATED_STATUS', $update);
+        self::assertTrue(
+            strpos($update, '$targetStatusCode === AcademicRecordWorkflow::GRADUATED_STATUS') !== false
+            && strpos($update, '$currentStatusCode === AcademicRecordWorkflow::GRADUATED_STATUS') !== false
+        );
         self::assertStringNotContainsString('updateGraduatedStatus', $controller);
         self::assertStringNotContainsString('assertEligible($locked)', $update);
-        self::assertStringContainsString('first_name', self::source('app/Http/Requests/Student/UpdateStudentRequest.php'));
-        self::assertStringContainsString('phone_number', self::source('app/Http/Requests/Student/UpdateStudentRequest.php'));
+        $request = self::source('app/Http/Requests/Student/UpdateStudentRequest.php');
+        self::assertStringContainsString('first_name', $request);
+        self::assertStringContainsString('phone_number', $request);
+        self::assertStringContainsString("'address'", $request);
     }
 
     public function test_canonical_calculators_are_reused_not_duplicated(): void
@@ -92,7 +100,29 @@ class StudentAcademicProgressionContractTest extends TestCase
         $terms = self::source('app/Services/AcademicTermSnapshotService.php');
         $finalize = self::extractMethod($terms, 'finalize');
         self::assertStringContainsString('isFinalized()', $finalize);
+        self::assertStringContainsString('lockStudentAcademicGraph(', $finalize);
+        self::assertStringContainsString('unfinalizedAcademicWorkForTerm(', $finalize);
+        self::assertStringContainsString('academicResultsNotFinal()', $finalize);
+        self::assertTrue(
+            strpos($finalize, 'lockStudentAcademicGraph(') < strpos($finalize, 'unfinalizedAcademicWorkForTerm(')
+        );
+        self::assertTrue(
+            strpos($finalize, 'unfinalizedAcademicWorkForTerm(') < strpos($finalize, 'upsertComputedTerm(')
+        );
         self::assertStringContainsString('upsertComputedTerm(', $finalize);
+
+        $upsert = self::extractMethod($terms, 'upsertComputedTerm');
+        self::assertTrue(
+            strpos($upsert, 'unfinalizedAcademicWorkForTerm(') < strpos($upsert, "'is_finalized' => true")
+        );
+
+        $grades = self::source('app/Services/GradeService.php');
+        self::assertStringContainsString('public function unfinalizedAcademicWorkForTerm(', $grades);
+        $termWork = self::extractMethod($grades, 'unfinalizedAcademicWorkForTerm');
+        self::assertStringContainsString('collectUnfinalizedAcademicWork(', $termWork);
+        $collect = self::extractMethod($grades, 'collectUnfinalizedAcademicWork');
+        self::assertStringContainsString('academicAttempts(requireResult: false)', $collect);
+        self::assertStringContainsString('isOfficiallyVisibleAttempt(', $collect);
 
         $reject = self::extractMethod($terms, 'rejectGenericMutation');
         self::assertStringContainsString('academicTermFinalized()', $reject);
@@ -117,6 +147,19 @@ class StudentAcademicProgressionContractTest extends TestCase
         self::assertStringContainsString("decision_result === AcademicRecordWorkflow::RESULT_PROMOTED", $decide);
         $finish = self::extractMethod($progression, 'finishDecision');
         self::assertStringNotContainsString('DB::transaction', $finish);
+        $termGpa = self::extractMethod($progression, 'officialTermGpa');
+        self::assertStringContainsString('isFinalized()', $termGpa);
+        self::assertStringContainsString('officialTermMetrics(', $termGpa);
+        self::assertStringContainsString('getGpaOverview(', $termGpa);
+        self::assertTrue(
+            strpos($termGpa, 'isFinalized()') < strpos($termGpa, '$latestTerm->term_gpa')
+        );
+        self::assertTrue(
+            strpos($termGpa, '$latestTerm->term_gpa') < strpos($termGpa, 'officialTermMetrics(')
+        );
+        self::assertTrue(
+            strpos($termGpa, 'isFinalized()') < strpos($termGpa, 'officialTermMetrics(')
+        );
 
         $graduation = self::source('app/Services/GraduationDecisionService.php');
         self::assertStringContainsString(
@@ -188,7 +231,7 @@ class StudentAcademicProgressionContractTest extends TestCase
         }
 
         $readme = self::source('database/sql/student-academic-progression/README.md');
-        foreach (['AC10-01', 'AC10-21', 'AC10-40', 'SQL-AC10', 'BLOCKED_IN_USE', 'registration_officer', 'graduated', '4.0'] as $needle) {
+        foreach (['AC10-01', 'AC10-21', 'AC10-40', 'AC10-41', 'AC10-46', 'SQL-AC10', 'SQL-AC10-17', 'SQL-AC10-22', 'BLOCKED_IN_USE', 'registration_officer', 'graduated', '4.0', 'retained_no_provenance'] as $needle) {
             self::assertStringContainsString($needle, $readme);
         }
 
@@ -204,12 +247,22 @@ class StudentAcademicProgressionContractTest extends TestCase
             self::assertStringContainsString("status_code = 'graduated'", $sql);
             self::assertStringContainsString("index_name = 'uq_spd_current_slot'", $sql);
             self::assertStringContainsString("index_name = 'idx_spd_student_status'", $sql);
+            self::assertStringContainsString('referenced_table_name', $sql);
+            self::assertStringContainsString("referenced_column_name = 'user_id'", $sql);
+            self::assertStringContainsString("LOWER(column_type) = 'tinyint(1)'", $sql);
+            self::assertStringContainsString('numeric_precision', $sql);
+            self::assertStringContainsString("index_name = 'idx_spe_decision'", $sql);
+            self::assertStringContainsString("index_name = 'idx_sge_actor'", $sql);
+            self::assertStringContainsString("index_name = 'idx_spd_reviewer'", $sql);
+            self::assertStringContainsString("constraint_name = 'fk_sat_finalized_by'", $sql);
             self::assertMatchesRegularExpression(
                 "/index_name = 'idx_spd_student_status'\\s*AND non_unique = 1/s",
                 $sql
             );
         }
 
+        self::assertStringContainsString('PREPARE stmt FROM @sql', $preflight);
+        self::assertStringContainsString('@missing_required_columns', $preflight);
         self::assertStringContainsString('legacy_term_duplicates', $preflight);
         self::assertStringContainsString('@apply_ready := @overall_ready', $apply);
         self::assertStringContainsString('ROLLBACK', $apply);
@@ -218,6 +271,9 @@ class StudentAcademicProgressionContractTest extends TestCase
         self::assertStringContainsString('PREPARE stmt FROM @sql', $rollback);
         self::assertStringContainsString('BLOCKED_IN_USE', $rollback);
         self::assertStringContainsString('retained_no_provenance', $rollback);
+        self::assertStringContainsString('RETAINED_NO_PROVENANCE', $rollback);
+        self::assertStringNotContainsString('DROP COLUMN', $rollback);
+        self::assertStringNotContainsString('DROP TABLE `alrowad_uni_rust`.`student_progression_decisions`', $rollback);
         self::assertStringNotContainsString('DROP TABLE `alrowad_uni_rust`.`students`', $rollback);
         self::assertStringNotContainsString('DROP TABLE `alrowad_uni_rust`.`student_academic_terms`', $rollback);
         self::assertStringNotContainsString("DELETE FROM `alrowad_uni_rust`.`permissions`", $rollback);
@@ -240,6 +296,123 @@ class StudentAcademicProgressionContractTest extends TestCase
         self::assertStringContainsString('academic-records/students/{student}/terms', $routes);
         self::assertStringContainsString('academic-progression/{student}/submit', $routes);
         self::assertStringContainsString('graduation-decisions/{student}/submit', $routes);
+    }
+
+    public function test_ac10_41_term_finalize_rejects_non_final_target_term_work(): void
+    {
+        $exception = self::source('app/Exceptions/AcademicRecordException.php');
+        self::assertStringContainsString("ACADEMIC_RESULTS_NOT_FINAL = 'academic_results_not_final'", $exception);
+        self::assertStringContainsString('409, self::ACADEMIC_RESULTS_NOT_FINAL', $exception);
+
+        $finalize = self::extractMethod(self::source('app/Services/AcademicTermSnapshotService.php'), 'finalize');
+        self::assertStringContainsString('unfinalizedAcademicWorkForTerm($locked, $academicYearId, $semesterId) !== []', $finalize);
+        self::assertStringContainsString('academicResultsNotFinal()', $finalize);
+        self::assertTrue(
+            strpos($finalize, 'academicResultsNotFinal()') < strpos($finalize, 'upsertComputedTerm($locked, $academicYearId, $semesterId, $user, finalize: true)')
+        );
+
+        $collect = self::extractMethod(self::source('app/Services/GradeService.php'), 'collectUnfinalizedAcademicWork');
+        self::assertStringContainsString("->where('academic_year_id', \$academicYearId)", $collect);
+        self::assertStringContainsString("->where('semester_id', \$semesterId)", $collect);
+        self::assertStringContainsString('isOfficiallyVisibleAttempt(', $collect);
+    }
+
+    public function test_ac10_42_term_finalize_snapshots_official_term_evidence(): void
+    {
+        $terms = self::source('app/Services/AcademicTermSnapshotService.php');
+        $upsert = self::extractMethod($terms, 'upsertComputedTerm');
+        self::assertStringContainsString('officialTermMetrics($student, $academicYearId, $semesterId)', $upsert);
+        self::assertStringContainsString("'is_finalized' => true", $upsert);
+        self::assertTrue(
+            strpos($upsert, 'unfinalizedAcademicWorkForTerm(') < strpos($upsert, "'is_finalized' => true")
+        );
+
+        $recalculate = self::extractMethod($terms, 'recalculate');
+        self::assertStringContainsString('finalize: false', $recalculate);
+        self::assertStringNotContainsString('academicResultsNotFinal()', $recalculate);
+    }
+
+    public function test_ac10_43_and_44_progression_term_gpa_uses_finalized_snapshot_only(): void
+    {
+        $termGpa = self::extractMethod(self::source('app/Services/AcademicProgressionService.php'), 'officialTermGpa');
+        self::assertStringContainsString('$latestTerm !== null && $latestTerm->isFinalized()', $termGpa);
+        self::assertStringContainsString('officialTermMetrics(', $termGpa);
+        self::assertGreaterThanOrEqual(1, substr_count($termGpa, '$latestTerm->term_gpa'));
+        self::assertTrue(strpos($termGpa, 'isFinalized()') < strpos($termGpa, '$latestTerm->term_gpa'));
+
+        $build = self::extractMethod(self::source('app/Services/AcademicProgressionService.php'), 'buildEvidence');
+        self::assertStringContainsString('officialTermGpa(', $build);
+        self::assertStringNotContainsString('$term->term_gpa', $build);
+
+        $decide = self::extractMethod(self::source('app/Services/AcademicProgressionService.php'), 'decide');
+        self::assertStringContainsString('buildEvidence(', $decide);
+        self::assertStringContainsString('lockStudentAcademicGraph(', $decide);
+        self::assertTrue(
+            strpos($decide, 'lockStudentAcademicGraph(') < strpos($decide, 'buildEvidence(')
+        );
+    }
+
+    public function test_ac10_45_and_46_graduated_status_is_protected_in_both_directions(): void
+    {
+        $update = self::extractMethod(self::source('app/Http/Controllers/Api/StudentController.php'), 'update');
+        self::assertStringContainsString('$targetStatusCode === AcademicRecordWorkflow::GRADUATED_STATUS', $update);
+        self::assertStringContainsString('$currentStatusCode === AcademicRecordWorkflow::GRADUATED_STATUS', $update);
+        self::assertStringContainsString('graduationDecisionWorkflowRequired()', $update);
+        self::assertStringContainsString('$locked->update($data)', $update);
+
+        $exception = self::source('app/Exceptions/AcademicRecordException.php');
+        self::assertStringContainsString("GRADUATION_DECISION_WORKFLOW_REQUIRED = 'graduation_decision_workflow_required'", $exception);
+        self::assertStringContainsString('entered or left through the formal graduation decision workflow', $exception);
+
+        $request = self::source('app/Http/Requests/Student/UpdateStudentRequest.php');
+        self::assertStringContainsString("'phone_number'", $request);
+        self::assertStringContainsString("'address'", $request);
+    }
+
+    public function test_sql_ac10_17_through_22_exact_compatibility_fail_closed_and_provenance(): void
+    {
+        $preflight = self::source('database/sql/student-academic-progression/00_preflight.sql');
+        $apply = self::source('database/sql/student-academic-progression/01_apply.sql');
+        $verify = self::source('database/sql/student-academic-progression/02_verify.sql');
+        $rollback = self::source('database/sql/student-academic-progression/03_rollback.sql');
+
+        foreach ([$preflight, $apply, $verify] as $sql) {
+            self::assertStringContainsString('LOWER(c.data_type) <> required.data_type', $sql);
+            self::assertStringContainsString('k.referenced_table_name = required.ref_table', $sql);
+            self::assertStringContainsString('k.referenced_column_name = required.ref_column', $sql);
+            self::assertStringContainsString("referenced_table_name = 'users'", $sql);
+            self::assertStringContainsString("referenced_column_name = 'user_id'", $sql);
+            self::assertStringContainsString("constraint_name = 'fk_sat_finalized_by'", $sql);
+            self::assertStringContainsString("AND constraint_type = 'FOREIGN KEY') = 7", $sql);
+            self::assertMatchesRegularExpression("/index_name = 'idx_spd_reviewer'\\s*AND non_unique = 1/s", $sql);
+            self::assertMatchesRegularExpression("/index_name = 'idx_spe_decision'\\s*AND non_unique = 1/s", $sql);
+            self::assertMatchesRegularExpression("/index_name = 'idx_sge_actor'\\s*AND non_unique = 1/s", $sql);
+        }
+
+        self::assertStringContainsString("IF(@overall_ready = 1, 'READY', 'BLOCKED')", $preflight);
+        self::assertStringContainsString('@missing_required_columns = 0', $preflight);
+        self::assertStringContainsString('never SQL error #1146', $preflight);
+        self::assertStringContainsString("IF(@apply_ready = 1 AND @rbac_post_ok = 1, 'APPLIED', 'BLOCKED')", $apply);
+        self::assertStringContainsString('@apply_ready := @overall_ready', $apply);
+        self::assertStringContainsString("IF(@structure_ok = 1 AND @invariants_ok = 1, 'PASS', 'FAIL')", $verify);
+        self::assertStringContainsString('fk_sat_finalized_by', $verify);
+        self::assertStringContainsString("'promoted'", $verify);
+        self::assertStringContainsString("'retained'", $verify);
+        self::assertStringContainsString("decision_result <> ''graduated''", $verify);
+
+        foreach ([$preflight, $apply, $verify] as $sql) {
+            self::assertDoesNotMatchRegularExpression(
+                '/^SELECT\\s+.*FROM `alrowad_uni_rust`\\.`(?:roles|student_statuses|permissions)`/m',
+                $sql
+            );
+        }
+
+        self::assertStringContainsString('retained_no_provenance', $rollback);
+        self::assertStringContainsString('RETAINED_NO_PROVENANCE', $rollback);
+        self::assertStringNotContainsString('DROP COLUMN', $rollback);
+        self::assertStringNotContainsString('DROP FOREIGN KEY', $rollback);
+        self::assertStringContainsString('skip_drop_is_finalized', $rollback);
+        self::assertStringContainsString('skip_drop_fk_sat_finalized_by', $rollback);
     }
 
     private static function extractMethod(string $source, string $name): string

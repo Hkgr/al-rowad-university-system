@@ -409,21 +409,7 @@ class AcademicProgressionService
         $candidate = $this->candidateNextLevel($student);
         $termGpa = null;
         if ($academicYearId !== null) {
-            $latestTerm = $student->studentAcademicTerms()
-                ->where('academic_year_id', $academicYearId)
-                ->orderByDesc('semester_id')
-                ->first();
-            if ($latestTerm !== null) {
-                $termGpa = $latestTerm->term_gpa !== null ? (float) $latestTerm->term_gpa : null;
-            } else {
-                $overview = $this->grades->getGpaOverview($student);
-                foreach (array_reverse($overview['timeline'] ?? []) as $point) {
-                    if ((int) ($point['academic_year_id'] ?? 0) === $academicYearId) {
-                        $termGpa = $point['term_gpa'];
-                        break;
-                    }
-                }
-            }
+            $termGpa = $this->officialTermGpa($student, $academicYearId);
         }
 
         $eligibility = null;
@@ -471,6 +457,39 @@ class AcademicProgressionService
             'repeated_courses_handling' => $metrics['repeated_courses_handling'],
             'gpa_scale' => $metrics['scale'],
         ];
+    }
+
+    /**
+     * Finalized StudentAcademicTerm rows are the official immutable snapshot.
+     * Unfinalized provisional rows must never override GradeService evidence.
+     */
+    private function officialTermGpa(Student $student, int $academicYearId): ?float
+    {
+        $latestTerm = $student->studentAcademicTerms()
+            ->where('academic_year_id', $academicYearId)
+            ->orderByDesc('semester_id')
+            ->first();
+
+        if ($latestTerm !== null && $latestTerm->isFinalized()) {
+            return $latestTerm->term_gpa !== null ? (float) $latestTerm->term_gpa : null;
+        }
+
+        if ($latestTerm !== null) {
+            return $this->grades->officialTermMetrics(
+                $student,
+                $academicYearId,
+                (int) $latestTerm->semester_id
+            )['term_gpa'];
+        }
+
+        $overview = $this->grades->getGpaOverview($student);
+        foreach (array_reverse($overview['timeline'] ?? []) as $point) {
+            if ((int) ($point['academic_year_id'] ?? 0) === $academicYearId) {
+                return $point['term_gpa'] !== null ? (float) $point['term_gpa'] : null;
+            }
+        }
+
+        return null;
     }
 
     private function candidateNextLevel(Student $student): ?AcademicLevel

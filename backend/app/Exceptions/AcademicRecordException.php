@@ -100,9 +100,9 @@ class AcademicRecordException extends Exception
 
     public static function academicResultsNotFinal(): self
     {
-        $message = 'Formal academic progression cannot finalize while official academic results are incomplete or unfinalized.';
+        $message = 'Formal academic record finalization cannot proceed while official academic results are incomplete or unfinalized.';
 
-        return new self($message, ['progression' => [$message]], 409, self::ACADEMIC_RESULTS_NOT_FINAL);
+        return new self($message, ['academic_results' => [$message]], 409, self::ACADEMIC_RESULTS_NOT_FINAL);
     }
 
     public static function academicProgressionReviewForbidden(): self
@@ -163,7 +163,7 @@ class AcademicRecordException extends Exception
 
     public static function graduationDecisionWorkflowRequired(): self
     {
-        $message = 'A student may only be marked graduated through the formal graduation decision workflow.';
+        $message = 'A student graduated status may only be entered or left through the formal graduation decision workflow.';
 
         return new self($message, ['student_status' => [$message]], 409, self::GRADUATION_DECISION_WORKFLOW_REQUIRED);
     }

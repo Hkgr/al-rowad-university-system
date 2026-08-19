@@ -75,6 +75,10 @@ class AcademicTermSnapshotService
                 return $this->present($existing->fresh()->load(['academicYear', 'semester', 'academicLevel', 'finalizedBy']));
             }
 
+            if ($this->grades->unfinalizedAcademicWorkForTerm($locked, $academicYearId, $semesterId) !== []) {
+                throw AcademicRecordException::academicResultsNotFinal();
+            }
+
             $term = $this->upsertComputedTerm($locked, $academicYearId, $semesterId, $user, finalize: true);
 
             return $this->present($term);
@@ -138,6 +142,10 @@ class AcademicTermSnapshotService
         }
 
         if ($finalize) {
+            if ($this->grades->unfinalizedAcademicWorkForTerm($student, $academicYearId, $semesterId) !== []) {
+                throw AcademicRecordException::academicResultsNotFinal();
+            }
+
             $now = now();
             $term->update([
                 'is_finalized' => true,
