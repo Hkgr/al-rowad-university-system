@@ -11,6 +11,7 @@ use App\Models\StudentProgressionDecision;
 use App\Models\StudentProgressionEvent;
 use App\Models\User;
 use App\Support\AcademicRecordWorkflow;
+use App\Support\AcademicQueuePagination;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
@@ -34,7 +35,7 @@ class AcademicProgressionService
         return $this->buildEvidence($student, $academicYearId);
     }
 
-    public function index(User $user, ?string $status = null, ?int $studentId = null): array
+    public function index(User $user, ?string $status = null, ?int $studentId = null, ?int $perPage = null): array
     {
         $this->assertCanView($user);
         $this->assertSchemaReady();
@@ -52,11 +53,14 @@ class AcademicProgressionService
             $query->where('student_id', $studentId);
         }
 
+        $paginator = $query->paginate(AcademicQueuePagination::perPage($perPage));
+
         return [
-            'decisions' => $query->get()
+            'decisions' => $paginator->getCollection()
                 ->map(fn (StudentProgressionDecision $decision): array => $this->present($decision))
                 ->values()
                 ->all(),
+            'meta' => AcademicQueuePagination::meta($paginator),
         ];
     }
 

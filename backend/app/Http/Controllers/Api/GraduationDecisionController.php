@@ -7,6 +7,7 @@ use App\Models\Student;
 use App\Models\StudentGraduationDecision;
 use App\Services\GraduationDecisionService;
 use App\Support\AcademicRecordWorkflow;
+use App\Support\AcademicQueuePagination;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -21,12 +22,14 @@ class GraduationDecisionController extends Controller
         $validated = $request->validate([
             'status' => ['sometimes', 'string', 'in:submitted,returned,approved,superseded'],
             'student_id' => ['sometimes', 'integer', 'exists:students,student_id'],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:'.AcademicQueuePagination::MAX_PER_PAGE],
         ]);
 
         return $this->ok($this->graduation->index(
             $request->user(),
             $validated['status'] ?? null,
-            isset($validated['student_id']) ? (int) $validated['student_id'] : null
+            isset($validated['student_id']) ? (int) $validated['student_id'] : null,
+            isset($validated['per_page']) ? (int) $validated['per_page'] : null
         ));
     }
 

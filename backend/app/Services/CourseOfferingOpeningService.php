@@ -165,6 +165,9 @@ class CourseOfferingOpeningService
     }
 
     /**
+     * Canonical lock order: course_offerings, then pending removal requests,
+     * then course_offering_instructors. Never lock instructors before the offering.
+     *
      * @param  callable(CourseOffering): CourseOffering  $then
      */
     private function withLockedOffering(CourseOffering $offering, callable $then): CourseOffering

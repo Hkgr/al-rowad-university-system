@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\StudentRegistrationWithdrawalRequest;
 use App\Services\RegistrationWithdrawalService;
+use App\Support\AcademicQueuePagination;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -18,10 +19,15 @@ class AcademicAdvisingRegistrationWithdrawalController extends Controller
     {
         $validated = $request->validate([
             'status' => ['sometimes', 'string', 'in:submitted,returned,approved,superseded'],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:'.AcademicQueuePagination::MAX_PER_PAGE],
         ]);
 
         return $this->successResponse(
-            $this->withdrawals->advisorIndex($request->user(), $validated['status'] ?? null)
+            $this->withdrawals->advisorIndex(
+                $request->user(),
+                $validated['status'] ?? null,
+                isset($validated['per_page']) ? (int) $validated['per_page'] : null
+            )
         );
     }
 

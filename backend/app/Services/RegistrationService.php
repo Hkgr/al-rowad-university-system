@@ -265,12 +265,10 @@ class RegistrationService
 
     private function isDuplicateRegistrationQueryException(QueryException $exception): bool
     {
-        $sqlState = $exception->errorInfo[0] ?? null;
         $errorCode = (int) ($exception->errorInfo[1] ?? 0);
         $message = $exception->getMessage();
 
-        return $sqlState === '23000'
-            || $errorCode === 1062
+        return $errorCode === 1062
             || str_contains($message, 'uq_student_course_offering');
     }
 

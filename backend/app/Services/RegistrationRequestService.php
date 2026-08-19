@@ -18,6 +18,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
+use App\Support\AcademicQueuePagination;
 use App\Support\CourseRequirementClassification;
 
 class RegistrationRequestService
@@ -289,7 +290,7 @@ class RegistrationRequestService
         });
     }
 
-    public function advisorIndex(User $user, ?string $status = null): array
+    public function advisorIndex(User $user, ?string $status = null, ?int $perPage = null): array
     {
         $this->assertCanViewRequests($user);
 
@@ -317,19 +318,20 @@ class RegistrationRequestService
             $status = StudentRegistrationRequest::STATUS_SUBMITTED;
         }
 
-        $requests = $query
+        $paginator = $query
             ->where('status', $status)
             ->orderByDesc('last_submitted_at')
             ->orderByDesc('student_registration_request_id')
-            ->get()
-            ->map(fn (StudentRegistrationRequest $request) => $this->presentAdvisorListItem($request))
-            ->values()
-            ->all();
+            ->paginate(AcademicQueuePagination::perPage($perPage));
 
         return [
             'summary' => $counts,
             'status' => $status,
-            'requests' => $requests,
+            'requests' => $paginator->getCollection()
+                ->map(fn (StudentRegistrationRequest $request) => $this->presentAdvisorListItem($request))
+                ->values()
+                ->all(),
+            'meta' => AcademicQueuePagination::meta($paginator),
         ];
     }
 
@@ -556,13 +558,13 @@ class RegistrationRequestService
         }
     }
 
-    public function approvedIndex(User $user): array
+    public function approvedIndex(User $user, ?int $perPage = null): array
     {
         if (! $user->hasPermission('registration.view')) {
             throw new AccessDeniedHttpException('You do not have permission to view approved registration requests.');
         }
 
-        $requests = $this->scopedRequestsQuery($user)
+        $paginator = $this->scopedRequestsQuery($user)
             ->where('status', StudentRegistrationRequest::STATUS_APPROVED)
             ->with([
                 'student.academicProgram',
@@ -573,24 +575,24 @@ class RegistrationRequestService
             ])
             ->orderByDesc('approved_at')
             ->orderByDesc('student_registration_request_id')
-            ->get();
+            ->paginate(AcademicQueuePagination::perPage($perPage));
 
+        $page = $paginator->getCollection();
         $courseMap = CourseRequirementClassification::indexActiveForPrograms(
-            $requests->map(fn (StudentRegistrationRequest $request) => $request->student?->academic_program_id),
-            $requests->flatMap(
+            $page->map(fn (StudentRegistrationRequest $request) => $request->student?->academic_program_id),
+            $page->flatMap(
                 fn (StudentRegistrationRequest $request) => $request->items->map(
                     fn (StudentRegistrationRequestItem $item) => $item->courseOffering?->course_id
                 )
             )
         );
 
-        $requests = $requests
-            ->map(fn (StudentRegistrationRequest $request) => $this->presentApprovedListItem($request, $courseMap))
-            ->values()
-            ->all();
-
         return [
-            'requests' => $requests,
+            'requests' => $page
+                ->map(fn (StudentRegistrationRequest $request) => $this->presentApprovedListItem($request, $courseMap))
+                ->values()
+                ->all(),
+            'meta' => AcademicQueuePagination::meta($paginator),
         ];
     }
 

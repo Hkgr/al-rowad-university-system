@@ -1,8 +1,6 @@
 <?php
 
-use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use App\Services\UserIdentityService;
 
@@ -23,6 +21,7 @@ use App\Http\Controllers\Api\BoardDecisionAttachmentController;
 use App\Http\Controllers\Api\BoardMeetingController;
 use App\Http\Controllers\Api\BoardMemberController;
 use App\Http\Controllers\Api\CollegeController;
+use App\Http\Controllers\Api\LoginController;
 use App\Http\Controllers\Api\CourseController;
 use App\Http\Controllers\Api\CourseDepartmentController;
 use App\Http\Controllers\Api\CourseInstructorController;
@@ -115,43 +114,8 @@ use App\Http\Controllers\Api\UserRoleController;
 |--------------------------------------------------------------------------
 */
 
-Route::post('login', function (Request $request, UserIdentityService $identity) {
-    $validated = $request->validate([
-        'email' => ['required', 'email'],
-        'password' => ['required', 'string'],
-    ]);
-
-    $user = User::query()->where('email', $validated['email'])->first();
-
-    if (! $user || ! Hash::check($validated['password'], $user->password_hash)) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Invalid email or password',
-            'errors' => ['email' => ['The provided credentials are incorrect.']],
-        ], 422);
-    }
-
-    if ($user->accountStatus?->status_code !== 'active') {
-        return response()->json([
-            'success' => false,
-            'message' => 'This account is disabled or inactive.',
-            'error_code' => 'account_inactive',
-            'errors' => [],
-        ], 403);
-    }
-
-    $token = $user->createToken('api-token')->plainTextToken;
-
-    return response()->json([
-        'success' => true,
-        'message' => 'Login successful',
-        'data' => [
-            'user' => $identity->payload($user),
-            'token' => $token,
-            'token_type' => 'Bearer',
-        ],
-    ]);
-});
+Route::post('login', [LoginController::class, 'login'])
+    ->middleware('throttle:login');
 
 /*
 |--------------------------------------------------------------------------

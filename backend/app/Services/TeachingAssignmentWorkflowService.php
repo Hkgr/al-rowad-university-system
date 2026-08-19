@@ -815,6 +815,15 @@ class TeachingAssignmentWorkflowService
     }
 
     /**
+     * Canonical lock order for teaching-assignment + offering mutations:
+     * 1. course_offerings (course_offering_id)
+     * 2. teaching_assignment_requests
+     * 3. teaching_assignment_reviews (scientific then administrative)
+     * 4. course_offering_instructors
+     *
+     * Compatible with CourseOfferingOpeningService (offering then instructors)
+     * and must not invert to assignment-then-offering.
+     *
      * @return array{0: CourseOffering, 1: TeachingAssignmentRequest}
      */
     private function lockOfferingThenRequest(int $requestId): array

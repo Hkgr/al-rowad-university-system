@@ -18,6 +18,8 @@ class CourseOfferingContextException extends Exception
 
     public const OFFERING_IDENTITY_LOCKED = 'offering_identity_locked';
 
+    public const CAPACITY_BELOW_OCCUPIED = 'course_offering_capacity_below_occupied';
+
     public function __construct(
         string $message,
         public readonly array $errors = [],
@@ -67,5 +69,12 @@ class CourseOfferingContextException extends Exception
         $message = 'لا يمكن تغيير هوية هذا الطرح لأنه مرتبط بتسجيلات أو حضور أو علامات أو تكليفات تدريسية.';
 
         return new self($message, ['course_offering' => [$message]], 422, self::OFFERING_IDENTITY_LOCKED);
+    }
+
+    public static function capacityBelowOccupied(): self
+    {
+        $message = 'Cannot reduce course offering capacity below currently registered students.';
+
+        return new self($message, ['capacity' => [$message]], 409, self::CAPACITY_BELOW_OCCUPIED);
     }
 }

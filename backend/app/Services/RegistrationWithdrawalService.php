@@ -11,6 +11,7 @@ use App\Models\StudentRegistrationWithdrawalEvent;
 use App\Models\StudentRegistrationWithdrawalRequest;
 use App\Models\User;
 use App\Support\RegistrationLifecycle;
+use App\Support\AcademicQueuePagination;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -137,7 +138,7 @@ class RegistrationWithdrawalService
         });
     }
 
-    public function advisorIndex(User $user, ?string $status = null): array
+    public function advisorIndex(User $user, ?string $status = null, ?int $perPage = null): array
     {
         $this->assertCanView($user);
         $this->assertSchemaReady();
@@ -151,11 +152,14 @@ class RegistrationWithdrawalService
             $query->where('status', $status);
         }
 
+        $paginator = $query->paginate(AcademicQueuePagination::perPage($perPage));
+
         return [
-            'withdrawals' => $query->get()
+            'withdrawals' => $paginator->getCollection()
                 ->map(fn (StudentRegistrationWithdrawalRequest $request) => $this->present($request))
                 ->values()
                 ->all(),
+            'meta' => AcademicQueuePagination::meta($paginator),
         ];
     }
 

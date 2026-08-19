@@ -73,7 +73,9 @@ class P01AuthorizationClosureTest extends TestCase
     public function test_login_and_me_share_the_identity_serializer(): void
     {
         $routes = self::source('routes/api.php');
-        self::assertSame(2, substr_count($routes, '$identity->payload('));
+        $login = self::source('app/Http/Controllers/Api/LoginController.php');
+        self::assertStringContainsString('$identity->payload(', $routes);
+        self::assertStringContainsString('$this->identity->payload(', $login);
         $identity = self::source('app/Services/UserIdentityService.php');
         foreach (['student_id', 'employee_id', 'roles', 'permissions', 'organizational_unit', 'access_scopes'] as $field) {
             self::assertStringContainsString("'$field'", $identity);
