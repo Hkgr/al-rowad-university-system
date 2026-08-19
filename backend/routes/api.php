@@ -506,6 +506,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('dean/course-offerings/{courseOffering}', [DeanCourseOfferingController::class, 'show']);
     Route::get('dean/registration-offerings', [DeanRegistrationOfferingController::class, 'index']);
     Route::post('dean/registration-offerings/open', [DeanRegistrationOfferingController::class, 'open']);
+    Route::post('dean/registration-offerings/bulk-prepare', [DeanRegistrationOfferingController::class, 'bulkPrepare']);
     Route::post('dean/registration-offerings/{courseOffering}/open', [DeanRegistrationOfferingController::class, 'reopen']);
     Route::post('dean/registration-offerings/{courseOffering}/close', [DeanRegistrationOfferingController::class, 'close']);
     Route::get('dean/teaching-assignments', [DeanTeachingAssignmentController::class, 'index']);

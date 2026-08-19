@@ -19,15 +19,19 @@ class AdvisorySemesterOfferingContractTest extends TestCase
     {
         $service = self::source('app/Services/DeanRegistrationOfferingService.php');
         $open = self::extractMethod($service, 'openFromProgramCourse');
+        $findOrCreate = self::extractMethod($service, 'findOrCreateClosedOffering');
         $catalog = self::extractMethod($service, 'curriculumLevels');
         $match = self::extractMethod($service, 'matchingOfferings');
 
         self::assertStringContainsString("(int) \$payload['semester_id']", $open);
-        self::assertStringContainsString('resolveFromProgramCourse(', $open);
-        self::assertStringContainsString("->where('semester_id', \$semesterId)", $open);
+        self::assertStringContainsString('findOrCreateClosedOffering(', $open);
         self::assertStringContainsString('ProgramCourse.recommended_semester_id is advisory metadata only', $open);
+        self::assertStringContainsString('resolveFromProgramCourse(', $findOrCreate);
+        self::assertStringContainsString("->where('semester_id', \$semesterId)", $findOrCreate);
+        self::assertStringContainsString('ProgramCourse.recommended_semester_id is advisory metadata only', $findOrCreate);
         self::assertStringNotContainsString('recommended_semester_id ===', $open);
         self::assertStringNotContainsString("where('recommended_semester_id'", $open);
+        self::assertStringNotContainsString("where('recommended_semester_id'", $findOrCreate);
         self::assertStringNotContainsString("where('recommended_semester_id'", $catalog);
         self::assertStringNotContainsString("where('recommended_semester_id'", $match);
         self::assertStringContainsString("where('is_active', true)", $catalog);
