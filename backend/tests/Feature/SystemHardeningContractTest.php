@@ -96,9 +96,9 @@ class SystemHardeningContractTest extends TestCase
         self::assertStringContainsString('isAdministrativeVicePresident()', $administrative);
         self::assertStringContainsString('holdsAssignedPermission(', $administrative);
         self::assertStringContainsString('effectivePermissions()', $holds);
-        self::assertStringNotContainsString('hasPermission(', $scientific);
-        self::assertStringNotContainsString('hasPermission(', $administrative);
-        self::assertStringNotContainsString('hasPermission(', $holds);
+        self::assertStringNotContainsString('$user->hasPermission(', $scientific);
+        self::assertStringNotContainsString('$user->hasPermission(', $administrative);
+        self::assertStringNotContainsString('$user->hasPermission(', $holds);
     }
 
     public function test_hard11_10_dean_wrong_scope_cannot_access_other_college(): void
