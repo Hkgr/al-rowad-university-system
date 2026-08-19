@@ -1096,7 +1096,7 @@ class GradeService
         return $this->officialAcademicAttempts($student);
     }
 
-    private function officialAcademicAttempts(Student $student): Builder
+    public function officialAcademicAttempts(Student $student): Builder
     {
         return StudentCourseRegistration::query()
             ->where('student_id', $student->student_id)
@@ -1114,6 +1114,261 @@ class GradeService
                 'studentCourseResult.resultStatus',
                 'registrationStatus',
             ]);
+    }
+
+    /**
+     * Official academic attempts that are visible on the canonical transcript.
+     *
+     * @return Collection<int, StudentCourseRegistration>
+     */
+    public function loadOfficialVisibleAttempts(Student $student): Collection
+    {
+        $student->loadMissing(['academicProgram']);
+
+        $registrations = $this->officialAcademicAttempts($student)
+            ->get()
+            ->filter(fn (StudentCourseRegistration $registration): bool => $this->isOfficiallyVisibleAttempt($registration))
+            ->values();
+        $registrations->each(fn (StudentCourseRegistration $registration) => $registration->setRelation('student', $student));
+
+        return $registrations;
+    }
+
+    /**
+     * Term GPA / hours from the same official-attempt and GPA path as the transcript.
+     *
+     * @return array{
+     *     term_gpa: ?float,
+     *     cumulative_gpa: ?float,
+     *     total_registered_hours: int,
+     *     attempted_hours: int,
+     *     earned_hours: int,
+     *     included_credit_hours: int,
+     *     official_attempts_count: int
+     * }
+     */
+    public function officialTermMetrics(Student $student, int $academicYearId, int $semesterId): array
+    {
+        $all = $this->loadOfficialVisibleAttempts($student);
+        $term = $all->filter(function (StudentCourseRegistration $registration) use ($academicYearId, $semesterId): bool {
+            $offering = $registration->courseOffering;
+
+            return (int) ($offering?->academic_year_id ?? 0) === $academicYearId
+                && (int) ($offering?->semester_id ?? 0) === $semesterId;
+        })->values();
+
+        $termSummary = $this->summarizeGpaCollection($term);
+        $academicYear = AcademicYear::query()->find($academicYearId);
+        $semester = Semester::query()->find($semesterId);
+        $termKey = $this->officialTermChronologyKey($academicYear, $semester);
+        $throughTerm = $all->filter(function (StudentCourseRegistration $registration) use ($termKey): bool {
+            $offering = $registration->courseOffering;
+
+            return $this->officialTermChronologyKey($offering?->academicYear, $offering?->semester) <= $termKey;
+        });
+        $cumulative = $this->summarizeGpaCollection($this->selectBestAttempts($throughTerm));
+
+        $attemptedHours = 0;
+        $earnedHours = 0;
+        foreach ($term as $registration) {
+            $hours = (int) ($registration->courseOffering?->course?->credit_hours ?? 0);
+            $attemptedHours += $hours;
+            if ($this->isOfficiallyPassedAttempt($registration)) {
+                $earnedHours += $hours;
+            }
+        }
+
+        return [
+            'term_gpa' => $termSummary['gpa'],
+            'cumulative_gpa' => $cumulative['gpa'],
+            'total_registered_hours' => $attemptedHours,
+            'attempted_hours' => $attemptedHours,
+            'earned_hours' => $earnedHours,
+            'included_credit_hours' => $termSummary['included_credit_hours'],
+            'official_attempts_count' => $term->count(),
+        ];
+    }
+
+    /**
+     * Latest official academic semester in a year, using transcript chronology.
+     *
+     * Official attempts are ordered by officialTermChronologyKey()
+     * (academic year start_date, then semester_order). This is independent of
+     * student_academic_terms row presence.
+     */
+    public function latestOfficialSemesterIdForYear(Student $student, int $academicYearId): ?int
+    {
+        $latestSemesterId = null;
+        $latestKey = null;
+
+        foreach ($this->loadOfficialVisibleAttempts($student) as $registration) {
+            $offering = $registration->courseOffering;
+            if ((int) ($offering?->academic_year_id ?? 0) !== $academicYearId) {
+                continue;
+            }
+
+            $key = $this->officialTermChronologyKey($offering?->academicYear, $offering?->semester);
+            if ($latestKey === null || $key > $latestKey) {
+                $latestKey = $key;
+                $latestSemesterId = $offering?->semester_id === null ? null : (int) $offering->semester_id;
+            }
+        }
+
+        return $latestSemesterId;
+    }
+
+    /**
+     * Cumulative official metrics reused by progression and graduation.
+     *
+     * @return array<string, mixed>
+     */
+    public function officialCumulativeMetrics(Student $student): array
+    {
+        $all = $this->loadOfficialVisibleAttempts($student);
+        $cgpaEvaluation = $this->summarizeGpaCollection($this->selectBestAttempts($all));
+        $summary = $this->officialTranscriptSummary($all, $cgpaEvaluation['gpa']);
+
+        $completed = [];
+        $failed = [];
+        $failedCourseIds = [];
+
+        foreach ($all as $registration) {
+            $course = $registration->courseOffering?->course;
+            $courseId = $course?->course_id === null ? null : (int) $course->course_id;
+            $statusCode = $this->resolveEffectiveResultStatusCode($registration);
+            $row = [
+                'student_course_registration_id' => $registration->student_course_registration_id,
+                'course_id' => $courseId,
+                'course_code' => $course?->course_code,
+                'course_name' => $course?->course_name,
+                'credit_hours' => (int) ($course?->credit_hours ?? 0),
+                'result_status' => $statusCode,
+                'final_mark' => $registration->studentCourseResult?->final_mark !== null
+                    ? (float) $registration->studentCourseResult->final_mark
+                    : null,
+            ];
+
+            if ($this->isOfficiallyPassedAttempt($registration) && $courseId !== null && ! isset($completed[$courseId])) {
+                $completed[$courseId] = $row;
+            }
+
+            if ($statusCode === 'failed') {
+                $failed[] = $row;
+                if ($courseId !== null) {
+                    $failedCourseIds[$courseId] = true;
+                }
+            }
+        }
+
+        return [
+            'scale' => [
+                'maximum' => 4.0,
+            ],
+            'cumulative_gpa' => $cgpaEvaluation['gpa'],
+            'earned_hours' => (int) ($summary['total_passed_credit_hours'] ?? 0),
+            'attempted_hours' => (int) ($summary['total_attempted_credit_hours'] ?? 0),
+            'failed_courses_count' => count($failedCourseIds),
+            'official_completed_courses' => array_values($completed),
+            'failed_courses' => $failed,
+            'repeated_courses_handling' => 'highest_attempt_only',
+            'summary' => $summary,
+        ];
+    }
+
+    /**
+     * Current or historical academic work that is not yet an official visible attempt.
+     *
+     * Academic attempts are the existing HISTORICAL_ATTEMPT_STATUSES
+     * (`registered` / `completed`). Dropped and withdrawn registrations are
+     * excluded by that canonical scope and do not require a final result.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function unfinalizedAcademicWork(Student $student): array
+    {
+        return $this->collectUnfinalizedAcademicWork($student);
+    }
+
+    /**
+     * Unfinalized academic attempts for one student/year/semester.
+     *
+     * Reuses the same official-result definition as unfinalizedAcademicWork().
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function unfinalizedAcademicWorkForTerm(Student $student, int $academicYearId, int $semesterId): array
+    {
+        return $this->collectUnfinalizedAcademicWork($student, $academicYearId, $semesterId);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function collectUnfinalizedAcademicWork(
+        Student $student,
+        ?int $academicYearId = null,
+        ?int $semesterId = null
+    ): array {
+        $query = StudentCourseRegistration::query()
+            ->where('student_id', $student->student_id)
+            ->academicAttempts(requireResult: false)
+            ->with([
+                'courseOffering.course',
+                'courseOffering.gradeApprovals.approvalStatus',
+                'studentCourseResult.resultStatus',
+                'registrationStatus',
+            ])
+            ->orderBy('student_course_registration_id');
+
+        if ($academicYearId !== null && $semesterId !== null) {
+            $query->whereHas('courseOffering', function ($offering) use ($academicYearId, $semesterId): void {
+                $offering->where('academic_year_id', $academicYearId)
+                    ->where('semester_id', $semesterId);
+            });
+        }
+
+        $items = [];
+        foreach ($query->get() as $registration) {
+            if ($this->isOfficiallyVisibleAttempt($registration)) {
+                continue;
+            }
+
+            $offering = $registration->courseOffering;
+            $items[] = [
+                'student_course_registration_id' => $registration->student_course_registration_id,
+                'course_offering_id' => $registration->course_offering_id,
+                'academic_year_id' => $offering?->academic_year_id,
+                'semester_id' => $offering?->semester_id,
+                'course_id' => $offering?->course_id ?? $offering?->course?->course_id,
+                'course_code' => $offering?->course?->course_code,
+                'registration_status' => $registration->registrationStatus?->status_code,
+                'has_result' => $registration->studentCourseResult !== null,
+                'reason' => $registration->studentCourseResult === null
+                    ? 'no_official_result'
+                    : 'grade_approval_not_approved',
+            ];
+        }
+
+        return $items;
+    }
+
+    /**
+     * Offering ids that must be locked before re-reading official results.
+     *
+     * @return list<int>
+     */
+    public function officialLockOfferingIds(Student $student): array
+    {
+        return StudentCourseRegistration::query()
+            ->where('student_id', $student->student_id)
+            ->academicAttempts(requireResult: false)
+            ->orderBy('course_offering_id')
+            ->pluck('course_offering_id')
+            ->unique()
+            ->filter()
+            ->map(fn ($id): int => (int) $id)
+            ->values()
+            ->all();
     }
 
     private function constrainAuthoritativeApprovedGradeApproval($subquery): void

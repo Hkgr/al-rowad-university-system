@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Exceptions\GraduationEligibilityException;
+use App\Exceptions\AcademicRecordException;
 use App\Http\Requests\Student\StoreStudentRequest;
 use App\Http\Requests\Student\UpdateStudentRequest;
 use App\Http\Resources\AvailableCourseOfferingResource;
@@ -20,7 +20,10 @@ use App\Models\StudentStatus;
 use App\Services\AcademicRequirementService;
 use App\Services\AttendanceService;
 use App\Services\GradeService;
+use App\Services\AcademicProgressionService;
+use App\Services\GraduationDecisionService;
 use App\Services\GraduationEligibilityService;
+use App\Support\AcademicRecordWorkflow;
 use App\Services\RegistrationService;
 use App\Services\AcademicAuthorizationService;
 use App\Services\DataScopeService;
@@ -46,22 +49,64 @@ class StudentController extends ApiController
     {
         $student = Student::query()->findOrFail($id);
         Gate::authorize('update', $student);
-        if (request()->filled('academic_program_id')) {
-            abort_unless(app(DataScopeService::class)->canAccessProgram(request()->user(), request()->integer('academic_program_id')), 403);
-        }
-        $statusCode = request()->input('student_status_code');
+        $request = app($this->updateRequestClass());
+        $data = $request->validated();
 
-        if ($statusCode === null && request()->filled('student_status_id')) {
-            $statusCode = StudentStatus::query()
-                ->whereKey(request()->integer('student_status_id'))
-                ->value('status_code');
+        if (array_key_exists('academic_program_id', $data)) {
+            abort_unless(app(DataScopeService::class)->canAccessProgram($request->user(), (int) $data['academic_program_id']), 403);
         }
 
-        if ($statusCode === 'graduated') {
-            return $this->updateGraduatedStatus($id, $student);
-        }
+        return DB::transaction(function () use ($student, $data, $request): JsonResponse {
+            $locked = Student::query()
+                ->whereKey($student->student_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $locked->loadMissing('studentStatus');
 
-        return parent::update($id);
+            if (array_key_exists('current_academic_level_id', $data)
+                && (int) $data['current_academic_level_id'] !== (int) $locked->current_academic_level_id) {
+                throw AcademicRecordException::academicLevelProgressionWorkflowRequired();
+            }
+
+            $targetStatusCode = null;
+            if (array_key_exists('student_status_id', $data)) {
+                $targetStatusCode = StudentStatus::query()
+                    ->whereKey((int) $data['student_status_id'])
+                    ->value('status_code');
+            }
+
+            $currentStatusCode = $locked->studentStatus?->status_code;
+            if ($targetStatusCode !== null && $targetStatusCode !== $currentStatusCode) {
+                if ($targetStatusCode === AcademicRecordWorkflow::GRADUATED_STATUS
+                    || $currentStatusCode === AcademicRecordWorkflow::GRADUATED_STATUS) {
+                    throw AcademicRecordException::graduationDecisionWorkflowRequired();
+                }
+            }
+
+            $programChanged = array_key_exists('academic_program_id', $data)
+                && (int) $data['academic_program_id'] !== (int) $locked->academic_program_id;
+            $levelUnchanged = ! array_key_exists('current_academic_level_id', $data)
+                || (int) $data['current_academic_level_id'] === (int) $locked->current_academic_level_id;
+
+            $locked->update($data);
+
+            if ($programChanged && $levelUnchanged) {
+                app(AcademicProgressionService::class)->supersedeCurrentForStudent(
+                    $request->user(),
+                    $locked,
+                    'academic_program_changed'
+                );
+                app(GraduationDecisionService::class)->supersedeCurrentForStudent(
+                    $request->user(),
+                    $locked,
+                    'academic_program_changed'
+                );
+            }
+
+            return $this->successResponse(
+                (new StudentResource($locked->fresh()))->resolve($request)
+            );
+        });
     }
 
     public function graduationEligibility(Student $student, GraduationEligibilityService $graduation): JsonResponse
@@ -73,36 +118,6 @@ class StudentController extends ApiController
                 $graduation->evaluate($student)
             ))->resolve(request())
         );
-    }
-
-    private function updateGraduatedStatus($id, Student $student): JsonResponse
-    {
-        return DB::transaction(function () use ($id, $student): JsonResponse {
-            $locked = Student::query()
-                ->whereKey($student->student_id)
-                ->lockForUpdate()
-                ->firstOrFail();
-            $locked->loadMissing('studentStatus');
-
-            if (request()->filled('academic_program_id')
-                && (int) request()->integer('academic_program_id') !== (int) $locked->academic_program_id) {
-                throw new GraduationEligibilityException(
-                    'The student academic program cannot be changed in the same request as a graduation status transition.',
-                    [
-                        'academic_program_id' => ['graduation_program_change_not_allowed'],
-                        'student_status' => ['graduation_program_change_not_allowed'],
-                    ],
-                    409,
-                    GraduationEligibilityException::PROGRAM_CHANGE_ERROR_CODE
-                );
-            }
-
-            if ($locked->studentStatus?->status_code !== 'graduated') {
-                app(GraduationEligibilityService::class)->assertEligible($locked);
-            }
-
-            return parent::update($id);
-        });
     }
 
     protected function modelClass(): string

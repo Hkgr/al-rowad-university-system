@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\AcademicRecordException;
 use App\Exceptions\AcademicRequirementConfigurationException;
 use App\Exceptions\AttendanceException;
 use App\Exceptions\CourseOfferingContextException;
@@ -192,6 +193,19 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->render(function (GraduationEligibilityException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (AcademicRecordException $exception, Request $request) {
             if (! $request->is('api/*')) {
                 return null;
             }

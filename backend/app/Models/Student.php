@@ -106,6 +106,16 @@ class Student extends Model
         return $this->hasMany(StudentDocument::class, 'student_id', 'student_id');
     }
 
+    public function progressionDecisions(): HasMany
+    {
+        return $this->hasMany(StudentProgressionDecision::class, 'student_id', 'student_id');
+    }
+
+    public function graduationDecisions(): HasMany
+    {
+        return $this->hasMany(StudentGraduationDecision::class, 'student_id', 'student_id');
+    }
+
     public function users(): HasMany
     {
         return $this->hasMany(User::class, 'student_id', 'student_id');
