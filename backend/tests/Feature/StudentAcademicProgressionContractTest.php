@@ -233,7 +233,7 @@ class StudentAcademicProgressionContractTest extends TestCase
         }
 
         $readme = self::source('database/sql/student-academic-progression/README.md');
-        foreach (['AC10-01', 'AC10-21', 'AC10-40', 'AC10-41', 'AC10-46', 'AC10-47', 'AC10-48', 'SQL-AC10', 'SQL-AC10-17', 'SQL-AC10-22', 'SQL-AC10-23', 'SQL-AC10-26', 'BLOCKED_IN_USE', 'registration_officer', 'graduated', '4.0', 'retained_no_provenance'] as $needle) {
+        foreach (['AC10-01', 'AC10-21', 'AC10-40', 'AC10-41', 'AC10-46', 'AC10-47', 'AC10-48', 'SQL-AC10', 'SQL-AC10-17', 'SQL-AC10-22', 'SQL-AC10-23', 'SQL-AC10-26', 'SQL-AC10-27', 'SQL-AC10-28', 'BLOCKED_IN_USE', 'registration_officer', 'graduated', '4.0', 'retained_no_provenance'] as $needle) {
             self::assertStringContainsString($needle, $readme);
         }
 
@@ -417,6 +417,26 @@ class StudentAcademicProgressionContractTest extends TestCase
             self::assertStringContainsString("required.autoinc = 0 AND LOWER(IFNULL(c.extra, '')) LIKE '%auto_increment%'", $sql);
             self::assertMatchesRegularExpression("/SELECT 'submitted_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP'.*0, 0/s", $sql);
             self::assertMatchesRegularExpression("/SELECT 'updated_at', 'timestamp', 'NO', 'CURRENT_TIMESTAMP'.*0, 1/s", $sql);
+            self::assertMatchesRegularExpression(
+                "/column_name = 'finalized_at'\\s+AND LOWER\\(data_type\\) = 'timestamp'[\\s\\S]*?NOT LIKE '%on update current_timestamp%'/",
+                $sql
+            );
+            self::assertMatchesRegularExpression(
+                "/column_name = 'is_finalized'\\s+AND LOWER\\(data_type\\) = 'tinyint'[\\s\\S]*?NOT LIKE '%auto_increment%'[\\s\\S]*?NOT LIKE '%on update current_timestamp%'/",
+                $sql
+            );
+            self::assertMatchesRegularExpression(
+                "/column_name = 'earned_hours'\\s+AND LOWER\\(data_type\\) = 'int'[\\s\\S]*?NOT LIKE '%on update current_timestamp%'/",
+                $sql
+            );
+            self::assertMatchesRegularExpression(
+                "/column_name = 'attempted_hours'\\s+AND LOWER\\(data_type\\) = 'int'[\\s\\S]*?NOT LIKE '%on update current_timestamp%'/",
+                $sql
+            );
+            self::assertMatchesRegularExpression(
+                "/column_name = 'finalized_by_user_id'\\s+AND LOWER\\(data_type\\) = 'int'[\\s\\S]*?NOT LIKE '%on update current_timestamp%'/",
+                $sql
+            );
             self::assertMatchesRegularExpression("/index_name = 'idx_spd_reviewer'\\s*AND non_unique = 1/s", $sql);
             self::assertMatchesRegularExpression("/index_name = 'idx_spe_decision'\\s*AND non_unique = 1/s", $sql);
             self::assertMatchesRegularExpression("/index_name = 'idx_sge_actor'\\s*AND non_unique = 1/s", $sql);

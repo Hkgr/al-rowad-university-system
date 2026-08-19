@@ -7,6 +7,7 @@
 -- Exact column types, defaults, AUTO_INCREMENT, extras (ON UPDATE), PKs, named FKs (source and target), and indexes are required.
 -- NOT NULL columns with no intended DEFAULT reject unexpected defaults.
 -- updated_at must include ON UPDATE CURRENT_TIMESTAMP; submitted_at/created_at must not.
+-- student_academic_terms.finalized_at must not have ON UPDATE CURRENT_TIMESTAMP or AUTO_INCREMENT.
 -- Missing required tables must yield OVERALL = FAIL, never SQL error #1146.
 -- Guarded queries use role_code = 'registration_officer' and status_code = 'graduated'.
 -- Progression decision_result values: NULL, 'promoted', 'retained'.
@@ -103,30 +104,40 @@ SET @col_is_finalized_ok := IF(@col_is_finalized = 0, 0, IF((
     WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_academic_terms' AND column_name = 'is_finalized'
       AND LOWER(data_type) = 'tinyint' AND LOWER(column_type) = 'tinyint(1)' AND is_nullable = 'NO'
       AND TRIM(BOTH '''' FROM IFNULL(column_default, '')) IN ('0', '0.0')
+      AND LOWER(IFNULL(extra, '')) NOT LIKE '%auto_increment%'
+      AND LOWER(IFNULL(extra, '')) NOT LIKE '%on update current_timestamp%'
 ) = 1, 1, 0));
 SET @col_earned_hours_ok := IF(@col_earned_hours = 0, 0, IF((
     SELECT COUNT(*) FROM information_schema.columns
     WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_academic_terms' AND column_name = 'earned_hours'
       AND LOWER(data_type) = 'int' AND LOWER(column_type) NOT LIKE '%unsigned%' AND is_nullable = 'NO'
       AND TRIM(BOTH '''' FROM IFNULL(column_default, '')) IN ('0', '0.0')
+      AND LOWER(IFNULL(extra, '')) NOT LIKE '%auto_increment%'
+      AND LOWER(IFNULL(extra, '')) NOT LIKE '%on update current_timestamp%'
 ) = 1, 1, 0));
 SET @col_attempted_hours_ok := IF(@col_attempted_hours = 0, 0, IF((
     SELECT COUNT(*) FROM information_schema.columns
     WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_academic_terms' AND column_name = 'attempted_hours'
       AND LOWER(data_type) = 'int' AND LOWER(column_type) NOT LIKE '%unsigned%' AND is_nullable = 'NO'
       AND TRIM(BOTH '''' FROM IFNULL(column_default, '')) IN ('0', '0.0')
+      AND LOWER(IFNULL(extra, '')) NOT LIKE '%auto_increment%'
+      AND LOWER(IFNULL(extra, '')) NOT LIKE '%on update current_timestamp%'
 ) = 1, 1, 0));
 SET @col_finalized_at_ok := IF(@col_finalized_at = 0, 0, IF((
     SELECT COUNT(*) FROM information_schema.columns
     WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_academic_terms' AND column_name = 'finalized_at'
       AND LOWER(data_type) = 'timestamp' AND is_nullable = 'YES'
       AND (column_default IS NULL OR LOWER(column_default) = 'null')
+      AND LOWER(IFNULL(extra, '')) NOT LIKE '%auto_increment%'
+      AND LOWER(IFNULL(extra, '')) NOT LIKE '%on update current_timestamp%'
 ) = 1, 1, 0));
 SET @col_finalized_by_ok := IF(@col_finalized_by = 0, 0, IF((
     SELECT COUNT(*) FROM information_schema.columns
     WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_academic_terms' AND column_name = 'finalized_by_user_id'
       AND LOWER(data_type) = 'int' AND LOWER(column_type) NOT LIKE '%unsigned%' AND is_nullable = 'YES'
       AND (column_default IS NULL OR LOWER(column_default) = 'null')
+      AND LOWER(IFNULL(extra, '')) NOT LIKE '%auto_increment%'
+      AND LOWER(IFNULL(extra, '')) NOT LIKE '%on update current_timestamp%'
 ) = 1, 1, 0));
 
 SET @fk_sat_exists := IF(

@@ -268,6 +268,8 @@ SQL-AC10-23 `student_progression_decisions.student_id` INT NOT NULL DEFAULT 1 �
 SQL-AC10-24 `updated_at` missing ON UPDATE CURRENT_TIMESTAMP → 00 BLOCKED, 01 BLOCKED, 02 FAIL
 SQL-AC10-25 `submitted_at` unexpectedly has ON UPDATE CURRENT_TIMESTAMP → 00 BLOCKED, 01 BLOCKED, 02 FAIL
 SQL-AC10-26 timestamp/default/extra definitions match intended DDL → compatible / APPLIED / PASS
+SQL-AC10-27 `student_academic_terms.finalized_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP → 00 BLOCKED/CONFLICT, 01 BLOCKED, 02 FAIL
+SQL-AC10-28 all five Phase 10 `student_academic_terms` columns match type/nullability/default/extra → 00 COMPATIBLE, 01 APPLIED/idempotent, 02 PASS
 
 Exact compatibility (00/01 CONFLICT, 02 FAIL) covers column names, data types,
 lengths/precision/scale, nullability, defaults, AUTO_INCREMENT, primary key,
