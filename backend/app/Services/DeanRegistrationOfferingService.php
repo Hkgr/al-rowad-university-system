@@ -150,6 +150,8 @@ class DeanRegistrationOfferingService
 
             $yearId = (int) $payload['academic_year_id'];
             $semesterId = (int) $payload['semester_id'];
+            // Actual offering identity uses the Dean-selected year/semester.
+            // ProgramCourse.recommended_semester_id is advisory metadata only.
             $context = $this->offeringContext->resolveFromProgramCourse(
                 $programCourse,
                 $yearId,
@@ -307,7 +309,7 @@ class DeanRegistrationOfferingService
         $rows = ProgramCourse::query()
             ->where('academic_program_id', $program->academic_program_id)
             ->where('is_active', true)
-            ->with(['course', 'academicLevel', 'requirementMapping.requirementGroup'])
+            ->with(['course', 'academicLevel', 'recommendedSemester', 'requirementMapping.requirementGroup'])
             ->orderBy('academic_level_id')
             ->get()
             ->filter(fn (ProgramCourse $row) => $row->course !== null);
@@ -353,6 +355,7 @@ class DeanRegistrationOfferingService
                             'course_type' => $row->course_type,
                             'academic_level_id' => $row->academic_level_id,
                             'requirement_classification' => CourseRequirementClassification::fromProgramCourse($row),
+                            'advisory_plan' => $this->advisoryPlan($row),
                             'course' => [
                                 'course_id' => $row->course->course_id,
                                 'course_code' => $row->course->course_code,
@@ -471,6 +474,34 @@ class DeanRegistrationOfferingService
                     ? $offering->currentExceptionRequest
                     : null
             ),
+        ];
+    }
+
+    /**
+     * Presentational ProgramCourse plan metadata. Never used as an offering
+     * identity or eligibility filter.
+     *
+     * @return array{
+     *     academic_level_id: int|null,
+     *     academic_level_name: string|null,
+     *     recommended_semester_id: int|null,
+     *     recommended_semester_name: string|null
+     * }
+     */
+    private function advisoryPlan(ProgramCourse $row): array
+    {
+        $level = $row->relationLoaded('academicLevel') ? $row->academicLevel : null;
+        $semester = $row->relationLoaded('recommendedSemester') ? $row->recommendedSemester : null;
+
+        return [
+            'academic_level_id' => $row->academic_level_id === null
+                ? null
+                : (int) $row->academic_level_id,
+            'academic_level_name' => $level?->level_name,
+            'recommended_semester_id' => $row->recommended_semester_id === null
+                ? null
+                : (int) $row->recommended_semester_id,
+            'recommended_semester_name' => $semester?->semester_name,
         ];
     }
 

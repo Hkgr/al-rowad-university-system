@@ -266,7 +266,13 @@ function CourseRow({ course, onAdd, adding, canEdit, advisoryMode }) {
             <span className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full ${badge.className}`}>{badge.label}</span>
             {advisoryMode === 'recommended' ? (
               <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary-dark border border-primary/20">
-                موصى به لهذا الفصل
+                موصى بها لهذا الفصل
+              </span>
+            ) : advisoryMode === 'other' ? (
+              <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-slate-500/10 text-slate-700 border border-slate-500/20">
+                {course?.advisory_plan?.recommended_semester_id
+                  ? 'من الخطة — موصى بها في فصل آخر'
+                  : 'من الخطة — الفصل الإرشادي غير محدد'}
               </span>
             ) : null}
           </div>
@@ -650,8 +656,8 @@ export default function StudentRegistration() {
             ) : (
               <>
                 <AvailableCourseSection
-                  title="المواد الموصى بها لهذا الفصل"
-                  helper="المقررات المقترحة لك وفق الخطة الإرشادية. يمكنك أيضًا تسجيل مقررات أخرى متاحة إذا استوفيت متطلباتها."
+                  title="مواد موصى بها لهذا الفصل"
+                  helper="المقررات المقترحة لك وفق الخطة الإرشادية. يمكنك أيضًا تسجيل مقررات أخرى مفتوحة من خطتك إذا استوفيت متطلباتها."
                   count={recommended.length}
                   empty={recommended.length === 0 ? 'لا توجد مقررات موصى بها متاحة حاليًا.' : null}
                 >
@@ -668,8 +674,8 @@ export default function StudentRegistration() {
                 </AvailableCourseSection>
                 {other.length > 0 ? (
                   <AvailableCourseSection
-                    title="مواد أخرى متاحة لك"
-                    helper="مقررات مطروحة حاليًا ويمكنك التقدم لتسجيلها عند استيفاء المتطلبات، حتى لو كانت موصى بها في سنة أو فصل مختلف."
+                    title="مواد أخرى مفتوحة من خطتك"
+                    helper="هذه المواد ضمن خطتك ومفتوحة للتسجيل في الفصل الحالي، لكنها موصى بها إرشاديًا لفصل أو مستوى آخر. يمكنك تسجيلها إذا استوفيت بقية الشروط."
                     count={other.length}
                   >
                     {other.map(course => (
