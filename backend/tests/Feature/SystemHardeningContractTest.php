@@ -634,6 +634,28 @@ class SystemHardeningContractTest extends TestCase
         self::assertStringContainsString('SQL NOT EXECUTED', $sql);
     }
 
+    public function test_sql_hard11_11_replace_action_type_fails_the_phase11_audit(): void
+    {
+        $sql = self::source('database/sql/system-hardening-audit/00_audit.sql');
+        $readme = self::source('database/sql/system-hardening-audit/README.md');
+        $workflow = self::source('app/Support/TeachingAssignmentWorkflow.php');
+        $phase8 = self::source('database/sql/teaching-assignment-lifecycle/02_verify.sql');
+
+        self::assertStringContainsString("ACTION_ASSIGN = 'assign'", $workflow);
+        self::assertStringContainsString("ACTION_REMOVE = 'remove'", $workflow);
+        self::assertStringNotContainsString('ACTION_REPLACE', $workflow);
+        self::assertStringContainsString("action_type NOT IN (''assign'', ''remove'')", $phase8);
+
+        $actionSql = self::extractSqlAssignment($sql, '@tar_bad_action');
+        self::assertStringContainsString("action_type NOT IN (''assign'',''remove'')", $actionSql);
+        self::assertStringNotContainsString("''replace''", $actionSql);
+        self::assertStringNotContainsString("''replace''", $sql);
+        self::assertStringContainsString('@tar_bad_action = 0', $sql);
+        self::assertStringContainsString('SQL-HARD11-11', $readme);
+        self::assertStringContainsString("action_type = 'replace'", $readme);
+        self::assertStringContainsString('FAIL', $readme);
+    }
+
     private static function extractSqlAssignment(string $sql, string $variable): string
     {
         $needle = 'SELECT '.$variable.' :=';

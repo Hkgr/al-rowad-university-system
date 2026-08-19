@@ -211,7 +211,7 @@ SET @sql := IF(
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 SET @sql := IF(
     @action_type_exists = 1,
-    'SELECT @tar_bad_action := (SELECT COUNT(*) FROM `alrowad_uni_rust`.`teaching_assignment_requests` WHERE action_type NOT IN (''assign'',''replace'',''remove''))',
+    'SELECT @tar_bad_action := (SELECT COUNT(*) FROM `alrowad_uni_rust`.`teaching_assignment_requests` WHERE action_type NOT IN (''assign'',''remove''))',
     'SELECT @tar_bad_action := 1'
 );
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;

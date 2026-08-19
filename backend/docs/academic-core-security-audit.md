@@ -149,8 +149,9 @@ See `backend/docs/production-academic-core-checklist.md` and
 The Phase 11 SQL audit is **READ ONLY**. Missing required tables or
 required columns yield `OVERALL = FAIL` without `#1146` / `#1054`. It
 reuses the exact Phase 8–10 current-slot UNIQUE index contracts and the
-existing academic-governance mutation permission codes. It does not
-apply schema.
+existing academic-governance mutation permission codes. Persisted
+teaching-assignment `action_type` values are exactly `assign` and
+`remove`; `replace` is not a stored action type. It does not apply schema.
 
 ## Known out-of-scope risks
 

@@ -41,6 +41,9 @@ requires a repair script.
   (`required_core_columns`) without querying that object
 - Phase 8/9/10 workflow queries run only after both TABLE and COLUMN guards
 - `teaching_assignment_requests.action_type` missing is `FAIL`
+- Persisted teaching-assignment `action_type` values are exactly `assign`
+  and `remove` (Phase 8 / `TeachingAssignmentWorkflow`). Replacement is a
+  workflow outcome, not a third stored `action_type`. `replace` is FAIL.
 - Current-slot UNIQUE indexes reuse the exact Phase 8/9/10 contracts:
   `uq_tar_current_slot`, `uq_srwr_current_slot`, `uq_spd_current_slot`,
   `uq_sgd_current_slot`
@@ -70,6 +73,7 @@ requires a repair script.
 | SQL-HARD11-08 | generic `vice_president` has dedicated academic review mutation | `generic_vp_without_dedicated_reviews` FAIL |
 | SQL-HARD11-09 | `super_admin` has explicit forbidden academic mutation mapping | `super_admin_without_explicit_academic_mutations` FAIL |
 | SQL-HARD11-10 | Clean fully applied Phase 8–10 database | `OVERALL = PASS` |
+| SQL-HARD11-11 | `teaching_assignment_requests.action_type = 'replace'` | `teaching_assignment_action_types` / OVERALL FAIL |
 
 ## Result meaning
 
