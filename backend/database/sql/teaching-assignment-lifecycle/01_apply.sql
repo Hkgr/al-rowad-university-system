@@ -3,8 +3,8 @@
 -- DDL (ALTER TABLE) commits implicitly in MariaDB; each object is added
 -- independently so a retry after partial compatible DDL remains recoverable.
 -- Independently recomputes the same critical safety conditions as 00_preflight.sql,
-including Phase 7 closure tables and a READ-ONLY Teaching Assignment RBAC guard.
-Does not INSERT/DELETE permissions or role_permissions.
+-- including Phase 7 closure tables and a READ-ONLY Teaching Assignment RBAC guard.
+-- Does not INSERT/DELETE permissions or role_permissions.
 -- No RBAC inserts. No data backfill beyond the column DEFAULT 'assign'.
 -- Do not use stored procedures, DELIMITER, or SIGNAL.
 --
