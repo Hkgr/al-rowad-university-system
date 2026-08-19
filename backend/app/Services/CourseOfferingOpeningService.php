@@ -4,12 +4,15 @@ namespace App\Services;
 
 use App\Exceptions\CourseOfferingClosureException;
 use App\Exceptions\ExceptionalOpeningException;
+use App\Exceptions\TeachingAssignmentException;
 use App\Models\CourseOffering;
 use App\Models\CourseOfferingExceptionRequest;
 use App\Models\CourseOfferingExceptionReview;
 use App\Models\CourseOfferingInstructor;
+use App\Models\TeachingAssignmentRequest;
 use App\Models\User;
 use App\Support\ExceptionalOpeningWorkflow;
+use App\Support\TeachingAssignmentWorkflow;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 
@@ -112,6 +115,8 @@ class CourseOfferingOpeningService
             throw ExceptionalOpeningException::proofInvalid();
         }
 
+        $this->assertNoPendingInstructorRemoval($lockedOffering);
+
         if (! $lockedRequest->identityMatches($lockedOffering)) {
             throw ExceptionalOpeningException::requestStale();
         }
@@ -170,6 +175,8 @@ class CourseOfferingOpeningService
                 ->lockForUpdate()
                 ->firstOrFail();
 
+            $this->lockPendingRemovalRequests($locked);
+
             CourseOfferingInstructor::query()
                 ->where('course_offering_id', $locked->course_offering_id)
                 ->lockForUpdate()
@@ -209,6 +216,8 @@ class CourseOfferingOpeningService
             throw new ConflictHttpException('تعذّر تنفيذ العملية بسبب تغير حالة المادة. أعد تحميل البيانات وحاول مجددًا.');
         }
 
+        $this->assertNoPendingInstructorRemoval($locked);
+
         $this->coverage->assertCompleteForNormalOpening($locked);
 
         $locked->status = self::STATUS_OPEN;
@@ -217,6 +226,49 @@ class CourseOfferingOpeningService
         $this->exceptionInvalidation->supersedeCurrentForNormalOpen($locked, $actor);
 
         return $locked;
+    }
+
+    /**
+     * A current unmaterialized instructor-removal request must not survive
+     * CLOSED → OPEN. Guard both Phase 5 normal opening and Phase 6
+     * exceptional opening. No-op when Phase 8 columns are not installed.
+     */
+    private function assertNoPendingInstructorRemoval(CourseOffering $lockedOffering): void
+    {
+        if (! TeachingAssignmentWorkflow::schemaReady()) {
+            return;
+        }
+
+        $this->lockPendingRemovalRequests($lockedOffering);
+
+        $pending = TeachingAssignmentRequest::query()
+            ->where('course_offering_id', $lockedOffering->course_offering_id)
+            ->where('action_type', TeachingAssignmentWorkflow::ACTION_REMOVE)
+            ->where('current_slot', 1)
+            ->whereIn('status', [
+                TeachingAssignmentWorkflow::STATUS_SUBMITTED,
+                TeachingAssignmentWorkflow::STATUS_RETURNED,
+            ])
+            ->exists();
+
+        if ($pending) {
+            throw TeachingAssignmentException::removalPending();
+        }
+    }
+
+    private function lockPendingRemovalRequests(CourseOffering $lockedOffering): void
+    {
+        if (! TeachingAssignmentWorkflow::schemaReady()) {
+            return;
+        }
+
+        TeachingAssignmentRequest::query()
+            ->where('course_offering_id', $lockedOffering->course_offering_id)
+            ->where('action_type', TeachingAssignmentWorkflow::ACTION_REMOVE)
+            ->where('current_slot', 1)
+            ->orderBy('teaching_assignment_request_id')
+            ->lockForUpdate()
+            ->get();
     }
 
     private function forgetCoverageGraph(CourseOffering $offering): void

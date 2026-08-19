@@ -25,6 +25,10 @@ class VicePresidencyTeachingAssignmentController extends Controller
                 TeachingAssignmentWorkflow::AUTHORITY_ADMINISTRATIVE,
             ])],
             'queue' => ['sometimes', Rule::in(['pending', 'returned', 'approved', 'all'])],
+            'action_type' => ['sometimes', Rule::in([
+                TeachingAssignmentWorkflow::ACTION_ASSIGN,
+                TeachingAssignmentWorkflow::ACTION_REMOVE,
+            ])],
             'college_id' => ['sometimes', 'integer', 'min:1'],
             'academic_program_id' => ['sometimes', 'integer', 'min:1'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
@@ -36,6 +40,9 @@ class VicePresidencyTeachingAssignmentController extends Controller
             ->orderByDesc('submitted_at');
 
         $queue = $validated['queue'] ?? 'pending';
+        if (isset($validated['action_type']) && TeachingAssignmentWorkflow::schemaReady()) {
+            $query->where('action_type', $validated['action_type']);
+        }
         if ($queue === 'pending') {
             $query->whereHas('reviews', fn ($reviews) => $reviews
                 ->where('review_authority', $authority)

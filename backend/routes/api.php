@@ -502,8 +502,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::post('dean/registration-offerings/{courseOffering}/close', [DeanRegistrationOfferingController::class, 'close']);
     Route::get('dean/teaching-assignments', [DeanTeachingAssignmentController::class, 'index']);
     Route::post('dean/teaching-assignments', [DeanTeachingAssignmentController::class, 'store']);
+    Route::post('dean/teaching-assignments/removals', [DeanTeachingAssignmentController::class, 'requestRemoval']);
     Route::post('dean/teaching-assignments/{teachingAssignmentRequest}/resubmit', [DeanTeachingAssignmentController::class, 'resubmit']);
     Route::post('dean/teaching-assignments/{teachingAssignmentRequest}/replace', [DeanTeachingAssignmentController::class, 'replace']);
+    Route::post('dean/teaching-assignments/{teachingAssignmentRequest}/withdraw-removal', [DeanTeachingAssignmentController::class, 'withdrawRemoval']);
     Route::get('dean/course-offering-exceptions', [DeanCourseOfferingExceptionController::class, 'index']);
     Route::post('dean/course-offering-exceptions', [DeanCourseOfferingExceptionController::class, 'store']);
     Route::get('dean/course-offering-exceptions/{courseOfferingExceptionRequest}', [DeanCourseOfferingExceptionController::class, 'show']);
