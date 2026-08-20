@@ -85,6 +85,7 @@ import TeachingAssignmentQueue from '../features/vice-presidency/pages/TeachingA
 import TeachingAssignmentDetail from '../features/vice-presidency/pages/TeachingAssignmentDetail'
 import ExceptionalOpeningQueue from '../features/vice-presidency/pages/ExceptionalOpeningQueue'
 import ExceptionalOpeningDetail from '../features/vice-presidency/pages/ExceptionalOpeningDetail'
+import SupplementaryExamPeriodsPage from '../features/vice-presidency/pages/SupplementaryExamPeriods'
 
 function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], studentIdentity = false, employeeIdentity = false }) {
   const token = localStorage.getItem('token')
@@ -268,6 +269,7 @@ export default function App() {
           <Route path="/vp/scientific/teaching-assignments/:id" element={<TeachingAssignmentDetail office="scientific" />} />
           <Route path="/vp/scientific/exceptional-openings" element={<ExceptionalOpeningQueue office="scientific" />} />
           <Route path="/vp/scientific/exceptional-openings/:id" element={<ExceptionalOpeningDetail office="scientific" />} />
+          <Route path="/vp/scientific/supplementary-exams" element={<SupplementaryExamPeriodsPage />} />
         </Route>
 
         {/* ── نيابة الشؤون الإدارية ── */}

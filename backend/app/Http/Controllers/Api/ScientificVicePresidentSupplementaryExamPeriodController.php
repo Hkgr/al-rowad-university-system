@@ -3,14 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\VicePresidency\AnnounceSupplementaryExamPeriodRequest;
 use App\Http\Resources\SupplementaryExamPeriodResource;
 use App\Models\SupplementaryExamPeriod;
 use App\Services\SupplementaryExamPeriodGovernanceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 
-class SupplementaryExamPeriodController extends Controller
+class ScientificVicePresidentSupplementaryExamPeriodController extends Controller
 {
     public function __construct(private SupplementaryExamPeriodGovernanceService $governance)
     {
@@ -22,14 +22,12 @@ class SupplementaryExamPeriodController extends Controller
             'academic_year_id' => ['sometimes', 'integer', 'min:1', 'exists:academic_years,academic_year_id'],
             'semester_id' => ['sometimes', 'integer', 'min:1', 'exists:semesters,semester_id'],
             'status' => ['sometimes', 'string', 'max:32'],
-            'per_page' => ['prohibited'],
         ]);
 
-        $periods = $this->governance->listPeriods($request->user(), $validated);
+        $catalog = $this->governance->catalog($request->user(), $validated);
+        $catalog['periods'] = SupplementaryExamPeriodResource::collection($catalog['periods'])->resolve($request);
 
-        return $this->successResponse(
-            SupplementaryExamPeriodResource::collection($periods)->resolve($request)
-        );
+        return $this->successResponse($catalog);
     }
 
     public function show(Request $request, SupplementaryExamPeriod $period): JsonResponse
@@ -41,19 +39,15 @@ class SupplementaryExamPeriodController extends Controller
         );
     }
 
-    public function store(): JsonResponse
+    public function store(AnnounceSupplementaryExamPeriodRequest $request): JsonResponse
     {
-        throw new MethodNotAllowedHttpException(['GET'], 'Generic supplementary exam period writes are disabled.');
-    }
+        $period = $this->governance->announce($request->user(), $request->validated());
 
-    public function update(): JsonResponse
-    {
-        throw new MethodNotAllowedHttpException(['GET'], 'Generic supplementary exam period writes are disabled.');
-    }
-
-    public function destroy(): JsonResponse
-    {
-        throw new MethodNotAllowedHttpException(['GET'], 'Generic supplementary exam period writes are disabled.');
+        return $this->successResponse(
+            (new SupplementaryExamPeriodResource($period))->resolve($request),
+            'تم اعتماد فتح الدورة الامتحانية التكميلية.',
+            201
+        );
     }
 
     protected function successResponse(mixed $data = [], string $message = 'Operation completed successfully', int $status = 200): JsonResponse

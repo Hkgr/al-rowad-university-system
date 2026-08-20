@@ -91,6 +91,7 @@ use App\Http\Controllers\Api\StudentCreditLimitController;
 use App\Http\Controllers\Api\StudentAffairsDashboardController;
 use App\Http\Controllers\Api\StudentDocumentController;
 use App\Http\Controllers\Api\StudentStatusController;
+use App\Http\Controllers\Api\ScientificVicePresidentSupplementaryExamPeriodController;
 use App\Http\Controllers\Api\SupplementaryExamPeriodController;
 use App\Http\Controllers\Api\SystemModuleController;
 use App\Http\Controllers\Api\DeanTeachingAssignmentController;
@@ -481,7 +482,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     |--------------------------------------------------------------------------
     */
 
-    Route::apiResource('supplementary-exam-periods', SupplementaryExamPeriodController::class);
+    Route::get('supplementary-exam-periods', [SupplementaryExamPeriodController::class, 'index']);
+    Route::get('supplementary-exam-periods/{period}', [SupplementaryExamPeriodController::class, 'show']);
 
     /*
     |--------------------------------------------------------------------------
@@ -541,6 +543,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::post('vice-presidency/course-offering-closures/{courseOfferingClosureRequest}/scientific/return', [VicePresidencyCourseOfferingClosureController::class, 'returnScientific']);
     Route::post('vice-presidency/course-offering-closures/{courseOfferingClosureRequest}/administrative/approve', [VicePresidencyCourseOfferingClosureController::class, 'approveAdministrative']);
     Route::post('vice-presidency/course-offering-closures/{courseOfferingClosureRequest}/administrative/return', [VicePresidencyCourseOfferingClosureController::class, 'returnAdministrative']);
+    Route::get('vice-presidency/scientific/supplementary-exam-periods', [ScientificVicePresidentSupplementaryExamPeriodController::class, 'index']);
+    Route::get('vice-presidency/scientific/supplementary-exam-periods/{period}', [ScientificVicePresidentSupplementaryExamPeriodController::class, 'show']);
+    Route::post('vice-presidency/scientific/supplementary-exam-periods', [ScientificVicePresidentSupplementaryExamPeriodController::class, 'store']);
     Route::get('teaching-staff', [TeachingStaffController::class, 'index']);
     Route::get('teaching-staff/assignment-instructors', [TeachingStaffAssignmentOfferingController::class, 'instructors']);
     Route::get('teaching-staff/assignment-offerings', [TeachingStaffAssignmentOfferingController::class, 'index']);
