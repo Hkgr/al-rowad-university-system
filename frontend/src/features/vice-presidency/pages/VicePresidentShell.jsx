@@ -7,6 +7,7 @@ const OFFICES = {
     scopeNote: 'نطاق العمل: الجامعة كاملة. الصلاحيات تُحدد لكل إجراء على حدة.',
     assignmentsPath: '/vp/scientific/teaching-assignments',
     exceptionalPath: '/vp/scientific/exceptional-openings',
+    supplementaryPath: '/vp/scientific/supplementary-exams',
     futureSections: [
       'الموافقة العلمية على إغلاق الشعب',
     ],
@@ -80,6 +81,16 @@ export default function VicePresidentShell({ office }) {
         <p className="text-[15px] font-black text-text-dark">الفتح الاستثنائي للشعب</p>
         <p className="text-[13px] text-text-light mt-1">مراجعة طلبات فتح الشعب استثنائيًا عند نقص تكليف المدرسين ضمن صلاحية هذه النيابة فقط.</p>
       </Link>
+
+      {copy.supplementaryPath && (
+      <Link
+        to={copy.supplementaryPath}
+        className="bg-white border border-primary/15 rounded-[16px] p-5 shadow-sm hover:border-primary/40"
+      >
+        <p className="text-[15px] font-black text-text-dark">الامتحانات التكميلية</p>
+        <p className="text-[13px] text-text-light mt-1">اعتماد فتح دورة امتحانية تكميلية اختيارية مرتبطة بسنة أكاديمية وفصل قائم.</p>
+      </Link>
+      )}
 
       {copy.futureSections.length > 0 && (
       <div className="bg-white border border-dashed border-primary/25 rounded-[16px] p-5">

@@ -1,6 +1,6 @@
-import { FaChalkboardTeacher, FaHome, FaUnlock } from 'react-icons/fa'
+import { FaChalkboardTeacher, FaClipboardList, FaHome, FaUnlock } from 'react-icons/fa'
 
-import { PERMISSIONS } from '../auth/auth'
+import { PERMISSIONS, ROLES } from '../auth/auth'
 
 export const scientificVicePresidentNav = [
   {
@@ -27,6 +27,14 @@ export const scientificVicePresidentNav = [
         ar: 'الفتح الاستثنائي',
         en: 'Exceptional opening',
         permissions: [PERMISSIONS.exceptionalOpenView],
+      },
+      {
+        to: '/vp/scientific/supplementary-exams',
+        Icon: FaClipboardList,
+        ar: 'الامتحانات التكميلية',
+        en: 'Supplementary exams',
+        allPermissions: [PERMISSIONS.supplementaryExamsPeriodsView],
+        roles: [ROLES.vicePresidentScientific],
       },
     ],
   },

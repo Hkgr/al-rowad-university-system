@@ -12,6 +12,7 @@ use App\Exceptions\GraduationEligibilityException;
 use App\Exceptions\OfferingInstructorCoverageException;
 use App\Exceptions\RegistrationException;
 use App\Exceptions\RegistrationRequestException;
+use App\Exceptions\SupplementaryExamPeriodGovernanceException;
 use App\Exceptions\TeachingAssignmentException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
@@ -172,6 +173,19 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->render(function (ExceptionalOpeningException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (SupplementaryExamPeriodGovernanceException $exception, Request $request) {
             if (! $request->is('api/*')) {
                 return null;
             }
