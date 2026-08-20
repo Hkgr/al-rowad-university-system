@@ -143,10 +143,36 @@ Operators who later need Student Affairs or Exam Affairs readers must map the pr
 
 `supplementary_exam_results` schema, data, and semantics are untouched.
 
+The identity UNIQUE contract is **semantic**: there exists a UNIQUE index whose ordered columns are exactly `academic_year_id,semester_id`. The physical name (`uq_sep_year_semester` or any other) is **not** an academic invariant. Preflight, apply completion, and verify all use `@identity_unique_exists`. An equivalent unique index under another name is `COMPATIBLE`; apply will not create a second identity unique and will not rename a user-owned index.
+
+## Event table contract
+
+`supplementary_exam_period_events` is required for governed audit atomicity. A pre-existing object is `COMPATIBLE` only when the **full** contract holds:
+
+- BASE TABLE, `ENGINE = InnoDB`
+- PRIMARY KEY `supplementary_exam_period_event_id` (integer, `auto_increment`)
+- required columns with compatible types, lengths, nullability, and `created_at` timestamp/datetime NOT NULL
+- period FK → `supplementary_exam_periods.supplementary_exam_period_id`
+- actor FK → `users.user_id`
+- lookup indexes: period, actor, and `event_type,to_status` prefix
+
+Physical constraint/index **names** are not required when an equivalent safe contract exists.
+
+If a pre-existing event table (or a same-named non-base object) does not satisfy that contract: `CONFLICT` / `BLOCKED`. Apply creates the table only when **ABSENT**, adopts it when **FULLY COMPATIBLE**, and refuses when **CONFLICT**. Apply never rewrites an unknown pre-existing table.
+
+`SupplementaryExamPeriodGovernance::schemaReady()` is fail-closed on the same identity UNIQUE and event-table contract (indexes + foreign keys + required types). Announcement cannot proceed after an incomplete SQL deployment.
+
 ## Rollback
 
 Production data may exist after deployment.
 
 If any governed period (`status = announced` or non-null `opened_by_user_id` / `opened_at`) or any event row exists: `BLOCKED_IN_USE`. Drop nothing. Never delete `supplementary_exam_results`.
 
-If rollback is safe: remove only Phase 1 columns / unique / event table / RBAC additions. Preserve every existing period row.
+Rollback may remove only objects **owned** by `[phase1-supplementary-exam-period-governance]`:
+
+- Governance columns (`status`, `opened_by_user_id`, `opened_at`, `decision_note`): drop only when `COLUMN_COMMENT` contains the Phase 1 marker. Compatible columns without that marker are **ADOPTED / DO NOT DROP**.
+- Event table: drop only when `TABLE_COMMENT` proves Phase 1 ownership **and** the table is empty **and** rollback is not `BLOCKED_IN_USE`. A pre-existing event table is left in place.
+- Indexes and foreign keys cannot carry a reliable ownership marker: adopted compatible identity UNIQUE indexes and other constraints are left in place. `fk_sep_opened_by` is dropped only when the `opened_by_user_id` column itself is Phase-1-owned.
+- Permissions: existing description-marker logic is unchanged; pre-existing compatible permissions without the marker are not removed.
+
+Rollback is conservative and may leave harmless compatible schema behind. It must not destroy adopted objects.

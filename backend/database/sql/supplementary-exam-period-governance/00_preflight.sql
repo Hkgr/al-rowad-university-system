@@ -76,6 +76,7 @@ SET @permissions_exist := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_sc
 SET @role_permissions_exist := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'role_permissions' AND table_type = 'BASE TABLE'), 0);
 SET @user_roles_exist := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'user_roles' AND table_type = 'BASE TABLE'), 0);
 SET @scopes_exist := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'user_access_scopes' AND table_type = 'BASE TABLE'), 0);
+SET @events_any := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'supplementary_exam_period_events'), 0);
 SET @events_exist := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'supplementary_exam_period_events' AND table_type = 'BASE TABLE'), 0);
 
 SET @status_exists := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'supplementary_exam_periods' AND column_name = 'status'), 0);
@@ -144,6 +145,23 @@ SET @fk_opened_by_state := CASE
     ELSE 'CONFLICT'
 END;
 
+SET @identity_unique_exists := IF(
+    @db_ready = 1,
+    (
+        SELECT COUNT(*)
+        FROM (
+            SELECT index_name
+            FROM information_schema.statistics
+            WHERE table_schema = 'alrowad_uni_rust'
+              AND table_name = 'supplementary_exam_periods'
+              AND non_unique = 0
+              AND index_name <> 'PRIMARY'
+            GROUP BY index_name
+            HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index SEPARATOR ',') = 'academic_year_id,semester_id'
+        ) identity_indexes
+    ),
+    0
+);
 SET @uq_name_exists := IF(
     @db_ready = 1,
     (SELECT COUNT(DISTINCT index_name) FROM information_schema.statistics
@@ -164,53 +182,172 @@ SET @uq_cols := IF(
     ),
     NULL
 );
-SET @identity_unique_other := IF(
-    @db_ready = 1,
-    (
+SET @uq_name_wrong := IF(@uq_name_exists = 1 AND NOT (@uq_cols <=> 'academic_year_id,semester_id'), 1, 0);
+-- Physical index name is not part of the academic invariant.
+SET @unique_state := CASE
+    WHEN @identity_unique_exists >= 1 THEN 'COMPATIBLE'
+    WHEN @uq_name_wrong = 1 THEN 'CONFLICT'
+    ELSE 'ABSENT'
+END;
+
+SET @events_engine_ok := IF(
+    @events_exist = 1
+    AND UPPER(IFNULL((SELECT t.engine FROM information_schema.tables t WHERE t.table_schema = 'alrowad_uni_rust' AND t.table_name = 'supplementary_exam_period_events' AND t.table_type = 'BASE TABLE'), '')) = 'INNODB',
+    1, 0
+);
+SET @events_pk_ok := IF(
+    @events_exist = 1
+    AND (SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'supplementary_exam_period_events' AND index_name = 'PRIMARY') <=> 'supplementary_exam_period_event_id',
+    1, 0
+);
+SET @events_pk_ai_ok := IF(
+    @events_exist = 1
+    AND LOWER(IFNULL((SELECT extra FROM information_schema.columns WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'supplementary_exam_period_events' AND column_name = 'supplementary_exam_period_event_id'), '')) LIKE '%auto_increment%',
+    1, 0
+);
+SET @events_types_ok := IF(
+    @events_exist = 1 AND (
+        SELECT COUNT(*)
+        FROM (
+            SELECT 'supplementary_exam_period_event_id' AS column_name, 'int' AS data_type, 'NO' AS is_nullable
+            UNION ALL SELECT 'supplementary_exam_period_id', 'int', 'NO'
+            UNION ALL SELECT 'event_type', 'varchar', 'NO'
+            UNION ALL SELECT 'from_status', 'varchar', 'YES'
+            UNION ALL SELECT 'to_status', 'varchar', 'NO'
+            UNION ALL SELECT 'actor_user_id', 'int', 'NO'
+            UNION ALL SELECT 'notes', 'text', 'YES'
+            UNION ALL SELECT 'created_at', 'timestamp', 'NO'
+        ) required
+        LEFT JOIN information_schema.columns c
+            ON c.table_schema = 'alrowad_uni_rust'
+           AND c.table_name = 'supplementary_exam_period_events'
+           AND c.column_name = required.column_name
+        WHERE c.column_name IS NULL
+           OR (
+               required.column_name = 'created_at'
+               AND (
+                   LOWER(c.data_type) NOT IN ('timestamp', 'datetime')
+                   OR c.is_nullable <> 'NO'
+               )
+           )
+           OR (
+               required.column_name = 'notes'
+               AND (
+                   LOWER(c.data_type) NOT IN ('text', 'varchar', 'mediumtext', 'longtext')
+                   OR c.is_nullable <> 'YES'
+               )
+           )
+           OR (
+               required.column_name IN ('event_type', 'from_status', 'to_status')
+               AND (
+                   LOWER(c.data_type) <> 'varchar'
+                   OR c.is_nullable <> required.is_nullable
+                   OR IFNULL(c.character_maximum_length, 0) < 16
+               )
+           )
+           OR (
+               required.column_name IN ('supplementary_exam_period_event_id', 'supplementary_exam_period_id', 'actor_user_id')
+               AND (
+                   LOWER(c.data_type) NOT IN ('int', 'bigint', 'mediumint')
+                   OR c.is_nullable <> required.is_nullable
+                   OR LOWER(c.column_type) LIKE '%unsigned%'
+               )
+           )
+    ) = 0,
+    1, 0
+);
+SET @events_fk_period_ok := IF(
+    @events_exist = 1
+    AND (
+        SELECT COUNT(*)
+        FROM information_schema.key_column_usage k
+        JOIN information_schema.table_constraints tc
+            ON tc.constraint_schema = k.constraint_schema
+           AND tc.table_name = k.table_name
+           AND tc.constraint_name = k.constraint_name
+           AND tc.constraint_type = 'FOREIGN KEY'
+        WHERE k.table_schema = 'alrowad_uni_rust'
+          AND k.table_name = 'supplementary_exam_period_events'
+          AND k.column_name = 'supplementary_exam_period_id'
+          AND k.referenced_table_name = 'supplementary_exam_periods'
+          AND k.referenced_column_name = 'supplementary_exam_period_id'
+    ) > 0,
+    1, 0
+);
+SET @events_fk_actor_ok := IF(
+    @events_exist = 1
+    AND (
+        SELECT COUNT(*)
+        FROM information_schema.key_column_usage k
+        JOIN information_schema.table_constraints tc
+            ON tc.constraint_schema = k.constraint_schema
+           AND tc.table_name = k.table_name
+           AND tc.constraint_name = k.constraint_name
+           AND tc.constraint_type = 'FOREIGN KEY'
+        WHERE k.table_schema = 'alrowad_uni_rust'
+          AND k.table_name = 'supplementary_exam_period_events'
+          AND k.column_name = 'actor_user_id'
+          AND k.referenced_table_name = 'users'
+          AND k.referenced_column_name = 'user_id'
+    ) > 0,
+    1, 0
+);
+SET @events_idx_period_ok := IF(
+    @events_exist = 1
+    AND (
+        SELECT COUNT(DISTINCT index_name)
+        FROM information_schema.statistics
+        WHERE table_schema = 'alrowad_uni_rust'
+          AND table_name = 'supplementary_exam_period_events'
+          AND seq_in_index = 1
+          AND column_name = 'supplementary_exam_period_id'
+    ) > 0,
+    1, 0
+);
+SET @events_idx_actor_ok := IF(
+    @events_exist = 1
+    AND (
+        SELECT COUNT(DISTINCT index_name)
+        FROM information_schema.statistics
+        WHERE table_schema = 'alrowad_uni_rust'
+          AND table_name = 'supplementary_exam_period_events'
+          AND seq_in_index = 1
+          AND column_name = 'actor_user_id'
+    ) > 0,
+    1, 0
+);
+SET @events_idx_event_type_ok := IF(
+    @events_exist = 1
+    AND (
         SELECT COUNT(*)
         FROM (
             SELECT index_name
             FROM information_schema.statistics
             WHERE table_schema = 'alrowad_uni_rust'
-              AND table_name = 'supplementary_exam_periods'
-              AND non_unique = 0
-              AND index_name <> 'PRIMARY'
+              AND table_name = 'supplementary_exam_period_events'
             GROUP BY index_name
-            HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'academic_year_id,semester_id'
-        ) existing_identity
-    ),
-    0
+            HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index SEPARATOR ',') LIKE 'event_type,to_status%'
+        ) typed
+    ) > 0,
+    1, 0
 );
-SET @unique_state := CASE
-    WHEN @uq_name_exists = 0 AND @identity_unique_other = 0 THEN 'ABSENT'
-    WHEN @uq_cols <=> 'academic_year_id,semester_id' OR @identity_unique_other > 0 THEN 'COMPATIBLE'
-    ELSE 'CONFLICT'
-END;
-
-SET @events_expected_cols := IF(
-    @events_exist = 1,
-    (
-        SELECT COUNT(*)
-        FROM (
-            SELECT 'supplementary_exam_period_event_id' AS column_name
-            UNION ALL SELECT 'supplementary_exam_period_id'
-            UNION ALL SELECT 'event_type'
-            UNION ALL SELECT 'from_status'
-            UNION ALL SELECT 'to_status'
-            UNION ALL SELECT 'actor_user_id'
-            UNION ALL SELECT 'notes'
-            UNION ALL SELECT 'created_at'
-        ) expected
-        JOIN information_schema.columns existing
-            ON existing.table_schema = 'alrowad_uni_rust'
-           AND existing.table_name = 'supplementary_exam_period_events'
-           AND existing.column_name = expected.column_name
-    ),
-    0
+SET @events_idx_lookup_ok := @events_idx_event_type_ok;
+SET @events_full_ok := IF(
+    @events_exist = 1
+    AND @events_engine_ok = 1
+    AND @events_pk_ok = 1
+    AND @events_pk_ai_ok = 1
+    AND @events_types_ok = 1
+    AND @events_fk_period_ok = 1
+    AND @events_fk_actor_ok = 1
+    AND @events_idx_period_ok = 1
+    AND @events_idx_actor_ok = 1
+    AND @events_idx_lookup_ok = 1,
+    1, 0
 );
 SET @events_state := CASE
-    WHEN @events_exist = 0 THEN 'ABSENT'
-    WHEN @events_exist = 1 AND @events_expected_cols = 8 THEN 'COMPATIBLE'
+    WHEN @events_any = 0 THEN 'ABSENT'
+    WHEN @events_full_ok = 1 THEN 'COMPATIBLE'
     ELSE 'CONFLICT'
 END;
 
@@ -376,6 +513,8 @@ SET @unique_can_create := IF(
     AND @unique_state IN ('ABSENT', 'COMPATIBLE'),
     1, 0
 );
+-- Semantic identity UNIQUE already present under any name is COMPATIBLE
+-- and does not need uq_sep_year_semester.
 
 SET @phase1_conflict := IF(
     @status_state = 'CONFLICT'
@@ -486,9 +625,15 @@ FROM (
     UNION ALL SELECT 'opened_at', @opened_at_state
     UNION ALL SELECT 'decision_note', @decision_note_state
     UNION ALL SELECT 'fk_sep_opened_by', @fk_opened_by_state
-    UNION ALL SELECT 'uq_sep_year_semester', @unique_state
+    UNION ALL SELECT 'identity_unique', @unique_state
     UNION ALL SELECT 'idx_sep_status', @idx_status_state
     UNION ALL SELECT 'supplementary_exam_period_events', @events_state
+    UNION ALL SELECT 'events_engine', IF(@events_exist = 0, 'ABSENT', IF(@events_engine_ok = 1, 'COMPATIBLE', 'CONFLICT'))
+    UNION ALL SELECT 'events_fk_period', IF(@events_exist = 0, 'ABSENT', IF(@events_fk_period_ok = 1, 'COMPATIBLE', 'CONFLICT'))
+    UNION ALL SELECT 'events_fk_actor', IF(@events_exist = 0, 'ABSENT', IF(@events_fk_actor_ok = 1, 'COMPATIBLE', 'CONFLICT'))
+    UNION ALL SELECT 'events_idx_period', IF(@events_exist = 0, 'ABSENT', IF(@events_idx_period_ok = 1, 'COMPATIBLE', 'CONFLICT'))
+    UNION ALL SELECT 'events_idx_actor', IF(@events_exist = 0, 'ABSENT', IF(@events_idx_actor_ok = 1, 'COMPATIBLE', 'CONFLICT'))
+    UNION ALL SELECT 'events_idx_event_type', IF(@events_exist = 0, 'ABSENT', IF(@events_idx_event_type_ok = 1, 'COMPATIBLE', 'CONFLICT'))
     UNION ALL SELECT 'supplementary_exams.periods.view', @view_perm_state
     UNION ALL SELECT 'supplementary_exams.periods.decide', @decide_perm_state
 ) objects;
@@ -530,6 +675,7 @@ SELECT 'I_unresolved_view_mapping' AS report_section,
 SELECT 'J_alter_safety' AS report_section,
        @alter_safe AS alter_safe,
        @unique_can_create AS unique_identity_can_be_created_safely,
+       @identity_unique_exists AS identity_unique_exists,
        @periods_engine_ok AS periods_innodb,
        @duplicate_pairs AS duplicate_pairs,
        @orphan_years AS orphan_years,
@@ -564,7 +710,8 @@ SELECT 'OVERALL' AS report_section,
        @rbac_matrix_conflict AS rbac_matrix_conflict,
        @phase1_conflict AS phase1_conflict,
        @alter_safe AS alter_safe,
-       @unique_can_create AS unique_can_create;
+       @unique_can_create AS unique_can_create,
+       @identity_unique_exists AS identity_unique_exists;
 
 SELECT 'BLOCKERS' AS report_section,
        CASE

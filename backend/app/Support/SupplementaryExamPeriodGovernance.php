@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use Illuminate\Support\Facades\Schema;
+use Throwable;
 
 final class SupplementaryExamPeriodGovernance
 {
@@ -29,13 +30,190 @@ final class SupplementaryExamPeriodGovernance
         'locked',
     ];
 
+    /**
+     * Fail-closed. Column presence alone is not enough: identity UNIQUE and
+     * the event-table audit contract must be inspectably usable. Incomplete
+     * SQL deployment must not allow announcement.
+     */
     public static function schemaReady(): bool
     {
-        return Schema::hasTable('supplementary_exam_periods')
-            && Schema::hasTable('supplementary_exam_period_events')
-            && Schema::hasColumn('supplementary_exam_periods', 'status')
-            && Schema::hasColumn('supplementary_exam_periods', 'opened_by_user_id')
-            && Schema::hasColumn('supplementary_exam_periods', 'opened_at')
-            && Schema::hasColumn('supplementary_exam_periods', 'decision_note');
+        try {
+            if (! Schema::hasTable('supplementary_exam_periods')
+                || ! Schema::hasTable('supplementary_exam_period_events')
+                || ! Schema::hasColumn('supplementary_exam_periods', 'status')
+                || ! Schema::hasColumn('supplementary_exam_periods', 'opened_by_user_id')
+                || ! Schema::hasColumn('supplementary_exam_periods', 'opened_at')
+                || ! Schema::hasColumn('supplementary_exam_periods', 'decision_note')) {
+                return false;
+            }
+
+            if (! method_exists(Schema::class, 'getIndexes')
+                || ! method_exists(Schema::class, 'getForeignKeys')
+                || ! method_exists(Schema::class, 'getColumns')) {
+                return false;
+            }
+
+            return self::identityUniqueReady()
+                && self::eventsTableContractReady();
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    private static function identityUniqueReady(): bool
+    {
+        foreach (Schema::getIndexes('supplementary_exam_periods') as $index) {
+            $columns = array_values($index['columns'] ?? []);
+            if (! empty($index['unique']) && $columns === ['academic_year_id', 'semester_id']) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function eventsTableContractReady(): bool
+    {
+        $columns = collect(Schema::getColumns('supplementary_exam_period_events'))->keyBy('name');
+        foreach ([
+            'supplementary_exam_period_event_id',
+            'supplementary_exam_period_id',
+            'event_type',
+            'from_status',
+            'to_status',
+            'actor_user_id',
+            'notes',
+            'created_at',
+        ] as $name) {
+            if (! $columns->has($name)) {
+                return false;
+            }
+        }
+
+        $pk = $columns->get('supplementary_exam_period_event_id');
+        if (! self::columnIsInteger($pk) || empty($pk['auto_increment']) || ! empty($pk['nullable'])) {
+            return false;
+        }
+        if (! self::columnIsInteger($columns->get('supplementary_exam_period_id'))
+            || ! self::columnIsInteger($columns->get('actor_user_id'))
+            || ! self::columnIsString($columns->get('event_type'))
+            || ! self::columnIsString($columns->get('to_status'))
+            || ! self::columnIsString($columns->get('from_status'), true)
+            || ! self::columnIsText($columns->get('notes'), true)
+            || ! self::columnIsDateTime($columns->get('created_at'))) {
+            return false;
+        }
+        if (! empty($columns->get('supplementary_exam_period_id')['nullable'])
+            || ! empty($columns->get('actor_user_id')['nullable'])
+            || ! empty($columns->get('event_type')['nullable'])
+            || ! empty($columns->get('to_status')['nullable'])
+            || ! empty($columns->get('created_at')['nullable'])) {
+            return false;
+        }
+
+        $hasPeriodIndex = false;
+        $hasActorIndex = false;
+        $hasEventTypeIndex = false;
+        $hasPrimary = false;
+        foreach (Schema::getIndexes('supplementary_exam_period_events') as $index) {
+            $indexColumns = array_values($index['columns'] ?? []);
+            if (! empty($index['primary']) && $indexColumns === ['supplementary_exam_period_event_id']) {
+                $hasPrimary = true;
+            }
+            if (($indexColumns[0] ?? null) === 'supplementary_exam_period_id') {
+                $hasPeriodIndex = true;
+            }
+            if (($indexColumns[0] ?? null) === 'actor_user_id') {
+                $hasActorIndex = true;
+            }
+            if (($indexColumns[0] ?? null) === 'event_type' && ($indexColumns[1] ?? null) === 'to_status') {
+                $hasEventTypeIndex = true;
+            }
+        }
+
+        $hasPeriodFk = false;
+        $hasActorFk = false;
+        foreach (Schema::getForeignKeys('supplementary_exam_period_events') as $foreign) {
+            $local = array_values($foreign['columns'] ?? []);
+            $remoteTable = (string) ($foreign['foreign_table'] ?? '');
+            $remoteColumns = array_values($foreign['foreign_columns'] ?? []);
+            if ($local === ['supplementary_exam_period_id']
+                && $remoteTable === 'supplementary_exam_periods'
+                && $remoteColumns === ['supplementary_exam_period_id']) {
+                $hasPeriodFk = true;
+            }
+            if ($local === ['actor_user_id']
+                && $remoteTable === 'users'
+                && $remoteColumns === ['user_id']) {
+                $hasActorFk = true;
+            }
+        }
+
+        return $hasPrimary && $hasPeriodIndex && $hasActorIndex && $hasEventTypeIndex
+            && $hasPeriodFk && $hasActorFk;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $column
+     */
+    private static function columnIsInteger(?array $column): bool
+    {
+        $type = strtolower((string) ($column['type_name'] ?? $column['type'] ?? ''));
+
+        return in_array($type, ['int', 'integer', 'bigint', 'mediumint'], true);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $column
+     */
+    private static function columnIsString(?array $column, bool $nullable = false): bool
+    {
+        if ($column === null) {
+            return false;
+        }
+        $type = strtolower((string) ($column['type_name'] ?? $column['type'] ?? ''));
+        if (! in_array($type, ['varchar', 'char', 'string'], true)) {
+            return false;
+        }
+
+        return self::columnMatchesNullability($column, $nullable);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $column
+     */
+    private static function columnIsText(?array $column, bool $nullable = false): bool
+    {
+        if ($column === null) {
+            return false;
+        }
+        $type = strtolower((string) ($column['type_name'] ?? $column['type'] ?? ''));
+        if (! in_array($type, ['text', 'tinytext', 'mediumtext', 'longtext', 'varchar', 'char', 'string'], true)) {
+            return false;
+        }
+
+        return self::columnMatchesNullability($column, $nullable);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $column
+     */
+    private static function columnIsDateTime(?array $column): bool
+    {
+        if ($column === null) {
+            return false;
+        }
+        $type = strtolower((string) ($column['type_name'] ?? $column['type'] ?? ''));
+
+        return in_array($type, ['timestamp', 'datetime'], true)
+            && self::columnMatchesNullability($column, false);
+    }
+
+    /**
+     * @param  array<string, mixed>  $column
+     */
+    private static function columnMatchesNullability(array $column, bool $nullable): bool
+    {
+        return $nullable === ! empty($column['nullable']);
     }
 }
