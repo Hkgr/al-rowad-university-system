@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Support\SupplementaryExamOfferingGovernance;
+use App\Support\SupplementaryExamPeriodGovernance;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\Schema\Builder;
 use Illuminate\Support\Facades\Schema;
@@ -30,13 +31,14 @@ class SupplementaryExamOfferingSchemaReadyRuntimeTest extends TestCase
         $this->assertTrue(method_exists($builder, 'getIndexes'));
     }
 
-    public function test_schema_ready_returns_true_when_full_contract_exists(): void
+    public function test_schema_ready_returns_true_when_full_phase1_and_phase2_exist(): void
     {
         $this->createFullContract();
+        $this->assertTrue(SupplementaryExamPeriodGovernance::schemaReady());
         $this->assertTrue(SupplementaryExamOfferingGovernance::schemaReady());
     }
 
-    public function test_schema_ready_is_false_without_identity_unique(): void
+    public function test_schema_ready_is_false_without_phase2_identity_unique(): void
     {
         $this->createFullContract();
         Schema::table('supplementary_exam_offerings', function (Blueprint $table): void {
@@ -47,26 +49,136 @@ class SupplementaryExamOfferingSchemaReadyRuntimeTest extends TestCase
 
     public function test_schema_ready_is_false_without_source_foreign_key(): void
     {
-        $this->createParents();
+        $this->createPhase1Contract();
+        $this->createPhase2Parents();
         $this->createOfferingsTable();
         $this->createSourcesTable(withOfferingFk: false);
         $this->createEventsTable();
+        $this->assertTrue(SupplementaryExamPeriodGovernance::schemaReady());
+        $this->assertFalse(SupplementaryExamOfferingGovernance::schemaReady());
+    }
+
+    public function test_schema_ready_is_false_when_phase1_period_unique_missing(): void
+    {
+        $this->createFullContract();
+        $this->assertTrue(SupplementaryExamOfferingGovernance::schemaReady());
+        Schema::table('supplementary_exam_periods', function (Blueprint $table): void {
+            $table->dropUnique('periods_year_semester_identity');
+        });
+        $this->assertFalse(SupplementaryExamPeriodGovernance::schemaReady());
+        $this->assertFalse(SupplementaryExamOfferingGovernance::schemaReady());
+    }
+
+    public function test_schema_ready_is_false_when_phase1_event_fk_missing(): void
+    {
+        $this->createUsersAndPeriods();
+        $this->createPeriodEventsTable(withPeriodFk: false, withActorFk: true, withLookupIndex: true, withNotes: true);
+        $this->createPhase2Parents();
+        $this->createOfferingsTable();
+        $this->createSourcesTable();
+        $this->createEventsTable();
+        $this->assertFalse(SupplementaryExamPeriodGovernance::schemaReady());
+        $this->assertFalse(SupplementaryExamOfferingGovernance::schemaReady());
+    }
+
+    public function test_schema_ready_is_false_when_phase1_event_index_missing(): void
+    {
+        $this->createUsersAndPeriods();
+        $this->createPeriodEventsTable(withPeriodFk: true, withActorFk: true, withLookupIndex: false, withNotes: true);
+        $this->createPhase2Parents();
+        $this->createOfferingsTable();
+        $this->createSourcesTable();
+        $this->createEventsTable();
+        $this->assertFalse(SupplementaryExamPeriodGovernance::schemaReady());
+        $this->assertFalse(SupplementaryExamOfferingGovernance::schemaReady());
+    }
+
+    public function test_schema_ready_is_false_when_phase1_governance_column_malformed(): void
+    {
+        $this->createUsersAndPeriods(withDecisionNote: false);
+        $this->createPeriodEventsTable(withPeriodFk: true, withActorFk: true, withLookupIndex: true, withNotes: true);
+        $this->createPhase2Parents();
+        $this->createOfferingsTable();
+        $this->createSourcesTable();
+        $this->createEventsTable();
+        $this->assertFalse(SupplementaryExamPeriodGovernance::schemaReady());
         $this->assertFalse(SupplementaryExamOfferingGovernance::schemaReady());
     }
 
     private function createFullContract(): void
     {
-        $this->createParents();
+        $this->createPhase1Contract();
+        $this->createPhase2Parents();
         $this->createOfferingsTable();
         $this->createSourcesTable();
         $this->createEventsTable();
     }
 
-    private function createParents(): void
+    private function createPhase1Contract(): void
+    {
+        $this->createUsersAndPeriods();
+        $this->createPeriodEventsTable(withPeriodFk: true, withActorFk: true, withLookupIndex: true, withNotes: true);
+    }
+
+    private function createUsersAndPeriods(bool $withDecisionNote = true): void
     {
         Schema::create('users', function (Blueprint $table): void {
             $table->integer('user_id')->autoIncrement();
         });
+        Schema::create('supplementary_exam_periods', function (Blueprint $table) use ($withDecisionNote): void {
+            $table->integer('supplementary_exam_period_id')->autoIncrement();
+            $table->integer('academic_year_id');
+            $table->integer('semester_id');
+            $table->string('status', 32);
+            $table->integer('opened_by_user_id')->nullable();
+            $table->dateTime('opened_at')->nullable();
+            if ($withDecisionNote) {
+                $table->text('decision_note')->nullable();
+            }
+            $table->unique(['academic_year_id', 'semester_id'], 'periods_year_semester_identity');
+        });
+    }
+
+    private function createPeriodEventsTable(
+        bool $withPeriodFk,
+        bool $withActorFk,
+        bool $withLookupIndex,
+        bool $withNotes,
+    ): void {
+        Schema::create('supplementary_exam_period_events', function (Blueprint $table) use (
+            $withPeriodFk,
+            $withActorFk,
+            $withLookupIndex,
+            $withNotes,
+        ): void {
+            $table->integer('supplementary_exam_period_event_id')->autoIncrement();
+            $table->integer('supplementary_exam_period_id');
+            $table->string('event_type', 64);
+            $table->string('from_status', 32)->nullable();
+            $table->string('to_status', 32);
+            $table->integer('actor_user_id');
+            if ($withNotes) {
+                $table->text('notes')->nullable();
+            }
+            $table->timestamp('created_at');
+            $table->index('supplementary_exam_period_id');
+            $table->index('actor_user_id');
+            if ($withLookupIndex) {
+                $table->index(['event_type', 'to_status']);
+            }
+            if ($withPeriodFk) {
+                $table->foreign('supplementary_exam_period_id')
+                    ->references('supplementary_exam_period_id')
+                    ->on('supplementary_exam_periods');
+            }
+            if ($withActorFk) {
+                $table->foreign('actor_user_id')->references('user_id')->on('users');
+            }
+        });
+    }
+
+    private function createPhase2Parents(): void
+    {
         Schema::create('academic_programs', function (Blueprint $table): void {
             $table->integer('academic_program_id')->autoIncrement();
         });
@@ -75,9 +187,6 @@ class SupplementaryExamOfferingSchemaReadyRuntimeTest extends TestCase
         });
         Schema::create('course_offerings', function (Blueprint $table): void {
             $table->integer('course_offering_id')->autoIncrement();
-        });
-        Schema::create('supplementary_exam_periods', function (Blueprint $table): void {
-            $table->integer('supplementary_exam_period_id')->autoIncrement();
         });
     }
 
@@ -144,6 +253,7 @@ class SupplementaryExamOfferingSchemaReadyRuntimeTest extends TestCase
         Schema::dropIfExists('supplementary_exam_offering_events');
         Schema::dropIfExists('supplementary_exam_offering_sources');
         Schema::dropIfExists('supplementary_exam_offerings');
+        Schema::dropIfExists('supplementary_exam_period_events');
         Schema::dropIfExists('supplementary_exam_periods');
         Schema::dropIfExists('course_offerings');
         Schema::dropIfExists('courses');

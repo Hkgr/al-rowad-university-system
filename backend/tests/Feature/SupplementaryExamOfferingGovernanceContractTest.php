@@ -30,7 +30,10 @@ class SupplementaryExamOfferingGovernanceContractTest extends TestCase
     {
         $source = self::source('app/Services/SupplementaryExamOfferingSourceService.php');
         self::assertStringContainsString('StudentCourseRegistration::HISTORICAL_ATTEMPT_STATUSES', $source);
-        self::assertStringContainsString('allowedSourceSemesterOrders($period)', $source);
+        self::assertStringContainsString("where('theoretical_hours', '>', 0)", $source);
+        self::assertStringContainsString('periodSemesterOrder($period)', $source);
+        self::assertStringContainsString('allowedSourceSemesterOrdersForOrder($order)', $source);
+        self::assertStringContainsString("where('semester_id', \$periodSemesterId)", $source);
         self::assertStringContainsString('whereIn(\'course_offering_id\', CourseOffering::idsResolvedToColleges($collegeIds))', $source);
         self::assertStringNotContainsString('ProgramCourse', $source);
         self::assertStringNotContainsString("status = 'OPEN'", strtoupper($source));
@@ -38,7 +41,6 @@ class SupplementaryExamOfferingGovernanceContractTest extends TestCase
         self::assertStringNotContainsString('semester_id = 1', $source);
         self::assertStringNotContainsString('semester_id = 2', $source);
         self::assertStringNotContainsString('semester_id = 3', $source);
-        self::assertStringNotContainsString('where(\'semester_id\'', $source);
 
         $policy = self::source('app/Support/SupplementaryExamPolicy.php');
         self::assertStringContainsString('self::SEMESTER_ORDER_FIRST => [self::SEMESTER_ORDER_FIRST]', $policy);
@@ -50,6 +52,7 @@ class SupplementaryExamOfferingGovernanceContractTest extends TestCase
     public function test_schema_ready_inspects_builder_not_schema_class(): void
     {
         $source = self::source('app/Support/SupplementaryExamOfferingGovernance.php');
+        self::assertStringContainsString('SupplementaryExamPeriodGovernance::schemaReady()', $source);
         self::assertStringContainsString('Schema::connection((string) config(\'database.default\'))', $source);
         self::assertStringContainsString('method_exists($builder, \'getIndexes\')', $source);
         self::assertStringNotContainsString("method_exists(Schema::class, 'getIndexes')", $source);

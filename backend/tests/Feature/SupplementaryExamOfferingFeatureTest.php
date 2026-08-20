@@ -57,6 +57,8 @@ class SupplementaryExamOfferingFeatureTest extends TestCase
 
     private Course $curriculumOnly;
 
+    private Course $practicalOnly;
+
     private User $dean;
 
     private User $otherDean;
@@ -480,6 +482,79 @@ class SupplementaryExamOfferingFeatureTest extends TestCase
         $this->assertSame([1, 2], $orders);
     }
 
+    public function test_supp_offer_41_practical_only_is_not_catalog_candidate(): void
+    {
+        $period = $this->announcedPeriod($this->first);
+        $this->genuineOffering($this->first, 'registered', course: $this->practicalOnly);
+
+        $catalog = $this->actingAs($this->dean, 'sanctum')
+            ->getJson('/api/v1/dean/supplementary-exam-offerings/catalog?'.$this->catalogQuery($period))
+            ->assertOk()
+            ->json('data.available_courses');
+        $ids = collect($catalog)->pluck('course_id')->all();
+        $this->assertNotContains($this->practicalOnly->course_id, $ids);
+        $this->assertSame(0, (int) $this->practicalOnly->theoretical_hours);
+    }
+
+    public function test_supp_offer_42_practical_only_cannot_be_opened(): void
+    {
+        $period = $this->announcedPeriod($this->first);
+        $this->genuineOffering($this->first, 'registered', course: $this->practicalOnly);
+
+        $this->actingAs($this->dean, 'sanctum')
+            ->postJson('/api/v1/dean/supplementary-exam-offerings', [
+                'supplementary_exam_period_id' => $period->supplementary_exam_period_id,
+                'academic_program_id' => $this->programA->academic_program_id,
+                'course_id' => $this->practicalOnly->course_id,
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('error_code', 'supplementary_exam_no_actual_source_offering');
+        $this->assertSame(0, SupplementaryExamOffering::query()->count());
+    }
+
+    public function test_supp_offer_43_theoretical_hours_positive_remains_eligible(): void
+    {
+        $this->assertGreaterThan(0, (int) $this->course->theoretical_hours);
+        $period = $this->announcedPeriod($this->first);
+        $this->genuineOffering($this->first, 'registered');
+        $this->actingAs($this->dean, 'sanctum')
+            ->postJson('/api/v1/dean/supplementary-exam-offerings', $this->openPayload($period))
+            ->assertCreated();
+    }
+
+    public function test_supp_offer_44_orders_1_and_2_require_exact_period_semester_row(): void
+    {
+        $altFirst = Semester::query()->create([
+            'semester_code' => 'first-b', 'semester_name' => 'First B', 'semester_order' => 1, 'is_active' => true,
+        ]);
+        $periodFirst = $this->announcedPeriod($this->first);
+        $this->genuineOffering($altFirst, 'registered');
+        $this->actingAs($this->dean, 'sanctum')
+            ->postJson('/api/v1/dean/supplementary-exam-offerings', $this->openPayload($periodFirst))
+            ->assertStatus(422)
+            ->assertJsonPath('error_code', 'supplementary_exam_no_actual_source_offering');
+
+        $this->genuineOffering($this->first, 'registered');
+        $this->actingAs($this->dean, 'sanctum')
+            ->postJson('/api/v1/dean/supplementary-exam-offerings', $this->openPayload($periodFirst))
+            ->assertCreated();
+
+        $altSecond = Semester::query()->create([
+            'semester_code' => 'second-b', 'semester_name' => 'Second B', 'semester_order' => 2, 'is_active' => true,
+        ]);
+        $periodSecond = $this->announcedPeriod($this->second);
+        $this->genuineOffering($altSecond, 'completed');
+        $this->actingAs($this->dean, 'sanctum')
+            ->postJson('/api/v1/dean/supplementary-exam-offerings', $this->openPayload($periodSecond))
+            ->assertStatus(422)
+            ->assertJsonPath('error_code', 'supplementary_exam_no_actual_source_offering');
+
+        $this->genuineOffering($this->second, 'completed');
+        $this->actingAs($this->dean, 'sanctum')
+            ->postJson('/api/v1/dean/supplementary-exam-offerings', $this->openPayload($periodSecond))
+            ->assertCreated();
+    }
+
     public function test_closed_identity_instructs_reopen(): void
     {
         $period = $this->announcedPeriod($this->first);
@@ -540,8 +615,9 @@ class SupplementaryExamOfferingFeatureTest extends TestCase
         string $statusCode,
         ?AcademicYear $year = null,
         string $offeringStatus = 'open',
+        ?Course $course = null,
     ): CourseOffering {
-        $offering = $this->offering($semester, $year, $offeringStatus);
+        $offering = $this->offering($semester, $year, $offeringStatus, $course);
         StudentCourseRegistration::query()->create([
             'student_id' => $this->student->student_id,
             'course_offering_id' => $offering->course_offering_id,
@@ -553,10 +629,10 @@ class SupplementaryExamOfferingFeatureTest extends TestCase
         return $offering;
     }
 
-    private function offering(Semester $semester, ?AcademicYear $year = null, string $status = 'open'): CourseOffering
+    private function offering(Semester $semester, ?AcademicYear $year = null, string $status = 'open', ?Course $course = null): CourseOffering
     {
         return CourseOffering::query()->create([
-            'course_id' => $this->course->course_id,
+            'course_id' => ($course ?? $this->course)->course_id,
             'academic_year_id' => ($year ?? $this->year)->academic_year_id,
             'semester_id' => $semester->semester_id,
             'department_id' => $this->programA->department_id,
@@ -618,8 +694,18 @@ class SupplementaryExamOfferingFeatureTest extends TestCase
         $this->summer = Semester::query()->create(['semester_code' => 'summer', 'semester_name' => 'Summer', 'semester_order' => 3, 'is_active' => true]);
         $this->first = Semester::query()->create(['semester_code' => 'first', 'semester_name' => 'First', 'semester_order' => 1, 'is_active' => true]);
         $this->second = Semester::query()->create(['semester_code' => 'second', 'semester_name' => 'Second', 'semester_order' => 2, 'is_active' => true]);
-        $this->course = Course::query()->create(['course_code' => 'ACC1', 'course_name' => 'محاسبة 1', 'credit_hours' => 3, 'is_active' => true]);
-        $this->curriculumOnly = Course::query()->create(['course_code' => 'CUR1', 'course_name' => 'خطة فقط', 'credit_hours' => 3, 'is_active' => true]);
+        $this->course = Course::query()->create([
+            'course_code' => 'ACC1', 'course_name' => 'محاسبة 1', 'credit_hours' => 3,
+            'theoretical_hours' => 3, 'practical_hours' => 0, 'is_active' => true,
+        ]);
+        $this->curriculumOnly = Course::query()->create([
+            'course_code' => 'CUR1', 'course_name' => 'خطة فقط', 'credit_hours' => 3,
+            'theoretical_hours' => 2, 'practical_hours' => 0, 'is_active' => true,
+        ]);
+        $this->practicalOnly = Course::query()->create([
+            'course_code' => 'LAB1', 'course_name' => 'مختبر عملي', 'credit_hours' => 3,
+            'theoretical_hours' => 0, 'practical_hours' => 3, 'is_active' => true,
+        ]);
         foreach (['registered', 'completed', 'dropped', 'withdrawn'] as $code) {
             $this->statuses[$code] = RegistrationStatus::query()->create(['status_code' => $code, 'status_name' => $code, 'is_active' => true]);
         }
@@ -738,6 +824,8 @@ class SupplementaryExamOfferingFeatureTest extends TestCase
             $t->string('course_code');
             $t->string('course_name');
             $t->integer('credit_hours')->default(3);
+            $t->integer('theoretical_hours')->default(0);
+            $t->integer('practical_hours')->default(0);
             $t->boolean('is_active')->default(true);
             $t->timestamps();
         });
@@ -800,6 +888,21 @@ class SupplementaryExamOfferingFeatureTest extends TestCase
             $t->text('decision_note')->nullable();
             $t->timestamps();
             $t->unique(['academic_year_id', 'semester_id']);
+        });
+        Schema::create('supplementary_exam_period_events', function (Blueprint $t): void {
+            $t->integer('supplementary_exam_period_event_id')->autoIncrement();
+            $t->integer('supplementary_exam_period_id');
+            $t->string('event_type', 64);
+            $t->string('from_status', 32)->nullable();
+            $t->string('to_status', 32);
+            $t->integer('actor_user_id');
+            $t->text('notes')->nullable();
+            $t->timestamp('created_at');
+            $t->index('supplementary_exam_period_id');
+            $t->index('actor_user_id');
+            $t->index(['event_type', 'to_status']);
+            $t->foreign('supplementary_exam_period_id')->references('supplementary_exam_period_id')->on('supplementary_exam_periods');
+            $t->foreign('actor_user_id')->references('user_id')->on('users');
         });
         Schema::create('supplementary_exam_results', function (Blueprint $t): void {
             $t->integer('supplementary_exam_result_id')->autoIncrement();

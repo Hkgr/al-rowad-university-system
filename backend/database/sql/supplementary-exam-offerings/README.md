@@ -77,14 +77,18 @@ A source `CourseOffering` is eligible only when it was **actually offered**:
 2. Same `academic_year_id` as the supplementary period
 3. Non-null `academic_program_id`
 4. Program inside the Dean's accessible college
-5. Source semester_order allowed by policy
+5. Source semester:
+   - period semester_order 1 or 2: `course_offerings.semester_id` equals **that period's** `semester_id` (not a hard-coded PK, and not any other row that happens to share `semester_order`)
+   - period semester_order 3: related `semesters.semester_order IN (1, 2, 3)` in the same academic year
 6. At least one `StudentCourseRegistration` whose `RegistrationStatus.status_code` is `registered` or `completed`
+7. Related `courses.theoretical_hours > 0` (theoretical examination only)
 
 `ProgramCourse` / curriculum presence is **not** sufficient.
 `dropped` / `withdrawn` are **not** proof.
 Source `CourseOffering.status` may be `CLOSED`. Do not require `OPEN`.
+A course with `theoretical_hours = 0` is never a candidate.
 
-Semester policy uses `semester_order`, never hard-coded `semester_id`:
+Semester policy uses `semester_order` to choose the rule, never hard-coded `semester_id = 1|2|3`:
 
 | Period semester_order | Allowed source semester_order |
 | --- | --- |

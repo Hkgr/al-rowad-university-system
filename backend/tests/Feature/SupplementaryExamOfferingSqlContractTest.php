@@ -144,6 +144,8 @@ class SupplementaryExamOfferingSqlContractTest extends TestCase
         self::assertStringContainsString("'APPLY_RESULT' AS report_section", $apply);
         self::assertStringContainsString('@apply_status AS result', $apply);
         self::assertStringContainsString("'OVERALL' AS report_section", $verify);
+        self::assertStringContainsString('@phase1_ready AS phase1_ready', $verify);
+        self::assertStringContainsString('@theory_hours_ok AS theory_hours_ok', $verify);
         self::assertStringContainsString('@offerings_contract_ok AS offerings_contract_ok', $verify);
         self::assertStringContainsString("'ROLLBACK_RESULT' AS report_section", $rollback);
         self::assertStringContainsString('@rollback_status AS result', $rollback);
@@ -160,6 +162,87 @@ class SupplementaryExamOfferingSqlContractTest extends TestCase
             self::assertDoesNotMatchRegularExpression('/DROP TABLE[^;]*`supplementary_exam_periods`/i', $source);
             self::assertDoesNotMatchRegularExpression('/DROP TABLE[^;]*`supplementary_exam_period_events`/i', $source);
         }
+    }
+
+    public function test_supp_offer_sql_15_verify_phase1_is_not_weaker_than_preflight(): void
+    {
+        $markers = [
+            '@phase1_cols_ok',
+            '@p1_fk_opened_by_ok',
+            '@p1_events_engine_ok',
+            '@p1_events_pk_ok',
+            '@p1_events_pk_ai_ok',
+            '@p1_events_types_ok',
+            '@p1_events_fk_period_ok',
+            '@p1_events_fk_actor_ok',
+            '@p1_events_idx_period_ok',
+            '@p1_events_idx_actor_ok',
+            '@p1_events_idx_lookup_ok',
+            "AND @p1_fk_opened_by_ok = 1",
+            "AND @p1_events_types_ok = 1",
+            "AND @p1_events_fk_period_ok = 1",
+            "AND @p1_events_idx_lookup_ok = 1",
+            "p.permission_code = 'supplementary_exams.periods.view' AND p.is_active = 1 AND sm.module_code = 'exams'",
+            "p.permission_code = 'supplementary_exams.periods.decide' AND p.is_active = 1 AND sm.module_code = 'exams'",
+            "HAVING GROUP_CONCAT(column_name ORDER BY seq_in_index SEPARATOR ',') LIKE 'event_type,to_status%'",
+        ];
+        $preflight = $this->sql('00_preflight.sql');
+        $apply = $this->sql('01_apply.sql');
+        $verify = $this->sql('02_verify.sql');
+        foreach ([$preflight, $apply, $verify] as $source) {
+            foreach ($markers as $marker) {
+                self::assertStringContainsString($marker, $source);
+            }
+        }
+
+        $start = 'SET @periods_exist := IF(@db_ready = 1, (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = \'alrowad_uni_rust\' AND table_name = \'supplementary_exam_periods\' AND table_type = \'BASE TABLE\'), 0);';
+        $end = 'SET @phase1_ready := IF(';
+        $extract = static function (string $source) use ($start, $end): string {
+            $from = strpos($source, $start);
+            $to = strpos($source, $end, $from);
+            self::assertNotFalse($from);
+            self::assertNotFalse($to);
+
+            return substr($source, $from, $to - $from);
+        };
+        $preflightBlock = $extract($preflight);
+        self::assertSame($preflightBlock, $extract($apply));
+        self::assertSame($preflightBlock, $extract($verify));
+    }
+
+    public function test_supp_offer_sql_16_phase1_event_defect_blocks(): void
+    {
+        foreach (['00_preflight.sql', '01_apply.sql', '02_verify.sql'] as $file) {
+            $source = $this->sql($file);
+            self::assertStringContainsString('@p1_events_types_ok = 1', $source);
+            self::assertStringContainsString('@p1_events_fk_period_ok = 1', $source);
+            self::assertStringContainsString('@p1_events_fk_actor_ok = 1', $source);
+            self::assertStringContainsString('@p1_events_idx_period_ok = 1', $source);
+            self::assertStringContainsString('@p1_events_idx_actor_ok = 1', $source);
+            self::assertStringContainsString('@p1_events_idx_lookup_ok = 1', $source);
+            self::assertStringContainsString('@p1_events_engine_ok = 1', $source);
+            self::assertStringContainsString("LOWER(c.column_type) LIKE '%unsigned%'", $source);
+        }
+        $preflight = $this->sql('00_preflight.sql');
+        $apply = $this->sql('01_apply.sql');
+        $verify = $this->sql('02_verify.sql');
+        self::assertStringContainsString("WHEN @phase1_ready = 0 THEN 'PHASE1_NOT_DEPLOYED'", $preflight);
+        self::assertStringContainsString('@apply_ready = 1 AND @offerings_state', $apply);
+        self::assertStringContainsString('@phase1_ready = 1', $verify);
+        self::assertStringContainsString("'FAIL'", $verify);
+    }
+
+    public function test_supp_offer_sql_17_theoretical_hours_required(): void
+    {
+        $preflight = $this->sql('00_preflight.sql');
+        $apply = $this->sql('01_apply.sql');
+        foreach ([$preflight, $apply] as $source) {
+            self::assertStringContainsString("UNION ALL SELECT 'courses', 'theoretical_hours'", $source);
+            self::assertStringContainsString('@theory_hours_type_ok = 1', $source);
+        }
+        self::assertStringContainsString('theoretical_hours', $this->sql('02_verify.sql'));
+        self::assertStringContainsString('@theory_hours_ok = 1', $this->sql('02_verify.sql'));
+        self::assertStringContainsString("WHEN @db_ready = 0 OR @structure_ok = 0 OR @pk_signed = 0 THEN 'REQUIRED_STRUCTURE_MISSING'", $preflight);
     }
 
     public function test_pack_layout_and_preflight_read_only(): void

@@ -30,6 +30,10 @@ final class SupplementaryExamOfferingGovernance
     {
         try {
             $builder = Schema::connection((string) config('database.default'));
+            if (! SupplementaryExamPeriodGovernance::schemaReady()) {
+                return false;
+            }
+
             if (! $builder instanceof Builder
                 || ! method_exists($builder, 'getIndexes')
                 || ! method_exists($builder, 'getForeignKeys')
