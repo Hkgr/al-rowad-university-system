@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FaLock, FaLockOpen, FaPlus, FaSpinner, FaTimes } from 'react-icons/fa'
+import { FaLockOpen, FaPlus, FaSpinner, FaTimes } from 'react-icons/fa'
 import { apiRequest } from '../../../services/apiClient'
 import { hasPermission, PERMISSIONS } from '../../auth/auth'
 import DeanConfirmDialog from '../components/DeanConfirmDialog'
@@ -18,15 +18,44 @@ import {
 import {
   ADVISORY_NOTICE,
   CLEAR_DRAFT_WARNING,
+  CLOSURE_REQUEST_SUBMITTED,
+  CLOSURE_REQUEST_WARNING,
   advisorySemesterLabel,
   applyAdvisoryPlan,
+  applyBulkPrepareOutcome,
+  canSubmitCurrentWorkflowRequest,
   coursesForAcademicLevel,
+  currentWorkflowRequest,
   matchesCourseSearch,
+  openOfferingIds,
+  pagedResourceRows,
   recommendedSemesterMatches,
   rowsByAcademicLevel,
   savePreview,
   uniqueProgramCourseIds,
 } from '../utils/deanOfferingPlanner'
+
+async function fetchCurrentClosureRequests(levels) {
+  const ids = openOfferingIds(levels)
+  if (ids.length === 0) return {}
+  const entries = await Promise.all(ids.map(async (id) => {
+    try {
+      const params = new URLSearchParams({
+        course_offering_id: String(id),
+        per_page: '5',
+      })
+      const response = await apiRequest(`/v1/dean/course-offering-closures?${params.toString()}`)
+      return [id, currentWorkflowRequest(pagedResourceRows(response))]
+    } catch {
+      return [id, null]
+    }
+  }))
+  const map = {}
+  entries.forEach(([id, row]) => {
+    if (row) map[id] = row
+  })
+  return map
+}
 
 function InfoLine({ label, value }) {
   return (
@@ -78,14 +107,18 @@ function CourseCard({
   selectedSemesterId,
   canManage,
   canRequestException,
+  canRequestClosure,
   busy,
+  prepareError,
+  closureRequest,
   onRemoveDraft,
   onReopen,
-  onClose,
   onManageOffering,
   onManageInstructors,
   onRequestException,
   onResubmitException,
+  onRequestClosure,
+  onResubmitClosure,
 }) {
   const course = row.course
   const offering = row.offering
@@ -102,6 +135,12 @@ function CourseCard({
   const showExceptionStatus = Boolean(exceptionRequest)
     && state.key === 'pending_coverage'
     && exceptionStatus !== 'superseded'
+  const closureStatus = closureRequest?.status
+  const showClosureRequest = canRequestClosure && state.key === 'open'
+    && canSubmitCurrentWorkflowRequest(closureRequest)
+  const showClosureStatus = Boolean(closureRequest)
+    && state.key === 'open'
+    && closureStatus !== 'superseded'
   const advisory = advisorySemesterLabel(row, selectedSemesterId)
   const advisoryMatch = recommendedSemesterMatches(row, selectedSemesterId)
   const advisoryClass = advisoryMatch
@@ -146,6 +185,18 @@ function CourseCard({
           <p>إداري: {reviewStatusLabel(exceptionRequest.administrative_review?.status)}</p>
         </div>
       )}
+
+      {showClosureStatus && (
+        <div className="mt-2 rounded-[10px] border border-primary/15 bg-primary/[0.04] px-3 py-2 text-[12px] text-text-dark space-y-1">
+          <p className="font-bold">طلب إغلاق التسجيل: {requestStatusLabel(closureStatus)}</p>
+          <p>علمي: {reviewStatusLabel(closureRequest.scientific_review?.status)}</p>
+          <p>إداري: {reviewStatusLabel(closureRequest.administrative_review?.status)}</p>
+        </div>
+      )}
+
+      {!offering && prepareError ? (
+        <p className="mt-2 text-[12px] font-semibold text-amber-800">{prepareError}</p>
+      ) : null}
 
       <div className="mt-3 flex flex-wrap gap-2">
         {!offering ? (
@@ -195,15 +246,14 @@ function CourseCard({
                 {exceptionStatus === 'returned' ? 'إعادة إرسال طلب الفتح الاستثنائي' : 'طلب فتح استثنائي'}
               </button>
             ) : null}
-            {canManage && state.key === 'open' ? (
+            {showClosureRequest ? (
               <button
                 type="button"
-                className="flex items-center justify-center gap-1.5 px-3 py-2 border border-red-300 text-red-700 bg-red-50 rounded-[10px] text-[12.5px] font-bold hover:enabled:bg-red-100 disabled:opacity-40"
-                onClick={() => onClose(row)}
+                className="px-3 py-2 border border-primary/30 text-primary-dark rounded-[10px] text-[12.5px] font-bold hover:bg-primary/8 disabled:opacity-40"
+                onClick={() => (closureStatus === 'returned' ? onResubmitClosure(row) : onRequestClosure(row))}
                 disabled={busy}
               >
-                {busy ? <FaSpinner className="animate-spin text-[11px]" aria-hidden="true" /> : <FaLock className="text-[11px]" aria-hidden="true" />}
-                إغلاق التسجيل
+                {closureStatus === 'returned' ? 'إعادة إرسال طلب الإغلاق' : 'طلب إغلاق التسجيل'}
               </button>
             ) : null}
           </>
@@ -311,7 +361,9 @@ export default function DeanRegistrationOfferings() {
   const canManageLocal = hasPermission(PERMISSIONS.courseOfferingsManage)
     || hasPermission(PERMISSIONS.coursesManage)
   const canRequestException = hasPermission(PERMISSIONS.exceptionalOpenRequest)
+  const canRequestClosure = hasPermission(PERMISSIONS.closureRequest)
   const [exceptionReason, setExceptionReason] = useState('')
+  const [closureReason, setClosureReason] = useState('')
 
   const [options, setOptions] = useState({
     academic_years: [],
@@ -326,6 +378,8 @@ export default function DeanRegistrationOfferings() {
   const [programId, setProgramId] = useState('')
   const [levels, setLevels] = useState([])
   const [draftIds, setDraftIds] = useState([])
+  const [prepareErrors, setPrepareErrors] = useState({})
+  const [closureByOffering, setClosureByOffering] = useState({})
   const [context, setContext] = useState({ academic_year: null, semester: null })
   const [bootLoading, setBootLoading] = useState(true)
   const [loading, setLoading] = useState(false)
@@ -365,6 +419,15 @@ export default function DeanRegistrationOfferings() {
       }
       if (requestError.errorCode === 'normal_opening_available') {
         return requestError.message || 'أصبح الفتح الاعتيادي متاحًا. استخدم فتح المادة الاعتيادي.'
+      }
+      if (requestError.errorCode === 'course_offering_closure_request_already_current') {
+        return requestError.message || 'يوجد طلب إغلاق حالي لنفس الطرح.'
+      }
+      if (requestError.errorCode === 'course_offering_closure_workflow_required') {
+        return requestError.message || 'لا يمكن إغلاق طرح مفتوح مباشرة. يجب إرسال طلب عبر مسار موافقة النائب العلمي والنائب الإداري.'
+      }
+      if (requestError.errorCode === 'course_offering_closure_reason_required') {
+        return requestError.message || 'سبب طلب إغلاق طرح المادة مطلوب.'
       }
       return requestError.message || 'تعذّر تنفيذ العملية بسبب تغير حالة المادة. أعد تحميل البيانات وحاول مجددًا.'
     }
@@ -436,6 +499,7 @@ export default function DeanRegistrationOfferings() {
           academic_year: data.academic_year ?? null,
           semester: data.semester ?? null,
         })
+        setClosureByOffering(await fetchCurrentClosureRequests(data.levels ?? []))
       } catch (requestError) {
         if (!active) return
         setLevels([])
@@ -451,6 +515,8 @@ export default function DeanRegistrationOfferings() {
 
   useEffect(() => {
     setDraftIds([])
+    setPrepareErrors({})
+    setClosureByOffering({})
     setAddLevel(null)
     setNotice('')
   }, [programId, semesterId, yearId])
@@ -523,15 +589,13 @@ export default function DeanRegistrationOfferings() {
         selectedSemesterId={semesterId}
         canManage={canManageLocal}
         canRequestException={canRequestException}
-        busy={Boolean(busyIds[`pc-${row.program_course_id}`] || (row.offering && busyIds[`off-${row.offering.course_offering_id}`]) || busyIds.bulk)}
+        canRequestClosure={canRequestClosure}
+        busy={Boolean(busyIds[`pc-${row.program_course_id}`] || (row.offering && busyIds[`off-${row.offering.course_offering_id}`]) || busyIds.bulk || (row.offering && busyIds[`cl-${row.offering.course_offering_id}`]))}
+        prepareError={prepareErrors[row.program_course_id]}
+        closureRequest={row.offering ? closureByOffering[row.offering.course_offering_id] : null}
         onRemoveDraft={id => setDraftIds(current => current.filter(item => Number(item) !== Number(id)))}
         onReopen={item => setConfirm({
           type: 'reopen',
-          key: `off-${item.offering.course_offering_id}`,
-          row: item,
-        })}
-        onClose={item => setConfirm({
-          type: 'close',
           key: `off-${item.offering.course_offering_id}`,
           row: item,
         })}
@@ -550,6 +614,23 @@ export default function DeanRegistrationOfferings() {
           setConfirm({
             type: 'exception-resubmit',
             key: `ex-${item.offering.course_offering_id}`,
+            row: item,
+          })
+        }}
+        onRequestClosure={item => {
+          setClosureReason('')
+          setConfirm({
+            type: 'closure',
+            key: `cl-${item.offering.course_offering_id}`,
+            row: item,
+          })
+        }}
+        onResubmitClosure={item => {
+          const current = closureByOffering[item.offering.course_offering_id]
+          setClosureReason(current?.reason || '')
+          setConfirm({
+            type: 'closure-resubmit',
+            key: `cl-${item.offering.course_offering_id}`,
             row: item,
           })
         }}
@@ -612,6 +693,35 @@ export default function DeanRegistrationOfferings() {
     }
   }
 
+  async function runClosure(key, request, offeringId, successFallback) {
+    if (savingRef.current) return
+    savingRef.current = true
+    setBusyIds(current => ({ ...current, [key]: true }))
+    setError('')
+    try {
+      const response = await request()
+      const closureRequest = response?.data ?? null
+      if (closureRequest) {
+        setClosureByOffering(current => ({
+          ...current,
+          [offeringId]: closureRequest,
+        }))
+      }
+      showNotice(successFallback || CLOSURE_REQUEST_SUBMITTED)
+      setConfirm(null)
+      setClosureReason('')
+    } catch (requestError) {
+      setError(handleRequestError(requestError, 'تعذّر إرسال طلب إغلاق التسجيل.'))
+    } finally {
+      savingRef.current = false
+      setBusyIds(current => {
+        const next = { ...current }
+        delete next[key]
+        return next
+      })
+    }
+  }
+
   async function reloadCatalog() {
     if (!yearId || !semesterId || !programId) return
     const params = new URLSearchParams({
@@ -627,6 +737,7 @@ export default function DeanRegistrationOfferings() {
       academic_year: data.academic_year ?? null,
       semester: data.semester ?? null,
     })
+    setClosureByOffering(await fetchCurrentClosureRequests(data.levels ?? []))
   }
 
   async function savePreparation() {
@@ -646,10 +757,10 @@ export default function DeanRegistrationOfferings() {
         }),
       })
       const result = response?.data ?? {}
-      const created = result.created_count ?? 0
-      const existing = result.existing_count ?? 0
-      showNotice(`تم حفظ تجهيز الفصل بنجاح. ${created} طروحات أُنشئت، ${existing} كانت محفوظة مسبقًا.`)
-      setDraftIds([])
+      const outcome = applyBulkPrepareOutcome(result)
+      setDraftIds(outcome.draftIds)
+      setPrepareErrors(outcome.prepareErrors)
+      showNotice(outcome.notice, outcome.tone)
       await reloadCatalog()
     } catch (requestError) {
       setError(handleRequestError(requestError, 'تعذّر تجهيز طروحات المواد.'))
@@ -754,7 +865,7 @@ export default function DeanRegistrationOfferings() {
       </div>
 
       {notice && (
-        <div className={`mb-4 rounded-[12px] px-[18px] py-3 text-[13.5px] font-semibold ${
+        <div className={`mb-4 rounded-[12px] px-[18px] py-3 text-[13.5px] font-semibold whitespace-pre-line ${
           noticeTone === 'warning'
             ? 'bg-amber-50 text-amber-800 border border-amber-200'
             : 'bg-green-500/8 border border-green-500/25 text-green-700'
@@ -890,7 +1001,7 @@ export default function DeanRegistrationOfferings() {
                 ? 'تأكيد فتح المادة'
                 : confirm.type === 'exception' || confirm.type === 'exception-resubmit'
                   ? 'طلب فتح استثنائي'
-                  : 'تأكيد إغلاق التسجيل'
+                  : 'طلب إغلاق التسجيل'
           }
           warning={
             confirm.type === 'clear-draft'
@@ -899,26 +1010,30 @@ export default function DeanRegistrationOfferings() {
                 ? 'سيتم فتح المادة للتسجيل بعد التحقق من اكتمال تكليف المدرسين المعتمدين.'
                 : confirm.type === 'exception' || confirm.type === 'exception-resubmit'
                   ? 'لن تُفتح المادة من هذه الشاشة. يبقى الطرح مغلقًا إلى أن يوافق النائب العلمي والنائب الإداري معًا.'
-                  : 'سيؤدي الإغلاق إلى منع تسجيل طلاب جدد في هذه المادة. لن يتم حذف تسجيلات الطلاب الحالية.'
+                  : CLOSURE_REQUEST_WARNING
           }
           confirmLabel={
             confirm.type === 'clear-draft'
               ? 'تفريغ غير المحفوظ'
               : confirm.type === 'reopen'
                 ? 'تأكيد الفتح'
-                : confirm.type === 'exception'
+                : confirm.type === 'exception' || confirm.type === 'closure'
                   ? 'إرسال الطلب'
-                  : confirm.type === 'exception-resubmit'
+                  : confirm.type === 'exception-resubmit' || confirm.type === 'closure-resubmit'
                     ? 'إعادة الإرسال'
-                    : 'تأكيد الإغلاق'
+                    : 'إرسال الطلب'
           }
-          confirmTone={confirm.type === 'close' ? 'danger' : 'primary'}
+          confirmTone="primary"
           busy={confirmBusy}
-          disabled={(confirm.type === 'exception' || confirm.type === 'exception-resubmit') && !exceptionReason.trim()}
-          onCancel={() => { if (!confirmBusy) { setConfirm(null); setExceptionReason('') } }}
+          disabled={
+            ((confirm.type === 'exception' || confirm.type === 'exception-resubmit') && !exceptionReason.trim())
+            || ((confirm.type === 'closure' || confirm.type === 'closure-resubmit') && !closureReason.trim())
+          }
+          onCancel={() => { if (!confirmBusy) { setConfirm(null); setExceptionReason(''); setClosureReason('') } }}
           onConfirm={() => {
             if (confirm.type === 'clear-draft') {
               setDraftIds([])
+              setPrepareErrors({})
               setConfirm(null)
               return
             }
@@ -964,14 +1079,35 @@ export default function DeanRegistrationOfferings() {
               )
               return
             }
-            runMutation(
-              confirm.key,
-              () => apiRequest(`/v1/dean/registration-offerings/${row.offering.course_offering_id}/close`, {
-                method: 'POST',
-              }),
-              row.program_course_id,
-              'تم إغلاق التسجيل للمادة بنجاح.',
-            )
+            if (confirm.type === 'closure') {
+              runClosure(
+                confirm.key,
+                () => apiRequest('/v1/dean/course-offering-closures', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    course_offering_id: row.offering.course_offering_id,
+                    reason: closureReason.trim(),
+                  }),
+                }),
+                row.offering.course_offering_id,
+                CLOSURE_REQUEST_SUBMITTED,
+              )
+              return
+            }
+            if (confirm.type === 'closure-resubmit') {
+              const requestId = closureByOffering[row.offering.course_offering_id]?.course_offering_closure_request_id
+              runClosure(
+                confirm.key,
+                () => apiRequest(`/v1/dean/course-offering-closures/${requestId}/resubmit`, {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    reason: closureReason.trim(),
+                  }),
+                }),
+                row.offering.course_offering_id,
+                CLOSURE_REQUEST_SUBMITTED,
+              )
+            }
           }}
         >
           {confirm.row ? (
@@ -987,6 +1123,17 @@ export default function DeanRegistrationOfferings() {
                     className="w-full min-h-[96px] py-2.5 px-3 border-[1.5px] border-primary/20 rounded-[10px] text-[13px]"
                     value={exceptionReason}
                     onChange={event => setExceptionReason(event.target.value)}
+                    required
+                  />
+                </label>
+              )}
+              {(confirm.type === 'closure' || confirm.type === 'closure-resubmit') && (
+                <label className="sm:col-span-2 flex flex-col gap-1.5">
+                  <span className="text-[11px] text-text-light font-semibold">سبب إغلاق التسجيل</span>
+                  <textarea
+                    className="w-full min-h-[96px] py-2.5 px-3 border-[1.5px] border-primary/20 rounded-[10px] text-[13px]"
+                    value={closureReason}
+                    onChange={event => setClosureReason(event.target.value)}
                     required
                   />
                 </label>

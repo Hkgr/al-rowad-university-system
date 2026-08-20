@@ -163,3 +163,79 @@ export function rowsByAcademicLevel(levels, draftIds) {
     rows: plannerRowsForLevel(level, draftIds),
   }))
 }
+
+export const BULK_PREPARE_FULL_SUCCESS_PREFIX = 'تم حفظ تجهيز الفصل بنجاح.'
+
+export const BULK_PREPARE_PARTIAL_KEEP_DRAFT = 'بقيت المواد غير المحفوظة في التجهيز لتتمكن من المحاولة مرة أخرى.'
+
+export const SAFE_PREPARE_ERROR_LABELS = {
+  prepare_failed: 'تعذّر تجهيز هذه المادة.',
+  invalid_program_course: 'المادة غير صالحة في خطة البرنامج.',
+  not_found: 'تعذّر العثور على المادة.',
+  conflict: 'تعذّر تجهيز المادة بسبب تعارض في البيانات.',
+}
+
+export const CLOSURE_REQUEST_WARNING = 'سيتم إرسال طلب إغلاق التسجيل للمراجعة.\nيبقى التسجيل مفتوحًا حتى اكتمال الموافقات المطلوبة.'
+
+export const CLOSURE_REQUEST_SUBMITTED = 'تم إرسال طلب إغلاق التسجيل للمراجعة.'
+
+export function prepareErrorLabel(errorCode) {
+  const code = String(errorCode ?? '').trim()
+  if (!code || /sqlstate|errorinfo|uq_course_offering/i.test(code)) {
+    return SAFE_PREPARE_ERROR_LABELS.prepare_failed
+  }
+  return SAFE_PREPARE_ERROR_LABELS[code] || SAFE_PREPARE_ERROR_LABELS.prepare_failed
+}
+
+export function applyBulkPrepareOutcome(result) {
+  const items = Array.isArray(result?.items) ? result.items : []
+  const failedItems = items.filter(item => item.result === 'failed')
+  const failedIds = uniqueProgramCourseIds(failedItems.map(item => Number(item.program_course_id)))
+  const created = Number(result?.created_count) || 0
+  const existing = Number(result?.existing_count) || 0
+  const failed = Number(result?.failed_count) || failedItems.length
+  const prepareErrors = {}
+  failedItems.forEach(item => {
+    const id = Number(item.program_course_id)
+    if (id) prepareErrors[id] = prepareErrorLabel(item.error_code)
+  })
+
+  if (failed === 0) {
+    return {
+      draftIds: [],
+      tone: 'success',
+      notice: `${BULK_PREPARE_FULL_SUCCESS_PREFIX} ${created} طروحات أُنشئت، ${existing} كانت محفوظة مسبقًا.`,
+      prepareErrors: {},
+    }
+  }
+
+  return {
+    draftIds: failedIds,
+    tone: 'warning',
+    notice: `تم إنشاء ${created} طروحات، و${existing} كانت محفوظة مسبقًا، وتعذّر تجهيز ${failed} مواد.\n${BULK_PREPARE_PARTIAL_KEEP_DRAFT}`,
+    prepareErrors,
+  }
+}
+
+export function pagedResourceRows(response) {
+  const payload = response?.data
+  if (Array.isArray(payload?.data)) return payload.data
+  if (Array.isArray(payload)) return payload
+  return []
+}
+
+export function currentWorkflowRequest(rows) {
+  return (rows ?? []).find(row => row && row.status !== 'superseded') ?? null
+}
+
+export function canSubmitCurrentWorkflowRequest(request) {
+  return !request || request.status === 'returned' || request.status === 'superseded'
+}
+
+export function openOfferingIds(levels) {
+  return uniqueProgramCourseIds(
+    flattenCatalogCourses(levels)
+      .filter(row => row.offering?.status === 'open')
+      .map(row => row.offering?.course_offering_id),
+  )
+}

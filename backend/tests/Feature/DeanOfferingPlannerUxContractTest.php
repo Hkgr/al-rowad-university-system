@@ -119,7 +119,8 @@ class DeanOfferingPlannerUxContractTest extends TestCase
         self::assertStringContainsString('program_course_ids: preview.programCourseIds', $save);
         self::assertStringContainsString('reloadCatalog()', $save);
         self::assertStringNotContainsString('window.location.reload', $save);
-        self::assertStringContainsString('تم حفظ تجهيز الفصل بنجاح.', $save);
+        self::assertStringContainsString('applyBulkPrepareOutcome(result)', $save);
+        self::assertStringContainsString('تم حفظ تجهيز الفصل بنجاح.', self::frontend('src/features/dean-dashboard/utils/deanOfferingPlanner.js'));
         self::assertStringNotContainsString("mode: 'advisory_semester'", $page);
         self::assertStringNotContainsString("mode: 'all_curriculum'", $page);
         self::assertStringNotContainsString('إجراءات جماعية', $page);
@@ -196,6 +197,103 @@ class DeanOfferingPlannerUxContractTest extends TestCase
         self::assertFileDoesNotExist(dirname(__DIR__, 3).'/frontend/src/features/dean-dashboard/components/DeanOfferingStatusPanel.jsx');
         self::assertStringContainsString('DeanCourseTeachersPanel', $profile);
         self::assertStringContainsString('/v1/dean/course-offerings/${id}', $profile);
+    }
+
+    public function test_ux_save_fail_01_partial_bulk_failure_preserves_failed_draft_ids(): void
+    {
+        $page = self::frontend('src/features/dean-dashboard/pages/DeanRegistrationOfferings.jsx');
+        $save = self::sliceJs($page, 'async function savePreparation', 'const confirmBusy');
+        $util = self::frontend('src/features/dean-dashboard/utils/deanOfferingPlanner.js');
+
+        self::assertStringContainsString('applyBulkPrepareOutcome(result)', $save);
+        self::assertStringContainsString('setDraftIds(outcome.draftIds)', $save);
+        self::assertStringContainsString("item.result === 'failed'", $util);
+        self::assertStringContainsString('failedIds', $util);
+        self::assertStringNotContainsString('setDraftIds([])', $save);
+    }
+
+    public function test_ux_save_fail_02_partial_failure_shows_warning_not_full_success(): void
+    {
+        $page = self::frontend('src/features/dean-dashboard/pages/DeanRegistrationOfferings.jsx');
+        $save = self::sliceJs($page, 'async function savePreparation', 'const confirmBusy');
+        $util = self::frontend('src/features/dean-dashboard/utils/deanOfferingPlanner.js');
+        $apply = self::extractJsFunction($util, 'applyBulkPrepareOutcome');
+
+        self::assertStringContainsString("showNotice(outcome.notice, outcome.tone)", $save);
+        self::assertStringContainsString("tone: 'warning'", $apply);
+        self::assertStringContainsString('بقيت المواد غير المحفوظة في التجهيز لتتمكن من المحاولة مرة أخرى.', $util);
+        self::assertStringContainsString('if (failed === 0)', $apply);
+        self::assertStringContainsString('BULK_PREPARE_FULL_SUCCESS_PREFIX', $apply);
+        self::assertStringContainsString('BULK_PREPARE_PARTIAL_KEEP_DRAFT', $apply);
+        self::assertGreaterThan(
+            (int) strpos($apply, 'if (failed === 0)'),
+            (int) strpos($apply, 'BULK_PREPARE_PARTIAL_KEEP_DRAFT')
+        );
+    }
+
+    public function test_open_offering_uses_phase_7_closure_request_not_direct_close(): void
+    {
+        $page = self::frontend('src/features/dean-dashboard/pages/DeanRegistrationOfferings.jsx');
+        $closure = self::extractJsFunction($page, 'runClosure');
+
+        self::assertStringNotContainsString('/registration-offerings/${id}/close', $page);
+        self::assertStringNotContainsString('/registration-offerings/${row.offering.course_offering_id}/close', $page);
+        self::assertDoesNotMatchRegularExpression('/>\s*إغلاق التسجيل\s*</u', $page);
+        self::assertStringContainsString('طلب إغلاق التسجيل', $page);
+        self::assertStringContainsString("type: 'closure'", $page);
+        self::assertStringContainsString('closureReason.trim()', $page);
+        self::assertStringContainsString("apiRequest('/v1/dean/course-offering-closures'", $page);
+        self::assertStringContainsString('course_offering_id: row.offering.course_offering_id', $page);
+        self::assertStringContainsString('reason: closureReason.trim()', $page);
+        self::assertStringContainsString('/v1/dean/course-offering-closures?', $page);
+        self::assertStringContainsString('/v1/dean/course-offering-closures/${requestId}/resubmit', $page);
+        self::assertStringNotContainsString("status: 'closed'", $closure);
+        self::assertStringNotContainsString('offering.status =', $closure);
+        self::assertStringContainsString('CLOSURE_REQUEST_SUBMITTED', $closure);
+        self::assertStringContainsString('canSubmitCurrentWorkflowRequest(closureRequest)', $page);
+    }
+
+    public function test_phase_5_6_7_and_no_direct_status_mutation(): void
+    {
+        $page = self::frontend('src/features/dean-dashboard/pages/DeanRegistrationOfferings.jsx');
+        $util = self::frontend('src/features/dean-dashboard/utils/deanOfferingPlanner.js');
+
+        self::assertStringContainsString('`/v1/dean/registration-offerings/${row.offering.course_offering_id}/open`', $page);
+        self::assertStringContainsString('/v1/dean/course-offering-exceptions', $page);
+        self::assertStringContainsString('/v1/dean/course-offering-closures', $page);
+        foreach ([$page, $util] as $source) {
+            self::assertStringNotContainsString("status: 'open'", $source);
+            self::assertStringNotContainsString('status: "open"', $source);
+            self::assertStringNotContainsString("status: 'closed'", $source);
+            self::assertDoesNotMatchRegularExpression('/offering\.status\s*=(?!=)/', $source);
+            self::assertStringNotContainsString("method: 'PATCH'", $source);
+            self::assertStringNotContainsString("method: 'PUT'", $source);
+        }
+    }
+
+    public function test_ux_plan_01_to_11_advisory_and_draft_behavior_still_pass(): void
+    {
+        $script = dirname(__DIR__, 1).'/Feature/deanOfferingPlanner.behavior.mjs';
+        $output = [];
+        $code = 0;
+        exec('node '.escapeshellarg($script).' 2>&1', $output, $code);
+        $raw = implode("\n", $output);
+        self::assertSame(0, $code, $raw);
+        $payload = json_decode($raw, true);
+        $names = array_map(static fn (array $row): string => $row['name'], $payload['results'] ?? []);
+        self::assertContains('UX-PLAN-01 advisory click with matching rows produces non-empty draft', $names);
+        self::assertContains('UX-SAVE-FAIL-01 bulk response with created + existing + failed keeps failed ids in draft', $names);
+    }
+
+    private static function sliceJs(string $source, string $startNeedle, string $endNeedle): string
+    {
+        $start = strpos($source, $startNeedle);
+        $end = strpos($source, $endNeedle);
+        self::assertNotFalse($start, "Expected slice start {$startNeedle}.");
+        self::assertNotFalse($end, "Expected slice end {$endNeedle}.");
+        self::assertGreaterThan($start, $end);
+
+        return substr($source, $start, $end - $start);
     }
 
     private static function source(string $path): string

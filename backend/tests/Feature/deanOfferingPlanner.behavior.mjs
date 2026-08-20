@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import {
   ADVISORY_NOTICE,
+  BULK_PREPARE_FULL_SUCCESS_PREFIX,
+  BULK_PREPARE_PARTIAL_KEEP_DRAFT,
   applyAdvisoryPlan,
+  applyBulkPrepareOutcome,
+  canSubmitCurrentWorkflowRequest,
   clearUnsavedDraft,
   coursesForAcademicLevel,
   plannerRowsForLevel,
@@ -189,6 +193,80 @@ test('UX-PLAN-10/11 preview does not mark existing offerings as creating', () =>
   assert.equal(existingRow, true)
   assert.equal(preview.existing, 1)
   assert.equal(levels[1].courses[0].offering.status, 'open')
+})
+
+test('UX-SAVE-FAIL-01 bulk response with created + existing + failed keeps failed ids in draft', () => {
+  const outcome = applyBulkPrepareOutcome({
+    created_count: 2,
+    existing_count: 1,
+    failed_count: 1,
+    items: [
+      { program_course_id: 101, result: 'created' },
+      { program_course_id: 201, result: 'existing' },
+      { program_course_id: 301, result: 'failed', error_code: 'conflict' },
+    ],
+  })
+  assert.deepEqual(outcome.draftIds, [301])
+  assert.equal(outcome.tone, 'warning')
+  assert.equal(outcome.prepareErrors[301], 'تعذّر تجهيز المادة بسبب تعارض في البيانات.')
+})
+
+test('UX-SAVE-FAIL-02 failed_count > 0 does NOT show the full-success notice', () => {
+  const outcome = applyBulkPrepareOutcome({
+    created_count: 1,
+    existing_count: 0,
+    failed_count: 2,
+    items: [
+      { program_course_id: 101, result: 'created' },
+      { program_course_id: 102, result: 'failed', error_code: 'not_found' },
+      { program_course_id: 103, result: 'failed', error_code: 'SQLSTATE[23000]' },
+    ],
+  })
+  assert.equal(outcome.notice.includes(BULK_PREPARE_FULL_SUCCESS_PREFIX), false)
+  assert.equal(outcome.notice.includes(BULK_PREPARE_PARTIAL_KEEP_DRAFT), true)
+  assert.equal(outcome.prepareErrors[103].includes('SQLSTATE'), false)
+})
+
+test('UX-SAVE-FAIL-03 successful items persist after reload while failed unsaved remain visible', () => {
+  const levels = businessAdministrationCurriculum()
+  const outcome = applyBulkPrepareOutcome({
+    created_count: 1,
+    existing_count: 0,
+    failed_count: 1,
+    items: [
+      { program_course_id: 101, result: 'created' },
+      { program_course_id: 201, result: 'failed', error_code: 'prepare_failed' },
+    ],
+  })
+  levels[0].courses[0].offering = { course_offering_id: 9101, status: 'closed' }
+  const cards = rowsByAcademicLevel(levels, outcome.draftIds)
+  assert.deepEqual(cards[0].rows.map(row => row.program_course_id), [101])
+  assert.equal(cards[0].rows[0].offering.status, 'closed')
+  assert.deepEqual(cards[1].rows.map(row => row.program_course_id), [201])
+  assert.equal(cards[1].rows[0].offering, null)
+})
+
+test('UX-SAVE-FAIL-04 full success clears draft', () => {
+  const outcome = applyBulkPrepareOutcome({
+    created_count: 3,
+    existing_count: 1,
+    failed_count: 0,
+    items: [
+      { program_course_id: 101, result: 'created' },
+      { program_course_id: 201, result: 'existing' },
+    ],
+  })
+  assert.deepEqual(outcome.draftIds, [])
+  assert.equal(outcome.tone, 'success')
+  assert.equal(outcome.notice.includes(BULK_PREPARE_FULL_SUCCESS_PREFIX), true)
+})
+
+test('closure current request blocks duplicate submit', () => {
+  assert.equal(canSubmitCurrentWorkflowRequest(null), true)
+  assert.equal(canSubmitCurrentWorkflowRequest({ status: 'returned' }), true)
+  assert.equal(canSubmitCurrentWorkflowRequest({ status: 'superseded' }), true)
+  assert.equal(canSubmitCurrentWorkflowRequest({ status: 'submitted' }), false)
+  assert.equal(canSubmitCurrentWorkflowRequest({ status: 'approved' }), false)
 })
 
 if (results.some(result => !result.ok)) {
