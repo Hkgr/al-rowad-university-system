@@ -9,8 +9,6 @@ import DeanCourseSessionsTab from '../components/DeanCourseSessionsTab'
 import DeanCourseStudentsTab from '../components/DeanCourseStudentsTab'
 import DeanCourseTeachersPanel from '../components/DeanCourseTeachersPanel'
 import TeacherAssignmentManagerModal from '../components/TeacherAssignmentManagerModal'
-import DeanOfferingStatusPanel from '../components/DeanOfferingStatusPanel'
-import DeanConfirmDialog from '../components/DeanConfirmDialog'
 import {
   formatAverageMark,
   instructorCoverageComplete,
@@ -19,7 +17,7 @@ import {
   offeringStatusText,
   statusBadgeClass,
 } from '../utils/courseOfferingDisplay'
-import { displayValue, firstApiErrorMessage } from '../utils/teacherDisplay'
+import { displayValue } from '../utils/teacherDisplay'
 import { CourseRequirementMeta, pickRequirementClassification } from '../../../components/academic/CourseRequirementBadges'
 
 const TABS = [
@@ -71,33 +69,17 @@ function ErrorState({ message, onBack }) {
   )
 }
 
-function exceptionRows(response) {
-  const payload = response?.data
-  if (Array.isArray(payload?.data)) return payload.data
-  if (Array.isArray(payload)) return payload
-  return []
-}
-
 export default function DeanCourseOfferingProfile() {
   const { id } = useParams()
   const navigate = useNavigate()
   const canManageTeachers = hasPermission(PERMISSIONS.teachingStaffManage)
     || hasPermission(PERMISSIONS.teachingAssignmentsManage)
-  const canManageOffering = hasPermission(PERMISSIONS.courseOfferingsManage)
-    || hasPermission(PERMISSIONS.coursesManage)
-  const canRequestException = hasPermission(PERMISSIONS.exceptionalOpenRequest)
 
   const [offering, setOffering] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [actionError, setActionError] = useState('')
   const [managerOpen, setManagerOpen] = useState(false)
-  const [exceptionRequest, setExceptionRequest] = useState(null)
-  const [confirm, setConfirm] = useState(null)
-  const [exceptionReason, setExceptionReason] = useState('')
-  const [actionBusy, setActionBusy] = useState(false)
-  const actionRef = useRef(false)
   const [activeTab, setActiveTab] = useState('overview')
 
   const [students, setStudents] = useState(emptyTabState)
@@ -118,24 +100,6 @@ export default function DeanCourseOfferingProfile() {
     return response?.data ?? null
   }, [id])
 
-  const loadExceptionRequest = useCallback(async () => {
-    try {
-      const params = new URLSearchParams({
-        course_offering_id: String(id),
-        per_page: '5',
-      })
-      const response = await apiRequest(`/v1/dean/course-offering-exceptions?${params.toString()}`)
-      const current = exceptionRows(response).find(row => row.status !== 'superseded') ?? null
-      setExceptionRequest(current)
-    } catch (requestError) {
-      if (requestError.status === 401) {
-        goToLogin()
-        return
-      }
-      setExceptionRequest(null)
-    }
-  }, [goToLogin, id])
-
   useEffect(() => {
     let active = true
 
@@ -151,11 +115,6 @@ export default function DeanCourseOfferingProfile() {
       setRegistrationStatus('registered')
       setSessionType('')
       setManagerOpen(false)
-      setExceptionRequest(null)
-      setConfirm(null)
-      setExceptionReason('')
-      setActionError('')
-      setNotice('')
       studentsQueryRef.current = ''
       sessionsQueryRef.current = ''
 
@@ -163,7 +122,6 @@ export default function DeanCourseOfferingProfile() {
         const payload = await loadOffering()
         if (!active) return
         setOffering(payload)
-        await loadExceptionRequest()
       } catch (requestError) {
         if (!active) return
         if (requestError.status === 401) {
@@ -182,7 +140,7 @@ export default function DeanCourseOfferingProfile() {
 
     load()
     return () => { active = false }
-  }, [goToLogin, id, loadExceptionRequest, loadOffering])
+  }, [goToLogin, id, loadOffering])
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -278,7 +236,6 @@ export default function DeanCourseOfferingProfile() {
     try {
       const payload = await loadOffering()
       setOffering(payload)
-      await loadExceptionRequest()
       setNotice('تم إرسال طلب التكليف للمراجعة. لا يصبح نافذًا قبل موافقة النائبين.')
       setManagerOpen(false)
     } catch (requestError) {
@@ -287,91 +244,6 @@ export default function DeanCourseOfferingProfile() {
         return
       }
       setNotice('')
-    }
-  }
-
-  function handleActionError(requestError, fallback) {
-    if (requestError.status === 401) {
-      goToLogin()
-      return
-    }
-    if (requestError.status === 409 && requestError.errorCode === 'offering_instructor_coverage_incomplete') {
-      setActionError(requestError.message || 'لا يمكن فتح المادة قبل استكمال تكليف المدرسين المعتمدين.')
-      return
-    }
-    if (requestError.status === 409 && requestError.errorCode === 'exceptional_opening_not_required') {
-      setActionError(requestError.message || 'تكليف المدرسين مكتمل. استخدم الفتح الاعتيادي.')
-      return
-    }
-    if (requestError.status === 409 && requestError.errorCode === 'exceptional_opening_duplicate_current') {
-      setActionError(requestError.message || 'يوجد طلب فتح استثنائي حالي لنفس الطرح.')
-      return
-    }
-    if (requestError.status === 409 && requestError.errorCode === 'normal_opening_available') {
-      setActionError(requestError.message || 'أصبح الفتح الاعتيادي متاحًا. استخدم فتح التسجيل.')
-      return
-    }
-    setActionError(firstApiErrorMessage(requestError, fallback))
-  }
-
-  async function openRegistration() {
-    if (actionRef.current) return
-    actionRef.current = true
-    setActionBusy(true)
-    setActionError('')
-    try {
-      const response = await apiRequest(`/v1/dean/registration-offerings/${id}/open`, {
-        method: 'POST',
-      })
-      const payload = await loadOffering()
-      setOffering(payload)
-      await loadExceptionRequest()
-      setNotice(response?.message || 'تمت إعادة فتح التسجيل للمادة بنجاح.')
-      setConfirm(null)
-    } catch (requestError) {
-      handleActionError(requestError, 'تعذّر فتح التسجيل.')
-    } finally {
-      actionRef.current = false
-      setActionBusy(false)
-    }
-  }
-
-  async function submitException(resubmit) {
-    if (actionRef.current) return
-    const reason = exceptionReason.trim()
-    if (!reason) return
-    actionRef.current = true
-    setActionBusy(true)
-    setActionError('')
-    try {
-      const response = resubmit
-        ? await apiRequest(
-          `/v1/dean/course-offering-exceptions/${exceptionRequest.course_offering_exception_request_id}/resubmit`,
-          {
-            method: 'POST',
-            body: JSON.stringify({ reason }),
-          },
-        )
-        : await apiRequest('/v1/dean/course-offering-exceptions', {
-          method: 'POST',
-          body: JSON.stringify({
-            course_offering_id: Number(id),
-            reason,
-          }),
-        })
-      setExceptionRequest(response?.data ?? null)
-      const payload = await loadOffering()
-      setOffering(payload)
-      setNotice(response?.message || (resubmit
-        ? 'تم إعادة إرسال طلب الفتح الاستثنائي.'
-        : 'تم إرسال طلب الفتح الاستثنائي. يبقى الطرح مغلقًا.'))
-      setConfirm(null)
-      setExceptionReason('')
-    } catch (requestError) {
-      handleActionError(requestError, 'تعذّر إرسال طلب الفتح الاستثنائي.')
-    } finally {
-      actionRef.current = false
-      setActionBusy(false)
     }
   }
 
@@ -420,12 +292,6 @@ export default function DeanCourseOfferingProfile() {
       {notice && (
         <div className="mb-4 bg-green-500/8 border border-green-500/25 rounded-[12px] px-[18px] py-3 text-[13.5px] text-green-700 font-semibold">
           {notice}
-        </div>
-      )}
-
-      {actionError && (
-        <div className="mb-4 bg-red-500/6 border border-red-500/25 rounded-[12px] px-[18px] py-3 text-[13.5px] text-red-600">
-          ⚠ {actionError}
         </div>
       )}
 
@@ -511,23 +377,6 @@ export default function DeanCourseOfferingProfile() {
                 onManage={() => setManagerOpen(true)}
               />
 
-              <DeanOfferingStatusPanel
-                offering={offering}
-                exceptionRequest={exceptionRequest}
-                canManage={canManageOffering}
-                canRequestException={canRequestException}
-                busy={actionBusy}
-                onOpenRegistration={() => setConfirm({ type: 'open' })}
-                onRequestException={() => {
-                  setExceptionReason('')
-                  setConfirm({ type: 'exception' })
-                }}
-                onResubmitException={() => {
-                  setExceptionReason(exceptionRequest?.reason || '')
-                  setConfirm({ type: 'exception-resubmit' })
-                }}
-              />
-
               <div>
                 <SectionTitle
                   title="ملخص النتائج"
@@ -591,52 +440,6 @@ export default function DeanCourseOfferingProfile() {
           )}
         </div>
       </div>
-
-      {confirm && (
-        <DeanConfirmDialog
-          title={
-            confirm.type === 'open'
-              ? 'تأكيد فتح التسجيل'
-              : confirm.type === 'exception-resubmit'
-                ? 'إعادة إرسال طلب الفتح الاستثنائي'
-                : 'طلب فتح استثنائي'
-          }
-          warning={
-            confirm.type === 'open'
-              ? 'سيتم فتح المادة للتسجيل بعد التحقق من اكتمال تكليف المدرسين المعتمدين.'
-              : 'لن تُفتح المادة من هذه الشاشة. يبقى الطرح مغلقًا إلى أن يوافق النائب العلمي والنائب الإداري معًا.'
-          }
-          confirmLabel={
-            confirm.type === 'open'
-              ? 'تأكيد الفتح'
-              : confirm.type === 'exception-resubmit'
-                ? 'إعادة الإرسال'
-                : 'إرسال الطلب'
-          }
-          busy={actionBusy}
-          disabled={(confirm.type === 'exception' || confirm.type === 'exception-resubmit') && !exceptionReason.trim()}
-          onCancel={() => { if (!actionBusy) { setConfirm(null); setExceptionReason('') } }}
-          onConfirm={() => {
-            if (confirm.type === 'open') {
-              openRegistration()
-              return
-            }
-            submitException(confirm.type === 'exception-resubmit')
-          }}
-        >
-          {(confirm.type === 'exception' || confirm.type === 'exception-resubmit') && (
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] text-text-light font-semibold">سبب الفتح الاستثنائي</span>
-              <textarea
-                className="w-full min-h-[96px] py-2.5 px-3 border-[1.5px] border-primary/20 rounded-[10px] text-[13px]"
-                value={exceptionReason}
-                onChange={event => setExceptionReason(event.target.value)}
-                required
-              />
-            </label>
-          )}
-        </DeanConfirmDialog>
-      )}
 
       {managerOpen && (
         <TeacherAssignmentManagerModal
