@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use Illuminate\Database\Schema\Builder;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
 
@@ -34,35 +35,41 @@ final class SupplementaryExamPeriodGovernance
      * Fail-closed. Column presence alone is not enough: identity UNIQUE and
      * the event-table audit contract must be inspectably usable. Incomplete
      * SQL deployment must not allow announcement.
+     *
+     * Inspection uses the Schema Builder instance. getIndexes/getForeignKeys/
+     * getColumns are Builder methods forwarded by the Schema facade; they are
+     * not methods on Schema::class.
      */
     public static function schemaReady(): bool
     {
         try {
-            if (! Schema::hasTable('supplementary_exam_periods')
-                || ! Schema::hasTable('supplementary_exam_period_events')
-                || ! Schema::hasColumn('supplementary_exam_periods', 'status')
-                || ! Schema::hasColumn('supplementary_exam_periods', 'opened_by_user_id')
-                || ! Schema::hasColumn('supplementary_exam_periods', 'opened_at')
-                || ! Schema::hasColumn('supplementary_exam_periods', 'decision_note')) {
+            $builder = Schema::connection((string) config('database.default'));
+            if (! $builder instanceof Builder
+                || ! method_exists($builder, 'getIndexes')
+                || ! method_exists($builder, 'getForeignKeys')
+                || ! method_exists($builder, 'getColumns')) {
                 return false;
             }
 
-            if (! method_exists(Schema::class, 'getIndexes')
-                || ! method_exists(Schema::class, 'getForeignKeys')
-                || ! method_exists(Schema::class, 'getColumns')) {
+            if (! $builder->hasTable('supplementary_exam_periods')
+                || ! $builder->hasTable('supplementary_exam_period_events')
+                || ! $builder->hasColumn('supplementary_exam_periods', 'status')
+                || ! $builder->hasColumn('supplementary_exam_periods', 'opened_by_user_id')
+                || ! $builder->hasColumn('supplementary_exam_periods', 'opened_at')
+                || ! $builder->hasColumn('supplementary_exam_periods', 'decision_note')) {
                 return false;
             }
 
-            return self::identityUniqueReady()
-                && self::eventsTableContractReady();
+            return self::identityUniqueReady($builder)
+                && self::eventsTableContractReady($builder);
         } catch (Throwable) {
             return false;
         }
     }
 
-    private static function identityUniqueReady(): bool
+    private static function identityUniqueReady(Builder $builder): bool
     {
-        foreach (Schema::getIndexes('supplementary_exam_periods') as $index) {
+        foreach ($builder->getIndexes('supplementary_exam_periods') as $index) {
             $columns = array_values($index['columns'] ?? []);
             if (! empty($index['unique']) && $columns === ['academic_year_id', 'semester_id']) {
                 return true;
@@ -72,9 +79,9 @@ final class SupplementaryExamPeriodGovernance
         return false;
     }
 
-    private static function eventsTableContractReady(): bool
+    private static function eventsTableContractReady(Builder $builder): bool
     {
-        $columns = collect(Schema::getColumns('supplementary_exam_period_events'))->keyBy('name');
+        $columns = collect($builder->getColumns('supplementary_exam_period_events'))->keyBy('name');
         foreach ([
             'supplementary_exam_period_event_id',
             'supplementary_exam_period_id',
@@ -115,7 +122,7 @@ final class SupplementaryExamPeriodGovernance
         $hasActorIndex = false;
         $hasEventTypeIndex = false;
         $hasPrimary = false;
-        foreach (Schema::getIndexes('supplementary_exam_period_events') as $index) {
+        foreach ($builder->getIndexes('supplementary_exam_period_events') as $index) {
             $indexColumns = array_values($index['columns'] ?? []);
             if (! empty($index['primary']) && $indexColumns === ['supplementary_exam_period_event_id']) {
                 $hasPrimary = true;
@@ -133,7 +140,7 @@ final class SupplementaryExamPeriodGovernance
 
         $hasPeriodFk = false;
         $hasActorFk = false;
-        foreach (Schema::getForeignKeys('supplementary_exam_period_events') as $foreign) {
+        foreach ($builder->getForeignKeys('supplementary_exam_period_events') as $foreign) {
             $local = array_values($foreign['columns'] ?? []);
             $remoteTable = (string) ($foreign['foreign_table'] ?? '');
             $remoteColumns = array_values($foreign['foreign_columns'] ?? []);

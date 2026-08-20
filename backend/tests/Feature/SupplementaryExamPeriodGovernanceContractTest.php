@@ -470,9 +470,19 @@ class SupplementaryExamPeriodGovernanceContractTest extends TestCase
         $service = self::source('app/Services/SupplementaryExamPeriodGovernanceService.php');
 
         self::assertStringContainsString('schemaReady(): bool', $source);
-        self::assertStringContainsString('getIndexes', $source);
-        self::assertStringContainsString('getForeignKeys', $source);
-        self::assertStringContainsString('getColumns', $source);
+        self::assertStringContainsString('Schema::connection((string) config(\'database.default\'))', $source);
+        self::assertStringContainsString('Illuminate\\Database\\Schema\\Builder', $source);
+        self::assertStringContainsString('method_exists($builder, \'getIndexes\')', $source);
+        self::assertStringContainsString('method_exists($builder, \'getForeignKeys\')', $source);
+        self::assertStringContainsString('method_exists($builder, \'getColumns\')', $source);
+        self::assertStringContainsString('$builder->hasTable(', $source);
+        self::assertStringContainsString('$builder->hasColumn(', $source);
+        self::assertStringContainsString('$builder->getIndexes(', $source);
+        self::assertStringContainsString('$builder->getColumns(', $source);
+        self::assertStringContainsString('$builder->getForeignKeys(', $source);
+        self::assertStringNotContainsString("method_exists(Schema::class, 'getIndexes')", $source);
+        self::assertStringNotContainsString("method_exists(Schema::class, 'getForeignKeys')", $source);
+        self::assertStringNotContainsString("method_exists(Schema::class, 'getColumns')", $source);
         self::assertStringContainsString("'academic_year_id', 'semester_id'", $source);
         self::assertStringContainsString("'supplementary_exam_period_id'", $source);
         self::assertStringContainsString("=== 'event_type'", $source);
