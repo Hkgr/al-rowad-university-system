@@ -305,18 +305,14 @@ class BulkDeanOfferingPrepareContractTest extends TestCase
         self::assertStringNotContainsString('bulk-delete', $routes);
         self::assertStringNotContainsString('bulk-close', $routes);
         self::assertStringNotContainsString('forceDelete', $controller);
-        self::assertStringNotContainsString('تفريغ', $dean);
         self::assertStringNotContainsString('حذف الطروحات', $dean);
         self::assertStringNotContainsString('bulk-delete', $dean);
-        self::assertStringContainsString('إجراءات جماعية', $dean);
-        self::assertStringContainsString('تجهيز الفصل حسب الخطة الإرشادية', $dean);
-        self::assertStringContainsString('تجهيز جميع مواد البرنامج', $dean);
-        self::assertStringContainsString('تجهيز المواد المحددة', $dean);
-        self::assertStringContainsString('تحديد المواد يدويًا', $dean);
-        self::assertStringContainsString('selectionMode', $dean);
-        self::assertStringContainsString('mode: \'advisory_semester\'', $dean);
-        self::assertStringContainsString('بما فيها المواد الموصى بها إرشاديًا لفصول أخرى', $dean);
-        self::assertStringContainsString('تم تجهيز ${created} طروحات', $dean);
+        self::assertStringNotContainsString('إجراءات جماعية', $dean);
+        self::assertStringNotContainsString('تجهيز جميع مواد البرنامج', $dean);
+        self::assertStringNotContainsString('تحديد المواد يدويًا', $dean);
+        self::assertStringNotContainsString('selectionMode', $dean);
+        self::assertStringNotContainsString("mode: 'advisory_semester'", $dean);
+        self::assertStringContainsString("mode: 'selected'", $dean);
         self::assertStringContainsString('/v1/dean/registration-offerings/bulk-prepare', $dean);
         self::assertStringContainsString('reloadCatalog()', $dean);
         self::assertStringNotContainsString('window.location.reload', $dean);
@@ -503,17 +499,14 @@ class BulkDeanOfferingPrepareContractTest extends TestCase
     public function test_ui_bulk_checkboxes_appear_only_in_selection_mode(): void
     {
         $dean = self::frontend('src/features/dean-dashboard/pages/DeanRegistrationOfferings.jsx');
-        $card = self::extractJsFunction($dean, 'CourseCard');
 
-        self::assertStringContainsString('selectionMode = false', $card);
-        self::assertStringContainsString('{selectionMode ? (', $card);
-        self::assertStringContainsString('type="checkbox"', $card);
-        self::assertStringContainsString('تحديد الكل', $dean);
-        self::assertStringContainsString('إلغاء التحديد', $dean);
-        self::assertStringContainsString('مادة مطابقة', $dean);
-        self::assertStringContainsString('طروحات موجودة', $dean);
-        self::assertStringContainsString('طروحات سيتم إنشاؤها', $dean);
-        self::assertStringContainsString('إدارة تكليف المدرسين', $card);
+        self::assertStringNotContainsString('selectionMode', $dean);
+        self::assertStringNotContainsString('تحديد الكل', $dean);
+        self::assertStringNotContainsString('إلغاء التحديد', $dean);
+        self::assertStringNotContainsString('تحديد المواد يدويًا', $dean);
+        self::assertStringContainsString('حفظ التجهيز', $dean);
+        self::assertStringContainsString("mode: 'selected'", $dean);
+        self::assertStringContainsString('إدارة الطرح', $dean);
     }
 
     private function advisorySemesterBranch(string $select): string
