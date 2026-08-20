@@ -1,78 +1,32 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FaSpinner, FaTimes } from 'react-icons/fa'
+import { FaLock, FaLockOpen, FaPlus, FaSpinner, FaTimes } from 'react-icons/fa'
 import { apiRequest } from '../../../services/apiClient'
 import { hasPermission, PERMISSIONS } from '../../auth/auth'
 import DeanConfirmDialog from '../components/DeanConfirmDialog'
-import { firstApiErrorMessage, displayValue } from '../utils/teacherDisplay'
-
-function uniqueProgramCourseIds(ids) {
-  const seen = new Set()
-  const result = []
-  ;(ids ?? []).forEach(raw => {
-    const id = Number(raw)
-    if (!Number.isFinite(id) || id < 1 || seen.has(id)) return
-    seen.add(id)
-    result.push(id)
-  })
-  return result
-}
-
-function flattenCatalogCourses(levels) {
-  return (levels ?? []).flatMap(level => (level.courses ?? []).map(row => ({
-    ...row,
-    academic_level_id: row.academic_level_id ?? level.academic_level_id,
-    academic_level_name: row.academic_level_name ?? level.level_name,
-  })))
-}
-
-function recommendedSemesterMatches(row, selectedSemesterId) {
-  const recommendedId = row?.advisory_plan?.recommended_semester_id
-  if (recommendedId == null || recommendedId === '') return false
-  return Number(recommendedId) === Number(selectedSemesterId)
-}
-
-function advisoryPlanDraftIds(levels, selectedSemesterId) {
-  return uniqueProgramCourseIds(
-    flattenCatalogCourses(levels)
-      .filter(row => recommendedSemesterMatches(row, selectedSemesterId))
-      .map(row => row.program_course_id),
-  )
-}
-
-function fillAdvisoryPlanDraft(currentIds, levels, selectedSemesterId) {
-  return uniqueProgramCourseIds([
-    ...(currentIds ?? []),
-    ...advisoryPlanDraftIds(levels, selectedSemesterId),
-  ])
-}
-
-function advisorySemesterLabel(row) {
-  const recommendedId = row?.advisory_plan?.recommended_semester_id
-  if (recommendedId == null || recommendedId === '') return 'الفصل الإرشادي غير محدد'
-  const name = row?.advisory_plan?.recommended_semester_name
-  return name ? `إرشاديًا: ${name}` : 'إرشاديًا: فصل آخر'
-}
-
-function plannerRowsForLevel(level, draftIds) {
-  const draftSet = new Set((draftIds ?? []).map(Number))
-  return (level?.courses ?? []).filter(row => (
-    Boolean(row.offering) || draftSet.has(Number(row.program_course_id))
-  ))
-}
-
-function savePreview(catalogCourses, draftIds) {
-  const byId = new Map(catalogCourses.map(row => [Number(row.program_course_id), row]))
-  const selected = uniqueProgramCourseIds(draftIds)
-    .map(id => byId.get(id))
-    .filter(Boolean)
-  return {
-    total: selected.length,
-    existing: selected.filter(row => Boolean(row.offering)).length,
-    creating: selected.filter(row => !row.offering).length,
-    programCourseIds: selected.map(row => Number(row.program_course_id)),
-  }
-}
+import { firstApiErrorMessage, offeringStatusLabel, displayValue } from '../utils/teacherDisplay'
+import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
+import {
+  instructorCoverageComplete,
+  instructorCoverageSummary,
+  instructorRoleTeacherName,
+} from '../utils/courseOfferingDisplay'
+import {
+  requestStatusLabel,
+  reviewStatusLabel,
+} from '../../vice-presidency/utils/exceptionalOpeningLabels'
+import {
+  ADVISORY_NOTICE,
+  CLEAR_DRAFT_WARNING,
+  advisorySemesterLabel,
+  applyAdvisoryPlan,
+  coursesForAcademicLevel,
+  matchesCourseSearch,
+  recommendedSemesterMatches,
+  rowsByAcademicLevel,
+  savePreview,
+  uniqueProgramCourseIds,
+} from '../utils/deanOfferingPlanner'
 
 function InfoLine({ label, value }) {
   return (
@@ -83,66 +37,193 @@ function InfoLine({ label, value }) {
   )
 }
 
-function PlannerRow({ row, onRemove, onManage }) {
-  const persisted = Boolean(row.offering)
+function registrationState(offering) {
+  if (!offering) {
+    return {
+      key: 'draft',
+      label: 'غير محفوظ',
+      className: 'bg-amber-500/10 text-amber-800 border-amber-500/20',
+    }
+  }
+  if (offering.status === 'open') {
+    return {
+      key: 'open',
+      label: 'مفتوح',
+      className: 'bg-green-500/10 text-green-700 border-green-500/20',
+    }
+  }
+  if (offering.status === 'closed') {
+    if (offering.instructor_coverage && !instructorCoverageComplete(offering.instructor_coverage)) {
+      return {
+        key: 'pending_coverage',
+        label: 'بانتظار التكليف',
+        className: 'bg-amber-500/10 text-amber-800 border-amber-500/20',
+      }
+    }
+    return {
+      key: 'closed',
+      label: 'مغلق',
+      className: 'bg-slate-500/10 text-slate-600 border-slate-500/25',
+    }
+  }
+  return {
+    key: 'other',
+    label: offeringStatusLabel(offering.status),
+    className: 'bg-red-500/10 text-red-700 border-red-500/20',
+  }
+}
+
+function CourseCard({
+  row,
+  selectedSemesterId,
+  canManage,
+  canRequestException,
+  busy,
+  onRemoveDraft,
+  onReopen,
+  onClose,
+  onManageOffering,
+  onManageInstructors,
+  onRequestException,
+  onResubmitException,
+}) {
+  const course = row.course
+  const offering = row.offering
+  const state = registrationState(offering)
+  const coverage = offering?.instructor_coverage
+  const coverageLabel = instructorCoverageSummary(coverage)
+  const theoryName = instructorRoleTeacherName(coverage, 'theoretical')
+  const practicalName = instructorRoleTeacherName(coverage, 'practical')
+  const requiredRoles = coverage?.required_roles ?? []
+  const exceptionRequest = offering?.exceptional_opening_request
+  const exceptionStatus = exceptionRequest?.status
+  const showExceptionRequest = canRequestException && state.key === 'pending_coverage'
+    && (!exceptionRequest || exceptionStatus === 'returned' || exceptionStatus === 'superseded')
+  const showExceptionStatus = Boolean(exceptionRequest)
+    && state.key === 'pending_coverage'
+    && exceptionStatus !== 'superseded'
+  const advisory = advisorySemesterLabel(row, selectedSemesterId)
+  const advisoryMatch = recommendedSemesterMatches(row, selectedSemesterId)
+  const advisoryClass = advisoryMatch
+    ? 'bg-primary/10 text-primary-dark border-primary/20'
+    : advisory === 'الفصل الإرشادي غير محدد'
+      ? 'bg-slate-500/10 text-slate-600 border-slate-500/20'
+      : 'bg-amber-500/10 text-amber-800 border-amber-500/20'
+
   return (
-    <div className="flex items-center gap-3 py-2.5 border-b border-primary/8 last:border-b-0">
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="font-mono text-[13px] font-black text-primary-dark">{displayValue(row.course?.course_code)}</span>
-          <span className="text-[13.5px] font-bold text-text-dark">{displayValue(row.course?.course_name)}</span>
-          <span className="text-[12px] text-text-light">{displayValue(row.course?.credit_hours)} ساعات</span>
-        </div>
-        <p className="text-[11.5px] text-text-light mt-0.5">{advisorySemesterLabel(row)}</p>
+    <article className="border border-primary/12 rounded-[14px] bg-white px-4 py-3.5 flex flex-col shadow-[0_1px_8px_rgba(26,46,16,0.04)]">
+      <div className="min-w-0">
+        <p className="font-mono text-[13px] font-black text-primary-dark">{displayValue(course?.course_code)}</p>
+        <h4 className="text-[14px] font-extrabold text-text-dark mt-0.5 break-words">{displayValue(course?.course_name)}</h4>
       </div>
-      <span className={`shrink-0 text-[10.5px] font-bold px-2 py-0.5 rounded-full border ${
-        persisted
-          ? 'bg-slate-500/10 text-slate-600 border-slate-500/20'
-          : 'bg-amber-500/10 text-amber-800 border-amber-500/20'
-      }`}
-      >
-        {persisted ? 'محفوظ مسبقًا' : 'غير محفوظ'}
-      </span>
-      {persisted ? (
-        <button
-          type="button"
-          className="shrink-0 text-[12px] font-bold text-primary-dark hover:underline"
-          onClick={() => onManage(row.offering.course_offering_id)}
-        >
-          إدارة الطرح
-        </button>
-      ) : (
-        <button
-          type="button"
-          className="shrink-0 text-[12px] font-semibold text-text-light hover:text-text-dark"
-          onClick={() => onRemove(row.program_course_id)}
-          aria-label="إزالة من التجهيز"
-          title="إزالة من التجهيز"
-        >
-          × إزالة من التجهيز
-        </button>
+
+      <div className="flex items-center flex-wrap gap-1.5 mt-2.5">
+        <CourseRequirementBadges classification={row.requirement_classification} compact />
+        <span className={`inline-block text-[10.5px] font-bold px-2 py-0.5 rounded-full border ${state.className}`}>
+          {state.label}
+        </span>
+        <span className={`inline-block text-[10.5px] font-bold px-2 py-0.5 rounded-full border ${advisoryClass}`}>
+          {advisory}
+        </span>
+      </div>
+
+      <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-2.5 text-[11.5px] text-text-light">
+        <span><b className="text-text-dark">{displayValue(course?.credit_hours)}</b> ساعة</span>
+      </div>
+
+      {offering && coverage && (
+        <p className={`mt-2 text-[12px] font-bold ${instructorCoverageComplete(coverage) ? 'text-green-700' : 'text-amber-800'}`}>
+          اكتمال المدرسين: {coverageLabel}
+          {requiredRoles.includes('theoretical') ? ` · نظري: ${theoryName || '—'}` : ''}
+          {requiredRoles.includes('practical') ? ` · عملي: ${practicalName || '—'}` : ''}
+        </p>
       )}
-    </div>
+
+      {showExceptionStatus && (
+        <div className="mt-2 rounded-[10px] border border-primary/15 bg-primary/[0.04] px-3 py-2 text-[12px] text-text-dark space-y-1">
+          <p className="font-bold">طلب الفتح الاستثنائي: {requestStatusLabel(exceptionStatus)}</p>
+          <p>علمي: {reviewStatusLabel(exceptionRequest.scientific_review?.status)}</p>
+          <p>إداري: {reviewStatusLabel(exceptionRequest.administrative_review?.status)}</p>
+        </div>
+      )}
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {!offering ? (
+          <button
+            type="button"
+            className="px-3 py-2 border border-primary/20 rounded-[10px] text-[12.5px] font-bold text-text-gray hover:bg-primary/5"
+            onClick={() => onRemoveDraft(row.program_course_id)}
+          >
+            إزالة
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="px-3 py-2 bg-primary/15 text-primary-dark rounded-[10px] text-[12.5px] font-bold hover:bg-primary/22"
+              onClick={() => onManageOffering(offering.course_offering_id)}
+            >
+              إدارة الطرح
+            </button>
+            {canManage && state.key === 'closed' ? (
+              <button
+                type="button"
+                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-primary text-white rounded-[10px] text-[12.5px] font-bold hover:enabled:bg-primary-dark disabled:opacity-40"
+                onClick={() => onReopen(row)}
+                disabled={busy}
+              >
+                {busy ? <FaSpinner className="animate-spin text-[11px]" aria-hidden="true" /> : <FaLockOpen className="text-[11px]" aria-hidden="true" />}
+                فتح المادة
+              </button>
+            ) : null}
+            {canManage && state.key === 'pending_coverage' ? (
+              <button
+                type="button"
+                className="px-3 py-2 bg-primary/15 text-primary-dark rounded-[10px] text-[12.5px] font-bold hover:bg-primary/22"
+                onClick={() => onManageInstructors(offering.course_offering_id)}
+              >
+                إدارة تكليف المدرسين
+              </button>
+            ) : null}
+            {showExceptionRequest ? (
+              <button
+                type="button"
+                className="px-3 py-2 border border-primary/30 text-primary-dark rounded-[10px] text-[12.5px] font-bold hover:bg-primary/8 disabled:opacity-40"
+                onClick={() => (exceptionStatus === 'returned' ? onResubmitException(row) : onRequestException(row))}
+                disabled={busy}
+              >
+                {exceptionStatus === 'returned' ? 'إعادة إرسال طلب الفتح الاستثنائي' : 'طلب فتح استثنائي'}
+              </button>
+            ) : null}
+            {canManage && state.key === 'open' ? (
+              <button
+                type="button"
+                className="flex items-center justify-center gap-1.5 px-3 py-2 border border-red-300 text-red-700 bg-red-50 rounded-[10px] text-[12.5px] font-bold hover:enabled:bg-red-100 disabled:opacity-40"
+                onClick={() => onClose(row)}
+                disabled={busy}
+              >
+                {busy ? <FaSpinner className="animate-spin text-[11px]" aria-hidden="true" /> : <FaLock className="text-[11px]" aria-hidden="true" />}
+                إغلاق التسجيل
+              </button>
+            ) : null}
+          </>
+        )}
+      </div>
+    </article>
   )
 }
 
 function AddCourseDialog({
-  levelName,
+  level,
   courses,
-  query,
-  onQueryChange,
+  draftIds,
+  selectedSemesterId,
   onAdd,
   onClose,
 }) {
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    if (!needle) return courses
-    return courses.filter(row => {
-      const code = String(row.course?.course_code ?? '').toLowerCase()
-      const name = String(row.course?.course_name ?? '').toLowerCase()
-      return code.includes(needle) || name.includes(needle)
-    })
-  }, [courses, query])
+  const [query, setQuery] = useState('')
+  const draftSet = new Set((draftIds ?? []).map(Number))
+  const visible = (courses ?? []).filter(row => matchesCourseSearch(row, query))
 
   return (
     <div
@@ -150,15 +231,15 @@ function AddCourseDialog({
       dir="rtl"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="add-course-title"
+      aria-labelledby="dean-add-course-title"
       onClick={event => {
         if (event.target === event.currentTarget) onClose()
       }}
     >
-      <div className="w-full sm:max-w-[520px] max-h-[96vh] overflow-y-auto bg-white rounded-t-[18px] sm:rounded-[18px] shadow-2xl">
+      <div className="w-full sm:max-w-[560px] max-h-[96vh] overflow-y-auto bg-white rounded-t-[18px] sm:rounded-[18px] shadow-2xl">
         <div className="flex items-center justify-between border-b border-primary/10 px-5 py-4 sticky top-0 bg-white z-10">
-          <h3 id="add-course-title" className="text-[16px] font-black text-text-dark">
-            إضافة مادة — {levelName}
+          <h3 id="dean-add-course-title" className="text-[16px] font-black text-text-dark">
+            إضافة مادة — {level?.level_name}
           </h3>
           <button
             type="button"
@@ -170,47 +251,54 @@ function AddCourseDialog({
             <FaTimes aria-hidden="true" />
           </button>
         </div>
+
         <div className="px-5 py-4 space-y-3">
           <input
+            className="w-full py-[13px] px-4 border-[1.5px] border-primary/20 rounded-[13px] bg-white text-[14px] font-medium text-text-dark outline-none focus:border-primary focus:shadow-[0_0_0_4px_rgba(86,153,51,0.1)]"
             type="search"
-            value={query}
-            onChange={event => onQueryChange(event.target.value)}
             placeholder="ابحث باسم المادة أو رمزها"
-            className="w-full px-3 py-2.5 border border-primary/20 rounded-[10px] text-[13.5px] outline-none focus:border-primary"
+            value={query}
+            onChange={event => setQuery(event.target.value)}
           />
-          {filtered.length === 0 ? (
-            <p className="text-[13px] text-text-light py-6 text-center">لا توجد مواد مطابقة.</p>
+
+          {visible.length === 0 ? (
+            <p className="text-[13px] text-text-light py-6 text-center">لا توجد مواد مطابقة في هذه السنة.</p>
           ) : (
-            <ul className="divide-y divide-primary/8">
-              {filtered.map(row => {
+            <div className="space-y-2">
+              {visible.map(row => {
                 const persisted = Boolean(row.offering)
-                const added = Boolean(row.alreadyInDraft)
+                const added = draftSet.has(Number(row.program_course_id))
                 const blocked = persisted || added
                 return (
-                  <li key={row.program_course_id}>
+                  <div
+                    key={row.program_course_id}
+                    className="border border-primary/12 rounded-[14px] bg-white px-3.5 py-3 flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-mono text-[12.5px] font-black text-primary-dark">
+                        {displayValue(row.course?.course_code)}
+                      </p>
+                      <p className="text-[13.5px] font-extrabold text-text-dark break-words">
+                        {displayValue(row.course?.course_name)}
+                      </p>
+                      <p className="text-[11.5px] text-text-light mt-1">
+                        {displayValue(row.course?.credit_hours)} ساعات
+                        {' · '}
+                        {advisorySemesterLabel(row, selectedSemesterId)}
+                      </p>
+                    </div>
                     <button
                       type="button"
-                      className="w-full text-right py-3 flex items-start gap-3 disabled:opacity-55"
+                      className="shrink-0 px-3 py-2 bg-primary text-white rounded-[10px] text-[12.5px] font-bold hover:enabled:bg-primary-dark disabled:opacity-40"
                       disabled={blocked}
-                      onClick={() => onAdd(row.program_course_id)}
+                      onClick={() => onAdd(row)}
                     >
-                      <span className="mt-1 h-3.5 w-3.5 rounded-full border border-primary/40 shrink-0" aria-hidden="true" />
-                      <span className="min-w-0">
-                        <span className="block font-mono text-[13px] font-black text-primary-dark">
-                          {displayValue(row.course?.course_code)} — {displayValue(row.course?.course_name)}
-                        </span>
-                        <span className="block text-[12px] text-text-light mt-0.5">{advisorySemesterLabel(row)}</span>
-                        {persisted ? (
-                          <span className="block text-[11.5px] font-bold text-slate-600 mt-0.5">موجودة مسبقًا</span>
-                        ) : added ? (
-                          <span className="block text-[11.5px] font-bold text-text-light mt-0.5">مضافة</span>
-                        ) : null}
-                      </span>
+                      {blocked ? (persisted ? 'محفوظة' : 'مضافة') : 'إضافة'}
                     </button>
-                  </li>
+                  </div>
                 )
               })}
-            </ul>
+            </div>
           )}
         </div>
       </div>
@@ -222,6 +310,8 @@ export default function DeanRegistrationOfferings() {
   const navigate = useNavigate()
   const canManageLocal = hasPermission(PERMISSIONS.courseOfferingsManage)
     || hasPermission(PERMISSIONS.coursesManage)
+  const canRequestException = hasPermission(PERMISSIONS.exceptionalOpenRequest)
+  const [exceptionReason, setExceptionReason] = useState('')
 
   const [options, setOptions] = useState({
     academic_years: [],
@@ -235,16 +325,16 @@ export default function DeanRegistrationOfferings() {
   const [departmentId, setDepartmentId] = useState('')
   const [programId, setProgramId] = useState('')
   const [levels, setLevels] = useState([])
-  const [context, setContext] = useState({ academic_year: null, semester: null })
   const [draftIds, setDraftIds] = useState([])
+  const [context, setContext] = useState({ academic_year: null, semester: null })
   const [bootLoading, setBootLoading] = useState(true)
   const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [noticeTone, setNoticeTone] = useState('success')
+  const [busyIds, setBusyIds] = useState({})
   const [confirm, setConfirm] = useState(null)
-  const [picker, setPicker] = useState(null)
-  const [pickerQuery, setPickerQuery] = useState('')
+  const [addLevel, setAddLevel] = useState(null)
   const savingRef = useRef(false)
 
   const goToLogin = useCallback(() => navigate('/login', { replace: true }), [navigate])
@@ -255,12 +345,33 @@ export default function DeanRegistrationOfferings() {
       return fallback
     }
     if (requestError.status === 403) {
-      return requestError.message || 'ليس لديك صلاحية لتجهيز هذا الفصل.'
+      if (requestError.errorCode === 'program_outside_user_scope') {
+        return requestError.message || 'ليس لديك صلاحية على هذا البرنامج.'
+      }
+      return requestError.message || 'ليس لديك صلاحية لإدارة إتاحة هذه المادة.'
     }
     if (requestError.status === 404) {
-      return 'تعذّر الوصول إلى البرنامج المطلوب.'
+      return 'تعذّر الوصول إلى المادة المطلوبة.'
+    }
+    if (requestError.status === 409) {
+      if (requestError.errorCode === 'offering_instructor_coverage_incomplete') {
+        return requestError.message || 'لا يمكن فتح المادة قبل استكمال تكليف المدرسين المعتمدين.'
+      }
+      if (requestError.errorCode === 'exceptional_opening_not_required') {
+        return requestError.message || 'تكليف المدرسين مكتمل. استخدم الفتح الاعتيادي.'
+      }
+      if (requestError.errorCode === 'exceptional_opening_duplicate_current') {
+        return requestError.message || 'يوجد طلب فتح استثنائي حالي لنفس الطرح.'
+      }
+      if (requestError.errorCode === 'normal_opening_available') {
+        return requestError.message || 'أصبح الفتح الاعتيادي متاحًا. استخدم فتح المادة الاعتيادي.'
+      }
+      return requestError.message || 'تعذّر تنفيذ العملية بسبب تغير حالة المادة. أعد تحميل البيانات وحاول مجددًا.'
     }
     if (requestError.status === 422) {
+      if (requestError.errorCode === 'offering_teaching_components_undefined') {
+        return requestError.message || 'لا يمكن فتح المادة لأن مكونات التدريس للمقرر غير محددة.'
+      }
       return firstApiErrorMessage(requestError, fallback)
     }
     return fallback
@@ -291,7 +402,7 @@ export default function DeanRegistrationOfferings() {
           requestError,
           requestError.status === 403
             ? 'ليس لديك صلاحية لعرض مواد الكلية.'
-            : 'تعذّر تحميل بيانات تجهيز الفصل.',
+            : 'تعذّر تحميل بيانات إتاحة المواد.',
         ))
       } finally {
         if (active) setBootLoading(false)
@@ -340,9 +451,7 @@ export default function DeanRegistrationOfferings() {
 
   useEffect(() => {
     setDraftIds([])
-    setPicker(null)
-    setPickerQuery('')
-    setConfirm(null)
+    setAddLevel(null)
     setNotice('')
   }, [programId, semesterId, yearId])
 
@@ -358,14 +467,150 @@ export default function DeanRegistrationOfferings() {
     [options.academic_programs, programId, programs],
   )
 
-  const catalogCourses = useMemo(() => flattenCatalogCourses(levels), [levels])
-  const draftSet = useMemo(() => new Set(draftIds.map(Number)), [draftIds])
-  const preview = useMemo(() => savePreview(catalogCourses, draftIds), [catalogCourses, draftIds])
+  const levelCards = useMemo(
+    () => rowsByAcademicLevel(levels, draftIds),
+    [draftIds, levels],
+  )
+
+  const preview = useMemo(
+    () => savePreview(levels, draftIds),
+    [draftIds, levels],
+  )
 
   const yearName = context.academic_year?.year_name
     || options.academic_years.find(year => String(year.academic_year_id) === String(yearId))?.year_name
   const semesterName = context.semester?.semester_name
     || options.semesters.find(semester => String(semester.semester_id) === String(semesterId))?.semester_name
+
+  function patchOffering(programCourseId, offering) {
+    setLevels(current => current.map(level => ({
+      ...level,
+      courses: (level.courses ?? []).map(row => (
+        row.program_course_id === programCourseId ? { ...row, offering } : row
+      )),
+    })))
+  }
+
+  function showNotice(message, tone = 'success') {
+    setNoticeTone(tone)
+    setNotice(message)
+  }
+
+  function applyAdvisoryPlanClick() {
+    const result = applyAdvisoryPlan(draftIds, levels, semesterId)
+    if (result.kind === 'missing-metadata') {
+      showNotice(result.notice || ADVISORY_NOTICE.missingMetadata, 'warning')
+      return
+    }
+    if (result.kind === 'zero-match') {
+      showNotice(result.notice || ADVISORY_NOTICE.zeroMatch, 'warning')
+      return
+    }
+    setDraftIds(result.draftIds)
+    showNotice(result.notice, 'success')
+  }
+
+  function addCourseToDraft(row) {
+    setDraftIds(current => uniqueProgramCourseIds([...(current ?? []), row.program_course_id]))
+    setAddLevel(null)
+  }
+
+  function courseCard(row) {
+    return (
+      <CourseCard
+        key={row.program_course_id}
+        row={row}
+        selectedSemesterId={semesterId}
+        canManage={canManageLocal}
+        canRequestException={canRequestException}
+        busy={Boolean(busyIds[`pc-${row.program_course_id}`] || (row.offering && busyIds[`off-${row.offering.course_offering_id}`]) || busyIds.bulk)}
+        onRemoveDraft={id => setDraftIds(current => current.filter(item => Number(item) !== Number(id)))}
+        onReopen={item => setConfirm({
+          type: 'reopen',
+          key: `off-${item.offering.course_offering_id}`,
+          row: item,
+        })}
+        onClose={item => setConfirm({
+          type: 'close',
+          key: `off-${item.offering.course_offering_id}`,
+          row: item,
+        })}
+        onManageOffering={id => navigate(`/dean/courses/${id}`)}
+        onManageInstructors={id => navigate(`/dean/courses/${id}`)}
+        onRequestException={item => {
+          setExceptionReason('')
+          setConfirm({
+            type: 'exception',
+            key: `ex-${item.offering.course_offering_id}`,
+            row: item,
+          })
+        }}
+        onResubmitException={item => {
+          setExceptionReason(item.offering?.exceptional_opening_request?.reason || '')
+          setConfirm({
+            type: 'exception-resubmit',
+            key: `ex-${item.offering.course_offering_id}`,
+            row: item,
+          })
+        }}
+      />
+    )
+  }
+
+  async function runMutation(key, request, programCourseId, successFallback) {
+    if (savingRef.current) return
+    savingRef.current = true
+    setBusyIds(current => ({ ...current, [key]: true }))
+    setError('')
+    try {
+      const response = await request()
+      const offering = response?.data?.offering ?? null
+      const rowId = response?.data?.program_course_id ?? programCourseId
+      if (offering) patchOffering(rowId, offering)
+      showNotice(response?.message || successFallback)
+      setConfirm(null)
+    } catch (requestError) {
+      setError(handleRequestError(requestError, 'تعذّر تحديث إتاحة المادة للتسجيل.'))
+    } finally {
+      savingRef.current = false
+      setBusyIds(current => {
+        const next = { ...current }
+        delete next[key]
+        return next
+      })
+    }
+  }
+
+  async function runException(key, request, programCourseId, successFallback) {
+    if (savingRef.current) return
+    savingRef.current = true
+    setBusyIds(current => ({ ...current, [key]: true }))
+    setError('')
+    try {
+      const response = await request()
+      const exceptionRequest = response?.data ?? null
+      setLevels(current => current.map(level => ({
+        ...level,
+        courses: (level.courses ?? []).map(row => (
+          row.program_course_id === programCourseId && row.offering
+            ? { ...row, offering: { ...row.offering, exceptional_opening_request: exceptionRequest } }
+            : row
+        )),
+      })))
+      showNotice(response?.message || successFallback)
+      setConfirm(null)
+      setExceptionReason('')
+    } catch (requestError) {
+      setError(handleRequestError(requestError, 'تعذّر إرسال طلب الفتح الاستثنائي.'))
+    } finally {
+      savingRef.current = false
+      setBusyIds(current => {
+        const next = { ...current }
+        delete next[key]
+        return next
+      })
+    }
+  }
 
   async function reloadCatalog() {
     if (!yearId || !semesterId || !programId) return
@@ -384,26 +629,10 @@ export default function DeanRegistrationOfferings() {
     })
   }
 
-  function applyAdvisoryPlan() {
-    setDraftIds(current => fillAdvisoryPlanDraft(current, levels, semesterId))
-    setNotice('تمت إضافة الخطة الإرشادية إلى التجهيز.')
-    setError('')
-  }
-
-  function removeFromDraft(programCourseId) {
-    setDraftIds(current => current.filter(id => Number(id) !== Number(programCourseId)))
-  }
-
-  function addCourseToDraft(programCourseId) {
-    setDraftIds(current => uniqueProgramCourseIds([...current, programCourseId]))
-    setPicker(null)
-    setPickerQuery('')
-  }
-
-  async function saveDraft() {
-    if (savingRef.current || preview.programCourseIds.length < 1) return
+  async function savePreparation() {
+    if (savingRef.current) return
     savingRef.current = true
-    setSaving(true)
+    setBusyIds(current => ({ ...current, bulk: true }))
     setError('')
     try {
       const response = await apiRequest('/v1/dean/registration-offerings/bulk-prepare', {
@@ -419,28 +648,24 @@ export default function DeanRegistrationOfferings() {
       const result = response?.data ?? {}
       const created = result.created_count ?? 0
       const existing = result.existing_count ?? 0
-      setNotice(`تم حفظ تجهيز الفصل بنجاح. تم إنشاء ${created} طروحات، و${existing} كانت موجودة مسبقًا.`)
-      setConfirm(null)
-      const failedIds = (result.items ?? [])
-        .filter(item => item.result === 'failed')
-        .map(item => item.program_course_id)
-      setDraftIds(uniqueProgramCourseIds(failedIds))
+      showNotice(`تم حفظ تجهيز الفصل بنجاح. ${created} طروحات أُنشئت، ${existing} كانت محفوظة مسبقًا.`)
+      setDraftIds([])
       await reloadCatalog()
     } catch (requestError) {
-      setError(handleRequestError(requestError, 'تعذّر حفظ تجهيز الفصل.'))
+      setError(handleRequestError(requestError, 'تعذّر تجهيز طروحات المواد.'))
     } finally {
       savingRef.current = false
-      setSaving(false)
+      setBusyIds(current => {
+        const next = { ...current }
+        delete next.bulk
+        return next
+      })
     }
   }
 
-  const pickerCourses = useMemo(() => {
-    if (!picker) return []
-    return (picker.courses ?? []).map(row => ({
-      ...row,
-      alreadyInDraft: draftSet.has(Number(row.program_course_id)),
-    }))
-  }, [draftSet, picker])
+  const confirmBusy = confirm
+    ? Boolean(busyIds[confirm.key])
+    : false
 
   if (bootLoading) {
     return (
@@ -454,9 +679,9 @@ export default function DeanRegistrationOfferings() {
   return (
     <div dir="rtl">
       <div className="mb-5">
-        <h2 className="text-[20px] font-black text-text-dark mb-[3px]">تجهيز الفصل</h2>
+        <h2 className="text-[20px] font-black text-text-dark mb-[3px]">فتح المواد للتسجيل</h2>
         <p className="text-[12.5px] text-text-light">
-          اختر السنة والفصل والبرنامج، ثم أضف الخطة الإرشادية أو المواد يدويًا واحفظ التجهيز.
+          جهّز مواد الفصل ثم تابع إدارة كل طرح بعد الحفظ.
         </p>
       </div>
 
@@ -528,43 +753,13 @@ export default function DeanRegistrationOfferings() {
         </div>
       </div>
 
-      {yearId && semesterId && programId && canManageLocal && (
-        <div className="flex flex-wrap items-center gap-2 mb-5">
-          <button
-            type="button"
-            className="px-4 py-2 border border-primary/20 rounded-[10px] text-[13px] font-bold text-text-dark hover:bg-primary/5 disabled:opacity-40"
-            disabled={loading || saving || draftIds.length === 0}
-            onClick={() => setConfirm({ type: 'clear-draft' })}
-          >
-            تفريغ
-          </button>
-          <button
-            type="button"
-            className="px-4 py-2 bg-primary/15 text-primary-dark rounded-[10px] text-[13px] font-bold hover:enabled:bg-primary/22 disabled:opacity-40"
-            disabled={loading || saving}
-            onClick={applyAdvisoryPlan}
-          >
-            إضافة الخطة الإرشادية
-          </button>
-          <button
-            type="button"
-            className="px-4 py-2 bg-primary text-white rounded-[10px] text-[13px] font-bold hover:enabled:bg-primary-dark disabled:opacity-40"
-            disabled={loading || saving || preview.programCourseIds.length < 1}
-            onClick={() => setConfirm({ type: 'save-draft' })}
-          >
-            {saving ? 'جاري الحفظ' : 'حفظ التجهيز'}
-          </button>
-        </div>
-      )}
-
-      {yearId && semesterId && programId && (
-        <p className="text-[13px] text-text-light mb-4">
-          ابدأ بإضافة الخطة الإرشادية أو أضف المواد يدويًا.
-        </p>
-      )}
-
       {notice && (
-        <div className="mb-4 bg-green-500/8 border border-green-500/25 rounded-[12px] px-[18px] py-3 text-[13.5px] text-green-700 font-semibold">
+        <div className={`mb-4 rounded-[12px] px-[18px] py-3 text-[13.5px] font-semibold ${
+          noticeTone === 'warning'
+            ? 'bg-amber-50 text-amber-800 border border-amber-200'
+            : 'bg-green-500/8 border border-green-500/25 text-green-700'
+        }`}
+        >
           {notice}
         </div>
       )}
@@ -577,106 +772,227 @@ export default function DeanRegistrationOfferings() {
 
       {!yearId || !semesterId || !programId ? (
         <p className="text-[13.5px] text-text-light bg-white border border-primary/12 rounded-[14px] px-4 py-8 text-center">
-          اختر السنة الأكاديمية والفصل الفعلي والبرنامج لبدء تجهيز الفصل.
+          اختر السنة الأكاديمية والفصل الفعلي والقسم والبرنامج لبدء تجهيز مواد الفصل.
         </p>
       ) : loading ? (
         <div className="flex flex-col items-center justify-center gap-3 py-16 text-primary-light">
           <FaSpinner className="text-[26px] animate-[spin_0.7s_linear_infinite]" aria-hidden="true" />
-          <span className="text-[13.5px] font-medium">جاري تحميل الخطة…</span>
+          <span className="text-[13.5px] font-medium">جاري تحميل مواد الخطة…</span>
         </div>
       ) : (
-        <div className="space-y-8">
-          {levels.map(level => {
-            const rows = plannerRowsForLevel(level, draftIds)
-            return (
-              <section key={level.academic_level_id ?? level.level_name}>
-                <h3 className="text-[15px] font-extrabold text-text-dark pb-2 mb-1 border-b border-primary/15">
-                  {level.level_name}
-                </h3>
-                {rows.length === 0 ? (
-                  <p className="text-[13px] text-text-light py-4">لا توجد مواد في التجهيز</p>
-                ) : (
-                  <div>
-                    {rows.map(row => (
-                      <PlannerRow
-                        key={row.program_course_id}
-                        row={row}
-                        onRemove={removeFromDraft}
-                        onManage={id => navigate(`/dean/courses/${id}`)}
-                      />
-                    ))}
+        <>
+          <section className="bg-white border border-primary/12 rounded-[16px] p-4 mb-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
+            <h3 className="text-[14px] font-extrabold text-text-dark mb-1">تجهيز مواد الفصل</h3>
+            <p className="text-[12.5px] text-text-light mb-4">
+              أضف مواد الخطة الإرشادية أو أضف مواد أخرى يدويًا.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="px-3 py-2 bg-primary text-white rounded-[10px] text-[12.5px] font-bold hover:enabled:bg-primary-dark disabled:opacity-40"
+                disabled={!canManageLocal || Boolean(busyIds.bulk)}
+                onClick={applyAdvisoryPlanClick}
+              >
+                إضافة الخطة الإرشادية
+              </button>
+              <button
+                type="button"
+                className="px-3 py-2 border border-primary/20 rounded-[10px] text-[12.5px] font-bold text-text-gray hover:bg-primary/5 disabled:opacity-40"
+                disabled={draftIds.length === 0 || Boolean(busyIds.bulk)}
+                onClick={() => setConfirm({ type: 'clear-draft', key: 'clear-draft' })}
+              >
+                تفريغ التجهيز
+              </button>
+            </div>
+          </section>
+
+          {levels.length === 0 ? (
+            <p className="text-[13.5px] text-text-light bg-white border border-primary/12 rounded-[14px] px-4 py-8 text-center">
+              لا توجد مواد في خطة هذا البرنامج.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {levelCards.map(level => (
+                <section
+                  key={level.academic_level_id ?? level.level_name}
+                  className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]"
+                >
+                  <div className="flex items-center justify-between px-4 py-3 bg-primary/[0.05] border-b border-primary/10">
+                    <h3 className="text-[14px] font-extrabold text-text-dark">
+                      {level.level_name}
+                    </h3>
+                    <span className="text-[11px] font-bold text-text-light bg-white px-2 py-0.5 rounded-full">
+                      {level.rows.length} مواد
+                      {level.curriculumCount > 0 ? ` · ${level.curriculumCount} مادة في الخطة` : ''}
+                    </span>
                   </div>
-                )}
-                {canManageLocal && (
-                  <button
-                    type="button"
-                    className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-bold text-primary-dark hover:underline disabled:opacity-40"
-                    disabled={saving}
-                    onClick={() => {
-                      setPickerQuery('')
-                      setPicker({
-                        levelName: level.level_name,
-                        academicLevelId: level.academic_level_id,
-                        courses: level.courses ?? [],
-                      })
-                    }}
-                  >
-                    + إضافة مادة
-                  </button>
-                )}
-              </section>
-            )
-          })}
-        </div>
+                  <div className="p-4 space-y-3">
+                    {level.rows.length === 0 ? (
+                      <p className="text-[13px] text-text-light">
+                        لم تتم إضافة مواد إلى تجهيز هذه السنة بعد.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                        {level.rows.map(row => courseCard(row))}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 px-3 py-2 border border-primary/20 rounded-[10px] text-[12.5px] font-bold text-primary-dark hover:bg-primary/5"
+                      onClick={() => setAddLevel(level)}
+                    >
+                      <FaPlus className="text-[10px]" aria-hidden="true" />
+                      + إضافة مادة
+                    </button>
+                  </div>
+                </section>
+              ))}
+            </div>
+          )}
+
+          <section className="bg-white border border-primary/12 rounded-[16px] p-4 mt-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="text-[13px] text-text-dark space-y-1">
+                <p><b>{preview.total}</b> مادة في التجهيز</p>
+                <p><b>{preview.existing}</b> محفوظة مسبقًا</p>
+                <p><b>{preview.creating}</b> سيتم إنشاؤها</p>
+              </div>
+              <button
+                type="button"
+                className="px-4 py-2 bg-primary text-white rounded-[10px] text-[13px] font-bold hover:enabled:bg-primary-dark disabled:opacity-40"
+                disabled={!canManageLocal || preview.total < 1 || Boolean(busyIds.bulk)}
+                onClick={savePreparation}
+              >
+                {busyIds.bulk ? 'جاري الحفظ' : 'حفظ التجهيز'}
+              </button>
+            </div>
+          </section>
+        </>
       )}
 
-      {picker && (
+      {addLevel && (
         <AddCourseDialog
-          levelName={picker.levelName}
-          courses={pickerCourses}
-          query={pickerQuery}
-          onQueryChange={setPickerQuery}
+          level={addLevel}
+          courses={coursesForAcademicLevel(levels, addLevel.academic_level_id)}
+          draftIds={draftIds}
+          selectedSemesterId={semesterId}
           onAdd={addCourseToDraft}
-          onClose={() => { setPicker(null); setPickerQuery('') }}
+          onClose={() => setAddLevel(null)}
         />
       )}
 
       {confirm && (
         <DeanConfirmDialog
-          title={confirm.type === 'clear-draft' ? 'تفريغ التجهيز غير المحفوظ' : 'حفظ التجهيز'}
+          title={
+            confirm.type === 'clear-draft'
+              ? 'تفريغ التجهيز'
+              : confirm.type === 'reopen'
+                ? 'تأكيد فتح المادة'
+                : confirm.type === 'exception' || confirm.type === 'exception-resubmit'
+                  ? 'طلب فتح استثنائي'
+                  : 'تأكيد إغلاق التسجيل'
+          }
           warning={
             confirm.type === 'clear-draft'
-              ? 'سيتم تفريغ التجهيز غير المحفوظ فقط. لن يتم حذف أي طروحات أو بيانات أكاديمية محفوظة.'
-              : 'سيتم إنشاء الطروحات المفقودة فقط وبحالة مغلقة. لن يُفتح التسجيل ولن يُعيَّن مدرسون.'
+              ? CLEAR_DRAFT_WARNING
+              : confirm.type === 'reopen'
+                ? 'سيتم فتح المادة للتسجيل بعد التحقق من اكتمال تكليف المدرسين المعتمدين.'
+                : confirm.type === 'exception' || confirm.type === 'exception-resubmit'
+                  ? 'لن تُفتح المادة من هذه الشاشة. يبقى الطرح مغلقًا إلى أن يوافق النائب العلمي والنائب الإداري معًا.'
+                  : 'سيؤدي الإغلاق إلى منع تسجيل طلاب جدد في هذه المادة. لن يتم حذف تسجيلات الطلاب الحالية.'
           }
-          confirmLabel={confirm.type === 'clear-draft' ? 'تأكيد التفريغ' : 'تأكيد الحفظ'}
-          busy={confirm.type === 'save-draft' ? saving : false}
-          disabled={confirm.type === 'save-draft' && preview.programCourseIds.length < 1}
-          onCancel={() => { if (!saving) setConfirm(null) }}
+          confirmLabel={
+            confirm.type === 'clear-draft'
+              ? 'تفريغ غير المحفوظ'
+              : confirm.type === 'reopen'
+                ? 'تأكيد الفتح'
+                : confirm.type === 'exception'
+                  ? 'إرسال الطلب'
+                  : confirm.type === 'exception-resubmit'
+                    ? 'إعادة الإرسال'
+                    : 'تأكيد الإغلاق'
+          }
+          confirmTone={confirm.type === 'close' ? 'danger' : 'primary'}
+          busy={confirmBusy}
+          disabled={(confirm.type === 'exception' || confirm.type === 'exception-resubmit') && !exceptionReason.trim()}
+          onCancel={() => { if (!confirmBusy) { setConfirm(null); setExceptionReason('') } }}
           onConfirm={() => {
             if (confirm.type === 'clear-draft') {
               setDraftIds([])
               setConfirm(null)
-              setNotice('تم تفريغ التجهيز غير المحفوظ.')
               return
             }
-            saveDraft()
+            const row = confirm.row
+            if (confirm.type === 'reopen') {
+              runMutation(
+                confirm.key,
+                () => apiRequest(`/v1/dean/registration-offerings/${row.offering.course_offering_id}/open`, {
+                  method: 'POST',
+                }),
+                row.program_course_id,
+                'تمت إعادة فتح التسجيل للمادة بنجاح.',
+              )
+              return
+            }
+            if (confirm.type === 'exception') {
+              runException(
+                confirm.key,
+                () => apiRequest('/v1/dean/course-offering-exceptions', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    course_offering_id: row.offering.course_offering_id,
+                    reason: exceptionReason.trim(),
+                  }),
+                }),
+                row.program_course_id,
+                'تم إرسال طلب الفتح الاستثنائي. يبقى الطرح مغلقًا.',
+              )
+              return
+            }
+            if (confirm.type === 'exception-resubmit') {
+              const requestId = row.offering.exceptional_opening_request?.course_offering_exception_request_id
+              runException(
+                confirm.key,
+                () => apiRequest(`/v1/dean/course-offering-exceptions/${requestId}/resubmit`, {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    reason: exceptionReason.trim(),
+                  }),
+                }),
+                row.program_course_id,
+                'تم إعادة إرسال طلب الفتح الاستثنائي.',
+              )
+              return
+            }
+            runMutation(
+              confirm.key,
+              () => apiRequest(`/v1/dean/registration-offerings/${row.offering.course_offering_id}/close`, {
+                method: 'POST',
+              }),
+              row.program_course_id,
+              'تم إغلاق التسجيل للمادة بنجاح.',
+            )
           }}
         >
-          {confirm.type === 'save-draft' ? (
+          {confirm.row ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <InfoLine label="المادة" value={[confirm.row.course?.course_code, confirm.row.course?.course_name].filter(Boolean).join(' — ')} />
               <InfoLine label="البرنامج" value={selectedProgram?.program_name} />
-              <InfoLine label="السنة الأكاديمية" value={yearName} />
-              <InfoLine label="الفصل الفعلي" value={semesterName} />
-              <InfoLine label="إجمالي المواد في التجهيز" value={preview.total} />
-              <InfoLine label="موجودة مسبقًا" value={preview.existing} />
-              <InfoLine label="سيتم إنشاء" value={preview.creating} />
+              <InfoLine label="السنة الدراسية" value={yearName} />
+              <InfoLine label="الفصل الفعلي للطرح" value={semesterName} />
+              {(confirm.type === 'exception' || confirm.type === 'exception-resubmit') && (
+                <label className="sm:col-span-2 flex flex-col gap-1.5">
+                  <span className="text-[11px] text-text-light font-semibold">سبب الفتح الاستثنائي</span>
+                  <textarea
+                    className="w-full min-h-[96px] py-2.5 px-3 border-[1.5px] border-primary/20 rounded-[10px] text-[13px]"
+                    value={exceptionReason}
+                    onChange={event => setExceptionReason(event.target.value)}
+                    required
+                  />
+                </label>
+              )}
             </div>
-          ) : (
-            <p className="text-[13px] text-text-dark leading-7">
-              الطروحات المحفوظة مسبقًا ستبقى ظاهرة في التجهيز ولن تُحذف.
-            </p>
-          )}
+          ) : null}
         </DeanConfirmDialog>
       )}
     </div>

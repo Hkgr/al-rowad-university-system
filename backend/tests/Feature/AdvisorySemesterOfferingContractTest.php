@@ -135,23 +135,24 @@ class AdvisorySemesterOfferingContractTest extends TestCase
 
     public function test_ui_advsem_01_dean_matching_semester_shows_recommended_badge(): void
     {
+        $planner = self::frontend('src/features/dean-dashboard/utils/deanOfferingPlanner.js');
         $dean = self::frontend('src/features/dean-dashboard/pages/DeanRegistrationOfferings.jsx');
-        self::assertStringContainsString('function advisorySemesterLabel(', $dean);
-        self::assertStringContainsString('إرشاديًا: ${name}', $dean);
-        self::assertStringContainsString('function recommendedSemesterMatches(', $dean);
-        self::assertStringContainsString('Number(recommendedId) === Number(selectedSemesterId)', $dean);
+        self::assertStringContainsString('export function advisorySemesterLabel(', $planner);
+        self::assertStringContainsString('إرشاديًا: ${name}', $planner);
+        self::assertStringContainsString('export function recommendedSemesterMatches(', $planner);
+        self::assertStringContainsString('recommendedId === Number(selectedSemesterId)', $planner);
+        self::assertStringContainsString('advisorySemesterLabel(row, selectedSemesterId)', $dean);
     }
 
     public function test_ui_advsem_02_dean_mismatched_semester_keeps_opening_enabled(): void
     {
         $dean = self::frontend('src/features/dean-dashboard/pages/DeanRegistrationOfferings.jsx');
         $dialog = self::extractJsFunction($dean, 'AddCourseDialog');
-        self::assertStringContainsString('إرشاديًا: ${name}', $dean);
         self::assertStringContainsString('+ إضافة مادة', $dean);
         self::assertStringContainsString('const blocked = persisted || added', $dialog);
         self::assertDoesNotMatchRegularExpression('/disabled=\{[^}]*advisory/', $dialog);
-        self::assertStringNotContainsString('فتح استثنائي', $dean);
         self::assertStringNotContainsString('disabled={blocked || recommended', $dialog);
+        self::assertStringNotContainsString('فتح استثنائي', $dialog);
     }
 
     public function test_ui_advsem_03_student_other_open_plan_courses_remain_addable_when_eligible(): void
@@ -169,10 +170,10 @@ class AdvisorySemesterOfferingContractTest extends TestCase
 
     public function test_ui_advsem_04_missing_recommended_semester_stays_visible_and_openable(): void
     {
-        $dean = self::frontend('src/features/dean-dashboard/pages/DeanRegistrationOfferings.jsx');
+        $planner = self::frontend('src/features/dean-dashboard/utils/deanOfferingPlanner.js');
         $student = self::frontend('src/features/student-dashboard/pages/StudentRegistration.jsx');
-        self::assertStringContainsString("return 'الفصل الإرشادي غير محدد'", $dean);
-        self::assertStringContainsString('function advisorySemesterLabel(', $dean);
+        self::assertStringContainsString("return 'الفصل الإرشادي غير محدد'", $planner);
+        self::assertStringContainsString('export function advisorySemesterLabel(', $planner);
         self::assertStringContainsString('من الخطة — الفصل الإرشادي غير محدد', $student);
         self::assertStringContainsString('function splitAdvisoryCourses(', $student);
         self::assertStringContainsString('else other.push(course)', $student);

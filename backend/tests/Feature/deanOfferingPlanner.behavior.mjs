@@ -1,0 +1,199 @@
+import assert from 'node:assert/strict'
+import {
+  ADVISORY_NOTICE,
+  applyAdvisoryPlan,
+  clearUnsavedDraft,
+  coursesForAcademicLevel,
+  plannerRowsForLevel,
+  rowsByAcademicLevel,
+  savePreview,
+  uniqueProgramCourseIds,
+} from '../../../frontend/src/features/dean-dashboard/utils/deanOfferingPlanner.js'
+
+function course(id, levelId, semesterId, code, name, offering = null) {
+  return {
+    program_course_id: id,
+    academic_level_id: levelId,
+    course: { course_code: code, course_name: name, credit_hours: 3 },
+    advisory_plan: semesterId == null
+      ? undefined
+      : {
+        recommended_semester_id: semesterId,
+        recommended_semester_name: semesterId === 1 ? 'الفصل الأول' : 'الفصل الثاني',
+      },
+    offering,
+  }
+}
+
+function businessAdministrationCurriculum() {
+  return [
+    {
+      academic_level_id: 1,
+      level_name: 'السنة الأولى',
+      courses: [
+        course(101, 1, 1, 'BA101', 'مبادئ الإدارة'),
+        course(102, 1, 2, 'BA102', 'مبادئ المحاسبة'),
+      ],
+    },
+    {
+      academic_level_id: 2,
+      level_name: 'السنة الثانية',
+      courses: [
+        course(201, 2, 1, 'BA201', 'مبادئ التسويق'),
+        course(202, 2, 2, 'FMF204', 'إدارة مالية'),
+      ],
+    },
+    {
+      academic_level_id: 3,
+      level_name: 'السنة الثالثة',
+      courses: [
+        course(301, 3, 1, 'BA301', 'إدارة الموارد البشرية'),
+        course(302, 3, 2, 'BA302', 'إدارة العمليات'),
+      ],
+    },
+    {
+      academic_level_id: 4,
+      level_name: 'السنة الرابعة',
+      courses: [
+        course(401, 4, 1, 'BA401', 'الإدارة الاستراتيجية'),
+        course(402, 4, 2, 'BA402', 'مشروع التخرج'),
+      ],
+    },
+  ]
+}
+
+const results = []
+
+function test(name, fn) {
+  try {
+    fn()
+    results.push({ name, ok: true })
+  } catch (error) {
+    results.push({ name, ok: false, error: error.message })
+  }
+}
+
+test('UX-PLAN-01 advisory click with matching rows produces non-empty draft', () => {
+  const levels = businessAdministrationCurriculum()
+  const result = applyAdvisoryPlan([], levels, 1)
+  assert.equal(result.kind, 'added')
+  assert.ok(result.matched > 0)
+  assert.ok(result.added > 0)
+  assert.deepEqual(result.draftIds, [101, 201, 301, 401])
+  assert.equal(result.notice, ADVISORY_NOTICE.added(4))
+  assert.equal(result.notice.includes('تمت إضافة 0'), false)
+})
+
+test('UX-PLAN-02 advisory click with 0 true matches shows NO success message', () => {
+  const levels = businessAdministrationCurriculum()
+  const result = applyAdvisoryPlan([], levels, 99)
+  assert.equal(result.kind, 'zero-match')
+  assert.equal(result.matched, 0)
+  assert.deepEqual(result.draftIds, [])
+  assert.equal(result.notice, ADVISORY_NOTICE.zeroMatch)
+  assert.equal(result.notice.startsWith('تمت إضافة'), false)
+})
+
+test('UX-PLAN-03 missing advisory metadata produces explicit warning, not silent empty state', () => {
+  const levels = [{
+    academic_level_id: 1,
+    level_name: 'السنة الأولى',
+    courses: [
+      course(101, 1, null, 'BA101', 'مبادئ الإدارة'),
+      course(102, 1, null, 'BA102', 'مبادئ المحاسبة'),
+    ],
+  }]
+  const result = applyAdvisoryPlan([], levels, 1)
+  assert.equal(result.kind, 'missing-metadata')
+  assert.deepEqual(result.draftIds, [])
+  assert.equal(result.notice, ADVISORY_NOTICE.missingMetadata)
+  assert.notEqual(result.notice, ADVISORY_NOTICE.zeroMatch)
+})
+
+test('UX-PLAN-04 matched rows are distributed under their correct academic levels', () => {
+  const levels = businessAdministrationCurriculum()
+  const result = applyAdvisoryPlan([], levels, 1)
+  const cards = rowsByAcademicLevel(levels, result.draftIds)
+  assert.equal(cards.length, 4)
+  assert.equal(cards[0].level_name, 'السنة الأولى')
+  assert.deepEqual(cards[0].rows.map(row => row.program_course_id), [101])
+  assert.deepEqual(cards[1].rows.map(row => row.program_course_id), [201])
+  assert.deepEqual(cards[2].rows.map(row => row.program_course_id), [301])
+  assert.deepEqual(cards[3].rows.map(row => row.program_course_id), [401])
+  assert.equal(cards[0].curriculumCount, 2)
+})
+
+test('UX-PLAN-05 duplicate click does not duplicate rows', () => {
+  const levels = businessAdministrationCurriculum()
+  const first = applyAdvisoryPlan([], levels, 1)
+  const second = applyAdvisoryPlan(first.draftIds, levels, 1)
+  assert.deepEqual(second.draftIds, first.draftIds)
+  assert.equal(second.draftIds.length, uniqueProgramCourseIds(second.draftIds).length)
+  assert.equal(second.added, 0)
+  assert.equal(second.alreadyPresent, 4)
+})
+
+test('UX-PLAN-06 manual off-semester course remains selectable', () => {
+  const levels = businessAdministrationCurriculum()
+  const year2 = coursesForAcademicLevel(levels, 2)
+  const finance = year2.find(row => row.course.course_code === 'FMF204')
+  assert.ok(finance)
+  assert.equal(finance.advisory_plan.recommended_semester_id, 2)
+  const afterAdvisory = applyAdvisoryPlan([], levels, 1)
+  assert.equal(afterAdvisory.draftIds.includes(202), false)
+  const withManual = uniqueProgramCourseIds([...afterAdvisory.draftIds, finance.program_course_id])
+  assert.ok(withManual.includes(202))
+  const visible = plannerRowsForLevel(levels[1], withManual).map(row => row.program_course_id)
+  assert.deepEqual(visible, [201, 202])
+})
+
+test('UX-PLAN-07 clear removes unsaved only', () => {
+  const levels = businessAdministrationCurriculum()
+  levels[0].courses[0].offering = { course_offering_id: 9001, status: 'closed' }
+  const result = applyAdvisoryPlan([], levels, 1)
+  assert.ok(result.draftIds.includes(101))
+  const cleared = clearUnsavedDraft(result.draftIds)
+  assert.deepEqual(cleared, [])
+  const visible = plannerRowsForLevel(levels[0], cleared).map(row => row.program_course_id)
+  assert.deepEqual(visible, [101])
+})
+
+test('UX-PLAN-08 existing offerings remain visible after clear', () => {
+  const levels = businessAdministrationCurriculum()
+  levels[3].courses[0].offering = { course_offering_id: 9401, status: 'open' }
+  const result = applyAdvisoryPlan([402], levels, 1)
+  const cleared = clearUnsavedDraft(result.draftIds)
+  const cards = rowsByAcademicLevel(levels, cleared)
+  assert.deepEqual(cards[3].rows.map(row => row.program_course_id), [401])
+  assert.equal(cards[3].rows[0].offering.status, 'open')
+  assert.equal(cards[0].rows.length, 0)
+})
+
+test('UX-PLAN-09 save uses selected ids including existing and unsaved', () => {
+  const levels = businessAdministrationCurriculum()
+  levels[0].courses[0].offering = { course_offering_id: 9001, status: 'closed' }
+  const result = applyAdvisoryPlan([202], levels, 1)
+  const preview = savePreview(levels, result.draftIds)
+  assert.ok(preview.programCourseIds.includes(101))
+  assert.ok(preview.programCourseIds.includes(202))
+  assert.equal(preview.existing, 1)
+  assert.ok(preview.creating >= 4)
+})
+
+test('UX-PLAN-10/11 preview does not mark existing offerings as creating', () => {
+  const levels = businessAdministrationCurriculum()
+  levels[1].courses[0].offering = { course_offering_id: 9201, status: 'open' }
+  const result = applyAdvisoryPlan([], levels, 1)
+  const preview = savePreview(levels, result.draftIds)
+  const existingRow = preview.programCourseIds.includes(201)
+  assert.equal(existingRow, true)
+  assert.equal(preview.existing, 1)
+  assert.equal(levels[1].courses[0].offering.status, 'open')
+})
+
+if (results.some(result => !result.ok)) {
+  console.error(JSON.stringify(results, null, 2))
+  process.exit(1)
+}
+
+console.log(JSON.stringify({ ok: true, count: results.length, results }))
