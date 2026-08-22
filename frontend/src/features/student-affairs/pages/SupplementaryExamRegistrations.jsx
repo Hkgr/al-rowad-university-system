@@ -3,9 +3,9 @@ import { apiRequest } from '../../../services/apiClient'
 
 export default function SupplementaryExamRegistrations(){
  const [periods,setPeriods]=useState([]),[period,setPeriod]=useState(''),[rows,setRows]=useState([]),[meta,setMeta]=useState(null),[query,setQuery]=useState(''),[students,setStudents]=useState([]),[student,setStudent]=useState(null),[eligible,setEligible]=useState([]),[message,setMessage]=useState('')
- useEffect(()=>{apiRequest('/v1/supplementary-exam-registration-periods').then(payload=>setPeriods(payload?.data??[]))},[])
+ useEffect(()=>{void apiRequest('/v1/supplementary-exam-registration-periods').then(payload=>setPeriods(payload?.data??[]))},[])
  const load=async()=>{if(!period)return;const payload=await apiRequest(`/v1/registration-office/supplementary-exam-periods/${period}/registrations`);setRows(payload?.data??[]);setMeta(payload)}
- useEffect(()=>{load()},[period]) // eslint-disable-line react-hooks/exhaustive-deps
+ useEffect(()=>{void load()},[period]) // eslint-disable-line react-hooks/exhaustive-deps
  const search=async()=>{const params=new URLSearchParams({search:query,per_page:'10'});const payload=await apiRequest(`/v1/students?${params.toString()}`);setStudents(payload?.data?.data??[])}
  const selectStudent=async s=>{setStudent(s);setStudents([]);const params=new URLSearchParams({supplementary_exam_period_id:String(period),student_id:String(s.student_id),eligible:'1'});const payload=await apiRequest(`/v1/supplementary-exam-eligibility?${params.toString()}`);setEligible(payload?.data??[])}
  const transition=async action=>{await apiRequest(`/v1/registration-office/supplementary-exam-periods/${period}/${action}-registration`,{method:'POST'});setMessage(action==='open'?'تم فتح التسجيل':'تم تثبيت القائمة النهائية');await load()}
