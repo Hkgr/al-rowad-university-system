@@ -108,4 +108,11 @@ SET @rbac_safe := @permission_collision=0 AND @permission_duplicates=0 AND @off_
 SET @target_schema_safe := @reg_state<>'CONFLICT' AND @event_state<>'CONFLICT';
 SET @overall := IF(@phase3_ready AND @period_lifecycle_width_ready AND @target_schema_safe AND @rbac_safe,'READY','BLOCKED');
 SET @blocker_code := IF(NOT @phase3_ready,'PHASE3_NOT_DEPLOYED',IF(NOT @period_lifecycle_width_ready,'PERIOD_LIFECYCLE_SCHEMA_TOO_NARROW',IF(NOT @target_schema_safe,'TARGET_SCHEMA_CONFLICT',IF(NOT @rbac_safe,'RBAC_CONFLICT',NULL))));
-SELECT 'OVERALL' AS report_section,@overall AS result,@blocker_code AS blocker_code,@phase3_ready AS phase3_ready,@period_lifecycle_width_ready AS period_lifecycle_width_ready,@reg_state AS registrations_state,@event_state AS events_state,@target_schema_safe AS target_schema_safe,@rbac_safe AS rbac_safe;
+-- OPERATOR REPORT: run from phpMyAdmin SQL tab so this resultset is visible.
+SELECT 'PHASE3_DEPENDENCY' AS report_section,IF(@phase3_ready,'PASS','FAIL') AS result,IF(@phase3_ready,'READY','PHASE3_NOT_DEPLOYED') AS detail,IF(@phase3_ready,'CONTINUE','STOP') AS next_action
+UNION ALL SELECT 'PERIOD_LIFECYCLE_WIDTH',IF(@period_lifecycle_width_ready,'PASS','FAIL'),IF(@period_lifecycle_width_ready,'VARCHAR >= 19','PERIOD_LIFECYCLE_SCHEMA_TOO_NARROW'),IF(@period_lifecycle_width_ready,'CONTINUE','STOP')
+UNION ALL SELECT 'REGISTRATIONS_TABLE',@reg_state,CASE @reg_state WHEN 'ABSENT' THEN 'SAFE_TO_CREATE' WHEN 'COMPATIBLE' THEN 'SAFE_TO_ADOPT' ELSE 'INCOMPATIBLE_EXISTING_SCHEMA' END,IF(@reg_state='CONFLICT','STOP','CONTINUE')
+UNION ALL SELECT 'REGISTRATION_EVENTS_TABLE',@event_state,CASE @event_state WHEN 'ABSENT' THEN 'SAFE_TO_CREATE' WHEN 'COMPATIBLE' THEN 'SAFE_TO_ADOPT' ELSE 'INCOMPATIBLE_EXISTING_SCHEMA' END,IF(@event_state='CONFLICT','STOP','CONTINUE')
+UNION ALL SELECT 'RBAC',IF(@rbac_safe,'PASS','FAIL'),IF(@rbac_safe,'SAFE','RBAC_CONFLICT'),IF(@rbac_safe,'CONTINUE','STOP')
+UNION ALL SELECT 'TARGET_SCHEMA',IF(@target_schema_safe,'PASS','FAIL'),IF(@target_schema_safe,'SAFE','TARGET_SCHEMA_CONFLICT'),IF(@target_schema_safe,'CONTINUE','STOP')
+UNION ALL SELECT 'OVERALL',@overall,COALESCE(@blocker_code,'NONE'),IF(@overall='READY','RUN 01_apply.sql','STOP - DO NOT RUN 01_apply.sql');
