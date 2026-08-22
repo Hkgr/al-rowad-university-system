@@ -248,7 +248,6 @@ class SupplementaryExamPeriodGovernanceContractTest extends TestCase
     {
         $root = dirname(__DIR__, 2);
         foreach ([
-            'app/Models/SupplementaryExamOffering.php',
             'app/Models/SupplementaryExamRegistration.php',
             'app/Services/SupplementaryExamEligibilityService.php',
             'app/Services/SupplementaryExamGradingService.php',

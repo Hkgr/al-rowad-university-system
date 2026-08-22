@@ -73,6 +73,7 @@ import DeanTeacherProfile  from '../features/dean-dashboard/pages/DeanTeacherPro
 import DeanCourses         from '../features/dean-dashboard/pages/DeanCourses'
 import DeanCourseOfferingProfile from '../features/dean-dashboard/pages/DeanCourseOfferingProfile'
 import DeanRegistrationOfferings from '../features/dean-dashboard/pages/DeanRegistrationOfferings'
+import DeanSupplementaryExams from '../features/dean-dashboard/pages/DeanSupplementaryExams'
 import DeanRegistrationRequests from '../features/dean-dashboard/pages/DeanRegistrationRequests'
 import DeanRegistrationRequestDetail from '../features/dean-dashboard/pages/DeanRegistrationRequestDetail'
 import DeanReports         from '../features/dean-dashboard/pages/DeanReports'
@@ -252,6 +253,7 @@ export default function App() {
           <Route path="/dean/registration-offerings" element={<DeanRegistrationOfferings />} />
           <Route path="/dean/registration-requests" element={<DeanRegistrationRequests />} />
           <Route path="/dean/registration-requests/:id" element={<DeanRegistrationRequestDetail />} />
+          <Route path="/dean/supplementary-exams" element={<DeanSupplementaryExams />} />
           <Route path="/dean/reports"       element={<DeanReports />} />
           <Route path="/dean/calendar"      element={<DeanCalendar />} />
         </Route>

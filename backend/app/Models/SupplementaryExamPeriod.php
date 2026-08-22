@@ -69,6 +69,15 @@ class SupplementaryExamPeriod extends Model
         return $this->hasMany(SupplementaryExamResult::class, 'supplementary_exam_period_id', 'supplementary_exam_period_id');
     }
 
+    public function supplementaryExamOfferings(): HasMany
+    {
+        return $this->hasMany(
+            SupplementaryExamOffering::class,
+            'supplementary_exam_period_id',
+            'supplementary_exam_period_id'
+        );
+    }
+
     public function isLegacy(): bool
     {
         return (string) $this->status === SupplementaryExamPeriodGovernance::STATUS_LEGACY

@@ -37,6 +37,8 @@ export const PERMISSIONS = Object.freeze({
   closureRequest: 'course_offerings.closure.request',
   supplementaryExamsPeriodsView: 'supplementary_exams.periods.view',
   supplementaryExamsPeriodsDecide: 'supplementary_exams.periods.decide',
+  supplementaryExamsOfferingsView: 'supplementary_exams.offerings.view',
+  supplementaryExamsOfferingsManage: 'supplementary_exams.offerings.manage',
 })
 
 export const ACCESS = Object.freeze({
