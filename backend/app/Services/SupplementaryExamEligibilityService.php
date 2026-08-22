@@ -13,6 +13,7 @@ use App\Models\SupplementaryExamTheoreticalDeferral;
 use App\Models\SupplementaryExamTheoreticalDeferralEvent;
 use App\Models\User;
 use App\Support\SupplementaryExamEligibilityGovernance;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class SupplementaryExamEligibilityService
@@ -73,7 +74,7 @@ class SupplementaryExamEligibilityService
         elseif (!in_array($registration->registrationStatus?->status_code,StudentCourseRegistration::HISTORICAL_ATTEMPT_STATUSES,true)) $reason='registration_not_academic_attempt';
         elseif ($this->deprived($registration)) $reason='student_deprived';
         elseif (!$parts->contains('component_type','theoretical')) $reason='theoretical_not_required';
-        elseif ($this->partMark($registration,$parts,'theoretical')!==null) $reason='theoretical_already_graded';
+        elseif ($this->hasAnyPartMark($registration,$parts,'theoretical')) $reason='theoretical_already_graded';
         else { $approval=GradePartApproval::query()->where('course_offering_id',$registration->course_offering_id)->where('component_type','theoretical')->first(); if($approval&&!in_array($approval->status,['draft','returned'],true)&&$approval->submitted_at?->lte($row->declared_at))$reason='theoretical_part_locked'; }
         if ($reason===null && $parts->contains('component_type','practical')) { $mark=$this->partMark($registration,$parts,'practical'); if($mark===null)$reason='practical_mark_missing'; elseif($mark<(float)$this->grades->defaultGradingPolicy()->minimum_practical_mark)$reason='practical_failed'; }
         return ['valid'=>$reason===null,'reason'=>$reason,'deferral'=>$row];
@@ -119,8 +120,17 @@ class SupplementaryExamEligibilityService
         if(isset($outcome['error']))$this->fail(...$outcome['error']);return $outcome['row'];
     }
 
-    private function declarationBlockers($o,$r,$parts,$approval): array {$b=[];if(!$o->isOpen())$b[]='supplementary_offering_not_open';if($o->period?->status!=='announced')$b[]='supplementary_period_not_announced';if($r->registrationStatus?->status_code!=='registered')$b[]='registration_not_academic_attempt';if(!$this->sourceAllowed($o,$r))$b[]='source_not_allowed';if(!$parts->contains('component_type','theoretical'))$b[]='theoretical_not_required';if($this->deprived($r))$b[]='student_deprived';if($this->partMark($r,$parts,'theoretical')!==null)$b[]='theoretical_already_graded';if($approval&&!in_array($approval->status,['draft','returned'],true))$b[]='theoretical_part_locked';if($r->studentCourseResult&&$this->grades->isOfficiallyVisibleAttempt($r))$b[]='deferral_too_late';if($parts->contains('component_type','practical')){$pa=GradePartApproval::query()->where('course_offering_id',$r->course_offering_id)->where('component_type','practical')->lockForUpdate()->first();if($pa?->status!=='approved')$b[]='practical_result_not_approved';$m=$this->partMark($r,$parts,'practical');if($m===null)$b[]='practical_mark_missing';elseif($m<(float)$this->grades->defaultGradingPolicy()->minimum_practical_mark)$b[]='practical_failed';}return array_values(array_unique($b));}
+    private function declarationBlockers($o,$r,$parts,$approval): array {$b=[];if(!$o->isOpen())$b[]='supplementary_offering_not_open';if($o->period?->status!=='announced')$b[]='supplementary_period_not_announced';if($r->registrationStatus?->status_code!=='registered')$b[]='registration_not_academic_attempt';if(!$this->sourceAllowed($o,$r))$b[]='source_not_allowed';if(!$parts->contains('component_type','theoretical'))$b[]='theoretical_not_required';if($this->deprived($r))$b[]='student_deprived';if($this->hasAnyPartMark($r,$parts,'theoretical'))$b[]='theoretical_already_graded';if($approval&&!in_array($approval->status,['draft','returned'],true))$b[]='theoretical_part_locked';if($r->studentCourseResult&&$this->grades->isOfficiallyVisibleAttempt($r))$b[]='deferral_too_late';if($parts->contains('component_type','practical')){$pa=GradePartApproval::query()->where('course_offering_id',$r->course_offering_id)->where('component_type','practical')->lockForUpdate()->first();if($pa?->status!=='approved')$b[]='practical_result_not_approved';$m=$this->partMark($r,$parts,'practical');if($m===null)$b[]='practical_mark_missing';elseif($m<(float)$this->grades->defaultGradingPolicy()->minimum_practical_mark)$b[]='practical_failed';}return array_values(array_unique($b));}
     private function parts($r,bool $lock=false){$q=GradeComponent::query()->where('course_offering_id',$r->course_offering_id)->where('is_required',true)->whereIn('component_type',['practical','theoretical']);return ($lock?$q->lockForUpdate():$q)->get();}
+    private function hasAnyPartMark(StudentCourseRegistration $registration, Collection $requiredParts, string $part): bool
+    {
+        $componentIds = $requiredParts->where('component_type', $part)->pluck('grade_component_id');
+        return $componentIds->isNotEmpty() && StudentGradeComponent::query()
+            ->where('student_course_registration_id', $registration->getKey())
+            ->whereIn('grade_component_id', $componentIds)
+            ->whereNotNull('mark')
+            ->exists();
+    }
     private function partMark($r,$parts,string $part):?float{$ids=$parts->where('component_type',$part)->pluck('grade_component_id');if($ids->isEmpty())return null;$marks=StudentGradeComponent::query()->where('student_course_registration_id',$r->getKey())->whereIn('grade_component_id',$ids)->get();if($marks->count()!==$ids->count()||$marks->contains(fn($m)=>$m->mark===null))return null;return(float)$marks->sum(fn($m)=>(float)$m->mark);}
     private function sourceAllowed($o,$r):bool{return SupplementaryExamOfferingSource::query()->where('supplementary_exam_offering_id',$o->getKey())->where('course_offering_id',$r->course_offering_id)->exists();}
     private function deprived($r):bool{return(bool)$r->studentCourseResult?->is_deprived||$r->studentCourseResult?->resultStatus?->status_code==='deprived'||$r->resultStatus?->status_code==='deprived';}

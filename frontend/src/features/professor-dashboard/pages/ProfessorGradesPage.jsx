@@ -4,7 +4,7 @@ import {
   FaExclamationTriangle, FaFlask, FaLock, FaPaperPlane, FaSave, FaSpinner, FaUserGraduate,
 } from 'react-icons/fa'
 import useMyOfferings from '../hooks/useMyOfferings'
-import { getGradePartsWorkflow, saveRegistrationGradePart, submitMyGradeParts } from '../lib/professorApi'
+import { getGradePartsWorkflow, saveRegistrationGradePart, submitGradePart } from '../lib/professorApi'
 import CourseRequirementBadges, { pickRequirementClassification } from '../../../components/academic/CourseRequirementBadges'
 
 const PARTS = {
@@ -24,7 +24,6 @@ const ERROR_MESSAGES = {
   grade_part_already_approved: 'هذا الجزء معتمد بالفعل.',
   grade_part_already_submitted: 'هذا الجزء مرسل بالفعل إلى هيئة الامتحانات.',
   grade_part_incomplete: 'علامات هذا الجزء غير مكتملة.',
-  grade_parts_must_be_submitted_together: 'يجب إرسال الجزأين النظري والعملي معًا في إجراء واحد.',
   deprived_student_grade_locked: 'لا يمكن تعديل علامة الطالب المحروم.',
   grade_entry_not_allowed: 'إدخال العلامة غير مسموح لهذا التسجيل.',
   not_primary_instructor: 'إدخال العلامات متاح حسب التكليف التدريسي فقط.',
@@ -34,7 +33,7 @@ const ERROR_MESSAGES = {
 }
 const CONFLICT_CODES = new Set([
   'grade_part_locked', 'grade_part_already_approved', 'grade_part_already_submitted',
-  'grade_part_not_required', 'unauthorized_grade_part', 'grade_parts_must_be_submitted_together',
+  'grade_part_not_required', 'unauthorized_grade_part',
 ])
 const HTTP_MESSAGES = {
   401: 'انتهت جلسة الدخول. يرجى تسجيل الدخول من جديد.',
@@ -113,14 +112,6 @@ export default function ProfessorGradesPage() {
   }, [componentDefinitions, dirtyKeys, rows, selectedPart])
   const official = workflow?.finalization?.official_result_available === true
   const ownsBoth = requiredAssignedParts.length === 2
-  const actionableAssignedParts = useMemo(
-    () => requiredAssignedParts.filter(part => ['draft', 'returned'].includes(workflow?.parts?.[part]?.status || 'draft')),
-    [requiredAssignedParts, workflow],
-  )
-  const unchangedAssignedParts = useMemo(
-    () => requiredAssignedParts.filter(part => ['submitted', 'approved'].includes(workflow?.parts?.[part]?.status)),
-    [requiredAssignedParts, workflow],
-  )
   const busy = saving || submitting || loading
 
   const loadWorkflow = useCallback(async (offeringId, { preserveDirty = false } = {}) => {
@@ -220,15 +211,14 @@ export default function ProfessorGradesPage() {
     const offeringId = selectedId
     setSubmitting(true); setNotice(null)
     try {
-      const result = await submitMyGradeParts(offeringId)
+      const part = selectedPartRef.current
+      await submitGradePart(offeringId, part)
       if (Number(selectedIdRef.current) !== Number(offeringId)) return
       setConfirmOpen(false)
       setRefreshRequired(true)
       const refreshed = await loadWorkflow(offeringId)
-      const submitted = result?.submitted_parts ?? []
-      const submittedLabel = submitted.map(part => PARTS[part]?.label).filter(Boolean).join(' وال')
       setNotice(refreshed
-        ? { type: 'success', text: submitted.length ? `تم إرسال علامات ${submittedLabel} إلى هيئة الامتحانات.` : 'لم تتغير حالة الأجزاء المرسلة سابقًا.' }
+        ? { type: 'success', text: `تم إرسال العلامة ${PARTS[part]?.label || ''} إلى هيئة الامتحانات.` }
         : { type: 'warning', text: 'تم الإرسال، لكن تعذّر تحديث الحالة. تبقى الحقول مقفلة حتى إعادة التحميل.' })
     } catch (error) {
       if (Number(selectedIdRef.current) !== Number(offeringId)) return
@@ -240,10 +230,14 @@ export default function ProfessorGradesPage() {
   const partMax = componentDefinitions.reduce((sum, component) => sum + Number(component.max_mark || 0), 0)
   const completeCount = rows.filter(row => rowComplete(row)).length
   const incompleteCount = rows.filter(row => !row.is_deprived && !rowComplete(row)).length
-  const actionableReady = actionableAssignedParts.length > 0 && actionableAssignedParts.every(part => workflow?.parts?.[part]?.can_submit === true)
+  const selectedPartCanSubmit = Boolean(selectedPart
+    && partState?.required === true
+    && partState?.assigned_to_me === true
+    && partState?.can_submit === true
+    && ['draft', 'returned'].includes(partState?.status || 'draft'))
   const canSave = !official && !refreshRequired && !loadError && !loading && partState?.can_edit === true && selectedDirtyKeys.length > 0 && !saving && !submitting
-  const canSubmit = !official && !refreshRequired && !loadError && !loading && actionableReady && dirtyKeys.length === 0 && !saving && !submitting
-  const submitLabel = submitButtonLabel(actionableAssignedParts, workflow?.parts)
+  const canSubmit = !official && !refreshRequired && !loadError && !loading && selectedPartCanSubmit && dirtyKeys.length === 0 && !saving && !submitting
+  const submitLabel = submitButtonLabel(selectedPart, workflow?.parts)
 
   return <>
     <div className="mb-5" dir="rtl">
@@ -319,8 +313,7 @@ export default function ProfessorGradesPage() {
     {confirmOpen && <ConfirmDialog
       offering={selectedOffering}
       workflow={workflow}
-      partsToSubmit={actionableAssignedParts}
-      unchangedParts={unchangedAssignedParts}
+      partToSubmit={selectedPart}
       studentCount={rows.length}
       submitting={submitting}
       onCancel={() => setConfirmOpen(false)}
@@ -489,51 +482,25 @@ function OfficialResults({ workflow, rows }) {
   </div>
 }
 
-function submitButtonLabel(actionableParts, parts) {
-  if (actionableParts.length === 2) return 'إرسال العلامات إلى هيئة الامتحانات'
-  const part = actionableParts[0]
-  if (!part) return 'إرسال العلامات إلى هيئة الامتحانات'
+function submitButtonLabel(part, parts) {
+  if (!part) return 'إرسال العلامة إلى هيئة الامتحانات'
   const name = PARTS[part]?.label || ''
   return parts?.[part]?.status === 'returned'
-    ? `إعادة إرسال علامات ${name} إلى هيئة الامتحانات`
-    : `إرسال علامات ${name} إلى هيئة الامتحانات`
+    ? `إعادة إرسال ${name} إلى هيئة الامتحانات`
+    : `إرسال ${name} إلى هيئة الامتحانات`
 }
 
-function unchangedPartNote(part, status) {
-  if (status === 'approved') return `${PARTS[part].label} معتمد مسبقاً ولن يتغير.`
-  if (status === 'submitted') return `${PARTS[part].label} مرسل مسبقاً وينتظر المراجعة.`
-  return null
-}
-
-function ConfirmDialog({ offering, workflow, partsToSubmit, unchangedParts, studentCount, submitting, onCancel, onConfirm }) {
+function ConfirmDialog({ offering, workflow, partToSubmit, studentCount, submitting, onCancel, onConfirm }) {
   const course = workflow?.course?.course_name || offering?.course?.course_name || '—'
-  const submitLabel = partsToSubmit.map(part => PARTS[part]?.label).join(' وال')
+  const partFull = PARTS[partToSubmit]?.full || 'العلامة'
   return <div className="fixed inset-0 z-50 bg-black/45 flex items-center justify-center p-4" dir="rtl" role="dialog" aria-modal="true">
     <div className="bg-white rounded-[18px] max-w-[580px] w-full p-6 shadow-2xl">
-      <div className="flex gap-3">
-        <FaExclamationTriangle className="text-amber-500 text-[22px] flex-shrink-0" />
-        <div>
-          <h3 className="font-black text-text-dark mb-2">تأكيد إرسال العلامات</h3>
-          <ul className="text-[13px] leading-7 text-text-dark list-disc pr-5">
-            <li>المقرر: {course}</li>
-            <li>سيتم إرسال: {submitLabel || '—'}</li>
-            <li>عدد الطلاب: {studentCount}</li>
-            {partsToSubmit.map(part => {
-              const complete = workflow?.parts?.[part]?.can_submit === true
-              return <li key={part}>{PARTS[part].label}: {complete ? 'مكتمل' : 'ناقص'}</li>
-            })}
-          </ul>
-          {unchangedParts.map(part => {
-            const note = unchangedPartNote(part, workflow?.parts?.[part]?.status)
-            return note ? <p key={part} className="mt-2 text-[12.5px] text-text-dark">{note}</p> : null
-          })}
-          <p className="mt-3 text-[12.5px] leading-7 text-amber-800 bg-amber-50 border border-amber-200 rounded-[10px] p-3">بعد الإرسال ستُقفل الأجزاء المرسلة حتى تعتمدها هيئة الامتحانات أو تعيدها للتصحيح.</p>
-        </div>
-      </div>
-      <div className="flex gap-3 mt-6">
-        <button onClick={onCancel} disabled={submitting} className="px-5 py-2.5 border border-primary/20 rounded-[10px] text-[13px] font-bold">إلغاء</button>
-        <button onClick={onConfirm} disabled={submitting} className="px-5 py-2.5 bg-amber-700 text-white rounded-[10px] text-[13px] font-bold inline-flex items-center gap-2">{submitting && <FaSpinner className="animate-spin" />}تأكيد الإرسال</button>
-      </div>
+      <div className="flex gap-3"><FaExclamationTriangle className="text-amber-500 text-[22px] flex-shrink-0" /><div>
+        <h3 className="font-black text-text-dark mb-2">تأكيد إرسال {partFull} إلى الامتحانات</h3>
+        <ul className="text-[13px] leading-7 text-text-dark list-disc pr-5"><li>المقرر: {course}</li><li>سيتم إرسال {partFull} فقط إلى الامتحانات</li><li>عدد الطلاب: {studentCount}</li></ul>
+        <p className="mt-3 text-[12.5px] leading-7 text-amber-800 bg-amber-50 border border-amber-200 rounded-[10px] p-3">بعد الإرسال ستُقفل {partFull} حتى تعتمدها هيئة الامتحانات أو تعيدها للتصحيح، ولن تتغير حالة الجزء الآخر.</p>
+      </div></div>
+      <div className="flex gap-3 mt-6"><button onClick={onCancel} disabled={submitting} className="px-5 py-2.5 border border-primary/20 rounded-[10px] text-[13px] font-bold">إلغاء</button><button onClick={onConfirm} disabled={submitting} className="px-5 py-2.5 bg-amber-700 text-white rounded-[10px] text-[13px] font-bold inline-flex items-center gap-2">{submitting && <FaSpinner className="animate-spin" />}تأكيد الإرسال</button></div>
     </div>
   </div>
 }
