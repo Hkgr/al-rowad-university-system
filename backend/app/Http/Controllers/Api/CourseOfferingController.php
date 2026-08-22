@@ -9,6 +9,7 @@ use App\Http\Resources\CourseOfferingResource;
 use App\Http\Resources\CourseOfferingStudentResource;
 use App\Http\Resources\StudentCourseRegistrationResource;
 use App\Models\CourseOffering;
+use App\Models\StudentCourseResult;
 use App\Services\AttendanceService;
 use App\Services\GradeService;
 use App\Services\AcademicAuthorizationService;
@@ -185,5 +186,24 @@ class CourseOfferingController extends ApiController
         $result = $service->applyDeprivation($id, request()->user()?->user_id);
 
         return $this->successResponse($result, 'Deprivation applied successfully');
+    }
+
+    public function announceResults(int $id, AcademicAuthorizationService $authorization): JsonResponse
+    {
+        $authorization->assertExaminationCommittee(request()->user());
+        CourseOffering::query()->findOrFail($id);
+
+        $newlyAnnouncedCount = StudentCourseResult::query()
+            ->whereNull('result_announced_at')
+            ->whereHas(
+                'studentCourseRegistration',
+                fn ($query) => $query->where('course_offering_id', $id)
+            )
+            ->update(['result_announced_at' => now()]);
+
+        return $this->successResponse([
+            'course_offering_id' => $id,
+            'newly_announced_count' => $newlyAnnouncedCount,
+        ]);
     }
 }

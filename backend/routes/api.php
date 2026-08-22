@@ -212,6 +212,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('students/{student}/cgpa', [StudentController::class, 'cgpa']);
     Route::get('students/{student}/attendance', [StudentController::class, 'attendance']);
     Route::get('students/{student}/absence-percentage', [StudentController::class, 'absencePercentage']);
+    Route::get('students/{student}/grade-appeals', [GradeAppealController::class, 'forStudent']);
 
     /*
     |--------------------------------------------------------------------------
@@ -261,6 +262,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::post('course-offerings/{id}/attendance-sessions', [CourseOfferingController::class, 'storeAttendanceSession']);
     Route::get('course-offerings/{id}/deprived-students', [CourseOfferingController::class, 'deprivedStudents']);
     Route::post('course-offerings/{id}/apply-deprivation', [CourseOfferingController::class, 'applyDeprivation']);
+    Route::post('course-offerings/{id}/announce-results', [CourseOfferingController::class, 'announceResults']);
     Route::get('course-offerings/by-program/{program_id}', [CourseOfferingController::class, 'byProgram']);
     Route::middleware(\App\Http\Middleware\RequireModuleAccess::class.':courses')->group(function (): void {
         Route::get('course-offerings/{courseOffering}/instructors', [CourseOfferingInstructorController::class, 'index']);
@@ -384,7 +386,12 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     |--------------------------------------------------------------------------
     */
 
-    Route::apiResource('grade-appeals', GradeAppealController::class);
+    // Status/decision changes must go through decide() below so the
+    // permission gate and review workflow cannot be bypassed via a raw update.
+    Route::apiResource('grade-appeals', GradeAppealController::class)
+        ->only(['index', 'show', 'store']);
+    Route::post('grade-appeals/{id}/decide', [GradeAppealController::class, 'decide'])
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':exams.manage');
     Route::apiResource('grade-approvals', GradeApprovalController::class);
     Route::apiResource('grade-audit-logs', GradeAuditLogController::class);
     Route::apiResource('grade-components', GradeComponentController::class);

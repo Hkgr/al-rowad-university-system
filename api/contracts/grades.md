@@ -60,6 +60,7 @@ A+ (≥98), A (≥95), A- (≥90), B+ (≥85), B (≥80), B- (≥75), C+ (≥70)
 |--------|-----|---------|
 | GET | `/api/v1/course-offerings/{id}/grade-sheet` | Full grade sheet |
 | GET | `/api/v1/course-offerings/{id}/results-summary` | Pass/fail statistics |
+| POST | `/api/v1/course-offerings/{id}/announce-results` | Officially announce results (sets `result_announced_at`) |
 
 ### Student grade views
 
@@ -68,6 +69,16 @@ A+ (≥98), A (≥95), A- (≥90), B+ (≥85), B (≥80), B- (≥75), C+ (≥70)
 | GET | `/api/v1/students/{student}/transcript` | Transcript |
 | GET | `/api/v1/students/{student}/gpa` | Term GPA |
 | GET | `/api/v1/students/{student}/cgpa` | CGPA |
+| GET | `/api/v1/students/{student}/grade-appeals` | Student's own grade appeals |
+
+### Grade appeals
+
+| Method | URL | Purpose |
+|--------|-----|---------|
+| GET | `/api/v1/grade-appeals` | List appeals (paginated) |
+| POST | `/api/v1/grade-appeals` | Submit a grade appeal (student) |
+| GET | `/api/v1/grade-appeals/{id}` | Show one appeal |
+| POST | `/api/v1/grade-appeals/{id}/decide` | Review/decide an appeal (examinations staff) |
 
 ### CRUD resources
 
@@ -76,13 +87,223 @@ A+ (≥98), A (≥95), A- (≥90), B+ (≥85), B (≥80), B- (≥75), C+ (≥70)
 | Grading policies | `/api/v1/grading-policies` |
 | Grade components | `/api/v1/grade-components` |
 | Student course results (read-only) | `/api/v1/student-course-results` |
-| Grade appeals | `/api/v1/grade-appeals` |
+| Grade appeals (index/show/store only) | `/api/v1/grade-appeals` |
 | Grade approvals | `/api/v1/grade-approvals` |
 | Grade audit logs | `/api/v1/grade-audit-logs` |
 | Supplementary exam periods | `/api/v1/supplementary-exam-periods` |
 | Supplementary exam results | `/api/v1/supplementary-exam-results` |
 
-Raw student results support only GET list/detail. Raw grade-component routes are not exposed. Grade writes must use `/registrations/{id}/grades`, which enforces role, section ownership, and registration eligibility.
+Raw student results support only GET list/detail. Raw grade-component routes are not exposed. Grade writes must use `/registrations/{id}/grades`, which enforces role, section ownership, and registration eligibility. Grade appeal status/decision changes must use `POST /grade-appeals/{id}/decide` (requires `exams.manage` permission); raw PUT/PATCH/DELETE on `/grade-appeals` is not exposed.
+
+---
+
+## POST /api/v1/course-offerings/{id}/announce-results
+
+**Purpose:** Officially announce course results for a course offering. Sets `result_announced_at = now()` on every `student_course_results` row linked to registrations under this offering where `result_announced_at` is currently `NULL`. Idempotent — calling again does not overwrite existing announcement dates.
+
+**Authorization:** Examination Committee (`exams.manage` permission and `exam_officer` or `super_admin` role), enforced in controller via `AcademicAuthorizationService::assertExaminationCommittee()`.
+
+**URL parameter:** `{id}` = `course_offering_id`
+
+**Request body:** None
+
+### Success response (200)
+
+```json
+{
+  "success": true,
+  "message": "Operation completed successfully",
+  "data": {
+    "course_offering_id": 5,
+    "newly_announced_count": 28
+  }
+}
+```
+
+### Error response (403)
+
+```json
+{
+  "success": false,
+  "message": "This operation requires Examination Committee permission.",
+  "error_code": "forbidden",
+  "errors": []
+}
+```
+
+### Frontend notes
+
+- Call once per offering when results are ready for student viewing and appeals.
+- `newly_announced_count` is `0` if all results were already announced.
+- Students cannot submit appeals until their registration's result has a non-null `result_announced_at`.
+
+---
+
+## POST /api/v1/grade-appeals
+
+**Purpose:** Submit exactly one grade appeal per course registration, within 7 days of the official result announcement.
+
+**Authorization:** Authenticated user must have a linked `student_id` on their user account. The registration must belong to that student.
+
+**Request body:**
+
+```json
+{
+  "student_course_registration_id": 10,
+  "appeal_reason": "I believe my practical exam mark was recorded incorrectly."
+}
+```
+
+### Validation rules
+
+| Field | Rules |
+|-------|-------|
+| `student_course_registration_id` | `required\|integer\|exists:student_course_registrations,student_course_registration_id` |
+| `appeal_reason` | `required\|string` |
+
+The following fields are **not accepted** from the client: `student_id`, `appeal_status_id`, `submitted_at`, `reviewed_by_user_id`, `review_notes`, `decision_date`, `created_at`, `updated_at`. The server sets `student_id` from the authenticated user, `appeal_status_id` to `submitted`, and `submitted_at` to `now()`.
+
+### Business rules (enforced after validation, in order)
+
+| Check | HTTP | Message |
+|-------|------|---------|
+| User has no linked `student_id`, or registration does not belong to that student | 403 | `You are not authorized to submit an appeal for this registration.` (or generic 403 if no linked student — checked in `authorize()` before validation) |
+| No result row, or `result_announced_at` is null | 422 | `لم يتم إعلان النتيجة رسمياً بعد لهذا المقرر.` |
+| Current time is more than 7 days after `result_announced_at` | 422 | `انتهت مهلة تقديم الاعتراض (أسبوع واحد من تاريخ إعلان النتيجة).` |
+| An appeal already exists for this `student_course_registration_id` (any status) | 422 | `تم تقديم اعتراض على هذا المقرر مسبقاً.` |
+
+### Success response (201)
+
+```json
+{
+  "success": true,
+  "message": "Operation completed successfully",
+  "data": {
+    "grade_appeal_id": 1,
+    "student_id": 3,
+    "student_course_registration_id": 10,
+    "appeal_reason": "I believe my practical exam mark was recorded incorrectly.",
+    "appeal_status_id": 1,
+    "submitted_at": "2026-08-22T10:00:00.000000Z",
+    "reviewed_by_user_id": null,
+    "review_notes": null,
+    "decision_date": null,
+    "created_at": "2026-08-22T10:00:00.000000Z",
+    "updated_at": "2026-08-22T10:00:00.000000Z"
+  }
+}
+```
+
+### Frontend notes
+
+- Only student accounts (users with linked `student_id`) can submit.
+- One appeal per course registration, ever — even if a previous appeal was rejected.
+- Appeal window starts when examinations staff call `announce-results` for the offering.
+
+---
+
+## POST /api/v1/grade-appeals/{id}/decide
+
+**Purpose:** Update appeal status and record an examinations review decision.
+
+**Authorization:** Requires `exams.manage` permission (route middleware).
+
+**URL parameter:** `{id}` = `grade_appeal_id`
+
+**Request body:**
+
+```json
+{
+  "status_code": "accepted",
+  "notes": "Mark corrected after re-checking the answer sheet."
+}
+```
+
+### Validation rules
+
+| Field | Rules |
+|-------|-------|
+| `status_code` | `required\|string\|in:under_review,accepted,rejected,closed` |
+| `notes` | `nullable\|string` |
+
+### Success response (200)
+
+```json
+{
+  "success": true,
+  "message": "Operation completed successfully",
+  "data": {
+    "grade_appeal_id": 1,
+    "student_id": 3,
+    "student_course_registration_id": 10,
+    "appeal_reason": "I believe my practical exam mark was recorded incorrectly.",
+    "appeal_status_id": 3,
+    "submitted_at": "2026-08-22T10:00:00.000000Z",
+    "reviewed_by_user_id": 2,
+    "review_notes": "Mark corrected after re-checking the answer sheet.",
+    "decision_date": "2026-08-25T00:00:00.000000Z",
+    "created_at": "2026-08-22T10:00:00.000000Z",
+    "updated_at": "2026-08-25T14:30:00.000000Z"
+  }
+}
+```
+
+### Error response (403)
+
+```json
+{
+  "success": false,
+  "message": "You do not have permission to perform this operation.",
+  "error_code": "forbidden",
+  "errors": []
+}
+```
+
+### Frontend notes
+
+- Use this endpoint exclusively for status changes — PUT/PATCH on `/grade-appeals/{id}` is not available.
+- `appeal_status_id` values map to `appeal_statuses.status_code`: `submitted`(1), `under_review`(2), `accepted`(3), `rejected`(4), `closed`(5).
+
+---
+
+## GET /api/v1/students/{student}/grade-appeals
+
+**Purpose:** List all grade appeals for one student (student self-view or authorized staff).
+
+**Authorization:** Student may view their own record; staff require an authorized academic role via `AcademicAuthorizationService::assertStudentRecord()`.
+
+**URL parameter:** `{student}` = `student_id`
+
+**Request body:** None
+
+### Success response (200)
+
+```json
+{
+  "success": true,
+  "message": "Operation completed successfully",
+  "data": [
+    {
+      "grade_appeal_id": 1,
+      "student_id": 3,
+      "student_course_registration_id": 10,
+      "appeal_reason": "I believe my practical exam mark was recorded incorrectly.",
+      "appeal_status_id": 2,
+      "submitted_at": "2026-08-22T10:00:00.000000Z",
+      "reviewed_by_user_id": null,
+      "review_notes": null,
+      "decision_date": null,
+      "created_at": "2026-08-22T10:00:00.000000Z",
+      "updated_at": "2026-08-22T10:00:00.000000Z"
+    }
+  ]
+}
+```
+
+### Frontend notes
+
+- Resolve `appeal_status_id` via `/api/v1/appeal-statuses` lookup for display labels.
+- Show `review_notes` when present so the student can read the decision rationale.
 
 ---
 
