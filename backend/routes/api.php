@@ -110,6 +110,7 @@ use App\Http\Controllers\Api\UserActivityLogController;
 use App\Http\Controllers\Api\UserRoleController;
 use App\Http\Controllers\Api\StudentSupplementaryExamController;
 use App\Http\Controllers\Api\SupplementaryExamEligibilityController;
+use App\Http\Controllers\Api\SupplementaryExamGradingController;
 
 /*
 |--------------------------------------------------------------------------
@@ -343,6 +344,11 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('course-offerings/by-semester', [CourseOfferingController::class, 'bySemester']);
     Route::get('course-offerings/{id}/grade-sheet', [CourseOfferingController::class, 'gradeSheet']);
     Route::get('professor/course-offerings', [ProfessorCourseOfferingController::class, 'index']);
+    Route::get('professor/supplementary-exams', [SupplementaryExamGradingController::class, 'professorIndex']);
+    Route::get('professor/supplementary-exams/{offering}/grades', [SupplementaryExamGradingController::class, 'professorGrades']);
+    Route::put('professor/supplementary-exams/{offering}/grades', [SupplementaryExamGradingController::class, 'save']);
+    Route::post('professor/supplementary-exams/{offering}/submit', [SupplementaryExamGradingController::class, 'submit']);
+    Route::post('professor/supplementary-exams/{offering}/resubmit', [SupplementaryExamGradingController::class, 'resubmit']);
     Route::get('course-offerings/{offering}/grade-parts-workflow', [GradePartWorkflowController::class, 'show']);
     Route::put('registrations/{registration}/grade-parts/{part}', [GradePartWorkflowController::class, 'update']);
     Route::post('course-offerings/{offering}/grade-parts/submit-my-parts', [GradePartWorkflowController::class, 'submitMyParts']);
@@ -504,6 +510,12 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
 
     Route::get('supplementary-exam-periods', [SupplementaryExamPeriodController::class, 'index']);
     Route::get('supplementary-exam-periods/{period}', [SupplementaryExamPeriodController::class, 'show']);
+    Route::get('exams/supplementary-grades', [SupplementaryExamGradingController::class, 'queue']);
+    Route::post('exams/supplementary-grades/{submission}/return', [SupplementaryExamGradingController::class, 'return']);
+    Route::post('exams/supplementary-grades/{submission}/approve', [SupplementaryExamGradingController::class, 'approve']);
+    Route::post('exams/supplementary-grades/{submission}/publish', [SupplementaryExamGradingController::class, 'publish']);
+    Route::post('exams/supplementary-offerings/{offering}/grader', [SupplementaryExamGradingController::class, 'assign']);
+    Route::post('exams/supplementary-periods/{period}/open-grading', [SupplementaryExamGradingController::class, 'open']);
 
     /*
     |--------------------------------------------------------------------------

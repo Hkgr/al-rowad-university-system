@@ -65,6 +65,8 @@ import professorNav             from '../features/professor-dashboard/nav'
 import ProfessorHome            from '../features/professor-dashboard/pages/ProfessorHome'
 import AttendanceDeprivationPage from '../features/professor-dashboard/pages/AttendanceDeprivationPage'
 import ProfessorGradesPage       from '../features/professor-dashboard/pages/ProfessorGradesPage'
+import ProfessorSupplementaryExams from '../features/professor-dashboard/pages/ProfessorSupplementaryExams'
+import SupplementaryGradesPage from '../features/exam-board/pages/SupplementaryGradesPage'
 
 // ── بوابة عميد الكلية (Dean Dashboard) ─────────────────────────────────────
 import DeanLayout          from '../features/dean-dashboard/DeanLayout'
@@ -189,6 +191,7 @@ export default function App() {
           <Route path="/exam-board/approvals"     element={protect(<ApprovalsPage />, { permissions: ['exams.manage'] })} />
           <Route path="/exam-board/deprivation"   element={protect(<DeprivationPage />, { permissions: ['exams.manage'] })} />
           <Route path="/exam-board/supplementary" element={protect(<ReadOnlyRegistrationList title="قائمة التسجيل في الامتحانات التكميلية" />, { permissions: ['exams.view'] })} />
+          <Route path="/exam-board/supplementary-grades" element={protect(<SupplementaryGradesPage />, { permissions: ['supplementary_exams.grades.review'] })} />
           <Route path="/exam-board/results"       element={protect(<ExamPlaceholder title="النتائج والتقارير" en="Results" />, { permissions: ['grades.view'] })} />
           <Route path="/exam-board/courses"             element={protect(<CoursesPage />, ACCESS.courseManagement)} />
           <Route path="/exam-board/course-offerings"    element={protect(<CourseOfferingsPage />, ACCESS.courseManagement)} />
@@ -238,6 +241,7 @@ export default function App() {
           <Route path="/professor"             element={<ProfessorHome />}             />
           <Route path="/professor/attendance"  element={<AttendanceDeprivationPage />}  />
           <Route path="/professor/grades" element={protect(<ProfessorGradesPage />, { employeeIdentity: true, permissions: ['grades.manage'] })} />
+          <Route path="/professor/supplementary-exams" element={protect(<ProfessorSupplementaryExams />, { employeeIdentity: true, permissions: ['supplementary_exams.grades.view'] })} />
         </Route>
 
         {/* ── بوابة عميد الكلية dashboard ── */}

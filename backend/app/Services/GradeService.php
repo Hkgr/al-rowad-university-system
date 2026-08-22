@@ -30,6 +30,20 @@ class GradeService
 
     private ?GradingPolicy $defaultPolicy = null;
 
+    /** Canonical limits used by isolated supplementary previews and validation. */
+    public function gradingPolicyLimits(): array
+    {
+        $policy = $this->defaultGradingPolicy();
+
+        return [
+            'theoretical_max_mark' => (float) $policy->theoretical_max_mark,
+            'practical_max_mark' => (float) $policy->practical_max_mark,
+            'minimum_theoretical_mark' => (float) $policy->minimum_theoretical_mark,
+            'minimum_practical_mark' => (float) $policy->minimum_practical_mark,
+            'minimum_final_mark' => (float) $policy->minimum_final_mark,
+        ];
+    }
+
     public function getGradeSheet(int $courseOfferingId, bool $includeInactive = false): array
     {
         $offering = CourseOffering::query()
