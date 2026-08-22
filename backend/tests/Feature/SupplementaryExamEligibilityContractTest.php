@@ -57,5 +57,7 @@ class SupplementaryExamEligibilityContractTest extends TestCase
         $this->assertStringNotContainsString("'theoretical_total' => 0", $workflow); // SUPP-ELIG-25/26
         $this->assertTrue(class_exists(SupplementaryExamEligibilityService::class));
         $this->assertTrue(class_exists(GradePartWorkflowService::class));
+        $this->assertStringNotContainsString('assertJointFirstSubmission', $workflow);
+        $this->assertStringContainsString('resolveInvalidCurrentDeferral', $workflow);
     }
 }

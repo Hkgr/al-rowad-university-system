@@ -180,13 +180,13 @@ class GradePartWorkflowService
             }
             CourseOfferingLock::lock((int) $locked->course_offering_id);
             $this->assertRequired((int) $locked->course_offering_id, $part);
-            if ($part === 'theoretical' && $this->supplementaryEligibility->activeValidDeferral($locked)) {
-                $this->fail('The regular theoretical examination was deferred.', 'supplementary_theoretical_deferred');
-            }
             $approval = $this->lockApproval((int) $locked->course_offering_id, $part);
             if ($approval && ! in_array($approval->status, ['draft', 'returned'], true)) $this->fail('This grade part is locked.', 'grade_part_locked');
-
             $components = GradeComponent::query()->where('course_offering_id', $locked->course_offering_id)->where('component_type', $part)->where('is_required', true)->lockForUpdate()->get()->keyBy('grade_component_id');
+            StudentGradeComponent::query()->where('student_course_registration_id', $locked->getKey())->whereIn('grade_component_id', $components->keys())->lockForUpdate()->get();
+            if ($part === 'theoretical' && $this->supplementaryEligibility->resolveInvalidCurrentDeferral($locked, (int) $user->user_id)) {
+                $this->fail('The regular theoretical examination was deferred.', 'supplementary_theoretical_deferred');
+            }
             $input = $data['components'] ?? null;
             if ($input === null) {
                 if ($components->count() !== 1) $this->fail('Component marks are required when a part has multiple components.', 'invalid_grade_part');
@@ -213,7 +213,6 @@ class GradePartWorkflowService
         $this->assignments->assertCanManageGradePart($user, $offeringId, $part);
         return DB::transaction(function () use ($offeringId, $part, $user): GradePartApproval {
             CourseOffering::query()->whereKey($offeringId)->lockForUpdate()->firstOrFail();
-            $this->assertJointFirstSubmission($user, $offeringId, [$part]);
 
             return $this->submitPartInTransaction($offeringId, $part, $user->user_id);
         });
@@ -363,34 +362,6 @@ class GradePartWorkflowService
     /**
      * @param  list<string>  $submitting
      */
-    private function assertJointFirstSubmission(User $user, int $offeringId, array $submitting): void
-    {
-        $assigned = $this->assignments->assignedGradeParts($user, $offeringId);
-        $required = $this->requiredParts($offeringId);
-        $assignedRequired = array_values(array_intersect($assigned, $required));
-        if (! (in_array('theoretical', $assignedRequired, true) && in_array('practical', $assignedRequired, true))) {
-            return;
-        }
-
-        $other = $submitting === ['theoretical'] ? 'practical' : ($submitting === ['practical'] ? 'theoretical' : null);
-        if ($other === null) {
-            return;
-        }
-
-        $statuses = GradePartApproval::query()
-            ->where('course_offering_id', $offeringId)
-            ->whereIn('component_type', ['theoretical', 'practical'])
-            ->pluck('status', 'component_type');
-        $thisStatus = $statuses->get($submitting[0], 'draft');
-        $otherStatus = $statuses->get($other, 'draft');
-        if (in_array($thisStatus, ['draft', 'returned'], true) && in_array($otherStatus, ['draft', 'returned'], true)) {
-            $this->fail(
-                'Both assigned grade parts must be submitted together.',
-                'grade_parts_must_be_submitted_together'
-            );
-        }
-    }
-
     /**
      * @param  list<string>  $parts
      */
@@ -475,7 +446,7 @@ class GradePartWorkflowService
         );
         foreach ($registrations as $registration) {
             // An explicit, currently valid deferral is provenance for an intentionally absent regular theory result.
-            if ($this->supplementaryEligibility->activeValidDeferral($registration)) continue;
+            if ($this->supplementaryEligibility->resolveInvalidCurrentDeferral($registration, $userId)) continue;
             $existing = StudentCourseResult::query()->where('student_course_registration_id', $registration->student_course_registration_id)->lockForUpdate()->first();
             $existingStatus = $existing === null ? $registration->resultStatus?->status_code
                 : ResultStatus::query()->whereKey($existing->result_status_id)->lockForUpdate()->value('status_code');
