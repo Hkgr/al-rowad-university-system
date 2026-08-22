@@ -1,0 +1,7 @@
+<?php
+namespace Tests\Feature;
+use Tests\TestCase;
+class ProfessorGradePartSubmissionFrontendContractTest extends TestCase
+{
+ public function test_professor_screen_submits_only_selected_ready_part():void{$api=file_get_contents(base_path('../frontend/src/features/professor-dashboard/lib/professorApi.js'));$page=file_get_contents(base_path('../frontend/src/features/professor-dashboard/pages/ProfessorGradesPage.jsx'));$this->assertStringContainsString('submitGradePart = (offeringId, part)',$api);$this->assertStringContainsString('/grade-parts/${part}/submit',$api);$this->assertStringContainsString('selectedPartCanSubmit',$page);$this->assertStringContainsString('partState?.can_submit === true',$page);$this->assertStringContainsString('await submitGradePart(offeringId, part)',$page);$this->assertStringNotContainsString('actionableAssignedParts.every',$page);$this->assertStringNotContainsString('يجب إرسال الجزأين النظري والعملي معًا',$page);$this->assertStringContainsString('ولن تتغير حالة الجزء الآخر',$page);$start=strpos($page,'function MarksTable(');$end=strpos($page,'function OfficialResults(',$start);$marksTable=substr($page,$start,$end-$start);$this->assertStringNotContainsString("selectedPart === 'theoretical'",$marksTable);$this->assertSame(2,substr_count($marksTable,"part === 'theoretical' && row.theoretical_deferred"));$this->assertStringContainsString('deferred ? <span className="text-amber-700 font-bold text-xs">مؤجل إلى التكميلي</span> : <input',$page);}
+}

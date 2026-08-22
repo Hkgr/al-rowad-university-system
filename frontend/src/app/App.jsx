@@ -27,6 +27,7 @@ import StudentAttendance  from '../features/student-dashboard/pages/StudentAtten
 import StudentRegistration from '../features/student-dashboard/pages/StudentRegistration'
 import StudentCalendar from '../features/student-dashboard/pages/StudentCalendar'
 import StudentRequirements from '../features/student-dashboard/pages/StudentRequirements'
+import StudentSupplementaryExams from '../features/student-dashboard/pages/StudentSupplementaryExams'
 
 // ── الموارد البشرية (HR) ────────────────────────────────────────────────────
 import hrNav                from '../features/hr-dashboard/nav'
@@ -158,6 +159,7 @@ export default function App() {
           <Route path="/student/registration" element={<StudentRegistration />} />
           <Route path="/student/requirements" element={<StudentRequirements />} />
           <Route path="/student/calendar" element={<StudentCalendar />} />
+          <Route path="/student/supplementary-exams" element={<StudentSupplementaryExams />} />
         </Route>
 
         {/* ── هيئة الامتحانات dashboard ── */}

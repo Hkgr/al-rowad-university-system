@@ -40,9 +40,10 @@ const saveRegistrationGradePart = (registrationId, part, payload) => apiRequest(
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(payload),
 })
+const submitGradePart = (offeringId, part) => apiRequest(`/course-offerings/${offeringId}/grade-parts/${part}/submit`, { method: 'POST' })
 const submitMyGradeParts = offeringId => apiRequest(`/course-offerings/${offeringId}/grade-parts/submit-my-parts`, { method: 'POST' })
 
 export {
   API, authHeaders, ProfessorApiError, getMyCourseOfferings,
-  getGradePartsWorkflow, saveRegistrationGradePart, submitMyGradeParts,
+  getGradePartsWorkflow, saveRegistrationGradePart, submitGradePart, submitMyGradeParts,
 }

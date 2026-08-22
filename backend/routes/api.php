@@ -106,6 +106,8 @@ use App\Http\Controllers\Api\VicePresidencyCourseOfferingExceptionController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\UserActivityLogController;
 use App\Http\Controllers\Api\UserRoleController;
+use App\Http\Controllers\Api\StudentSupplementaryExamController;
+use App\Http\Controllers\Api\SupplementaryExamEligibilityController;
 
 /*
 |--------------------------------------------------------------------------
@@ -161,6 +163,11 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
 */
 
 Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::class])->prefix('v1')->group(function (): void {
+    Route::get('student/supplementary-exams/eligibility', [StudentSupplementaryExamController::class, 'eligibility']);
+    Route::get('student/supplementary-exams/deferrals', [StudentSupplementaryExamController::class, 'deferrals']);
+    Route::post('student/supplementary-exams/deferrals', [StudentSupplementaryExamController::class, 'declare']);
+    Route::post('student/supplementary-exams/deferrals/{deferral}/cancel', [StudentSupplementaryExamController::class, 'cancel']);
+    Route::get('supplementary-exam-eligibility', [SupplementaryExamEligibilityController::class, 'index']);
     Route::put('users/{user}/identity', [UserController::class, 'linkIdentity'])
         ->middleware(\App\Http\Middleware\RequirePermission::class.':users_permissions.manage');
 

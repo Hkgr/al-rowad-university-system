@@ -1,0 +1,15 @@
+import { useEffect, useState } from 'react'
+import apiClient from '../../../services/apiClient'
+
+const labels = {
+  failed_theoretical: 'مؤهل — راسب في المحاولة النظامية', voluntarily_deferred_theoretical: 'مؤهل — مؤجل نظرياً إلى التكميلي',
+  practical_failed: 'غير مؤهل — العملي غير ناجح', regular_result_passed: 'غير مؤهل — النتيجة النظامية ناجحة', regular_result_not_official: 'بانتظار اعتماد النتيجة النظامية',
+}
+export default function StudentSupplementaryExams(){
+ const [rows,setRows]=useState([]),[error,setError]=useState(''),[busy,setBusy]=useState(false)
+ const load=()=>apiClient.get('/v1/student/supplementary-exams/eligibility').then(r=>setRows(r.data?.data??r.data??[])).catch(()=>setError('تعذر تحميل الأهلية'))
+ useEffect(load,[])
+ async function declare(row){if(!window.confirm('لن تدخل علامة نظري نظامية لهذه المادة. علامة العملي المعتمدة ستبقى محفوظة. هذا ليس تسجيلًا نهائيًا في التكميلي؛ التسجيل الرسمي سيتم في المرحلة التالية.'))return;setBusy(true);try{await apiClient.post('/v1/student/supplementary-exams/deferrals',{supplementary_exam_offering_id:row.supplementary_offering.supplementary_exam_offering_id,student_course_registration_id:row.original_registration.student_course_registration_id});load()}finally{setBusy(false)}}
+ async function cancel(row){setBusy(true);try{await apiClient.post(`/v1/student/supplementary-exams/deferrals/${row.eligibility.active_deferral_id}/cancel`,{});load()}finally{setBusy(false)}}
+ return <main dir="rtl" className="p-6"><h1 className="text-2xl font-bold mb-5">الامتحانات التكميلية</h1>{error&&<p className="text-red-600">{error}</p>}<div className="overflow-auto bg-white rounded-xl border"><table className="w-full text-right"><thead><tr className="bg-gray-50"><th className="p-3">الدورة التكميلية</th><th>المادة</th><th>الفصل الأصلي</th><th>حالة الأهلية</th><th></th></tr></thead><tbody>{rows.map(row=>{const e=row.eligibility;const blocker=e.blockers?.[0];const active=e.eligibility_reason==='voluntarily_deferred_theoretical';const canDeclare=!e.active_deferral_id&&blocker==='regular_result_not_official'&&!e.blockers.some(x=>['practical_failed','practical_mark_missing','practical_result_not_approved','theoretical_already_graded','theoretical_part_locked'].includes(x));return <tr className="border-t" key={`${row.supplementary_offering.supplementary_exam_offering_id}-${e.original_registration_id}`}><td className="p-3">{row.period?.period_name}</td><td>{row.course?.course_name}</td><td>{row.original_registration?.course_offering?.semester?.semester_name??'—'}</td><td>{labels[e.eligibility_reason]||labels[blocker]||'غير مؤهل'}{e.eligibility_reason==='failed_theoretical'&&<small className="block">مؤهل للتسجيل عند فتح التسجيل</small>}</td><td>{active?<><span className="font-bold">مؤجل إلى الدورة التكميلية</span><button disabled={busy} onClick={()=>cancel(row)} className="mr-3 text-red-700">إلغاء التأجيل</button></>:canDeclare&&<button disabled={busy} onClick={()=>declare(row)} className="bg-primary text-white rounded p-2">تأجيل النظري إلى التكميلي</button>}</td></tr>})}</tbody></table></div></main>
+}

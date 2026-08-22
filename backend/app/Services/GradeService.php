@@ -1813,7 +1813,7 @@ class GradeService
         return (int) $statusId;
     }
 
-    private function defaultGradingPolicy(): GradingPolicy
+    public function defaultGradingPolicy(): GradingPolicy
     {
         if ($this->defaultPolicy === null) {
             $this->defaultPolicy = GradingPolicy::query()
