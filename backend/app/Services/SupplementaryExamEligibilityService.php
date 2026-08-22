@@ -87,6 +87,7 @@ class SupplementaryExamEligibilityService
 
     public function resolveInvalidCurrentDeferral(StudentCourseRegistration $registration, int $actorUserId): ?SupplementaryExamTheoreticalDeferral
     {
+        if (! SupplementaryExamEligibilityGovernance::schemaReady()) return null;
         $row=SupplementaryExamTheoreticalDeferral::query()->with('offering.period')->where('student_course_registration_id',$registration->getKey())->where('status','declared')->where('current_slot',1)->lockForUpdate()->first();
         if(!$row)return null;$state=$this->evaluateCurrentDeferralValidity($registration,$row);if($state['valid'])return $row;
         $row->update(['status'=>'superseded','current_slot'=>null,'superseded_at'=>now(),'supersede_reason'=>$state['reason']]);$this->event($row,'superseded','declared','superseded',$actorUserId,$state['reason']);return null;
@@ -94,7 +95,7 @@ class SupplementaryExamEligibilityService
 
     public function declare(User $user,int $offeringId,int $registrationId): SupplementaryExamTheoreticalDeferral
     {
-        $this->assertStudent($user);
+        $this->assertStudent($user);$this->assertSchemaReady();
         $outcome=DB::transaction(function()use($user,$offeringId,$registrationId){
             $r=StudentCourseRegistration::query()->with(['registrationStatus','resultStatus','studentCourseResult.resultStatus','courseOffering'])->lockForUpdate()->findOrFail($registrationId);
             if((int)$r->student_id!==(int)$user->student_id)return ['error'=>['The registration is not owned by this student.','deferral_not_owned',403]];
@@ -111,7 +112,7 @@ class SupplementaryExamEligibilityService
 
     public function cancel(User $user,SupplementaryExamTheoreticalDeferral $deferral,?string $reason): SupplementaryExamTheoreticalDeferral
     {
-        $this->assertStudent($user);$outcome=DB::transaction(function()use($user,$deferral,$reason){$row=SupplementaryExamTheoreticalDeferral::query()->with('offering.period')->lockForUpdate()->findOrFail($deferral->getKey());
+        $this->assertStudent($user);$this->assertSchemaReady();$outcome=DB::transaction(function()use($user,$deferral,$reason){$row=SupplementaryExamTheoreticalDeferral::query()->with('offering.period')->lockForUpdate()->findOrFail($deferral->getKey());
             $r=StudentCourseRegistration::query()->with(['registrationStatus','resultStatus','studentCourseResult.resultStatus'])->lockForUpdate()->findOrFail($row->student_course_registration_id);if((int)$r->student_id!==(int)$user->student_id)return ['error'=>['Not owned.','deferral_not_owned',403]];
             CourseOfferingLock::lock((int)$r->course_offering_id);$state=$this->evaluateCurrentDeferralValidity($r,$row);if(!$state['valid']){$row->update(['status'=>'superseded','current_slot'=>null,'superseded_at'=>now(),'supersede_reason'=>$state['reason']]);$this->event($row,'superseded','declared','superseded',(int)$user->user_id,$state['reason']);return ['error'=>['The declaration became invalid.','deferral_cannot_cancel',409]];}
             $approval=GradePartApproval::query()->where('course_offering_id',$r->course_offering_id)->where('component_type','theoretical')->lockForUpdate()->first();$hasMark=StudentGradeComponent::query()->where('student_course_registration_id',$r->getKey())->whereHas('gradeComponent',fn($q)=>$q->where('component_type','theoretical'))->whereNotNull('mark')->lockForUpdate()->exists();
@@ -134,6 +135,12 @@ class SupplementaryExamEligibilityService
     private function partMark($r,$parts,string $part):?float{$ids=$parts->where('component_type',$part)->pluck('grade_component_id');if($ids->isEmpty())return null;$marks=StudentGradeComponent::query()->where('student_course_registration_id',$r->getKey())->whereIn('grade_component_id',$ids)->get();if($marks->count()!==$ids->count()||$marks->contains(fn($m)=>$m->mark===null))return null;return(float)$marks->sum(fn($m)=>(float)$m->mark);}
     private function sourceAllowed($o,$r):bool{return SupplementaryExamOfferingSource::query()->where('supplementary_exam_offering_id',$o->getKey())->where('course_offering_id',$r->course_offering_id)->exists();}
     private function deprived($r):bool{return(bool)$r->studentCourseResult?->is_deprived||$r->studentCourseResult?->resultStatus?->status_code==='deprived'||$r->resultStatus?->status_code==='deprived';}
+    public function assertSchemaReady(): void
+    {
+        if (! SupplementaryExamEligibilityGovernance::schemaReady()) {
+            $this->fail('Supplementary exam eligibility is not available.', 'supplementary_exam_eligibility_schema_not_ready', 503);
+        }
+    }
     private function assertStudent($u):void{if(!$u->isStudent()||!$u->effectivePermissions()->contains(SupplementaryExamEligibilityGovernance::PERMISSION_SELF))$this->fail('Student self-service permission required.','deferral_not_owned',403);}
     private function event($d,$type,$from,$to,$actor,$notes):void{SupplementaryExamTheoreticalDeferralEvent::query()->create(['supplementary_exam_theoretical_deferral_id'=>$d->getKey(),'event_type'=>$type,'from_status'=>$from,'to_status'=>$to,'actor_user_id'=>$actor,'notes'=>$notes,'created_at'=>now()]);}
     private function fail(string $message,string $code,int $status=409):never{throw new GradeException($message,status:$status,errorCode:$code);}
