@@ -20,6 +20,7 @@ class SupplementaryExamEligibilityPartialTheoryBehaviorTest extends TestCase
  public function test_no_theoretical_component_mark_keeps_declaration_open():void{$this->assertNotContains('theoretical_already_graded',$this->blockers());}
  public function test_first_of_two_theoretical_marks_blocks_declaration():void{$this->mark(1,15);$this->assertContains('theoretical_already_graded',$this->blockers());}
  public function test_second_of_two_theoretical_marks_blocks_declaration():void{$this->mark(2,15);$this->assertContains('theoretical_already_graded',$this->blockers());}
+ public function test_new_deferral_is_blocked_after_registration_opens():void{$this->offering->period->status='registration_open';$this->assertContains('supplementary_period_not_announced',$this->blockers());}
  private function mark(int$id,float$mark):void{StudentGradeComponent::query()->create(['student_course_registration_id'=>30,'grade_component_id'=>$id,'mark'=>$mark]);}
  private function blockers():array{$method=new ReflectionMethod($this->service,'declarationBlockers');return $method->invoke($this->service,$this->offering,$this->registration,$this->parts,null);}
 }

@@ -6,6 +6,7 @@ use App\Support\SupplementaryExamPeriodGovernance;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 class SupplementaryExamPeriod extends Model
 {
@@ -76,6 +77,11 @@ class SupplementaryExamPeriod extends Model
             'supplementary_exam_period_id',
             'supplementary_exam_period_id'
         );
+    }
+
+    public function registrations(): HasManyThrough
+    {
+        return $this->hasManyThrough(SupplementaryExamRegistration::class, SupplementaryExamOffering::class, 'supplementary_exam_period_id', 'supplementary_exam_offering_id');
     }
 
     public function isLegacy(): bool

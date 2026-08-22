@@ -23,6 +23,28 @@ class DataScopeService
             ->values()->all();
     }
 
+    /** Mutation-safe checks intentionally never honor the super-admin read bypass. */
+    public function hasActualUniversityScope(User $user): bool
+    {
+        return collect($this->scopes($user))->contains(fn (array $scope) => $scope['type'] === 'university');
+    }
+
+    public function canMutateStudent(User $user, Student $student): bool
+    {
+        return $this->canMutateProgram($user, (int) $student->academic_program_id);
+    }
+
+    public function canMutateProgram(User $user, AcademicProgram|int $program): bool
+    {
+        $program = $program instanceof AcademicProgram ? $program->loadMissing('department') : AcademicProgram::query()->with('department')->find($program);
+        if (! $program) return false;
+        $scopes = collect($this->scopes($user));
+        return $scopes->contains(fn (array $s) => $s['type'] === 'university')
+            || $scopes->contains(fn (array $s) => $s['type'] === 'program' && $s['id'] === (int) $program->academic_program_id)
+            || $scopes->contains(fn (array $s) => $s['type'] === 'department' && $s['id'] === (int) $program->department_id)
+            || $scopes->contains(fn (array $s) => $s['type'] === 'college' && $s['id'] === (int) $program->department?->college_id);
+    }
+
     public function scopeStudents(Builder $query, User $user): Builder
     {
         if ($this->bypassesScope($user)) return $query;

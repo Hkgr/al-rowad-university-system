@@ -4,6 +4,7 @@ import { FaCheckCircle, FaLock, FaPlus, FaRedo, FaUnlock } from 'react-icons/fa'
 import { apiRequest } from '../../../services/apiClient'
 import { getIdentity } from '../../auth/auth'
 import DeanConfirmDialog from '../components/DeanConfirmDialog'
+import ReadOnlyRegistrationList from '../../supplementary-exams/ReadOnlyRegistrationList'
 import {
   canManageSupplementaryExamOfferings,
   canViewSupplementaryExamOfferings,
@@ -186,6 +187,8 @@ export default function DeanSupplementaryExams() {
         <h1 className="text-[20px] font-black text-text-dark mb-1">الامتحانات التكميلية</h1>
         <p className="text-[13px] text-text-light font-semibold">طرح المواد التي قُدّمت فعليًا في الفصل الأصلي لهذه الدورة التكميلية.</p>
       </header>
+
+      <ReadOnlyRegistrationList title="قائمة التسجيل ضمن نطاق الكلية" />
 
       <section className="bg-white border border-primary/12 rounded-[18px] p-5 shadow-[0_2px_12px_rgba(26,46,16,0.05)]">
         <div className="grid grid-cols-4 max-[1100px]:grid-cols-2 max-[560px]:grid-cols-1 gap-3">

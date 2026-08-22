@@ -1,5 +1,5 @@
 import {
-  FaHome, FaGraduationCap, FaUserPlus, FaArchive, FaUsers, FaClipboardCheck,
+  FaHome, FaGraduationCap, FaUserPlus, FaArchive, FaUsers, FaClipboardCheck, FaBookOpen,
 } from 'react-icons/fa'
 
 const studentAffairsNav = [
@@ -20,7 +20,8 @@ const studentAffairsNav = [
   {
     label: 'التسجيل',
     items: [
-      { to: '/student-affairs/approved-registration-requests', Icon: FaClipboardCheck, ar: 'طلبات التسجيل المعتمدة', en: 'Approved requests', end: true, permissions: ['registration.view'] },
+      { to: '/student-affairs/supplementary-exams', Icon: FaBookOpen, ar: 'التسجيل التكميلي', en: 'Supplementary registration', end: true, permissions: ['supplementary_exams.registrations.view'] },
+      { to: '/student-affairs/approved-registration-requests', Icon: FaClipboardCheck, FaBookOpen, ar: 'طلبات التسجيل المعتمدة', en: 'Approved requests', end: true, permissions: ['registration.view'] },
     ],
   },
   {

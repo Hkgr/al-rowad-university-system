@@ -17,6 +17,7 @@ import EditStudentPage      from '../features/student-affairs/pages/EditStudentP
 import StudentProfilePage   from '../features/student-affairs/pages/StudentProfilePage'
 import ArchivedStudentsPage from '../features/student-affairs/pages/ArchivedStudentsPage'
 import GraduatesPage       from '../features/student-affairs/pages/GraduatesPage'
+import SupplementaryExamRegistrations from '../features/student-affairs/pages/SupplementaryExamRegistrations'
 
 // ── بوابة الطالب (Student Dashboard) ────────────────────────────────────────
 import studentNav        from '../features/student-dashboard/nav'
@@ -56,6 +57,7 @@ import CourseRegistrationPage from '../features/exam-board/pages/CourseRegistrat
 import CourseOfferingsPage    from '../features/exam-board/pages/CourseOfferingsPage'
 import CourseTablePage        from '../features/exam-board/pages/CourseTablePage'
 import ExamPlaceholder        from '../features/exam-board/pages/ExamPlaceholder'
+import ReadOnlyRegistrationList from '../features/supplementary-exams/ReadOnlyRegistrationList'
 import ApprovedRegistrationRequestsPage from '../features/registration-requests/pages/ApprovedRegistrationRequestsPage'
 
 // ── بوابة الأستاذ (Professor Dashboard) ─────────────────────────────────────
@@ -141,6 +143,7 @@ export default function App() {
           <Route path="/student-affairs/graduates"         element={<GraduatesPage />}         />
           <Route path="/student-affairs/students/:id"      element={<StudentProfilePage />}    />
           <Route path="/student-affairs/students/:id/edit" element={protect(<EditStudentPage />, { permissions: ['students.manage'] })} />
+          <Route path="/student-affairs/supplementary-exams" element={protect(<SupplementaryExamRegistrations />, { permissions: ['supplementary_exams.registrations.view'] })} />
           <Route path="/student-affairs/approved-registration-requests" element={protect(<ApprovedRegistrationRequestsPage />, { permissions: ['registration.view'] })} />
         </Route>
 
@@ -185,7 +188,7 @@ export default function App() {
           <Route path="/exam-board/grade-sheet"   element={protect(<GradeSheetPage />, { permissions: ['grades.view'] })} />
           <Route path="/exam-board/approvals"     element={protect(<ApprovalsPage />, { permissions: ['exams.manage'] })} />
           <Route path="/exam-board/deprivation"   element={protect(<DeprivationPage />, { permissions: ['exams.manage'] })} />
-          <Route path="/exam-board/supplementary" element={protect(<ExamPlaceholder title="الامتحانات التكميلية" en="Supplementary Exams" />, { permissions: ['exams.view'] })} />
+          <Route path="/exam-board/supplementary" element={protect(<ReadOnlyRegistrationList title="قائمة التسجيل في الامتحانات التكميلية" />, { permissions: ['exams.view'] })} />
           <Route path="/exam-board/results"       element={protect(<ExamPlaceholder title="النتائج والتقارير" en="Results" />, { permissions: ['grades.view'] })} />
           <Route path="/exam-board/courses"             element={protect(<CoursesPage />, ACCESS.courseManagement)} />
           <Route path="/exam-board/course-offerings"    element={protect(<CourseOfferingsPage />, ACCESS.courseManagement)} />
