@@ -3,7 +3,7 @@ import apiClient from '../../../services/apiClient'
 
 export default function SupplementaryExamRegistrations(){
  const [periods,setPeriods]=useState([]),[period,setPeriod]=useState(''),[rows,setRows]=useState([]),[meta,setMeta]=useState(null),[query,setQuery]=useState(''),[students,setStudents]=useState([]),[student,setStudent]=useState(null),[eligible,setEligible]=useState([]),[message,setMessage]=useState('')
- useEffect(()=>{apiClient.get('/v1/supplementary-exam-periods').then(r=>setPeriods(r.data?.data??[]))},[])
+ useEffect(()=>{apiClient.get('/v1/supplementary-exam-registration-periods').then(r=>setPeriods(r.data?.data??[]))},[])
  const load=async()=>{if(!period)return;const r=await apiClient.get(`/v1/registration-office/supplementary-exam-periods/${period}/registrations`);setRows(r.data?.data??[]);setMeta(r.data)}
  useEffect(()=>{load()},[period]) // eslint-disable-line react-hooks/exhaustive-deps
  const search=async()=>{const r=await apiClient.get('/v1/students',{params:{search:query,per_page:10}});setStudents(r.data?.data??[])}

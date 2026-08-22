@@ -174,6 +174,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::post('student/supplementary-exams/registrations', [StudentSupplementaryExamRegistrationController::class, 'store']);
     Route::post('student/supplementary-exams/registrations/{registration}/cancel', [StudentSupplementaryExamRegistrationController::class, 'cancel']);
     Route::post('registration-office/supplementary-exam-periods/{period}/open-registration', [SupplementaryExamRegistrationOfficeController::class, 'open']);
+    Route::get('supplementary-exam-registration-periods', [SupplementaryExamRegistrationOfficeController::class, 'periods']);
     Route::post('registration-office/supplementary-exam-periods/{period}/close-registration', [SupplementaryExamRegistrationOfficeController::class, 'close']);
     Route::get('registration-office/supplementary-exam-periods/{period}/registrations', [SupplementaryExamRegistrationOfficeController::class, 'index']);
     Route::get('supplementary-exam-periods/{period}/registrations', [SupplementaryExamRegistrationOfficeController::class, 'index']);
