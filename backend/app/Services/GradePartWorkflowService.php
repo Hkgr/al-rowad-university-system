@@ -27,6 +27,7 @@ class GradePartWorkflowService
         private readonly DataScopeService $dataScope,
         private readonly GradeService $grades,
         private readonly ProfessorGradeAssignmentService $assignments,
+        private readonly SupplementaryExamEligibilityService $supplementaryEligibility,
     ) {}
 
     public function workflow(int $offeringId, ?User $actor = null): array
@@ -131,10 +132,15 @@ class GradePartWorkflowService
                 })->all();
 
                 $result = $registration->studentCourseResult;
+                $deferral = $this->supplementaryEligibility->activeValidDeferral($registration);
 
                 return [
                     'registration_id' => $registration->student_course_registration_id,
                     'registration_status' => $registration->registrationStatus?->status_code,
+                    'theoretical_deferred' => $deferral !== null,
+                    'supplementary_exam_offering_id' => $deferral?->supplementary_exam_offering_id,
+                    'supplementary_exam_period_id' => $deferral?->offering?->supplementary_exam_period_id,
+                    'deferral_id' => $deferral?->getKey(),
                     'is_deprived' => $this->registrationIsDeprived($registration),
                     'student' => [
                         'student_id' => $registration->student_id,
@@ -172,7 +178,11 @@ class GradePartWorkflowService
             if ($this->registrationIsDeprived($locked)) {
                 $this->fail('Grades cannot be entered or changed for a deprived student.', 'deprived_student_grade_locked', 409);
             }
+            CourseOfferingLock::lock((int) $locked->course_offering_id);
             $this->assertRequired((int) $locked->course_offering_id, $part);
+            if ($part === 'theoretical' && $this->supplementaryEligibility->activeValidDeferral($locked)) {
+                $this->fail('The regular theoretical examination was deferred.', 'supplementary_theoretical_deferred');
+            }
             $approval = $this->lockApproval((int) $locked->course_offering_id, $part);
             if ($approval && ! in_array($approval->status, ['draft', 'returned'], true)) $this->fail('This grade part is locked.', 'grade_part_locked');
 
@@ -464,6 +474,8 @@ class GradePartWorkflowService
             (float) $components->where('component_type', 'practical')->sum('max_mark')
         );
         foreach ($registrations as $registration) {
+            // An explicit, currently valid deferral is provenance for an intentionally absent regular theory result.
+            if ($this->supplementaryEligibility->activeValidDeferral($registration)) continue;
             $existing = StudentCourseResult::query()->where('student_course_registration_id', $registration->student_course_registration_id)->lockForUpdate()->first();
             $existingStatus = $existing === null ? $registration->resultStatus?->status_code
                 : ResultStatus::query()->whereKey($existing->result_status_id)->lockForUpdate()->value('status_code');
@@ -523,6 +535,7 @@ class GradePartWorkflowService
         $partComponents = $components->where('component_type', $part); if ($partComponents->isEmpty()) return false;
         foreach ($registrations as $registration) {
             if ($registration->studentCourseResult?->is_deprived || $registration->studentCourseResult?->resultStatus?->status_code === 'deprived' || $registration->resultStatus?->status_code === 'deprived') continue;
+            if ($part === 'theoretical' && $this->supplementaryEligibility->activeValidDeferral($registration)) continue;
             $grades = StudentGradeComponent::query()->where('student_course_registration_id', $registration->student_course_registration_id)->whereIn('grade_component_id', $partComponents->pluck('grade_component_id'))->get()->keyBy('grade_component_id');
             foreach ($partComponents as $component) { $grade = $grades->get($component->grade_component_id); if (! $grade || $grade->mark === null || (float) $grade->mark < 0 || (float) $grade->mark > (float) $component->max_mark) return false; }
         }

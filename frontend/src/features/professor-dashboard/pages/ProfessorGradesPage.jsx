@@ -30,6 +30,7 @@ const ERROR_MESSAGES = {
   not_primary_instructor: 'إدخال العلامات متاح حسب التكليف التدريسي فقط.',
   unauthorized_grade_part: 'غير مصرح لك بالوصول إلى هذا الجزء.',
   grade_part_workflow_required: 'يجب استخدام مسار أجزاء العلامة لإدخال العلامات أو إرسالها.',
+  supplementary_theoretical_deferred: 'مؤجل إلى التكميلي',
 }
 const CONFLICT_CODES = new Set([
   'grade_part_locked', 'grade_part_already_approved', 'grade_part_already_submitted',
@@ -436,7 +437,7 @@ function MarksTable({ rows, part, partState, componentDefinitions, edits, rowVal
                 {row.is_deprived && <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200 text-[10px] font-bold">محروم — للقراءة فقط</span>}
                 {locked && !row.is_deprived && <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold text-text-light"><FaLock />مقفل</span>}
               </td>
-              {componentDefinitions.map((component, index) => <MarkInput key={component.grade_component_id} value={edits[editKey(row.registration_id, component.grade_component_id)]?.value ?? ''} max={component.max_mark} error={errors[index]} dirty={edits[editKey(row.registration_id, component.grade_component_id)]?.dirty} disabled={!editable || saving || submitting} onChange={value => updateMark(row.registration_id, component.grade_component_id, value)} />)}
+              {componentDefinitions.map((component, index) => <MarkInput key={component.grade_component_id} value={edits[editKey(row.registration_id, component.grade_component_id)]?.value ?? ''} max={component.max_mark} error={errors[index]} dirty={edits[editKey(row.registration_id, component.grade_component_id)]?.dirty} disabled={!editable || saving || submitting || (selectedPart === 'theoretical' && row.theoretical_deferred)} deferred={selectedPart === 'theoretical' && row.theoretical_deferred} onChange={value => updateMark(row.registration_id, component.grade_component_id, value)} />)}
               <td className="px-3 py-3 text-center font-bold">{row.is_deprived ? '—' : filled ? subtotal : '—'}</td>
               <td className="px-3 py-3 text-center">{dirty ? <span className="text-amber-700 font-bold text-[11px]">غير محفوظ</span> : <span className="text-green-700 font-bold text-[11px]"><FaCheck className="inline ml-1" />محفوظ</span>}</td>
             </tr>
@@ -537,9 +538,9 @@ function ConfirmDialog({ offering, workflow, partsToSubmit, unchangedParts, stud
   </div>
 }
 
-function MarkInput({ value, max, error, dirty, disabled, onChange }) {
+function MarkInput({ value, max, error, dirty, disabled, deferred, onChange }) {
   return <td className="px-3 py-3 align-top">
-    <input type="number" min="0" max={max} step="0.5" value={value} disabled={disabled} onChange={event => onChange(event.target.value)} className={`block mx-auto w-[96px] px-2 py-2 border rounded-[8px] text-center outline-none disabled:bg-gray-100 ${dirty && error ? 'border-red-400 bg-red-50' : 'border-primary/20 focus:border-primary'}`} dir="ltr" />
+    {deferred ? <span className="text-amber-700 font-bold text-xs">مؤجل إلى التكميلي</span> : <input type="number" min="0" max={max} step="0.5" value={value} disabled={disabled} onChange={event => onChange(event.target.value)} className={`block mx-auto w-[96px] px-2 py-2 border rounded-[8px] text-center outline-none disabled:bg-gray-100 ${dirty && error ? 'border-red-400 bg-red-50' : 'border-primary/20 focus:border-primary'}`} dir="ltr" />}
     <div className="text-[10px] text-text-light text-center mt-1">الحد الأعلى: {max}</div>
     {dirty && error && <div className="text-[10px] text-red-500 text-center mt-1">{error}</div>}
   </td>
