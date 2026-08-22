@@ -34,7 +34,7 @@ class SupplementaryExamEligibilityService
         $blockers = [];
         if (! SupplementaryExamEligibilityGovernance::schemaReady()) $blockers[] = 'phase3_schema_not_ready';
         if (! $offering->isOpen()) $blockers[] = 'supplementary_offering_not_open';
-        if ($offering->period?->status !== 'announced') $blockers[] = 'supplementary_period_not_announced';
+        if (! in_array($offering->period?->status, ['announced', 'registration_open', 'registration_closed'], true)) $blockers[] = 'supplementary_period_not_available';
         if (! in_array($registration->registrationStatus?->status_code, StudentCourseRegistration::HISTORICAL_ATTEMPT_STATUSES, true)) $blockers[] = 'registration_not_academic_attempt';
         if (! $this->sourceAllowed($offering, $registration)) $blockers[] = 'source_not_allowed';
         if (! $theoreticalRequired) $blockers[] = 'theoretical_not_required';
@@ -69,7 +69,7 @@ class SupplementaryExamEligibilityService
         $row->loadMissing('offering.period'); $registration->loadMissing(['registrationStatus','resultStatus','studentCourseResult.resultStatus']); $parts=$this->parts($registration);
         $reason = null;
         if (!$row->offering?->isOpen()) $reason='offering_closed';
-        elseif ($row->offering?->period?->status!=='announced') $reason='period_not_announced';
+        elseif (!in_array($row->offering?->period?->status,['announced','registration_open','registration_closed'],true)) $reason='period_not_available';
         elseif (!$this->sourceAllowed($row->offering,$registration)) $reason='source_not_allowed';
         elseif (!in_array($registration->registrationStatus?->status_code,StudentCourseRegistration::HISTORICAL_ATTEMPT_STATUSES,true)) $reason='registration_not_academic_attempt';
         elseif ($this->deprived($registration)) $reason='student_deprived';
@@ -115,6 +115,7 @@ class SupplementaryExamEligibilityService
         $this->assertStudent($user);$this->assertSchemaReady();$outcome=DB::transaction(function()use($user,$deferral,$reason){$row=SupplementaryExamTheoreticalDeferral::query()->with('offering.period')->lockForUpdate()->findOrFail($deferral->getKey());
             $r=StudentCourseRegistration::query()->with(['registrationStatus','resultStatus','studentCourseResult.resultStatus'])->lockForUpdate()->findOrFail($row->student_course_registration_id);if((int)$r->student_id!==(int)$user->student_id)return ['error'=>['Not owned.','deferral_not_owned',403]];
             CourseOfferingLock::lock((int)$r->course_offering_id);$state=$this->evaluateCurrentDeferralValidity($r,$row);if(!$state['valid']){$row->update(['status'=>'superseded','current_slot'=>null,'superseded_at'=>now(),'supersede_reason'=>$state['reason']]);$this->event($row,'superseded','declared','superseded',(int)$user->user_id,$state['reason']);return ['error'=>['The declaration became invalid.','deferral_cannot_cancel',409]];}
+            if ($row->offering?->period?->status !== 'announced') return ['error'=>['The declaration is committed after registration opens.','deferral_cannot_cancel',409]];
             $approval=GradePartApproval::query()->where('course_offering_id',$r->course_offering_id)->where('component_type','theoretical')->lockForUpdate()->first();$hasMark=StudentGradeComponent::query()->where('student_course_registration_id',$r->getKey())->whereHas('gradeComponent',fn($q)=>$q->where('component_type','theoretical'))->whereNotNull('mark')->lockForUpdate()->exists();
             if($row->status!=='declared'||$row->current_slot!=1||$hasMark||($approval&&!in_array($approval->status,['draft','returned'],true)))return ['error'=>['Cannot cancel.','deferral_cannot_cancel',409]];
             $row->update(['status'=>'cancelled','current_slot'=>null,'cancelled_by_user_id'=>$user->user_id,'cancelled_at'=>now(),'cancellation_reason'=>$reason]);$this->event($row,'cancelled','declared','cancelled',(int)$user->user_id,$reason);return ['row'=>$row->fresh()];},3);

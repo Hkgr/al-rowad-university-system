@@ -31,6 +31,8 @@ use App\Http\Controllers\Api\DeanCourseOfferingController;
 use App\Http\Controllers\Api\DeanDashboardController;
 use App\Http\Controllers\Api\DeanRegistrationOfferingController;
 use App\Http\Controllers\Api\DeanSupplementaryExamOfferingController;
+use App\Http\Controllers\Api\StudentSupplementaryExamRegistrationController;
+use App\Http\Controllers\Api\SupplementaryExamRegistrationOfficeController;
 use App\Http\Controllers\Api\CoursePrerequisiteController;
 use App\Http\Controllers\Api\DepartmentController;
 use App\Http\Controllers\Api\DisciplinaryCaseAppealController;
@@ -168,6 +170,15 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::post('student/supplementary-exams/deferrals', [StudentSupplementaryExamController::class, 'declare']);
     Route::post('student/supplementary-exams/deferrals/{deferral}/cancel', [StudentSupplementaryExamController::class, 'cancel']);
     Route::get('supplementary-exam-eligibility', [SupplementaryExamEligibilityController::class, 'index']);
+    Route::get('student/supplementary-exams/registrations', [StudentSupplementaryExamRegistrationController::class, 'index']);
+    Route::post('student/supplementary-exams/registrations', [StudentSupplementaryExamRegistrationController::class, 'store']);
+    Route::post('student/supplementary-exams/registrations/{registration}/cancel', [StudentSupplementaryExamRegistrationController::class, 'cancel']);
+    Route::post('registration-office/supplementary-exam-periods/{period}/open-registration', [SupplementaryExamRegistrationOfficeController::class, 'open']);
+    Route::post('registration-office/supplementary-exam-periods/{period}/close-registration', [SupplementaryExamRegistrationOfficeController::class, 'close']);
+    Route::get('registration-office/supplementary-exam-periods/{period}/registrations', [SupplementaryExamRegistrationOfficeController::class, 'index']);
+    Route::get('supplementary-exam-periods/{period}/registrations', [SupplementaryExamRegistrationOfficeController::class, 'index']);
+    Route::post('registration-office/supplementary-exam-registrations', [SupplementaryExamRegistrationOfficeController::class, 'store']);
+    Route::post('registration-office/supplementary-exam-registrations/{registration}/cancel', [SupplementaryExamRegistrationOfficeController::class, 'cancel']);
     Route::put('users/{user}/identity', [UserController::class, 'linkIdentity'])
         ->middleware(\App\Http\Middleware\RequirePermission::class.':users_permissions.manage');
 

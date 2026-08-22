@@ -17,6 +17,7 @@ import EditStudentPage      from '../features/student-affairs/pages/EditStudentP
 import StudentProfilePage   from '../features/student-affairs/pages/StudentProfilePage'
 import ArchivedStudentsPage from '../features/student-affairs/pages/ArchivedStudentsPage'
 import GraduatesPage       from '../features/student-affairs/pages/GraduatesPage'
+import SupplementaryExamRegistrations from '../features/student-affairs/pages/SupplementaryExamRegistrations'
 
 // ── بوابة الطالب (Student Dashboard) ────────────────────────────────────────
 import studentNav        from '../features/student-dashboard/nav'
@@ -141,6 +142,7 @@ export default function App() {
           <Route path="/student-affairs/graduates"         element={<GraduatesPage />}         />
           <Route path="/student-affairs/students/:id"      element={<StudentProfilePage />}    />
           <Route path="/student-affairs/students/:id/edit" element={protect(<EditStudentPage />, { permissions: ['students.manage'] })} />
+          <Route path="/student-affairs/supplementary-exams" element={protect(<SupplementaryExamRegistrations />, { permissions: ['supplementary_exams.registrations.view'] })} />
           <Route path="/student-affairs/approved-registration-requests" element={protect(<ApprovedRegistrationRequestsPage />, { permissions: ['registration.view'] })} />
         </Route>
 
