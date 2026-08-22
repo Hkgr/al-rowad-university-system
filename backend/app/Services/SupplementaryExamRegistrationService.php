@@ -41,7 +41,7 @@ class SupplementaryExamRegistrationService
             if(!$offering->isOpen())return ['error'=>['المقرر التكميلي مغلق.','supplementary_exam_registration_locked',409]];
             $original=StudentCourseRegistration::query()->with(['registrationStatus','resultStatus','studentCourseResult.resultStatus'])->lockForUpdate()->findOrFail($registrationId);
             if((int)$original->student_id!==$studentId)return ['error'=>['المحاولة لا تخص الطالب.','supplementary_exam_registration_wrong_student',409]];
-            if($channel==='student_affairs'&&(!$this->scope->canAccessStudent($actor,$student)||!$this->scope->canAccessProgram($actor,(int)$offering->academic_program_id)))return ['error'=>['خارج نطاق الصلاحية.','supplementary_exam_registration_out_of_scope',403]];
+            if($channel==='student_affairs'&&(!$this->scope->canMutateStudent($actor,$student)||!$this->scope->canMutateProgram($actor,(int)$offering->academic_program_id)))return ['error'=>['خارج نطاق الصلاحية.','supplementary_exam_registration_out_of_scope',403]];
             if(!SupplementaryExamOfferingSource::query()->where('supplementary_exam_offering_id',$offeringId)->where('course_offering_id',$original->course_offering_id)->exists())return ['error'=>['المحاولة الأصلية ليست مصدراً معتمداً.','supplementary_exam_registration_source_invalid',409]];
             SupplementaryExamRegistration::query()->where('student_id',$studentId)->where('current_slot',1)->lockForUpdate()->get();
             $current=SupplementaryExamRegistration::query()->where('supplementary_exam_offering_id',$offeringId)->where('student_id',$studentId)->where('current_slot',1)->lockForUpdate()->first();
@@ -64,7 +64,7 @@ class SupplementaryExamRegistrationService
             if($period->status!=='registration_open')return ['error'=>['القائمة مثبتة ولا يمكن تعديلها.','supplementary_exam_registration_locked',409]];
             if($row->status!=='registered'||$row->current_slot!=1)return ['error'=>['لا يوجد تسجيل نشط.','supplementary_exam_not_registered',409]];
             if(!$staff&&(int)$row->student_id!==(int)$actor->student_id)return ['error'=>['التسجيل لا يخص الطالب.','supplementary_exam_registration_not_owned',403]];
-            if($staff&&(!$this->scope->canAccessStudent($actor,$student)||!$this->scope->canAccessProgram($actor,(int)$seed->offering->academic_program_id)))return ['error'=>['خارج النطاق.','supplementary_exam_registration_out_of_scope',403]];
+            if($staff&&(!$this->scope->canMutateStudent($actor,$student)||!$this->scope->canMutateProgram($actor,(int)$seed->offering->academic_program_id)))return ['error'=>['خارج النطاق.','supplementary_exam_registration_out_of_scope',403]];
             $row->update(['status'=>'cancelled','current_slot'=>null,'cancelled_by_user_id'=>$actor->user_id,'cancelled_at'=>now(),'cancellation_reason'=>$reason]);$this->event($row,'cancelled','registered','cancelled',$actor,$reason);return ['row'=>$row->fresh()];
         },3);if(isset($out['error']))$this->fail(...$out['error']);return $out['row'];
     }

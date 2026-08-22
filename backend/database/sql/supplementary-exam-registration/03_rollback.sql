@@ -1,4 +1,4 @@
--- Emergency rollback: optional-table safe and history preserving.
+-- Emergency-only Phase 4 rollback: optional-table safe, ownership-aware, adopted-object preserving, and history blocking.
 SET @reg_exists := (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='alrowad_uni_rust' AND table_name='supplementary_exam_registrations');
 SET @event_exists := (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='alrowad_uni_rust' AND table_name='supplementary_exam_registration_events');
 SET @reg_owned := (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='alrowad_uni_rust' AND table_name='supplementary_exam_registrations' AND table_comment LIKE '%[phase4-supplementary-exam-registration]%');

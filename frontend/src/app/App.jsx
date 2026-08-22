@@ -57,6 +57,7 @@ import CourseRegistrationPage from '../features/exam-board/pages/CourseRegistrat
 import CourseOfferingsPage    from '../features/exam-board/pages/CourseOfferingsPage'
 import CourseTablePage        from '../features/exam-board/pages/CourseTablePage'
 import ExamPlaceholder        from '../features/exam-board/pages/ExamPlaceholder'
+import ReadOnlyRegistrationList from '../features/supplementary-exams/ReadOnlyRegistrationList'
 import ApprovedRegistrationRequestsPage from '../features/registration-requests/pages/ApprovedRegistrationRequestsPage'
 
 // ── بوابة الأستاذ (Professor Dashboard) ─────────────────────────────────────
@@ -187,7 +188,7 @@ export default function App() {
           <Route path="/exam-board/grade-sheet"   element={protect(<GradeSheetPage />, { permissions: ['grades.view'] })} />
           <Route path="/exam-board/approvals"     element={protect(<ApprovalsPage />, { permissions: ['exams.manage'] })} />
           <Route path="/exam-board/deprivation"   element={protect(<DeprivationPage />, { permissions: ['exams.manage'] })} />
-          <Route path="/exam-board/supplementary" element={protect(<ExamPlaceholder title="الامتحانات التكميلية" en="Supplementary Exams" />, { permissions: ['exams.view'] })} />
+          <Route path="/exam-board/supplementary" element={protect(<ReadOnlyRegistrationList title="قائمة التسجيل في الامتحانات التكميلية" />, { permissions: ['exams.view'] })} />
           <Route path="/exam-board/results"       element={protect(<ExamPlaceholder title="النتائج والتقارير" en="Results" />, { permissions: ['grades.view'] })} />
           <Route path="/exam-board/courses"             element={protect(<CoursesPage />, ACCESS.courseManagement)} />
           <Route path="/exam-board/course-offerings"    element={protect(<CourseOfferingsPage />, ACCESS.courseManagement)} />
