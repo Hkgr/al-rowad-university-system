@@ -92,6 +92,16 @@ class SupplementaryExamOffering extends Model
         return $this->hasMany(SupplementaryExamRegistration::class, 'supplementary_exam_offering_id', 'supplementary_exam_offering_id');
     }
 
+    public function graderAssignments(): HasMany
+    {
+        return $this->hasMany(SupplementaryExamGraderAssignment::class, 'supplementary_exam_offering_id');
+    }
+
+    public function gradeResults(): HasMany
+    {
+        return $this->hasMany(SupplementaryExamGradeResult::class, 'supplementary_exam_offering_id');
+    }
+
     public function isOpen(): bool
     {
         return (string) $this->status === SupplementaryExamOfferingGovernance::STATUS_OPEN;
