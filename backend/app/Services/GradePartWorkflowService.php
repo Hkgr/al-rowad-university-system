@@ -333,6 +333,15 @@ class GradePartWorkflowService
             if ($approval->status === 'approved' && $action === 'approve') return $approval;
             if ($approval->status !== 'submitted') $this->fail('Only a submitted grade part may be reviewed.', 'grade_part_not_submitted');
             if ($action === 'return' && trim((string) $notes) === '') $this->fail('Review notes are required.', 'missing_review_notes');
+            $registrations = StudentCourseRegistration::query()
+                ->where('course_offering_id', $approval->course_offering_id)
+                ->current()
+                ->orderBy('student_course_registration_id')
+                ->lockForUpdate()
+                ->get();
+            foreach ($registrations as $registration) {
+                $this->grades->assertNotSupplementaryMaterialized((int) $registration->getKey());
+            }
             $old = $approval->toArray();
             $approval->update(['status' => $action === 'approve' ? 'approved' : 'returned', 'reviewed_by_user_id' => $user->user_id, 'reviewed_at' => now(), 'review_notes' => $notes]);
             $this->setComponentStatus($approval, $action === 'approve' ? 'approved' : 'returned');

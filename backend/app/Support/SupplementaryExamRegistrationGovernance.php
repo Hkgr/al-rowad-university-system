@@ -12,6 +12,20 @@ final class SupplementaryExamRegistrationGovernance
     public const SELF='supplementary_exams.registrations.self';
     public const MANAGE='supplementary_exams.registrations.manage';
     public const WINDOW='supplementary_exams.registrations.window';
+    public const FIXED_ROSTER_PERIOD_STATUSES = [
+        'registration_closed',
+        'grading_open',
+        'grading_submitted',
+        'results_approved',
+        'results_published',
+        'results_materialized',
+    ];
+
+    public static function isRosterFixed(string $periodStatus): bool
+    {
+        return in_array($periodStatus, self::FIXED_ROSTER_PERIOD_STATUSES, true);
+    }
+
     public static function schemaReady(): bool
     {
         if (!SupplementaryExamEligibilityGovernance::schemaReady()) return false;

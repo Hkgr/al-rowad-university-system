@@ -13,6 +13,7 @@ use App\Models\Student;
 use App\Models\StudentCourseRegistration;
 use App\Models\StudentCreditLimit;
 use App\Support\CourseRequirementClassification;
+use App\Support\SupplementaryExamTargetGuard;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
@@ -334,6 +335,8 @@ class RegistrationService
         StudentCourseRegistration $lockedRegistration,
         CourseOffering $lockedOffering
     ): void {
+        SupplementaryExamTargetGuard::assertAvailable((int) $lockedRegistration->getKey());
+        SupplementaryExamTargetGuard::assertFixedRosterAvailable((int) $lockedRegistration->getKey());
         $this->assertLockedRegistrationIsRegistered($lockedRegistration);
         $droppedStatusId = $this->registrationStatusId(StudentCourseRegistration::DROPPED_STATUS);
         if ($droppedStatusId === null) {
@@ -348,6 +351,8 @@ class RegistrationService
         StudentCourseRegistration $lockedRegistration,
         CourseOffering $lockedOffering
     ): void {
+        SupplementaryExamTargetGuard::assertAvailable((int) $lockedRegistration->getKey());
+        SupplementaryExamTargetGuard::assertFixedRosterAvailable((int) $lockedRegistration->getKey());
         $this->assertLockedRegistrationIsRegistered($lockedRegistration);
         $withdrawnStatusId = $this->registrationStatusId(StudentCourseRegistration::WITHDRAWN_STATUS);
         if ($withdrawnStatusId === null) {

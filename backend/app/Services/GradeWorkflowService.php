@@ -25,7 +25,8 @@ class GradeWorkflowService
     {
         return DB::transaction(function () use ($courseOfferingId, $userId): array {
             CourseOffering::query()->whereKey($courseOfferingId)->lockForUpdate()->firstOrFail();
-            app(GradeService::class)->assertLegacyGradeWorkflowAllowed($courseOfferingId);
+            $grades = app(GradeService::class);
+            $grades->assertLegacyGradeWorkflowAllowed($courseOfferingId);
 
             $approval = GradeApproval::query()
                 ->where('course_offering_id', $courseOfferingId)
@@ -55,6 +56,9 @@ class GradeWorkflowService
                     status: 409,
                     errorCode: 'no_eligible_students'
                 );
+            }
+            foreach ($registrations as $registration) {
+                $grades->assertNotSupplementaryMaterialized((int) $registration->getKey());
             }
 
             $registrationIds = $registrations->pluck('student_course_registration_id');

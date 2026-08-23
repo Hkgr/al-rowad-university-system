@@ -5,10 +5,13 @@ namespace Tests\Feature;
 use App\Exceptions\GradeException;
 use App\Models\Student;
 use App\Models\SupplementaryExamOffering;
+use App\Models\SupplementaryExamPeriod;
 use App\Models\User;
 use App\Services\DataScopeService;
 use App\Services\GradeService;
 use App\Services\SupplementaryExamMaterializationService;
+use App\Services\SupplementaryExamReconciliationService;
+use App\Support\SupplementaryExamTargetGuard;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -425,8 +428,71 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
     }
 
     #[Test]
-    public function later_canonical_recalculation_is_locked_and_all_official_reads_keep_the_supplementary_result(): void
+    public function published_handoff_materializes_through_official_reads_and_idempotent_retry_consistently(): void
     {
+        // This fixture intentionally starts at the immutable Phase-5 handoff.
+        // The public assign/open/draft/submit/approve/publish service journey is
+        // exercised by SupplementaryExamRegistrationBehaviorTest; this test owns
+        // Phase-6 posting, official reads, reconciliation, and retry boundaries.
+        $this->assertDatabaseHas('student_course_results', [
+            'student_course_result_id' => 400,
+            'theoretical_total' => 20,
+            'practical_total' => 30,
+            'result_status_id' => 1,
+            'is_deprived' => 0,
+        ]);
+        $this->assertDatabaseHas('supplementary_exam_periods', [
+            'supplementary_exam_period_id' => 500,
+            'status' => 'results_published',
+        ]);
+        $this->assertDatabaseHas('supplementary_exam_offerings', [
+            'supplementary_exam_offering_id' => 600,
+            'supplementary_exam_period_id' => 500,
+        ]);
+        $this->assertDatabaseHas('supplementary_exam_registrations', [
+            'supplementary_exam_registration_id' => 700,
+            'status' => 'registered',
+            'current_slot' => 1,
+            'eligibility_reason' => 'failed_theoretical',
+        ]);
+        $this->assertDatabaseHas('supplementary_exam_grader_assignments', [
+            'supplementary_exam_grader_assignment_id' => 750,
+            'supplementary_exam_offering_id' => 600,
+            'current_slot' => 1,
+        ]);
+        $this->assertDatabaseHas('supplementary_exam_grade_results', [
+            'supplementary_exam_grade_result_id' => 800,
+            'theoretical_mark' => 40,
+            'status' => 'published',
+            'submission_version' => 1,
+        ]);
+        $this->assertDatabaseHas('supplementary_exam_grade_submissions', [
+            'supplementary_exam_grade_submission_id' => 900,
+            'status' => 'published',
+            'submission_version' => 1,
+        ]);
+        $this->assertDatabaseHas('supplementary_exam_grade_events', [
+            'supplementary_exam_grade_event_id' => 998,
+            'supplementary_exam_grade_submission_id' => 900,
+            'event_type' => 'submitted',
+            'from_status' => 'draft',
+            'to_status' => 'submitted',
+        ]);
+        $this->assertDatabaseHas('supplementary_exam_grade_events', [
+            'supplementary_exam_grade_event_id' => 999,
+            'supplementary_exam_grade_submission_id' => 900,
+            'event_type' => 'approved',
+            'from_status' => 'submitted',
+            'to_status' => 'approved',
+        ]);
+        $this->assertDatabaseHas('supplementary_exam_grade_events', [
+            'supplementary_exam_grade_event_id' => 1000,
+            'supplementary_exam_grade_submission_id' => 900,
+            'event_type' => 'published',
+            'from_status' => 'approved',
+            'to_status' => 'published',
+        ]);
+
         $beforePractical = DB::table('student_grade_components')->where('student_grade_component_id', 501)->first();
         $beforeAttendance = DB::table('student_attendance')->where('student_attendance_id', 1)->first();
         $this->service()->materializeOffering($this->actor(), $this->offering());
@@ -469,6 +535,315 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
         $this->assertEquals(40, DB::table('student_grade_components')->where('student_grade_component_id', 500)->value('mark'));
         $this->assertEquals($beforePractical, DB::table('student_grade_components')->where('student_grade_component_id', 501)->first());
         $this->assertEquals($beforeAttendance, DB::table('student_attendance')->where('student_attendance_id', 1)->first());
+
+        $reconciliation = $this->reconciliation()->reconcile($this->actor(), $this->period()->fresh());
+        $retry = $this->service()->materializeOffering($this->actor(), $this->offering());
+        $this->assertSame('PASS', $reconciliation['state']);
+        $this->assertTrue($reconciliation['scope_complete']);
+        $this->assertSame(['roster' => 1, 'graded' => 1, 'published' => 1, 'materialized' => 1], $reconciliation['counts']);
+        $this->assertSame('already_materialized', $retry['status']);
+        $this->assertSame(1, DB::table('supplementary_exam_materializations')->count());
+        $this->assertSame(1, DB::table('supplementary_exam_materialization_events')->count());
+        $this->assertSame(1, DB::table('supplementary_exam_period_events')->where('event_type', 'results_materialized')->count());
+        $this->assertSame('results_materialized', $this->period()->fresh()->status);
+        $this->assertDatabaseHas('supplementary_exam_materializations', [
+            'supplementary_exam_registration_id' => 700,
+            'supplementary_exam_grade_result_id' => 800,
+            'supplementary_exam_grade_event_id' => 1000,
+            'supplementary_exam_grade_submission_id' => 900,
+            'source_submission_version' => 1,
+            'student_course_registration_id' => 300,
+            'student_course_result_id' => 400,
+        ]);
+    }
+
+    #[Test]
+    public function theory_only_materialization_stays_consistent_in_transcript_and_gpa(): void
+    {
+        DB::table('student_grade_components')
+            ->where('student_grade_component_id', 501)
+            ->delete();
+        DB::table('grade_components')
+            ->where('grade_component_id', 2)
+            ->delete();
+        DB::table('student_course_results')
+            ->where('student_course_result_id', 400)
+            ->update([
+                'practical_total' => 0,
+                'final_mark' => 20,
+            ]);
+        DB::table('supplementary_exam_grade_results')
+            ->where('supplementary_exam_grade_result_id', 800)
+            ->update(['theoretical_mark' => 55]);
+        DB::table('supplementary_exam_grade_events')
+            ->whereIn('supplementary_exam_grade_event_id', [998, 999, 1000])
+            ->update(['theoretical_mark' => 55]);
+
+        $preview = (new GradeService())->buildCalculationForRequiredParts(
+            theoretical: 55,
+            practical: 30,
+            requiresTheoretical: true,
+            requiresPractical: false,
+            theoreticalMax: 60,
+            practicalMax: 0,
+        );
+        $summary = $this->service()->materializeOffering($this->actor(), $this->offering());
+        $student = Student::query()->findOrFail(200);
+        $grades = new GradeService();
+        $transcript = $grades->getTranscript($student);
+        $course = $transcript['terms'][0]['courses'][0];
+        $gpa = $grades->calculateGpa($student->fresh(), 1, 1);
+
+        $this->assertSame('materialized', $summary['status']);
+        $this->assertSame(55.0, $preview['final_mark']);
+        $this->assertSame('passed', $preview['result_status_code']);
+        $this->assertSame('D+', $preview['letter_grade']);
+        $this->assertSame(1.75, $preview['grade_points']);
+        $this->assertFalse($preview['calculation_details']['requires_practical']);
+        $this->assertDatabaseHas('student_course_results', [
+            'student_course_result_id' => 400,
+            'theoretical_total' => 55,
+            'practical_total' => 0,
+            'final_mark' => 55,
+            'result_status_id' => 2,
+        ]);
+        $this->assertSame(55.0, $course['theoretical_mark']);
+        $this->assertNull($course['practical_mark']);
+        $this->assertSame(55.0, $course['final_mark']);
+        $this->assertSame('D+', $course['letter_grade']);
+        $this->assertSame(1.75, $course['grade_points']);
+        $this->assertSame('passed', $course['result_status']['status_code']);
+        $this->assertSame(1.75, $gpa['gpa']);
+        $this->assertSame(1, $gpa['included_courses_count']);
+        $this->assertSame('PASS', $this->reconciliation()->reconcile($this->actor(), $this->period()->fresh())['state']);
+    }
+
+    #[Test]
+    public function materialized_configuration_and_referenced_policy_guards_return_stable_conflicts(): void
+    {
+        $this->service()->materializeOffering($this->actor(), $this->offering());
+        DB::table('grading_policies')->insert([
+            'grading_policy_id' => 2,
+            'policy_name' => 'Unreferenced',
+            'theoretical_max_mark' => 60,
+            'practical_max_mark' => 40,
+            'minimum_theoretical_mark' => 30,
+            'minimum_practical_mark' => 20,
+            'minimum_final_mark' => 50,
+            'is_default' => 0,
+            'is_active' => 1,
+            'created_at' => self::OLD_TIME,
+            'updated_at' => self::OLD_TIME,
+        ]);
+
+        $this->expectGradeError(
+            fn () => SupplementaryExamTargetGuard::assertCourseOfferingConfigurationsMutable([100]),
+            SupplementaryExamTargetGuard::CONFIGURATION_ERROR_CODE,
+            409,
+        );
+        $this->expectGradeError(
+            fn () => SupplementaryExamTargetGuard::assertGradingPolicyMutable(1),
+            SupplementaryExamTargetGuard::POLICY_ERROR_CODE,
+            409,
+        );
+
+        SupplementaryExamTargetGuard::assertGradingPolicyMutable(2);
+        $this->addToAssertionCount(1);
+        $this->assertDatabaseHas('grade_components', [
+            'grade_component_id' => 1,
+            'course_offering_id' => 100,
+            'max_mark' => 60,
+        ]);
+        $this->assertDatabaseHas('grading_policies', [
+            'grading_policy_id' => 1,
+            'is_active' => 1,
+        ]);
+    }
+
+    #[Test]
+    public function fixed_roster_locks_only_the_selected_policy_and_selection_changing_catalog_mutations(): void
+    {
+        $this->seedUnrelatedGradingPolicy();
+
+        SupplementaryExamTargetGuard::assertGradingPolicyUpdateMutable(1, [
+            'policy_name' => 'Harmless display rename',
+        ]);
+        SupplementaryExamTargetGuard::assertGradingPolicyUpdateMutable(1, [
+            'minimum_final_mark' => 50,
+        ]);
+        SupplementaryExamTargetGuard::assertGradingPolicyUpdateMutable(1, [
+            'is_default' => 0,
+        ]);
+        SupplementaryExamTargetGuard::assertGradingPolicyUpdateMutable(2, [
+            'minimum_final_mark' => 81,
+            'is_active' => 0,
+        ]);
+        SupplementaryExamTargetGuard::assertGradingPolicyMutable(2);
+        SupplementaryExamTargetGuard::assertGradingPolicyCreationMutable(
+            $this->gradingPolicyPayload('Future noncanonical policy'),
+        );
+        $this->addToAssertionCount(6);
+
+        $this->expectGradeError(
+            fn () => SupplementaryExamTargetGuard::assertGradingPolicyCreationMutable(
+                $this->gradingPolicyPayload('Competing default', isDefault: true),
+            ),
+            SupplementaryExamTargetGuard::POLICY_ERROR_CODE,
+            409,
+        );
+        $this->expectGradeError(
+            fn () => SupplementaryExamTargetGuard::assertGradingPolicyUpdateMutable(1, [
+                'minimum_final_mark' => 51,
+            ]),
+            SupplementaryExamTargetGuard::POLICY_ERROR_CODE,
+            409,
+        );
+        $this->expectGradeError(
+            fn () => SupplementaryExamTargetGuard::assertGradingPolicyUpdateMutable(1, [
+                'is_active' => 0,
+            ]),
+            SupplementaryExamTargetGuard::POLICY_ERROR_CODE,
+            409,
+        );
+        $this->expectGradeError(
+            fn () => SupplementaryExamTargetGuard::assertGradingPolicyUpdateMutable(2, [
+                'is_default' => 1,
+            ]),
+            SupplementaryExamTargetGuard::POLICY_ERROR_CODE,
+            409,
+        );
+        $this->expectGradeError(
+            fn () => SupplementaryExamTargetGuard::assertGradingPolicyMutable(1),
+            SupplementaryExamTargetGuard::POLICY_ERROR_CODE,
+            409,
+        );
+    }
+
+    #[Test]
+    public function posted_policy_allows_name_idempotent_and_default_changes_but_locks_scoring_active_and_destroy(): void
+    {
+        $this->service()->materializeOffering($this->actor(), $this->offering());
+        $this->seedUnrelatedGradingPolicy();
+
+        SupplementaryExamTargetGuard::assertGradingPolicyUpdateMutable(1, [
+            'policy_name' => 'Historical policy display name',
+        ]);
+        SupplementaryExamTargetGuard::assertGradingPolicyUpdateMutable(1, [
+            'minimum_final_mark' => 50,
+            'is_active' => 1,
+        ]);
+        SupplementaryExamTargetGuard::assertGradingPolicyUpdateMutable(1, [
+            'is_default' => 0,
+        ]);
+        SupplementaryExamTargetGuard::assertGradingPolicyUpdateMutable(2, [
+            'minimum_final_mark' => 81,
+            'is_active' => 0,
+            'is_default' => 1,
+        ]);
+        SupplementaryExamTargetGuard::assertGradingPolicyMutable(2);
+        SupplementaryExamTargetGuard::assertGradingPolicyCreationMutable(
+            $this->gradingPolicyPayload('Future post-publication default', isDefault: true),
+        );
+        $this->addToAssertionCount(6);
+
+        $this->expectGradeError(
+            fn () => SupplementaryExamTargetGuard::assertGradingPolicyUpdateMutable(1, [
+                'minimum_final_mark' => 51,
+            ]),
+            SupplementaryExamTargetGuard::POLICY_ERROR_CODE,
+            409,
+        );
+        $this->expectGradeError(
+            fn () => SupplementaryExamTargetGuard::assertGradingPolicyUpdateMutable(1, [
+                'is_active' => 0,
+            ]),
+            SupplementaryExamTargetGuard::POLICY_ERROR_CODE,
+            409,
+        );
+        $this->expectGradeError(
+            fn () => SupplementaryExamTargetGuard::assertGradingPolicyMutable(1),
+            SupplementaryExamTargetGuard::POLICY_ERROR_CODE,
+            409,
+        );
+    }
+
+    #[Test]
+    public function fixed_roster_status_guards_lock_only_concrete_dependencies_and_canonical_outcomes(): void
+    {
+        $this->seedUnrelatedOfficialStatuses();
+
+        SupplementaryExamTargetGuard::assertResultStatusUpdateMutable(1, ['status_name' => 'Failed display']);
+        SupplementaryExamTargetGuard::assertResultStatusUpdateMutable(1, ['status_code' => 'failed', 'is_active' => 1]);
+        SupplementaryExamTargetGuard::assertApprovalStatusUpdateMutable(1, ['status_name' => 'Approved display']);
+        SupplementaryExamTargetGuard::assertApprovalStatusUpdateMutable(1, ['status_code' => 'approved', 'is_active' => 1]);
+        SupplementaryExamTargetGuard::assertRegistrationStatusUpdateMutable(1, ['status_name' => 'Registered display']);
+        SupplementaryExamTargetGuard::assertRegistrationStatusUpdateMutable(1, ['status_code' => 'registered']);
+        SupplementaryExamTargetGuard::assertResultStatusUpdateMutable(5, ['status_code' => 'future_result_changed', 'is_active' => 0]);
+        SupplementaryExamTargetGuard::assertResultStatusDestroyable(5);
+        SupplementaryExamTargetGuard::assertApprovalStatusUpdateMutable(2, ['status_code' => 'future_approval_changed', 'is_active' => 0]);
+        SupplementaryExamTargetGuard::assertApprovalStatusDestroyable(2);
+        SupplementaryExamTargetGuard::assertRegistrationStatusUpdateMutable(2, ['status_code' => 'future_registration_changed']);
+        SupplementaryExamTargetGuard::assertRegistrationStatusDestroyable(2);
+        $this->addToAssertionCount(12);
+
+        foreach ([
+            fn () => SupplementaryExamTargetGuard::assertResultStatusUpdateMutable(1, ['status_code' => 'failed_changed']),
+            fn () => SupplementaryExamTargetGuard::assertResultStatusUpdateMutable(1, ['is_active' => 0]),
+            fn () => SupplementaryExamTargetGuard::assertResultStatusDestroyable(1),
+            fn () => SupplementaryExamTargetGuard::assertResultStatusUpdateMutable(2, ['status_code' => 'passed_changed']),
+            fn () => SupplementaryExamTargetGuard::assertResultStatusDestroyable(2),
+            fn () => SupplementaryExamTargetGuard::assertApprovalStatusUpdateMutable(1, ['status_code' => 'approved_changed']),
+            fn () => SupplementaryExamTargetGuard::assertApprovalStatusUpdateMutable(1, ['is_active' => 0]),
+            fn () => SupplementaryExamTargetGuard::assertApprovalStatusDestroyable(1),
+            fn () => SupplementaryExamTargetGuard::assertRegistrationStatusUpdateMutable(1, ['status_code' => 'registered_changed']),
+            fn () => SupplementaryExamTargetGuard::assertRegistrationStatusDestroyable(1),
+        ] as $mutation) {
+            $this->expectGradeError(
+                $mutation,
+                SupplementaryExamTargetGuard::STATUS_ERROR_CODE,
+                409,
+            );
+        }
+    }
+
+    #[Test]
+    public function referenced_official_statuses_allow_name_and_idempotent_updates_but_lock_semantics_and_destroy(): void
+    {
+        $this->service()->materializeOffering($this->actor(), $this->offering());
+        $this->seedUnrelatedOfficialStatuses();
+
+        SupplementaryExamTargetGuard::assertResultStatusUpdateMutable(1, ['status_name' => 'Failed display']);
+        SupplementaryExamTargetGuard::assertResultStatusUpdateMutable(1, ['status_code' => 'failed', 'is_active' => 1]);
+        SupplementaryExamTargetGuard::assertApprovalStatusUpdateMutable(1, ['status_name' => 'Approved display']);
+        SupplementaryExamTargetGuard::assertApprovalStatusUpdateMutable(1, ['status_code' => 'approved', 'is_active' => 1]);
+        SupplementaryExamTargetGuard::assertRegistrationStatusUpdateMutable(1, ['status_name' => 'Registered display']);
+        SupplementaryExamTargetGuard::assertRegistrationStatusUpdateMutable(1, ['status_code' => 'registered']);
+        SupplementaryExamTargetGuard::assertResultStatusUpdateMutable(5, ['status_code' => 'future_result_changed', 'is_active' => 0]);
+        SupplementaryExamTargetGuard::assertResultStatusDestroyable(5);
+        SupplementaryExamTargetGuard::assertApprovalStatusUpdateMutable(2, ['status_code' => 'future_approval_changed', 'is_active' => 0]);
+        SupplementaryExamTargetGuard::assertApprovalStatusDestroyable(2);
+        SupplementaryExamTargetGuard::assertRegistrationStatusUpdateMutable(2, ['status_code' => 'future_registration_changed']);
+        SupplementaryExamTargetGuard::assertRegistrationStatusDestroyable(2);
+        $this->addToAssertionCount(12);
+
+        foreach ([
+            fn () => SupplementaryExamTargetGuard::assertResultStatusUpdateMutable(1, ['status_code' => 'failed_changed']),
+            fn () => SupplementaryExamTargetGuard::assertResultStatusUpdateMutable(1, ['is_active' => 0]),
+            fn () => SupplementaryExamTargetGuard::assertResultStatusDestroyable(1),
+            fn () => SupplementaryExamTargetGuard::assertResultStatusUpdateMutable(2, ['status_code' => 'passed_changed']),
+            fn () => SupplementaryExamTargetGuard::assertResultStatusDestroyable(2),
+            fn () => SupplementaryExamTargetGuard::assertApprovalStatusUpdateMutable(1, ['status_code' => 'approved_changed']),
+            fn () => SupplementaryExamTargetGuard::assertApprovalStatusUpdateMutable(1, ['is_active' => 0]),
+            fn () => SupplementaryExamTargetGuard::assertApprovalStatusDestroyable(1),
+            fn () => SupplementaryExamTargetGuard::assertRegistrationStatusUpdateMutable(1, ['status_code' => 'registered_changed']),
+            fn () => SupplementaryExamTargetGuard::assertRegistrationStatusDestroyable(1),
+        ] as $mutation) {
+            $this->expectGradeError(
+                $mutation,
+                SupplementaryExamTargetGuard::STATUS_ERROR_CODE,
+                409,
+            );
+        }
     }
 
     #[Test]
@@ -493,6 +868,107 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
         $this->seedSecondOffering(withCandidate: false);
         $zeroRoster = $this->service()->materializeOffering($this->actor(), $this->offering());
         $this->assertTrue($zeroRoster['period_materialized']);
+        $zeroRosterAudit = $this->reconciliation()->reconcile($this->actor(), $this->period()->fresh());
+        $this->assertSame('WARNING', $zeroRosterAudit['state']);
+        $this->assertContains('empty_roster', array_column($zeroRosterAudit['issues'], 'code'));
+        $this->assertNotContains('terminal_coverage_incomplete', array_column($zeroRosterAudit['issues'], 'code'));
+    }
+
+    #[Test]
+    public function terminal_completion_rejects_zero_roster_offering_with_missing_or_mismatched_source(): void
+    {
+        $this->seedSecondOffering(withCandidate: false);
+        DB::table('supplementary_exam_offering_sources')
+            ->where('supplementary_exam_offering_id', 601)
+            ->delete();
+
+        $this->expectGradeError(
+            fn () => $this->service()->materializeOffering($this->actor(), $this->offering()),
+            'supplementary_materialization_period_source_conflict',
+            409,
+        );
+        $this->assertDatabaseCount('supplementary_exam_materializations', 0);
+
+        DB::table('supplementary_exam_offering_sources')->insert([
+            'supplementary_exam_offering_source_id' => 2,
+            'supplementary_exam_offering_id' => 601,
+            'course_offering_id' => 100,
+            'created_at' => self::OLD_TIME,
+        ]);
+        DB::table('supplementary_exam_offerings')
+            ->where('supplementary_exam_offering_id', 601)
+            ->update(['course_id' => 999]);
+
+        $this->expectGradeError(
+            fn () => $this->service()->materializeOffering($this->actor(), $this->offering()),
+            'supplementary_materialization_period_source_conflict',
+            409,
+        );
+        $this->assertDatabaseCount('supplementary_exam_materializations', 0);
+        $this->assertEquals(20, DB::table('student_course_results')->where('student_course_result_id', 400)->value('theoretical_total'));
+    }
+
+    #[Test]
+    public function terminal_completion_rejects_malformed_registration_excluded_from_current_roster(): void
+    {
+        $this->seedSecondOffering(withCandidate: false);
+        DB::table('supplementary_exam_registrations')->insert([
+            'supplementary_exam_registration_id' => 799,
+            'supplementary_exam_offering_id' => 601,
+            'student_id' => 200,
+            'student_course_registration_id' => 300,
+            'status' => 'cancelled',
+            'current_slot' => 1,
+            'eligibility_reason' => 'failed_theoretical',
+            'created_at' => self::OLD_TIME,
+            'updated_at' => self::OLD_TIME,
+        ]);
+
+        $this->expectGradeError(
+            fn () => $this->service()->materializeOffering($this->actor(), $this->offering()),
+            'supplementary_materialization_roster_mismatch',
+            409,
+        );
+
+        $this->assertDatabaseCount('supplementary_exam_materializations', 0);
+        $this->assertSame('results_published', $this->period()->fresh()->status);
+        $this->assertEquals(20, DB::table('student_course_results')->where('student_course_result_id', 400)->value('theoretical_total'));
+    }
+
+    #[Test]
+    public function zero_roster_offering_with_submission_blocks_terminal_completion_and_reconciliation(): void
+    {
+        $this->seedSecondOffering(withCandidate: false);
+        DB::table('supplementary_exam_grade_submissions')->insert([
+            'supplementary_exam_grade_submission_id' => 901,
+            'supplementary_exam_offering_id' => 601,
+            'submission_version' => 1,
+            'status' => 'published',
+            'published_at' => self::PUBLISHED_TIME,
+            'created_at' => self::PUBLISHED_TIME,
+            'updated_at' => self::PUBLISHED_TIME,
+        ]);
+
+        $this->expectGradeError(
+            fn () => $this->service()->materializeOffering($this->actor(), $this->offering()),
+            'supplementary_materialization_roster_mismatch',
+            409,
+        );
+
+        $this->assertDatabaseCount('supplementary_exam_materializations', 0);
+        $this->assertDatabaseCount('supplementary_exam_materialization_events', 0);
+        $this->assertSame('results_published', $this->period()->fresh()->status);
+        $this->assertEquals(20, DB::table('student_course_results')->where('student_course_result_id', 400)->value('theoretical_total'));
+
+        $report = $this->reconciliation()->reconcile($this->actor(), $this->period()->fresh());
+        $emptyOffering = collect($report['offerings'])
+            ->firstWhere('supplementary_exam_offering_id', 601);
+
+        $this->assertSame('CONFLICT', $report['state']);
+        $this->assertNotNull($emptyOffering);
+        $this->assertSame('CONFLICT', $emptyOffering['state']);
+        $this->assertContains('empty_roster', array_column($emptyOffering['issues'], 'code'));
+        $this->assertContains('zero_roster_grading_artifacts', array_column($emptyOffering['issues'], 'code'));
     }
 
     #[Test]
@@ -506,17 +982,505 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
             'updated_at' => '2026-01-04 10:00:00',
         ]);
 
-        $second = $this->service()->materializeOffering(
-            $this->actor(),
-            SupplementaryExamOffering::query()->findOrFail(601),
+        $beforeSecondResult = DB::table('student_course_results')
+            ->where('student_course_result_id', 401)
+            ->first();
+        $beforeSecondTheory = DB::table('student_grade_components')
+            ->where('student_grade_component_id', 502)
+            ->first();
+
+        $this->expectGradeError(
+            fn () => $this->service()->materializeOffering(
+                $this->actor(),
+                SupplementaryExamOffering::query()->findOrFail(601),
+            ),
+            'supplementary_materialization_target_conflict',
+            409,
         );
 
-        $this->assertFalse($second['period_materialized']);
+        $this->assertDatabaseCount('supplementary_exam_materializations', 1);
+        $this->assertDatabaseHas('supplementary_exam_materializations', [
+            'supplementary_exam_registration_id' => 700,
+        ]);
+        $this->assertDatabaseMissing('supplementary_exam_materializations', [
+            'supplementary_exam_registration_id' => 701,
+        ]);
+        $this->assertEquals(
+            $beforeSecondResult,
+            DB::table('student_course_results')->where('student_course_result_id', 401)->first(),
+        );
+        $this->assertEquals(
+            $beforeSecondTheory,
+            DB::table('student_grade_components')->where('student_grade_component_id', 502)->first(),
+        );
         $this->assertSame(
             'results_published',
             DB::table('supplementary_exam_periods')->where('supplementary_exam_period_id', 500)->value('status'),
         );
+        $this->assertDatabaseCount('supplementary_exam_materialization_events', 1);
         $this->assertSame(0, DB::table('supplementary_exam_period_events')->where('event_type', 'results_materialized')->count());
+    }
+
+    #[Test]
+    public function reconciliation_is_read_only_and_reports_published_work_as_a_warning(): void
+    {
+        $before = [
+            'period' => DB::table('supplementary_exam_periods')->where('supplementary_exam_period_id', 500)->first(),
+            'result' => DB::table('student_course_results')->where('student_course_result_id', 400)->first(),
+            'materializations' => DB::table('supplementary_exam_materializations')->count(),
+            'events' => DB::table('supplementary_exam_period_events')->count(),
+        ];
+
+        $report = $this->reconciliation()->reconcile($this->actor(), $this->period());
+
+        $this->assertSame('WARNING', $report['state']);
+        $this->assertTrue($report['scope_complete']);
+        $this->assertSame(['roster' => 1, 'graded' => 1, 'published' => 1, 'materialized' => 0], $report['counts']);
+        $this->assertContains('published_result_not_materialized', array_column($report['issues'], 'code'));
+        $this->assertEquals($before['period'], DB::table('supplementary_exam_periods')->where('supplementary_exam_period_id', 500)->first());
+        $this->assertEquals($before['result'], DB::table('student_course_results')->where('student_course_result_id', 400)->first());
+        $this->assertSame($before['materializations'], DB::table('supplementary_exam_materializations')->count());
+        $this->assertSame($before['events'], DB::table('supplementary_exam_period_events')->count());
+    }
+
+    #[Test]
+    public function zero_roster_reconciliation_is_warning_no_candidates_without_submission_ambiguity(): void
+    {
+        $this->seedSecondOffering(withCandidate: false);
+
+        $report = $this->reconciliation()->reconcile($this->actor(), $this->period());
+        $emptyOffering = collect($report['offerings'])
+            ->firstWhere('supplementary_exam_offering_id', 601);
+
+        $this->assertNotNull($emptyOffering);
+        $this->assertSame('WARNING', $emptyOffering['state']);
+        $this->assertSame('no_candidates', $emptyOffering['operational_status']);
+        $this->assertSame(['empty_roster'], array_column($emptyOffering['issues'], 'code'));
+        $this->assertNotContains('source_submission_version_ambiguous', array_column($report['issues'], 'code'));
+    }
+
+    #[Test]
+    public function manually_terminal_all_zero_period_is_a_reconciliation_conflict(): void
+    {
+        DB::table('supplementary_exam_grade_events')->delete();
+        DB::table('supplementary_exam_grade_results')->delete();
+        DB::table('supplementary_exam_grade_submissions')->delete();
+        DB::table('supplementary_exam_registrations')->update([
+            'status' => 'cancelled',
+            'current_slot' => null,
+        ]);
+        DB::table('supplementary_exam_periods')
+            ->where('supplementary_exam_period_id', 500)
+            ->update(['status' => 'results_materialized']);
+        DB::table('supplementary_exam_period_events')->insert([
+            'supplementary_exam_period_id' => 500,
+            'event_type' => 'results_materialized',
+            'from_status' => 'results_published',
+            'to_status' => 'results_materialized',
+            'actor_user_id' => 1,
+            'created_at' => self::PUBLISHED_TIME,
+        ]);
+
+        $report = $this->reconciliation()->reconcile($this->actor(), $this->period()->fresh());
+
+        $this->assertSame('CONFLICT', $report['state']);
+        $this->assertSame(['roster' => 0, 'graded' => 0, 'published' => 0, 'materialized' => 0], $report['counts']);
+        $this->assertContains('terminal_period_empty_roster', array_column($report['issues'], 'code'));
+    }
+
+    #[Test]
+    public function published_unmaterialized_candidate_with_missing_or_mismatched_official_target_is_conflict(): void
+    {
+        DB::table('student_course_registrations')
+            ->where('student_course_registration_id', 300)
+            ->update(['student_id' => 999]);
+
+        $mismatched = $this->reconciliation()->reconcile($this->actor(), $this->period());
+        $this->assertSame('CONFLICT', $mismatched['state']);
+        $this->assertContains('offering_source_target_mismatch', array_column($mismatched['issues'], 'code'));
+
+        DB::table('student_course_registrations')
+            ->where('student_course_registration_id', 300)
+            ->update(['student_id' => 200]);
+        DB::table('student_course_results')
+            ->where('student_course_result_id', 400)
+            ->delete();
+
+        $missing = $this->reconciliation()->reconcile($this->actor(), $this->period());
+        $this->assertSame('CONFLICT', $missing['state']);
+        $this->assertContains('official_target_missing_or_ambiguous', array_column($missing['issues'], 'code'));
+    }
+
+    #[Test]
+    public function unmaterialized_reconciliation_uses_current_target_status_for_eligibility(): void
+    {
+        DB::table('student_course_results')
+            ->where('student_course_result_id', 400)
+            ->update(['result_status_id' => 2]);
+        DB::table('student_course_registrations')
+            ->where('student_course_registration_id', 300)
+            ->update(['result_status_id' => 2]);
+
+        $report = $this->reconciliation()->reconcile($this->actor(), $this->period());
+
+        $this->assertSame('CONFLICT', $report['state']);
+        $this->assertContains('materialization_precondition_conflict', array_column($report['issues'], 'code'));
+    }
+
+    #[Test]
+    public function materialized_reconciliation_uses_preserved_before_status_for_eligibility(): void
+    {
+        $this->service()->materializeOffering($this->actor(), $this->offering());
+
+        $valid = $this->reconciliation()->reconcile($this->actor(), $this->period()->fresh());
+        $this->assertSame('PASS', $valid['state']);
+
+        DB::table('supplementary_exam_materializations')->update([
+            'before_result_status_id' => 2,
+        ]);
+        $tampered = $this->reconciliation()->reconcile($this->actor(), $this->period()->fresh());
+
+        $this->assertSame('CONFLICT', $tampered['state']);
+        $this->assertContains('materialization_precondition_conflict', array_column($tampered['issues'], 'code'));
+    }
+
+    #[Test]
+    public function registration_closed_reconciliation_allows_opening_grading_without_premature_publication_conflicts(): void
+    {
+        DB::table('supplementary_exam_grade_events')->delete();
+        DB::table('supplementary_exam_grade_results')->delete();
+        DB::table('supplementary_exam_grade_submissions')->delete();
+        DB::table('supplementary_exam_periods')->where('supplementary_exam_period_id', 500)->update([
+            'status' => 'registration_closed',
+        ]);
+
+        $report = $this->reconciliation()->reconcile($this->actor(), $this->period()->fresh());
+
+        $this->assertSame('WARNING', $report['state']);
+        $this->assertTrue($report['action_flags']['can_open_grading']);
+        $this->assertContains('source_result_missing_or_ambiguous', array_column($report['issues'], 'code'));
+        $this->assertNotContains('CONFLICT', array_column($report['issues'], 'severity'));
+    }
+
+    #[Test]
+    public function registration_closed_reconciliation_rejects_premature_grading_artifacts(): void
+    {
+        DB::table('supplementary_exam_periods')
+            ->where('supplementary_exam_period_id', 500)
+            ->update(['status' => 'registration_closed']);
+
+        $report = $this->reconciliation()->reconcile($this->actor(), $this->period()->fresh());
+
+        $this->assertSame('CONFLICT', $report['state']);
+        $this->assertFalse($report['action_flags']['can_open_grading']);
+        $this->assertContains('premature_grading_artifacts', array_column($report['issues'], 'code'));
+    }
+
+    #[Test]
+    public function reconciliation_detects_target_component_drift_and_terminal_incompleteness(): void
+    {
+        $this->service()->materializeOffering($this->actor(), $this->offering());
+        DB::table('student_grade_components')->where('student_grade_component_id', 501)->update([
+            'mark' => 31,
+            'updated_at' => '2026-01-04 10:00:00',
+        ]);
+
+        $drift = $this->reconciliation()->reconcile($this->actor(), $this->period()->fresh());
+        $this->assertSame('CONFLICT', $drift['state']);
+        $this->assertContains('practical_component_drift', array_column($drift['issues'], 'code'));
+
+        $this->resetMaterializationState();
+        DB::table('supplementary_exam_periods')->where('supplementary_exam_period_id', 500)->update(['status' => 'results_materialized']);
+        $incomplete = $this->reconciliation()->reconcile($this->actor(), $this->period()->fresh());
+        $this->assertSame('CONFLICT', $incomplete['state']);
+        $this->assertContains('terminal_coverage_incomplete', array_column($incomplete['issues'], 'code'));
+        $this->assertContains('terminal_event_mismatch', array_column($incomplete['issues'], 'code'));
+    }
+
+    #[Test]
+    public function reconciliation_detects_materialization_target_registration_id_drift(): void
+    {
+        $this->service()->materializeOffering($this->actor(), $this->offering());
+        DB::table('supplementary_exam_materializations')->update([
+            'student_course_registration_id' => 999,
+        ]);
+
+        $report = $this->reconciliation()->reconcile($this->actor(), $this->period()->fresh());
+
+        $this->assertSame('CONFLICT', $report['state']);
+        $this->assertContains('materialization_target_mismatch', array_column($report['issues'], 'code'));
+    }
+
+    #[Test]
+    public function coordinated_final_mark_and_provenance_tampering_fails_reconciliation_and_retry(): void
+    {
+        $this->service()->materializeOffering($this->actor(), $this->offering());
+        DB::table('student_course_results')
+            ->where('student_course_result_id', 400)
+            ->update(['final_mark' => 71]);
+        DB::table('supplementary_exam_materializations')->update([
+            'after_final_mark' => 71,
+        ]);
+
+        $report = $this->reconciliation()->reconcile($this->actor(), $this->period()->fresh());
+
+        $this->assertSame('CONFLICT', $report['state']);
+        $this->assertContains('CONFLICT', array_column($report['issues'], 'severity'));
+        $this->expectGradeError(
+            fn () => $this->service()->materializeOffering($this->actor(), $this->offering()),
+            'supplementary_materialization_target_conflict',
+            409,
+        );
+    }
+
+    #[Test]
+    public function incompatible_grading_policy_id_drift_is_detected_by_reconciliation_and_retry(): void
+    {
+        $this->service()->materializeOffering($this->actor(), $this->offering());
+        DB::table('grading_policies')->insert([
+            'grading_policy_id' => 2,
+            'policy_name' => 'Alternate',
+            'theoretical_max_mark' => 60,
+            'practical_max_mark' => 40,
+            'minimum_theoretical_mark' => 30,
+            'minimum_practical_mark' => 20,
+            'minimum_final_mark' => 80,
+            'is_default' => 0,
+            'is_active' => 1,
+            'created_at' => self::OLD_TIME,
+            'updated_at' => self::OLD_TIME,
+        ]);
+        DB::table('supplementary_exam_materializations')->update([
+            'grading_policy_id' => 2,
+        ]);
+
+        $report = $this->reconciliation()->reconcile($this->actor(), $this->period()->fresh());
+
+        $this->assertSame('CONFLICT', $report['state']);
+        $this->assertContains('grading_policy_or_outcome_mismatch', array_column($report['issues'], 'code'));
+        $this->expectGradeError(
+            fn () => $this->service()->materializeOffering($this->actor(), $this->offering()),
+            'supplementary_materialization_target_conflict',
+            409,
+        );
+    }
+
+    #[Test]
+    public function zero_default_fallback_is_deterministic_and_stored_policy_may_cease_to_be_default_but_must_stay_active(): void
+    {
+        DB::table('grading_policies')->where('grading_policy_id', 1)->update([
+            'is_default' => 0,
+        ]);
+        DB::table('grading_policies')->insert([
+            'grading_policy_id' => 2,
+            'policy_name' => 'Later default',
+            'theoretical_max_mark' => 60,
+            'practical_max_mark' => 40,
+            'minimum_theoretical_mark' => 50,
+            'minimum_practical_mark' => 30,
+            'minimum_final_mark' => 80,
+            'is_default' => 0,
+            'is_active' => 1,
+            'created_at' => self::OLD_TIME,
+            'updated_at' => self::OLD_TIME,
+        ]);
+
+        $summary = $this->service()->materializeOffering($this->actor(), $this->offering());
+
+        $this->assertSame('materialized', $summary['status']);
+        $this->assertEquals(
+            1,
+            DB::table('supplementary_exam_materializations')->value('grading_policy_id'),
+        );
+
+        DB::table('grading_policies')->where('grading_policy_id', 2)->update([
+            'is_default' => 1,
+        ]);
+
+        $valid = $this->reconciliation()->reconcile($this->actor(), $this->period()->fresh());
+        $retry = $this->service()->materializeOffering($this->actor(), $this->offering());
+        $this->assertSame('PASS', $valid['state']);
+        $this->assertSame('already_materialized', $retry['status']);
+
+        DB::table('grading_policies')->where('grading_policy_id', 1)->update([
+            'is_active' => 0,
+        ]);
+
+        $inactive = $this->reconciliation()->reconcile($this->actor(), $this->period()->fresh());
+        $this->assertSame('CONFLICT', $inactive['state']);
+        $this->assertContains('grading_policy_or_outcome_mismatch', array_column($inactive['issues'], 'code'));
+        $this->expectGradeError(
+            fn () => $this->service()->materializeOffering($this->actor(), $this->offering()),
+            'supplementary_materialization_target_conflict',
+            409,
+        );
+    }
+
+    #[Test]
+    public function predating_materialization_evidence_is_detected_by_reconciliation_and_retry(): void
+    {
+        $this->service()->materializeOffering($this->actor(), $this->offering());
+        DB::table('supplementary_exam_materializations')->update([
+            'materialized_at' => '2026-01-01 09:00:00',
+            'created_at' => '2026-01-01 09:00:00',
+        ]);
+
+        $report = $this->reconciliation()->reconcile($this->actor(), $this->period()->fresh());
+
+        $this->assertSame('CONFLICT', $report['state']);
+        $this->assertContains('materialization_source_mismatch', array_column($report['issues'], 'code'));
+        $this->expectGradeError(
+            fn () => $this->service()->materializeOffering($this->actor(), $this->offering()),
+            'supplementary_materialization_idempotency_conflict',
+            409,
+        );
+    }
+
+    #[Test]
+    public function predating_posting_event_is_detected_by_reconciliation_and_retry(): void
+    {
+        $this->service()->materializeOffering($this->actor(), $this->offering());
+        DB::table('supplementary_exam_materialization_events')->update([
+            'created_at' => '2026-01-01 09:00:00',
+        ]);
+
+        $report = $this->reconciliation()->reconcile($this->actor(), $this->period()->fresh());
+
+        $this->assertSame('CONFLICT', $report['state']);
+        $this->assertContains('materialization_event_mismatch', array_column($report['issues'], 'code'));
+        $this->expectGradeError(
+            fn () => $this->service()->materializeOffering($this->actor(), $this->offering()),
+            'supplementary_materialization_event_conflict',
+            409,
+        );
+    }
+
+    #[Test]
+    public function predating_terminal_event_is_detected_by_reconciliation_and_retry(): void
+    {
+        $this->service()->materializeOffering($this->actor(), $this->offering());
+        DB::table('supplementary_exam_period_events')
+            ->where('event_type', 'results_materialized')
+            ->update(['created_at' => '2026-01-01 09:00:00']);
+
+        $report = $this->reconciliation()->reconcile($this->actor(), $this->period()->fresh());
+
+        $this->assertSame('CONFLICT', $report['state']);
+        $this->assertContains('terminal_event_mismatch', array_column($report['issues'], 'code'));
+        $this->expectGradeError(
+            fn () => $this->service()->materializeOffering($this->actor(), $this->offering()),
+            'supplementary_materialization_terminal_event_conflict',
+            409,
+        );
+    }
+
+    #[Test]
+    public function reconciliation_requires_actual_exam_officer_review_permission_and_mutation_scope(): void
+    {
+        $professor = $this->createActor(2, 'doctor_instructor', employeeId: 22);
+        $this->expectGradeError(
+            fn () => $this->reconciliation()->reconcile($professor, $this->period()),
+            'supplementary_reconciliation_forbidden',
+            403,
+        );
+
+        DB::table('role_permissions')->where('permission_id', 2)->delete();
+        $this->expectGradeError(
+            fn () => $this->reconciliation()->reconcile($this->actor(), $this->period()),
+            'supplementary_reconciliation_forbidden',
+            403,
+        );
+        $this->mapReviewPermission();
+
+        $this->expectGradeError(
+            fn () => $this->reconciliation(inScope: false)->reconcile($this->actor(), $this->period()),
+            'supplementary_reconciliation_out_of_scope',
+            403,
+        );
+    }
+
+    #[Test]
+    public function exact_retry_requires_one_correct_terminal_event_and_rejects_pretransition_evidence(): void
+    {
+        $this->service()->materializeOffering($this->actor(), $this->offering());
+        DB::table('supplementary_exam_period_events')->where('event_type', 'results_materialized')->delete();
+        $this->expectGradeError(
+            fn () => $this->service()->materializeOffering($this->actor(), $this->offering()),
+            'supplementary_materialization_terminal_event_conflict',
+            409,
+        );
+
+        $this->resetMaterializationState();
+        DB::table('supplementary_exam_period_events')->insert([
+            'supplementary_exam_period_id' => 500,
+            'event_type' => 'results_materialized',
+            'from_status' => 'results_published',
+            'to_status' => 'results_materialized',
+            'actor_user_id' => 1,
+            'created_at' => self::PUBLISHED_TIME,
+        ]);
+        $this->expectGradeError(
+            fn () => $this->service()->materializeOffering($this->actor(), $this->offering()),
+            'supplementary_materialization_terminal_event_conflict',
+            409,
+        );
+        $this->assertSame(0, DB::table('supplementary_exam_materializations')->count());
+        $this->assertEquals(20, DB::table('student_course_results')->where('student_course_result_id', 400)->value('theoretical_total'));
+    }
+
+    #[Test]
+    public function rogue_terminal_event_is_rejected_before_incomplete_period_coverage_can_short_circuit(): void
+    {
+        $this->seedSecondOffering(withCandidate: true);
+        DB::table('supplementary_exam_period_events')->insert([
+            'supplementary_exam_period_id' => 500,
+            'event_type' => 'results_materialized',
+            'from_status' => 'results_published',
+            'to_status' => 'results_materialized',
+            'actor_user_id' => 1,
+            'created_at' => self::PUBLISHED_TIME,
+        ]);
+
+        $this->expectGradeError(
+            fn () => $this->service()->materializeOffering($this->actor(), $this->offering()),
+            'supplementary_materialization_terminal_event_conflict',
+            409,
+        );
+
+        $this->assertDatabaseCount('supplementary_exam_materializations', 0);
+        $this->assertSame('results_published', $this->period()->fresh()->status);
+        $this->assertEquals(20, DB::table('student_course_results')->where('student_course_result_id', 400)->value('theoretical_total'));
+        $this->assertEquals(20, DB::table('student_course_results')->where('student_course_result_id', 401)->value('theoretical_total'));
+    }
+
+    #[Test]
+    public function cross_period_repeat_target_is_visible_in_queue_and_rejected_with_stable_code(): void
+    {
+        $this->service()->materializeOffering($this->actor(), $this->offering());
+        $this->seedRepeatPeriodSource();
+        $repeatOffering = SupplementaryExamOffering::query()->with('period')->findOrFail(610);
+        $submission = \App\Models\SupplementaryExamGradeSubmission::query()->findOrFail(910);
+        $queue = $this->service()->decorateReviewQueue($this->actor(), [[
+            'offering' => $repeatOffering,
+            'submission' => $submission,
+            'workflow_status' => 'published',
+            'roster' => [[
+                'supplementary_exam_registration_id' => 710,
+                'student_course_registration_id' => 300,
+                'supplementary_theoretical_mark' => 41,
+                'result_status' => 'published',
+            ]],
+        ]]);
+
+        $this->assertSame('conflict', $queue[0]['materialization']['state']);
+        $this->assertSame('regular_attempt_already_materialized', $queue[0]['materialization']['reason']);
+        $this->assertSame('regular_attempt_already_materialized', $queue[0]['roster'][0]['materialization_conflict_reason']);
+        $this->expectGradeError(
+            fn () => $this->service()->materializeOffering($this->actor(), $repeatOffering),
+            'supplementary_materialization_repeat_attempt_unsupported',
+            409,
+        );
+        $this->assertSame(1, DB::table('supplementary_exam_materializations')->count());
     }
 
     private function service(bool $inScope = true): SupplementaryExamMaterializationService
@@ -527,6 +1491,16 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
         return new SupplementaryExamMaterializationService(new GradeService(), $scope);
     }
 
+    private function reconciliation(bool $inScope = true): SupplementaryExamReconciliationService
+    {
+        $scope = $this->createMock(DataScopeService::class);
+        $scope->method('scopes')->willReturn($inScope
+            ? [['type' => 'university', 'id' => 1]]
+            : []);
+
+        return new SupplementaryExamReconciliationService($scope);
+    }
+
     private function actor(): User
     {
         return User::query()->findOrFail(1);
@@ -535,6 +1509,11 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
     private function offering(): SupplementaryExamOffering
     {
         return SupplementaryExamOffering::query()->findOrFail(600);
+    }
+
+    private function period(int $periodId = 500): SupplementaryExamPeriod
+    {
+        return SupplementaryExamPeriod::query()->findOrFail($periodId);
     }
 
     private function expectGradeError(callable $callback, string $code, int $status): void
@@ -577,21 +1556,88 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
         ]);
     }
 
+    private function mapReviewPermission(): void
+    {
+        DB::table('role_permissions')->insert([
+            'role_id' => 1,
+            'permission_id' => 2,
+            'granted_at' => self::OLD_TIME,
+        ]);
+    }
+
+    private function seedUnrelatedGradingPolicy(): void
+    {
+        DB::table('grading_policies')->insert(array_merge(
+            ['grading_policy_id' => 2],
+            $this->gradingPolicyPayload('Future noncanonical policy'),
+            ['created_at' => self::OLD_TIME, 'updated_at' => self::OLD_TIME],
+        ));
+    }
+
+    private function gradingPolicyPayload(string $name, bool $isDefault = false): array
+    {
+        return [
+            'policy_name' => $name,
+            'theoretical_max_mark' => 60,
+            'practical_max_mark' => 40,
+            'minimum_theoretical_mark' => 45,
+            'minimum_practical_mark' => 25,
+            'minimum_final_mark' => 80,
+            'is_default' => $isDefault ? 1 : 0,
+            'is_active' => 1,
+        ];
+    }
+
+    private function seedUnrelatedOfficialStatuses(): void
+    {
+        DB::table('result_statuses')->insert([
+            'result_status_id' => 5,
+            'status_code' => 'future_result',
+            'status_name' => 'Future result',
+            'is_active' => 1,
+        ]);
+        DB::table('approval_statuses')->insert([
+            'approval_status_id' => 2,
+            'status_code' => 'future_approval',
+            'status_name' => 'Future approval',
+            'is_active' => 1,
+        ]);
+        DB::table('registration_statuses')->insert([
+            'registration_status_id' => 2,
+            'status_code' => 'future_registration',
+            'status_name' => 'Future registration',
+            'is_active' => 1,
+        ]);
+    }
+
     private function seedReferenceData(): void
     {
         DB::table('system_modules')->insert(['module_id' => 1, 'module_code' => 'exams', 'is_active' => 1]);
         DB::table('roles')->insert(['role_id' => 1, 'role_code' => 'exam_officer', 'is_active' => 1]);
         DB::table('permissions')->insert([
-            'permission_id' => 1,
-            'module_id' => 1,
-            'permission_code' => 'supplementary_exams.results.materialize',
-            'permission_name' => 'Materialize supplementary official results',
-            'description' => 'owned:supplementary-exam-materialization-phase6',
-            'is_active' => 1,
-            'created_at' => self::OLD_TIME,
-            'updated_at' => self::OLD_TIME,
+            [
+                'permission_id' => 1,
+                'module_id' => 1,
+                'permission_code' => 'supplementary_exams.results.materialize',
+                'permission_name' => 'Materialize supplementary official results',
+                'description' => 'owned:supplementary-exam-materialization-phase6',
+                'is_active' => 1,
+                'created_at' => self::OLD_TIME,
+                'updated_at' => self::OLD_TIME,
+            ],
+            [
+                'permission_id' => 2,
+                'module_id' => 1,
+                'permission_code' => 'supplementary_exams.grades.review',
+                'permission_name' => 'Review supplementary grades',
+                'description' => 'assigned Phase-7 reconciliation authority',
+                'is_active' => 1,
+                'created_at' => self::OLD_TIME,
+                'updated_at' => self::OLD_TIME,
+            ],
         ]);
         $this->mapMaterializationPermission();
+        $this->mapReviewPermission();
         DB::table('users')->insert([
             'user_id' => 1,
             'username' => 'exam.officer',
@@ -823,6 +1869,16 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
             'created_at' => self::PUBLISHED_TIME,
             'updated_at' => self::PUBLISHED_TIME,
         ]);
+        DB::table('supplementary_exam_grader_assignments')->insert([
+            'supplementary_exam_grader_assignment_id' => 750,
+            'supplementary_exam_offering_id' => 600,
+            'faculty_member_id' => 77,
+            'current_slot' => 1,
+            'assigned_by_user_id' => 1,
+            'assigned_at' => self::OLD_TIME,
+            'created_at' => self::OLD_TIME,
+            'updated_at' => self::OLD_TIME,
+        ]);
         DB::table('supplementary_exam_grade_results')->insert([
             'supplementary_exam_grade_result_id' => 800,
             'supplementary_exam_registration_id' => 700,
@@ -837,16 +1893,42 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
             'updated_at' => self::PUBLISHED_TIME,
         ]);
         DB::table('supplementary_exam_grade_events')->insert([
-            'supplementary_exam_grade_event_id' => 1000,
-            'supplementary_exam_grade_result_id' => 800,
-            'supplementary_exam_grade_submission_id' => 900,
-            'event_type' => 'published',
-            'from_status' => 'approved',
-            'to_status' => 'published',
-            'submission_version' => 1,
-            'theoretical_mark' => 40,
-            'actor_user_id' => 1,
-            'created_at' => self::PUBLISHED_TIME,
+            [
+                'supplementary_exam_grade_event_id' => 998,
+                'supplementary_exam_grade_result_id' => 800,
+                'supplementary_exam_grade_submission_id' => 900,
+                'event_type' => 'submitted',
+                'from_status' => 'draft',
+                'to_status' => 'submitted',
+                'submission_version' => 1,
+                'theoretical_mark' => 40,
+                'actor_user_id' => 77,
+                'created_at' => self::PUBLISHED_TIME,
+            ],
+            [
+                'supplementary_exam_grade_event_id' => 999,
+                'supplementary_exam_grade_result_id' => 800,
+                'supplementary_exam_grade_submission_id' => 900,
+                'event_type' => 'approved',
+                'from_status' => 'submitted',
+                'to_status' => 'approved',
+                'submission_version' => 1,
+                'theoretical_mark' => 40,
+                'actor_user_id' => 1,
+                'created_at' => self::PUBLISHED_TIME,
+            ],
+            [
+                'supplementary_exam_grade_event_id' => 1000,
+                'supplementary_exam_grade_result_id' => 800,
+                'supplementary_exam_grade_submission_id' => 900,
+                'event_type' => 'published',
+                'from_status' => 'approved',
+                'to_status' => 'published',
+                'submission_version' => 1,
+                'theoretical_mark' => 40,
+                'actor_user_id' => 1,
+                'created_at' => self::PUBLISHED_TIME,
+            ],
         ]);
     }
 
@@ -979,6 +2061,78 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
         ]);
         DB::table('supplementary_exam_grade_events')->where('supplementary_exam_grade_event_id', 1001)->update([
             'supplementary_exam_grade_submission_id' => 901,
+        ]);
+    }
+
+    private function seedRepeatPeriodSource(): void
+    {
+        DB::table('supplementary_exam_periods')->insert([
+            'supplementary_exam_period_id' => 510,
+            'academic_year_id' => 1,
+            'semester_id' => 1,
+            'status' => 'results_published',
+            'created_at' => self::OLD_TIME,
+            'updated_at' => self::OLD_TIME,
+        ]);
+        DB::table('supplementary_exam_offerings')->insert([
+            'supplementary_exam_offering_id' => 610,
+            'supplementary_exam_period_id' => 510,
+            'academic_program_id' => 10,
+            'course_id' => 20,
+            'status' => 'closed',
+            'created_at' => self::OLD_TIME,
+            'updated_at' => self::OLD_TIME,
+        ]);
+        DB::table('supplementary_exam_offering_sources')->insert([
+            'supplementary_exam_offering_source_id' => 10,
+            'supplementary_exam_offering_id' => 610,
+            'course_offering_id' => 100,
+            'created_at' => self::OLD_TIME,
+        ]);
+        DB::table('supplementary_exam_registrations')->insert([
+            'supplementary_exam_registration_id' => 710,
+            'supplementary_exam_offering_id' => 610,
+            'student_id' => 200,
+            'student_course_registration_id' => 300,
+            'status' => 'registered',
+            'current_slot' => 1,
+            'eligibility_reason' => 'failed_theoretical',
+            'created_at' => self::PUBLISHED_TIME,
+            'updated_at' => self::PUBLISHED_TIME,
+        ]);
+        DB::table('supplementary_exam_grade_submissions')->insert([
+            'supplementary_exam_grade_submission_id' => 910,
+            'supplementary_exam_offering_id' => 610,
+            'submission_version' => 1,
+            'status' => 'published',
+            'published_at' => self::PUBLISHED_TIME,
+            'created_at' => self::PUBLISHED_TIME,
+            'updated_at' => self::PUBLISHED_TIME,
+        ]);
+        DB::table('supplementary_exam_grade_results')->insert([
+            'supplementary_exam_grade_result_id' => 810,
+            'supplementary_exam_registration_id' => 710,
+            'supplementary_exam_offering_id' => 610,
+            'student_course_registration_id' => 300,
+            'student_id' => 200,
+            'theoretical_mark' => 41,
+            'status' => 'published',
+            'submission_version' => 1,
+            'published_at' => self::PUBLISHED_TIME,
+            'created_at' => self::PUBLISHED_TIME,
+            'updated_at' => self::PUBLISHED_TIME,
+        ]);
+        DB::table('supplementary_exam_grade_events')->insert([
+            'supplementary_exam_grade_event_id' => 1010,
+            'supplementary_exam_grade_result_id' => 810,
+            'supplementary_exam_grade_submission_id' => 910,
+            'event_type' => 'published',
+            'from_status' => 'approved',
+            'to_status' => 'published',
+            'submission_version' => 1,
+            'theoretical_mark' => 41,
+            'actor_user_id' => 1,
+            'created_at' => self::PUBLISHED_TIME,
         ]);
     }
 
@@ -1280,6 +2434,16 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
             $table->integer('submission_version');
             $table->string('status', 24);
             $table->dateTime('published_at')->nullable();
+            $table->timestamps();
+        });
+        Schema::create('supplementary_exam_grader_assignments', function (Blueprint $table): void {
+            $table->increments('supplementary_exam_grader_assignment_id');
+            $table->integer('supplementary_exam_offering_id');
+            $table->integer('faculty_member_id');
+            $table->tinyInteger('current_slot')->nullable();
+            $table->integer('assigned_by_user_id');
+            $table->dateTime('assigned_at');
+            $table->dateTime('ended_at')->nullable();
             $table->timestamps();
         });
         Schema::create('supplementary_exam_grade_results', function (Blueprint $table): void {

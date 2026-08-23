@@ -17,6 +17,8 @@ use Illuminate\Support\Facades\DB;
 
 class DisciplinaryCaseService
 {
+    public function __construct(private readonly GradeService $grades) {}
+
     public function createCase(array $data, ?int $userId): StudentDisciplinaryCase
     {
         return DB::transaction(function () use ($data, $userId): StudentDisciplinaryCase {
@@ -103,9 +105,14 @@ class DisciplinaryCaseService
                     });
             })
             ->with(['studentCourseResult', 'courseOffering'])
+            ->orderBy('student_course_registration_id')
+            ->lockForUpdate()
             ->get();
 
         foreach ($registrations as $registration) {
+            $this->grades->assertNotSupplementaryMaterialized(
+                (int) $registration->student_course_registration_id
+            );
             $result = $registration->studentCourseResult;
 
             DisciplinaryCaseAffectedCourse::query()->create([
@@ -146,18 +153,32 @@ class DisciplinaryCaseService
             $affectedCourses = DisciplinaryCaseAffectedCourse::query()
                 ->where('case_id', $case->case_id)
                 ->whereNull('reverted_at')
+                ->orderBy('course_offering_id')
+                ->lockForUpdate()
                 ->get();
 
+            $registrations = StudentCourseRegistration::query()
+                ->where('student_id', $case->student_id)
+                ->whereIn('course_offering_id', $affectedCourses->pluck('course_offering_id'))
+                ->orderBy('student_course_registration_id')
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('course_offering_id');
+            $results = StudentCourseResult::query()
+                ->whereIn('student_course_registration_id', $registrations->modelKeys())
+                ->orderBy('student_course_result_id')
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('student_course_registration_id');
+
             foreach ($affectedCourses as $affected) {
-                $registration = StudentCourseRegistration::query()
-                    ->where('student_id', $case->student_id)
-                    ->where('course_offering_id', $affected->course_offering_id)
-                    ->first();
+                $registration = $registrations->get((int) $affected->course_offering_id);
 
                 if ($registration !== null) {
-                    $result = StudentCourseResult::query()
-                        ->where('student_course_registration_id', $registration->student_course_registration_id)
-                        ->first();
+                    $this->grades->assertNotSupplementaryMaterialized(
+                        (int) $registration->student_course_registration_id
+                    );
+                    $result = $results->get((int) $registration->student_course_registration_id);
 
                     $hadPreviousResult = $affected->previous_result_status_id !== null
                         || $affected->previous_theoretical_mark !== null
@@ -184,7 +205,7 @@ class DisciplinaryCaseService
             }
 
             $case->update(['case_status' => 'overturned']);
-        });
+        }, 3);
     }
 
     public function submitAppeal(int $caseId, array $data): DisciplinaryCaseAppeal

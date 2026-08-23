@@ -6,6 +6,7 @@ use App\Exceptions\GradeException;
 use App\Models\CourseOffering;
 use App\Models\GradeApproval;
 use App\Models\GradeComponent;
+use App\Models\GradingPolicy;
 use App\Models\RegistrationStatus;
 use App\Models\ResultStatus;
 use App\Models\StudentCourseRegistration;
@@ -49,38 +50,114 @@ class SupplementaryExamMaterializationService
         $authorized = $actor->isExamOfficer()
             && $actor->effectivePermissions()->contains(Governance::MATERIALIZE);
 
-        return collect($rows)->map(function (array $row) use ($actor, $ready, $authorized): array {
+        $rows = collect($rows);
+        $offeringIds = $rows->pluck('offering')
+            ->filter()
+            ->map(fn (SupplementaryExamOffering $offering): int => (int) $offering->getKey())
+            ->unique()
+            ->values();
+        $roster = $rows->flatMap(fn (array $row): array => $row['roster'] ?? []);
+        $registrationIds = $roster->pluck('supplementary_exam_registration_id')
+            ->filter()->map(fn ($id): int => (int) $id)->unique()->values();
+        $targetRegistrationIds = $roster->pluck('student_course_registration_id')
+            ->filter()->map(fn ($id): int => (int) $id)->unique()->values();
+
+        // Older queue payloads did not expose the canonical target id. Resolve all
+        // missing ids in one query so cross-period provenance is still visible.
+        $targetByRegistration = collect();
+        if ($ready && $registrationIds->isNotEmpty()) {
+            $targetByRegistration = SupplementaryExamRegistration::query()
+                ->whereIn('supplementary_exam_registration_id', $registrationIds)
+                ->pluck('student_course_registration_id', 'supplementary_exam_registration_id')
+                ->map(fn ($id): int => (int) $id);
+            $targetRegistrationIds = $targetRegistrationIds
+                ->concat($targetByRegistration->values())
+                ->unique()
+                ->values();
+        }
+
+        $materializations = collect();
+        if ($ready && ($offeringIds->isNotEmpty() || $registrationIds->isNotEmpty() || $targetRegistrationIds->isNotEmpty())) {
+            $materializations = SupplementaryExamMaterialization::query()
+                ->with([
+                    'supplementaryRegistration',
+                    'sourceResult.events',
+                    'sourceEvent',
+                    'sourceSubmission',
+                    'originalRegistration.courseOffering.gradeApprovals.approvalStatus',
+                    'originalRegistration.courseOffering.gradeComponents',
+                    'originalRegistration.studentGradeComponents',
+                    'targetResult.resultStatus',
+                    'gradingPolicy',
+                    'gradeApproval.approvalStatus',
+                    'event',
+                ])
+                ->where(function ($query) use ($offeringIds, $registrationIds, $targetRegistrationIds): void {
+                    if ($offeringIds->isNotEmpty()) {
+                        $query->whereIn('supplementary_exam_offering_id', $offeringIds);
+                    }
+                    if ($registrationIds->isNotEmpty()) {
+                        $query->orWhereIn('supplementary_exam_registration_id', $registrationIds);
+                    }
+                    if ($targetRegistrationIds->isNotEmpty()) {
+                        $query->orWhereIn('student_course_registration_id', $targetRegistrationIds);
+                    }
+                })
+                ->orderBy('supplementary_exam_materialization_id')
+                ->get();
+        }
+
+        $materializationsByOffering = $materializations->groupBy('supplementary_exam_offering_id');
+        $materializationsByRegistration = $materializations->groupBy('supplementary_exam_registration_id');
+        $materializationsByTarget = $materializations->groupBy('student_course_registration_id');
+
+        return $rows->map(function (array $row) use (
+            $ready,
+            $authorized,
+            $targetByRegistration,
+            $materializationsByOffering,
+            $materializationsByRegistration,
+            $materializationsByTarget,
+        ): array {
             $offering = $row['offering'];
             $roster = collect($row['roster'] ?? []);
             $offeringId = (int) $offering->getKey();
             $submissionId = (int) (($row['submission'] ?? null)?->getKey() ?? 0);
-            $registrationIds = $roster->pluck('supplementary_exam_registration_id')->map(fn ($id) => (int) $id);
-            $materializations = collect();
+            $offeringMaterializations = $materializationsByOffering->get($offeringId, collect());
+            $repeatConflict = false;
 
-            if ($ready && $registrationIds->isNotEmpty()) {
-                $materializations = SupplementaryExamMaterialization::query()
-                    ->with([
-                        'supplementaryRegistration',
-                        'sourceResult.events',
-                        'sourceEvent',
-                        'sourceSubmission',
-                        'originalRegistration.courseOffering.gradeApprovals.approvalStatus',
-                        'originalRegistration.courseOffering.gradeComponents',
-                        'originalRegistration.studentGradeComponents',
-                        'targetResult',
-                        'gradeApproval.approvalStatus',
-                        'event',
-                    ])
-                    ->where(function ($query) use ($offeringId, $registrationIds): void {
-                        $query->where('supplementary_exam_offering_id', $offeringId)
-                            ->orWhereIn('supplementary_exam_registration_id', $registrationIds);
-                    })
-                    ->get()
-                    ->keyBy('supplementary_exam_registration_id');
-            }
-
-            $row['roster'] = $roster->map(function (array $candidate) use ($materializations, $offeringId, $submissionId): array {
-                $materialization = $materializations->get((int) $candidate['supplementary_exam_registration_id']);
+            $row['roster'] = $roster->map(function (array $candidate) use (
+                $targetByRegistration,
+                $materializationsByRegistration,
+                $materializationsByTarget,
+                $offeringId,
+                $submissionId,
+                &$repeatConflict,
+            ): array {
+                $registrationId = (int) $candidate['supplementary_exam_registration_id'];
+                $targetRegistrationId = (int) ($candidate['student_course_registration_id']
+                    ?? $targetByRegistration->get($registrationId)
+                    ?? 0);
+                $candidate['student_course_registration_id'] = $targetRegistrationId ?: null;
+                $sourceMatches = $materializationsByRegistration->get($registrationId, collect());
+                $targetMatches = $targetRegistrationId > 0
+                    ? $materializationsByTarget->get($targetRegistrationId, collect())
+                    : collect();
+                $relevant = $sourceMatches->concat($targetMatches)
+                    ->unique('supplementary_exam_materialization_id')
+                    ->values();
+                $materialization = $relevant->first(fn (SupplementaryExamMaterialization $row): bool =>
+                    (int) $row->supplementary_exam_registration_id === $registrationId
+                    && (int) $row->supplementary_exam_offering_id === $offeringId
+                );
+                $candidateRepeatConflict = $targetMatches->contains(fn (SupplementaryExamMaterialization $row): bool =>
+                    (int) $row->supplementary_exam_registration_id !== $registrationId
+                    || (int) $row->supplementary_exam_offering_id !== $offeringId
+                );
+                $repeatConflict = $repeatConflict || $candidateRepeatConflict;
+                $candidate['materialization_conflict_reason'] = $candidateRepeatConflict
+                    ? 'regular_attempt_already_materialized'
+                    : null;
                 $candidate['official_record_materialized'] = $materialization !== null
                     && (int) $materialization->supplementary_exam_offering_id === $offeringId
                     && (int) $materialization->supplementary_exam_grade_result_id
@@ -114,6 +191,12 @@ class SupplementaryExamMaterializationService
             })->all();
 
             $exactCount = collect($row['roster'])->where('official_record_materialized', true)->count();
+            $gradedCount = collect($row['roster'])
+                ->filter(fn (array $candidate): bool => ($candidate['supplementary_theoretical_mark'] ?? null) !== null)
+                ->count();
+            $publishedCount = collect($row['roster'])
+                ->where('result_status', 'published')
+                ->count();
             $periodStatus = (string) $offering->period?->status;
 
             if (! $ready) {
@@ -122,10 +205,13 @@ class SupplementaryExamMaterializationService
             } elseif ($roster->isEmpty()) {
                 $state = 'no_candidates';
                 $reason = 'empty_roster';
-            } elseif ($exactCount === $roster->count() && $materializations->count() === $roster->count()) {
+            } elseif ($repeatConflict) {
+                $state = 'conflict';
+                $reason = 'regular_attempt_already_materialized';
+            } elseif ($exactCount === $roster->count() && $offeringMaterializations->count() === $roster->count()) {
                 $state = 'materialized';
                 $reason = null;
-            } elseif ($materializations->isNotEmpty()) {
+            } elseif ($offeringMaterializations->isNotEmpty()) {
                 $state = 'conflict';
                 $reason = 'provenance_mismatch';
             } elseif (($row['workflow_status'] ?? null) === 'published') {
@@ -136,19 +222,63 @@ class SupplementaryExamMaterializationService
                 $reason = 'result_not_published';
             }
 
+            $canMaterialize = $state === 'waiting'
+                && $reason === null
+                && $authorized
+                && (bool) ($row['action_flags']['can_materialize'] ?? false);
+
             $row['materialization'] = [
                 'state' => $state,
                 'reason' => $reason,
                 'materialized_count' => $exactCount,
                 'candidate_count' => $roster->count(),
-                'can_materialize' => $state === 'waiting'
-                    && $reason === null
-                    && $authorized
-                    && $this->scope->canMutateProgram($actor, (int) $offering->academic_program_id),
+                'roster_count' => $roster->count(),
+                'graded_count' => $gradedCount,
+                'published_count' => $publishedCount,
+                'official_materialized_count' => $exactCount,
+                'operational_status' => $this->operationalStatus(
+                    $state,
+                    (string) ($row['workflow_status'] ?? 'waiting'),
+                    $periodStatus,
+                ),
+                'can_materialize' => $canMaterialize,
             ];
+            $row['action_flags']['can_materialize'] = $canMaterialize;
 
             return $row;
         })->all();
+    }
+
+    private function operationalStatus(string $state, string $workflowStatus, string $periodStatus): string
+    {
+        if ($state === 'conflict') {
+            return 'conflict_requires_review';
+        }
+        if ($state === 'materialized') {
+            return 'officially_materialized';
+        }
+        if ($state === 'no_candidates') {
+            return 'no_candidates';
+        }
+        if ($state === 'waiting' && $workflowStatus === 'published') {
+            return 'awaiting_official_materialization';
+        }
+
+        return match ($workflowStatus) {
+            'submitted' => 'grades_submitted',
+            'returned' => 'returned_for_correction',
+            'approved' => 'grades_approved',
+            'published' => $periodStatus === Governance::SOURCE_PERIOD_STATUS
+                ? 'awaiting_official_materialization'
+                : 'results_published',
+            'draft' => 'awaiting_grade_entry',
+            default => match ($periodStatus) {
+                'registration_open' => 'registration_open',
+                'registration_closed' => 'registration_closed',
+                'grading_open' => 'awaiting_grade_entry',
+                default => 'awaiting_workflow_progress',
+            },
+        };
     }
 
     public function materializeOffering(User $actor, SupplementaryExamOffering $seed): array
@@ -251,6 +381,7 @@ class SupplementaryExamMaterializationService
                 ->groupBy('student_course_registration_id');
 
             $materializations = SupplementaryExamMaterialization::query()
+                ->with('gradingPolicy')
                 ->where(function ($query) use ($offering, $registrations, $sourceResults, $sourceEvents, $regularRegistrations, $regularResults): void {
                     $query->where('supplementary_exam_offering_id', $offering->getKey())
                         ->orWhereIn('supplementary_exam_registration_id', $registrations->modelKeys())
@@ -268,7 +399,7 @@ class SupplementaryExamMaterializationService
                 ->orderBy('supplementary_exam_materialization_event_id')
                 ->lockForUpdate()
                 ->get()
-                ->keyBy('supplementary_exam_materialization_id');
+                ->groupBy('supplementary_exam_materialization_id');
 
             $registrationStatuses = RegistrationStatus::query()
                 ->whereIn('registration_status_id', $regularRegistrations->pluck('registration_status_id'))
@@ -301,7 +432,7 @@ class SupplementaryExamMaterializationService
             }
             $approvedStatusId = (int) $approvedStatuses->first()->approval_status_id;
 
-            $policy = $this->grades->lockDefaultGradingPolicy();
+            $policy = null;
             $now = now();
             $materializedCount = 0;
             $alreadyMaterializedCount = 0;
@@ -327,6 +458,18 @@ class SupplementaryExamMaterializationService
                     || (int) $row->student_course_registration_id === (int) $regularRegistration?->getKey()
                     || (int) $row->student_course_result_id === (int) $regularResult?->getKey()
                 );
+
+                if ($existing
+                    && ((int) $existing->student_course_registration_id === (int) $regularRegistration?->getKey()
+                        || (int) $existing->student_course_result_id === (int) $regularResult?->getKey())
+                    && ((int) $existing->supplementary_exam_registration_id !== (int) $registration->getKey()
+                        || (int) $existing->supplementary_exam_offering_id !== (int) $offering->getKey())) {
+                    $this->fail(
+                        'The original academic attempt was already materialized by another supplementary examination.',
+                        'supplementary_materialization_repeat_attempt_unsupported',
+                        409,
+                    );
+                }
 
                 $this->assertCandidateProvenance(
                     $offering,
@@ -358,9 +501,10 @@ class SupplementaryExamMaterializationService
                 );
 
                 if ($existing) {
+                    $recordedPolicy = $existing->gradingPolicy;
                     $this->assertExistingMaterialization(
                         $existing,
-                        $eventsByMaterialization->get($existing->getKey()),
+                        $eventsByMaterialization->get($existing->getKey(), collect()),
                         $submission,
                         $registration,
                         $sourceResult,
@@ -368,7 +512,9 @@ class SupplementaryExamMaterializationService
                         $regularRegistration,
                         $regularResult,
                         $approval,
+                        $recordedPolicy,
                         $regularRegistrationStatus,
+                        $resultStatusesById->get((int) $regularResult?->result_status_id),
                         $theoreticalSnapshot,
                         $practicalSnapshot,
                     );
@@ -376,6 +522,8 @@ class SupplementaryExamMaterializationService
                     $alreadyMaterializedCount++;
                     continue;
                 }
+
+                $policy ??= $this->grades->lockDefaultGradingPolicy();
 
                 if ($period->status === Governance::TERMINAL_PERIOD_STATUS) {
                     $this->fail('A terminal period contains an unmaterialized candidate.', 'supplementary_materialization_terminal_conflict', 409);
@@ -754,18 +902,23 @@ class SupplementaryExamMaterializationService
 
     private function assertTheoreticalComponentTransition(array $before, array $after, float $sourceMark): void
     {
-        if (count($before) !== 1
-            || count($after) !== 1
-            || $before[0]['student_grade_component_id'] !== $after[0]['student_grade_component_id']
-            || $before[0]['grade_component_id'] !== $after[0]['grade_component_id']
-            || $before[0]['grade_status'] !== $after[0]['grade_status']
-            || $this->decimal($after[0]['mark']) !== $this->decimal($sourceMark)) {
+        if (! $this->theoreticalComponentTransitionMatches($before, $after, $sourceMark)) {
             $this->fail(
                 'The canonical theoretical component transition is inconsistent.',
                 'supplementary_materialization_theoretical_component_failure',
                 409,
             );
         }
+    }
+
+    private function theoreticalComponentTransitionMatches(array $before, array $after, float|string $sourceMark): bool
+    {
+        return count($before) === 1
+            && count($after) === 1
+            && $before[0]['student_grade_component_id'] === $after[0]['student_grade_component_id']
+            && $before[0]['grade_component_id'] === $after[0]['grade_component_id']
+            && $before[0]['grade_status'] === $after[0]['grade_status']
+            && $this->decimal($after[0]['mark']) === $this->decimal($sourceMark);
     }
 
     private function assertPracticalAggregateMatchesSnapshot(Collection $components, array $snapshot, StudentCourseResult $result): void
@@ -871,7 +1024,7 @@ class SupplementaryExamMaterializationService
 
     private function assertExistingMaterialization(
         SupplementaryExamMaterialization $materialization,
-        ?SupplementaryExamMaterializationEvent $event,
+        Collection $events,
         SupplementaryExamGradeSubmission $submission,
         SupplementaryExamRegistration $registration,
         SupplementaryExamGradeResult $sourceResult,
@@ -879,10 +1032,13 @@ class SupplementaryExamMaterializationService
         StudentCourseRegistration $regularRegistration,
         StudentCourseResult $regularResult,
         GradeApproval $approval,
+        ?GradingPolicy $policy,
         ?RegistrationStatus $registrationStatus,
+        ?ResultStatus $resultStatus,
         array $theoreticalSnapshot,
         array $practicalSnapshot,
     ): void {
+        $event = $events->first();
         $sourceMatches = (int) $materialization->supplementary_exam_registration_id === (int) $registration->getKey()
             && (int) $materialization->supplementary_exam_offering_id === (int) $registration->supplementary_exam_offering_id
             && (int) $materialization->supplementary_exam_grade_result_id === (int) $sourceResult->getKey()
@@ -892,6 +1048,7 @@ class SupplementaryExamMaterializationService
             && (int) $materialization->student_course_registration_id === (int) $regularRegistration->getKey()
             && (int) $materialization->student_course_result_id === (int) $regularResult->getKey()
             && (int) $materialization->student_id === (int) $registration->student_id
+            && (int) $materialization->grading_policy_id === (int) $policy?->getKey()
             && (int) $materialization->grade_approval_id === (int) $approval->getKey()
             && (int) $materialization->preserved_registration_status_id === (int) $registrationStatus?->getKey()
             && $this->decimal($materialization->source_theoretical_mark) === $this->decimal($sourceResult->theoretical_mark)
@@ -901,6 +1058,11 @@ class SupplementaryExamMaterializationService
             && $this->timestamp($materialization->source_result_updated_at) === $this->timestamp($sourceResult->updated_at)
             && $this->timestamp($materialization->source_submission_updated_at) === $this->timestamp($submission->updated_at)
             && $this->timestamp($materialization->grade_approval_updated_at) === $this->timestamp($approval->updated_at)
+            && $materialization->materialized_at !== null
+            && $materialization->created_at !== null
+            && $this->timestamp($materialization->materialized_at) === $this->timestamp($materialization->created_at)
+            && ! $materialization->materialized_at->lt($sourceResult->published_at)
+            && ! $materialization->materialized_at->lt($submission->published_at)
             && count($materialization->before_theoretical_components_snapshot ?? []) === 1
             && count($materialization->after_theoretical_components_snapshot ?? []) === 1
             && $materialization->after_theoretical_components_snapshot === $theoreticalSnapshot
@@ -920,16 +1082,21 @@ class SupplementaryExamMaterializationService
             $regularResult,
             $theoreticalSnapshot,
             $practicalSnapshot,
+            $policy,
+            $resultStatus,
         )) {
             $this->fail('The materialized official result has changed since posting.', 'supplementary_materialization_target_conflict', 409);
         }
 
-        if (! $event
+        if ($events->count() !== 1
+            || ! $event
             || $event->event_type !== 'official_result_materialized'
             || (int) $event->supplementary_exam_offering_id !== (int) $registration->supplementary_exam_offering_id
             || (int) $event->supplementary_exam_registration_id !== (int) $registration->getKey()
             || (int) $event->source_submission_version !== (int) $submission->submission_version
-            || (int) $event->actor_user_id !== (int) $materialization->materialized_by_user_id) {
+            || (int) $event->actor_user_id !== (int) $materialization->materialized_by_user_id
+            || $event->created_at === null
+            || $this->timestamp($event->created_at) !== $this->timestamp($materialization->created_at)) {
             $this->fail('The immutable materialization event is missing or inconsistent.', 'supplementary_materialization_event_conflict', 409);
         }
     }
@@ -1013,11 +1180,14 @@ class SupplementaryExamMaterializationService
         StudentCourseResult $result,
         ?array $theoreticalSnapshot = null,
         ?array $practicalSnapshot = null,
+        ?GradingPolicy $policy = null,
+        ?ResultStatus $resultStatus = null,
     ): bool {
         if ((int) $registration->getKey() !== (int) $materialization->student_course_registration_id
             || (int) $registration->student_id !== (int) $materialization->student_id
             || (int) $result->getKey() !== (int) $materialization->student_course_result_id
-            || (int) $result->student_course_registration_id !== (int) $registration->getKey()) {
+            || (int) $result->student_course_registration_id !== (int) $registration->getKey()
+            || (int) $registration->result_status_id !== (int) $result->result_status_id) {
             return false;
         }
 
@@ -1040,12 +1210,98 @@ class SupplementaryExamMaterializationService
             [$theoreticalSnapshot, $practicalSnapshot] = $this->componentSnapshotsForRegistration($registration);
         }
 
-        return count($theoreticalSnapshot) === 1
-            && count($materialization->after_theoretical_components_snapshot ?? []) === 1
-            && $materialization->after_theoretical_components_snapshot === $theoreticalSnapshot
+        $policy ??= $materialization->relationLoaded('gradingPolicy')
+            ? $materialization->gradingPolicy
+            : GradingPolicy::query()->find($materialization->grading_policy_id);
+        $resultStatus ??= $result->relationLoaded('resultStatus')
+            ? $result->resultStatus
+            : ResultStatus::query()->find($result->result_status_id);
+        $protectedSnapshotsMatch = collect(['practical_total', 'coursework_total', 'is_deprived', 'result_announced_at'])
+            ->every(function (string $field) use ($materialization): bool {
+                $before = $materialization->getAttribute("before_{$field}");
+                $after = $materialization->getAttribute("after_{$field}");
+
+                return match ($field) {
+                    'practical_total', 'coursework_total' => $this->decimal($before) === $this->decimal($after),
+                    'result_announced_at' => $this->timestamp($before) === $this->timestamp($after),
+                    default => (bool) $before === (bool) $after,
+                };
+            });
+        $beforeTheoreticalSnapshot = $materialization->before_theoretical_components_snapshot ?? [];
+        $afterTheoreticalSnapshot = $materialization->after_theoretical_components_snapshot ?? [];
+
+        return $protectedSnapshotsMatch
+            && count($theoreticalSnapshot) === 1
+            && $this->theoreticalComponentTransitionMatches(
+                $beforeTheoreticalSnapshot,
+                $afterTheoreticalSnapshot,
+                $materialization->source_theoretical_mark,
+            )
+            && $afterTheoreticalSnapshot === $theoreticalSnapshot
+            && $this->decimal(collect($beforeTheoreticalSnapshot)->sum('mark'))
+                === $this->decimal($materialization->before_theoretical_total)
             && $this->decimal(collect($theoreticalSnapshot)->sum('mark'))
                 === $this->decimal($materialization->after_theoretical_total)
-            && $materialization->practical_components_snapshot === $practicalSnapshot;
+            && $materialization->practical_components_snapshot === $practicalSnapshot
+            && $this->canonicalOfficialOutcomeMatches(
+                $materialization,
+                $registration,
+                $result,
+                $theoreticalSnapshot,
+                $practicalSnapshot,
+                $policy,
+                $resultStatus,
+            );
+    }
+
+    private function canonicalOfficialOutcomeMatches(
+        SupplementaryExamMaterialization $materialization,
+        StudentCourseRegistration $registration,
+        StudentCourseResult $result,
+        array $theoreticalSnapshot,
+        array $practicalSnapshot,
+        ?GradingPolicy $policy,
+        ?ResultStatus $resultStatus,
+    ): bool {
+        if (! $policy
+            || ! $resultStatus
+            || (int) $policy->getKey() !== (int) $materialization->grading_policy_id
+            || ! (bool) $policy->is_active
+            || ! (bool) $resultStatus->is_active
+            || (bool) $result->is_deprived
+            || collect($theoreticalSnapshot)->contains(fn (array $row): bool =>
+                $row['mark'] === null || $row['grade_status'] !== 'approved')
+            || collect($practicalSnapshot)->contains(fn (array $row): bool =>
+                $row['mark'] === null || $row['grade_status'] !== 'approved')) {
+            return false;
+        }
+
+        $theoretical = (float) collect($theoreticalSnapshot)->sum('mark');
+        $requiresPractical = $practicalSnapshot !== [];
+        $practical = $requiresPractical ? (float) collect($practicalSnapshot)->sum('mark') : 0.0;
+        if ($theoretical < 0
+            || $theoretical > (float) $policy->theoretical_max_mark
+            || ($requiresPractical && ($practical < 0 || $practical > (float) $policy->practical_max_mark))) {
+            return false;
+        }
+        $final = round($theoretical + $practical, 2);
+        $failed = $theoretical < (float) $policy->minimum_theoretical_mark
+            || ($requiresPractical && (
+                $practical < (float) $policy->minimum_practical_mark
+            ))
+            || $final < (float) $policy->minimum_final_mark;
+        $expectedStatus = $failed ? 'failed' : 'passed';
+        $practicalAggregateMatches = $requiresPractical
+            ? $this->decimal($practical) === $this->decimal($result->practical_total)
+            : in_array($this->decimal($result->practical_total), [null, '0.00'], true);
+
+        return $this->decimal($theoretical) === $this->decimal($materialization->source_theoretical_mark)
+            && $this->decimal($theoretical) === $this->decimal($result->theoretical_total)
+            && $practicalAggregateMatches
+            && $this->decimal($final) === $this->decimal($result->final_mark)
+            && $this->decimal($final) === $this->decimal($materialization->after_final_mark)
+            && $resultStatus->status_code === $expectedStatus
+            && (int) $registration->result_status_id === (int) $resultStatus->getKey();
     }
 
     private function componentSnapshotsForRegistration(StudentCourseRegistration $registration): array
@@ -1081,15 +1337,99 @@ class SupplementaryExamMaterializationService
         User $actor,
         CarbonInterface $now,
     ): bool {
-        $offeringIds = $offerings->modelKeys();
-        $registrations = SupplementaryExamRegistration::query()
-            ->whereIn('supplementary_exam_offering_id', $offeringIds)
-            ->where('status', 'registered')
-            ->where('current_slot', 1)
-            ->orderBy('supplementary_exam_registration_id')
+        $terminalEvents = SupplementaryExamPeriodEvent::query()
+            ->where('supplementary_exam_period_id', $period->getKey())
+            ->where('event_type', 'results_materialized')
+            ->orderBy('supplementary_exam_period_event_id')
+            ->lockForUpdate()
             ->get();
 
+        if ($period->status === Governance::TERMINAL_PERIOD_STATUS) {
+            $terminalEvent = $terminalEvents->first();
+            if ($terminalEvents->count() !== 1
+                || ! $terminalEvent
+                || (int) $terminalEvent->supplementary_exam_period_id !== (int) $period->getKey()
+                || $terminalEvent->from_status !== Governance::SOURCE_PERIOD_STATUS
+                || $terminalEvent->to_status !== Governance::TERMINAL_PERIOD_STATUS
+                || $terminalEvent->actor_user_id === null
+                || $terminalEvent->created_at === null) {
+                $this->fail(
+                    'The terminal period event is missing or inconsistent.',
+                    'supplementary_materialization_terminal_event_conflict',
+                    409,
+                );
+            }
+        } elseif ($terminalEvents->isNotEmpty()) {
+            $this->fail(
+                'A non-terminal period already contains terminal materialization evidence.',
+                'supplementary_materialization_terminal_event_conflict',
+                409,
+            );
+        }
+
+        $offeringIds = $offerings->modelKeys();
+        $offeringsById = $offerings->keyBy('supplementary_exam_offering_id');
+        $periodSources = SupplementaryExamOfferingSource::query()
+            ->whereIn('supplementary_exam_offering_id', $offeringIds)
+            ->orderBy('supplementary_exam_offering_source_id')
+            ->lockForUpdate()
+            ->get();
+        $sourceOfferings = CourseOffering::query()
+            ->whereIn('course_offering_id', $periodSources->pluck('course_offering_id'))
+            ->orderBy('course_offering_id')
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('course_offering_id');
+        $allowedSources = $periodSources->groupBy('supplementary_exam_offering_id');
+        foreach ($offerings as $periodOffering) {
+            $offeringSources = $allowedSources->get($periodOffering->getKey(), collect());
+            if ($offeringSources->isEmpty()
+                || $offeringSources->contains(function (SupplementaryExamOfferingSource $source) use (
+                    $periodOffering,
+                    $sourceOfferings,
+                ): bool {
+                    $sourceOffering = $sourceOfferings->get((int) $source->course_offering_id);
+
+                    return ! $sourceOffering
+                        || (int) $sourceOffering->course_id !== (int) $periodOffering->course_id
+                        || (int) $sourceOffering->academic_program_id !== (int) $periodOffering->academic_program_id;
+                })) {
+                $this->fail(
+                    'A period offering has missing or inconsistent academic sources.',
+                    'supplementary_materialization_period_source_conflict',
+                    409,
+                );
+            }
+        }
+
+        $allRegistrations = SupplementaryExamRegistration::query()
+            ->whereIn('supplementary_exam_offering_id', $offeringIds)
+            ->orderBy('supplementary_exam_registration_id')
+            ->lockForUpdate()
+            ->get();
+        if ($allRegistrations->contains(fn (SupplementaryExamRegistration $registration): bool =>
+            ! (($registration->status === 'registered' && (int) $registration->current_slot === 1)
+                || ($registration->status === 'cancelled' && $registration->current_slot === null)))) {
+            $this->fail(
+                'The period contains an invalid supplementary registration state.',
+                'supplementary_materialization_roster_mismatch',
+                409,
+            );
+        }
+        $registrations = $allRegistrations
+            ->where('status', 'registered')
+            ->filter(fn (SupplementaryExamRegistration $registration): bool => (int) $registration->current_slot === 1)
+            ->values();
+
         if ($registrations->isEmpty()) {
+            if ($period->status === Governance::TERMINAL_PERIOD_STATUS) {
+                $this->fail(
+                    'A terminal period cannot have an empty fixed roster.',
+                    'supplementary_materialization_terminal_conflict',
+                    409,
+                );
+            }
+
             return false;
         }
 
@@ -1103,7 +1443,11 @@ class SupplementaryExamMaterializationService
         $resultRosterIds = $allResults->pluck('supplementary_exam_registration_id')
             ->map(fn ($id) => (int) $id)->sort()->values()->all();
         if ($rosterIds !== $resultRosterIds) {
-            return false;
+            $this->fail(
+                'Published period results do not exactly match the fixed roster.',
+                'supplementary_materialization_roster_mismatch',
+                409,
+            );
         }
         $results = $allResults->keyBy('supplementary_exam_registration_id');
         $sourceEvents = SupplementaryExamGradeEvent::query()
@@ -1112,6 +1456,7 @@ class SupplementaryExamMaterializationService
             ->get()
             ->groupBy('supplementary_exam_grade_result_id');
         $allMaterializations = SupplementaryExamMaterialization::query()
+            ->with('gradingPolicy')
             ->whereIn('supplementary_exam_offering_id', $offeringIds)
             ->orderBy('supplementary_exam_materialization_id')
             ->get()
@@ -1119,6 +1464,15 @@ class SupplementaryExamMaterializationService
         $materializedRosterIds = $allMaterializations->pluck('supplementary_exam_registration_id')
             ->map(fn ($id) => (int) $id)->sort()->values()->all();
         if ($rosterIds !== $materializedRosterIds) {
+            if (count($materializedRosterIds) !== count(array_unique($materializedRosterIds))
+                || array_diff($materializedRosterIds, $rosterIds) !== []) {
+                $this->fail(
+                    'Period materialization provenance does not match the fixed roster.',
+                    'supplementary_materialization_idempotency_conflict',
+                    409,
+                );
+            }
+
             return false;
         }
         $materializations = $allMaterializations->keyBy('supplementary_exam_registration_id');
@@ -1128,7 +1482,11 @@ class SupplementaryExamMaterializationService
             ->get()
             ->values();
         if ($allEvents->count() !== $allMaterializations->count()) {
-            return false;
+            $this->fail(
+                'Period materialization events do not exactly match provenance.',
+                'supplementary_materialization_event_conflict',
+                409,
+            );
         }
         $events = $allEvents->keyBy('supplementary_exam_materialization_id');
         $submissions = SupplementaryExamGradeSubmission::query()
@@ -1136,6 +1494,15 @@ class SupplementaryExamMaterializationService
             ->orderBy('supplementary_exam_grade_submission_id')
             ->get()
             ->groupBy('supplementary_exam_offering_id');
+        $rosterOfferingIds = $registrations->pluck('supplementary_exam_offering_id')
+            ->map(fn ($id): int => (int) $id)->unique()->values();
+        if ($submissions->keys()->map(fn ($id): int => (int) $id)->diff($rosterOfferingIds)->isNotEmpty()) {
+            $this->fail(
+                'A zero-roster offering contains grading submissions.',
+                'supplementary_materialization_roster_mismatch',
+                409,
+            );
+        }
 
         foreach ($registrations->groupBy('supplementary_exam_offering_id') as $offeringId => $roster) {
             $offeringSubmissions = $submissions->get($offeringId, collect());
@@ -1146,7 +1513,11 @@ class SupplementaryExamMaterializationService
                 || $submission->updated_at === null
                 || $submission->updated_at->gt($submission->published_at)
                 || $offeringSubmissions->where('submission_version', $submission->submission_version)->count() !== 1) {
-                return false;
+                $this->fail(
+                    'A period submission is missing, stale, or no longer published.',
+                    'supplementary_materialization_source_drift',
+                    409,
+                );
             }
             foreach ($roster as $registration) {
                 $result = $results->get($registration->getKey());
@@ -1155,10 +1526,10 @@ class SupplementaryExamMaterializationService
                 $sourceEvent = $materialization
                     ? $resultEvents->firstWhere('supplementary_exam_grade_event_id', $materialization->supplementary_exam_grade_event_id)
                     : null;
-                $event = $materialization ? $events->get($materialization->getKey()) : null;
+                $materializationEvent = $materialization ? $events->get($materialization->getKey()) : null;
                 if (! $result || ! $materialization
                     || ! $sourceEvent
-                    || ! $event
+                    || ! $materializationEvent
                     || $result->status !== 'published'
                     || $result->published_at === null
                     || $result->updated_at === null
@@ -1193,13 +1564,17 @@ class SupplementaryExamMaterializationService
                     || $sourceEvent->created_at === null
                     || $sourceEvent->created_at->lt($result->published_at)
                     || $sourceEvent->created_at->lt($submission->published_at)
-                    || $event->event_type !== 'official_result_materialized'
-                    || (int) $event->supplementary_exam_materialization_id !== (int) $materialization->getKey()
-                    || (int) $event->supplementary_exam_offering_id !== (int) $offeringId
-                    || (int) $event->supplementary_exam_registration_id !== (int) $registration->getKey()
-                    || (int) $event->source_submission_version !== (int) $submission->submission_version
-                    || (int) $event->actor_user_id !== (int) $materialization->materialized_by_user_id) {
-                    return false;
+                    || $materializationEvent->event_type !== 'official_result_materialized'
+                    || (int) $materializationEvent->supplementary_exam_materialization_id !== (int) $materialization->getKey()
+                    || (int) $materializationEvent->supplementary_exam_offering_id !== (int) $offeringId
+                    || (int) $materializationEvent->supplementary_exam_registration_id !== (int) $registration->getKey()
+                    || (int) $materializationEvent->source_submission_version !== (int) $submission->submission_version
+                    || (int) $materializationEvent->actor_user_id !== (int) $materialization->materialized_by_user_id) {
+                    $this->fail(
+                        'Period source or materialization provenance no longer reconciles.',
+                        'supplementary_materialization_idempotency_conflict',
+                        409,
+                    );
                 }
             }
         }
@@ -1209,7 +1584,11 @@ class SupplementaryExamMaterializationService
             ->whereIn('student_course_registration_id', $targetRegistrationIds)
             ->pluck('course_offering_id', 'student_course_registration_id');
         if ($targetOfferingMap->count() !== $allMaterializations->count()) {
-            return false;
+            $this->fail(
+                'A materialized official registration is missing or ambiguous.',
+                'supplementary_materialization_target_conflict',
+                409,
+            );
         }
 
         $targetOfferingIds = $targetOfferingMap->values()->map(fn ($id) => (int) $id)->unique()->sort()->values();
@@ -1240,7 +1619,11 @@ class SupplementaryExamMaterializationService
             ->get(['approval_status_id']);
 
         if ($targetOfferings->count() !== $targetOfferingIds->count() || $approvedStatuses->count() !== 1) {
-            return false;
+            $this->fail(
+                'An official target offering or canonical approval status is missing.',
+                'supplementary_materialization_target_conflict',
+                409,
+            );
         }
         $approvedStatusId = (int) $approvedStatuses->first()->approval_status_id;
 
@@ -1256,6 +1639,18 @@ class SupplementaryExamMaterializationService
             ->lockForUpdate()
             ->get()
             ->keyBy('student_course_result_id');
+        $gradingPolicies = GradingPolicy::query()
+            ->whereIn('grading_policy_id', $allMaterializations->pluck('grading_policy_id'))
+            ->orderBy('grading_policy_id')
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('grading_policy_id');
+        $targetResultStatuses = ResultStatus::query()
+            ->whereIn('result_status_id', $targetResults->pluck('result_status_id'))
+            ->orderBy('result_status_id')
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('result_status_id');
         $targetGradeRows = StudentGradeComponent::query()
             ->whereIn('student_course_registration_id', $targetRegistrationIds)
             ->orderBy('student_grade_component_id')
@@ -1264,14 +1659,21 @@ class SupplementaryExamMaterializationService
             ->groupBy('student_course_registration_id');
 
         if ($targetRegistrations->count() !== $allMaterializations->count()
-            || $targetResults->count() !== $allMaterializations->count()) {
-            return false;
+            || $targetResults->count() !== $allMaterializations->count()
+            || $gradingPolicies->count() !== $allMaterializations->pluck('grading_policy_id')->unique()->count()
+            || $targetResultStatuses->count() !== $targetResults->pluck('result_status_id')->unique()->count()) {
+            $this->fail(
+                'Official target or grading-policy provenance is missing or ambiguous.',
+                'supplementary_materialization_target_conflict',
+                409,
+            );
         }
 
         foreach ($allMaterializations as $materialization) {
             $targetRegistration = $targetRegistrations->get((int) $materialization->student_course_registration_id);
             $targetResult = $targetResults->get((int) $materialization->student_course_result_id);
             $targetOffering = $targetOfferings->get((int) $targetRegistration?->course_offering_id);
+            $supplementaryOffering = $offeringsById->get((int) $materialization->supplementary_exam_offering_id);
             $targetApproval = $targetApprovals->get((int) $targetRegistration?->course_offering_id);
             $requiredComponents = $targetComponents
                 ->get((int) $targetRegistration?->course_offering_id, collect())
@@ -1283,9 +1685,18 @@ class SupplementaryExamMaterializationService
             if (! $targetRegistration
                 || ! $targetResult
                 || ! $targetOffering
+                || ! $supplementaryOffering
                 || ! $targetApproval
                 || (int) $targetRegistration->student_id !== (int) $materialization->student_id
                 || (int) $targetResult->student_course_registration_id !== (int) $targetRegistration->getKey()
+                || (int) $targetRegistration->registration_status_id !== (int) $materialization->preserved_registration_status_id
+                || (int) $targetOffering->course_id !== (int) $supplementaryOffering->course_id
+                || (int) $targetOffering->academic_program_id !== (int) $supplementaryOffering->academic_program_id
+                || ! $allowedSources
+                    ->get((int) $supplementaryOffering->getKey(), collect())
+                    ->pluck('course_offering_id')
+                    ->map(fn ($id): int => (int) $id)
+                    ->contains((int) $targetOffering->getKey())
                 || (int) $targetApproval->getKey() !== (int) $materialization->grade_approval_id
                 || (int) $targetApproval->approval_status_id !== $approvedStatusId
                 || $this->timestamp($targetApproval->updated_at) !== $this->timestamp($materialization->grade_approval_updated_at)
@@ -1295,12 +1706,27 @@ class SupplementaryExamMaterializationService
                     $targetResult,
                     $theoreticalSnapshot,
                     $practicalSnapshot,
+                    $gradingPolicies->get((int) $materialization->grading_policy_id),
+                    $targetResultStatuses->get((int) $targetResult->result_status_id),
                 )) {
-                return false;
+                $this->fail(
+                    'A materialized official target no longer matches its recorded provenance.',
+                    'supplementary_materialization_target_conflict',
+                    409,
+                );
             }
         }
 
         if ($period->status === Governance::TERMINAL_PERIOD_STATUS) {
+            if ($allMaterializations->contains(fn (SupplementaryExamMaterialization $row): bool =>
+                $row->materialized_at === null || $terminalEvent->created_at->lt($row->materialized_at))) {
+                $this->fail(
+                    'The terminal period event predates official materialization evidence.',
+                    'supplementary_materialization_terminal_event_conflict',
+                    409,
+                );
+            }
+
             return true;
         }
 

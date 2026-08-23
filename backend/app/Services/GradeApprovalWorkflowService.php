@@ -109,6 +109,9 @@ class GradeApprovalWorkflowService
             if ($registrations->isEmpty()) {
                 throw new GradeException('This section has no eligible registered students.', status: 409, errorCode: 'no_eligible_students');
             }
+            foreach ($registrations as $registration) {
+                $this->grades->assertNotSupplementaryMaterialized((int) $registration->getKey());
+            }
 
             $registrationIds = $registrations->pluck('student_course_registration_id');
             $results = StudentCourseResult::query()->whereIn('student_course_registration_id', $registrationIds)
