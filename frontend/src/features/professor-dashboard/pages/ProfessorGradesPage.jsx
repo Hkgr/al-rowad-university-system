@@ -45,6 +45,11 @@ const HTTP_MESSAGES = {
 const apiMessage = error => ERROR_MESSAGES[error?.errorCode] || HTTP_MESSAGES[error?.status] || error?.message || 'تعذّر الاتصال بالخادم'
 const studentName = student => [student?.first_name, student?.last_name].filter(Boolean).join(' ') || '—'
 const editKey = (registrationId, componentId) => `${registrationId}:${componentId}`
+const initialAssignedPart = (parts, states) => (
+  states?.practical?.required === true && states?.theoretical?.required === true && parts.includes('practical') && parts.includes('theoretical')
+    ? 'practical'
+    : (parts[0] ?? null)
+)
 
 function assignmentCopy(mode) {
   if (mode === 'both') return { text: 'تكليفك: النظري والعملي', Icon: FaClipboardList }
@@ -123,7 +128,7 @@ export default function ProfessorGradesPage() {
       setWorkflow(next)
       setRefreshRequired(false)
       const nextParts = (next.assigned_parts ?? []).filter(part => PARTS[part] && next.parts?.[part]?.required !== false)
-      setSelectedPart(current => nextParts.includes(current) ? current : (nextParts[0] ?? null))
+      setSelectedPart(current => nextParts.includes(current) ? current : initialAssignedPart(nextParts, next.parts))
       setEdits(current => {
         const fresh = buildEdits(next)
         if (!preserveDirty) return fresh
