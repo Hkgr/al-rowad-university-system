@@ -116,6 +116,37 @@ class SupplementaryExamMaterializationSqlContractTest extends TestCase
     }
 
     #[Test]
+    public function nullable_null_defaults_are_normalized_for_mariadb_metadata(): void
+    {
+        $normalization = <<<'REGEX'
+/\(\s*column_default IS NULL\s*OR UPPER\(\s*TRIM\(\s*BOTH ''''\s*FROM CAST\(column_default AS CHAR\)\s*\)\s*\) = 'NULL'\s*\)/
+REGEX;
+
+        foreach (['00_preflight.sql', '01_apply.sql', '02_verify.sql'] as $file) {
+            $sql = $this->sql($file);
+
+            $this->assertSame(2, preg_match_all($normalization, $sql));
+            $this->assertDoesNotMatchRegularExpression(
+                "/is_nullable = 'YES'\s+AND\s+column_default IS NULL/",
+                $sql,
+            );
+            $this->assertMatchesRegularExpression(
+                "/is_nullable = 'NO' AND column_default IS NULL/",
+                $sql,
+            );
+            foreach ([
+                'before_registration_result_status_id',
+                'before_calculated_by_user_id',
+                'before_calculated_at',
+                'before_result_announced_at',
+                'after_result_announced_at',
+            ] as $nullableColumn) {
+                $this->assertStringContainsString($nullableColumn, $sql);
+            }
+        }
+    }
+
+    #[Test]
     public function operator_outputs_have_the_required_exact_terminal_values(): void
     {
         $this->assertStringContainsString("'OVERALL', IF(@preflight_ready, 'READY', 'BLOCKED')", $this->sql('00_preflight.sql'));

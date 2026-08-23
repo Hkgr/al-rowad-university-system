@@ -202,7 +202,15 @@ SET @verify_mat_columns := (
                    'materialized_by_user_id'
                ) THEN data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO' AND column_default IS NULL AND extra = ''
                WHEN column_name IN ('before_registration_result_status_id', 'before_calculated_by_user_id')
-                   THEN data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'YES' AND column_default IS NULL AND extra = ''
+                   THEN data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'YES' AND (
+                       column_default IS NULL
+                       OR UPPER(
+                           TRIM(
+                               BOTH ''''
+                               FROM CAST(column_default AS CHAR)
+                           )
+                       ) = 'NULL'
+                   ) AND extra = ''
                WHEN column_name IN ('before_is_deprived', 'after_is_deprived')
                    THEN data_type = 'tinyint' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO' AND column_default IS NULL AND extra = ''
                WHEN column_name IN (
@@ -225,7 +233,15 @@ SET @verify_mat_columns := (
                    'after_registration_updated_at', 'materialized_at', 'created_at'
                ) THEN data_type = 'datetime' AND is_nullable = 'NO' AND column_default IS NULL AND extra = ''
                WHEN column_name IN ('before_calculated_at', 'before_result_announced_at', 'after_result_announced_at')
-                   THEN data_type = 'datetime' AND is_nullable = 'YES' AND column_default IS NULL AND extra = ''
+                   THEN data_type = 'datetime' AND is_nullable = 'YES' AND (
+                       column_default IS NULL
+                       OR UPPER(
+                           TRIM(
+                               BOTH ''''
+                               FROM CAST(column_default AS CHAR)
+                           )
+                       ) = 'NULL'
+                   ) AND extra = ''
                ELSE 0
            END
        ) = 50
