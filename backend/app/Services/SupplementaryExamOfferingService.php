@@ -268,7 +268,7 @@ class SupplementaryExamOfferingService
         $program = AcademicProgram::query()
             ->with('department.college')
             ->findOrFail((int) $payload['academic_program_id']);
-        $this->assertProgramInAccessibleCollege($program, $collegeIds);
+        $this->assertProgramMutationScope($user, $program);
 
         $course = Course::query()->findOrFail((int) $payload['course_id']);
         $qualifying = $this->sources->eligibleSources($period, $program, $course, $collegeIds);
@@ -343,7 +343,7 @@ class SupplementaryExamOfferingService
             ->lockForUpdate()
             ->findOrFail($offering->supplementary_exam_offering_id);
 
-        $this->assertOfferingInScope($locked, $this->accessibleCollegeIdList($user));
+        $this->assertOfferingMutationScope($user, $locked);
         $this->assertPeriodManageable($locked->period);
         if (! $locked->isOpen()) {
             throw SupplementaryExamOfferingException::offeringNotOpen();
@@ -379,7 +379,7 @@ class SupplementaryExamOfferingService
             ->findOrFail($offering->supplementary_exam_offering_id);
 
         $collegeIds = $this->accessibleCollegeIdList($user);
-        $this->assertOfferingInScope($locked, $collegeIds);
+        $this->assertOfferingMutationScope($user, $locked);
         $this->assertPeriodManageable($locked->period);
         if (! $locked->isClosed()) {
             throw SupplementaryExamOfferingException::offeringNotClosed();
@@ -488,6 +488,23 @@ class SupplementaryExamOfferingService
             throw SupplementaryExamOfferingException::programOutOfScope();
         }
         $this->assertProgramInAccessibleCollege($offering->academicProgram, $collegeIds);
+    }
+
+    private function assertProgramMutationScope(User $user, AcademicProgram $program): void
+    {
+        if (! $this->dataScope->canMutateProgram($user, $program)) {
+            throw SupplementaryExamOfferingException::programOutOfScope();
+        }
+    }
+
+    private function assertOfferingMutationScope(User $user, SupplementaryExamOffering $offering): void
+    {
+        $offering->loadMissing('academicProgram');
+        if ($offering->academicProgram === null) {
+            throw SupplementaryExamOfferingException::programOutOfScope();
+        }
+
+        $this->assertProgramMutationScope($user, $offering->academicProgram);
     }
 
     /**

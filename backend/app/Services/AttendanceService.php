@@ -21,6 +21,8 @@ class AttendanceService
 {
     public const DEPRIVATION_THRESHOLD = 15;
 
+    public function __construct(private readonly GradeService $grades) {}
+
     public function getCourseOfferingSessions(int $courseOfferingId): array
     {
         $offering = CourseOffering::query()->findOrFail($courseOfferingId);
@@ -406,6 +408,7 @@ class AttendanceService
 
             $registrations = $this->activeRegistrationsQuery($courseOfferingId)
                 ->with(['student', 'studentCourseResult.resultStatus'])
+                ->lockForUpdate()
                 ->get();
 
             foreach ($registrations as $registration) {
@@ -431,6 +434,9 @@ class AttendanceService
                     continue;
                 }
 
+                $this->grades->assertNotSupplementaryMaterialized(
+                    (int) $registration->student_course_registration_id
+                );
                 $existingResult = $registration->studentCourseResult;
 
                 if ($existingResult === null) {

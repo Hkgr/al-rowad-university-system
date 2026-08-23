@@ -126,14 +126,141 @@ class SupplementaryExamMaterializationContractTest extends TestCase
         $governance = file_get_contents(app_path('Support/SupplementaryExamMaterializationGovernance.php'));
         $grades = file_get_contents(app_path('Services/GradeService.php'));
         $parts = file_get_contents(app_path('Services/GradePartWorkflowService.php'));
+        $submission = file_get_contents(app_path('Services/GradeWorkflowService.php'));
+        $approval = file_get_contents(app_path('Services/GradeApprovalWorkflowService.php'));
 
         $this->assertStringContainsString('resultAnnouncedAtAvailable()', $governance);
         $this->assertStringNotContainsString("'result_announced_at', 'calculated_by_user_id'", $governance);
         $this->assertStringContainsString('assertNotSupplementaryMaterialized(', $grades);
         $this->assertStringContainsString('supplementary_materialized_result_locked', $grades);
         $this->assertStringContainsString('assertNotSupplementaryMaterialized(', $parts);
+        $this->assertGreaterThanOrEqual(4, substr_count($parts, 'assertNotSupplementaryMaterialized('));
+        $this->assertMatchesRegularExpression(
+            '/function review\(.*?lockForUpdate\(\).*?assertNotSupplementaryMaterialized\(/s',
+            $parts,
+        );
+        $this->assertMatchesRegularExpression(
+            '/function submit\(.*?lockForUpdate\(\).*?assertNotSupplementaryMaterialized\(/s',
+            $submission,
+        );
+        $this->assertMatchesRegularExpression(
+            '/function transition\(.*?lockForUpdate\(\).*?assertNotSupplementaryMaterialized\(/s',
+            $approval,
+        );
         $this->assertStringNotContainsString('calculate_final_grade', $grades);
         $this->assertStringNotContainsString('calculate_final_grade', $parts);
+    }
+
+    #[Test]
+    public function grade_component_mutations_lock_existing_current_and_incoming_offerings(): void
+    {
+        $controller = file_get_contents(app_path('Http/Controllers/Api/GradeComponentController.php'));
+        $guard = file_get_contents(app_path('Support/SupplementaryExamTargetGuard.php'));
+        $crud = file_get_contents(app_path('Http/Controllers/Api/Concerns/HandlesApiCrud.php'));
+
+        $this->assertSame(3, substr_count($controller, 'DB::transaction('));
+        foreach ([
+            '(int) $component->course_offering_id',
+            '(int) $currentOfferingId',
+            "(int) (\$payload['course_offering_id'] ?? \$component->course_offering_id)",
+            'assertCourseOfferingConfigurationsMutable($offeringIds)',
+            'GradeComponent::query()->whereKey($component->getKey())->lockForUpdate()->first()',
+        ] as $proof) {
+            $this->assertStringContainsString($proof, $controller);
+        }
+        foreach (['beforeStoreMutation', 'beforeUpdateMutation', 'beforeDestroyMutation'] as $hook) {
+            $this->assertStringContainsString("method_exists(\$this, '{$hook}')", $crud);
+        }
+        foreach ([
+            'CONFIGURATION_ERROR_CODE',
+            "whereIn('course_offering_id', \$ids)",
+            '$hasMaterialization',
+            '$hasFixedRoster',
+        ] as $proof) {
+            $this->assertStringContainsString($proof, $guard);
+        }
+    }
+
+    #[Test]
+    public function grading_policy_mutations_preserve_fixed_canonical_selection_and_narrow_provenance(): void
+    {
+        $controller = file_get_contents(app_path('Http/Controllers/Api/GradingPolicyController.php'));
+        $guard = file_get_contents(app_path('Support/SupplementaryExamTargetGuard.php'));
+
+        $this->assertSame(3, substr_count($controller, 'DB::transaction('));
+        foreach ([
+            'assertGradingPolicyCreationMutable($payload)',
+            'assertGradingPolicyUpdateMutable((int) $policy->getKey(), $payload)',
+            'assertGradingPolicyMutable((int) $policy->getKey())',
+        ] as $hook) {
+            $this->assertStringContainsString($hook, $controller);
+        }
+        foreach ([
+            'public const POLICY_ERROR_CODE',
+            'POLICY_SCORING_FIELDS',
+            'POLICY_SELECTION_FIELDS',
+            'fixedUnmaterializedTargetIds($periods)',
+            "whereDoesntHave('materialization')",
+            'canonicalPolicyId($after) !== self::canonicalPolicyId($policies)',
+            '$afterPolicyId !== $beforePolicyId',
+            '$beforePolicyId === $gradingPolicyId',
+            'changedFields($policy, $payload, $semanticFields)',
+            "array_merge(self::POLICY_SCORING_FIELDS, ['is_active'])",
+            'gradingPolicyHasProvenance($gradingPolicyId)',
+            'assertGradingPolicyMutable(int $gradingPolicyId)',
+            "where('grading_policy_id', \$gradingPolicyId)",
+            'lockForUpdate()->first()',
+            'supplementary_grading_policy_locked',
+        ] as $proof) {
+            $this->assertStringContainsString($proof, $guard);
+        }
+    }
+
+    #[Test]
+    public function official_result_approval_and_registration_status_semantics_are_transactionally_guarded(): void
+    {
+        $controllers = [
+            'ResultStatusController.php' => [
+                'assertResultStatusUpdateMutable((int) $status->getKey(), $payload)',
+                'assertResultStatusDestroyable((int) $status->getKey())',
+            ],
+            'ApprovalStatusController.php' => [
+                'assertApprovalStatusUpdateMutable((int) $status->getKey(), $payload)',
+                'assertApprovalStatusDestroyable((int) $status->getKey())',
+            ],
+            'RegistrationStatusController.php' => [
+                'assertRegistrationStatusUpdateMutable((int) $status->getKey(), $payload)',
+                'assertRegistrationStatusDestroyable((int) $status->getKey())',
+            ],
+        ];
+        foreach ($controllers as $file => $hooks) {
+            $controller = file_get_contents(app_path('Http/Controllers/Api/'.$file));
+            $this->assertSame(2, substr_count($controller, 'DB::transaction('));
+            foreach ($hooks as $hook) {
+                $this->assertStringContainsString($hook, $controller);
+            }
+        }
+
+        $guard = file_get_contents(app_path('Support/SupplementaryExamTargetGuard.php'));
+        foreach ([
+            'public const STATUS_ERROR_CODE',
+            "['status_code', 'is_active']",
+            "['status_code']",
+            'assertOfficialStatusUpdateMutable(',
+            'changedFields($status, $payload, $semanticFields)->isEmpty()',
+            '$modelClass::query()->whereKey($statusId)->lockForUpdate()->first()',
+            'fixedUnmaterializedTargetIds($periods)',
+            '$hasFixedDependency($status, $targetIds)',
+            'latestTargetApprovalUsesStatus($targetIds, $approvalStatusId)',
+            "in_array((string) \$status->status_code, ['passed', 'failed'], true)",
+            "(string) \$status->status_code === 'approved'",
+            "where('before_result_status_id', \$resultStatusId)",
+            "whereIn('grade_approval_id', GradeApproval::query()",
+            "where('preserved_registration_status_id', \$registrationStatusId)",
+            'supplementary_official_status_locked',
+        ] as $proof) {
+            $this->assertStringContainsString($proof, $guard);
+        }
     }
 
     #[Test]

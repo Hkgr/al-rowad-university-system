@@ -261,6 +261,18 @@ class DataScopeService
         return $query->where(fn (Builder $program) => $program
             ->whereIn('academic_program_id', $scopes['program'])
             ->orWhereIn('department_id', $scopes['department'])
+                ->orWhereHas('department', fn (Builder $department) => $department->whereIn('college_id', $scopes['college'])));
+    }
+
+    /** Mutation-safe program scope; effective Super Admin grants never bypass assigned scopes. */
+    public function scopeProgramsForMutation(Builder $query, User $user): Builder
+    {
+        $scopes = $this->grouped($user);
+        if ($scopes['university'] !== []) return $query;
+
+        return $query->where(fn (Builder $program) => $program
+            ->whereIn('academic_program_id', $scopes['program'])
+            ->orWhereIn('department_id', $scopes['department'])
             ->orWhereHas('department', fn (Builder $department) => $department->whereIn('college_id', $scopes['college'])));
     }
 
@@ -295,6 +307,53 @@ class DataScopeService
                     });
             });
         });
+    }
+
+    /** Mutation-safe faculty scope; effective Super Admin grants never bypass assigned scopes. */
+    public function scopeFacultyMembersForMutation(Builder $query, User $user): Builder
+    {
+        $scopes = collect($this->scopes($user));
+        $collegeQuery = College::query();
+
+        if (! $scopes->contains(fn (array $scope): bool => $scope['type'] === 'university')) {
+            $collegeIds = $scopes->where('type', 'college')->pluck('id')->map(fn ($id): int => (int) $id);
+            $departmentIds = $scopes->where('type', 'department')->pluck('id')->map(fn ($id): int => (int) $id);
+            $programIds = $scopes->where('type', 'program')->pluck('id')->map(fn ($id): int => (int) $id);
+            $collegeQuery->where(fn (Builder $college) => $college
+                ->whereIn('college_id', $collegeIds)
+                ->orWhereHas('departments', fn (Builder $department) => $department
+                    ->whereIn('department_id', $departmentIds)
+                    ->orWhereHas('academicPrograms', fn (Builder $program) => $program
+                        ->whereIn('academic_program_id', $programIds))));
+        }
+
+        $unitIds = $collegeQuery
+            ->whereNotNull('organizational_unit_id')
+            ->pluck('organizational_unit_id')
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+        if ($unitIds === []) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->whereHas('employee', function (Builder $employee) use ($unitIds): void {
+            $employee->where(function (Builder $membership) use ($unitIds): void {
+                $membership->whereIn('organizational_unit_id', $unitIds)
+                    ->orWhereHas('employeeUnitAssignments', function (Builder $assignment) use ($unitIds): void {
+                        $assignment->whereIn('organizational_unit_id', $unitIds)
+                            ->where('is_active', true);
+                    });
+            });
+        });
+    }
+
+    public function canMutateFacultyMember(User $user, FacultyMember $facultyMember): bool
+    {
+        return $this->scopeFacultyMembersForMutation(FacultyMember::query(), $user)
+            ->whereKey($facultyMember->faculty_member_id)
+            ->exists();
     }
 
     public function canAccessFacultyMember(User $user, FacultyMember $facultyMember): bool

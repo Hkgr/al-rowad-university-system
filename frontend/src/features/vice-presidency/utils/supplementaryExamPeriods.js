@@ -1,4 +1,5 @@
 import { hasRole, ROLES } from '../../auth/auth'
+import { periodStatusLabel } from '../../supplementary-exams/supplementaryStatus'
 
 export const STATUS_LEGACY = 'legacy'
 export const STATUS_ANNOUNCED = 'announced'
@@ -37,10 +38,7 @@ export function defaultSupplementaryPeriodName(semesterName, yearName) {
 }
 
 export function statusLabelAr(status) {
-  if (status === STATUS_ANNOUNCED) return 'معلنة'
-  if (status === STATUS_LEGACY) return 'سجل سابق'
-  if (!status) return 'غير مفعلة'
-  return String(status)
+  return periodStatusLabel(status)
 }
 
 export function formatPeriodDate(value) {

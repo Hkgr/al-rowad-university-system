@@ -18,9 +18,8 @@ use App\Models\Student;
 use App\Models\StudentCourseRegistration;
 use App\Models\StudentCourseResult;
 use App\Models\StudentGradeComponent;
-use App\Models\SupplementaryExamMaterialization;
 use App\Support\CourseRequirementClassification;
-use App\Support\SupplementaryExamMaterializationGovernance;
+use App\Support\SupplementaryExamTargetGuard;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
@@ -59,6 +58,7 @@ class GradeService
                 'registrationStatus',
                 'studentCourseResult.resultStatus',
                 'courseOffering.course',
+                'courseOffering.gradeComponents',
             ]);
 
         if (! $includeInactive) {
@@ -78,6 +78,7 @@ class GradeService
             ->orderByDesc('grade_approval_id')
             ->first();
         $workflowEditable = $approval === null || $approval->allowsGradeEditing();
+        $officiallyVisible = $approval?->approvalStatus?->status_code === 'approved';
 
         return [
             'course_offering_id' => $offering->course_offering_id,
@@ -87,7 +88,11 @@ class GradeService
             'academic_year' => $this->compactAcademicYear($offering->academicYear),
             'semester' => $this->compactSemester($offering->semester),
             'students' => $registrations
-                ->map(fn (StudentCourseRegistration $registration) => $this->formatGradeSheetRow($registration, $workflowEditable))
+                ->map(fn (StudentCourseRegistration $registration) => $this->formatGradeSheetRow(
+                    $registration,
+                    $workflowEditable,
+                    $officiallyVisible,
+                ))
                 ->values()
                 ->all(),
         ];
@@ -617,7 +622,8 @@ class GradeService
     {
         $policy = $this->defaultGradingPolicy();
         $requiredMaximum = ($requiresTheoretical ? $theoreticalMax : 0) + ($requiresPractical ? $practicalMax : 0);
-        $policyMaximum = (float) $policy->theoretical_max_mark + (float) $policy->practical_max_mark;
+        $policyMaximum = ($requiresTheoretical ? (float) $policy->theoretical_max_mark : 0)
+            + ($requiresPractical ? (float) $policy->practical_max_mark : 0);
         $partMaximumsMatch = (! $requiresTheoretical || abs($theoreticalMax - (float) $policy->theoretical_max_mark) <= 0.001)
             && (! $requiresPractical || abs($practicalMax - (float) $policy->practical_max_mark) <= 0.001);
         if (! $partMaximumsMatch
@@ -797,18 +803,39 @@ class GradeService
         }
     }
 
-    private function formatRegistrationGrades(StudentCourseRegistration $registration): array
+    private function formatRegistrationGrades(
+        StudentCourseRegistration $registration,
+        ?bool $officiallyVisible = null,
+    ): array
     {
         $result = $registration->studentCourseResult;
         $theoretical = $result?->theoretical_total !== null ? (float) $result->theoretical_total : null;
         $practical = $result?->practical_total !== null ? (float) $result->practical_total : null;
         $statusCode = $this->resolveEffectiveResultStatusCode($registration);
-        $calculation = $this->buildCalculation(
-            $theoretical,
-            $practical,
-            $statusCode,
-            (bool) ($result?->is_deprived ?? false)
-        );
+        $officiallyVisible ??= $this->isOfficiallyVisibleAttempt($registration);
+        if ($result !== null && $officiallyVisible && $statusCode !== null) {
+            $finalMark = $result->final_mark === null ? null : (float) $result->final_mark;
+            $letterGrade = $this->letterGradeFromOfficialResult(
+                $theoretical,
+                $practical,
+                $finalMark,
+                $statusCode,
+                $this->officialComponentVisibility($registration->courseOffering),
+            );
+            $calculation = [
+                'final_mark' => $finalMark,
+                'letter_grade' => $letterGrade,
+                'grade_points' => $this->resolveGradePoints($letterGrade, $statusCode),
+                'result_status_code' => $statusCode,
+            ];
+        } else {
+            $calculation = $this->buildCalculation(
+                $theoretical,
+                $practical,
+                $statusCode,
+                (bool) ($result?->is_deprived ?? false)
+            );
+        }
 
         return [
             'registration' => [
@@ -842,9 +869,13 @@ class GradeService
         ];
     }
 
-    private function formatGradeSheetRow(StudentCourseRegistration $registration, bool $workflowEditable): array
+    private function formatGradeSheetRow(
+        StudentCourseRegistration $registration,
+        bool $workflowEditable,
+        bool $officiallyVisible,
+    ): array
     {
-        $grades = $this->formatRegistrationGrades($registration);
+        $grades = $this->formatRegistrationGrades($registration, $officiallyVisible);
         $registrationAllowsGradeEntry = $registration->allowsGradeEntry();
         $gradeEntryAllowed = $registrationAllowsGradeEntry && $workflowEditable;
 
@@ -1041,7 +1072,10 @@ class GradeService
             ];
         }
 
-        if ($result->theoretical_total === null || $result->practical_total === null) {
+        $visibility = $this->officialComponentVisibility($registration->courseOffering);
+        if (($visibility['theoretical'] && $result->theoretical_total === null)
+            || ($visibility['practical'] && $result->practical_total === null)
+            || $result->final_mark === null) {
             return [
                 'included' => false,
                 'course' => array_merge($base, ['exclusion_reason' => 'missing_marks']),
@@ -1061,22 +1095,27 @@ class GradeService
             ];
         }
 
-        $calculation = $this->buildCalculation(
-            (float) $result->theoretical_total,
-            (float) $result->practical_total,
-            $statusCode,
-            (bool) $result->is_deprived
+        $theoretical = $result->theoretical_total === null ? null : (float) $result->theoretical_total;
+        $practical = $result->practical_total === null ? null : (float) $result->practical_total;
+        $finalMark = (float) $result->final_mark;
+        $letterGrade = $this->letterGradeFromOfficialResult(
+            $theoretical,
+            $practical,
+            $finalMark,
+            (string) $statusCode,
+            $visibility,
         );
+        $gradePoints = $this->resolveGradePoints($letterGrade, (string) $statusCode);
 
         return [
             'included' => true,
             'course' => array_merge($base, [
-                'final_mark' => $calculation['final_mark'],
-                'letter_grade' => $calculation['letter_grade'],
-                'grade_points' => $calculation['grade_points'],
+                'final_mark' => $finalMark,
+                'letter_grade' => $letterGrade,
+                'grade_points' => $gradePoints,
                 'result_status' => $statusCode,
             ]),
-            'grade_points' => $calculation['grade_points'],
+            'grade_points' => $gradePoints,
             'credit_hours' => $creditHours,
         ];
     }
@@ -1495,21 +1534,16 @@ class GradeService
         string $statusCode,
         array $visibility
     ): string {
-        $policy = $this->defaultGradingPolicy();
-        $theoreticalForPolicy = $visibility['theoretical']
-            ? $theoretical
-            : ($theoretical ?? (float) $policy->minimum_theoretical_mark);
-        $practicalForPolicy = $visibility['practical']
-            ? $practical
-            : ($practical ?? (float) $policy->minimum_practical_mark);
-
-        return $this->resolveLetterGrade(
-            $finalMark,
-            $statusCode,
-            $theoreticalForPolicy,
-            $practicalForPolicy,
-            $policy
-        );
+        // Official reads consume the persisted official outcome. Reapplying
+        // today's default policy would rewrite historical transcript/GPA
+        // meaning after a legitimate policy change.
+        return match ($statusCode) {
+            'deprived' => 'Z',
+            'withdrawn' => 'W',
+            'incomplete' => 'I',
+            'failed' => 'F',
+            default => $finalMark === null ? 'F' : $this->letterGradeFromFinalMark($finalMark),
+        };
     }
 
     private function latestApprovalIsApproved(Collection $approvals): bool
@@ -1670,6 +1704,7 @@ class GradeService
             'student',
             'registrationStatus',
             'courseOffering.course',
+            'courseOffering.gradeComponents',
             'courseOffering.academicYear',
             'courseOffering.semester',
             'studentCourseResult.resultStatus',
@@ -1691,10 +1726,13 @@ class GradeService
 
     public function assertNotSupplementaryMaterialized(int $registrationId): void
     {
-        if (SupplementaryExamMaterializationGovernance::materializationTableAvailable()
-            && SupplementaryExamMaterialization::query()
-                ->where('student_course_registration_id', $registrationId)
-                ->exists()) {
+        try {
+            SupplementaryExamTargetGuard::assertOrdinaryMutationAvailable($registrationId);
+        } catch (GradeException $exception) {
+            if ($exception->errorCode !== SupplementaryExamTargetGuard::ERROR_CODE) {
+                throw $exception;
+            }
+
             throw new GradeException(
                 'A materialized supplementary result is locked against ordinary grade recalculation.',
                 status: 409,
@@ -1849,15 +1887,24 @@ class GradeService
     public function defaultGradingPolicy(): GradingPolicy
     {
         if ($this->defaultPolicy === null) {
-            $this->defaultPolicy = GradingPolicy::query()
-                ->where('is_default', true)
+            $policies = GradingPolicy::query()
                 ->where('is_active', true)
-                ->first()
-                ?? GradingPolicy::query()->where('is_active', true)->first();
+                ->orderBy('grading_policy_id')
+                ->get();
 
-            if ($this->defaultPolicy === null) {
+            if ($policies->isEmpty()) {
                 throw new ModelNotFoundException('No active grading policy was found.');
             }
+            $defaults = $policies->where('is_default', true);
+            if ($defaults->count() > 1) {
+                throw new GradeException(
+                    'More than one active default grading policy was found.',
+                    status: 409,
+                    errorCode: 'grading_policy_ambiguous',
+                );
+            }
+
+            $this->defaultPolicy = $defaults->first() ?? $policies->first();
         }
 
         return $this->defaultPolicy;

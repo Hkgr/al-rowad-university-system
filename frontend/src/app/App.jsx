@@ -233,7 +233,7 @@ export default function App() {
         {/* ── بوابة الأستاذ dashboard ── */}
         <Route
           element={
-            <ProtectedRoute employeeIdentity permissions={['grades.manage', 'attendance.manage']}>
+            <ProtectedRoute employeeIdentity permissions={['grades.manage', 'attendance.manage', 'supplementary_exams.grades.view']}>
               <DashboardLayout nav={professorNav} appTitle="بوابة الأستاذ" />
             </ProtectedRoute>
           }

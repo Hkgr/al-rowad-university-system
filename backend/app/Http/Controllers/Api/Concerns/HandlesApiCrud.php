@@ -41,6 +41,9 @@ trait HandlesApiCrud
         /** @var FormRequest $request */
         $request = app($this->storeRequestClass());
         app(DataScopeService::class)->assertPayloadScope(request()->user(), $request->validated());
+        if (method_exists($this, 'beforeStoreMutation')) {
+            $this->beforeStoreMutation($request->validated());
+        }
 
         $modelClass = $this->modelClass();
 
@@ -81,6 +84,9 @@ trait HandlesApiCrud
         $model = app(DataScopeService::class)->scopeResourceQuery($modelClass::query(), request()->user())->findOrFail($id);
         $this->authorizeIfPolicyExists('update', $model);
         app(DataScopeService::class)->assertPayloadScope(request()->user(), $request->validated());
+        if (method_exists($this, 'beforeUpdateMutation')) {
+            $this->beforeUpdateMutation($model, $request->validated());
+        }
 
         $model->update($request->validated());
 
@@ -97,6 +103,9 @@ trait HandlesApiCrud
 
         $model = app(DataScopeService::class)->scopeResourceQuery($modelClass::query(), request()->user())->findOrFail($id);
         $this->authorizeIfPolicyExists('delete', $model);
+        if (method_exists($this, 'beforeDestroyMutation')) {
+            $this->beforeDestroyMutation($model);
+        }
 
         $model->delete();
 
