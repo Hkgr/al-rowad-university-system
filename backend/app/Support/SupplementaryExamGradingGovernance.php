@@ -13,7 +13,7 @@ final class SupplementaryExamGradingGovernance
     public const ENTER = 'supplementary_exams.grades.enter';
     public const REVIEW = 'supplementary_exams.grades.review';
     public const PUBLISH = 'supplementary_exams.grades.publish';
-    public const PERIOD_STATUSES = ['registration_closed', 'grading_open', 'grading_submitted', 'results_approved', 'results_published'];
+    public const PERIOD_STATUSES = ['registration_closed', 'grading_open', 'grading_submitted', 'results_approved', 'results_published', 'results_materialized'];
     public const RESULT_STATUSES = ['draft', 'submitted', 'returned', 'approved', 'published'];
 
     public static function schemaReady(): bool

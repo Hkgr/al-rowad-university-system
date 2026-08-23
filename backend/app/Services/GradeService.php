@@ -1844,6 +1844,33 @@ class GradeService
         return $this->defaultPolicy;
     }
 
+    /** Lock the exact canonical policy used by a high-risk official-result write. */
+    public function lockDefaultGradingPolicy(): GradingPolicy
+    {
+        $policies = GradingPolicy::query()
+            ->where('is_active', true)
+            ->orderBy('grading_policy_id')
+            ->lockForUpdate()
+            ->get();
+
+        if ($policies->isEmpty()) {
+            throw new ModelNotFoundException('No active grading policy was found.');
+        }
+
+        $defaults = $policies->where('is_default', true);
+        if ($defaults->count() > 1) {
+            throw new GradeException(
+                'More than one active default grading policy was found.',
+                status: 409,
+                errorCode: 'grading_policy_ambiguous',
+            );
+        }
+
+        $this->defaultPolicy = $defaults->first() ?? $policies->first();
+
+        return $this->defaultPolicy;
+    }
+
     private function compactAcademicYear($year): ?array
     {
         if ($year === null) {

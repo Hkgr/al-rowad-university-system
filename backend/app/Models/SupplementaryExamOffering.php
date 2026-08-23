@@ -102,6 +102,11 @@ class SupplementaryExamOffering extends Model
         return $this->hasMany(SupplementaryExamGradeResult::class, 'supplementary_exam_offering_id');
     }
 
+    public function materializations(): HasMany
+    {
+        return $this->hasMany(SupplementaryExamMaterialization::class, 'supplementary_exam_offering_id');
+    }
+
     public function isOpen(): bool
     {
         return (string) $this->status === SupplementaryExamOfferingGovernance::STATUS_OPEN;
