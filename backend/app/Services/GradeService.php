@@ -58,6 +58,7 @@ class GradeService
                 'registrationStatus',
                 'studentCourseResult.resultStatus',
                 'courseOffering.course',
+                'courseOffering.gradeComponents',
             ]);
 
         if (! $includeInactive) {
@@ -77,6 +78,7 @@ class GradeService
             ->orderByDesc('grade_approval_id')
             ->first();
         $workflowEditable = $approval === null || $approval->allowsGradeEditing();
+        $officiallyVisible = $approval?->approvalStatus?->status_code === 'approved';
 
         return [
             'course_offering_id' => $offering->course_offering_id,
@@ -86,7 +88,11 @@ class GradeService
             'academic_year' => $this->compactAcademicYear($offering->academicYear),
             'semester' => $this->compactSemester($offering->semester),
             'students' => $registrations
-                ->map(fn (StudentCourseRegistration $registration) => $this->formatGradeSheetRow($registration, $workflowEditable))
+                ->map(fn (StudentCourseRegistration $registration) => $this->formatGradeSheetRow(
+                    $registration,
+                    $workflowEditable,
+                    $officiallyVisible,
+                ))
                 ->values()
                 ->all(),
         ];
@@ -797,18 +803,39 @@ class GradeService
         }
     }
 
-    private function formatRegistrationGrades(StudentCourseRegistration $registration): array
+    private function formatRegistrationGrades(
+        StudentCourseRegistration $registration,
+        ?bool $officiallyVisible = null,
+    ): array
     {
         $result = $registration->studentCourseResult;
         $theoretical = $result?->theoretical_total !== null ? (float) $result->theoretical_total : null;
         $practical = $result?->practical_total !== null ? (float) $result->practical_total : null;
         $statusCode = $this->resolveEffectiveResultStatusCode($registration);
-        $calculation = $this->buildCalculation(
-            $theoretical,
-            $practical,
-            $statusCode,
-            (bool) ($result?->is_deprived ?? false)
-        );
+        $officiallyVisible ??= $this->isOfficiallyVisibleAttempt($registration);
+        if ($result !== null && $officiallyVisible && $statusCode !== null) {
+            $finalMark = $result->final_mark === null ? null : (float) $result->final_mark;
+            $letterGrade = $this->letterGradeFromOfficialResult(
+                $theoretical,
+                $practical,
+                $finalMark,
+                $statusCode,
+                $this->officialComponentVisibility($registration->courseOffering),
+            );
+            $calculation = [
+                'final_mark' => $finalMark,
+                'letter_grade' => $letterGrade,
+                'grade_points' => $this->resolveGradePoints($letterGrade, $statusCode),
+                'result_status_code' => $statusCode,
+            ];
+        } else {
+            $calculation = $this->buildCalculation(
+                $theoretical,
+                $practical,
+                $statusCode,
+                (bool) ($result?->is_deprived ?? false)
+            );
+        }
 
         return [
             'registration' => [
@@ -842,9 +869,13 @@ class GradeService
         ];
     }
 
-    private function formatGradeSheetRow(StudentCourseRegistration $registration, bool $workflowEditable): array
+    private function formatGradeSheetRow(
+        StudentCourseRegistration $registration,
+        bool $workflowEditable,
+        bool $officiallyVisible,
+    ): array
     {
-        $grades = $this->formatRegistrationGrades($registration);
+        $grades = $this->formatRegistrationGrades($registration, $officiallyVisible);
         $registrationAllowsGradeEntry = $registration->allowsGradeEntry();
         $gradeEntryAllowed = $registrationAllowsGradeEntry && $workflowEditable;
 
@@ -1673,6 +1704,7 @@ class GradeService
             'student',
             'registrationStatus',
             'courseOffering.course',
+            'courseOffering.gradeComponents',
             'courseOffering.academicYear',
             'courseOffering.semester',
             'studentCourseResult.resultStatus',
