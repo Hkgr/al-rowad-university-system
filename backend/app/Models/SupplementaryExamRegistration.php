@@ -16,4 +16,5 @@ class SupplementaryExamRegistration extends Model
     public function originalRegistration(): BelongsTo { return $this->belongsTo(StudentCourseRegistration::class,'student_course_registration_id'); }
     public function events(): HasMany { return $this->hasMany(SupplementaryExamRegistrationEvent::class,'supplementary_exam_registration_id'); }
     public function gradeResult() { return $this->hasOne(SupplementaryExamGradeResult::class, 'supplementary_exam_registration_id'); }
+    public function materialization() { return $this->hasOne(SupplementaryExamMaterialization::class, 'supplementary_exam_registration_id'); }
 }

@@ -111,6 +111,7 @@ use App\Http\Controllers\Api\UserRoleController;
 use App\Http\Controllers\Api\StudentSupplementaryExamController;
 use App\Http\Controllers\Api\SupplementaryExamEligibilityController;
 use App\Http\Controllers\Api\SupplementaryExamGradingController;
+use App\Http\Controllers\Api\SupplementaryExamMaterializationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -514,6 +515,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::post('exams/supplementary-grades/{submission}/return', [SupplementaryExamGradingController::class, 'return']);
     Route::post('exams/supplementary-grades/{submission}/approve', [SupplementaryExamGradingController::class, 'approve']);
     Route::post('exams/supplementary-grades/{submission}/publish', [SupplementaryExamGradingController::class, 'publish']);
+    Route::post('exams/supplementary-offerings/{offering}/materialize', [SupplementaryExamMaterializationController::class, 'store']);
     Route::post('exams/supplementary-offerings/{offering}/grader', [SupplementaryExamGradingController::class, 'assign']);
     Route::post('exams/supplementary-periods/{period}/open-grading', [SupplementaryExamGradingController::class, 'open']);
 

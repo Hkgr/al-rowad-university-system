@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class StudentCourseResult extends Model
 {
@@ -21,6 +21,7 @@ class StudentCourseResult extends Model
         'result_status_id',
         'is_deprived',
         'calculated_at',
+        'result_announced_at',
         'calculated_by_user_id',
         'created_at',
         'updated_at',
@@ -35,6 +36,7 @@ class StudentCourseResult extends Model
             'final_mark' => 'decimal:2',
             'is_deprived' => 'boolean',
             'calculated_at' => 'datetime',
+            'result_announced_at' => 'datetime',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
         ];
@@ -55,4 +57,12 @@ class StudentCourseResult extends Model
         return $this->belongsTo(ResultStatus::class, 'result_status_id', 'result_status_id');
     }
 
+    public function supplementaryExamMaterialization(): HasOne
+    {
+        return $this->hasOne(
+            SupplementaryExamMaterialization::class,
+            'student_course_result_id',
+            'student_course_result_id'
+        );
+    }
 }

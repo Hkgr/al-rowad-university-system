@@ -18,7 +18,9 @@ use App\Models\Student;
 use App\Models\StudentCourseRegistration;
 use App\Models\StudentCourseResult;
 use App\Models\StudentGradeComponent;
+use App\Models\SupplementaryExamMaterialization;
 use App\Support\CourseRequirementClassification;
+use App\Support\SupplementaryExamMaterializationGovernance;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
@@ -294,6 +296,7 @@ class GradeService
     {
         return DB::transaction(function () use ($registrationId, $data, $userId): array {
             $registration = $this->lockRegistrationWorkflow($registrationId);
+            $this->assertNotSupplementaryMaterialized($registrationId);
             $this->assertLegacyGradeWorkflowAllowed((int) $registration->course_offering_id);
             $this->assertRegistrationAllowsGrading($registration);
             $this->assertOfferingGradesEditable((int) $registration->course_offering_id);
@@ -313,6 +316,7 @@ class GradeService
     {
         return DB::transaction(function () use ($registrationId, $data, $userId): array {
             $registration = $this->lockRegistrationWorkflow($registrationId);
+            $this->assertNotSupplementaryMaterialized($registrationId);
             $this->assertLegacyGradeWorkflowAllowed((int) $registration->course_offering_id);
             $this->assertRegistrationAllowsGrading($registration);
             $this->assertOfferingGradesEditable((int) $registration->course_offering_id);
@@ -349,6 +353,7 @@ class GradeService
     {
         return DB::transaction(function () use ($registrationId, $userId): array {
             $registration = $this->lockRegistrationWorkflow($registrationId);
+            $this->assertNotSupplementaryMaterialized($registrationId);
             $this->assertLegacyGradeWorkflowAllowed((int) $registration->course_offering_id);
             $this->assertRegistrationAllowsGrading($registration);
             $this->assertOfferingGradesEditable((int) $registration->course_offering_id);
@@ -1684,6 +1689,20 @@ class GradeService
         }
     }
 
+    public function assertNotSupplementaryMaterialized(int $registrationId): void
+    {
+        if (SupplementaryExamMaterializationGovernance::materializationTableAvailable()
+            && SupplementaryExamMaterialization::query()
+                ->where('student_course_registration_id', $registrationId)
+                ->exists()) {
+            throw new GradeException(
+                'A materialized supplementary result is locked against ordinary grade recalculation.',
+                status: 409,
+                errorCode: 'supplementary_materialized_result_locked',
+            );
+        }
+    }
+
     private function assertRequestedGradePartsEditable(int $offeringId, array $data): void
     {
         $requested = collect(GradePartApproval::PARTS)
@@ -1840,6 +1859,33 @@ class GradeService
                 throw new ModelNotFoundException('No active grading policy was found.');
             }
         }
+
+        return $this->defaultPolicy;
+    }
+
+    /** Lock the exact canonical policy used by a high-risk official-result write. */
+    public function lockDefaultGradingPolicy(): GradingPolicy
+    {
+        $policies = GradingPolicy::query()
+            ->where('is_active', true)
+            ->orderBy('grading_policy_id')
+            ->lockForUpdate()
+            ->get();
+
+        if ($policies->isEmpty()) {
+            throw new ModelNotFoundException('No active grading policy was found.');
+        }
+
+        $defaults = $policies->where('is_default', true);
+        if ($defaults->count() > 1) {
+            throw new GradeException(
+                'More than one active default grading policy was found.',
+                status: 409,
+                errorCode: 'grading_policy_ambiguous',
+            );
+        }
+
+        $this->defaultPolicy = $defaults->first() ?? $policies->first();
 
         return $this->defaultPolicy;
     }

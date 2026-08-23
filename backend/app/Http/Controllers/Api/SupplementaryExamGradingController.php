@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\SupplementaryExamOffering;
 use App\Models\SupplementaryExamPeriod;
 use App\Services\SupplementaryExamGradingService;
+use App\Services\SupplementaryExamMaterializationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -16,7 +17,18 @@ class SupplementaryExamGradingController extends Controller
     public function save(Request $request, SupplementaryExamOffering $offering, SupplementaryExamGradingService $service): JsonResponse { $data=$request->validate(['marks'=>['required','array'],'marks.*.supplementary_exam_registration_id'=>['required','integer'],'marks.*.theoretical_mark'=>['required','numeric']]);return response()->json(['success'=>true,'data'=>$service->saveDrafts($request->user(),$offering,$data['marks'])]); }
     public function submit(Request $request, SupplementaryExamOffering $offering, SupplementaryExamGradingService $service): JsonResponse { return response()->json(['success'=>true,'data'=>$service->submit($request->user(),$offering)]); }
     public function resubmit(Request $request, SupplementaryExamOffering $offering, SupplementaryExamGradingService $service): JsonResponse { return response()->json(['success'=>true,'data'=>$service->submit($request->user(),$offering,true)]); }
-    public function queue(Request $request, SupplementaryExamGradingService $service): JsonResponse { return response()->json(['success'=>true,'data'=>$service->reviewQueue($request->user())]); }
+    public function queue(
+        Request $request,
+        SupplementaryExamGradingService $service,
+        SupplementaryExamMaterializationService $materializations,
+    ): JsonResponse {
+        $queue = $service->reviewQueue($request->user());
+
+        return response()->json([
+            'success' => true,
+            'data' => $materializations->decorateReviewQueue($request->user(), $queue),
+        ]);
+    }
     public function return(Request $request,int $submission,SupplementaryExamGradingService $service):JsonResponse{$data=$request->validate(['reason'=>['required','string','max:2000']]);return response()->json(['success'=>true,'data'=>$service->review($request->user(),$submission,'return',$data['reason'])]);}
     public function approve(Request $request,int $submission,SupplementaryExamGradingService $service):JsonResponse{return response()->json(['success'=>true,'data'=>$service->review($request->user(),$submission,'approve')]);}
     public function publish(Request $request,int $submission,SupplementaryExamGradingService $service):JsonResponse{return response()->json(['success'=>true,'data'=>$service->review($request->user(),$submission,'publish')]);}

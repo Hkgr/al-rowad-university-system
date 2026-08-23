@@ -172,6 +172,7 @@ class GradePartWorkflowService
             $locked = StudentCourseRegistration::query()->whereKey($registration->student_course_registration_id)
                 ->with(['registrationStatus', 'resultStatus', 'studentCourseResult.resultStatus'])
                 ->lockForUpdate()->firstOrFail();
+            $this->grades->assertNotSupplementaryMaterialized((int) $locked->getKey());
             if (! $locked->allowsGradeEntry()) {
                 $this->fail('Grade entry is not allowed for this registration.', 'grade_entry_not_allowed', 409);
             }
@@ -349,6 +350,9 @@ class GradePartWorkflowService
         if ($approval?->status === 'submitted') return $approval;
         if ($approval && ! in_array($approval->status, ['draft', 'returned'], true)) $this->fail('This grade part cannot be submitted.', 'grade_part_already_submitted');
         $registrations = StudentCourseRegistration::query()->where('course_offering_id', $offeringId)->current()->with(['studentCourseResult.resultStatus', 'resultStatus'])->lockForUpdate()->get();
+        foreach ($registrations as $registration) {
+            $this->grades->assertNotSupplementaryMaterialized((int) $registration->getKey());
+        }
         $components = GradeComponent::query()->where('course_offering_id', $offeringId)->where('component_type', $part)->where('is_required', true)->get();
         if ($registrations->isEmpty() || ! $this->partComplete($registrations, $components, $part)) $this->fail('Required marks for this grade part are incomplete.', 'grade_part_incomplete');
         $old = $approval?->toArray();
@@ -438,6 +442,9 @@ class GradePartWorkflowService
     {
         $required = $this->requiredParts($offeringId);
         $registrations = StudentCourseRegistration::query()->where('course_offering_id', $offeringId)->current()->with('resultStatus')->lockForUpdate()->get();
+        foreach ($registrations as $registration) {
+            $this->grades->assertNotSupplementaryMaterialized((int) $registration->getKey());
+        }
         $components = GradeComponent::query()->where('course_offering_id', $offeringId)->where('is_required', true)->get();
         $this->grades->assertRequiredPartsPolicyCompatible(
             in_array('theoretical', $required, true), in_array('practical', $required, true),
