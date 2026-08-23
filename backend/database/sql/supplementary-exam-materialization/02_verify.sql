@@ -21,14 +21,14 @@ SET @verify_dependencies := (
           'academic_programs', 'departments', 'colleges', 'organizational_units'
       )
 ) AND (
-    SELECT COUNT(*) = 12
+    SELECT COUNT(*) = 11
     FROM information_schema.columns
     WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'student_course_results'
       AND column_name IN (
           'student_course_result_id', 'student_course_registration_id',
           'theoretical_total', 'practical_total', 'coursework_total', 'final_mark',
           'result_status_id', 'is_deprived', 'calculated_at',
-          'result_announced_at', 'calculated_by_user_id', 'updated_at'
+          'calculated_by_user_id', 'updated_at'
       )
 ) AND (
     SELECT COUNT(*) = 1
@@ -38,8 +38,31 @@ SET @verify_dependencies := (
       AND character_maximum_length >= 20 AND is_nullable = 'NO'
 );
 
+SET @result_announced_at_exists := (
+    SELECT COUNT(*) = 1
+    FROM information_schema.columns
+    WHERE table_schema = 'alrowad_uni_rust'
+      AND table_name = 'student_course_results'
+      AND column_name = 'result_announced_at'
+);
+SET @result_announced_at_compatible := NOT @result_announced_at_exists OR (
+    SELECT COUNT(*) = 1
+    FROM information_schema.columns
+    WHERE table_schema = 'alrowad_uni_rust'
+      AND table_name = 'student_course_results'
+      AND column_name = 'result_announced_at'
+      AND data_type IN ('datetime', 'timestamp')
+      AND datetime_precision = 0
+      AND LOWER(COALESCE(extra, '')) NOT LIKE '%on update%'
+);
+SET @result_announced_at_classification := IF(
+    NOT @result_announced_at_exists,
+    'ABSENT_OPTIONAL',
+    IF(@result_announced_at_compatible, 'PRESENT_COMPATIBLE', 'CONFLICT')
+);
+
 SET @verify_application_columns := (
-    SELECT COUNT(*) = 139
+    SELECT COUNT(*) = 138
     FROM information_schema.columns
     WHERE table_schema = 'alrowad_uni_rust'
       AND (
@@ -52,7 +75,7 @@ SET @verify_application_columns := (
           (table_name = 'supplementary_exam_grade_submissions' AND column_name IN ('supplementary_exam_grade_submission_id', 'supplementary_exam_offering_id', 'submission_version', 'status', 'published_at', 'updated_at')) OR
           (table_name = 'supplementary_exam_grade_events' AND column_name IN ('supplementary_exam_grade_event_id', 'supplementary_exam_grade_result_id', 'supplementary_exam_grade_submission_id', 'event_type', 'from_status', 'to_status', 'submission_version', 'theoretical_mark', 'actor_user_id', 'notes', 'created_at')) OR
           (table_name = 'student_course_registrations' AND column_name IN ('student_course_registration_id', 'student_id', 'course_offering_id', 'registration_status_id', 'result_status_id', 'updated_at')) OR
-          (table_name = 'student_course_results' AND column_name IN ('student_course_result_id', 'student_course_registration_id', 'theoretical_total', 'practical_total', 'coursework_total', 'final_mark', 'result_status_id', 'is_deprived', 'calculated_at', 'result_announced_at', 'calculated_by_user_id', 'updated_at')) OR
+          (table_name = 'student_course_results' AND column_name IN ('student_course_result_id', 'student_course_registration_id', 'theoretical_total', 'practical_total', 'coursework_total', 'final_mark', 'result_status_id', 'is_deprived', 'calculated_at', 'calculated_by_user_id', 'updated_at')) OR
           (table_name = 'course_offerings' AND column_name IN ('course_offering_id', 'course_id', 'academic_program_id')) OR
           (table_name = 'grade_approvals' AND column_name IN ('grade_approval_id', 'course_offering_id', 'approval_status_id', 'updated_at')) OR
           (table_name = 'approval_statuses' AND column_name IN ('approval_status_id', 'status_code', 'is_active')) OR
@@ -150,7 +173,8 @@ SET @verify_parent_primary_keys := (
           (table_name = 'users' AND index_columns = 'user_id')
       )
 );
-SET @verify_dependencies := @verify_dependencies AND @verify_application_columns
+SET @verify_dependencies := @verify_dependencies AND @result_announced_at_compatible
+    AND @verify_application_columns
     AND @verify_drift_timestamps AND @verify_signed_parent_ids
     AND @verify_parent_primary_keys;
 
@@ -161,7 +185,7 @@ SET @verify_mat_table := (
       AND table_type = 'BASE TABLE' AND engine = 'InnoDB'
 );
 SET @verify_mat_columns := (
-    SELECT COUNT(*) = 48
+    SELECT COUNT(*) = 50
        AND SUM(
            CASE
                WHEN column_name = 'supplementary_exam_materialization_id'
@@ -186,8 +210,12 @@ SET @verify_mat_columns := (
                    'before_coursework_total', 'before_final_mark', 'after_theoretical_total',
                    'after_practical_total', 'after_coursework_total', 'after_final_mark'
                ) THEN data_type = 'decimal' AND numeric_precision = 5 AND numeric_scale = 2 AND is_nullable = 'NO' AND column_default IS NULL AND extra = ''
-               WHEN column_name = 'practical_components_snapshot'
-                   THEN data_type IN ('longtext', 'json') AND is_nullable = 'NO' AND column_default IS NULL
+                WHEN column_name IN (
+                    'practical_components_snapshot',
+                    'before_theoretical_components_snapshot',
+                    'after_theoretical_components_snapshot'
+                )
+                    THEN data_type IN ('longtext', 'json') AND is_nullable = 'NO' AND column_default IS NULL
                WHEN column_name IN (
                    'source_result_published_at', 'source_submission_published_at',
                    'source_registration_updated_at', 'grade_approval_updated_at',
@@ -200,7 +228,7 @@ SET @verify_mat_columns := (
                    THEN data_type = 'datetime' AND is_nullable = 'YES' AND column_default IS NULL AND extra = ''
                ELSE 0
            END
-       ) = 48
+       ) = 50
     FROM information_schema.columns
     WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'supplementary_exam_materializations'
 );
@@ -217,11 +245,15 @@ SET @verify_mat_primary := (
     WHERE non_unique = 0 AND index_columns = 'supplementary_exam_materialization_id'
 );
 SET @verify_mat_json := (
-    SELECT COUNT(*) = 1
+    SELECT COUNT(*) = 3
     FROM information_schema.columns c
     WHERE c.table_schema = 'alrowad_uni_rust'
       AND c.table_name = 'supplementary_exam_materializations'
-      AND c.column_name = 'practical_components_snapshot'
+      AND c.column_name IN (
+          'practical_components_snapshot',
+          'before_theoretical_components_snapshot',
+          'after_theoretical_components_snapshot'
+      )
       AND (
           c.data_type = 'json'
           OR (
@@ -236,7 +268,7 @@ SET @verify_mat_json := (
                     AND tc.table_name = c.table_name
                     AND tc.constraint_type = 'CHECK'
                     AND LOWER(cc.check_clause) LIKE '%json_valid%'
-                    AND LOWER(cc.check_clause) LIKE '%practical_components_snapshot%'
+                    AND LOWER(cc.check_clause) LIKE CONCAT('%', LOWER(c.column_name), '%')
               )
           )
       )
@@ -454,6 +486,7 @@ SET @verify_pass := @verify_dependencies AND @verify_mat_compatible
 SELECT report_section, result
 FROM (
     SELECT 10 AS sort_order, 'DEPENDENCIES' AS report_section, IF(@verify_dependencies, 'PASS', 'FAIL') AS result
+    UNION ALL SELECT 12, 'OPTIONAL_RESULT_ANNOUNCED_AT', @result_announced_at_classification
     UNION ALL SELECT 15, 'supplementary_exam_materializations', @verify_mat_classification
     UNION ALL SELECT 20, 'MATERIALIZATION_COLUMNS', IF(@verify_mat_columns, 'PASS', 'FAIL')
     UNION ALL SELECT 25, 'MATERIALIZATION_PRIMARY_AND_JSON', IF(@verify_mat_primary AND @verify_mat_json, 'PASS', 'FAIL')

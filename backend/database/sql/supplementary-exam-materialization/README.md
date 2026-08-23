@@ -32,9 +32,9 @@ Phase 6 adds these tables when absent and compatible to create:
 
 - `supplementary_exam_materializations`: immutable structured source, target,
   canonical policy, authoritative regular approval, preserved registration
-  status, practical-component evidence, and before/after result provenance.
-  The practical-component snapshot is protected by a database JSON-validity
-  check.
+  status, preserved practical-component evidence, before/after canonical
+  theoretical-component evidence, and before/after result provenance. All
+  component snapshots are protected by database JSON-validity checks.
   Unique constraints cover the Phase-4 registration, Phase-5 grade result and
   immutable publication event, source submission/version/registration tuple,
   target registration, and target result.
@@ -64,9 +64,26 @@ The application materializes one complete published offering in one database
 transaction. It updates the existing `student_course_results` row rather than
 creating another registration or academic attempt. It changes only the official
 theoretical total, canonical final mark and result status, calculation actor/time,
-plus the original registration's matching result status. Practical total,
-coursework total, deprivation state, announcement timestamp, practical component
-rows, attendance, and registration identity are preserved.
+the single required canonical theoretical component mark, plus the original
+registration's matching result status. The theoretical component is part of the
+current official grade-part contract: the active grade-part finalizer rebuilds
+the aggregate from component rows, while official detail, grade sheet, transcript,
+and GPA paths consume `student_course_results`. Phase 6 keeps those canonical
+representations synchronized so component-based recalculation cannot restore the
+old regular theory mark. It therefore requires exactly one required, approved
+theoretical component row whose mark matches the pre-materialization aggregate;
+missing, duplicate, multi-component, or divergent evidence is rejected rather
+than assigned an invented distribution. Its before/after rows are recorded in
+provenance.
+
+Practical total, coursework total, deprivation state, practical component rows,
+attendance, and registration identity are preserved. `result_announced_at` is a
+preservation-only optional source column: when present it is snapshotted and
+verified unchanged; when absent both provenance snapshots are `NULL` and Phase 6
+continues without ever attempting to write that column. Preflight and verify
+report `PRESENT_COMPATIBLE` or `ABSENT_OPTIONAL`; only an incompatible present
+definition (a non-date/time or fractional type, or automatic `ON UPDATE`) is a
+conflict.
 An older official row whose nonzero practical total cannot be reconciled exactly
 to required, approved practical component rows is rejected rather than inferred
 or rewritten.
@@ -75,8 +92,9 @@ The exact immutable Phase-5 publication event, publication/update timestamps,
 the latest regular approval identifier, and locked component evidence form the
 available source/target drift guard.
 Before a period becomes `results_materialized`, the application re-locks every
-materialized official target in that period and verifies its recorded after
-snapshot; a drifted earlier target keeps the period non-terminal.
+materialized official target and its canonical component rows in that period and
+verifies the recorded after snapshots; a drifted earlier target keeps the period
+non-terminal.
 Because the current schema stores these timestamps only to whole-second precision,
 a same-second external write remains a residual limitation; relational and
 before/after provenance checks still fail closed on detectable mismatches.
@@ -84,6 +102,14 @@ before/after provenance checks still fail closed on detectable mismatches.
 The Phase-5 source mark and submission remain immutable. Transcript and GPA read
 the canonical existing result path; this package creates no parallel academic
 aggregate tables.
+
+Ordinary grade update/recalculation and grade-part finalization paths reject a
+registration after Phase-6 provenance exists. The legacy `calculate_final_grade`
+routine included in database dumps is not called by any application route or
+service; because the canonical theoretical component is synchronized, its
+component sum cannot restore the old regular theoretical mark. Direct invocation
+of legacy mutation routines remains outside the supported application and audited
+correction contract.
 
 ## Rollback is not grade reversal
 

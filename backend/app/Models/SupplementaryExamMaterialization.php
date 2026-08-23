@@ -20,6 +20,8 @@ class SupplementaryExamMaterialization extends Model
             'source_submission_version' => 'integer',
             'source_theoretical_mark' => 'decimal:2',
             'practical_components_snapshot' => 'array',
+            'before_theoretical_components_snapshot' => 'array',
+            'after_theoretical_components_snapshot' => 'array',
             'before_theoretical_total' => 'decimal:2',
             'before_practical_total' => 'decimal:2',
             'before_coursework_total' => 'decimal:2',

@@ -18,7 +18,9 @@ use App\Models\Student;
 use App\Models\StudentCourseRegistration;
 use App\Models\StudentCourseResult;
 use App\Models\StudentGradeComponent;
+use App\Models\SupplementaryExamMaterialization;
 use App\Support\CourseRequirementClassification;
+use App\Support\SupplementaryExamMaterializationGovernance;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
@@ -294,6 +296,7 @@ class GradeService
     {
         return DB::transaction(function () use ($registrationId, $data, $userId): array {
             $registration = $this->lockRegistrationWorkflow($registrationId);
+            $this->assertNotSupplementaryMaterialized($registrationId);
             $this->assertLegacyGradeWorkflowAllowed((int) $registration->course_offering_id);
             $this->assertRegistrationAllowsGrading($registration);
             $this->assertOfferingGradesEditable((int) $registration->course_offering_id);
@@ -313,6 +316,7 @@ class GradeService
     {
         return DB::transaction(function () use ($registrationId, $data, $userId): array {
             $registration = $this->lockRegistrationWorkflow($registrationId);
+            $this->assertNotSupplementaryMaterialized($registrationId);
             $this->assertLegacyGradeWorkflowAllowed((int) $registration->course_offering_id);
             $this->assertRegistrationAllowsGrading($registration);
             $this->assertOfferingGradesEditable((int) $registration->course_offering_id);
@@ -349,6 +353,7 @@ class GradeService
     {
         return DB::transaction(function () use ($registrationId, $userId): array {
             $registration = $this->lockRegistrationWorkflow($registrationId);
+            $this->assertNotSupplementaryMaterialized($registrationId);
             $this->assertLegacyGradeWorkflowAllowed((int) $registration->course_offering_id);
             $this->assertRegistrationAllowsGrading($registration);
             $this->assertOfferingGradesEditable((int) $registration->course_offering_id);
@@ -1680,6 +1685,20 @@ class GradeService
                 'This course offering must use the grade-parts workflow.',
                 status: 409,
                 errorCode: 'legacy_grade_workflow_disabled'
+            );
+        }
+    }
+
+    public function assertNotSupplementaryMaterialized(int $registrationId): void
+    {
+        if (SupplementaryExamMaterializationGovernance::materializationTableAvailable()
+            && SupplementaryExamMaterialization::query()
+                ->where('student_course_registration_id', $registrationId)
+                ->exists()) {
+            throw new GradeException(
+                'A materialized supplementary result is locked against ordinary grade recalculation.',
+                status: 409,
+                errorCode: 'supplementary_materialized_result_locked',
             );
         }
     }

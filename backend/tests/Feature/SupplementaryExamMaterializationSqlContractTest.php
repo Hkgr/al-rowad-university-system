@@ -84,7 +84,7 @@ class SupplementaryExamMaterializationSqlContractTest extends TestCase
         foreach (['00_preflight.sql', '01_apply.sql'] as $file) {
             $sql = $this->sql($file);
             $this->assertMatchesRegularExpression(
-                '/SET @canonical_result_ready := \(\s*SELECT COUNT\(\*\) = 12/s',
+                '/SET @canonical_result_ready := \(\s*SELECT COUNT\(\*\) = 11/s',
                 $sql,
             );
             $this->assertMatchesRegularExpression(
@@ -96,7 +96,22 @@ class SupplementaryExamMaterializationSqlContractTest extends TestCase
         foreach (['00_preflight.sql', '01_apply.sql', '02_verify.sql'] as $file) {
             $sql = $this->sql($file);
             $this->assertStringContainsString('supplementary_exam_grade_event_id', $sql);
+            $this->assertStringContainsString('before_theoretical_components_snapshot', $sql);
+            $this->assertStringContainsString('after_theoretical_components_snapshot', $sql);
+            $this->assertStringContainsString('OPTIONAL_RESULT_ANNOUNCED_AT', $sql);
+            $this->assertStringContainsString('ABSENT_OPTIONAL', $sql);
+            $this->assertStringContainsString('PRESENT_COMPATIBLE', $sql);
+            $this->assertStringContainsString('datetime_precision = 0', $sql);
+            $this->assertStringContainsString("LOWER(COALESCE(extra, '')) NOT LIKE '%on update%'", $sql);
             $this->assertStringContainsString('non_unique = 0 AND index_columns NOT IN', $sql);
+            $this->assertMatchesRegularExpression(
+                '/SET @(?:verify_)?mat_primary(?:_ready)? := \(\s*SELECT COUNT\(\*\) = 1/s',
+                $sql,
+            );
+            $this->assertMatchesRegularExpression(
+                '/SET @(?:verify_)?mat_json(?:_ready)? := \(\s*SELECT COUNT\(\*\) = 3/s',
+                $sql,
+            );
         }
     }
 

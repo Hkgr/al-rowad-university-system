@@ -64,7 +64,7 @@ final class SupplementaryExamMaterializationGovernance
                     'student_course_result_id', 'student_course_registration_id',
                     'theoretical_total', 'practical_total', 'coursework_total', 'final_mark',
                     'result_status_id', 'is_deprived', 'calculated_at',
-                    'result_announced_at', 'calculated_by_user_id', 'updated_at',
+                    'calculated_by_user_id', 'updated_at',
                 ],
                 'course_offerings' => [
                     'course_offering_id', 'course_id', 'academic_program_id',
@@ -146,6 +146,8 @@ final class SupplementaryExamMaterializationGovernance
                     'preserved_registration_status_id',
                     'source_theoretical_mark',
                     'practical_components_snapshot',
+                    'before_theoretical_components_snapshot',
+                    'after_theoretical_components_snapshot',
                     'source_registration_updated_at',
                     'source_result_published_at',
                     'source_submission_published_at',
@@ -199,6 +201,24 @@ final class SupplementaryExamMaterializationGovernance
             }
 
             return self::permissionReady();
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    public static function materializationTableAvailable(): bool
+    {
+        try {
+            return Schema::hasTable('supplementary_exam_materializations');
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    public static function resultAnnouncedAtAvailable(): bool
+    {
+        try {
+            return Schema::hasColumn('student_course_results', 'result_announced_at');
         } catch (Throwable) {
             return false;
         }

@@ -30,11 +30,14 @@ use Illuminate\Support\Facades\DB;
 /**
  * Lock order: period, ordered supplementary offerings, submission, ordered
  * roster/results/publish events, regular offerings/approvals/components/registrations/results,
- * then existing Phase-6 provenance. A terminal transition re-locks every prior
- * official target and approval. One transaction owns the whole offering.
+ * component marks, then existing Phase-6 provenance. A terminal transition
+ * re-locks every prior official target, approval, and component row. One
+ * transaction owns the whole offering.
  */
 class SupplementaryExamMaterializationService
 {
+    private ?bool $resultAnnouncedAtAvailable = null;
+
     public function __construct(
         private readonly GradeService $grades,
         private readonly DataScopeService $scope,
@@ -62,6 +65,8 @@ class SupplementaryExamMaterializationService
                         'sourceEvent',
                         'sourceSubmission',
                         'originalRegistration.courseOffering.gradeApprovals.approvalStatus',
+                        'originalRegistration.courseOffering.gradeComponents',
+                        'originalRegistration.studentGradeComponents',
                         'targetResult',
                         'gradeApproval.approvalStatus',
                         'event',
@@ -341,7 +346,16 @@ class SupplementaryExamMaterializationService
                     $this->fail('The original academic result is not canonically approved.', 'supplementary_materialization_regular_result_not_approved', 409);
                 }
 
-                $practicalSnapshot = $this->practicalComponentsSnapshot($requiredComponents, $candidateGradeRows);
+                $theoreticalSnapshot = $this->gradeComponentsSnapshot(
+                    $requiredComponents,
+                    $candidateGradeRows,
+                    'theoretical',
+                );
+                $practicalSnapshot = $this->gradeComponentsSnapshot(
+                    $requiredComponents,
+                    $candidateGradeRows,
+                    'practical',
+                );
 
                 if ($existing) {
                     $this->assertExistingMaterialization(
@@ -355,6 +369,7 @@ class SupplementaryExamMaterializationService
                         $regularResult,
                         $approval,
                         $regularRegistrationStatus,
+                        $theoreticalSnapshot,
                         $practicalSnapshot,
                     );
                     $matchedMaterializationIds->push($existing->getKey());
@@ -379,8 +394,12 @@ class SupplementaryExamMaterializationService
 
                 $theoreticalComponents = $requiredComponents->where('component_type', 'theoretical');
                 $practicalComponents = $requiredComponents->where('component_type', 'practical');
-                if ($theoreticalComponents->isEmpty()) {
-                    $this->fail('The original offering has no required theoretical component.', 'supplementary_materialization_theoretical_part_missing', 409);
+                if ($theoreticalComponents->count() !== 1) {
+                    $this->fail(
+                        'The published aggregate requires exactly one canonical theoretical component.',
+                        'supplementary_materialization_theoretical_component_ambiguous',
+                        409,
+                    );
                 }
 
                 $theoreticalMax = (float) $theoreticalComponents->sum('max_mark');
@@ -394,6 +413,11 @@ class SupplementaryExamMaterializationService
                 if ($practicalMark !== null && ($practicalMark < 0 || $practicalMark > $practicalMax)) {
                     $this->fail('The preserved practical mark is outside the canonical range.', 'supplementary_materialization_practical_out_of_range', 409);
                 }
+                $this->assertTheoreticalAggregateMatchesSnapshot(
+                    $theoreticalComponents,
+                    $theoreticalSnapshot,
+                    $regularResult,
+                );
                 $this->assertPracticalAggregateMatchesSnapshot($practicalComponents, $practicalSnapshot, $regularResult);
 
                 $calculation = $this->grades->buildCalculationForRequiredParts(
@@ -411,6 +435,24 @@ class SupplementaryExamMaterializationService
 
                 $preservedRegistrationStatusId = (int) $regularRegistration->registration_status_id;
                 $before = $this->officialSnapshot($regularRegistration, $regularResult);
+                $theoreticalGrade = $candidateGradeRows->firstWhere(
+                    'grade_component_id',
+                    $theoreticalComponents->first()->grade_component_id,
+                );
+                $theoreticalGrade->forceFill([
+                    'mark' => round($theoreticalMark, 2),
+                    'updated_at' => $now,
+                ])->save();
+                $theoreticalSnapshotAfter = $this->gradeComponentsSnapshot(
+                    $requiredComponents,
+                    $candidateGradeRows,
+                    'theoretical',
+                );
+                $this->assertTheoreticalComponentTransition(
+                    $theoreticalSnapshot,
+                    $theoreticalSnapshotAfter,
+                    $theoreticalMark,
+                );
                 $regularResult->forceFill([
                     'theoretical_total' => round($theoreticalMark, 2),
                     'final_mark' => round((float) $calculation['final_mark'], 2),
@@ -443,6 +485,8 @@ class SupplementaryExamMaterializationService
                     'preserved_registration_status_id' => $preservedRegistrationStatusId,
                     'source_theoretical_mark' => $sourceResult->theoretical_mark,
                     'practical_components_snapshot' => $practicalSnapshot,
+                    'before_theoretical_components_snapshot' => $theoreticalSnapshot,
+                    'after_theoretical_components_snapshot' => $theoreticalSnapshotAfter,
                     'source_registration_updated_at' => $registration->updated_at,
                     'source_result_published_at' => $sourceResult->published_at,
                     'source_submission_published_at' => $submission->published_at,
@@ -661,15 +705,15 @@ class SupplementaryExamMaterializationService
         }
     }
 
-    private function practicalComponentsSnapshot(Collection $components, Collection $gradeRows): array
+    private function gradeComponentsSnapshot(Collection $components, Collection $gradeRows, string $part): array
     {
-        $practicalComponentIds = $components
-            ->where('component_type', 'practical')
+        $componentIds = $components
+            ->where('component_type', $part)
             ->pluck('grade_component_id')
             ->map(fn ($id) => (int) $id);
 
         return $gradeRows
-            ->whereIn('grade_component_id', $practicalComponentIds)
+            ->whereIn('grade_component_id', $componentIds)
             ->sortBy('student_grade_component_id')
             ->map(fn (StudentGradeComponent $row): array => [
                 'student_grade_component_id' => (int) $row->student_grade_component_id,
@@ -680,6 +724,48 @@ class SupplementaryExamMaterializationService
             ])
             ->values()
             ->all();
+    }
+
+    private function assertTheoreticalAggregateMatchesSnapshot(
+        Collection $components,
+        array $snapshot,
+        StudentCourseResult $result,
+    ): void {
+        $expectedComponentIds = $components->pluck('grade_component_id')->map(fn ($id) => (int) $id)->values()->all();
+        $snapshotComponentIds = collect($snapshot)->pluck('grade_component_id')->map(fn ($id) => (int) $id)->values()->all();
+        if (count($expectedComponentIds) !== 1
+            || $snapshotComponentIds !== $expectedComponentIds
+            || collect($snapshot)->contains(fn (array $row) => $row['mark'] === null || $row['grade_status'] !== 'approved')) {
+            $this->fail(
+                'The canonical theoretical component evidence is incomplete or ambiguous.',
+                'supplementary_materialization_theoretical_components_incomplete',
+                409,
+            );
+        }
+
+        if ($this->decimal($snapshot[0]['mark']) !== $this->decimal($result->theoretical_total)) {
+            $this->fail(
+                'The theoretical aggregate no longer matches its canonical component.',
+                'supplementary_materialization_theoretical_drift',
+                409,
+            );
+        }
+    }
+
+    private function assertTheoreticalComponentTransition(array $before, array $after, float $sourceMark): void
+    {
+        if (count($before) !== 1
+            || count($after) !== 1
+            || $before[0]['student_grade_component_id'] !== $after[0]['student_grade_component_id']
+            || $before[0]['grade_component_id'] !== $after[0]['grade_component_id']
+            || $before[0]['grade_status'] !== $after[0]['grade_status']
+            || $this->decimal($after[0]['mark']) !== $this->decimal($sourceMark)) {
+            $this->fail(
+                'The canonical theoretical component transition is inconsistent.',
+                'supplementary_materialization_theoretical_component_failure',
+                409,
+            );
+        }
     }
 
     private function assertPracticalAggregateMatchesSnapshot(Collection $components, array $snapshot, StudentCourseResult $result): void
@@ -752,7 +838,9 @@ class SupplementaryExamMaterializationService
             'registration_result_status_id' => $registration->result_status_id === null ? null : (int) $registration->result_status_id,
             'is_deprived' => (bool) $result->is_deprived,
             'calculated_at' => $result->calculated_at,
-            'result_announced_at' => $result->result_announced_at,
+            'result_announced_at' => $this->resultAnnouncedAtAvailable()
+                ? $result->getAttribute('result_announced_at')
+                : null,
             'calculated_by_user_id' => $result->calculated_by_user_id === null ? null : (int) $result->calculated_by_user_id,
             'result_updated_at' => $result->updated_at,
             'registration_updated_at' => $registration->updated_at,
@@ -762,6 +850,12 @@ class SupplementaryExamMaterializationService
     private function prefixSnapshot(string $prefix, array $snapshot): array
     {
         return collect($snapshot)->mapWithKeys(fn ($value, $key) => ["{$prefix}_{$key}" => $value])->all();
+    }
+
+    private function resultAnnouncedAtAvailable(): bool
+    {
+        return $this->resultAnnouncedAtAvailable
+            ??= Governance::resultAnnouncedAtAvailable();
     }
 
     private function assertPreservedOfficialFields(array $before, array $after): void
@@ -786,6 +880,7 @@ class SupplementaryExamMaterializationService
         StudentCourseResult $regularResult,
         GradeApproval $approval,
         ?RegistrationStatus $registrationStatus,
+        array $theoreticalSnapshot,
         array $practicalSnapshot,
     ): void {
         $sourceMatches = (int) $materialization->supplementary_exam_registration_id === (int) $registration->getKey()
@@ -806,13 +901,26 @@ class SupplementaryExamMaterializationService
             && $this->timestamp($materialization->source_result_updated_at) === $this->timestamp($sourceResult->updated_at)
             && $this->timestamp($materialization->source_submission_updated_at) === $this->timestamp($submission->updated_at)
             && $this->timestamp($materialization->grade_approval_updated_at) === $this->timestamp($approval->updated_at)
+            && count($materialization->before_theoretical_components_snapshot ?? []) === 1
+            && count($materialization->after_theoretical_components_snapshot ?? []) === 1
+            && $materialization->after_theoretical_components_snapshot === $theoreticalSnapshot
+            && $this->decimal(collect($materialization->before_theoretical_components_snapshot)->sum('mark'))
+                === $this->decimal($materialization->before_theoretical_total)
+            && $this->decimal(collect($materialization->after_theoretical_components_snapshot)->sum('mark'))
+                === $this->decimal($materialization->source_theoretical_mark)
             && $materialization->practical_components_snapshot === $practicalSnapshot;
 
         if (! $sourceMatches) {
             $this->fail('Existing materialization points to a different published source.', 'supplementary_materialization_idempotency_conflict', 409);
         }
 
-        if (! $this->targetSnapshotMatches($materialization, $regularRegistration, $regularResult)) {
+        if (! $this->targetSnapshotMatches(
+            $materialization,
+            $regularRegistration,
+            $regularResult,
+            $theoreticalSnapshot,
+            $practicalSnapshot,
+        )) {
             $this->fail('The materialized official result has changed since posting.', 'supplementary_materialization_target_conflict', 409);
         }
 
@@ -903,6 +1011,8 @@ class SupplementaryExamMaterializationService
         SupplementaryExamMaterialization $materialization,
         StudentCourseRegistration $registration,
         StudentCourseResult $result,
+        ?array $theoreticalSnapshot = null,
+        ?array $practicalSnapshot = null,
     ): bool {
         if ((int) $registration->getKey() !== (int) $materialization->student_course_registration_id
             || (int) $registration->student_id !== (int) $materialization->student_id
@@ -926,7 +1036,43 @@ class SupplementaryExamMaterializationService
             }
         }
 
-        return true;
+        if ($theoreticalSnapshot === null || $practicalSnapshot === null) {
+            [$theoreticalSnapshot, $practicalSnapshot] = $this->componentSnapshotsForRegistration($registration);
+        }
+
+        return count($theoreticalSnapshot) === 1
+            && count($materialization->after_theoretical_components_snapshot ?? []) === 1
+            && $materialization->after_theoretical_components_snapshot === $theoreticalSnapshot
+            && $this->decimal(collect($theoreticalSnapshot)->sum('mark'))
+                === $this->decimal($materialization->after_theoretical_total)
+            && $materialization->practical_components_snapshot === $practicalSnapshot;
+    }
+
+    private function componentSnapshotsForRegistration(StudentCourseRegistration $registration): array
+    {
+        $offering = $registration->relationLoaded('courseOffering')
+            ? $registration->courseOffering
+            : CourseOffering::query()->find($registration->course_offering_id);
+        $components = $offering?->relationLoaded('gradeComponents')
+            ? $offering->gradeComponents
+            : GradeComponent::query()
+                ->where('course_offering_id', $registration->course_offering_id)
+                ->orderBy('grade_component_id')
+                ->get();
+        $gradeRows = $registration->relationLoaded('studentGradeComponents')
+            ? $registration->studentGradeComponents
+            : StudentGradeComponent::query()
+                ->where('student_course_registration_id', $registration->getKey())
+                ->orderBy('student_grade_component_id')
+                ->get();
+        $requiredComponents = $components
+            ->where('is_required', true)
+            ->whereIn('component_type', ['theoretical', 'practical']);
+
+        return [
+            $this->gradeComponentsSnapshot($requiredComponents, $gradeRows, 'theoretical'),
+            $this->gradeComponentsSnapshot($requiredComponents, $gradeRows, 'practical'),
+        ];
     }
 
     private function completePeriodIfReady(
@@ -1080,6 +1226,12 @@ class SupplementaryExamMaterializationService
             ->get()
             ->groupBy('course_offering_id')
             ->map(fn (Collection $rows) => $rows->last());
+        $targetComponents = GradeComponent::query()
+            ->whereIn('course_offering_id', $targetOfferingIds)
+            ->orderBy('grade_component_id')
+            ->lockForUpdate()
+            ->get()
+            ->groupBy('course_offering_id');
         $approvedStatuses = DB::table('approval_statuses')
             ->where('status_code', 'approved')
             ->where('is_active', true)
@@ -1104,6 +1256,12 @@ class SupplementaryExamMaterializationService
             ->lockForUpdate()
             ->get()
             ->keyBy('student_course_result_id');
+        $targetGradeRows = StudentGradeComponent::query()
+            ->whereIn('student_course_registration_id', $targetRegistrationIds)
+            ->orderBy('student_grade_component_id')
+            ->lockForUpdate()
+            ->get()
+            ->groupBy('student_course_registration_id');
 
         if ($targetRegistrations->count() !== $allMaterializations->count()
             || $targetResults->count() !== $allMaterializations->count()) {
@@ -1115,6 +1273,13 @@ class SupplementaryExamMaterializationService
             $targetResult = $targetResults->get((int) $materialization->student_course_result_id);
             $targetOffering = $targetOfferings->get((int) $targetRegistration?->course_offering_id);
             $targetApproval = $targetApprovals->get((int) $targetRegistration?->course_offering_id);
+            $requiredComponents = $targetComponents
+                ->get((int) $targetRegistration?->course_offering_id, collect())
+                ->where('is_required', true)
+                ->whereIn('component_type', ['theoretical', 'practical']);
+            $gradeRows = $targetGradeRows->get((int) $targetRegistration?->getKey(), collect());
+            $theoreticalSnapshot = $this->gradeComponentsSnapshot($requiredComponents, $gradeRows, 'theoretical');
+            $practicalSnapshot = $this->gradeComponentsSnapshot($requiredComponents, $gradeRows, 'practical');
             if (! $targetRegistration
                 || ! $targetResult
                 || ! $targetOffering
@@ -1124,7 +1289,13 @@ class SupplementaryExamMaterializationService
                 || (int) $targetApproval->getKey() !== (int) $materialization->grade_approval_id
                 || (int) $targetApproval->approval_status_id !== $approvedStatusId
                 || $this->timestamp($targetApproval->updated_at) !== $this->timestamp($materialization->grade_approval_updated_at)
-                || ! $this->targetSnapshotMatches($materialization, $targetRegistration, $targetResult)) {
+                || ! $this->targetSnapshotMatches(
+                    $materialization,
+                    $targetRegistration,
+                    $targetResult,
+                    $theoreticalSnapshot,
+                    $practicalSnapshot,
+                )) {
                 return false;
             }
         }

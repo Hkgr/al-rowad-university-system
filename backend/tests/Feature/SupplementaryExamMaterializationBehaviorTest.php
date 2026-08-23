@@ -245,6 +245,7 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
     public function official_result_preserves_practical_components_attendance_and_attempt_identity(): void
     {
         $beforeRegistrationCount = DB::table('student_course_registrations')->count();
+        $beforeTheoretical = DB::table('student_grade_components')->where('student_grade_component_id', 500)->first();
         $beforePractical = DB::table('student_grade_components')->where('student_grade_component_id', 501)->first();
         $beforeAttendance = DB::table('student_attendance')->where('student_attendance_id', 1)->first();
         $beforeAnnouncement = DB::table('student_course_results')->where('student_course_result_id', 400)->value('result_announced_at');
@@ -266,8 +267,68 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
             'calculated_by_user_id' => 1,
         ]);
         $this->assertSame($beforeRegistrationCount, DB::table('student_course_registrations')->count());
+        $afterTheoretical = DB::table('student_grade_components')->where('student_grade_component_id', 500)->first();
+        $this->assertEquals(40, $afterTheoretical->mark);
+        $this->assertSame($beforeTheoretical->grade_status, $afterTheoretical->grade_status);
+        $this->assertSame($beforeTheoretical->created_at, $afterTheoretical->created_at);
         $this->assertEquals($beforePractical, DB::table('student_grade_components')->where('student_grade_component_id', 501)->first());
         $this->assertEquals($beforeAttendance, DB::table('student_attendance')->where('student_attendance_id', 1)->first());
+    }
+
+    #[Test]
+    public function result_announcement_snapshot_is_optional_when_the_source_column_is_absent(): void
+    {
+        Schema::table('student_course_results', function (Blueprint $table): void {
+            $table->dropColumn('result_announced_at');
+        });
+
+        $summary = $this->service()->materializeOffering($this->actor(), $this->offering());
+        $materialization = DB::table('supplementary_exam_materializations')->first();
+
+        $this->assertSame('materialized', $summary['status']);
+        $this->assertNull($materialization->before_result_announced_at);
+        $this->assertNull($materialization->after_result_announced_at);
+        $this->assertEquals(40, DB::table('student_course_results')->where('student_course_result_id', 400)->value('theoretical_total'));
+    }
+
+    #[Test]
+    public function theoretical_component_evidence_must_be_complete_unambiguous_and_match_the_official_aggregate(): void
+    {
+        DB::table('student_grade_components')->where('student_grade_component_id', 500)->update(['mark' => 21]);
+        $this->expectGradeError(
+            fn () => $this->service()->materializeOffering($this->actor(), $this->offering()),
+            'supplementary_materialization_theoretical_drift',
+            409,
+        );
+
+        DB::table('student_grade_components')->where('student_grade_component_id', 500)->update(['mark' => 10]);
+        DB::table('grade_components')->where('grade_component_id', 1)->update(['max_mark' => 30]);
+        DB::table('grade_components')->insert([
+            'grade_component_id' => 3,
+            'course_offering_id' => 100,
+            'component_name' => 'Second theory component',
+            'component_type' => 'theoretical',
+            'max_mark' => 30,
+            'is_required' => 1,
+            'created_at' => self::OLD_TIME,
+            'updated_at' => self::OLD_TIME,
+        ]);
+        DB::table('student_grade_components')->insert([
+            'student_grade_component_id' => 504,
+            'student_course_registration_id' => 300,
+            'grade_component_id' => 3,
+            'mark' => 10,
+            'grade_status' => 'approved',
+            'created_at' => self::OLD_TIME,
+            'updated_at' => self::OLD_TIME,
+        ]);
+
+        $this->expectGradeError(
+            fn () => $this->service()->materializeOffering($this->actor(), $this->offering()),
+            'supplementary_materialization_theoretical_component_ambiguous',
+            409,
+        );
+        $this->assertDatabaseCount('supplementary_exam_materializations', 0);
     }
 
     #[Test]
@@ -294,6 +355,7 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
     {
         $first = $this->service()->materializeOffering($this->actor(), $this->offering());
         $updatedAt = DB::table('student_course_results')->where('student_course_result_id', 400)->value('updated_at');
+        $componentUpdatedAt = DB::table('student_grade_components')->where('student_grade_component_id', 500)->value('updated_at');
         $second = $this->service()->materializeOffering($this->actor(), $this->offering());
 
         $this->assertSame('materialized', $first['status']);
@@ -301,6 +363,7 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
         $this->assertSame(0, $second['materialized_count']);
         $this->assertSame(1, $second['already_materialized_count']);
         $this->assertSame($updatedAt, DB::table('student_course_results')->where('student_course_result_id', 400)->value('updated_at'));
+        $this->assertSame($componentUpdatedAt, DB::table('student_grade_components')->where('student_grade_component_id', 500)->value('updated_at'));
         $this->assertDatabaseCount('supplementary_exam_materializations', 1);
         $this->assertDatabaseCount('supplementary_exam_materialization_events', 1);
 
@@ -349,6 +412,10 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
         $this->assertSame(1, $row->materialized_by_user_id);
         $this->assertNotNull($row->materialized_at);
         $this->assertStringContainsString('"student_grade_component_id":501', $row->practical_components_snapshot);
+        $this->assertStringContainsString('"student_grade_component_id":500', $row->before_theoretical_components_snapshot);
+        $this->assertStringContainsString('"mark":"20.00"', $row->before_theoretical_components_snapshot);
+        $this->assertStringContainsString('"student_grade_component_id":500', $row->after_theoretical_components_snapshot);
+        $this->assertStringContainsString('"mark":"40.00"', $row->after_theoretical_components_snapshot);
         $this->assertDatabaseHas('supplementary_exam_materialization_events', [
             'supplementary_exam_materialization_id' => $row->supplementary_exam_materialization_id,
             'event_type' => 'official_result_materialized',
@@ -358,16 +425,38 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
     }
 
     #[Test]
-    public function transcript_and_gpa_read_the_new_canonical_result_without_duplicate_credit(): void
+    public function later_canonical_recalculation_is_locked_and_all_official_reads_keep_the_supplementary_result(): void
     {
+        $beforePractical = DB::table('student_grade_components')->where('student_grade_component_id', 501)->first();
+        $beforeAttendance = DB::table('student_attendance')->where('student_attendance_id', 1)->first();
         $this->service()->materializeOffering($this->actor(), $this->offering());
         $student = Student::query()->findOrFail(200);
         $grades = new GradeService();
 
+        $this->expectGradeError(
+            fn () => $grades->calculateRegistrationResult(300, 1),
+            'supplementary_materialized_result_locked',
+            409,
+        );
+
+        $detail = $grades->getRegistrationGrades(300);
+        $gradeSheet = $grades->getGradeSheet(100);
         $transcript = $grades->getTranscript($student);
         $course = $transcript['terms'][0]['courses'][0];
         $gpa = $grades->calculateGpa($student->fresh(), 1, 1);
+        $componentTheoretical = DB::table('student_grade_components as grades')
+            ->join('grade_components as components', 'components.grade_component_id', '=', 'grades.grade_component_id')
+            ->where('grades.student_course_registration_id', 300)
+            ->where('components.component_type', 'theoretical')
+            ->sum('grades.mark');
 
+        $this->assertEquals(40, $componentTheoretical);
+        $this->assertSame(40.0, $detail['theoretical_mark']);
+        $this->assertSame(30.0, $detail['practical_mark']);
+        $this->assertSame(70.0, $detail['final_mark']);
+        $this->assertSame(40.0, $gradeSheet['students'][0]['theoretical_mark']);
+        $this->assertSame(30.0, $gradeSheet['students'][0]['practical_mark']);
+        $this->assertSame(70.0, $gradeSheet['students'][0]['final_mark']);
         $this->assertSame(40.0, $course['theoretical_mark']);
         $this->assertSame(30.0, $course['practical_mark']);
         $this->assertSame(70.0, $course['final_mark']);
@@ -377,6 +466,9 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
         $this->assertSame(2.5, $gpa['gpa']);
         $this->assertSame(3, $gpa['total_included_credit_hours']);
         $this->assertSame(1, $gpa['included_courses_count']);
+        $this->assertEquals(40, DB::table('student_grade_components')->where('student_grade_component_id', 500)->value('mark'));
+        $this->assertEquals($beforePractical, DB::table('student_grade_components')->where('student_grade_component_id', 501)->first());
+        $this->assertEquals($beforeAttendance, DB::table('student_attendance')->where('student_attendance_id', 1)->first());
     }
 
     #[Test]
@@ -683,13 +775,24 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
             'updated_at' => self::OLD_TIME,
         ]);
         DB::table('student_grade_components')->insert([
-            'student_grade_component_id' => 501,
-            'student_course_registration_id' => 300,
-            'grade_component_id' => 2,
-            'mark' => 30,
-            'grade_status' => 'approved',
-            'created_at' => self::OLD_TIME,
-            'updated_at' => self::OLD_TIME,
+            [
+                'student_grade_component_id' => 500,
+                'student_course_registration_id' => 300,
+                'grade_component_id' => 1,
+                'mark' => 20,
+                'grade_status' => 'approved',
+                'created_at' => self::OLD_TIME,
+                'updated_at' => self::OLD_TIME,
+            ],
+            [
+                'student_grade_component_id' => 501,
+                'student_course_registration_id' => 300,
+                'grade_component_id' => 2,
+                'mark' => 30,
+                'grade_status' => 'approved',
+                'created_at' => self::OLD_TIME,
+                'updated_at' => self::OLD_TIME,
+            ],
         ]);
         DB::table('student_attendance')->insert([
             'student_attendance_id' => 1,
@@ -783,13 +886,24 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
             'updated_at' => self::OLD_TIME,
         ]);
         DB::table('student_grade_components')->insert([
-            'student_grade_component_id' => 502,
-            'student_course_registration_id' => 301,
-            'grade_component_id' => 2,
-            'mark' => 30,
-            'grade_status' => 'approved',
-            'created_at' => self::OLD_TIME,
-            'updated_at' => self::OLD_TIME,
+            [
+                'student_grade_component_id' => 502,
+                'student_course_registration_id' => 301,
+                'grade_component_id' => 1,
+                'mark' => 20,
+                'grade_status' => 'approved',
+                'created_at' => self::OLD_TIME,
+                'updated_at' => self::OLD_TIME,
+            ],
+            [
+                'student_grade_component_id' => 503,
+                'student_course_registration_id' => 301,
+                'grade_component_id' => 2,
+                'mark' => 30,
+                'grade_status' => 'approved',
+                'created_at' => self::OLD_TIME,
+                'updated_at' => self::OLD_TIME,
+            ],
         ]);
         DB::table('supplementary_exam_registrations')->insert([
             'supplementary_exam_registration_id' => 701,
@@ -895,6 +1009,11 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
         ]);
         DB::table('student_course_registrations')->where('student_course_registration_id', 300)->update([
             'result_status_id' => 1,
+            'updated_at' => self::OLD_TIME,
+        ]);
+        DB::table('student_grade_components')->where('student_grade_component_id', 500)->update([
+            'mark' => 20,
+            'grade_status' => 'approved',
             'updated_at' => self::OLD_TIME,
         ]);
         DB::table('supplementary_exam_periods')->where('supplementary_exam_period_id', 500)->update([
@@ -1208,6 +1327,8 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
             }
             $table->decimal('source_theoretical_mark', 5, 2);
             $table->text('practical_components_snapshot');
+            $table->text('before_theoretical_components_snapshot');
+            $table->text('after_theoretical_components_snapshot');
             foreach (['source_registration_updated_at', 'source_result_published_at', 'source_submission_published_at', 'source_result_updated_at', 'source_submission_updated_at', 'grade_approval_updated_at'] as $column) {
                 $table->dateTime($column);
             }

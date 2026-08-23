@@ -71,7 +71,7 @@ class SupplementaryExamMaterializationContractTest extends TestCase
     }
 
     #[Test]
-    public function canonical_result_is_updated_without_parallel_attempt_or_practical_attendance_writes(): void
+    public function canonical_result_and_single_theoretical_component_are_updated_without_practical_or_attendance_writes(): void
     {
         $service = $this->service();
         $this->assertStringContainsString('buildCalculationForRequiredParts(', $service);
@@ -79,12 +79,15 @@ class SupplementaryExamMaterializationContractTest extends TestCase
         $this->assertStringContainsString("'theoretical_total' => round(", $service);
         $this->assertStringContainsString("'final_mark' => round(", $service);
         $this->assertStringContainsString("'result_status_id' => \$newStatus->getKey()", $service);
+        $this->assertStringContainsString("'mark' => round(\$theoreticalMark, 2)", $service);
+        $this->assertStringContainsString('assertTheoreticalAggregateMatchesSnapshot(', $service);
+        $this->assertStringContainsString('assertTheoreticalComponentTransition(', $service);
+        $this->assertStringContainsString('supplementary_materialization_theoretical_component_ambiguous', $service);
         $this->assertStringContainsString('assertPreservedOfficialFields(', $service);
         $this->assertStringContainsString("['practical_total', 'coursework_total', 'is_deprived', 'result_announced_at']", $service);
 
         foreach ([
             'StudentCourseRegistration::query()->create',
-            'StudentGradeComponent::query()->update',
             'StudentAttendance::',
             'supplementary_exam_results',
         ] as $forbiddenWrite) {
@@ -101,6 +104,8 @@ class SupplementaryExamMaterializationContractTest extends TestCase
             'supplementary_materialization_idempotency_conflict',
             'supplementary_materialization_target_conflict',
             'practical_components_snapshot',
+            'before_theoretical_components_snapshot',
+            'after_theoretical_components_snapshot',
             'supplementary_exam_grade_event_id',
             'sourceSnapshotMatches(',
             'approvalSnapshotMatches(',
@@ -113,6 +118,22 @@ class SupplementaryExamMaterializationContractTest extends TestCase
         ] as $proof) {
             $this->assertStringContainsString($proof, $service);
         }
+    }
+
+    #[Test]
+    public function optional_announcement_and_post_materialization_recalculation_guards_are_explicit(): void
+    {
+        $governance = file_get_contents(app_path('Support/SupplementaryExamMaterializationGovernance.php'));
+        $grades = file_get_contents(app_path('Services/GradeService.php'));
+        $parts = file_get_contents(app_path('Services/GradePartWorkflowService.php'));
+
+        $this->assertStringContainsString('resultAnnouncedAtAvailable()', $governance);
+        $this->assertStringNotContainsString("'result_announced_at', 'calculated_by_user_id'", $governance);
+        $this->assertStringContainsString('assertNotSupplementaryMaterialized(', $grades);
+        $this->assertStringContainsString('supplementary_materialized_result_locked', $grades);
+        $this->assertStringContainsString('assertNotSupplementaryMaterialized(', $parts);
+        $this->assertStringNotContainsString('calculate_final_grade', $grades);
+        $this->assertStringNotContainsString('calculate_final_grade', $parts);
     }
 
     #[Test]
