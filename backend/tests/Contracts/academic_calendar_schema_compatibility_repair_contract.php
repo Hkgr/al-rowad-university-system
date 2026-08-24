@@ -27,12 +27,13 @@ $contract = static function (string $backendRoot): array {
         }
     };
 
-    $expect(substr_count($preflight, "'OVERALL'") >= 1 && str_contains($preflight, "'READY', 'BLOCKED'"), 'Preflight must visibly terminate READY or BLOCKED.');
-    $expect(str_contains($verify, "'OVERALL'") && str_contains($verify, "'PASS','FAIL'"), 'Verify must visibly terminate PASS or FAIL.');
+    $expect(str_contains($preflight, "'OVERALL'") && str_contains($preflight, "'READY'") && str_contains($preflight, "'BLOCKED'"), 'Preflight must visibly terminate READY or BLOCKED.');
+    $expect(str_contains($verify, "'OVERALL'") && str_contains($verify, "'PASS'") && str_contains($verify, "'FAIL'"), 'Verify must visibly terminate PASS or FAIL.');
+    $expect(str_contains($apply, "SELECT 'OVERALL' AS report_section") && str_contains($apply, "'APPLIED', 'BLOCKED'"), 'Apply must end with a plain visible OVERALL APPLIED or BLOCKED result.');
     $expect(str_contains($preflight, 'REPAIRABLE_SOURCE') && str_contains($preflight, 'ALREADY_COMPATIBLE') && str_contains($preflight, 'SAFE_PARTIAL') && str_contains($preflight, 'CONFLICTING'), 'Preflight must classify source, target, partial, and conflicting layouts.');
-    $expect(str_contains($preflight, '@acr_event_context_columns = 0 AND @acr_version_context_columns = 2') && str_contains($preflight, '@acr_state_enum_columns = 5') && str_contains($preflight, '@acr_source_indexes = 4') && str_contains($preflight, '@acr_context_fk_source = 2'), 'Preflight source fingerprint does not describe the known deployed layout.');
-    $expect(str_contains($preflight, '@acr_event_context_columns = 2 AND @acr_version_context_columns = 0') && str_contains($preflight, '@acr_state_varchar_columns = 5') && str_contains($preflight, '@acr_known_check_count = 12') && str_contains($preflight, '@acr_target_indexes = 10') && str_contains($preflight, '@acr_context_fk_target = 2'), 'Preflight target fingerprint does not describe the merged layout.');
-    $expect(str_contains($preflight, '@acr_event_rows = 0 AND @acr_version_rows = 0'), 'Preflight must require empty event and revision history.');
+    $expect(str_contains($preflight, 'event_context_columns=0 AND version_context_columns=2') && str_contains($preflight, 'state_enum_columns=5') && str_contains($preflight, 'source_indexes=4') && str_contains($preflight, 'context_fk_source=2'), 'Preflight source fingerprint does not describe the known deployed layout.');
+    $expect(str_contains($preflight, 'event_context_columns=2 AND version_context_columns=0') && str_contains($preflight, 'state_varchar_columns=5') && str_contains($preflight, 'known_check_count=12') && str_contains($preflight, 'target_indexes=10') && str_contains($preflight, 'context_fk_target=2'), 'Preflight target fingerprint does not describe the merged layout.');
+    $expect(str_contains($preflight, 'event_rows=0 AND version_rows=0'), 'Preflight must require empty event and revision history.');
     $expect(str_contains($apply, '@acr_event_rows = 0 AND @acr_version_rows = 0'), 'Apply must independently require empty event and revision history.');
     $expect(str_contains($rollback, '@acr_event_rows=0 AND @acr_version_rows=0'), 'Rollback must fail closed after event or revision history exists.');
 
@@ -41,9 +42,9 @@ $contract = static function (string $backendRoot): array {
     $expect(str_contains($apply, 'ADD COLUMN `academic_calendar_event_type_id` INT NOT NULL AFTER `semester_id`'), 'Apply must add event-type context to logical events.');
     $expect(str_contains($apply, 'fk_ace_semester') && str_contains($apply, 'fk_ace_event_type'), 'Apply must restore logical-event context foreign keys.');
     $expect(str_contains($apply, 'idx_ace_year_semester') && str_contains($apply, 'idx_ace_event_type'), 'Apply must restore logical-event context indexes.');
-    $expect(str_contains($verify, '@acr_context_ownership'), 'Verify must assert merged logical-event context ownership.');
+    $expect(str_contains($verify, 'AS context_ownership'), 'Verify must assert merged logical-event context ownership.');
     $expect(str_contains($verify, 'SELECT COUNT(*) = 42 FROM information_schema.columns') && str_contains($verify, 'SELECT COUNT(*) = 11 FROM information_schema.key_column_usage k') && str_contains($verify, 'SELECT COUNT(*) = 18 FROM information_schema.columns'), 'Verify must protect the exact merged column, FK, and signed-key counts.');
-    $expect(str_contains($preflight, '@acr_generated_slots = 2 AND @acr_generated_unique_indexes = 2') && str_contains($verify, '@acr_generated_slots AND @acr_generated_unique_indexes'), 'Generated single-active and single-published uniqueness must remain intact.');
+    $expect(str_contains($preflight, 'generated_slots=2 AND generated_unique_indexes=2') && str_contains($verify, 'generated_slots AND generated_unique_indexes'), 'Generated single-active and single-published uniqueness must remain intact.');
 
     foreach (['calendar_lifecycle_status', 'event_type_kind', 'publication_status', 'from_status', 'to_status'] as $stateColumn) {
         $expect(str_contains($allSql, $stateColumn), 'Missing state-column contract: '.$stateColumn);
@@ -61,6 +62,9 @@ $contract = static function (string $backendRoot): array {
 
     foreach ([$preflight, $verify] as $readOnlySql) {
         $expect(! preg_match('/^\s*(INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|REPLACE|TRUNCATE)\b/im', $readOnlySql), 'A read-only script contains a mutating statement.');
+        $expect(! preg_match('/\b(PREPARE|EXECUTE)\b/i', $readOnlySql), 'A read-only operator report contains dynamic execution.');
+        $expect(! preg_match('/\bINTO\s+@/i', $readOnlySql), 'A read-only operator report contains SELECT INTO user-variable reporting.');
+        $expect(! preg_match('/^\s*SET\s+@/im', $readOnlySql), 'A read-only operator report must be a direct CTE-backed SELECT.');
     }
     $expect(! preg_match('/^\s*(INSERT|UPDATE|DELETE|REPLACE|TRUNCATE)\b/im', $apply), 'Apply must contain no data mutation.');
     $expect(! str_contains(strtoupper($apply), 'CREATE TABLE'), 'Apply must not create a replacement calendar table.');
@@ -68,7 +72,7 @@ $contract = static function (string $backendRoot): array {
     foreach (['DATABASE()', 'DELIMITER', 'SIGNAL', 'CREATE PROCEDURE', 'CREATE FUNCTION'] as $forbidden) {
         $expect(! str_contains(strtoupper($allSql), $forbidden), 'Forbidden SQL construct found: '.$forbidden);
     }
-    foreach (['00_preflight.sql' => $preflight, '01_apply.sql' => $apply, '02_verify.sql' => $verify, '03_rollback.sql' => $rollback] as $file => $sql) {
+    foreach (['01_apply.sql' => $apply, '03_rollback.sql' => $rollback] as $file => $sql) {
         preg_match_all('/(?<!DEALLOCATE )\bPREPARE\s+[a-z0-9_]+\s+FROM\b/i', $sql, $prepares);
         preg_match_all('/\bEXECUTE\s+[a-z0-9_]+\b/i', $sql, $executes);
         preg_match_all('/\bDEALLOCATE\s+PREPARE\s+[a-z0-9_]+\b/i', $sql, $deallocates);
@@ -84,15 +88,37 @@ $contract = static function (string $backendRoot): array {
         'database/sql/academic-calendar-phase1/02_verify.sql' => '35706b06b5c818d00f0bded1477d5ce2a9ebb74752ebcb929d148056810035cb',
         'database/sql/academic-calendar-phase1/03_rollback.sql' => '83371ec3b6a2a9ca8baba385f991036c3478c4aaeed9cbf576ed6d841a7bf7b8',
         'database/sql/academic-calendar-phase1/README.md' => '719bbacb596fab3113aa0f9f3fe522370efa1e68bc2123744337a32239c1499c',
-        'database/sql/academic-calendar-phase2-rbac/00_preflight.sql' => 'e61e331d44d38210547d32e3469673ae76bf6f7d27bf8ed2e0b80923b63ceb49',
-        'database/sql/academic-calendar-phase2-rbac/01_apply.sql' => '1f8ab5bff3671316f3e6101c7ba5ad9c311d3e52b0f5314fc3094cfaed64c16f',
-        'database/sql/academic-calendar-phase2-rbac/02_verify.sql' => '66f5d75dbdd27b520670ab69bfe4d396d010fd78768a1bfee2746e0852165a9f',
-        'database/sql/academic-calendar-phase2-rbac/03_rollback.sql' => 'a60fb09f935cb0dc6c70d2418d93469ba9f4d34d21d417f711b107f46ec3ddea',
-        'database/sql/academic-calendar-phase2-rbac/README.md' => 'b64c73fa66433588e0ec1af0ae6699608fe5d42ef287ac72b2820b11050d9293',
     ];
     foreach ($immutablePackages as $file => $sha256) {
         $expect(hash_file('sha256', $backendRoot.'/'.$file) === $sha256, 'Previously merged SQL package changed: '.$file);
     }
+
+    $phaseOneApply = file_get_contents($backendRoot.'/database/sql/academic-calendar-phase1/01_apply.sql');
+    $mergedEvents = explode("CREATE TABLE `alrowad_uni_rust`.`academic_calendar_event_versions`", explode("CREATE TABLE `alrowad_uni_rust`.`academic_calendar_events`", $phaseOneApply, 2)[1] ?? '', 2)[0];
+    $mergedVersions = explode("CREATE TABLE `alrowad_uni_rust`.`academic_calendar_year_lifecycle_events`", explode("CREATE TABLE `alrowad_uni_rust`.`academic_calendar_event_versions`", $phaseOneApply, 2)[1] ?? '', 2)[0];
+    $expect(str_contains($mergedEvents, '`semester_id` INT DEFAULT NULL') && str_contains($mergedEvents, '`academic_calendar_event_type_id` INT NOT NULL'), 'Merged Phase 1 must keep semester and type on logical events.');
+    $expect(! str_contains($mergedVersions, '`semester_id`') && ! str_contains($mergedVersions, '`academic_calendar_event_type_id`'), 'Merged Phase 1 revisions must not own semester or type context.');
+    foreach (['idx_ace_year_semester', 'idx_ace_event_type', 'idx_acev_event_status', 'idx_acev_publication_window', 'idx_acyle_status_occurred', 'fk_ace_semester', 'fk_ace_event_type', 'fk_acev_event', 'fk_acyle_year', '[academic-calendar-phase1] logical university calendar events', '[academic-calendar-phase1] immutable event content revisions'] as $mergedToken) {
+        $expect(str_contains($phaseOneApply, $mergedToken) && str_contains($apply.$verify, $mergedToken), 'Repair target drifted from merged Phase 1 token: '.$mergedToken);
+    }
+
+    $rbacPackage = $backendRoot.'/database/sql/academic-calendar-phase2-rbac';
+    $rbacPreflight = file_get_contents($rbacPackage.'/00_preflight.sql');
+    $rbacApply = file_get_contents($rbacPackage.'/01_apply.sql');
+    $rbacVerify = file_get_contents($rbacPackage.'/02_verify.sql');
+    $rbacRollback = file_get_contents($rbacPackage.'/03_rollback.sql');
+    foreach ([$rbacPreflight, $rbacVerify] as $readOnlySql) {
+        $expect(! preg_match('/^\s*(INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|REPLACE|TRUNCATE)\b/im', $readOnlySql), 'A Phase 2 RBAC read-only report contains a mutation.');
+        $expect(! preg_match('/\b(PREPARE|EXECUTE)\b/i', $readOnlySql) && ! preg_match('/\bINTO\s+@/i', $readOnlySql) && ! preg_match('/^\s*SET\s+@/im', $readOnlySql), 'A Phase 2 RBAC read-only report is not phpMyAdmin-visible plain SELECT.');
+    }
+    $marker = '[academic-calendar-phase2-rbac]';
+    $expect(str_contains($rbacApply, $marker) && str_contains($rbacRollback, $marker), 'Phase 2 RBAC ownership marker must control creation and rollback.');
+    $mappingInsert = explode('COMMIT;', explode('INSERT INTO `alrowad_uni_rust`.`role_permissions`', $rbacApply, 2)[1] ?? '', 2)[0];
+    $expect(str_contains($mappingInsert, "p.description LIKE '%[academic-calendar-phase2-rbac]%'"), 'Apply may create a mapping only for a package-owned permission.');
+    $expect(str_contains($rbacPreflight, 'permission_rows=0 OR owned_permission=1 OR scientific_mapping=1'), 'Preflight must block an externally owned permission without the Scientific VP mapping.');
+    $expect(str_contains($rbacPreflight, 'EXTERNAL_PRESERVED') && str_contains($rbacPreflight, 'EXTERNAL_MAPPING_MISSING_BLOCKED'), 'Preflight must distinguish preserved and blocked external ownership states.');
+    $expect(substr_count($rbacRollback, "description LIKE '%[academic-calendar-phase2-rbac]%'") >= 3, 'Rollback must remove only marker-owned artifacts.');
+    $expect(str_contains($rbacApply, "SELECT 'OVERALL' AS report_section") && str_contains($rbacApply, "'APPLIED', 'BLOCKED'"), 'Phase 2 apply must visibly terminate OVERALL APPLIED or BLOCKED.');
 
     $calendarMigrations = glob($backendRoot.'/database/migrations/*academic*calendar*') ?: [];
     $expect($calendarMigrations === [], 'A calendar migration exists outside the manual repair package.');

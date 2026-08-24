@@ -22,6 +22,11 @@ means no repair remains. `SAFE_PARTIAL` identifies only a known, empty,
 partially repaired layout that may safely resume. Any other layout is
 `CONFLICTING` and blocks execution.
 
+Both operator-facing read-only scripts use one ordinary CTE-backed `SELECT`
+result set. They contain no prepared execution or `SELECT ... INTO` reporting,
+so phpMyAdmin displays every report row and the terminal `OVERALL` row in the
+same grid.
+
 ## Safety and ownership
 
 The repair fails closed unless both `academic_calendar_events` and

@@ -9,7 +9,14 @@ SET @ac2_apply_ready :=
         OR
         (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` p JOIN `alrowad_uni_rust`.`system_modules` m ON m.module_id = p.module_id WHERE p.permission_code = 'academic_calendar.manage' AND p.is_active = 1 AND m.module_code = 'vice_presidency') = 1
     )
-    AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`role_permissions` rp JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id JOIN `alrowad_uni_rust`.`roles` r ON r.role_id = rp.role_id WHERE p.permission_code = 'academic_calendar.manage' AND r.role_code <> 'vice_president_scientific') = 0;
+    AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`role_permissions` rp JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id JOIN `alrowad_uni_rust`.`roles` r ON r.role_id = rp.role_id WHERE p.permission_code = 'academic_calendar.manage' AND r.role_code <> 'vice_president_scientific') = 0
+    AND (
+        (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'academic_calendar.manage') = 0
+        OR
+        (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'academic_calendar.manage' AND description LIKE '%[academic-calendar-phase2-rbac]%') = 1
+        OR
+        (SELECT COUNT(*) FROM `alrowad_uni_rust`.`role_permissions` rp JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id JOIN `alrowad_uni_rust`.`roles` r ON r.role_id = rp.role_id WHERE p.permission_code = 'academic_calendar.manage' AND r.role_code = 'vice_president_scientific' AND r.is_active = 1) = 1
+    );
 
 START TRANSACTION;
 
@@ -27,11 +34,12 @@ FROM `alrowad_uni_rust`.`roles` r
 JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_code = 'academic_calendar.manage' AND p.is_active = 1
 JOIN `alrowad_uni_rust`.`system_modules` m ON m.module_id = p.module_id AND m.module_code = 'vice_presidency'
 WHERE @ac2_apply_ready = 1 AND r.role_code = 'vice_president_scientific' AND r.is_active = 1
+  AND p.description LIKE '%[academic-calendar-phase2-rbac]%'
   AND NOT EXISTS (SELECT 1 FROM `alrowad_uni_rust`.`role_permissions` rp WHERE rp.role_id = r.role_id AND rp.permission_id = p.permission_id);
 
 COMMIT;
 
-SELECT 'APPLY_RESULT' AS report_section,
+SELECT 'OVERALL' AS report_section,
        IF(@ac2_apply_ready = 1
           AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code = 'academic_calendar.manage') = 1
           AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`role_permissions` rp JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id JOIN `alrowad_uni_rust`.`roles` r ON r.role_id = rp.role_id WHERE p.permission_code = 'academic_calendar.manage' AND r.role_code = 'vice_president_scientific') = 1,
