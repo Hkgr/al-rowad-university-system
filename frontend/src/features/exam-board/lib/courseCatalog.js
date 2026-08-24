@@ -19,6 +19,35 @@ function paginatedPath(path, page) {
   return `${base}?${params.toString()}`
 }
 
+function safeUpstreamMessage(error) {
+  const message = typeof error?.message === 'string'
+    ? error.message.replace(/\s+/g, ' ').trim()
+    : ''
+  if (message === '' || message.length > 200 || message.includes('/') || message.includes('\\')) return null
+  if (/bearer\s+|\btoken\b|password|stack\s*trace|sqlstate|mysql:|pgsql:|\bselect\b.+\bfrom\b/i.test(message)) {
+    return null
+  }
+
+  return message
+}
+
+function catalogPageFailure(path, page, error) {
+  const endpoint = String(path).split('?', 1)[0]
+  const collection = endpoint.split('/').filter(Boolean).at(-1) || endpoint || 'catalog'
+  const details = [`تعذر تحميل ${collection} (${endpoint})`, `الصفحة ${page}`]
+  const status = Number(error?.status)
+  if (Number.isInteger(status) && status >= 100 && status <= 599) details.push(`HTTP ${status}`)
+
+  const message = safeUpstreamMessage(error)
+  if (message !== null) details.push(message)
+  const errorCode = typeof error?.errorCode === 'string' && /^[a-z0-9_.-]{1,80}$/i.test(error.errorCode)
+    ? error.errorCode
+    : null
+  if (errorCode !== null) details.push(errorCode)
+
+  return new CatalogPaginationError(details.join(' — '), 'catalog_page_failed', error)
+}
+
 function pagePayload(response, requestedPage) {
   if (response?.success !== true) {
     throw new CatalogPaginationError('The catalog endpoint did not report success.', 'catalog_page_unsuccessful')
@@ -69,7 +98,7 @@ export async function fetchAllPaginated(path, {
   try {
     firstResponse = await request(paginatedPath(path, 1))
   } catch (error) {
-    throw new CatalogPaginationError('Failed to load catalog page 1.', 'catalog_page_failed', error)
+    throw catalogPageFailure(path, 1, error)
   }
   const first = pagePayload(firstResponse, 1)
   if (first.lastPage > maxPages || first.total > maxItems) {
@@ -77,12 +106,13 @@ export async function fetchAllPaginated(path, {
   }
 
   const remainingPages = Array.from({ length: first.lastPage - 1 }, (_, index) => index + 2)
-  let remainingResponses
-  try {
-    remainingResponses = await Promise.all(remainingPages.map(page => request(paginatedPath(path, page))))
-  } catch (error) {
-    throw new CatalogPaginationError('Failed to load a catalog page.', 'catalog_page_failed', error)
-  }
+  const remainingResponses = await Promise.all(remainingPages.map(async page => {
+    try {
+      return await request(paginatedPath(path, page))
+    } catch (error) {
+      throw catalogPageFailure(path, page, error)
+    }
+  }))
 
   const pages = [first, ...remainingResponses.map((response, index) => pagePayload(response, index + 2))]
   const rowsById = new Map()
