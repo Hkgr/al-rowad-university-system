@@ -352,6 +352,7 @@ export default function StudentRegistration() {
   const semesters = payload?.semesters ?? []
   const selectedSemesterId = semesterId || String(payload?.semester?.semester_id || '')
   const registrationOpen = payload?.registration_open === true
+  const requestItemRemovalOpen = payload?.request_item_removal_open === true
   const termReady = Boolean(academicYear?.academic_year_id && selectedSemesterId)
   const available = payload?.available_courses ?? []
   const workspaceSemesterId = payload?.semester?.semester_id ?? selectedSemesterId
@@ -367,6 +368,10 @@ export default function StudentRegistration() {
   const hours = payload?.hours ?? request?.hours ?? null
   const status = request?.status ?? 'draft'
   const canEdit = registrationOpen && termReady && (!request || status === 'draft' || status === 'returned')
+  const canRemoveItem = requestItemRemovalOpen
+    && termReady
+    && Boolean(request)
+    && (status === 'draft' || status === 'returned')
   const readOnly = status === 'submitted' || status === 'approved'
   const busy = loading || refreshing
   const statusMeta = STATUS_LABELS[status] ?? STATUS_LABELS.draft
@@ -723,7 +728,7 @@ export default function StudentRegistration() {
                           </span>
                         </div>
                       </div>
-                      {canEdit ? (
+                      {canRemoveItem ? (
                         <button
                           type="button"
                           onClick={() => removeItem(item)}

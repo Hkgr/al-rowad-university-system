@@ -12,6 +12,8 @@ use App\Models\Semester;
 use App\Models\Student;
 use App\Models\StudentCourseRegistration;
 use App\Models\StudentCreditLimit;
+use App\Support\AcademicCalendarPolicyResult;
+use App\Support\AcademicCalendarPolicyStatus;
 use App\Support\CourseRequirementClassification;
 use App\Support\SupplementaryExamTargetGuard;
 use Illuminate\Database\Eloquent\Builder;
@@ -33,8 +35,12 @@ class RegistrationService
 
     private const UNSATISFACTORY_RESULT_STATUSES = ['deprived', 'withdrawn', 'incomplete', 'failed'];
 
-    public function __construct(private AcademicRequirementService $requirements)
-    {
+    private const COURSE_REGISTRATION_EVENT_TYPE = 'course_registration';
+
+    public function __construct(
+        private AcademicRequirementService $requirements,
+        private AcademicCalendarPolicyService $academicCalendarPolicy,
+    ) {
     }
 
     public function paginate(int $perPage = 15): LengthAwarePaginator
@@ -78,6 +84,29 @@ class RegistrationService
     public function currentOfferingIds(Student $student): array
     {
         return $this->currentRegisteredOfferingIds($student);
+    }
+
+    public function courseRegistrationWindow(int $academicYearId, int $semesterId): AcademicCalendarPolicyResult
+    {
+        return $this->academicCalendarPolicy->evaluate(
+            self::COURSE_REGISTRATION_EVENT_TYPE,
+            $academicYearId,
+            $semesterId,
+        );
+    }
+
+    public function assertCourseRegistrationWindowOpen(int $academicYearId, int $semesterId): void
+    {
+        $result = $this->courseRegistrationWindow($academicYearId, $semesterId);
+
+        match ($result->status) {
+            AcademicCalendarPolicyStatus::OPEN => null,
+            AcademicCalendarPolicyStatus::CLOSED => throw RegistrationException::courseRegistrationWindowClosed(),
+            AcademicCalendarPolicyStatus::INVALID_EVENT_TYPE,
+            AcademicCalendarPolicyStatus::CALENDAR_CONFIGURATION_ERROR => throw RegistrationException::academicCalendarConfigurationInvalid(),
+            AcademicCalendarPolicyStatus::INVALID_ACADEMIC_YEAR => throw RegistrationException::academicCalendarYearContextInvalid(),
+            AcademicCalendarPolicyStatus::INVALID_SEMESTER_CONTEXT => throw RegistrationException::academicCalendarSemesterContextInvalid(),
+        };
     }
 
     private function performRegisterStudent(array $data, ?int $authenticatedUserId): array
@@ -174,6 +203,13 @@ class RegistrationService
         if ($registeredStatusId === null) {
             throw new ModelNotFoundException('Registration status "registered" was not found.');
         }
+
+        // This is the authoritative write-time gate. Preparation checks are
+        // never reused: each create/reactivation evaluates the locked offering.
+        $this->assertCourseRegistrationWindowOpen(
+            (int) $courseOffering->academic_year_id,
+            (int) $courseOffering->semester_id,
+        );
 
         $registrationDate = $data['registration_date'] ?? now()->toDateString();
         $reactivatable = $this->findReactivatableRegistration(
