@@ -57,6 +57,31 @@ function assignmentCopy(mode) {
   return { text: 'تكليفك: النظري', Icon: FaChalkboardTeacher }
 }
 
+function occurrenceCopy(part, result) {
+  const label = part === 'practical' ? 'العملي' : 'النظري'
+  if (result?.status === 'open' && result?.is_occurring === true) {
+    return { text: `فترة الامتحان ${label} جارية`, tone: 'border-green-200 bg-green-50 text-green-700' }
+  }
+  if (result?.status === 'closed') {
+    return { text: `خارج فترة الامتحان ${label}`, tone: 'border-primary/10 bg-gray-50 text-text-light' }
+  }
+  return { text: `حالة فترة الامتحان ${label} غير متاحة`, tone: 'border-amber-200 bg-amber-50 text-amber-700' }
+}
+
+function RegularExamOccurrencePanel({ occurrence }) {
+  if (!occurrence) return null
+
+  return <div className="grid grid-cols-2 max-[600px]:grid-cols-1 gap-3 mb-4" dir="rtl" aria-label="حالة فترات الامتحانات النظامية">
+    {Object.entries({ practical: FaFlask, theoretical: FaChalkboardTeacher }).map(([part, Icon]) => {
+      const display = occurrenceCopy(part, occurrence?.[part])
+      return <div key={part} className={`flex items-center gap-2 rounded-[12px] border px-4 py-3 text-[12.5px] font-bold ${display.tone}`}>
+        <Icon className="flex-shrink-0" />
+        <span>{display.text}</span>
+      </div>
+    })}
+  </div>
+}
+
 function stepForPart(state) {
   if (!state?.required) return null
   if (state.status === 'approved') return 'approved'
@@ -274,6 +299,7 @@ export default function ProfessorGradesPage() {
     {selectedId && loadError && <RetryAlert text={loadError} disabled={busy} onRetry={() => loadWorkflow(selectedId, { preserveDirty: true })} />}
     {workflow && <>
       <OfferingHeader offering={selectedOffering} workflow={workflow} />
+      <RegularExamOccurrencePanel occurrence={workflow.regular_exam_occurrence} />
       <PartPanels workflow={workflow} />
       {official ? <OfficialResults workflow={workflow} rows={rows} /> : <>
         {ownsBoth && <div className="mb-4 flex flex-wrap items-center gap-2" dir="rtl">
