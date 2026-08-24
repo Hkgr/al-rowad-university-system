@@ -42,21 +42,33 @@ class RegistrationRequestService
             ? collect()
             : $this->registration->selfRegistrationOpenSemesters($student, (int) $year->academic_year_id);
 
+        $calendarWindowBySemesterId = $year === null
+            ? collect()
+            : $openSemesters->mapWithKeys(function ($semester) use ($year): array {
+                $semesterId = (int) $semester->semester_id;
+
+                return [
+                    $semesterId => $this->registration->courseRegistrationWindow(
+                        (int) $year->academic_year_id,
+                        $semesterId,
+                    ),
+                ];
+            });
+        $liveOpenSemesters = $openSemesters
+            ->filter(fn ($semester): bool => $calendarWindowBySemesterId
+                ->get((int) $semester->semester_id)
+                ?->isOpen() === true)
+            ->values();
+
         $yearRequests = $year === null
             ? collect()
             : $this->currentYearRequests($student, (int) $year->academic_year_id);
 
         $selectableSemesters = $this->selectableSemesters($openSemesters, $yearRequests);
 
-        $semester = $this->resolveWorkspaceSemester($selectableSemesters, $openSemesters, $yearRequests, $semesterId);
+        $semester = $this->resolveWorkspaceSemester($selectableSemesters, $liveOpenSemesters, $yearRequests, $semesterId);
         $registrationOpen = $semester !== null
-            && $openSemesters->contains(fn ($open) => (int) $open->semester_id === (int) $semester->semester_id);
-        if ($registrationOpen) {
-            $registrationOpen = $this->registration->courseRegistrationWindow(
-                (int) $year->academic_year_id,
-                (int) $semester->semester_id,
-            )->isOpen();
-        }
+            && $liveOpenSemesters->contains(fn ($open) => (int) $open->semester_id === (int) $semester->semester_id);
 
         $request = null;
         $available = collect();
@@ -683,7 +695,7 @@ class RegistrationRequestService
 
     private function resolveWorkspaceSemester(
         Collection $selectable,
-        Collection $openSemesters,
+        Collection $liveOpenSemesters,
         Collection $yearRequests,
         ?int $semesterId
     ) {
@@ -695,19 +707,27 @@ class RegistrationRequestService
             return $selectable->first();
         }
 
-        $preferredRequest = $yearRequests->first(
-            function (StudentRegistrationRequest $request) use ($openSemesters): bool {
-                return $openSemesters->contains(
+        $preferredLiveRequest = $yearRequests->first(
+            function (StudentRegistrationRequest $request) use ($liveOpenSemesters): bool {
+                return $liveOpenSemesters->contains(
                     fn ($open) => (int) $open->semester_id === (int) $request->semester_id
                 );
             }
-        ) ?? $yearRequests->first();
+        );
 
-        if ($preferredRequest !== null) {
-            return $selectable->firstWhere('semester_id', (int) $preferredRequest->semester_id);
+        if ($preferredLiveRequest !== null) {
+            return $selectable->firstWhere('semester_id', (int) $preferredLiveRequest->semester_id);
         }
 
-        return $openSemesters->count() === 1 ? $openSemesters->first() : null;
+        if ($liveOpenSemesters->count() === 1) {
+            return $liveOpenSemesters->first();
+        }
+
+        $viewableRequest = $yearRequests->first();
+
+        return $viewableRequest === null
+            ? null
+            : $selectable->firstWhere('semester_id', (int) $viewableRequest->semester_id);
     }
 
     private function findRequestForSubmit(Student $student, int $academicYearId, ?int $semesterId): ?StudentRegistrationRequest

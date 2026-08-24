@@ -147,6 +147,16 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
         );
     }
 
+    public function test_year_wide_window_opens_each_eligible_explicit_semester_context(): void
+    {
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-03T12:00:00Z'));
+        $this->createWindow(semesterId: null);
+        $service = $this->service();
+
+        self::assertTrue($service->courseRegistrationWindow(1, 1)->isOpen());
+        self::assertTrue($service->courseRegistrationWindow(1, 2)->isOpen());
+    }
+
     public function test_non_effective_calendar_revisions_never_authorize_registration(): void
     {
         CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-03T12:00:00Z'));

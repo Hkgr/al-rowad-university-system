@@ -93,6 +93,9 @@ $contract = static function (string $backendRoot): array {
     $submit = $method($requests, 'submit');
     $approve = $method($requests, 'approve');
     $expect(str_contains($workspace, 'courseRegistrationWindow(') && str_contains($workspace, '->isOpen()'), 'registration_open must include the calendar window result.');
+    $expect(str_contains($workspace, '$calendarWindowBySemesterId') && str_contains($workspace, '->mapWithKeys('), 'Workspace must build a local evaluation map for every workflow-open semester.');
+    $expect(str_contains($workspace, '$liveOpenSemesters') && str_contains($workspace, 'resolveWorkspaceSemester($selectableSemesters, $liveOpenSemesters'), 'Workspace selection must use calendar-filtered live-open semesters.');
+    $expect(str_contains($workspace, '$liveOpenSemesters->contains('), 'registration_open must be derived from the filtered live-open semester collection.');
     foreach (['addItem' => $add, 'updateNotes' => $notes, 'submit' => $submit] as $name => $source) {
         $expect(str_contains($source, 'assertCourseRegistrationWindowOpen('), $name.' must reject closed preparation mutations.');
     }
