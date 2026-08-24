@@ -43,7 +43,7 @@ class CourseOfferingController extends ApiController
         Gate::authorize('viewAny', CourseOffering::class);
         $offerings = CourseOffering::query()
             ->with(['course', 'academicYear', 'semester', 'department', 'academicProgram', 'facultyMember'])
-            ->withCount('studentCourseRegistrations')
+            ->withCount(['studentCourseRegistrations' => fn ($query) => $query->whereHas('student')])
             ->where('status', 'open')
             ->orderBy('course_offering_id', 'desc')
             ->paginate(request()->integer('per_page', 15));
@@ -55,7 +55,7 @@ class CourseOfferingController extends ApiController
     {
         $offering = CourseOffering::query()
             ->with(['course', 'academicYear', 'semester', 'department', 'academicProgram', 'facultyMember'])
-            ->withCount('studentCourseRegistrations')
+            ->withCount(['studentCourseRegistrations' => fn ($query) => $query->whereHas('student')])
             ->findOrFail($id);
         Gate::authorize('view', $offering);
 
@@ -67,21 +67,22 @@ class CourseOfferingController extends ApiController
 
     public function students(int $id): JsonResponse
     {
-        $offering = CourseOffering::query()->with([
-            'studentCourseRegistrations.student',
-            'studentCourseRegistrations.registrationStatus',
-            'studentCourseRegistrations.resultStatus',
-        ])->findOrFail($id);
+        $offering = CourseOffering::query()->findOrFail($id);
         Gate::authorize('viewRoster', $offering);
 
-        return $this->successResponse(CourseOfferingStudentResource::collection($offering->studentCourseRegistrations));
+        $registrations = $offering->studentCourseRegistrations()
+            ->whereHas('student')
+            ->with(['student', 'registrationStatus', 'resultStatus'])
+            ->get();
+
+        return $this->successResponse(CourseOfferingStudentResource::collection($registrations));
     }
 
     public function capacity(int $id): JsonResponse
     {
         $offering = CourseOffering::query()->findOrFail($id);
         Gate::authorize('view', $offering);
-        $registeredCount = $offering->studentCourseRegistrations()->current()->count();
+        $registeredCount = $offering->studentCourseRegistrations()->current()->whereHas('student')->count();
         $capacity = (int) $offering->capacity;
         $availableSeats = (int) $offering->available_seats;
 
@@ -107,7 +108,7 @@ class CourseOfferingController extends ApiController
 
         $offerings = CourseOffering::query()
             ->with(['course', 'academicYear', 'semester', 'department', 'academicProgram', 'facultyMember'])
-            ->withCount('studentCourseRegistrations')
+            ->withCount(['studentCourseRegistrations' => fn ($query) => $query->whereHas('student')])
             ->where('academic_year_id', $validated['academic_year_id'])
             ->where('semester_id', $validated['semester_id'])
             ->when($validated['department_id'] ?? null, fn ($query, $departmentId) => $query->where('department_id', $departmentId))
@@ -130,7 +131,7 @@ class CourseOfferingController extends ApiController
 
         $offerings = CourseOffering::query()
             ->with(['course', 'academicYear', 'semester', 'department', 'academicProgram', 'facultyMember'])
-            ->withCount('studentCourseRegistrations')
+            ->withCount(['studentCourseRegistrations' => fn ($query) => $query->whereHas('student')])
             ->where('academic_program_id', $program_id)
             ->when($validated['academic_year_id'] ?? null, fn ($query, $academicYearId) => $query->where('academic_year_id', $academicYearId))
             ->when($validated['semester_id'] ?? null, fn ($query, $semesterId) => $query->where('semester_id', $semesterId))

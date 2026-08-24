@@ -18,6 +18,10 @@ Accept: application/json
 Content-Type: application/json
 ```
 
+## Deregistration behavior
+
+A soft-deleted (deregistered) student is automatically excluded from course grade sheets, course/department pass-fail statistics, course offering rosters and capacity counts, and all attendance screens (sessions, session roster, deprived-students list, and deprivation application). Their own individual endpoints — transcript, GPA/CGPA, and profile — still return their complete history when queried directly by student id, because those are single-student lookups, not aggregates. Historical rows remain in the database and can be restored via `POST /api/v1/students/{id}/restore`, which also clears `deregistration_reason` back to `null`.
+
 ## Standard Response Envelope
 
 **Success:**
@@ -65,6 +69,7 @@ Content-Type: application/json
 | GET | `/api/v1/students/{id}` | Show student |
 | PUT/PATCH | `/api/v1/students/{id}` | Update student |
 | DELETE | `/api/v1/students/{id}` | Delete student (**existing** — currently hard delete; **recommended:** soft delete / archive) |
+| POST | `/api/v1/students/{id}/deregister` | Deregister (ترقين قيد): set reason and soft-delete |
 | GET | `/api/v1/students/deleted` | List soft-deleted students (**proposed endpoint**) |
 | POST | `/api/v1/students/{student_id}/restore` | Restore soft-deleted student (**proposed endpoint**) |
 | DELETE | `/api/v1/students/{student_id}/force` | Permanent delete (**proposed endpoint**) |
@@ -626,6 +631,69 @@ Before `DELETE .../force`, the API should verify absence of:
   "data": null
 }
 ```
+
+---
+
+## POST /api/v1/students/{id}/deregister
+
+**Purpose:** Officially deregister a student (ترقين قيد). Sets `deregistration_reason` to the provided reason, then soft-deletes the student (`deleted_at`). Academic history is preserved and can be restored later.
+
+**URL parameter:** `{id}` = `student_id`
+
+**Authorization:** Same delete ability as archive (`Gate::authorize('delete', $student)`).
+
+### Request body
+
+```json
+{
+  "reason": "انسحاب طوعي من الجامعة بناءً على طلب الطالب"
+}
+```
+
+### Validation rules
+
+| Field | Rules |
+|-------|-------|
+| `reason` | `required\|string` |
+
+### Success response (200)
+
+```json
+{
+  "success": true,
+  "message": "Student archived successfully.",
+  "data": null
+}
+```
+
+### Error response (422)
+
+```json
+{
+  "success": false,
+  "message": "Validation failed",
+  "errors": {
+    "reason": ["The reason field is required."]
+  }
+}
+```
+
+### Error response (403)
+
+```json
+{
+  "success": false,
+  "message": "This action is unauthorized.",
+  "error_code": "forbidden",
+  "errors": []
+}
+```
+
+### Frontend notes
+
+- After this call, the student disappears from all rosters, statistics, attendance screens, and grade sheets across the system (see [Deregistration behavior](#deregistration-behavior) above), but their historical data is preserved.
+- Restore via `POST /api/v1/students/{id}/restore`, which also clears `deregistration_reason` back to `null`.
+- Prefer this endpoint over raw `DELETE /students/{id}` when a deregistration reason must be recorded for audit.
 
 ---
 

@@ -132,6 +132,24 @@ class StudentController extends ApiController
         return $this->successResponse(null, 'Student archived successfully.');
     }
 
+    public function deregister(int $id, Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'reason' => ['required', 'string'],
+        ]);
+
+        $student = Student::query()->findOrFail($id);
+        Gate::authorize('delete', $student);
+
+        DB::transaction(function () use ($student, $validated): void {
+            $student->deregistration_reason = $validated['reason'];
+            $student->save();
+            $student->delete();
+        });
+
+        return $this->successResponse(null, 'Student archived successfully.');
+    }
+
     public function deleted(Request $request): JsonResponse
     {
         Gate::authorize('viewAny', Student::class);
@@ -154,6 +172,7 @@ class StudentController extends ApiController
             return $this->errorResponse('Student is not archived.', [], 400);
         }
 
+        $student->deregistration_reason = null;
         $student->restore();
 
         return $this->successResponse(new \stdClass, 'Student restored successfully.');

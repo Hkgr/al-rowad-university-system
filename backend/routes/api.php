@@ -197,6 +197,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
 
     Route::get('students/deleted', [StudentController::class, 'deleted']);
     Route::post('students/{id}/restore', [StudentController::class, 'restore']);
+    Route::post('students/{id}/deregister', [StudentController::class, 'deregister']);
     Route::delete('students/{id}/force', [StudentController::class, 'forceDestroy']);
     Route::get('students/search', [StudentController::class, 'search']);
     Route::get('students/{student}/available-courses', [StudentController::class, 'availableCourses']);

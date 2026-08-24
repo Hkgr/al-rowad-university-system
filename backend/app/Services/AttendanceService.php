@@ -469,7 +469,8 @@ class AttendanceService
     {
         return StudentCourseRegistration::query()
             ->where('course_offering_id', $courseOfferingId)
-            ->current();
+            ->current()
+            ->whereHas('student');
     }
 
     private function isDeprived(StudentCourseRegistration $registration): bool
