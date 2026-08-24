@@ -279,6 +279,8 @@ class DataScopeService
     public function scopeCourses(Builder $query, User $user): Builder
     {
         if ($this->bypassesScope($user)) return $query;
+        $scopes = $this->grouped($user);
+        if ($scopes['university'] !== []) return $query;
 
         return $query->where(function (Builder $courses) use ($user): void {
             $courses->whereHas('departments', fn (Builder $department) => $this->scopeDepartments($department, $user))

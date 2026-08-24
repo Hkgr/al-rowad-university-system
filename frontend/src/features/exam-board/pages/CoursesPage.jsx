@@ -1,15 +1,27 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useCallback, useState, useEffect, useMemo } from 'react'
 import { FaSpinner, FaPlus, FaEdit, FaTrash, FaCheck, FaTimes, FaBook, FaStar, FaRegStar, FaLayerGroup } from 'react-icons/fa'
 import { hasPermission, PERMISSIONS } from '../../auth/auth'
 import CourseRequirementBadges, { ProgramRequirementClassifications } from '../../../components/academic/CourseRequirementBadges'
-
-const API = 'https://rust.alrowaduni.edu.sy/api/v1'
-function authHeaders() {
-  return { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }
-}
+import { apiRequest } from '../../../services/apiClient'
+import {
+  buildCourseCollegeMap,
+  fetchAllPaginated,
+  filterCoursesByAffiliation,
+  planDepartmentLinkSync,
+} from '../lib/courseCatalog'
 
 const EMPTY_FORM = {
   course_code: '', course_name: '', credit_hours: '', theoretical_hours: '', practical_hours: '', description: '', is_active: true,
+}
+
+function requestErrorMessage(error, fallback) {
+  const details = error?.details
+  if (details && typeof details === 'object') {
+    const messages = Object.values(details).flat().filter(Boolean)
+    if (messages.length > 0) return messages.join(' | ')
+  }
+
+  return error?.message || fallback
 }
 
 function CourseForm({ initial, onSave, onCancel, saving, colleges, departments, initialDepartmentIds }) {
@@ -17,7 +29,7 @@ function CourseForm({ initial, onSave, onCancel, saving, colleges, departments, 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }))
   const isEdit = !!initial
 
-  const [scope, setScope] = useState((initialDepartmentIds?.length ?? 0) > 0 ? 'specific' : 'shared')
+  const [scope, setScope] = useState((initialDepartmentIds?.length ?? 0) > 0 ? 'specific' : 'unlinked')
   const [selectedDeptIds, setSelectedDeptIds] = useState(new Set((initialDepartmentIds ?? []).map(String)))
   function toggleDept(id) {
     setSelectedDeptIds(prev => {
@@ -121,8 +133,8 @@ function CourseForm({ initial, onSave, onCancel, saving, colleges, departments, 
         <label className="text-[11.5px] font-bold text-text-dark">نطاق المادة</label>
         <div className="flex gap-4 mb-2">
           <label className="flex items-center gap-2 cursor-pointer text-[13px]">
-            <input type="radio" name="scope" checked={scope === 'shared'} onChange={() => setScope('shared')} />
-            <span className="font-semibold text-text-dark">مشتركة لكل الكليات</span>
+            <input type="radio" name="scope" checked={scope === 'unlinked'} onChange={() => setScope('unlinked')} />
+            <span className="font-semibold text-text-dark">غير مرتبطة بقسم</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer text-[13px]">
             <input type="radio" name="scope" checked={scope === 'specific'} onChange={() => setScope('specific')} />
@@ -189,7 +201,9 @@ export default function CoursesPage() {
   const [departments, setDepartments] = useState([])
   const [assignments, setAssignments] = useState([])   // course_departments rows
   const [loading,     setLoading]     = useState(true)
-  const [activeTab,   setActiveTab]   = useState('all') // 'all' | college_id | 'shared'
+  const [catalogReady, setCatalogReady] = useState(false)
+  const [catalogError, setCatalogError] = useState('')
+  const [activeTab,   setActiveTab]   = useState('all') // 'all' | college_id | 'unlinked'
   const [mode,        setMode]        = useState(null)  // null | 'add' | course object
   const [saving,      setSaving]      = useState(false)
   const [deleting,    setDeleting]    = useState({})
@@ -203,44 +217,54 @@ export default function CoursesPage() {
   const [dvRemoving,  setDvRemoving]  = useState({})
   const [dvErr,       setDvErr]       = useState('')
 
-  function loadAll() {
+  const loadAll = useCallback(async () => {
     setLoading(true)
-    Promise.all([
-      fetch(`${API}/courses?per_page=500`,           { headers: authHeaders() }).then(r => r.json()),
-      fetch(`${API}/colleges?per_page=50`,           { headers: authHeaders() }).then(r => r.json()),
-      fetch(`${API}/departments?per_page=200`,       { headers: authHeaders() }).then(r => r.json()),
-      fetch(`${API}/course-departments?per_page=500`,{ headers: authHeaders() }).then(r => r.json()),
-    ]).then(([co, cl, dp, cd]) => {
-      setCourses(co.success     ? (co.data?.data ?? co.data ?? []) : [])
-      setColleges(cl.success    ? (cl.data?.data ?? cl.data ?? []) : [])
-      setDepartments(dp.success ? (dp.data?.data ?? dp.data ?? []) : [])
-      setAssignments(cd.success ? (cd.data?.data ?? cd.data ?? []) : [])
-    }).finally(() => setLoading(false))
-  }
+    setCatalogReady(false)
+    setCatalogError('')
+    try {
+      const [nextCourses, nextColleges, nextDepartments, nextAssignments] = await Promise.all([
+        fetchAllPaginated('/v1/courses', { request: apiRequest, primaryKey: 'course_id' }),
+        fetchAllPaginated('/v1/colleges', { request: apiRequest, primaryKey: 'college_id' }),
+        fetchAllPaginated('/v1/departments', { request: apiRequest, primaryKey: 'department_id' }),
+        fetchAllPaginated('/v1/course-departments', { request: apiRequest, primaryKey: 'course_department_id' }),
+      ])
 
-  useEffect(() => { loadAll() }, [])
+      buildCourseCollegeMap(nextCourses, nextDepartments, nextAssignments)
+      setCourses(nextCourses)
+      setColleges(nextColleges)
+      setDepartments(nextDepartments)
+      setAssignments(nextAssignments)
+      setCatalogReady(true)
+
+      return true
+    } catch (error) {
+      setCourses([])
+      setColleges([])
+      setDepartments([])
+      setAssignments([])
+      setCatalogError(`تعذر تحميل كتالوج المواد كاملاً. ${error?.message || 'حاول مرة أخرى.'}`)
+
+      return false
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { void loadAll() }, [loadAll])
 
   // Map: course_id → Set of college_ids
   const courseCollegeMap = useMemo(() => {
-    const deptToCollege = {}
-    departments.forEach(d => { deptToCollege[d.department_id] = d.college_id })
-    const map = {}
-    assignments.forEach(a => {
-      const colId = deptToCollege[a.department_id]
-      if (!map[a.course_id]) map[a.course_id] = new Set()
-      if (colId) map[a.course_id].add(String(colId))
-    })
-    return map
-  }, [assignments, departments])
+    if (!catalogReady) return new Map()
+    return buildCourseCollegeMap(courses, departments, assignments)
+  }, [assignments, catalogReady, courses, departments])
 
-  const filteredCourses = useMemo(() => {
-    if (activeTab === 'all')    return courses
-    if (activeTab === 'shared') return courses.filter(c => !courseCollegeMap[c.course_id] || courseCollegeMap[c.course_id].size === 0)
-    return courses.filter(c => courseCollegeMap[c.course_id]?.has(String(activeTab)))
-  }, [courses, courseCollegeMap, activeTab])
+  const filteredCourses = useMemo(
+    () => filterCoursesByAffiliation(courses, courseCollegeMap, activeTab),
+    [courses, courseCollegeMap, activeTab]
+  )
 
   // Count per tab
-  const sharedCount = courses.filter(c => !courseCollegeMap[c.course_id] || courseCollegeMap[c.course_id].size === 0).length
+  const unlinkedCount = filterCoursesByAffiliation(courses, courseCollegeMap, 'unlinked').length
 
   function flash(msg) {
     setSuccess(msg)
@@ -250,23 +274,35 @@ export default function CoursesPage() {
   async function syncDepartmentLinks(courseId, { scope, departmentIds }) {
     if (!canManage) return
     const current    = assignments.filter(a => a.course_id === courseId)
-    const currentIds = new Set(current.map(a => String(a.department_id)))
-    const desiredIds = scope === 'specific' ? new Set(departmentIds.map(String)) : new Set()
+    const desiredIds = scope === 'specific' ? departmentIds.map(String) : []
+    const plan = planDepartmentLinkSync(current, desiredIds)
+    const assignmentsByDepartment = new Map(current.map(assignment => [
+      String(assignment.department_id),
+      assignment,
+    ]))
 
-    const toAdd    = [...desiredIds].filter(id => !currentIds.has(id))
-    const toRemove = current.filter(a => !desiredIds.has(String(a.department_id)))
-
-    await Promise.all([
-      ...toAdd.map(id => fetch(`${API}/course-departments`, {
-        method:  'POST',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ course_id: courseId, department_id: parseInt(id), is_primary: true }),
-      })),
-      ...toRemove.map(a => fetch(`${API}/course-departments/${a.course_department_id}`, {
-        method:  'DELETE',
-        headers: authHeaders(),
-      })),
-    ])
+    for (const departmentId of plan.toAdd) {
+      const response = await apiRequest('/v1/course-departments', {
+        method: 'POST',
+        body: JSON.stringify({
+          course_id: courseId,
+          department_id: Number(departmentId),
+          is_primary: false,
+        }),
+      })
+      assignmentsByDepartment.set(departmentId, response.data)
+    }
+    for (const assignment of plan.toRemove) {
+      await apiRequest(`/v1/course-departments/${assignment.course_department_id}`, { method: 'DELETE' })
+    }
+    if (plan.promoteDepartmentId !== null) {
+      const primary = assignmentsByDepartment.get(plan.promoteDepartmentId)
+      if (!primary?.course_department_id) throw new Error('تعذر تحديد رابط القسم الرئيسي بعد الحفظ.')
+      await apiRequest(`/v1/course-departments/${primary.course_department_id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ is_primary: true }),
+      })
+    }
   }
 
   // ── Department-centric bulk assignment view ──────────────────────────────
@@ -282,24 +318,22 @@ export default function CoursesPage() {
     setDvCollegeId(cId); setDvDeptId(''); setDvErr('')
   }
 
-  async function reloadAssignments() {
-    const json = await fetch(`${API}/course-departments?per_page=500`, { headers: authHeaders() }).then(r => r.json())
-    if (json.success) setAssignments(json.data?.data ?? json.data ?? [])
-  }
-
   async function handleDvAdd(courseId) {
     if (!canManage) return
     setDvSaving(p => ({ ...p, [courseId]: true })); setDvErr('')
     try {
-      const res  = await fetch(`${API}/course-departments`, {
-        method:  'POST',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ course_id: courseId, department_id: parseInt(dvDeptId), is_primary: true }),
+      const departmentIds = assignments
+        .filter(assignment => assignment.course_id === courseId)
+        .map(assignment => assignment.department_id)
+      await syncDepartmentLinks(courseId, {
+        scope: 'specific',
+        departmentIds: [...departmentIds, dvDeptId],
       })
-      const json = await res.json()
-      if (json.success) await reloadAssignments()
-      else setDvErr(json.message || 'فشلت الإضافة')
-    } catch { setDvErr('تعذّر الاتصال بالخادم') }
+      if (!await loadAll()) setDvErr('تم تنفيذ الإضافة، لكن تعذر التحقق من الكتالوج بعد العملية.')
+    } catch (error) {
+      await loadAll()
+      setDvErr(requestErrorMessage(error, 'فشلت إضافة المادة إلى القسم.'))
+    }
     finally { setDvSaving(p => ({ ...p, [courseId]: false })) }
   }
 
@@ -307,14 +341,23 @@ export default function CoursesPage() {
     if (!canManage) return
     setDvRemoving(p => ({ ...p, [assignmentId]: true })); setDvErr('')
     try {
-      const res  = await fetch(`${API}/course-departments/${assignmentId}`, {
-        method:  'DELETE',
-        headers: authHeaders(),
+      const target = assignments.find(assignment => assignment.course_department_id === assignmentId)
+      if (!target) throw new Error('تعذر العثور على رابط القسم المطلوب حذفه.')
+      const departmentIds = assignments
+        .filter(assignment => (
+          assignment.course_id === target.course_id
+          && assignment.course_department_id !== assignmentId
+        ))
+        .map(assignment => assignment.department_id)
+      await syncDepartmentLinks(target.course_id, {
+        scope: departmentIds.length > 0 ? 'specific' : 'unlinked',
+        departmentIds,
       })
-      const json = await res.json()
-      if (json.success) setAssignments(p => p.filter(a => a.course_department_id !== assignmentId))
-      else setDvErr(json.message || 'فشل الحذف')
-    } catch { setDvErr('تعذّر الاتصال بالخادم') }
+      if (!await loadAll()) setDvErr('تم تنفيذ الحذف، لكن تعذر التحقق من الكتالوج بعد العملية.')
+    } catch (error) {
+      await loadAll()
+      setDvErr(requestErrorMessage(error, 'فشل حذف رابط القسم.'))
+    }
     finally { setDvRemoving(p => ({ ...p, [assignmentId]: false })) }
   }
 
@@ -322,12 +365,12 @@ export default function CoursesPage() {
     if (!canManage) { setErr('ليس لديك صلاحية إدارة المواد'); return }
     setSaving(true); setErr('')
     const isEdit = mode !== 'add'
-    const url    = isEdit ? `${API}/courses/${mode.course_id}` : `${API}/courses`
+    const url    = isEdit ? `/v1/courses/${mode.course_id}` : '/v1/courses'
     const method = isEdit ? 'PUT' : 'POST'
+    let coursePersisted = false
     try {
-      const res  = await fetch(url, {
+      const response = await apiRequest(url, {
         method,
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           course_code:       form.course_code.trim(),
           course_name:       form.course_name.trim(),
@@ -338,17 +381,21 @@ export default function CoursesPage() {
           is_active:         form.is_active,
         }),
       })
-      const json = await res.json()
-      if (json.success) {
-        const courseId = isEdit ? mode.course_id : json.data.course_id
-        await syncDepartmentLinks(courseId, deptSelection)
+      coursePersisted = true
+      const courseId = isEdit ? mode.course_id : response.data.course_id
+      await syncDepartmentLinks(courseId, deptSelection)
+      if (!await loadAll()) {
         setMode(null)
-        loadAll()
-        flash(isEdit ? 'تم تعديل المادة بنجاح' : 'تمت إضافة المادة بنجاح')
-      } else {
-        setErr(json.message || (json.errors ? Object.values(json.errors).flat().join(' | ') : 'فشلت العملية'))
+        setErr('تم حفظ المادة، لكن تعذر التحقق من الكتالوج بعد العملية.')
+        return
       }
-    } catch { setErr('تعذّر الاتصال بالخادم') }
+      setMode(null)
+      flash(isEdit ? 'تم تعديل المادة بنجاح' : 'تمت إضافة المادة بنجاح')
+    } catch (error) {
+      await loadAll()
+      if (coursePersisted) setMode(null)
+      setErr(requestErrorMessage(error, 'فشلت عملية حفظ المادة.'))
+    }
     finally { setSaving(false) }
   }
 
@@ -357,11 +404,16 @@ export default function CoursesPage() {
     if (!window.confirm(`حذف المادة "${course.course_name}"؟`)) return
     setDeleting(p => ({ ...p, [course.course_id]: true })); setErr('')
     try {
-      const res  = await fetch(`${API}/courses/${course.course_id}`, { method: 'DELETE', headers: authHeaders() })
-      const json = await res.json()
-      if (json.success) { setCourses(p => p.filter(c => c.course_id !== course.course_id)); flash('تم حذف المادة') }
-      else setErr(json.message || 'فشل الحذف')
-    } catch { setErr('تعذّر الاتصال بالخادم') }
+      await apiRequest(`/v1/courses/${course.course_id}`, { method: 'DELETE' })
+      if (!await loadAll()) {
+        setErr('تم حذف المادة، لكن تعذر التحقق من الكتالوج بعد العملية.')
+        return
+      }
+      flash('تم حذف المادة')
+    } catch (error) {
+      await loadAll()
+      setErr(requestErrorMessage(error, 'فشل حذف المادة.'))
+    }
     finally { setDeleting(p => ({ ...p, [course.course_id]: false })) }
   }
 
@@ -410,7 +462,7 @@ export default function CoursesPage() {
       )}
 
       {/* Add / Edit form */}
-      {canManage && viewTab === 'courses' && mode === 'add' && (
+      {canManage && catalogReady && viewTab === 'courses' && mode === 'add' && (
         <CourseForm
           onSave={handleSave}
           onCancel={() => { setMode(null); setErr('') }}
@@ -419,7 +471,7 @@ export default function CoursesPage() {
           departments={departments}
         />
       )}
-      {canManage && viewTab === 'courses' && mode !== null && mode !== 'add' && (
+      {canManage && catalogReady && viewTab === 'courses' && mode !== null && mode !== 'add' && (
         <CourseForm
           initial={mode}
           onSave={handleSave}
@@ -433,13 +485,25 @@ export default function CoursesPage() {
 
       {loading ? (
         <div className="flex justify-center py-16 text-primary"><FaSpinner className="animate-spin text-[28px]" /></div>
+      ) : !catalogReady ? (
+        <div className="flex flex-col items-center gap-3 rounded-[14px] border border-red-200 bg-red-50 px-5 py-12 text-center" dir="rtl">
+          <p className="text-[13px] font-bold text-red-700">{catalogError || 'تعذر تحميل كتالوج المواد كاملاً.'}</p>
+          <p className="text-[12px] text-red-600">لن تُعرض تصنيفات أو أعداد جزئية على أنها بيانات معتمدة.</p>
+          <button
+            type="button"
+            onClick={() => void loadAll()}
+            className="rounded-[9px] border border-red-300 bg-white px-4 py-2 text-[12px] font-bold text-red-700 hover:bg-red-100"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
       ) : viewTab === 'courses' ? (
         <>
           {/* College filter tabs */}
           <div className="flex gap-1.5 flex-wrap mb-4 p-1.5 bg-gray-100 rounded-[12px] w-fit" dir="rtl">
             <TabBtn label="الكل" count={courses.length}   active={activeTab === 'all'}    onClick={() => setActiveTab('all')} />
             {colleges.map(col => {
-              const cnt = courses.filter(c => courseCollegeMap[c.course_id]?.has(String(col.college_id))).length
+              const cnt = courses.filter(c => courseCollegeMap.get(String(c.course_id))?.has(String(col.college_id))).length
               return (
                 <TabBtn
                   key={col.college_id}
@@ -450,13 +514,13 @@ export default function CoursesPage() {
                 />
               )
             })}
-            <TabBtn label="مشتركة" count={sharedCount} active={activeTab === 'shared'} onClick={() => setActiveTab('shared')} />
+            <TabBtn label="غير مرتبطة بقسم" count={unlinkedCount} active={activeTab === 'unlinked'} onClick={() => setActiveTab('unlinked')} />
           </div>
 
-          {/* Shared courses note */}
-          {activeTab === 'shared' && sharedCount > 0 && (
+          {/* Unlinked courses note */}
+          {activeTab === 'unlinked' && unlinkedCount > 0 && (
             <div className="mb-4 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-[10px] text-[12px] text-amber-800" dir="rtl">
-              هذه المواد غير مرتبطة بأي قسم — يمكن اعتبارها مواد مشتركة لجميع الكليات.
+              هذه المواد لا تملك رابطاً بقسم في قاعدة البيانات، ولا يعني ذلك أنها مشتركة بين جميع الكليات.
               يمكنك ربطها بالأقسام من تبويب <strong>عرض حسب القسم</strong> أعلاه.
             </div>
           )}
@@ -465,7 +529,11 @@ export default function CoursesPage() {
             <div className="flex flex-col items-center py-20 gap-3">
               <FaBook className="text-[48px] text-primary/15" />
               <p className="text-[13px] text-text-light" dir="rtl">
-                {activeTab === 'all' ? 'لا توجد مواد دراسية.' : 'لا توجد مواد في هذا التصنيف.'}
+                {activeTab === 'all'
+                  ? 'لا توجد مواد دراسية.'
+                  : activeTab === 'unlinked'
+                    ? 'لا توجد مواد غير مرتبطة بقسم.'
+                    : 'لا توجد مواد مرتبطة بهذه الكلية في قاعدة البيانات.'}
               </p>
             </div>
           ) : (
@@ -489,7 +557,7 @@ export default function CoursesPage() {
                   </thead>
                   <tbody>
                     {filteredCourses.map(c => {
-                      const collegeIds   = courseCollegeMap[c.course_id]
+                      const collegeIds   = courseCollegeMap.get(String(c.course_id))
                       const courseColleges = collegeIds
                         ? colleges.filter(col => collegeIds.has(String(col.college_id)))
                         : []
@@ -507,7 +575,7 @@ export default function CoursesPage() {
                           <td className="px-3 py-3 text-center text-text-dark">{c.practical_hours ?? '—'}</td>
                           <td className="px-3 py-3" dir="rtl">
                             {courseColleges.length === 0 ? (
-                              <span className="inline-block px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-full">مشتركة</span>
+                              <span className="inline-block px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-full">غير مرتبطة بقسم</span>
                             ) : (
                               <div className="flex flex-wrap gap-1">
                                 {courseColleges.map(col => (
