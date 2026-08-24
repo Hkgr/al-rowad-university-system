@@ -77,7 +77,7 @@ class ExamBoardSupplementaryOverviewTest extends TestCase
         $this->registration(1, 1, 1, 'registered');
         $this->registration(2, 2, 1, 'registered', 2, 2);
 
-        $payload = $this->service(true)->overview($this->actor(), perPage: 20);
+        $payload = $this->service(false, programScopeId: 1)->overview($this->actor(), perPage: 20);
 
         self::assertCount(1, $payload['offerings']);
         self::assertSame(1, $payload['offerings'][0]['supplementary_exam_offering_id']);
@@ -112,6 +112,21 @@ class ExamBoardSupplementaryOverviewTest extends TestCase
 
         self::assertSame(200, $response->status());
         self::assertSame(1, $response->getData(true)['data']['selected_period']['supplementary_exam_period_id']);
+    }
+
+    public function test_super_admin_role_preserves_controller_view_compatibility_only(): void
+    {
+        $actor = Mockery::mock(User::class)->makePartial();
+        $actor->shouldReceive('effectivePermissions')->once()->andReturn(collect());
+        $actor->shouldReceive('hasRoleCode')->with('super_admin')->once()->andReturnTrue();
+        $overview = Mockery::mock(SupplementaryExamOverviewService::class);
+        $overview->shouldReceive('overview')->once()->with($actor, null, null, null, null)->andReturn(['periods' => []]);
+        $request = Request::create('/api/v1/exams/supplementary-overview', 'GET');
+        $request->setUserResolver(fn (): User => $actor);
+
+        $response = (new SupplementaryExamOverviewController())($request, $overview);
+
+        self::assertSame(200, $response->status());
     }
 
     public function test_latest_submission_published_and_materialized_counts_stay_distinct(): void
@@ -158,7 +173,7 @@ class ExamBoardSupplementaryOverviewTest extends TestCase
             'status' => 'published',
         ]);
 
-        $payload = $this->service(false, collect([1 => $latest]))->overview($this->actor());
+        $payload = $this->service(true, collect([1 => $latest]))->overview($this->actor());
 
         self::assertSame(['registered' => 1, 'graded' => 1, 'published' => 1, 'materialized' => 1], $payload['offerings'][0]['counts']);
         self::assertSame('published', $payload['offerings'][0]['workflow_status']);
@@ -181,7 +196,7 @@ class ExamBoardSupplementaryOverviewTest extends TestCase
         ]);
 
         $this->expectException(NotFoundHttpException::class);
-        $this->service(true)->overview($this->actor(), periodId: 2);
+        $this->service(false, programScopeId: 1)->overview($this->actor(), periodId: 2);
     }
 
     public function test_latest_submission_helper_uses_version_then_identity_tiebreak(): void
@@ -197,6 +212,70 @@ class ExamBoardSupplementaryOverviewTest extends TestCase
 
         self::assertSame(3, (int) $latest->get(1)->getKey());
         self::assertSame('approved', $latest->get(1)->status);
+    }
+
+    public function test_super_admin_without_actual_scope_does_not_gain_period_visibility(): void
+    {
+        $payload = $this->service(false)->overview($this->actor(superAdmin: true));
+
+        self::assertSame([], $payload['periods']);
+        self::assertNull($payload['selected_period']);
+
+        $this->expectException(NotFoundHttpException::class);
+        $this->service(false)->overview($this->actor(superAdmin: true), periodId: 1);
+    }
+
+    public function test_super_admin_with_actual_university_scope_sees_all_non_legacy_periods(): void
+    {
+        $this->secondPeriod();
+
+        $payload = $this->service(true)->overview($this->actor(superAdmin: true));
+
+        self::assertCount(2, $payload['periods']);
+    }
+
+    public function test_normal_actor_with_actual_university_scope_still_sees_all_non_legacy_periods(): void
+    {
+        $this->secondPeriod();
+
+        $payload = $this->service(true)->overview($this->actor());
+
+        self::assertCount(2, $payload['periods']);
+    }
+
+    public function test_published_counts_follow_duplicate_version_submission_identity_tiebreak(): void
+    {
+        $this->registration(1, 1, 1, 'registered');
+        DB::table('supplementary_exam_grade_results')->insert([
+            'supplementary_exam_grade_result_id' => 1,
+            'supplementary_exam_registration_id' => 1,
+            'supplementary_exam_offering_id' => 1,
+            'theoretical_mark' => 55,
+            'status' => 'published',
+            'submission_version' => 2,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('supplementary_exam_grade_submissions')->insert([
+            ['supplementary_exam_grade_submission_id' => 10, 'supplementary_exam_offering_id' => 1, 'submission_version' => 2, 'status' => 'published'],
+            ['supplementary_exam_grade_submission_id' => 11, 'supplementary_exam_offering_id' => 1, 'submission_version' => 2, 'status' => 'approved'],
+        ]);
+        $grading = new SupplementaryExamGradingService(Mockery::mock(GradeService::class), Mockery::mock(DataScopeService::class));
+        $approvedWinner = $grading->latestSubmissionsForOfferings(collect([1]));
+
+        self::assertSame(11, (int) $approvedWinner->get(1)->getKey());
+        $approvedPayload = $this->service(true, $approvedWinner)->overview($this->actor());
+        self::assertSame(0, $approvedPayload['summary']['published_offerings_count']);
+        self::assertSame(0, $approvedPayload['offerings'][0]['counts']['published']);
+
+        DB::table('supplementary_exam_grade_submissions')->where('supplementary_exam_grade_submission_id', 10)->update(['status' => 'approved']);
+        DB::table('supplementary_exam_grade_submissions')->where('supplementary_exam_grade_submission_id', 11)->update(['status' => 'published']);
+        $publishedWinner = $grading->latestSubmissionsForOfferings(collect([1]));
+
+        self::assertSame(11, (int) $publishedWinner->get(1)->getKey());
+        $publishedPayload = $this->service(true, $publishedWinner)->overview($this->actor());
+        self::assertSame(1, $publishedPayload['summary']['published_offerings_count']);
+        self::assertSame(1, $publishedPayload['offerings'][0]['counts']['published']);
     }
 
     public function test_query_count_does_not_grow_with_more_offerings(): void
@@ -217,15 +296,29 @@ class ExamBoardSupplementaryOverviewTest extends TestCase
         self::assertSame($oneOfferingQueries, $twoOfferingQueries);
     }
 
-    private function service(bool $narrowScope = false, ?Collection $latest = null): SupplementaryExamOverviewService
+    private function service(
+        bool $universityScope = true,
+        ?Collection $latest = null,
+        ?int $programScopeId = null,
+    ): SupplementaryExamOverviewService
     {
         $scope = Mockery::mock(DataScopeService::class);
-        $scope->shouldReceive('hasActualUniversityScope')->andReturn(! $narrowScope);
-        $scope->shouldReceive('scopePrograms')->andReturnUsing(function (Builder $query) use ($narrowScope): Builder {
-            return $narrowScope ? $query->whereKey(1) : $query;
+        $scope->shouldReceive('hasActualUniversityScope')->andReturn($universityScope);
+        $scope->shouldReceive('scopePrograms')->andReturnUsing(function (Builder $query) use ($universityScope, $programScopeId): Builder {
+            if ($universityScope) {
+                return $query;
+            }
+
+            return $programScopeId === null ? $query->whereRaw('1 = 0') : $query->whereKey($programScopeId);
         });
-        $scope->shouldReceive('scopeStudents')->andReturnUsing(function (Builder $query) use ($narrowScope): Builder {
-            return $narrowScope ? $query->where('academic_program_id', 1) : $query;
+        $scope->shouldReceive('scopeStudents')->andReturnUsing(function (Builder $query) use ($universityScope, $programScopeId): Builder {
+            if ($universityScope) {
+                return $query;
+            }
+
+            return $programScopeId === null
+                ? $query->whereRaw('1 = 0')
+                : $query->where('academic_program_id', $programScopeId);
         });
         $grading = Mockery::mock(SupplementaryExamGradingService::class);
         $grading->shouldReceive('latestSubmissionsForOfferings')->andReturn($latest ?? collect());
@@ -252,15 +345,38 @@ class ExamBoardSupplementaryOverviewTest extends TestCase
         return new SupplementaryExamOverviewService($scope, $grading, $occurrence);
     }
 
-    private function actor(): User
+    private function actor(bool $superAdmin = false): User
     {
         $actor = Mockery::mock(User::class)->makePartial();
         $actor->setAttribute('user_id', 99);
-        $actor->shouldReceive('hasRoleCode')->with('super_admin')->andReturnFalse();
+        $actor->shouldReceive('hasRoleCode')->with('super_admin')->andReturn($superAdmin);
         $actor->shouldReceive('isExamOfficer')->andReturnFalse();
         $actor->shouldReceive('effectivePermissions')->andReturn(collect(['supplementary_exams.registrations.view']));
 
         return $actor;
+    }
+
+    private function secondPeriod(): void
+    {
+        DB::table('supplementary_exam_periods')->insert([
+            'supplementary_exam_period_id' => 2,
+            'academic_year_id' => 1,
+            'semester_id' => 1,
+            'period_name' => 'Period 2',
+            'status' => 'registration_open',
+            'is_active' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('supplementary_exam_offerings')->insert([
+            'supplementary_exam_offering_id' => 2,
+            'supplementary_exam_period_id' => 2,
+            'academic_program_id' => 2,
+            'course_id' => 2,
+            'status' => 'open',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     private function registration(

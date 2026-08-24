@@ -58,6 +58,8 @@ test('page is read-only, debounced, and protects the last trusted snapshot', () 
   }
   assert.equal(page.includes('fetch('), false)
   assert.equal(/method:\s*['"](?:POST|PUT|PATCH|DELETE)/.test(page), false)
+  assert.ok(page.includes('علامات مدخلة'))
+  assert.equal(page.includes('<span>مصححون'), false)
 })
 
 test('route, navigation, and home card use registration-view permission', () => {

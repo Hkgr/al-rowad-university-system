@@ -12,7 +12,6 @@ use App\Support\AcademicQueuePagination;
 use App\Support\SupplementaryExamGradingGovernance;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 
 /** Read-only, scope-filtered operational projection for the Exam Board. */
 class SupplementaryExamOverviewService
@@ -87,7 +86,7 @@ class SupplementaryExamOverviewService
             ->get()
             ->keyBy('supplementary_exam_offering_id');
 
-        $counts = $this->offeringCounts($actor, $offeringIds);
+        $counts = $this->offeringCounts($actor, $offeringIds, $latestSubmissions);
         $rosterQuery = $this->currentRoster($actor, (int) $selected->getKey(), $offeringId, $search)
             ->with(['student.academicProgram', 'offering.course', 'offering.academicProgram'])
             ->orderBy('supplementary_exam_registration_id');
@@ -126,7 +125,7 @@ class SupplementaryExamOverviewService
             ->where('status', '<>', 'legacy')
             ->orderByDesc('supplementary_exam_period_id');
 
-        if ($actor->hasRoleCode('super_admin') || $this->scope->hasActualUniversityScope($actor)) {
+        if ($this->scope->hasActualUniversityScope($actor)) {
             return $query;
         }
 
@@ -189,7 +188,7 @@ class SupplementaryExamOverviewService
     }
 
     /** @param list<int> $offeringIds */
-    private function offeringCounts(User $actor, array $offeringIds): Collection
+    private function offeringCounts(User $actor, array $offeringIds, Collection $latestSubmissions): Collection
     {
         $counts = collect($offeringIds)->mapWithKeys(fn ($id): array => [(int) $id => $this->zeroCounts()]);
         if ($offeringIds === []) {
@@ -212,30 +211,28 @@ class SupplementaryExamOverviewService
             ->selectRaw('supplementary_exam_offering_id, COUNT(*) AS aggregate')
             ->groupBy('supplementary_exam_offering_id')->pluck('aggregate', 'supplementary_exam_offering_id');
 
-        $latestVersions = DB::table('supplementary_exam_grade_submissions')
-            ->selectRaw('supplementary_exam_offering_id, MAX(submission_version) AS latest_version')
-            ->whereIn('supplementary_exam_offering_id', $offeringIds)
-            ->groupBy('supplementary_exam_offering_id');
-        $published = SupplementaryExamRegistration::query()
-            ->join('supplementary_exam_grade_results as overview_results', 'overview_results.supplementary_exam_registration_id', '=', 'supplementary_exam_registrations.supplementary_exam_registration_id')
-            ->joinSub($latestVersions, 'overview_latest', fn ($join) => $join
-                ->on('overview_latest.supplementary_exam_offering_id', '=', 'supplementary_exam_registrations.supplementary_exam_offering_id'))
-            ->join('supplementary_exam_grade_submissions as overview_submission', function ($join): void {
-                $join->on('overview_submission.supplementary_exam_offering_id', '=', 'overview_latest.supplementary_exam_offering_id')
-                    ->on('overview_submission.submission_version', '=', 'overview_latest.latest_version');
-            })
-            ->whereIn('supplementary_exam_registrations.supplementary_exam_offering_id', $offeringIds)
-            ->where('supplementary_exam_registrations.status', 'registered')
-            ->where('supplementary_exam_registrations.current_slot', 1)
-            ->where('overview_results.status', 'published')
-            ->whereColumn('overview_results.submission_version', 'overview_latest.latest_version')
-            ->where('overview_submission.status', 'published')
-            ->whereHas('student', function (Builder $student) use ($actor): void {
-                $this->scope->scopeStudents($student, $actor);
-            })
-            ->selectRaw('supplementary_exam_registrations.supplementary_exam_offering_id, COUNT(*) AS aggregate')
-            ->groupBy('supplementary_exam_registrations.supplementary_exam_offering_id')
-            ->pluck('aggregate', 'supplementary_exam_registrations.supplementary_exam_offering_id');
+        $publishedWinners = $latestSubmissions
+            ->filter(fn (SupplementaryExamGradeSubmission $submission): bool => $submission->status === 'published')
+            ->mapWithKeys(fn (SupplementaryExamGradeSubmission $submission): array => [
+                (int) $submission->supplementary_exam_offering_id => (int) $submission->submission_version,
+            ]);
+        $published = collect();
+        if ($publishedWinners->isNotEmpty()) {
+            $published = (clone $base)
+                ->whereHas('gradeResult', function (Builder $result) use ($publishedWinners): void {
+                    $result->where('status', 'published')
+                        ->where(function (Builder $winner) use ($publishedWinners): void {
+                            foreach ($publishedWinners as $offeringId => $version) {
+                                $winner->orWhere(fn (Builder $pair): Builder => $pair
+                                    ->where('supplementary_exam_offering_id', $offeringId)
+                                    ->where('submission_version', $version));
+                            }
+                        });
+                })
+                ->selectRaw('supplementary_exam_offering_id, COUNT(*) AS aggregate')
+                ->groupBy('supplementary_exam_offering_id')
+                ->pluck('aggregate', 'supplementary_exam_offering_id');
+        }
 
         foreach ($counts->keys() as $offeringId) {
             $counts->put($offeringId, [
