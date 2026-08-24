@@ -10,6 +10,17 @@ export const PERIOD_STATUS_LABELS = Object.freeze({
   results_materialized: 'النتائج مُرحّلة إلى السجل الرسمي',
 })
 
+export const PERIOD_OPERATIONAL_MESSAGES = Object.freeze({
+  announced: 'أُعلنت الدورة ولم تُفتح نافذة التسجيل بعد.',
+  registration_open: 'التسجيل مفتوح والقائمة ما زالت قابلة للتغيير.',
+  registration_closed: 'أُغلق التسجيل وثُبتت قائمة الطلاب.',
+  grading_open: 'إدخال العلامات التكميلية جارٍ.',
+  grading_submitted: 'أُرسلت دفعات العلامات للمراجعة.',
+  results_approved: 'اعتُمدت النتائج وهي بانتظار النشر.',
+  results_published: 'نُشرت النتائج وهي بانتظار الترحيل الرسمي.',
+  results_materialized: 'اكتمل ترحيل النتائج إلى السجل الأكاديمي الرسمي.',
+})
+
 export const WORKFLOW_STATUS_LABELS = Object.freeze({
   waiting: 'بانتظار العلامات',
   draft: 'مسودة',
@@ -111,7 +122,14 @@ function localizedLabel(labels, status, missingLabel, unknownLabel) {
 }
 
 export function periodStatusLabel(status) {
-  return localizedLabel(PERIOD_STATUS_LABELS, status, 'غير مفعلة', 'حالة دورة غير معروفة')
+  if (status === null || status === undefined || status === '') return 'غير مفعلة'
+  const safeStatus = String(status).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40)
+  return PERIOD_STATUS_LABELS[status] ?? `حالة دورة غير معروفة${safeStatus ? ` (${safeStatus})` : ''}`
+}
+
+export function periodOperationalMessage(status) {
+  return PERIOD_OPERATIONAL_MESSAGES[status]
+    ?? 'حالة تشغيلية غير معروفة؛ راجع مسؤول النظام قبل اتخاذ أي إجراء.'
 }
 
 export function workflowStatusLabel(status) {

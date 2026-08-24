@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { FaClipboardList, FaCheckDouble, FaExclamationTriangle, FaCalendarAlt, FaLockOpen, FaBookOpen, FaTable } from 'react-icons/fa'
+import { hasPermission, PERMISSIONS } from '../../auth/auth'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
@@ -43,11 +44,11 @@ export default function ExamBoardHome() {
           { Icon: FaClipboardList,       color: '#569933', ar: 'كشوف الدرجات',         en: 'Grade Sheets',       to: '/exam-board/grade-sheet'   },
           { Icon: FaCheckDouble,         color: '#3b82f6', ar: 'اعتماد الدرجات',       en: 'Grade Approvals',    to: '/exam-board/approvals'      },
           { Icon: FaExclamationTriangle, color: '#f59e0b', ar: 'الحضور والحرمان',       en: 'Deprivation',        to: '/exam-board/deprivation'    },
-          { Icon: FaCalendarAlt,         color: '#8b5cf6', ar: 'الامتحانات التكميلية', en: 'Supplementary Exams', to: '/exam-board/supplementary'  },
+          { Icon: FaCalendarAlt,         color: '#8b5cf6', ar: 'الامتحانات التكميلية', en: 'Supplementary Exams', to: '/exam-board/supplementary', permission: PERMISSIONS.supplementaryExamsRegistrationsView },
           { Icon: FaLockOpen,            color: '#22c55e', ar: 'فتح المواد',           en: 'Course Offerings',   to: '/exam-board/course-offerings'    },
           { Icon: FaBookOpen,            color: '#ec4899', ar: 'تسجيل المواد',         en: 'Course Registration', to: '/exam-board/course-registration' },
           { Icon: FaTable,               color: '#0ea5e9', ar: 'جدول المواد',          en: 'Course Table',       to: '/exam-board/course-table'        },
-        ].map(({ Icon, color, ar, en, to }) => (
+        ].filter(({ permission }) => !permission || hasPermission(permission, user)).map(({ Icon, color, ar, en, to }) => (
           <Link
             key={ar}
             to={to}

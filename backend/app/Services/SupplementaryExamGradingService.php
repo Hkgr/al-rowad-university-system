@@ -101,6 +101,27 @@ class SupplementaryExamGradingService
     }
 
     /**
+     * Canonical latest-submission projection shared by read-only operational views.
+     *
+     * @param  Collection<int, int|string>  $offeringIds
+     * @return Collection<int, SupplementaryExamGradeSubmission>
+     */
+    public function latestSubmissionsForOfferings(Collection $offeringIds): Collection
+    {
+        if ($offeringIds->isEmpty()) {
+            return collect();
+        }
+
+        return SupplementaryExamGradeSubmission::query()
+            ->whereIn('supplementary_exam_offering_id', $offeringIds)
+            ->orderByDesc('submission_version')
+            ->orderByDesc('supplementary_exam_grade_submission_id')
+            ->get()
+            ->groupBy('supplementary_exam_offering_id')
+            ->map(fn (Collection $submissions) => $submissions->first());
+    }
+
+    /**
      * @return list<array<string, mixed>>
      */
     public function graderOptions(
@@ -506,12 +527,8 @@ class SupplementaryExamGradingService
             ->orderBy('supplementary_exam_registration_id')
             ->get()
             ->groupBy('supplementary_exam_offering_id');
-        $submissions = SupplementaryExamGradeSubmission::query()
-            ->whereIn('supplementary_exam_offering_id', $offeringIds)
-            ->orderByDesc('submission_version')
-            ->orderByDesc('supplementary_exam_grade_submission_id')
-            ->get()
-            ->groupBy('supplementary_exam_offering_id');
+        $submissions = $this->latestSubmissionsForOfferings($offeringIds)
+            ->map(fn (SupplementaryExamGradeSubmission $submission) => collect([$submission]));
         $assignments = SupplementaryExamGraderAssignment::query()
             ->with('facultyMember.employee')
             ->whereIn('supplementary_exam_offering_id', $offeringIds)
@@ -1145,12 +1162,7 @@ class SupplementaryExamGradingService
         if ($offeringIds->isEmpty()) {
             return false;
         }
-        $latest = SupplementaryExamGradeSubmission::query()
-            ->whereIn('supplementary_exam_offering_id', $offeringIds)
-            ->orderByDesc('submission_version')
-            ->get()
-            ->groupBy('supplementary_exam_offering_id')
-            ->map(fn (Collection $submissions) => $submissions->first());
+        $latest = $this->latestSubmissionsForOfferings($offeringIds);
 
         return $offeringIds->every(fn ($id) => in_array($latest->get($id)?->status, $statuses, true));
     }
