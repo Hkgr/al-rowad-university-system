@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\SupplementaryExamPeriodResource;
 use App\Models\SupplementaryExamPeriod;
 use App\Services\SupplementaryExamPeriodGovernanceService;
+use App\Services\SupplementaryExamOccurrenceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
@@ -32,13 +33,19 @@ class SupplementaryExamPeriodController extends Controller
         );
     }
 
-    public function show(Request $request, SupplementaryExamPeriod $period): JsonResponse
+    public function show(
+        Request $request,
+        SupplementaryExamPeriod $period,
+        SupplementaryExamOccurrenceService $occurrence,
+    ): JsonResponse
     {
         $period = $this->governance->findPeriod($request->user(), $period);
+        $payload = (new SupplementaryExamPeriodResource($period))->resolve($request);
+        $payload['supplementary_exam_occurrence'] = $occurrence
+            ->snapshotForPeriod($period)
+            ->toPublicArray();
 
-        return $this->successResponse(
-            (new SupplementaryExamPeriodResource($period))->resolve($request)
-        );
+        return $this->successResponse($payload);
     }
 
     public function store(): JsonResponse
