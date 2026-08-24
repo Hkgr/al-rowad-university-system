@@ -8,16 +8,30 @@ use App\Models\CourseOffering;
 use App\Models\StudentCourseRegistration;
 use App\Services\AcademicAuthorizationService;
 use App\Services\GradePartWorkflowService;
+use App\Services\RegularExamOccurrenceService;
+use App\Support\AcademicCalendarPolicyResult;
+use App\Support\RegularExamOccurrenceSnapshot;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class GradePartWorkflowController extends Controller
 {
-    public function show(CourseOffering $offering, Request $request, AcademicAuthorizationService $authorization, GradePartWorkflowService $service): JsonResponse
+    public function show(
+        CourseOffering $offering,
+        Request $request,
+        AcademicAuthorizationService $authorization,
+        GradePartWorkflowService $service,
+        RegularExamOccurrenceService $occurrence,
+    ): JsonResponse
     {
         $authorization->assertCanViewGradeParts($request->user(), $offering->course_offering_id);
 
-        return $this->success($service->workflow($offering->course_offering_id, $request->user()));
+        $payload = $service->workflow($offering->course_offering_id, $request->user());
+        $payload['regular_exam_occurrence'] = $this->occurrencePayload(
+            $occurrence->snapshotForOffering($offering)
+        );
+
+        return $this->success($payload);
     }
 
     public function update(StudentCourseRegistration $registration, string $part, SaveGradePartRequest $request, AcademicAuthorizationService $authorization, GradePartWorkflowService $service): JsonResponse
@@ -47,5 +61,28 @@ class GradePartWorkflowController extends Controller
     private function success(mixed $data, string $message = 'Operation completed successfully'): JsonResponse
     {
         return response()->json(['success' => true, 'message' => $message, 'data' => $data]);
+    }
+
+    /** @return array<string, mixed> */
+    private function occurrencePayload(RegularExamOccurrenceSnapshot $snapshot): array
+    {
+        return [
+            'course_offering_id' => $snapshot->courseOfferingId,
+            'academic_year_id' => $snapshot->academicYearId,
+            'semester_id' => $snapshot->semesterId,
+            'evaluated_at' => $snapshot->evaluatedAt->toIso8601String(),
+            'practical' => $this->occurrencePartPayload($snapshot->practical),
+            'theoretical' => $this->occurrencePartPayload($snapshot->theoretical),
+        ];
+    }
+
+    /** @return array{status: string, is_occurring: bool, reason_code: string|null} */
+    private function occurrencePartPayload(AcademicCalendarPolicyResult $result): array
+    {
+        return [
+            'status' => $result->status->value,
+            'is_occurring' => $result->isOpen(),
+            'reason_code' => $result->reasonCode,
+        ];
     }
 }
