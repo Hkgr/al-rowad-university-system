@@ -7,13 +7,27 @@ use App\Models\SupplementaryExamOffering;
 use App\Models\SupplementaryExamPeriod;
 use App\Services\SupplementaryExamGradingService;
 use App\Services\SupplementaryExamMaterializationService;
+use App\Services\SupplementaryExamOccurrenceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class SupplementaryExamGradingController extends Controller
 {
     public function professorIndex(Request $request, SupplementaryExamGradingService $service): JsonResponse { return response()->json(['success'=>true,'data'=>$service->professorOfferings($request->user())]); }
-    public function professorGrades(Request $request, SupplementaryExamOffering $offering, SupplementaryExamGradingService $service): JsonResponse { return response()->json(['success'=>true,'data'=>$service->roster($request->user(),$offering)]); }
+    public function professorGrades(
+        Request $request,
+        SupplementaryExamOffering $offering,
+        SupplementaryExamGradingService $service,
+        SupplementaryExamOccurrenceService $occurrence,
+    ): JsonResponse {
+        $payload = $service->roster($request->user(), $offering);
+        $offering->loadMissing('period');
+        $payload['supplementary_exam_occurrence'] = $occurrence
+            ->snapshotForPeriod($offering->period)
+            ->toPublicArray();
+
+        return response()->json(['success' => true, 'data' => $payload]);
+    }
     public function save(Request $request, SupplementaryExamOffering $offering, SupplementaryExamGradingService $service): JsonResponse { $data=$request->validate(['marks'=>['required','array','min:1'],'marks.*.supplementary_exam_registration_id'=>['required','integer','distinct'],'marks.*.theoretical_mark'=>['required','numeric']]);return response()->json(['success'=>true,'data'=>$service->saveDrafts($request->user(),$offering,$data['marks'])]); }
     public function submit(Request $request, SupplementaryExamOffering $offering, SupplementaryExamGradingService $service): JsonResponse { return response()->json(['success'=>true,'data'=>$service->submit($request->user(),$offering)]); }
     public function resubmit(Request $request, SupplementaryExamOffering $offering, SupplementaryExamGradingService $service): JsonResponse { return response()->json(['success'=>true,'data'=>$service->submit($request->user(),$offering,true)]); }

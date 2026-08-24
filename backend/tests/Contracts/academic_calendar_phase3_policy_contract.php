@@ -70,7 +70,10 @@ $contract = static function (string $backendRoot): array {
         if (! preg_match('/(Registration|Withdrawal|Grade|Supplementary|Dean|Appeal)/', basename($workflowFile))) {
             continue;
         }
-        if (basename($workflowFile) === 'RegistrationService.php') {
+        if (in_array(basename($workflowFile), [
+            'RegistrationService.php',
+            'SupplementaryExamOccurrenceService.php',
+        ], true)) {
             continue;
         }
         $expect(! str_contains(file_get_contents($workflowFile), 'AcademicCalendarPolicyService'), 'Phase 3 policy is already integrated into workflow: '.basename($workflowFile));

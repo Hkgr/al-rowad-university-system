@@ -26,10 +26,34 @@ function gradingLimits(sheet) {
   }
 }
 
+function SupplementaryExamOccurrenceIndicator({ occurrence }) {
+  const presentation = occurrence?.status === 'open'
+    ? {
+      text: 'فترة الامتحانات التكميلية جارية',
+      className: 'border-green-700 bg-green-50 text-green-900',
+    }
+    : occurrence?.status === 'closed'
+      ? {
+        text: 'خارج فترة الامتحانات التكميلية',
+        className: 'border-gray-500 bg-gray-50 text-gray-800',
+      }
+      : {
+        text: 'حالة فترة الامتحانات التكميلية غير متاحة',
+        className: 'border-amber-600 bg-amber-50 text-amber-900',
+      }
+
+  return (
+    <p className={`mb-4 rounded border-r-4 px-3 py-2 text-sm ${presentation.className}`} role="status">
+      {presentation.text}
+    </p>
+  )
+}
+
 export default function ProfessorSupplementaryExams() {
   const [offerings, setOfferings] = useState([])
   const [selectedOffering, setSelectedOffering] = useState(null)
   const [sheet, setSheet] = useState(null)
+  const [occurrence, setOccurrence] = useState(null)
   const [marks, setMarks] = useState({})
   const [savedMarks, setSavedMarks] = useState({})
   const [dirty, setDirty] = useState(false)
@@ -78,6 +102,7 @@ export default function ProfessorSupplementaryExams() {
     requestSequenceRef.current = sequence
     setSelectedOffering(offering)
     setSheet(null)
+    setOccurrence(null)
     setMarks({})
     setSavedMarks({})
     setDirty(false)
@@ -90,7 +115,9 @@ export default function ProfessorSupplementaryExams() {
         `/v1/professor/supplementary-exams/${offeringKey(offering)}/grades`,
       )
       if (sequence !== requestSequenceRef.current) return
-      replaceSheet(response?.data ?? null)
+      const nextSheet = response?.data ?? null
+      setOccurrence(nextSheet?.supplementary_exam_occurrence ?? null)
+      replaceSheet(nextSheet)
     } catch (requestError) {
       if (sequence !== requestSequenceRef.current) return
       setError(supplementaryErrorMessage(requestError, 'تعذر تحميل ورقة العلامات لهذا المقرر.'))
@@ -267,6 +294,8 @@ export default function ProfessorSupplementaryExams() {
                   {dirty && <span className="rounded bg-amber-100 px-2 py-1 font-bold">تعديلات غير محفوظة</span>}
                 </div>
               </header>
+
+              <SupplementaryExamOccurrenceIndicator occurrence={occurrence} />
 
               {!editable && (
                 <p className="mb-3 rounded bg-gray-100 p-3 text-sm">
