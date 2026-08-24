@@ -1,11 +1,12 @@
 import {
-  FaHome, FaGraduationCap, FaUserPlus, FaArchive, FaUsers, FaClipboardCheck, FaBookOpen,
+  FaHome, FaGraduationCap, FaUserPlus, FaArchive, FaUsers, FaClipboardCheck, FaBookOpen, FaCalendarAlt,
 } from 'react-icons/fa'
 
 const studentAffairsNav = [
   {
     label: 'الرئيسية',
     items: [
+      { to: '/student-affairs/calendar', Icon: FaCalendarAlt, ar: 'التقويم الأكاديمي', en: 'Calendar' },
       { to: '/student-affairs', Icon: FaHome, ar: 'الرئيسية', en: 'Home', end: true },
     ],
   },

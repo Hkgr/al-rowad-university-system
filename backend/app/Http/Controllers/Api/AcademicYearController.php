@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\AcademicCalendarException;
 use App\Http\Requests\AcademicYear\StoreAcademicYearRequest;
 use App\Http\Requests\AcademicYear\UpdateAcademicYearRequest;
 use App\Http\Resources\AcademicYearResource;
@@ -43,5 +44,20 @@ class AcademicYearController extends ApiController
         return $this->successResponse(
             (new AcademicYearResource($academicYear))->resolve(request())
         );
+    }
+
+    protected function beforeUpdateMutation(AcademicYear $academicYear, array $payload): void
+    {
+        if (($academicYear->is_current || $academicYear->calendar_lifecycle_status === 'active')
+            && array_key_exists('is_active', $payload) && ! $payload['is_active']) {
+            throw AcademicCalendarException::conflict('لا يمكن تعطيل السنة الحالية أو النشطة تقويمياً.');
+        }
+    }
+
+    protected function beforeDestroyMutation(AcademicYear $academicYear): void
+    {
+        if ($academicYear->is_current || $academicYear->calendar_lifecycle_status === 'active') {
+            throw AcademicCalendarException::conflict('لا يمكن حذف السنة الحالية أو النشطة تقويمياً.');
+        }
     }
 }

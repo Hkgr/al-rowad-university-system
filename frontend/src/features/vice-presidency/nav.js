@@ -1,4 +1,4 @@
-import { FaChalkboardTeacher, FaClipboardList, FaHome, FaUnlock } from 'react-icons/fa'
+import { FaCalendarAlt, FaChalkboardTeacher, FaClipboardList, FaHome, FaUnlock } from 'react-icons/fa'
 
 import { PERMISSIONS, ROLES } from '../auth/auth'
 
@@ -6,6 +6,7 @@ export const scientificVicePresidentNav = [
   {
     label: 'نيابة الشؤون العلمية',
     items: [
+      { to: '/vp/scientific/calendar', Icon: FaCalendarAlt, ar: 'التقويم الأكاديمي', en: 'Academic calendar' },
       {
         to: '/vp/scientific',
         Icon: FaHome,
@@ -44,6 +45,7 @@ export const administrativeVicePresidentNav = [
   {
     label: 'نيابة الشؤون الإدارية',
     items: [
+      { to: '/vp/administrative/calendar', Icon: FaCalendarAlt, ar: 'التقويم الأكاديمي', en: 'Academic calendar' },
       {
         to: '/vp/administrative',
         Icon: FaHome,

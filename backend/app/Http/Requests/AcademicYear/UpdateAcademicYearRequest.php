@@ -24,8 +24,10 @@ class UpdateAcademicYearRequest extends FormRequest
             ],
             'start_date' => 'sometimes|nullable|date',
             'end_date' => 'sometimes|nullable|date|after_or_equal:start_date',
-            'is_current' => 'sometimes|nullable|boolean',
+            'is_current' => 'prohibited',
             'is_active' => 'sometimes|nullable|boolean',
+            'calendar_lifecycle_status' => 'prohibited',
+            'calendar_active_slot' => 'prohibited',
         ];
     }
 }

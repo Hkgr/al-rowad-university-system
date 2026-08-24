@@ -39,6 +39,7 @@ export const PERMISSIONS = Object.freeze({
   supplementaryExamsPeriodsDecide: 'supplementary_exams.periods.decide',
   supplementaryExamsOfferingsView: 'supplementary_exams.offerings.view',
   supplementaryExamsOfferingsManage: 'supplementary_exams.offerings.manage',
+  academicCalendarManage: 'academic_calendar.manage',
 })
 
 export const ACCESS = Object.freeze({

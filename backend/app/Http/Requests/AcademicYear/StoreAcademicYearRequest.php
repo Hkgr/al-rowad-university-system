@@ -18,8 +18,10 @@ class StoreAcademicYearRequest extends FormRequest
             'year_name' => 'required|string|max:50|unique:academic_years,year_name',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
-            'is_current' => 'required|boolean',
+            'is_current' => 'prohibited',
             'is_active' => 'required|boolean',
+            'calendar_lifecycle_status' => 'prohibited',
+            'calendar_active_slot' => 'prohibited',
         ];
     }
 }
