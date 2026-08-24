@@ -3,7 +3,7 @@ import {
   FaCalendarAlt, FaChartBar, FaUsers, FaCog, FaBook,
   FaLockOpen, FaBookOpen, FaTable,
 } from 'react-icons/fa'
-import { ACCESS } from '../auth/auth'
+import { ACCESS, PERMISSIONS } from '../auth/auth'
 
 const examBoardNav = [
   {
@@ -14,7 +14,7 @@ const examBoardNav = [
       { to: '/exam-board/grade-sheet',      Icon: FaClipboardList,       ar: 'كشوف الدرجات',         en: 'Grade Sheets', permissions: ['grades.view'] },
       { to: '/exam-board/approvals',        Icon: FaCheckDouble,         ar: 'اعتماد الدرجات',       en: 'Approvals', permissions: ['exams.manage'] },
       { to: '/exam-board/deprivation',      Icon: FaExclamationTriangle, ar: 'الحضور والحرمان',      en: 'Deprivation', permissions: ['exams.manage'] },
-      { to: '/exam-board/supplementary',    Icon: FaCalendarAlt,         ar: 'الامتحانات التكميلية', en: 'Supplementary', permissions: ['exams.view'] },
+      { to: '/exam-board/supplementary',    Icon: FaCalendarAlt,         ar: 'الامتحانات التكميلية', en: 'Supplementary', permissions: [PERMISSIONS.supplementaryExamsRegistrationsView] },
       { to: '/exam-board/supplementary-grades', Icon: FaCheckDouble, ar: 'علامات الامتحانات التكميلية', en: 'Supplementary Grades', permissions: ['supplementary_exams.grades.review'] },
       { to: '/exam-board/results',          Icon: FaChartBar,            ar: 'النتائج والتقارير',    en: 'Results', permissions: ['grades.view'] },
     ],

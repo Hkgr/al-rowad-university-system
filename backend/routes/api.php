@@ -34,6 +34,7 @@ use App\Http\Controllers\Api\DeanRegistrationOfferingController;
 use App\Http\Controllers\Api\DeanSupplementaryExamOfferingController;
 use App\Http\Controllers\Api\StudentSupplementaryExamRegistrationController;
 use App\Http\Controllers\Api\SupplementaryExamRegistrationOfficeController;
+use App\Http\Controllers\Api\SupplementaryExamOverviewController;
 use App\Http\Controllers\Api\CoursePrerequisiteController;
 use App\Http\Controllers\Api\DepartmentController;
 use App\Http\Controllers\Api\DisciplinaryCaseAppealController;
@@ -532,6 +533,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('supplementary-exam-periods', [SupplementaryExamPeriodController::class, 'index']);
     Route::get('supplementary-exam-periods/{period}', [SupplementaryExamPeriodController::class, 'show']);
     Route::get('exams/supplementary-grades', [SupplementaryExamGradingController::class, 'queue']);
+    Route::get('exams/supplementary-overview', SupplementaryExamOverviewController::class);
     Route::post('exams/supplementary-grades/{submission}/return', [SupplementaryExamGradingController::class, 'return']);
     Route::post('exams/supplementary-grades/{submission}/approve', [SupplementaryExamGradingController::class, 'approve']);
     Route::post('exams/supplementary-grades/{submission}/publish', [SupplementaryExamGradingController::class, 'publish']);
