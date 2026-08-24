@@ -37,11 +37,51 @@ $contract = static function (string $backendRoot): array {
     $expect(str_contains($apply, '@acr_event_rows = 0 AND @acr_version_rows = 0'), 'Apply must independently require empty event and revision history.');
     $expect(str_contains($rollback, '@acr_event_rows=0 AND @acr_version_rows=0'), 'Rollback must fail closed after event or revision history exists.');
 
+    $freshEventGuard = '(SELECT COUNT(*) FROM `alrowad_uni_rust`.`academic_calendar_events`) = 0';
+    $freshVersionGuard = '(SELECT COUNT(*) FROM `alrowad_uni_rust`.`academic_calendar_event_versions`) = 0';
+    $destructiveRevisionContextOperations = [
+        'DROP FOREIGN KEY `fk_acev_semester`',
+        'DROP FOREIGN KEY `fk_acev_event_type`',
+        'DROP INDEX `idx_acev_semester`',
+        'DROP INDEX `idx_acev_event_type`',
+        'DROP COLUMN `semester_id`',
+        'DROP COLUMN `academic_calendar_event_type_id`',
+    ];
+    foreach ($destructiveRevisionContextOperations as $operation) {
+        $operationPosition = strpos($apply, $operation);
+        $guardPosition = $operationPosition === false
+            ? false
+            : strrpos(substr($apply, 0, $operationPosition), 'SET @acr_sql := IF(');
+        $guardedBlock = $guardPosition === false || $operationPosition === false
+            ? ''
+            : substr($apply, $guardPosition, $operationPosition - $guardPosition);
+        $expect(str_contains($guardedBlock, $freshEventGuard) && str_contains($guardedBlock, $freshVersionGuard), 'Destructive revision-context operation lacks fresh zero-row guards: '.$operation);
+    }
+    $expect(substr_count($apply, $freshEventGuard) >= 7 && substr_count($apply, $freshVersionGuard) >= 7, 'Apply must repeat live empty-table checks for every destructive step and the final result.');
+
     $expect(str_contains($apply, 'DROP COLUMN `semester_id`') && str_contains($apply, 'DROP COLUMN `academic_calendar_event_type_id`'), 'Apply must remove context columns from revisions.');
     $expect(str_contains($apply, 'ADD COLUMN `semester_id` INT NULL AFTER `academic_year_id`'), 'Apply must add nullable semester context to logical events.');
     $expect(str_contains($apply, 'ADD COLUMN `academic_calendar_event_type_id` INT NOT NULL AFTER `semester_id`'), 'Apply must add event-type context to logical events.');
     $expect(str_contains($apply, 'fk_ace_semester') && str_contains($apply, 'fk_ace_event_type'), 'Apply must restore logical-event context foreign keys.');
     $expect(str_contains($apply, 'idx_ace_year_semester') && str_contains($apply, 'idx_ace_event_type'), 'Apply must restore logical-event context indexes.');
+    $targetIndexes = [
+        'ADD KEY `idx_acet_kind_active` (`event_type_kind`, `is_active`)',
+        'ADD KEY `idx_ace_year_semester` (`academic_year_id`, `semester_id`)',
+        'ADD KEY `idx_ace_event_type` (`academic_calendar_event_type_id`)',
+        'ADD KEY `idx_ace_cancelled_at` (`cancelled_at`)',
+        'ADD KEY `idx_acev_event_status` (`academic_calendar_event_id`, `publication_status`)',
+        'ADD KEY `idx_acev_publication_window` (`publication_status`, `starts_at`, `ends_at`)',
+        'ADD KEY `idx_acev_replaces` (`replaces_version_id`)',
+        'ADD KEY `idx_acyle_year_occurred` (`academic_year_id`, `occurred_at`)',
+        'ADD KEY `idx_acyle_status_occurred` (`to_status`, `occurred_at`)',
+        'ADD KEY `idx_acyle_actor` (`actor_user_id`)',
+    ];
+    foreach ($targetIndexes as $targetIndex) {
+        $expect(str_contains($apply, $targetIndex), 'Apply cannot restore required target index: '.$targetIndex);
+    }
+    $expect(str_contains($apply, '@acr_post_target_indexes = 10'), 'Apply final result must validate all ten required target indexes.');
+    $expect(str_contains($preflight, 'known_common_index_names=compatible_common_indexes') && str_contains($preflight, 'known_migration_index_names=compatible_migration_indexes'), 'SAFE_PARTIAL must reject known index names with incompatible definitions.');
+    $expect(str_contains($apply, '@acr_known_common_index_names = @acr_compatible_common_indexes') && str_contains($apply, '@acr_known_migration_index_names = @acr_compatible_migration_indexes'), 'Apply must independently reject known index names with incompatible definitions.');
     $expect(str_contains($verify, 'AS context_ownership'), 'Verify must assert merged logical-event context ownership.');
     $expect(str_contains($verify, 'SELECT COUNT(*) = 42 FROM information_schema.columns') && str_contains($verify, 'SELECT COUNT(*) = 11 FROM information_schema.key_column_usage k') && str_contains($verify, 'SELECT COUNT(*) = 18 FROM information_schema.columns'), 'Verify must protect the exact merged column, FK, and signed-key counts.');
     $expect(str_contains($preflight, 'generated_slots=2 AND generated_unique_indexes=2') && str_contains($verify, 'generated_slots AND generated_unique_indexes'), 'Generated single-active and single-published uniqueness must remain intact.');
@@ -81,6 +121,18 @@ $contract = static function (string $backendRoot): array {
     $expect(substr_count($allSql, '`alrowad_uni_rust`') > 20, 'SQL must use the explicit production database.');
     $expect(! str_contains(strtoupper($allSql), 'INSERT INTO `ALROWAD_UNI_RUST`'), 'Repair package must not seed production data.');
     $expect(str_contains($readme, 'academic-calendar-phase1/02_verify.sql') && str_contains($readme, 'Phase 3'), 'README must require both verification gates before Phase 3.');
+    $maintenancePosition = strpos($readme, 'Put the Laravel application in maintenance mode');
+    $backupPosition = strpos($readme, 'Take and retain a database backup');
+    $preflightPosition = strpos($readme, 'Run `00_preflight.sql`');
+    $applyPosition = strpos($readme, 'Run `01_apply.sql`');
+    $repairVerifyPosition = strpos($readme, 'Run `02_verify.sql`');
+    $phaseOneVerifyPosition = strpos($readme, 'Re-run `../academic-calendar-phase1/02_verify.sql`');
+    $exitMaintenancePosition = strpos($readme, 'Exit maintenance mode only after both verification scripts return `PASS`');
+    $operatorOrder = [$maintenancePosition, $backupPosition, $preflightPosition, $applyPosition, $repairVerifyPosition, $phaseOneVerifyPosition, $exitMaintenancePosition];
+    $sortedOperatorOrder = $operatorOrder;
+    sort($sortedOperatorOrder);
+    $expect(! in_array(false, $operatorOrder, true) && $operatorOrder === $sortedOperatorOrder, 'README must enforce maintenance, backup, preflight, apply, both verifies, then maintenance exit in order.');
+    $expect(str_contains($readme, 'Do not run this repair while the application') && str_contains($readme, 'MariaDB DDL commits') && str_contains($readme, 'hard operational gate'), 'README must explain the maintenance-mode concurrency gate.');
 
     $immutablePackages = [
         'database/sql/academic-calendar-phase1/00_preflight.sql' => 'b3b40213bf336ba3221d9109838d20b53739cc2ef5ec80cbe3e118412cc0d342',

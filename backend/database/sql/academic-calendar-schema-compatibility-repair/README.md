@@ -7,15 +7,19 @@ workflow integration.
 
 ## Operator run order
 
-1. Take and retain a database backup.
-2. Run `00_preflight.sql` in the `alrowad_uni_rust` phpMyAdmin SQL tab.
-3. Continue only when the final visible row is `OVERALL | READY`.
-4. Run `01_apply.sql` once. It is guarded and rerunnable after a safe partial
+1. Put the Laravel application in maintenance mode and verify that no calendar
+   writes can reach the database. Do not run this repair while the application
+   can write.
+2. Take and retain a database backup while maintenance mode remains active.
+3. Run `00_preflight.sql` in the `alrowad_uni_rust` phpMyAdmin SQL tab.
+4. Continue only when the final visible row is `OVERALL | READY`.
+5. Run `01_apply.sql` once. It is guarded and rerunnable after a safe partial
    DDL interruption. Continue only when its final row is `OVERALL | APPLIED`.
-5. Run `02_verify.sql` and accept the repair only when its final row is
+6. Run `02_verify.sql` and accept the repair only when its final row is
    `OVERALL | PASS`.
-6. Re-run `../academic-calendar-phase1/02_verify.sql`; it must also finish with
+7. Re-run `../academic-calendar-phase1/02_verify.sql`; it must also finish with
    `OVERALL | PASS`.
+8. Exit maintenance mode only after both verification scripts return `PASS`.
 
 `REPAIRABLE_SOURCE` identifies the known deployed layout. `ALREADY_COMPATIBLE`
 means no repair remains. `SAFE_PARTIAL` identifies only a known, empty,
@@ -33,6 +37,13 @@ The repair fails closed unless both `academic_calendar_events` and
 `academic_calendar_event_versions` are empty. It never copies, rewrites, or
 deletes academic years, semesters, event-type vocabulary, lifecycle history,
 permissions, or role mappings. It does not seed data.
+
+Maintenance mode is a hard operational gate because MariaDB DDL commits
+implicitly and cannot make the full multi-table repair atomic. The apply script
+also repeats fresh zero-row checks immediately before every destructive
+revision-context operation and returns `BLOCKED` if either table is non-empty
+at its final check; these guards supplement, but do not replace, maintenance
+mode.
 
 The structural repair moves semester and event-type context to the logical
 event, restores the merged indexes and foreign keys, converts state enums to

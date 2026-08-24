@@ -104,6 +104,10 @@ SET @acr_context_fk_total := (SELECT COUNT(*) FROM information_schema.key_column
 SET @acr_compatible_context_fks := (SELECT COUNT(*) FROM information_schema.key_column_usage k JOIN information_schema.referential_constraints r ON r.constraint_schema=k.constraint_schema AND r.table_name=k.table_name AND r.constraint_name=k.constraint_name WHERE k.table_schema='alrowad_uni_rust' AND r.delete_rule IN ('RESTRICT','NO ACTION') AND r.update_rule IN ('RESTRICT','NO ACTION') AND ((k.table_name='academic_calendar_events' AND k.constraint_name='fk_ace_semester' AND k.column_name='semester_id' AND k.referenced_table_name='semesters' AND k.referenced_column_name='semester_id') OR (k.table_name='academic_calendar_events' AND k.constraint_name='fk_ace_event_type' AND k.column_name='academic_calendar_event_type_id' AND k.referenced_table_name='academic_calendar_event_types' AND k.referenced_column_name='academic_calendar_event_type_id') OR (k.table_name='academic_calendar_event_versions' AND k.constraint_name='fk_acev_semester' AND k.column_name='semester_id' AND k.referenced_table_name='semesters' AND k.referenced_column_name='semester_id') OR (k.table_name='academic_calendar_event_versions' AND k.constraint_name='fk_acev_event_type' AND k.column_name='academic_calendar_event_type_id' AND k.referenced_table_name='academic_calendar_event_types' AND k.referenced_column_name='academic_calendar_event_type_id')));
 SET @acr_unknown_calendar_fks := (SELECT COUNT(*) FROM information_schema.key_column_usage WHERE table_schema='alrowad_uni_rust' AND referenced_table_name IS NOT NULL AND table_name IN ('academic_calendar_events','academic_calendar_event_versions','academic_calendar_year_lifecycle_events') AND constraint_name NOT IN ('fk_ace_year','fk_ace_semester','fk_ace_event_type','fk_ace_created_by','fk_ace_cancelled_by','fk_acev_event','fk_acev_replaces','fk_acev_semester','fk_acev_event_type','fk_acev_created_by','fk_acev_published_by','fk_acyle_year','fk_acyle_actor'));
 SET @acr_unknown_indexes := (SELECT COUNT(DISTINCT table_name,index_name) FROM information_schema.statistics WHERE table_schema='alrowad_uni_rust' AND table_name IN ('academic_calendar_event_types','academic_calendar_events','academic_calendar_event_versions','academic_calendar_year_lifecycle_events') AND NOT ((table_name='academic_calendar_event_types' AND index_name IN ('PRIMARY','uq_acet_code','idx_acet_kind_active')) OR (table_name='academic_calendar_events' AND index_name IN ('PRIMARY','idx_ace_year','idx_ace_year_semester','idx_ace_event_type','idx_ace_cancelled_at','idx_ace_created_by','idx_ace_cancelled_by')) OR (table_name='academic_calendar_event_versions' AND index_name IN ('PRIMARY','uq_acev_event_version','uq_acev_published_event_slot','idx_acev_event_status','idx_acev_semester','idx_acev_event_type','idx_acev_publication_window','idx_acev_replaces','idx_acev_created_by','idx_acev_published_by')) OR (table_name='academic_calendar_year_lifecycle_events' AND index_name IN ('PRIMARY','idx_acyle_year_occurred','idx_acyle_to_status','idx_acyle_status_occurred','idx_acyle_actor'))));
+SET @acr_known_common_index_names := (SELECT COUNT(DISTINCT table_name,index_name) FROM information_schema.statistics WHERE table_schema='alrowad_uni_rust' AND ((table_name='academic_calendar_event_types' AND index_name='idx_acet_kind_active') OR (table_name='academic_calendar_events' AND index_name='idx_ace_cancelled_at') OR (table_name='academic_calendar_event_versions' AND index_name IN ('idx_acev_event_status','idx_acev_publication_window','idx_acev_replaces')) OR (table_name='academic_calendar_year_lifecycle_events' AND index_name IN ('idx_acyle_year_occurred','idx_acyle_actor'))));
+SET @acr_compatible_common_indexes := (SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema='alrowad_uni_rust' AND seq_in_index=1 AND ((table_name='academic_calendar_event_types' AND index_name='idx_acet_kind_active' AND column_name='event_type_kind') OR (table_name='academic_calendar_events' AND index_name='idx_ace_cancelled_at' AND column_name='cancelled_at') OR (table_name='academic_calendar_event_versions' AND index_name='idx_acev_event_status' AND column_name='academic_calendar_event_id') OR (table_name='academic_calendar_event_versions' AND index_name='idx_acev_publication_window' AND column_name='publication_status') OR (table_name='academic_calendar_event_versions' AND index_name='idx_acev_replaces' AND column_name='replaces_version_id') OR (table_name='academic_calendar_year_lifecycle_events' AND index_name='idx_acyle_year_occurred' AND column_name='academic_year_id') OR (table_name='academic_calendar_year_lifecycle_events' AND index_name='idx_acyle_actor' AND column_name='actor_user_id')));
+SET @acr_known_migration_index_names := (SELECT COUNT(DISTINCT table_name,index_name) FROM information_schema.statistics WHERE table_schema='alrowad_uni_rust' AND ((table_name='academic_calendar_events' AND index_name IN ('idx_ace_year','idx_ace_year_semester','idx_ace_event_type')) OR (table_name='academic_calendar_event_versions' AND index_name IN ('idx_acev_semester','idx_acev_event_type')) OR (table_name='academic_calendar_year_lifecycle_events' AND index_name IN ('idx_acyle_to_status','idx_acyle_status_occurred'))));
+SET @acr_compatible_migration_indexes := (SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema='alrowad_uni_rust' AND seq_in_index=1 AND ((table_name='academic_calendar_events' AND index_name='idx_ace_year' AND column_name='academic_year_id') OR (table_name='academic_calendar_events' AND index_name='idx_ace_year_semester' AND column_name='academic_year_id') OR (table_name='academic_calendar_events' AND index_name='idx_ace_event_type' AND column_name='academic_calendar_event_type_id') OR (table_name='academic_calendar_event_versions' AND index_name='idx_acev_semester' AND column_name='semester_id') OR (table_name='academic_calendar_event_versions' AND index_name='idx_acev_event_type' AND column_name='academic_calendar_event_type_id') OR (table_name='academic_calendar_year_lifecycle_events' AND index_name='idx_acyle_to_status' AND column_name='to_status') OR (table_name='academic_calendar_year_lifecycle_events' AND index_name='idx_acyle_status_occurred' AND column_name='to_status')));
 SET @acr_data_sql := IF(
     @acr_required_tables_ok AND @acr_data_columns_ok,
     'SELECT
@@ -159,6 +163,8 @@ SET @acr_apply_allowed := @acr_database_ok AND @acr_required_tables_ok AND @acr_
     AND @acr_noncontext_fks = 9 AND @acr_unknown_calendar_fks = 0
     AND @acr_compatible_context_fks = @acr_context_fk_total
     AND @acr_unknown_indexes = 0
+    AND @acr_known_common_index_names = @acr_compatible_common_indexes
+    AND @acr_known_migration_index_names = @acr_compatible_migration_indexes
     AND @acr_event_rows = 0 AND @acr_version_rows = 0
     AND @acr_bad_year_states = 0 AND @acr_bad_type_values = 0
     AND @acr_bad_lifecycle_history = 0 AND @acr_seed_codes = 13
@@ -167,7 +173,11 @@ SET @acr_apply_allowed := @acr_database_ok AND @acr_required_tables_ok AND @acr_
     AND @acr_other_mappings = 0 AND @acr_semester_codes = 3;
 
 -- Remove context ownership from revisions before adding it to logical events.
-SET @acr_sql := IF(@acr_apply_allowed AND EXISTS(
+-- Each destructive step repeats a fresh zero-row guard; the initial snapshot is not sufficient.
+SET @acr_sql := IF(@acr_apply_allowed
+    AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`academic_calendar_events`) = 0
+    AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`academic_calendar_event_versions`) = 0
+    AND EXISTS(
     SELECT 1 FROM information_schema.key_column_usage
     WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'academic_calendar_event_versions'
       AND constraint_name = 'fk_acev_semester' AND referenced_table_name IS NOT NULL
@@ -175,7 +185,10 @@ SET @acr_sql := IF(@acr_apply_allowed AND EXISTS(
    'SELECT ''SKIPPED_DROP_VERSION_SEMESTER_FK'' AS apply_step');
 PREPARE acr_step FROM @acr_sql; EXECUTE acr_step; DEALLOCATE PREPARE acr_step;
 
-SET @acr_sql := IF(@acr_apply_allowed AND EXISTS(
+SET @acr_sql := IF(@acr_apply_allowed
+    AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`academic_calendar_events`) = 0
+    AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`academic_calendar_event_versions`) = 0
+    AND EXISTS(
     SELECT 1 FROM information_schema.key_column_usage
     WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'academic_calendar_event_versions'
       AND constraint_name = 'fk_acev_event_type' AND referenced_table_name IS NOT NULL
@@ -183,7 +196,10 @@ SET @acr_sql := IF(@acr_apply_allowed AND EXISTS(
    'SELECT ''SKIPPED_DROP_VERSION_TYPE_FK'' AS apply_step');
 PREPARE acr_step FROM @acr_sql; EXECUTE acr_step; DEALLOCATE PREPARE acr_step;
 
-SET @acr_sql := IF(@acr_apply_allowed AND EXISTS(
+SET @acr_sql := IF(@acr_apply_allowed
+    AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`academic_calendar_events`) = 0
+    AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`academic_calendar_event_versions`) = 0
+    AND EXISTS(
     SELECT 1 FROM information_schema.statistics
     WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'academic_calendar_event_versions'
       AND index_name = 'idx_acev_semester'
@@ -191,7 +207,10 @@ SET @acr_sql := IF(@acr_apply_allowed AND EXISTS(
    'SELECT ''SKIPPED_DROP_VERSION_SEMESTER_INDEX'' AS apply_step');
 PREPARE acr_step FROM @acr_sql; EXECUTE acr_step; DEALLOCATE PREPARE acr_step;
 
-SET @acr_sql := IF(@acr_apply_allowed AND EXISTS(
+SET @acr_sql := IF(@acr_apply_allowed
+    AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`academic_calendar_events`) = 0
+    AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`academic_calendar_event_versions`) = 0
+    AND EXISTS(
     SELECT 1 FROM information_schema.statistics
     WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'academic_calendar_event_versions'
       AND index_name = 'idx_acev_event_type'
@@ -199,7 +218,10 @@ SET @acr_sql := IF(@acr_apply_allowed AND EXISTS(
    'SELECT ''SKIPPED_DROP_VERSION_TYPE_INDEX'' AS apply_step');
 PREPARE acr_step FROM @acr_sql; EXECUTE acr_step; DEALLOCATE PREPARE acr_step;
 
-SET @acr_sql := IF(@acr_apply_allowed AND EXISTS(
+SET @acr_sql := IF(@acr_apply_allowed
+    AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`academic_calendar_events`) = 0
+    AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`academic_calendar_event_versions`) = 0
+    AND EXISTS(
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'academic_calendar_event_versions'
       AND column_name = 'semester_id'
@@ -207,7 +229,10 @@ SET @acr_sql := IF(@acr_apply_allowed AND EXISTS(
    'SELECT ''SKIPPED_DROP_VERSION_SEMESTER'' AS apply_step');
 PREPARE acr_step FROM @acr_sql; EXECUTE acr_step; DEALLOCATE PREPARE acr_step;
 
-SET @acr_sql := IF(@acr_apply_allowed AND EXISTS(
+SET @acr_sql := IF(@acr_apply_allowed
+    AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`academic_calendar_events`) = 0
+    AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`academic_calendar_event_versions`) = 0
+    AND EXISTS(
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'academic_calendar_event_versions'
       AND column_name = 'academic_calendar_event_type_id'
@@ -280,6 +305,62 @@ SET @acr_sql := IF(@acr_apply_allowed AND NOT EXISTS(
       AND index_name = 'idx_acyle_status_occurred'
 ), 'ALTER TABLE `alrowad_uni_rust`.`academic_calendar_year_lifecycle_events` ADD KEY `idx_acyle_status_occurred` (`to_status`, `occurred_at`)',
    'SELECT ''SKIPPED_ADD_LIFECYCLE_STATUS_INDEX'' AS apply_step');
+PREPARE acr_step FROM @acr_sql; EXECUTE acr_step; DEALLOCATE PREPARE acr_step;
+
+SET @acr_sql := IF(@acr_apply_allowed AND NOT EXISTS(
+    SELECT 1 FROM information_schema.statistics
+    WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'academic_calendar_event_types'
+      AND index_name = 'idx_acet_kind_active'
+), 'ALTER TABLE `alrowad_uni_rust`.`academic_calendar_event_types` ADD KEY `idx_acet_kind_active` (`event_type_kind`, `is_active`)',
+   'SELECT ''SKIPPED_ADD_EVENT_TYPE_KIND_INDEX'' AS apply_step');
+PREPARE acr_step FROM @acr_sql; EXECUTE acr_step; DEALLOCATE PREPARE acr_step;
+
+SET @acr_sql := IF(@acr_apply_allowed AND NOT EXISTS(
+    SELECT 1 FROM information_schema.statistics
+    WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'academic_calendar_events'
+      AND index_name = 'idx_ace_cancelled_at'
+), 'ALTER TABLE `alrowad_uni_rust`.`academic_calendar_events` ADD KEY `idx_ace_cancelled_at` (`cancelled_at`)',
+   'SELECT ''SKIPPED_ADD_EVENT_CANCELLED_INDEX'' AS apply_step');
+PREPARE acr_step FROM @acr_sql; EXECUTE acr_step; DEALLOCATE PREPARE acr_step;
+
+SET @acr_sql := IF(@acr_apply_allowed AND NOT EXISTS(
+    SELECT 1 FROM information_schema.statistics
+    WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'academic_calendar_event_versions'
+      AND index_name = 'idx_acev_event_status'
+), 'ALTER TABLE `alrowad_uni_rust`.`academic_calendar_event_versions` ADD KEY `idx_acev_event_status` (`academic_calendar_event_id`, `publication_status`)',
+   'SELECT ''SKIPPED_ADD_VERSION_EVENT_STATUS_INDEX'' AS apply_step');
+PREPARE acr_step FROM @acr_sql; EXECUTE acr_step; DEALLOCATE PREPARE acr_step;
+
+SET @acr_sql := IF(@acr_apply_allowed AND NOT EXISTS(
+    SELECT 1 FROM information_schema.statistics
+    WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'academic_calendar_event_versions'
+      AND index_name = 'idx_acev_publication_window'
+), 'ALTER TABLE `alrowad_uni_rust`.`academic_calendar_event_versions` ADD KEY `idx_acev_publication_window` (`publication_status`, `starts_at`, `ends_at`)',
+   'SELECT ''SKIPPED_ADD_VERSION_PUBLICATION_WINDOW_INDEX'' AS apply_step');
+PREPARE acr_step FROM @acr_sql; EXECUTE acr_step; DEALLOCATE PREPARE acr_step;
+
+SET @acr_sql := IF(@acr_apply_allowed AND NOT EXISTS(
+    SELECT 1 FROM information_schema.statistics
+    WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'academic_calendar_event_versions'
+      AND index_name = 'idx_acev_replaces'
+), 'ALTER TABLE `alrowad_uni_rust`.`academic_calendar_event_versions` ADD KEY `idx_acev_replaces` (`replaces_version_id`)',
+   'SELECT ''SKIPPED_ADD_VERSION_REPLACES_INDEX'' AS apply_step');
+PREPARE acr_step FROM @acr_sql; EXECUTE acr_step; DEALLOCATE PREPARE acr_step;
+
+SET @acr_sql := IF(@acr_apply_allowed AND NOT EXISTS(
+    SELECT 1 FROM information_schema.statistics
+    WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'academic_calendar_year_lifecycle_events'
+      AND index_name = 'idx_acyle_year_occurred'
+), 'ALTER TABLE `alrowad_uni_rust`.`academic_calendar_year_lifecycle_events` ADD KEY `idx_acyle_year_occurred` (`academic_year_id`, `occurred_at`)',
+   'SELECT ''SKIPPED_ADD_LIFECYCLE_YEAR_INDEX'' AS apply_step');
+PREPARE acr_step FROM @acr_sql; EXECUTE acr_step; DEALLOCATE PREPARE acr_step;
+
+SET @acr_sql := IF(@acr_apply_allowed AND NOT EXISTS(
+    SELECT 1 FROM information_schema.statistics
+    WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'academic_calendar_year_lifecycle_events'
+      AND index_name = 'idx_acyle_actor'
+), 'ALTER TABLE `alrowad_uni_rust`.`academic_calendar_year_lifecycle_events` ADD KEY `idx_acyle_actor` (`actor_user_id`)',
+   'SELECT ''SKIPPED_ADD_LIFECYCLE_ACTOR_INDEX'' AS apply_step');
 PREPARE acr_step FROM @acr_sql; EXECUTE acr_step; DEALLOCATE PREPARE acr_step;
 
 -- Restore context foreign keys on the logical event.
@@ -396,13 +477,16 @@ SET @acr_post_version_context := (SELECT COUNT(*) FROM information_schema.column
 SET @acr_post_checks := (SELECT COUNT(*) FROM information_schema.table_constraints WHERE table_schema='alrowad_uni_rust' AND constraint_type='CHECK' AND constraint_name IN ('chk_ay_calendar_lifecycle_status','chk_acet_kind','chk_acet_flags','chk_ace_cancellation','chk_acev_version_number','chk_acev_window','chk_acev_enforcement','chk_acev_change_reason','chk_acev_publication','chk_acyle_from_status','chk_acyle_to_status','chk_acyle_reason'));
 SET @acr_post_varchars := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='alrowad_uni_rust' AND data_type='varchar' AND ((table_name='academic_years' AND column_name='calendar_lifecycle_status') OR (table_name='academic_calendar_event_types' AND column_name='event_type_kind') OR (table_name='academic_calendar_event_versions' AND column_name='publication_status') OR (table_name='academic_calendar_year_lifecycle_events' AND column_name IN ('from_status','to_status'))));
 SET @acr_post_context_fks := (SELECT COUNT(*) FROM information_schema.key_column_usage WHERE table_schema='alrowad_uni_rust' AND table_name='academic_calendar_events' AND referenced_table_name IS NOT NULL AND constraint_name IN ('fk_ace_semester','fk_ace_event_type'));
-SET @acr_post_repair_indexes := (SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema='alrowad_uni_rust' AND seq_in_index=1 AND ((table_name='academic_calendar_events' AND index_name IN ('idx_ace_year_semester','idx_ace_event_type')) OR (table_name='academic_calendar_year_lifecycle_events' AND index_name='idx_acyle_status_occurred')));
+SET @acr_post_target_indexes := (SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema='alrowad_uni_rust' AND seq_in_index=1 AND ((table_name='academic_calendar_event_types' AND index_name='idx_acet_kind_active' AND column_name='event_type_kind') OR (table_name='academic_calendar_events' AND index_name='idx_ace_year_semester' AND column_name='academic_year_id') OR (table_name='academic_calendar_events' AND index_name='idx_ace_event_type' AND column_name='academic_calendar_event_type_id') OR (table_name='academic_calendar_events' AND index_name='idx_ace_cancelled_at' AND column_name='cancelled_at') OR (table_name='academic_calendar_event_versions' AND index_name='idx_acev_event_status' AND column_name='academic_calendar_event_id') OR (table_name='academic_calendar_event_versions' AND index_name='idx_acev_publication_window' AND column_name='publication_status') OR (table_name='academic_calendar_event_versions' AND index_name='idx_acev_replaces' AND column_name='replaces_version_id') OR (table_name='academic_calendar_year_lifecycle_events' AND index_name='idx_acyle_year_occurred' AND column_name='academic_year_id') OR (table_name='academic_calendar_year_lifecycle_events' AND index_name='idx_acyle_status_occurred' AND column_name='to_status') OR (table_name='academic_calendar_year_lifecycle_events' AND index_name='idx_acyle_actor' AND column_name='actor_user_id')));
 SET @acr_post_source_indexes := (SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema='alrowad_uni_rust' AND index_name IN ('idx_ace_year','idx_acev_semester','idx_acev_event_type','idx_acyle_to_status') AND table_name IN ('academic_calendar_events','academic_calendar_event_versions','academic_calendar_year_lifecycle_events'));
 SET @acr_post_comments := (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='alrowad_uni_rust' AND table_name IN ('academic_calendar_event_types','academic_calendar_events','academic_calendar_event_versions','academic_calendar_year_lifecycle_events') AND table_comment LIKE '%[academic-calendar-phase1]%');
 
 SELECT 'OVERALL' AS report_section,
-       IF(@acr_apply_allowed AND @acr_post_event_context = 2
+       IF(@acr_apply_allowed
+          AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`academic_calendar_events`) = 0
+          AND (SELECT COUNT(*) FROM `alrowad_uni_rust`.`academic_calendar_event_versions`) = 0
+          AND @acr_post_event_context = 2
           AND @acr_post_version_context = 0 AND @acr_post_checks = 12
           AND @acr_post_varchars = 5 AND @acr_post_context_fks = 2
-          AND @acr_post_repair_indexes = 3 AND @acr_post_source_indexes = 0
+          AND @acr_post_target_indexes = 10 AND @acr_post_source_indexes = 0
           AND @acr_post_comments = 4, 'APPLIED', 'BLOCKED') AS result;
