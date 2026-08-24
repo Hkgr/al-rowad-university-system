@@ -15,14 +15,26 @@ class AcademicCalendarPhase2ContractTest extends TestCase
         }
         self::assertSame([], glob($root.'/database/migrations/*academic*calendar*') ?: []);
         $apply = file_get_contents($package.'/01_apply.sql');
+        $preflight = file_get_contents($package.'/00_preflight.sql');
+        $verify = file_get_contents($package.'/02_verify.sql');
+        $rollback = file_get_contents($package.'/03_rollback.sql');
         self::assertStringContainsString('academic_calendar.manage', $apply);
         self::assertStringContainsString('vice_president_scientific', $apply);
         self::assertStringNotContainsString('CREATE TABLE', strtoupper($apply));
+        self::assertStringContainsString("p.description LIKE '%[academic-calendar-phase2-rbac]%'", $apply);
+        self::assertStringContainsString('permission_rows=0 OR owned_permission=1 OR scientific_mapping=1', $preflight);
+        self::assertStringContainsString('EXTERNAL_MAPPING_MISSING_BLOCKED', $preflight);
+        self::assertStringContainsString("description LIKE '%[academic-calendar-phase2-rbac]%'", $rollback);
 
         foreach (['00_preflight.sql', '02_verify.sql'] as $readOnlyFile) {
             $sql = file_get_contents($package.'/'.$readOnlyFile);
             self::assertDoesNotMatchRegularExpression('/^\s*(INSERT|UPDATE|DELETE|ALTER|CREATE|DROP)\b/im', $sql);
+            self::assertDoesNotMatchRegularExpression('/\b(PREPARE|EXECUTE)\b/i', $sql);
+            self::assertDoesNotMatchRegularExpression('/\bINTO\s+@/i', $sql);
+            self::assertDoesNotMatchRegularExpression('/^\s*SET\s+@/im', $sql);
         }
+        self::assertStringContainsString("'OVERALL'", $preflight);
+        self::assertStringContainsString("'OVERALL'", $verify);
         foreach (['00_preflight.sql', '01_apply.sql', '02_verify.sql', '03_rollback.sql'] as $sqlFile) {
             $sql = strtoupper(file_get_contents($package.'/'.$sqlFile));
             foreach (['DATABASE()', 'DELIMITER', 'SIGNAL', 'CREATE PROCEDURE', 'CREATE FUNCTION'] as $forbidden) {
