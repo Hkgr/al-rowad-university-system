@@ -96,6 +96,7 @@ class AcademicCalendarPhase4RegistrationRequestTest extends TestCase
         $workspace = $this->requestService($registration, $year)->studentWorkspace($student, 1);
 
         self::assertFalse($workspace['registration_open']);
+        self::assertTrue($workspace['request_item_removal_open']);
         self::assertSame([], $workspace['available_courses']->all());
         self::assertSame(1, (int) $workspace['semester']->semester_id);
     }
@@ -166,12 +167,48 @@ class AcademicCalendarPhase4RegistrationRequestTest extends TestCase
         $liveWorkspace = $service->studentWorkspace($student);
         self::assertSame(2, (int) $liveWorkspace['semester']->semester_id);
         self::assertTrue($liveWorkspace['registration_open']);
+        self::assertTrue($liveWorkspace['request_item_removal_open']);
 
         $closedWorkspace = $service->studentWorkspace($student, 1);
         self::assertSame(1, (int) $closedWorkspace['semester']->semester_id);
         self::assertFalse($closedWorkspace['registration_open']);
+        self::assertTrue($closedWorkspace['request_item_removal_open']);
         self::assertSame([1, 2], $closedWorkspace['semesters']->pluck('semester_id')->map(fn ($id): int => (int) $id)->all());
         self::assertNotNull($closedWorkspace['request']);
+    }
+
+    public function test_workflow_closed_request_semester_stays_viewable_but_removal_is_unavailable(): void
+    {
+        [$year, , $student] = $this->contextModels();
+        DB::table('students')->insert(['student_id' => 1]);
+        DB::table('academic_years')->insert(['academic_year_id' => 1, 'academic_year_name' => '2026-2027']);
+        DB::table('semesters')->insert(['semester_id' => 1, 'semester_name' => 'First', 'semester_order' => 1]);
+        DB::table('student_registration_requests')->insert([
+            'student_registration_request_id' => 1,
+            'student_id' => 1,
+            'academic_year_id' => 1,
+            'semester_id' => 1,
+            'status' => 'draft',
+            'submission_version' => 0,
+        ]);
+
+        $registration = Mockery::mock(RegistrationService::class);
+        $registration->shouldReceive('selfRegistrationOpenSemesters')->once()->andReturn(collect());
+        $registration->shouldNotReceive('courseRegistrationWindow');
+        $registration->shouldReceive('hoursSnapshot')->zeroOrMoreTimes()->andReturn([
+            'registered_hours' => 0,
+            'max_allowed_hours' => 18,
+            'remaining_hours' => 18,
+        ]);
+        $registration->shouldReceive('currentOfferingIds')->zeroOrMoreTimes()->andReturn([]);
+        $registration->shouldReceive('getRegistrationSummary')->once()->andReturn([]);
+
+        $workspace = $this->requestService($registration, $year)->studentWorkspace($student, 1);
+
+        self::assertSame(1, (int) $workspace['semester']->semester_id);
+        self::assertFalse($workspace['registration_open']);
+        self::assertFalse($workspace['request_item_removal_open']);
+        self::assertNotNull($workspace['request']);
     }
 
     private function requestService(RegistrationService $registration, AcademicYear $year): RegistrationRequestService

@@ -7,6 +7,8 @@ $contract = static function (string $backendRoot): array {
         'requests' => $backendRoot.'/app/Services/RegistrationRequestService.php',
         'exception' => $backendRoot.'/app/Exceptions/RegistrationException.php',
         'policy' => $backendRoot.'/app/Services/AcademicCalendarPolicyService.php',
+        'controller' => $backendRoot.'/app/Http/Controllers/Api/StudentSelfRegistrationController.php',
+        'frontend' => dirname($backendRoot).'/frontend/src/features/student-dashboard/pages/StudentRegistration.jsx',
     ];
 
     foreach ($paths as $name => $path) {
@@ -42,6 +44,8 @@ $contract = static function (string $backendRoot): array {
     $requests = $sources['requests'];
     $exception = $sources['exception'];
     $policy = $sources['policy'];
+    $controller = $sources['controller'];
+    $frontend = $sources['frontend'];
     $window = $method($registration, 'courseRegistrationWindow');
     $assertWindow = $method($registration, 'assertCourseRegistrationWindowOpen');
     $materialize = $method($registration, 'performRegisterStudent');
@@ -96,12 +100,28 @@ $contract = static function (string $backendRoot): array {
     $expect(str_contains($workspace, '$calendarWindowBySemesterId') && str_contains($workspace, '->mapWithKeys('), 'Workspace must build a local evaluation map for every workflow-open semester.');
     $expect(str_contains($workspace, '$liveOpenSemesters') && str_contains($workspace, 'resolveWorkspaceSemester($selectableSemesters, $liveOpenSemesters'), 'Workspace selection must use calendar-filtered live-open semesters.');
     $expect(str_contains($workspace, '$liveOpenSemesters->contains('), 'registration_open must be derived from the filtered live-open semester collection.');
+    $expect(str_contains($workspace, "'request_item_removal_open' => \$requestItemRemovalOpen"), 'Workspace must expose the separate request-item removal capability.');
+    $expect(str_contains($workspace, '$requestItemRemovalOpen') && str_contains($workspace, '$openSemesters->contains('), 'Removal capability must use legacy workflow-open semesters.');
+    $expect(str_contains($controller, "'request_item_removal_open' => \$workspace['request_item_removal_open']"), 'Student registration API must expose the removal capability.');
     foreach (['addItem' => $add, 'updateNotes' => $notes, 'submit' => $submit] as $name => $source) {
         $expect(str_contains($source, 'assertCourseRegistrationWindowOpen('), $name.' must reject closed preparation mutations.');
     }
     $expect(! str_contains($remove, 'courseRegistrationWindow') && ! str_contains($remove, 'assertCourseRegistrationWindowOpen'), 'removeItem must remain ungated by Academic Calendar.');
     $expect(str_contains($approve, 'DB::transaction(') && str_contains($approve, 'registerStudentWithinTransaction('), 'Approval must preserve canonical transactional materialization.');
     $expect(str_contains($requests, 'approvalErrorCode(') && str_contains($requests, 'COURSE_REGISTRATION_WINDOW_CLOSED'), 'Approval must preserve calendar machine codes.');
+
+    $expect(str_contains($frontend, 'const requestItemRemovalOpen = payload?.request_item_removal_open === true'), 'Frontend must consume the removal capability.');
+    $expect(str_contains($frontend, 'const canRemoveItem = requestItemRemovalOpen'), 'Frontend must derive a distinct removal predicate.');
+    $removeButton = strpos($frontend, 'onClick={() => removeItem(item)}');
+    $removeContext = $removeButton === false ? '' : substr($frontend, max(0, $removeButton - 240), 480);
+    $expect(str_contains($removeContext, '{canRemoveItem ? ('), 'Remove button must depend on canRemoveItem.');
+    $expect(! str_contains($removeContext, '{canEdit ? ('), 'Remove button must not depend on calendar-gated canEdit.');
+    $expect(str_contains($frontend, 'const canEdit = registrationOpen && termReady'), 'Preparation capability must remain tied to registration_open.');
+    $expect(str_contains($frontend, 'canEdit={canEdit}'), 'Course add controls must remain tied to canEdit.');
+    $expect(str_contains($frontend, 'if (!canEdit) return') && str_contains($frontend, 'disabled={!canEdit}'), 'Notes editing must remain tied to canEdit.');
+    $submitButton = strpos($frontend, 'onClick={() => setConfirm({ type: \'submit\' })}');
+    $submitContext = $submitButton === false ? '' : substr($frontend, max(0, $submitButton - 240), 480);
+    $expect(str_contains($submitContext, '{canEdit ? ('), 'Submit control must remain tied to canEdit.');
 
     foreach (['isCourseRegistrationOpen', 'assertCourseRegistrationOpen'] as $registrationSpecificPolicyMethod) {
         $expect(! str_contains($policy, $registrationSpecificPolicyMethod), 'Phase 3 policy must remain generic: '.$registrationSpecificPolicyMethod);

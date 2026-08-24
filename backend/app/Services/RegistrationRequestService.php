@@ -69,6 +69,8 @@ class RegistrationRequestService
         $semester = $this->resolveWorkspaceSemester($selectableSemesters, $liveOpenSemesters, $yearRequests, $semesterId);
         $registrationOpen = $semester !== null
             && $liveOpenSemesters->contains(fn ($open) => (int) $open->semester_id === (int) $semester->semester_id);
+        $requestItemRemovalOpen = $semester !== null
+            && $openSemesters->contains(fn ($open) => (int) $open->semester_id === (int) $semester->semester_id);
 
         $request = null;
         $available = collect();
@@ -104,6 +106,7 @@ class RegistrationRequestService
 
         return [
             'registration_open' => $registrationOpen,
+            'request_item_removal_open' => $requestItemRemovalOpen,
             'academic_year' => $year,
             'semester' => $semester,
             'semesters' => $selectableSemesters,
