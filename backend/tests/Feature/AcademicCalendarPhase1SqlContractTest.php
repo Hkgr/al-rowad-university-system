@@ -108,6 +108,59 @@ class AcademicCalendarPhase1SqlContractTest extends TestCase
         }
     }
 
+    public function test_preflight_ends_with_one_visible_ready_or_blocked_operator_report(): void
+    {
+        $preflight = $this->sql('00_preflight.sql');
+
+        self::assertSame(0, preg_match_all('/\bINTO\s+@/i', $preflight));
+        self::assertSame(0, preg_match_all('/^PREPARE\s+/mi', $preflight));
+        self::assertSame(1, preg_match_all('/^EXECUTE IMMEDIATE\s+/mi', $preflight));
+        self::assertStringEndsWith('EXECUTE IMMEDIATE @ac1_report_sql;', trim($preflight));
+        self::assertStringContainsString('SELECT report_section, result, details', $preflight);
+
+        foreach ([
+            'DATABASE_AND_CORE',
+            'CURRENT_YEAR_AND_LINKS',
+            'STRUCTURE_COMPATIBILITY',
+            'PHASE1_OBJECTS',
+            'OVERALL',
+        ] as $reportSection) {
+            self::assertStringContainsString($reportSection, $preflight);
+        }
+
+        self::assertStringContainsString("''READY'', ''BLOCKED''", $preflight);
+        self::assertStringContainsString("SELECT 5, ''OVERALL'', ''BLOCKED''", $preflight);
+        self::assertStringContainsString('ORDER BY report_order', $preflight);
+    }
+
+    public function test_preflight_visible_report_preserves_structural_and_data_safety_checks(): void
+    {
+        $preflight = $this->sql('00_preflight.sql');
+
+        foreach ([
+            '@ac1_db_ready',
+            '@ac1_required_tables',
+            '@ac1_required_columns',
+            '@ac1_signed_integer_keys',
+            '@ac1_required_primary_keys',
+            '@ac1_offering_foreign_keys',
+            'SUM(is_current = 1)',
+            'SUM(is_current = 1 AND is_active = 1)',
+            'SUM(start_date > end_date)',
+            "semester_code IN (''first'', ''second'', ''summer'')",
+            'ay.academic_year_id IS NULL',
+            's.semester_id IS NULL',
+            '@ac1_extension_conflict',
+            '@ac1_types_contract',
+            '@ac1_events_contract',
+            '@ac1_versions_contract',
+            '@ac1_year_events_contract',
+            '@ac1_unexpected_calendar_objects',
+        ] as $requiredSafetyCheck) {
+            self::assertStringContainsString($requiredSafetyCheck, $preflight);
+        }
+    }
+
     public function test_academic_year_extension_is_additive_and_preserves_current_semantics(): void
     {
         $apply = $this->sql('01_apply.sql');
@@ -233,7 +286,7 @@ class AcademicCalendarPhase1SqlContractTest extends TestCase
         $verify = $this->sql('02_verify.sql');
         $rollback = $this->sql('03_rollback.sql');
 
-        self::assertStringContainsString("IF(@ac1_preflight_ready, 'READY', 'BLOCKED')", $preflight);
+        self::assertStringContainsString("''READY'', ''BLOCKED''", $preflight);
         foreach (['APPLIED', 'ALREADY_APPLIED', 'BLOCKED'] as $result) {
             self::assertStringContainsString("'{$result}'", $apply);
         }

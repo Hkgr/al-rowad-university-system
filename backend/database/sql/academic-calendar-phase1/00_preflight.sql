@@ -1,7 +1,8 @@
 -- READ ONLY. Continue only when the final OVERALL row returns READY.
 -- Academic Calendar Phase 1 foundation for MariaDB 10.11.
 -- Fully qualified objects; no selected-schema dependency.
--- SET/PREPARE/EXECUTE below are used only for guarded metadata and read queries.
+-- One guarded EXECUTE IMMEDIATE is used so missing core tables return BLOCKED
+-- without runtime errors. It is the final statement and returns one grid.
 
 SET @ac1_owner := '[academic-calendar-phase1]';
 
@@ -90,59 +91,6 @@ SET @ac1_core_ready := @ac1_db_ready
     AND @ac1_required_primary_keys
     AND @ac1_offering_foreign_keys;
 
-SET @ac1_sql := IF(
-    @ac1_core_ready,
-    'SELECT
-        COUNT(*),
-        COALESCE(SUM(is_current = 1), 0),
-        COALESCE(SUM(is_current = 1 AND is_active = 1), 0),
-        COALESCE(SUM(start_date > end_date), 0)
-     INTO @ac1_year_count, @ac1_current_count, @ac1_current_active_count, @ac1_bad_year_dates
-     FROM `alrowad_uni_rust`.`academic_years`',
-    'SELECT 0, 0, 0, 1 INTO @ac1_year_count, @ac1_current_count, @ac1_current_active_count, @ac1_bad_year_dates'
-);
-PREPARE ac1_preflight_years FROM @ac1_sql;
-EXECUTE ac1_preflight_years;
-DEALLOCATE PREPARE ac1_preflight_years;
-
-SET @ac1_sql := IF(
-    @ac1_core_ready,
-    'SELECT COUNT(*), COALESCE(SUM(semester_code IN (''first'', ''second'', ''summer'')), 0)
-     INTO @ac1_semester_count, @ac1_core_semester_code_count
-     FROM `alrowad_uni_rust`.`semesters`',
-    'SELECT 0, 0 INTO @ac1_semester_count, @ac1_core_semester_code_count'
-);
-PREPARE ac1_preflight_semesters FROM @ac1_sql;
-EXECUTE ac1_preflight_semesters;
-DEALLOCATE PREPARE ac1_preflight_semesters;
-
-SET @ac1_sql := IF(
-    @ac1_core_ready,
-    'SELECT
-        COUNT(*),
-        COALESCE(SUM(ay.academic_year_id IS NULL), 0),
-        COALESCE(SUM(s.semester_id IS NULL), 0)
-     INTO @ac1_offering_count, @ac1_orphan_offering_years, @ac1_orphan_offering_semesters
-     FROM `alrowad_uni_rust`.`course_offerings` co
-     LEFT JOIN `alrowad_uni_rust`.`academic_years` ay
-       ON ay.academic_year_id = co.academic_year_id
-     LEFT JOIN `alrowad_uni_rust`.`semesters` s
-       ON s.semester_id = co.semester_id',
-    'SELECT 0, 1, 1 INTO @ac1_offering_count, @ac1_orphan_offering_years, @ac1_orphan_offering_semesters'
-);
-PREPARE ac1_preflight_offerings FROM @ac1_sql;
-EXECUTE ac1_preflight_offerings;
-DEALLOCATE PREPARE ac1_preflight_offerings;
-
-SET @ac1_current_sane := @ac1_year_count > 0
-    AND @ac1_current_count = 1
-    AND @ac1_current_active_count = 1
-    AND @ac1_bad_year_dates = 0;
-SET @ac1_links_sane := @ac1_semester_count > 0
-    AND @ac1_core_semester_code_count = 3
-    AND @ac1_orphan_offering_years = 0
-    AND @ac1_orphan_offering_semesters = 0;
-
 -- Additive academic_years lifecycle objects.
 SET @ac1_status_exists := (
     SELECT COUNT(*)
@@ -229,31 +177,6 @@ SET @ac1_extension_conflict := @ac1_status_state = 'CONFLICT'
     OR (@ac1_status_exists = 0 AND (@ac1_slot_exists > 0 OR @ac1_lifecycle_check_exists > 0 OR @ac1_active_unique_exists > 0))
     OR (@ac1_lifecycle_check_exists > 1)
     OR (@ac1_active_unique_exists > 1);
-
-SET @ac1_sql := IF(
-    @ac1_core_ready AND @ac1_status_exists = 1,
-    'SELECT
-        COALESCE(SUM(calendar_lifecycle_status IS NOT NULL
-          AND calendar_lifecycle_status NOT IN (''draft'', ''active'', ''closed'')), 0),
-        COALESCE(SUM(calendar_lifecycle_status = ''active''), 0),
-        COALESCE(SUM(is_current = 1
-          AND calendar_lifecycle_status IS NOT NULL
-          AND calendar_lifecycle_status <> ''active''), 0),
-        COALESCE(SUM(is_current = 0 AND calendar_lifecycle_status = ''active''), 0)
-     INTO @ac1_bad_lifecycle_values, @ac1_lifecycle_active_count,
-          @ac1_current_lifecycle_mismatch, @ac1_noncurrent_lifecycle_active
-     FROM `alrowad_uni_rust`.`academic_years`',
-    'SELECT 0, 0, 0, 0 INTO @ac1_bad_lifecycle_values, @ac1_lifecycle_active_count,
-          @ac1_current_lifecycle_mismatch, @ac1_noncurrent_lifecycle_active'
-);
-PREPARE ac1_preflight_lifecycle FROM @ac1_sql;
-EXECUTE ac1_preflight_lifecycle;
-DEALLOCATE PREPARE ac1_preflight_lifecycle;
-
-SET @ac1_lifecycle_data_sane := @ac1_bad_lifecycle_values = 0
-    AND @ac1_current_lifecycle_mismatch = 0
-    AND @ac1_noncurrent_lifecycle_active = 0
-    AND @ac1_lifecycle_active_count <= 1;
 
 -- Calendar tables are adoptable only when they carry the Phase 1 ownership
 -- marker and satisfy their complete structural contract.
@@ -541,36 +464,170 @@ SET @ac1_objects_sane := @ac1_types_state <> 'CONFLICT'
     AND @ac1_unexpected_calendar_objects = 0
     AND NOT @ac1_extension_conflict;
 
-SET @ac1_preflight_ready := @ac1_core_ready
-    AND @ac1_current_sane
-    AND @ac1_links_sane
-    AND @ac1_lifecycle_data_sane
-    AND @ac1_objects_sane;
+-- Query lifecycle values only when the additive column is absent or has a
+-- compatible Phase 1 shape. A conflicting column is blocked by metadata and
+-- is never referenced as if it had the expected type.
+SET @ac1_lifecycle_checks_sql := IF(
+    @ac1_status_exists = 1 AND @ac1_status_state <> 'CONFLICT',
+    'SELECT
+       COALESCE(SUM(calendar_lifecycle_status IS NOT NULL
+         AND calendar_lifecycle_status NOT IN (''draft'', ''active'', ''closed'')), 0) AS bad_lifecycle_values,
+       COALESCE(SUM(calendar_lifecycle_status = ''active''), 0) AS lifecycle_active_count,
+       COALESCE(SUM(is_current = 1
+         AND calendar_lifecycle_status IS NOT NULL
+         AND calendar_lifecycle_status <> ''active''), 0) AS current_lifecycle_mismatch,
+       COALESCE(SUM(is_current = 0 AND calendar_lifecycle_status = ''active''), 0) AS noncurrent_lifecycle_active
+     FROM `alrowad_uni_rust`.`academic_years`',
+    'SELECT 0 AS bad_lifecycle_values,
+            0 AS lifecycle_active_count,
+            0 AS current_lifecycle_mismatch,
+            0 AS noncurrent_lifecycle_active'
+);
 
-SELECT 'DATABASE_AND_CORE' AS report_section,
-       IF(@ac1_core_ready, 'PASS', 'FAIL') AS result,
-       @@version AS server_version,
-       @ac1_year_count AS academic_year_count,
-       @ac1_semester_count AS semester_count,
-       @ac1_core_semester_code_count AS first_second_summer_count,
-       @ac1_offering_count AS course_offering_count;
+-- The dynamic statement is only a missing-table guard. Its final execution
+-- returns one compact result set, ordered so OVERALL is always the final row.
+SET @ac1_report_sql := IF(
+    @ac1_core_ready,
+    CONCAT(
+      'WITH
+       year_checks AS (
+         SELECT COUNT(*) AS academic_year_count,
+                COALESCE(SUM(is_current = 1), 0) AS current_year_count,
+                COALESCE(SUM(is_current = 1 AND is_active = 1), 0) AS current_and_active_count,
+                COALESCE(SUM(start_date > end_date), 0) AS invalid_year_date_count
+         FROM `alrowad_uni_rust`.`academic_years`
+       ),
+       semester_checks AS (
+         SELECT COUNT(*) AS semester_count,
+                COALESCE(SUM(semester_code IN (''first'', ''second'', ''summer'')), 0) AS required_semester_code_count
+         FROM `alrowad_uni_rust`.`semesters`
+       ),
+       offering_checks AS (
+         SELECT COUNT(*) AS course_offering_count,
+                COALESCE(SUM(ay.academic_year_id IS NULL), 0) AS orphan_offering_year_count,
+                COALESCE(SUM(s.semester_id IS NULL), 0) AS orphan_offering_semester_count
+         FROM `alrowad_uni_rust`.`course_offerings` co
+         LEFT JOIN `alrowad_uni_rust`.`academic_years` ay
+           ON ay.academic_year_id = co.academic_year_id
+         LEFT JOIN `alrowad_uni_rust`.`semesters` s
+           ON s.semester_id = co.semester_id
+       ),
+       lifecycle_checks AS (',
+       @ac1_lifecycle_checks_sql,
+      '),
+       readiness AS (
+         SELECT
+           (y.academic_year_count > 0
+             AND y.current_year_count = 1
+             AND y.current_and_active_count = 1
+             AND y.invalid_year_date_count = 0) AS current_year_sane,
+           (s.semester_count > 0
+             AND s.required_semester_code_count = 3
+             AND o.orphan_offering_year_count = 0
+             AND o.orphan_offering_semester_count = 0) AS links_sane,
+           (l.bad_lifecycle_values = 0
+             AND l.current_lifecycle_mismatch = 0
+             AND l.noncurrent_lifecycle_active = 0
+             AND l.lifecycle_active_count <= 1) AS lifecycle_data_sane,
+           y.academic_year_count,
+           y.current_year_count,
+           y.current_and_active_count,
+           y.invalid_year_date_count,
+           s.semester_count,
+           s.required_semester_code_count,
+           o.course_offering_count,
+           o.orphan_offering_year_count,
+           o.orphan_offering_semester_count
+         FROM year_checks y
+         CROSS JOIN semester_checks s
+         CROSS JOIN offering_checks o
+         CROSS JOIN lifecycle_checks l
+       )
+       SELECT report_section, result, details
+       FROM (
+         SELECT 1 AS report_order,
+                ''DATABASE_AND_CORE'' AS report_section,
+                ''PASS'' AS result,
+                CONCAT(''server_version='', @@version,
+                       ''; academic_years='', academic_year_count,
+                       ''; semesters='', semester_count,
+                       ''; course_offerings='', course_offering_count) AS details
+         FROM readiness
+         UNION ALL
+         SELECT 2,
+                ''CURRENT_YEAR_AND_LINKS'',
+                IF(current_year_sane AND links_sane, ''PASS'', ''FAIL''),
+                CONCAT(''current='', current_year_count,
+                       ''; current_and_active='', current_and_active_count,
+                       ''; invalid_year_dates='', invalid_year_date_count,
+                       ''; required_semester_codes='', required_semester_code_count,
+                       ''; orphan_year_links='', orphan_offering_year_count,
+                       ''; orphan_semester_links='', orphan_offering_semester_count)
+         FROM readiness
+         UNION ALL
+         SELECT 3,
+                ''STRUCTURE_COMPATIBILITY'',
+                IF(NOT @ac1_extension_conflict AND lifecycle_data_sane, ''PASS'', ''FAIL''),
+                CONCAT(''lifecycle_status='', @ac1_status_state,
+                       ''; active_slot='', @ac1_slot_state,
+                       ''; lifecycle_check_count='', @ac1_lifecycle_check_exists,
+                       ''; active_unique_count='', @ac1_active_unique_exists)
+         FROM readiness
+         UNION ALL
+         SELECT 4,
+                ''PHASE1_OBJECTS'',
+                IF(@ac1_objects_sane, ''PASS'', ''FAIL''),
+                CONCAT(''event_types='', @ac1_types_state,
+                       ''; events='', @ac1_events_state,
+                       ''; versions='', @ac1_versions_state,
+                       ''; lifecycle_events='', @ac1_year_events_state,
+                       ''; unexpected_objects='', @ac1_unexpected_calendar_objects)
+         FROM readiness
+         UNION ALL
+         SELECT 5,
+                ''OVERALL'',
+                IF(current_year_sane
+                   AND links_sane
+                   AND lifecycle_data_sane
+                   AND @ac1_objects_sane,
+                   ''READY'', ''BLOCKED''),
+                ''Continue to 01_apply.sql only when this row is READY.''
+         FROM readiness
+       ) report
+       ORDER BY report_order'
+    ),
+    'SELECT report_section, result, details
+     FROM (
+       SELECT 1 AS report_order,
+              ''DATABASE_AND_CORE'' AS report_section,
+              ''FAIL'' AS result,
+              CONCAT(''database_exists='', @ac1_db_ready,
+                     ''; required_core_tables='', @ac1_required_tables,
+                     ''; required_core_columns='', @ac1_required_columns,
+                     ''; signed_integer_keys='', @ac1_signed_integer_keys,
+                     ''; primary_keys='', @ac1_required_primary_keys,
+                     ''; offering_foreign_keys='', @ac1_offering_foreign_keys) AS details
+       UNION ALL
+       SELECT 2, ''CURRENT_YEAR_AND_LINKS'', ''FAIL'',
+              ''Not evaluated because core prerequisites are missing or incompatible.''
+       UNION ALL
+       SELECT 3, ''STRUCTURE_COMPATIBILITY'',
+              IF(@ac1_extension_conflict, ''FAIL'', ''PASS''),
+              CONCAT(''lifecycle_status='', @ac1_status_state,
+                     ''; active_slot='', @ac1_slot_state)
+       UNION ALL
+       SELECT 4, ''PHASE1_OBJECTS'',
+              IF(@ac1_objects_sane, ''PASS'', ''FAIL''),
+              CONCAT(''event_types='', @ac1_types_state,
+                     ''; events='', @ac1_events_state,
+                     ''; versions='', @ac1_versions_state,
+                     ''; lifecycle_events='', @ac1_year_events_state,
+                     ''; unexpected_objects='', @ac1_unexpected_calendar_objects)
+       UNION ALL
+       SELECT 5, ''OVERALL'', ''BLOCKED'',
+              ''Core prerequisites are missing or incompatible; do not run 01_apply.sql.''
+     ) report
+     ORDER BY report_order'
+);
 
-SELECT 'CURRENT_YEAR_AND_LINKS' AS report_section,
-       IF(@ac1_current_sane AND @ac1_links_sane, 'PASS', 'FAIL') AS result,
-       @ac1_current_count AS current_year_count,
-       @ac1_current_active_count AS current_and_active_count,
-       @ac1_bad_year_dates AS invalid_year_date_count,
-       @ac1_orphan_offering_years AS orphan_offering_year_count,
-       @ac1_orphan_offering_semesters AS orphan_offering_semester_count;
-
-SELECT 'PHASE1_OBJECTS' AS report_section,
-       @ac1_status_state AS lifecycle_status_column,
-       @ac1_slot_state AS active_slot_column,
-       @ac1_types_state AS event_types_table,
-       @ac1_events_state AS logical_events_table,
-       @ac1_versions_state AS event_versions_table,
-       @ac1_year_events_state AS year_lifecycle_events_table,
-       @ac1_unexpected_calendar_objects AS unexpected_calendar_objects;
-
-SELECT 'OVERALL' AS report_section,
-       IF(@ac1_preflight_ready, 'READY', 'BLOCKED') AS result;
+EXECUTE IMMEDIATE @ac1_report_sql;
