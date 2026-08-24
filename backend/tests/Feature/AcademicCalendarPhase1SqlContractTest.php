@@ -72,6 +72,42 @@ class AcademicCalendarPhase1SqlContractTest extends TestCase
         }
     }
 
+    public function test_preflight_enumerated_core_tables_and_event_foreign_keys_have_exact_counts(): void
+    {
+        $preflight = $this->sql('00_preflight.sql');
+        $coreTables = $this->between(
+            $preflight,
+            'SET @ac1_required_tables := (',
+            'SET @ac1_required_columns := (',
+        );
+
+        self::assertMatchesRegularExpression('/SELECT\s+COUNT\(\*\)\s*=\s*4\b/', $coreTables);
+        self::assertSame(1, preg_match('/table_name IN \((?<tables>[^)]+)\)/', $coreTables, $matches));
+        self::assertSame(4, preg_match_all("/'[^']+'/", $matches['tables']));
+
+        $eventsContract = $this->between(
+            $preflight,
+            'SET @ac1_events_contract := (',
+            'SET @ac1_events_state := CASE',
+        );
+        self::assertSame(1, preg_match(
+            '/SELECT\s+COUNT\(\*\)\s*=\s*5\s+FROM information_schema\.key_column_usage k(?<foreign_keys>.*?)\) AND \(\s+SELECT COUNT\(\*\) = 1 FROM information_schema\.table_constraints/s',
+            $eventsContract,
+            $matches,
+        ));
+        self::assertSame(5, substr_count($matches['foreign_keys'], 'k.column_name = '));
+
+        foreach ([
+            "'academic_year_id' AND k.referenced_table_name = 'academic_years'",
+            "'semester_id' AND k.referenced_table_name = 'semesters'",
+            "'academic_calendar_event_type_id' AND k.referenced_table_name = 'academic_calendar_event_types'",
+            "'created_by_user_id' AND k.referenced_table_name = 'users'",
+            "'cancelled_by_user_id' AND k.referenced_table_name = 'users'",
+        ] as $foreignKeyContract) {
+            self::assertStringContainsString($foreignKeyContract, $matches['foreign_keys']);
+        }
+    }
+
     public function test_academic_year_extension_is_additive_and_preserves_current_semantics(): void
     {
         $apply = $this->sql('01_apply.sql');

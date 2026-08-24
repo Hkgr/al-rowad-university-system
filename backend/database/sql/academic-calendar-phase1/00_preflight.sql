@@ -12,7 +12,7 @@ SET @ac1_db_ready := (
 );
 
 SET @ac1_required_tables := (
-    SELECT COUNT(*) = 5
+    SELECT COUNT(*) = 4
     FROM information_schema.tables
     WHERE table_schema = 'alrowad_uni_rust'
       AND table_type = 'BASE TABLE'
@@ -343,7 +343,7 @@ SET @ac1_events_contract := (
       AND table_name = 'academic_calendar_events'
       AND index_name = 'PRIMARY' AND column_name = 'academic_calendar_event_id'
 ) AND (
-    SELECT COUNT(*) = 4
+    SELECT COUNT(*) = 5
     FROM information_schema.key_column_usage k
     JOIN information_schema.referential_constraints r
       ON r.constraint_schema = k.constraint_schema
