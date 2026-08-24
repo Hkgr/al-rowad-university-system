@@ -90,7 +90,11 @@ test('page failure and changing or incomplete pagination fail explicitly', async
   const failing = paginatedRequest(rows, { failPage: 2 })
   await assert.rejects(
     fetchAllPaginated('/v1/courses', { request: failing.request, primaryKey: 'course_id' }),
-    error => error.code === 'catalog_page_failed',
+    error => (
+      error.code === 'catalog_page_failed'
+      && error.message.includes('courses (/v1/courses)')
+      && error.message.includes('الصفحة 2')
+    ),
   )
 
   const changing = paginatedRequest(rows, {
@@ -113,6 +117,36 @@ test('page failure and changing or incomplete pagination fail explicitly', async
   await assert.rejects(
     fetchAllPaginated('/v1/courses', { request: incomplete.request, primaryKey: 'course_id' }),
     error => error.code === 'catalog_total_mismatch',
+  )
+})
+
+test('page failure identifies the collection, page, and safe upstream HTTP context', async () => {
+  const upstream = Object.assign(new Error('Unexpected error occurred'), {
+    status: 500,
+    errorCode: 'unexpected_error',
+  })
+  await assert.rejects(
+    fetchAllPaginated('/v1/courses', {
+      request: async () => { throw upstream },
+      primaryKey: 'course_id',
+    }),
+    error => (
+      error.code === 'catalog_page_failed'
+      && error.message.includes('courses (/v1/courses)')
+      && error.message.includes('الصفحة 1')
+      && error.message.includes('HTTP 500')
+      && error.message.includes('Unexpected error occurred')
+      && error.message.includes('unexpected_error')
+    ),
+  )
+
+  const unsafe = Object.assign(new Error('Bearer secret-token-value'), { status: 500 })
+  await assert.rejects(
+    fetchAllPaginated('/v1/courses', {
+      request: async () => { throw unsafe },
+      primaryKey: 'course_id',
+    }),
+    error => error.code === 'catalog_page_failed' && !error.message.includes('secret-token-value'),
   )
 })
 

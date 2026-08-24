@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\DataScopeService;
 use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Pagination\AbstractCursorPaginator;
 use Illuminate\Pagination\AbstractPaginator;
 use Illuminate\Support\Collection;
@@ -318,10 +319,10 @@ class CourseRequirementClassification
     private static function programCourseEagerLoad(?User $user): array
     {
         return [
-            'programCourses' => function ($query) use ($user): void {
-                $query->where('is_active', true);
+            'programCourses' => function (HasMany $relation) use ($user): void {
+                $relation->where('is_active', true);
                 if ($user !== null) {
-                    app(DataScopeService::class)->scopeResourceQuery($query, $user);
+                    app(DataScopeService::class)->scopeResourceQuery($relation->getQuery(), $user);
                 }
             },
             'programCourses.requirementMapping.requirementGroup',
