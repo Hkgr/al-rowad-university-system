@@ -83,6 +83,7 @@ import DeanRegistrationRequests from '../features/dean-dashboard/pages/DeanRegis
 import DeanRegistrationRequestDetail from '../features/dean-dashboard/pages/DeanRegistrationRequestDetail'
 import DeanReports         from '../features/dean-dashboard/pages/DeanReports'
 import DeanCalendar        from '../features/dean-dashboard/pages/DeanCalendar'
+import AcademicCalendarPage from '../features/academic-calendar/AcademicCalendarPage'
 
 // ── نيابة رئاسة الجامعة (Vice Presidency shells) ───────────────────────────
 import { administrativeVicePresidentNav, scientificVicePresidentNav } from '../features/vice-presidency/nav'
@@ -147,6 +148,7 @@ export default function App() {
           <Route path="/student-affairs/students/:id/edit" element={protect(<EditStudentPage />, { permissions: ['students.manage'] })} />
           <Route path="/student-affairs/supplementary-exams" element={protect(<SupplementaryExamRegistrations />, { permissions: ['supplementary_exams.registrations.view'] })} />
           <Route path="/student-affairs/approved-registration-requests" element={protect(<ApprovedRegistrationRequestsPage />, { permissions: ['registration.view'] })} />
+          <Route path="/student-affairs/calendar" element={<AcademicCalendarPage />} />
         </Route>
 
         {/* ── بوابة الطالب dashboard ── */}
@@ -196,6 +198,7 @@ export default function App() {
           <Route path="/exam-board/courses"             element={protect(<CoursesPage />, ACCESS.courseManagement)} />
           <Route path="/exam-board/course-offerings"    element={protect(<CourseOfferingsPage />, ACCESS.courseManagement)} />
           <Route path="/exam-board/course-table"        element={protect(<CourseTablePage />, ACCESS.courseManagement)} />
+          <Route path="/exam-board/calendar" element={<AcademicCalendarPage />} />
           <Route path="/exam-board/appeals"          element={protect(<ExamPlaceholder title="التظلمات" en="Appeals" />, { permissions: ['exams.view'] })} />
           <Route path="/exam-board/settings"         element={protect(<ExamPlaceholder title="الإعدادات" en="Settings" />, { permissions: ['exams.view'] })} />
         </Route>
@@ -212,6 +215,7 @@ export default function App() {
           <Route path="/academic-structure/colleges"      element={<CollegesPage />}          />
           <Route path="/academic-structure/departments"   element={<DepartmentsPage />}       />
           <Route path="/academic-structure/programs"      element={<ProgramsPage />}          />
+          <Route path="/academic-structure/calendar" element={<AcademicCalendarPage />} />
         </Route>
 
         {/* ── الموارد البشرية dashboard ── */}
@@ -228,6 +232,7 @@ export default function App() {
           <Route path="/hr/employees/:id"      element={<EmployeeProfilePage />} />
           <Route path="/hr/faculty"            element={<FacultyPage />}         />
           <Route path="/hr/positions"          element={<PositionsPage />}       />
+          <Route path="/hr/calendar" element={<AcademicCalendarPage />} />
         </Route>
 
         {/* ── بوابة الأستاذ dashboard ── */}
@@ -242,6 +247,7 @@ export default function App() {
           <Route path="/professor/attendance"  element={<AttendanceDeprivationPage />}  />
           <Route path="/professor/grades" element={protect(<ProfessorGradesPage />, { employeeIdentity: true, permissions: ['grades.manage'] })} />
           <Route path="/professor/supplementary-exams" element={protect(<ProfessorSupplementaryExams />, { employeeIdentity: true, permissions: ['supplementary_exams.grades.view'] })} />
+          <Route path="/professor/calendar" element={<AcademicCalendarPage />} />
         </Route>
 
         {/* ── بوابة عميد الكلية dashboard ── */}
@@ -281,6 +287,7 @@ export default function App() {
           <Route path="/vp/scientific/exceptional-openings" element={<ExceptionalOpeningQueue office="scientific" />} />
           <Route path="/vp/scientific/exceptional-openings/:id" element={<ExceptionalOpeningDetail office="scientific" />} />
           <Route path="/vp/scientific/supplementary-exams" element={<SupplementaryExamPeriodsPage />} />
+          <Route path="/vp/scientific/calendar" element={<AcademicCalendarPage />} />
         </Route>
 
         {/* ── نيابة الشؤون الإدارية ── */}
@@ -296,6 +303,7 @@ export default function App() {
           <Route path="/vp/administrative/teaching-assignments/:id" element={<TeachingAssignmentDetail office="administrative" />} />
           <Route path="/vp/administrative/exceptional-openings" element={<ExceptionalOpeningQueue office="administrative" />} />
           <Route path="/vp/administrative/exceptional-openings/:id" element={<ExceptionalOpeningDetail office="administrative" />} />
+          <Route path="/vp/administrative/calendar" element={<AcademicCalendarPage />} />
         </Route>
 
         {/* Default redirect */}

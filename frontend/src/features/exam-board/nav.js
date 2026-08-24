@@ -9,6 +9,7 @@ const examBoardNav = [
   {
     label: 'هيئة الامتحانات',
     items: [
+      { to: '/exam-board/calendar', Icon: FaCalendarAlt, ar: 'التقويم الأكاديمي', en: 'Calendar', permissions: ['exams.view'] },
       { to: '/exam-board',                  Icon: FaHome,                ar: 'الرئيسية',             en: 'Home',          end: true, permissions: ['exams.view', 'grades.view'] },
       { to: '/exam-board/grade-sheet',      Icon: FaClipboardList,       ar: 'كشوف الدرجات',         en: 'Grade Sheets', permissions: ['grades.view'] },
       { to: '/exam-board/approvals',        Icon: FaCheckDouble,         ar: 'اعتماد الدرجات',       en: 'Approvals', permissions: ['exams.manage'] },

@@ -7,6 +7,7 @@ use App\Services\UserIdentityService;
 use App\Http\Controllers\Api\AcademicLevelController;
 use App\Http\Controllers\Api\AcademicProgramController;
 use App\Http\Controllers\Api\AcademicYearController;
+use App\Http\Controllers\Api\AcademicCalendarController;
 use App\Http\Controllers\Api\AccountStatusController;
 use App\Http\Controllers\Api\AdmissionApplicationController;
 use App\Http\Controllers\Api\AppealStatusController;
@@ -95,6 +96,7 @@ use App\Http\Controllers\Api\StudentAffairsDashboardController;
 use App\Http\Controllers\Api\StudentDocumentController;
 use App\Http\Controllers\Api\StudentStatusController;
 use App\Http\Controllers\Api\ScientificVicePresidentSupplementaryExamPeriodController;
+use App\Http\Controllers\Api\ScientificVicePresidentAcademicCalendarController;
 use App\Http\Controllers\Api\SupplementaryExamPeriodController;
 use App\Http\Controllers\Api\SystemModuleController;
 use App\Http\Controllers\Api\DeanTeachingAssignmentController;
@@ -196,6 +198,23 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
 
     Route::get('academic-years/current', [AcademicYearController::class, 'current']);
     Route::get('semesters/active', [SemesterController::class, 'active']);
+    Route::get('academic-calendar/catalog', [AcademicCalendarController::class, 'catalog']);
+    Route::get('academic-calendar/events', [AcademicCalendarController::class, 'events']);
+
+    Route::prefix('vice-presidency/scientific/academic-calendar')->group(function (): void {
+        Route::get('catalog', [ScientificVicePresidentAcademicCalendarController::class, 'catalog']);
+        Route::get('events', [ScientificVicePresidentAcademicCalendarController::class, 'index']);
+        Route::post('events', [ScientificVicePresidentAcademicCalendarController::class, 'store']);
+        Route::put('events/{event}/drafts/{version}', [ScientificVicePresidentAcademicCalendarController::class, 'updateDraft']);
+        Route::post('events/{event}/replacement-drafts', [ScientificVicePresidentAcademicCalendarController::class, 'replacementDraft']);
+        Route::post('events/{event}/drafts/{version}/publish', [ScientificVicePresidentAcademicCalendarController::class, 'publish']);
+        Route::delete('events/{event}/drafts/{version}', [ScientificVicePresidentAcademicCalendarController::class, 'destroyDraft']);
+        Route::post('events/{event}/cancel', [ScientificVicePresidentAcademicCalendarController::class, 'cancel']);
+        Route::get('events/{event}/history', [ScientificVicePresidentAcademicCalendarController::class, 'history']);
+        Route::post('academic-years/{year}/activate', [ScientificVicePresidentAcademicCalendarController::class, 'activateYear']);
+        Route::post('academic-years/{year}/reopen', [ScientificVicePresidentAcademicCalendarController::class, 'reopenYear']);
+        Route::post('academic-years/{year}/close', [ScientificVicePresidentAcademicCalendarController::class, 'closeYear']);
+    });
 
     /*
     |--------------------------------------------------------------------------
