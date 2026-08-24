@@ -51,6 +51,12 @@ class RegistrationRequestService
         $semester = $this->resolveWorkspaceSemester($selectableSemesters, $openSemesters, $yearRequests, $semesterId);
         $registrationOpen = $semester !== null
             && $openSemesters->contains(fn ($open) => (int) $open->semester_id === (int) $semester->semester_id);
+        if ($registrationOpen) {
+            $registrationOpen = $this->registration->courseRegistrationWindow(
+                (int) $year->academic_year_id,
+                (int) $semester->semester_id,
+            )->isOpen();
+        }
 
         $request = null;
         $available = collect();
@@ -116,6 +122,10 @@ class RegistrationRequestService
         }
 
         return DB::transaction(function () use ($student, $offering, $actor, $year): StudentRegistrationRequest {
+            $this->registration->assertCourseRegistrationWindowOpen(
+                (int) $offering->academic_year_id,
+                (int) $offering->semester_id,
+            );
             $request = $this->lockOrCreateEditableRequest(
                 $student,
                 (int) $year->academic_year_id,
@@ -220,6 +230,10 @@ class RegistrationRequestService
         $normalized = $this->normalizeStudentNotes($notes);
 
         return DB::transaction(function () use ($student, $normalized, $actor, $year, $semesterId): StudentRegistrationRequest {
+            $this->registration->assertCourseRegistrationWindowOpen(
+                (int) $year->academic_year_id,
+                $semesterId,
+            );
             $request = $this->lockOrCreateEditableRequest(
                 $student,
                 (int) $year->academic_year_id,
@@ -243,6 +257,10 @@ class RegistrationRequestService
         $semesterId = $this->resolveOpenSemesterId($student, (int) $year->academic_year_id, $semesterId);
 
         return DB::transaction(function () use ($student, $actor, $year, $semesterId): StudentRegistrationRequest {
+            $this->registration->assertCourseRegistrationWindowOpen(
+                (int) $year->academic_year_id,
+                $semesterId,
+            );
             $request = $this->lockExistingRequest($student, (int) $year->academic_year_id, $semesterId);
             $this->assertEditable($request);
             $student = $this->lockStudentRow($student);
@@ -540,7 +558,7 @@ class RegistrationRequestService
                 $exception->getMessage(),
                 $exception->errors,
                 409,
-                'registration_request_approval_failed',
+                $this->approvalErrorCode($exception),
                 $failures
             );
         } catch (QueryException $exception) {
@@ -744,6 +762,20 @@ class RegistrationRequestService
         }
 
         return 0;
+    }
+
+    private function approvalErrorCode(RegistrationException $exception): string
+    {
+        if (in_array($exception->errorCode, [
+            RegistrationException::COURSE_REGISTRATION_WINDOW_CLOSED,
+            RegistrationException::ACADEMIC_CALENDAR_CONFIGURATION_INVALID,
+            RegistrationException::ACADEMIC_CALENDAR_YEAR_CONTEXT_INVALID,
+            RegistrationException::ACADEMIC_CALENDAR_SEMESTER_CONTEXT_INVALID,
+        ], true)) {
+            return (string) $exception->errorCode;
+        }
+
+        return 'registration_request_approval_failed';
     }
 
     private function findRequest(Student $student, int $academicYearId, int $semesterId): ?StudentRegistrationRequest

@@ -34,6 +34,14 @@ class RegistrationException extends Exception
 
     public const GRADES_LOCKED = 'grades_locked';
 
+    public const COURSE_REGISTRATION_WINDOW_CLOSED = 'course_registration_window_closed';
+
+    public const ACADEMIC_CALENDAR_CONFIGURATION_INVALID = 'academic_calendar_configuration_invalid';
+
+    public const ACADEMIC_CALENDAR_YEAR_CONTEXT_INVALID = 'academic_calendar_year_context_invalid';
+
+    public const ACADEMIC_CALENDAR_SEMESTER_CONTEXT_INVALID = 'academic_calendar_semester_context_invalid';
+
     public function __construct(
         string $message,
         public readonly array $errors = [],
@@ -139,5 +147,33 @@ class RegistrationException extends Exception
         $message = 'Withdrawal is not allowed after grades for this offering have been submitted or locked.';
 
         return new self($message, ['registration' => [$message]], 409, self::GRADES_LOCKED);
+    }
+
+    public static function courseRegistrationWindowClosed(): self
+    {
+        $message = 'Course registration is not currently available according to the academic calendar.';
+
+        return new self($message, ['registration' => [$message]], 409, self::COURSE_REGISTRATION_WINDOW_CLOSED);
+    }
+
+    public static function academicCalendarConfigurationInvalid(): self
+    {
+        $message = 'Course registration cannot continue because the academic calendar configuration is invalid.';
+
+        return new self($message, ['registration' => [$message]], 409, self::ACADEMIC_CALENDAR_CONFIGURATION_INVALID);
+    }
+
+    public static function academicCalendarYearContextInvalid(): self
+    {
+        $message = 'The course offering academic year is not valid for live registration.';
+
+        return new self($message, ['course_offering_id' => [$message]], 409, self::ACADEMIC_CALENDAR_YEAR_CONTEXT_INVALID);
+    }
+
+    public static function academicCalendarSemesterContextInvalid(): self
+    {
+        $message = 'The course offering semester is not valid for live registration.';
+
+        return new self($message, ['course_offering_id' => [$message]], 409, self::ACADEMIC_CALENDAR_SEMESTER_CONTEXT_INVALID);
     }
 }
