@@ -111,7 +111,7 @@ class ScientificVicePresidentAcademicCalendarController extends Controller
             'starts_at' => [$presence, 'date'],
             'ends_at' => [$presence, 'date', 'after_or_equal:starts_at'],
             'is_enforcement' => [$presence, 'boolean'],
-            'change_reason' => ['sometimes', 'string', 'max:2000'],
+            'change_reason' => ['sometimes', 'nullable', 'string', 'max:2000'],
         ];
     }
 

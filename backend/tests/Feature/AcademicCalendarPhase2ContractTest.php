@@ -54,4 +54,17 @@ class AcademicCalendarPhase2ContractTest extends TestCase
         self::assertStringContainsString('lockForUpdate()', $service);
         self::assertStringContainsString('whereNull(\'ace.cancelled_at\')', $service);
     }
+
+    public function test_public_payload_keeps_cancellation_reason_private_and_optional_change_reason_is_nullable(): void
+    {
+        $root = dirname(__DIR__, 2);
+        $service = file_get_contents($root.'/app/Services/AcademicCalendarService.php');
+        $controller = file_get_contents($root.'/app/Http/Controllers/Api/ScientificVicePresidentAcademicCalendarController.php');
+        $publicPayload = explode('private function managementPayload', explode('private function publicPayload', $service, 2)[1], 2)[0];
+
+        self::assertStringNotContainsString("'cancellation_reason'", $publicPayload);
+        self::assertStringContainsString("'cancellation_reason' => \$event->cancellation_reason", $service);
+        self::assertStringContainsString("'change_reason' => ['sometimes', 'nullable', 'string', 'max:2000']", $controller);
+        self::assertStringContainsString("blank(\$data['change_reason'] ?? null)", $service);
+    }
 }

@@ -448,7 +448,6 @@ class AcademicCalendarService
             'is_enforcement' => (bool) $version->is_enforcement,
             'cancelled' => $event->cancelled_at !== null,
             'cancelled_at' => $event->cancelled_at?->utc()->toIso8601String(),
-            'cancellation_reason' => $event->cancellation_reason,
         ];
     }
 

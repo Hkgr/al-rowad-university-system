@@ -145,7 +145,9 @@ class AcademicCalendarPhase2ServiceTest extends TestCase
         $this->calendar->cancel($this->manager, $event, 'قرار الإلغاء');
         $public = $this->calendar->publicEvents([])->first();
         self::assertTrue($public['cancelled']);
-        self::assertSame('قرار الإلغاء', $public['cancellation_reason']);
+        self::assertArrayNotHasKey('cancellation_reason', $public);
+        self::assertNotNull($public['cancelled_at']);
+        self::assertSame('قرار الإلغاء', $this->calendar->managementEvents($this->manager, [])->first()['cancellation_reason']);
     }
 
     public function test_same_type_overlap_warns_without_blocking_and_different_type_does_not(): void
