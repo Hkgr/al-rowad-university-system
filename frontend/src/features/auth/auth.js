@@ -66,19 +66,24 @@ export function hasRole(role, user = getIdentity()) { return user?.roles?.includ
 export function hasPermission(permission, user = getIdentity()) {
   return hasRole('super_admin', user) || (user?.permissions?.includes(permission) ?? false)
 }
+export function hasAssignedPermission(permission, user = getIdentity()) {
+  return user?.permissions?.includes(permission) ?? false
+}
 export function can(permission, user = getIdentity()) { return hasPermission(permission, user) }
 export function canAny(permissions, user = getIdentity()) { return permissions.some(permission => can(permission, user)) }
 export function canAll(permissions, user = getIdentity()) { return permissions.every(permission => can(permission, user)) }
-export function canAccess({ permissions = [], allPermissions = [], roles = [], studentIdentity = false, employeeIdentity = false } = {}, user = getIdentity()) {
+export function canAccess({ permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], studentIdentity = false, employeeIdentity = false } = {}, user = getIdentity()) {
   if (!user) return false
   if (studentIdentity && !user.student_id) return false
   if (employeeIdentity && !user.employee_id) return false
   const hasEveryRequiredPermission = allPermissions.every(permission => hasPermission(permission, user))
+  const hasEveryRequiredRole = allRoles.every(role => hasRole(role, user))
+  const hasEveryAssignedPermission = assignedPermissions.every(permission => hasAssignedPermission(permission, user))
   const hasAnyAlternative = permissions.some(permission => hasPermission(permission, user))
     || roles.some(role => hasRole(role, user))
     || (permissions.length === 0 && roles.length === 0)
 
-  return hasEveryRequiredPermission && hasAnyAlternative
+  return hasEveryRequiredPermission && hasEveryRequiredRole && hasEveryAssignedPermission && hasAnyAlternative
 }
 export function landingRoute(user) {
   // Portal roles take precedence over permission-based staff landing pages.

@@ -690,7 +690,17 @@ class SupplementaryExamMaterializationService
             ->orderBy('supplementary_exam_grade_submission_id')
             ->lockForUpdate()
             ->get();
-        $submission = $submissions->sortByDesc('submission_version')->first();
+        if ($submissions->isEmpty()) {
+            $this->fail('The latest supplementary submission is not published.', 'supplementary_materialization_submission_not_published', 409);
+        }
+        $latestVersion = $submissions->max('submission_version');
+        $latestSubmissions = $submissions
+            ->where('submission_version', $latestVersion)
+            ->values();
+        if ($latestSubmissions->count() !== 1) {
+            $this->fail('The latest supplementary submission version is ambiguous.', 'supplementary_materialization_stale_submission', 409);
+        }
+        $submission = $latestSubmissions->first();
 
         if (! $submission || $submission->status !== 'published' || $submission->published_at === null || $submission->updated_at === null) {
             $this->fail('The latest supplementary submission is not published.', 'supplementary_materialization_submission_not_published', 409);
@@ -698,10 +708,6 @@ class SupplementaryExamMaterializationService
         if ($submission->updated_at->gt($submission->published_at)) {
             $this->fail('The published supplementary submission changed after publication.', 'supplementary_materialization_source_drift', 409);
         }
-        if ($submissions->where('submission_version', $submission->submission_version)->count() !== 1) {
-            $this->fail('The latest supplementary submission version is ambiguous.', 'supplementary_materialization_stale_submission', 409);
-        }
-
         return $submission;
     }
 
@@ -1506,13 +1512,23 @@ class SupplementaryExamMaterializationService
 
         foreach ($registrations->groupBy('supplementary_exam_offering_id') as $offeringId => $roster) {
             $offeringSubmissions = $submissions->get($offeringId, collect());
-            $submission = $offeringSubmissions->sortByDesc('submission_version')->first();
+            $latestVersion = $offeringSubmissions->max('submission_version');
+            $latestSubmissions = $offeringSubmissions
+                ->where('submission_version', $latestVersion)
+                ->values();
+            if ($latestSubmissions->count() !== 1) {
+                $this->fail(
+                    'A period submission version is ambiguous.',
+                    'supplementary_materialization_source_drift',
+                    409,
+                );
+            }
+            $submission = $latestSubmissions->first();
             if (! $submission
                 || $submission->status !== 'published'
                 || $submission->published_at === null
                 || $submission->updated_at === null
-                || $submission->updated_at->gt($submission->published_at)
-                || $offeringSubmissions->where('submission_version', $submission->submission_version)->count() !== 1) {
+                || $submission->updated_at->gt($submission->published_at)) {
                 $this->fail(
                     'A period submission is missing, stale, or no longer published.',
                     'supplementary_materialization_source_drift',

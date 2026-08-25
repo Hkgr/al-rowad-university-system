@@ -12,19 +12,18 @@ import {
   supplementaryErrorMessage,
   workflowStatusLabel,
 } from '../../supplementary-exams/supplementaryStatus'
+import { SupplementaryConfirmDialog, SupplementaryEmptyState, SupplementaryMetricCard, SupplementaryNotice, SupplementaryPeriodHeader, SupplementaryStatusBadge, SupplementaryWorkflowSteps } from '../../supplementary-exams/SupplementaryUi'
 
-const offeringOf = (row) => row?.offering ?? row?.supplementary_exam_offering ?? row ?? {}
-const offeringIdOf = (row) => offeringOf(row).supplementary_exam_offering_id ?? offeringOf(row).id
-const periodOf = (row) => offeringOf(row).period ?? row?.period ?? row?.supplementary_exam_period ?? {}
-const periodIdOf = (period) => period?.supplementary_exam_period_id ?? period?.id
-const candidateRows = (row) => row?.roster ?? row?.candidates ?? row?.registrations ?? []
+const offeringOf = (row) => row?.offering ?? {}
+const offeringIdOf = (row) => offeringOf(row).supplementary_exam_offering_id
+const periodOf = (row) => offeringOf(row).period ?? {}
+const periodIdOf = (period) => period?.supplementary_exam_period_id
+const candidateRows = (row) => row?.roster ?? []
 
 function extractQueue(response) {
-  const data = response?.data
-  if (Array.isArray(data)) return { rows: data, periods: response?.periods ?? [] }
   return {
-    rows: data?.rows ?? data?.offerings ?? data?.data ?? [],
-    periods: data?.periods ?? data?.supplementary_exam_periods ?? [],
+    rows: Array.isArray(response?.data) ? response.data : [],
+    periods: Array.isArray(response?.periods) ? response.periods : [],
   }
 }
 
@@ -39,12 +38,6 @@ function mergePeriods(explicitPeriods, rows) {
 
 function assignedGrader(row) {
   return row?.current_grader_assignment
-    ?? row?.grader_assignment
-    ?? row?.grader
-    ?? row?.assigned_grader
-    ?? offeringOf(row)?.grader
-    ?? offeringOf(row)?.assigned_grader
-    ?? offeringOf(row)?.faculty_member
 }
 
 function personName(person) {
@@ -58,27 +51,17 @@ function graderId(grader) {
 }
 
 function programName(row) {
-  const program = offeringOf(row)?.academic_program ?? row?.academic_program ?? row?.program
-  return program?.program_name ?? program?.name ?? 'برنامج غير محدد'
+  return offeringOf(row)?.academic_program?.program_name ?? 'برنامج غير محدد'
 }
 
 function rowCounts(row) {
-  const roster = candidateRows(row)
-  const counts = row?.counts ?? row?.summary?.counts ?? {}
-  const materialization = row?.materialization ?? {}
-  const graded = roster.filter((candidate) => (
-    candidate.supplementary_theoretical_mark !== null
-    && candidate.supplementary_theoretical_mark !== undefined
-    && candidate.supplementary_theoretical_mark !== ''
-  )).length
-  const published = roster.filter((candidate) => candidate.result_status || candidate.preview?.result_status_code).length
-  const materialized = roster.filter((candidate) => candidate.official_record_materialized).length
+  const counts = row?.counts ?? {}
 
   return {
-    registered: counts.registered ?? counts.roster ?? counts.candidates ?? roster.length,
-    graded: counts.graded ?? counts.marks ?? graded,
-    published: counts.published ?? (row?.workflow_status === 'published' ? (published || roster.length) : published),
-    materialized: counts.materialized ?? materialization.materialized_count ?? materialized,
+    registered: counts.registered ?? 0,
+    graded: counts.graded ?? 0,
+    published: counts.published ?? 0,
+    materialized: counts.materialized ?? 0,
   }
 }
 
@@ -125,6 +108,7 @@ export default function SupplementaryGradesPage() {
   const [graderSelections, setGraderSelections] = useState({})
   const [graderSearches, setGraderSearches] = useState({})
   const [graderLoading, setGraderLoading] = useState({})
+  const [dialog, setDialog] = useState(null)
 
   const loadQueue = useCallback(async () => {
     setLoading(true)
@@ -207,25 +191,31 @@ export default function SupplementaryGradesPage() {
     && Array.isArray(reconciliationView.reconciliation?.offerings)
     ? reconciliationView.reconciliation.offerings
     : []
+  const queueTotals = visibleRows.reduce((totals, row) => {
+    const counts = rowCounts(row)
+    return {
+      offerings: totals.offerings + 1,
+      registered: totals.registered + Number(counts.registered),
+      graded: totals.graded + Number(counts.graded),
+      materialized: totals.materialized + Number(counts.materialized),
+    }
+  }, { offerings: 0, registered: 0, graded: 0, materialized: 0 })
+  const workflowCodes = ['grading_open', 'grading_submitted', 'results_approved', 'results_published', 'results_materialized']
+  const workflowIndex = workflowCodes.indexOf(selectedPeriod?.status)
+  const workflowSteps = workflowCodes.map((code, index) => ({
+    code,
+    state: workflowIndex < 0 ? 'pending' : index < workflowIndex ? 'complete' : index === workflowIndex ? 'current' : 'pending',
+  }))
 
-  const review = async (row, action) => {
-    const submissionId = row?.submission?.supplementary_exam_grade_submission_id ?? row?.submission?.id
+  const review = async (row, action, reason = '') => {
+    const submissionId = row?.submission?.supplementary_exam_grade_submission_id
     if (!submissionId) {
       setError('لا توجد دفعة علامات قابلة للمراجعة لهذا العرض.')
       return
     }
 
-    let body
-    if (action === 'return') {
-      const reason = window.prompt('سبب الإرجاع (إلزامي)')?.trim()
-      if (!reason) return
-      if (!window.confirm('سيعود العرض إلى المصحح مع السبب المدخل. هل تريد المتابعة؟')) return
-      body = { reason }
-    } else if (action === 'approve') {
-      if (!window.confirm('سيتم اعتماد هذه الدفعة كما هي ولن تعود للمصحح إلا بإرجاع صريح. هل تريد المتابعة؟')) return
-    } else if (action === 'publish') {
-      if (!window.confirm('سيتم نشر النتائج المعتمدة للطلاب، لكنها لن تصبح في السجل الرسمي قبل الترحيل. هل تريد المتابعة؟')) return
-    }
+    const body = action === 'return' ? { reason: reason.trim() } : undefined
+    if (action === 'return' && !body.reason) return
 
     const key = `${action}:${offeringIdOf(row)}`
     setBusyAction(key)
@@ -251,7 +241,6 @@ export default function SupplementaryGradesPage() {
   }
 
   const materialize = async (row) => {
-    if (!window.confirm('سيتم ترحيل النتائج المنشورة إلى السجل الأكاديمي الرسمي مع إبقاء العلامات العملية الأصلية دون تغيير. هذا الإجراء ليس عكساً للعلامة. هل تريد المتابعة؟')) return
     const offeringId = offeringIdOf(row)
     setBusyAction(`materialize:${offeringId}`)
     setError('')
@@ -271,7 +260,7 @@ export default function SupplementaryGradesPage() {
   }
 
   const openGrading = async () => {
-    if (!periodId || !window.confirm('سيتم تثبيت قائمة الطلاب وفتح إدخال العلامات للمصححين في هذه الدورة. هل تريد المتابعة؟')) return
+    if (!periodId) return
     setBusyAction(`open-grading:${periodId}`)
     setError('')
     setNotice('')
@@ -297,7 +286,7 @@ export default function SupplementaryGradesPage() {
     try {
       const response = await apiRequest(`/v1/exams/supplementary-offerings/${offeringId}/graders${query ? `?${query}` : ''}`, { method: 'GET' })
       const data = response?.data
-      const options = Array.isArray(data) ? data : data?.graders ?? data?.faculty_members ?? data?.data ?? []
+      const options = Array.isArray(data) ? data : []
       setGraderOptions((current) => ({ ...current, [offeringId]: options }))
       const currentGraderId = graderId(assignedGrader(row))
       setGraderSelections((current) => {
@@ -321,9 +310,6 @@ export default function SupplementaryGradesPage() {
       setError('اختر المصحح قبل حفظ الإسناد.')
       return
     }
-    const option = (graderOptions[offeringId] ?? []).find((grader) => String(graderId(grader)) === String(facultyMemberId))
-    if (!window.confirm(`سيتم إسناد التصحيح إلى ${personName(option)}. هل تريد المتابعة؟`)) return
-
     setBusyAction(`grader:${offeringId}`)
     setError('')
     setNotice('')
@@ -341,31 +327,19 @@ export default function SupplementaryGradesPage() {
     }
   }
 
-  const canOpenGrading = Boolean(reconciliationMatchesPeriod && (
-    reconciliationView.reconciliation?.action_flags?.can_open_grading
-    ?? reconciliationView.reconciliation?.actions?.can_open_grading
-    ?? selectedPeriod?.action_flags?.can_open_grading
-    ?? selectedPeriod?.actions?.can_open_grading
-    ?? false
-  ))
+  const canOpenGrading = Boolean(
+    reconciliationMatchesPeriod
+    && reconciliationView.reconciliation?.action_flags?.can_open_grading === true,
+  )
 
   return (
-    <main className="p-6" dir="rtl">
-      <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-black">تشغيل علامات الامتحانات التكميلية</h1>
-          <p className="text-sm text-gray-500">الإسناد والمراجعة والنشر والترحيل الرسمي، مع تقرير مطابقة للقراءة فقط.</p>
-        </div>
-        <button className="inline-flex items-center gap-2 rounded border px-3 py-2" disabled={loading || Boolean(busyAction)} onClick={() => { setNotice(''); void refreshAll() }} type="button">
-          <FaSyncAlt aria-hidden="true" /> {loading ? 'جارٍ التحديث...' : 'تحديث البيانات'}
-        </button>
-      </header>
-
-      <section className="mb-4 rounded-md border bg-white p-4">
-        <div className="flex flex-wrap items-end gap-3">
+    <main className="space-y-5 p-4 sm:p-6" dir="rtl">
+      <SupplementaryPeriodHeader period={selectedPeriod ?? null} title="تشغيل علامات الامتحانات التكميلية">
+        <p className="mt-3 text-sm text-text-gray">الإسناد والمراجعة والنشر والترحيل الرسمي وفق القدرات التي تعيدها الخدمة الخلفية.</p>
+        <div className="mt-4 flex flex-wrap items-end gap-3">
           <label className="grid gap-1 font-bold">
             الدورة
-            <select className="min-w-72 rounded border p-2 font-normal" onChange={(event) => {
+            <select className="min-w-72 rounded-[14px] border border-primary/20 bg-white p-2 font-normal" onChange={(event) => {
               const nextPeriodId = event.target.value
               reconciliationRequestSequenceRef.current += 1
               setReconciliation(null)
@@ -382,22 +356,34 @@ export default function SupplementaryGradesPage() {
             </select>
           </label>
           {canOpenGrading && (
-            <button className="inline-flex items-center gap-2 rounded bg-blue-700 px-3 py-2 text-white disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => void openGrading()} type="button">
+            <button className="inline-flex items-center gap-2 rounded-[14px] bg-primary px-4 py-2 font-bold text-white disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => setDialog({ type: 'open-grading' })} type="button">
               <FaLockOpen aria-hidden="true" /> {busyAction.startsWith('open-grading:') ? 'جارٍ الفتح...' : 'تثبيت القائمة وفتح العلامات'}
             </button>
           )}
+          <button className="inline-flex items-center gap-2 rounded-[14px] border border-primary/20 bg-white px-4 py-2 font-bold text-primary-dark disabled:opacity-50" disabled={loading || Boolean(busyAction)} onClick={() => { setNotice(''); void refreshAll() }} type="button">
+            <FaSyncAlt aria-hidden="true" /> {loading ? 'جارٍ التحديث...' : 'تحديث البيانات'}
+          </button>
         </div>
+      </SupplementaryPeriodHeader>
+
+      {periodId && <SupplementaryWorkflowSteps steps={workflowSteps} />}
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <SupplementaryMetricCard label="العروض" value={queueTotals.offerings} />
+        <SupplementaryMetricCard label="الطلاب المسجلون" value={queueTotals.registered} />
+        <SupplementaryMetricCard label="العلامات المدخلة" value={queueTotals.graded} />
+        <SupplementaryMetricCard label="النتائج المرحّلة" value={queueTotals.materialized} />
       </section>
 
-      {error && <p className="my-3 border-r-4 border-red-600 bg-red-50 px-3 py-2" role="alert">{error}</p>}
-      {notice && <p className="my-3 border-r-4 border-green-700 bg-green-50 px-3 py-2" role="status">{notice}</p>}
+      {error && <SupplementaryNotice tone="error">{error}</SupplementaryNotice>}
+      {notice && <SupplementaryNotice>{notice}</SupplementaryNotice>}
 
       {periodId && (
-        <section className="mb-5 rounded-md border bg-slate-50 p-4" aria-busy={reconciliationLoading}>
+        <section className="rounded-[18px] border border-primary/15 bg-primary/5 p-5 shadow-sm" aria-busy={reconciliationLoading}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="font-black">تقرير المطابقة التشغيلي</h2>
-              <p className="text-sm text-gray-600">للقراءة فقط؛ يعرض الفروقات ولا ينفذ أي تعديل أو معالجة للبيانات.</p>
+              <p className="text-sm text-text-gray">للقراءة فقط؛ يعرض الفروقات ولا ينفذ أي تعديل أو معالجة للبيانات.</p>
             </div>
             {!reconciliationLoading && reconciliationMatchesPeriod && (
               <span className={`rounded px-3 py-2 font-black ${reconciliationView.status === 'CONFLICT' ? 'bg-red-100 text-red-800' : reconciliationView.status === 'WARNING' ? 'bg-amber-100 text-amber-900' : 'bg-green-100 text-green-800'}`}>
@@ -405,20 +391,17 @@ export default function SupplementaryGradesPage() {
               </span>
             )}
           </div>
-          {reconciliationLoading && <p className="py-4 text-gray-500">جارٍ فحص المطابقة...</p>}
-          {reconciliationError && <p className="mt-3 rounded bg-red-50 p-3 text-red-800" role="alert">{reconciliationError}</p>}
+          {reconciliationLoading && <SupplementaryNotice>جارٍ فحص المطابقة...</SupplementaryNotice>}
+          {reconciliationError && <SupplementaryNotice tone="error">{reconciliationError}</SupplementaryNotice>}
           {!reconciliationLoading && !reconciliationError && reconciliationMatchesPeriod && (
             <>
               <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
                 {Object.entries(reconciliationView.counts).map(([key, value]) => (
-                  <div className="rounded border bg-white p-3" key={key}>
-                    <div className="text-xs text-gray-500">{reconciliationCountLabels[key] ?? 'قياس إضافي'}</div>
-                    <div className="text-xl font-black">{Number.isFinite(Number(value)) ? Number(value) : '—'}</div>
-                  </div>
+                  <SupplementaryMetricCard key={key} label={reconciliationCountLabels[key] ?? 'قياس إضافي'} value={Number.isFinite(Number(value)) ? Number(value) : '—'} />
                 ))}
               </div>
               {reconciliationView.issues.length === 0 ? (
-                <p className="mt-3 rounded bg-green-50 p-3">لم يُبلغ الفحص عن ملاحظات.</p>
+                <SupplementaryNotice>لم يُبلغ الفحص عن ملاحظات.</SupplementaryNotice>
               ) : (
                 <ul className="mt-3 space-y-2">
                   {reconciliationView.issues.map((issue, index) => (
@@ -439,9 +422,9 @@ export default function SupplementaryGradesPage() {
         </section>
       )}
 
-      {loading && <p className="rounded border bg-white p-8 text-center text-gray-500">جارٍ تحميل طابور العلامات التكميلية...</p>}
+      {loading && <SupplementaryNotice>جارٍ تحميل طابور العلامات التكميلية...</SupplementaryNotice>}
       {!loading && !error && visibleRows.length === 0 && (
-        <p className="rounded border bg-white p-8 text-center text-gray-500">لا توجد عروض تكميلية في طابور التشغيل للدورة المحددة.</p>
+        <SupplementaryEmptyState title="طابور التشغيل فارغ" description="لا توجد عروض تكميلية في طابور التشغيل للدورة المحددة." />
       )}
 
       {!loading && visibleRows.length === 0 && reconciliationOfferings.length > 0 && (
@@ -452,26 +435,26 @@ export default function SupplementaryGradesPage() {
             const offeringId = offeringIdOf(report)
 
             return (
-              <article className="rounded-md border bg-white p-4" key={offeringId}>
+              <article className="rounded-[18px] border border-primary/15 bg-white p-5 shadow-sm" key={offeringId}>
                 <header className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h3 className="font-black">
                       {report.course?.course_code ?? 'دون رمز'} — {report.course?.course_name ?? `المقرر ${report.course_id ?? 'غير المحدد'}`}
                     </h3>
-                    <p className="mt-1 text-sm text-gray-600">
+                    <p className="mt-1 text-sm text-text-gray">
                       البرنامج: {report.academic_program?.program_name ?? `البرنامج ${report.academic_program_id ?? 'غير المحدد'}`}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2 text-sm">
-                    <span className="rounded bg-blue-50 px-2 py-1 font-bold">{operationalStatusLabel(report)}</span>
+                    <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 font-bold text-primary-dark">{operationalStatusLabel(report)}</span>
                     <span className="rounded border px-2 py-1">{reconciliationStatusLabel(report.state)}</span>
                   </div>
                 </header>
                 <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
-                  <div className="rounded bg-gray-50 p-2"><small>المسجلون</small><strong className="block text-lg">{counts.registered}</strong></div>
-                  <div className="rounded bg-gray-50 p-2"><small>أُدخلت علاماتهم</small><strong className="block text-lg">{counts.graded}</strong></div>
-                  <div className="rounded bg-gray-50 p-2"><small>المنشورة</small><strong className="block text-lg">{counts.published}</strong></div>
-                  <div className="rounded bg-gray-50 p-2"><small>المُرحّلة رسمياً</small><strong className="block text-lg">{counts.materialized}</strong></div>
+                  <SupplementaryMetricCard label="المسجلون" value={counts.registered} />
+                  <SupplementaryMetricCard label="العلامات المدخلة" value={counts.graded} />
+                  <SupplementaryMetricCard label="المنشورة" value={counts.published} />
+                  <SupplementaryMetricCard label="المُرحّلة رسمياً" value={counts.materialized} />
                 </div>
                 {(report.issues ?? []).length > 0 && (
                   <p className="mt-3 rounded bg-amber-50 p-3">
@@ -493,18 +476,16 @@ export default function SupplementaryGradesPage() {
           const counts = rowCounts(row)
           const materialization = row.materialization ?? { state: 'not_ready' }
           const currentGrader = assignedGrader(row)
-          const canAssignGrader = Boolean(row.action_flags?.can_assign_grader
-            ?? row.actions?.can_assign_grader
-            ?? false)
+          const canAssignGrader = row.action_flags?.can_assign_grader === true
           const rowBusy = busyAction.endsWith(`:${offeringId}`)
           const options = graderOptions[offeringId]
 
           return (
-            <article className="rounded-md border bg-white p-4" key={offeringId}>
+            <article className="rounded-[18px] border border-primary/15 bg-white p-5 shadow-sm" key={offeringId}>
               <header className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="font-black">{offering.course?.course_code ?? 'دون رمز'} — {offering.course?.course_name ?? 'مقرر غير مسمى'}</h2>
-                  <div className="mt-1 grid gap-1 text-sm text-gray-600 sm:grid-cols-2">
+                  <div className="mt-1 grid gap-1 text-sm text-text-gray sm:grid-cols-2">
                     <span>الدورة: {period.period_name ?? 'غير محددة'} ({periodStatusLabel(period.status)})</span>
                     <span>البرنامج: {programName(row)}</span>
                     <span>المصحح: {personName(currentGrader)}</span>
@@ -512,17 +493,17 @@ export default function SupplementaryGradesPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2 text-sm">
-                  <span className="rounded bg-blue-50 px-2 py-1 font-bold">{operationalStatusLabel(row)}</span>
-                  <span className="rounded border px-2 py-1">{workflowStatusLabel(row.workflow_status)}</span>
+                  <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 font-bold text-primary-dark">{operationalStatusLabel(row)}</span>
+                  <SupplementaryStatusBadge kind="workflow" status={row.workflow_status} />
                   <span className="rounded border px-2 py-1 font-bold">{materializationStatusLabel(materialization.state)}</span>
                 </div>
               </header>
 
               <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
-                <div className="rounded bg-gray-50 p-2"><small>المسجلون</small><strong className="block text-lg">{counts.registered}</strong></div>
-                <div className="rounded bg-gray-50 p-2"><small>أُدخلت علاماتهم</small><strong className="block text-lg">{counts.graded}</strong></div>
-                <div className="rounded bg-gray-50 p-2"><small>المنشورة</small><strong className="block text-lg">{counts.published}</strong></div>
-                <div className="rounded bg-gray-50 p-2"><small>المُرحّلة رسمياً</small><strong className="block text-lg">{counts.materialized}</strong></div>
+                <SupplementaryMetricCard label="المسجلون" value={counts.registered} />
+                <SupplementaryMetricCard label="العلامات المدخلة" value={counts.graded} />
+                <SupplementaryMetricCard label="المنشورة" value={counts.published} />
+                <SupplementaryMetricCard label="المُرحّلة رسمياً" value={counts.materialized} />
               </div>
 
               {materialization.reason && (
@@ -534,7 +515,7 @@ export default function SupplementaryGradesPage() {
               )}
 
               {canAssignGrader && (
-                <div className="mt-3 flex flex-wrap items-end gap-2 rounded border bg-gray-50 p-3">
+                <div className="mt-3 flex flex-wrap items-end gap-2 rounded-[14px] border border-primary/10 bg-primary/5 p-3">
                   <label className="grid gap-1 text-sm font-bold">
                     البحث عن مصحح
                     <input
@@ -558,8 +539,8 @@ export default function SupplementaryGradesPage() {
                           {options.map((grader) => <option key={graderId(grader)} value={graderId(grader)}>{personName(grader)}</option>)}
                         </select>
                       </label>
-                      {options.length === 0 && <span className="text-sm text-gray-500">لا يوجد مصححون متاحون ضمن نطاقك.</span>}
-                      <button className="rounded bg-gray-800 px-3 py-2 text-white disabled:opacity-50" disabled={!graderSelections[offeringId] || Boolean(busyAction)} onClick={() => void assignGrader(row)} type="button">
+                      {options.length === 0 && <span className="text-sm text-text-gray">لا يوجد مصححون متاحون ضمن نطاقك.</span>}
+                      <button className="rounded-[14px] bg-primary px-4 py-2 font-bold text-white disabled:opacity-50" disabled={!graderSelections[offeringId] || Boolean(busyAction)} onClick={() => setDialog({ type: 'assign', row })} type="button">
                         {busyAction === `grader:${offeringId}` ? 'جارٍ الحفظ...' : 'حفظ الإسناد'}
                       </button>
                     </>
@@ -568,19 +549,19 @@ export default function SupplementaryGradesPage() {
               )}
 
               {roster.length === 0 ? (
-                <p className="mt-3 rounded bg-gray-50 p-4 text-gray-500">لا يوجد طلاب في القائمة المثبتة لهذا العرض.</p>
+                <SupplementaryEmptyState title="القائمة المثبتة فارغة" description="لا يوجد طلاب في القائمة المثبتة لهذا العرض." />
               ) : (
                 <div className="mt-3 overflow-x-auto">
                   <table className="w-full min-w-[720px] text-right">
                     <thead><tr><th className="p-2">الطالب</th><th className="p-2">العملي المحفوظ</th><th className="p-2">النظري التكميلي</th><th className="p-2">المجموع المتوقع</th><th className="p-2">النتيجة</th><th className="p-2">السجل الرسمي</th></tr></thead>
                     <tbody>
                       {roster.map((candidate) => (
-                        <tr className="border-t" key={candidate.supplementary_exam_registration_id ?? candidate.id}>
+                        <tr className="border-t" key={candidate.supplementary_exam_registration_id}>
                           <td className="p-2">{candidate.student?.student_number ?? 'طالب غير معروف'}</td>
                           <td className="p-2">{candidate.preserved_practical_mark ?? '—'}</td>
                           <td className="p-2">{candidate.supplementary_theoretical_mark ?? '—'}</td>
-                          <td className="p-2">{candidate.preview?.final_mark ?? candidate.final_mark ?? '—'}</td>
-                          <td className="p-2">{resultStatusLabel(candidate.preview?.result_status_code ?? candidate.official_result_status)}</td>
+                          <td className="p-2">{candidate.preview?.final_mark ?? '—'}</td>
+                          <td className="p-2">{resultStatusLabel(candidate.preview?.result_status_code)}</td>
                           <td className="p-2">{candidate.official_record_materialized ? 'مُرحّل' : 'غير مُرحّل'}</td>
                         </tr>
                       ))}
@@ -592,21 +573,51 @@ export default function SupplementaryGradesPage() {
               <div className="mt-3 flex flex-wrap gap-2">
                 {(row.action_flags?.can_return || row.action_flags?.can_approve) && (
                   <>
-                    {row.action_flags?.can_return && <button className="inline-flex items-center gap-2 rounded border px-3 py-2 disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => void review(row, 'return')} type="button"><FaUndoAlt aria-hidden="true" /> إرجاع مع سبب</button>}
-                    {row.action_flags?.can_approve && <button className="inline-flex items-center gap-2 rounded bg-primary px-3 py-2 text-white disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => void review(row, 'approve')} type="button"><FaCheck aria-hidden="true" /> اعتماد</button>}
+                    {row.action_flags?.can_return && <button className="inline-flex items-center gap-2 rounded border px-3 py-2 disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => setDialog({ type: 'review', action: 'return', row })} type="button"><FaUndoAlt aria-hidden="true" /> إرجاع مع سبب</button>}
+                    {row.action_flags?.can_approve && <button className="inline-flex items-center gap-2 rounded bg-primary px-3 py-2 text-white disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => setDialog({ type: 'review', action: 'approve', row })} type="button"><FaCheck aria-hidden="true" /> اعتماد</button>}
                   </>
                 )}
                 {row.action_flags?.can_publish && (
-                  <button className="inline-flex items-center gap-2 rounded bg-green-700 px-3 py-2 text-white disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => void review(row, 'publish')} type="button"><FaUpload aria-hidden="true" /> نشر</button>
+                  <button className="inline-flex items-center gap-2 rounded bg-green-700 px-3 py-2 text-white disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => setDialog({ type: 'review', action: 'publish', row })} type="button"><FaUpload aria-hidden="true" /> نشر</button>
                 )}
                 {materialization.can_materialize && (
-                  <button className="inline-flex items-center gap-2 rounded bg-blue-700 px-3 py-2 text-white disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => void materialize(row)} type="button"><FaDatabase aria-hidden="true" /> {busyAction === `materialize:${offeringId}` ? 'جارٍ الترحيل...' : 'ترحيل إلى السجل الرسمي'}</button>
+                  <button className="inline-flex items-center gap-2 rounded-[14px] bg-primary px-4 py-2 font-bold text-white disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => setDialog({ type: 'materialize', row })} type="button"><FaDatabase aria-hidden="true" /> {busyAction === `materialize:${offeringId}` ? 'جارٍ الترحيل...' : 'ترحيل إلى السجل الرسمي'}</button>
                 )}
               </div>
             </article>
           )
         })}
       </div>
+      {dialog && (
+        <SupplementaryConfirmDialog
+          busy={Boolean(busyAction)}
+          confirmLabel="تأكيد الإجراء"
+          danger={dialog.type === 'review' && dialog.action === 'return'}
+          description={dialog.type === 'materialize'
+            ? 'سيتم ترحيل النتائج إلى السجل الأكاديمي الرسمي مع إبقاء العلامات العملية الأصلية دون تغيير.'
+            : dialog.type === 'open-grading'
+              ? 'سيتم تثبيت قائمة الطلاب وفتح إدخال العلامات للمصححين في هذه الدورة.'
+              : dialog.type === 'assign'
+                ? `سيتم إسناد التصحيح إلى ${personName((graderOptions[offeringIdOf(dialog.row)] ?? []).find((grader) => String(graderId(grader)) === String(graderSelections[offeringIdOf(dialog.row)])))}.`
+                : dialog.action === 'publish'
+                  ? 'ستظهر النتيجة التكميلية المنشورة للطالب، ولن تصبح نتيجة رسمية قبل الترحيل.'
+                  : dialog.action === 'approve'
+                    ? 'سيتم اعتماد هذه الدفعة كما هي.'
+                    : 'ستعود الدفعة إلى المصحح مع سبب الإرجاع.'}
+          onCancel={() => setDialog(null)}
+          onConfirm={(reason) => {
+            const current = dialog
+            setDialog(null)
+            if (current.type === 'review') void review(current.row, current.action, reason)
+            if (current.type === 'materialize') void materialize(current.row)
+            if (current.type === 'open-grading') void openGrading()
+            if (current.type === 'assign') void assignGrader(current.row)
+          }}
+          reasonLabel={dialog.type === 'review' && dialog.action === 'return' ? 'سبب الإرجاع' : undefined}
+          reasonRequired={dialog.type === 'review' && dialog.action === 'return'}
+          title="تأكيد عملية الامتحان التكميلي"
+        />
+      )}
     </main>
   )
 }

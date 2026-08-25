@@ -139,6 +139,47 @@ class SupplementaryExamRegistrationBehaviorTest extends SupplementaryExamEligibi
         ]);
     }
 
+    #[Test]
+    public function review_approve_and_publish_fail_closed_when_latest_version_is_ambiguous(): void
+    {
+        [$examOfficer, $professor] = $this->seedGradingJourney();
+        $service = $this->gradingService();
+        $offering = SupplementaryExamOffering::query()->findOrFail(600);
+        $period = SupplementaryExamPeriod::query()->findOrFail(500);
+        $service->assign($examOfficer, $offering, 901);
+        $service->openGrading($examOfficer, $period);
+        $service->saveDrafts($professor, $offering, [[
+            'supplementary_exam_registration_id' => 700,
+            'theoretical_mark' => 40,
+        ]]);
+        $service->submit($professor, $offering);
+        $canonicalId = (int) SupplementaryExamGradeSubmission::query()->value(
+            'supplementary_exam_grade_submission_id',
+        );
+        DB::table('supplementary_exam_grade_submissions')->insert([
+            'supplementary_exam_offering_id' => 600,
+            'grader_assignment_id' => 1,
+            'submission_version' => 1,
+            'status' => 'submitted',
+            'submitted_by_user_id' => 901,
+            'submitted_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        foreach (['return', 'approve', 'publish'] as $action) {
+            try {
+                $service->review($examOfficer, $canonicalId, $action, $action === 'return' ? 'تصحيح' : null);
+                $this->fail('Expected ambiguous latest submission to fail closed.');
+            } catch (GradeException $exception) {
+                $this->assertSame('supplementary_grade_submission_integrity_error', $exception->errorCode);
+                $this->assertSame(409, $exception->status);
+            }
+        }
+        $this->assertDatabaseMissing('supplementary_exam_grade_submissions', ['status' => 'approved']);
+        $this->assertDatabaseMissing('supplementary_exam_grade_submissions', ['status' => 'published']);
+    }
+
     private function gradingService(
         bool $programScope = true,
         bool $universityScope = true,

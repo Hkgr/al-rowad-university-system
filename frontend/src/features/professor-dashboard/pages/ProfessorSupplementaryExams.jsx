@@ -6,8 +6,9 @@ import {
   supplementaryErrorMessage,
   workflowStatusLabel,
 } from '../../supplementary-exams/supplementaryStatus'
+import { SupplementaryConfirmDialog, SupplementaryEmptyState, SupplementaryMetricCard, SupplementaryNotice, SupplementaryPeriodHeader, SupplementaryStatusBadge } from '../../supplementary-exams/SupplementaryUi'
 
-const offeringKey = (offering) => offering?.supplementary_exam_offering_id ?? offering?.id
+const offeringKey = (offering) => offering?.supplementary_exam_offering_id
 const normalizedMark = (value) => (value === null || value === undefined ? '' : String(value).trim())
 
 function marksFromRoster(roster = []) {
@@ -63,6 +64,7 @@ export default function ProfessorSupplementaryExams() {
   const [busyAction, setBusyAction] = useState(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [dialog, setDialog] = useState(null)
   const requestSequenceRef = useRef(0)
 
   const replaceSheet = useCallback((nextSheet) => {
@@ -80,7 +82,7 @@ export default function ProfessorSupplementaryExams() {
     try {
       const response = await apiRequest('/v1/professor/supplementary-exams')
       const data = response?.data
-      setOfferings(Array.isArray(data) ? data : data?.offerings ?? [])
+      setOfferings(Array.isArray(data) ? data : [])
       setOfferingsLoadedSuccessfully(true)
     } catch (requestError) {
       setError(supplementaryErrorMessage(requestError, 'تعذر تحميل المقررات التكميلية المكلف بها.'))
@@ -97,7 +99,6 @@ export default function ProfessorSupplementaryExams() {
   }, [loadOfferings])
 
   const loadSheet = async (offering) => {
-    if (dirty && !window.confirm('توجد تعديلات غير محفوظة في المقرر الحالي. هل تريد تجاهلها وإعادة تحميل ورقة العلامات؟')) return
     const sequence = requestSequenceRef.current + 1
     requestSequenceRef.current = sequence
     setSelectedOffering(offering)
@@ -126,19 +127,23 @@ export default function ProfessorSupplementaryExams() {
     }
   }
 
+  const requestSheet = (offering) => {
+    if (dirty) {
+      setDialog({ type: 'discard', offering })
+      return
+    }
+    void loadSheet(offering)
+  }
+
   const periodStatus = sheet?.period_status ?? sheet?.offering?.period?.status
-  const serverCanEdit = sheet?.can_edit
-    ?? sheet?.action_flags?.can_edit
-    ?? sheet?.actions?.can_edit
-    ?? selectedOffering?.can_edit
-    ?? false
+  const serverCanEdit = sheet?.action_flags?.can_edit === true
   const editable = Boolean(serverCanEdit && periodStatus === 'grading_open')
   const limits = gradingLimits(sheet)
   const roster = sheet?.roster ?? []
   const submitAction = sheet?.workflow_status === 'returned' ? 'resubmit' : 'submit'
-  const serverCanSubmit = Boolean(submitAction === 'resubmit'
-    ? (sheet?.action_flags?.can_resubmit ?? sheet?.actions?.can_resubmit ?? false)
-    : (sheet?.action_flags?.can_submit ?? sheet?.actions?.can_submit ?? false))
+  const serverCanSubmit = submitAction === 'resubmit'
+    ? sheet?.action_flags?.can_resubmit === true
+    : sheet?.action_flags?.can_submit === true
 
   const changedMarks = useMemo(() => Object.entries(marks)
     .filter(([registrationId, value]) => (
@@ -156,6 +161,7 @@ export default function ProfessorSupplementaryExams() {
   const hasIncompleteMarks = roster.some((candidate) => (
     normalizedMark(marks[candidate.supplementary_exam_registration_id]) === ''
   ))
+  const enteredMarksCount = Object.values(marks).filter((value) => normalizedMark(value) !== '').length
 
   const updateMark = (registrationId, value) => {
     const nextMarks = { ...marks, [registrationId]: value }
@@ -202,7 +208,7 @@ export default function ProfessorSupplementaryExams() {
     }
   }
 
-  const submit = async () => {
+  const submit = () => {
     if (!editable || busyAction) return
     if (dirty) {
       setError('توجد تعديلات غير محفوظة. احفظ المسودة قبل إرسال الدفعة للمراجعة.')
@@ -217,11 +223,11 @@ export default function ProfessorSupplementaryExams() {
       return
     }
 
-    const action = submitAction
-    const confirmation = action === 'resubmit'
-      ? 'سيُعاد إرسال الدفعة المصححة كاملة إلى لجنة الامتحانات. هل تريد المتابعة؟'
-      : 'سيُغلق تحرير هذه الدفعة بعد إرسالها إلى لجنة الامتحانات. هل تريد المتابعة؟'
-    if (!window.confirm(confirmation)) return
+    setDialog({ type: submitAction })
+  }
+
+  const performSubmit = async (action) => {
+    setDialog(null)
 
     setBusyAction(action)
     setError('')
@@ -241,34 +247,44 @@ export default function ProfessorSupplementaryExams() {
   }
 
   return (
-    <main className="p-6" dir="rtl">
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-black">الامتحانات التكميلية</h1>
-          <p className="text-sm text-gray-500">
-            إدخال العلامة النظرية التكميلية فقط؛ تبقى العلامة العملية الأصلية للقراءة، ولا يتغير السجل الرسمي في هذه المرحلة.
-          </p>
+    <main className="space-y-5 p-4 sm:p-6" dir="rtl">
+      <SupplementaryPeriodHeader
+        period={sheet?.offering?.period ?? selectedOffering?.period ?? null}
+        title="إدخال علامات الامتحانات التكميلية"
+      >
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-1 text-sm text-text-gray">
+            <p className="font-black text-primary-dark">الامتحان التكميلي نظري فقط</p>
+            <p>علامة العملي المعتمدة محفوظة ولا يمكن تعديلها من هذه الصفحة.</p>
+          </div>
+          <button className="rounded-[14px] border border-primary/20 bg-white px-4 py-2 font-bold text-primary-dark disabled:opacity-40" disabled={offeringsLoading} onClick={loadOfferings} type="button">
+            {offeringsLoading ? 'جارٍ التحديث...' : 'تحديث المقررات'}
+          </button>
         </div>
-        <button className="rounded border px-3 py-2" disabled={offeringsLoading} onClick={loadOfferings} type="button">
-          {offeringsLoading ? 'جارٍ التحديث...' : 'تحديث المقررات'}
-        </button>
-      </div>
+      </SupplementaryPeriodHeader>
 
-      {error && <p className="my-3 border-r-4 border-red-600 bg-red-50 px-3 py-2" role="alert">{error}</p>}
-      {notice && <p className="my-3 border-r-4 border-green-700 bg-green-50 px-3 py-2" role="status">{notice}</p>}
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <SupplementaryMetricCard label="العروض المسندة" value={offerings.length} />
+        <SupplementaryMetricCard label="طلاب القائمة المثبتة" value={roster.length} />
+        <SupplementaryMetricCard label="العلامات المدخلة" value={enteredMarksCount} />
+        <SupplementaryMetricCard label="حالة الدفعة" value={workflowStatusLabel(sheet?.workflow_status)} />
+      </section>
+
+      {error && <SupplementaryNotice tone="error">{error}</SupplementaryNotice>}
+      {notice && <SupplementaryNotice>{notice}</SupplementaryNotice>}
 
       <div className="grid gap-4 md:grid-cols-[280px_1fr]">
-        <aside className="rounded-xl border bg-white p-3" aria-busy={offeringsLoading}>
-          {offeringsLoading && <p className="p-3 text-gray-500">جارٍ تحميل المقررات المكلف بها...</p>}
+        <aside className="rounded-[18px] border border-primary/15 bg-white p-3 shadow-sm" aria-busy={offeringsLoading}>
+          {offeringsLoading && <SupplementaryNotice>جارٍ تحميل المقررات المكلف بها...</SupplementaryNotice>}
           {!offeringsLoading && offeringsLoadedSuccessfully && offerings.length === 0 && (
-            <p className="p-3 text-gray-500">لا توجد مقررات تكميلية مسندة إليك حالياً.</p>
+            <SupplementaryEmptyState title="لا توجد عروض مسندة" description="لا توجد مقررات تكميلية مسندة إليك حالياً." />
           )}
           {offerings.map((offering) => (
             <button
-              className={`block w-full border-b p-3 text-right ${offeringKey(selectedOffering) === offeringKey(offering) ? 'bg-blue-50 font-bold' : ''}`}
+              className={`block w-full rounded-[14px] border p-3 text-right transition ${offeringKey(selectedOffering) === offeringKey(offering) ? 'border-primary/20 bg-primary/10 font-bold text-primary-dark' : 'border-transparent text-text-gray hover:border-primary/10 hover:bg-primary/5'}`}
               disabled={Boolean(busyAction)}
               key={offeringKey(offering)}
-              onClick={() => void loadSheet(offering)}
+              onClick={() => requestSheet(offering)}
               type="button"
             >
               {offering.course?.course_code ?? 'دون رمز'} — {offering.course?.course_name ?? 'مقرر غير مسمى'}
@@ -276,20 +292,21 @@ export default function ProfessorSupplementaryExams() {
           ))}
         </aside>
 
-        <section className="rounded-xl border bg-white p-4" aria-busy={sheetLoading}>
-          {sheetLoading && <p className="py-8 text-center text-gray-500">جارٍ تحميل ورقة العلامات...</p>}
+        <section className="rounded-[18px] border border-primary/15 bg-white p-4 shadow-sm" aria-busy={sheetLoading}>
+          {sheetLoading && <SupplementaryNotice>جارٍ تحميل ورقة العلامات...</SupplementaryNotice>}
           {!sheetLoading && !sheet && (
-            <p className="py-8 text-center text-gray-500">
-              {selectedOffering ? 'تعذر عرض ورقة العلامات. أعد اختيار المقرر أو حدّث الصفحة.' : 'اختر مقرراً مكلفاً لك.'}
-            </p>
+            <SupplementaryEmptyState
+              title={selectedOffering ? 'تعذر عرض ورقة العلامات' : 'اختر عرضاً تكميلياً'}
+              description={selectedOffering ? 'أعد اختيار المقرر أو حدّث الصفحة.' : 'اختر مقرراً مسنداً إليك لعرض القائمة المثبتة.'}
+            />
           )}
           {!sheetLoading && sheet && (
             <>
               <header className="mb-4 flex flex-wrap items-center justify-between gap-2">
                 <b>{sheet.offering?.course?.course_name ?? selectedOffering?.course?.course_name ?? 'المقرر التكميلي'}</b>
                 <div className="flex flex-wrap gap-2 text-sm">
-                  <span className="rounded border px-2 py-1">الدورة: {periodStatusLabel(periodStatus)}</span>
-                  <span className="rounded border px-2 py-1">الدفعة: {workflowStatusLabel(sheet.workflow_status)}</span>
+                  <SupplementaryStatusBadge status={periodStatus} />
+                  <SupplementaryStatusBadge kind="workflow" status={sheet.workflow_status} />
                   <span className="rounded border px-2 py-1">الإصدار {sheet.submission?.submission_version ?? 1}</span>
                   {dirty && <span className="rounded bg-amber-100 px-2 py-1 font-bold">تعديلات غير محفوظة</span>}
                 </div>
@@ -298,16 +315,16 @@ export default function ProfessorSupplementaryExams() {
               <SupplementaryExamOccurrenceIndicator occurrence={occurrence} />
 
               {!editable && (
-                <p className="mb-3 rounded bg-gray-100 p-3 text-sm">
+                <SupplementaryNotice>
                   ورقة العلامات للقراءة فقط. يفتح التحرير فقط عندما تكون الدورة في «إدخال العلامات مفتوح» وتسمح الخدمة بالتعديل.
-                </p>
+                </SupplementaryNotice>
               )}
               {sheet.submission?.review_reason && (
                 <p className="mb-3 rounded bg-amber-50 p-3">ملاحظات الإرجاع: {sheet.submission.review_reason}</p>
               )}
 
               {roster.length === 0 ? (
-                <p className="py-8 text-center text-gray-500">لا يوجد طلاب في القائمة المثبتة لهذا المقرر.</p>
+                <SupplementaryEmptyState title="القائمة المثبتة فارغة" description="لا يوجد طلاب في القائمة المثبتة لهذا المقرر." />
               ) : (
                 <div className="overflow-auto">
                   <table className="w-full min-w-[720px] text-right">
@@ -352,7 +369,7 @@ export default function ProfessorSupplementaryExams() {
 
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
-                  className="rounded bg-gray-700 px-4 py-2 text-white disabled:opacity-40"
+                  className="rounded-[14px] border border-primary/20 bg-white px-4 py-2 font-bold text-primary-dark disabled:opacity-40"
                   disabled={!editable || !dirty || Boolean(busyAction)}
                   onClick={() => void save()}
                   type="button"
@@ -374,6 +391,23 @@ export default function ProfessorSupplementaryExams() {
           )}
         </section>
       </div>
+      {dialog && (
+        <SupplementaryConfirmDialog
+          busy={Boolean(busyAction)}
+          confirmLabel={dialog.type === 'discard' ? 'تجاهل التعديلات' : 'تأكيد الإرسال'}
+          danger={dialog.type === 'discard'}
+          description={dialog.type === 'discard'
+            ? 'توجد تعديلات غير محفوظة في المقرر الحالي. سيؤدي المتابعة إلى تجاهلها وإعادة تحميل ورقة العلامات.'
+            : dialog.type === 'resubmit'
+              ? 'سيُعاد إرسال الدفعة المصححة كاملة إلى لجنة الامتحانات.'
+              : 'سيُغلق تحرير هذه الدفعة بعد إرسالها إلى لجنة الامتحانات.'}
+          onCancel={() => setDialog(null)}
+          onConfirm={() => dialog.type === 'discard'
+            ? (setDialog(null), void loadSheet(dialog.offering))
+            : void performSubmit(dialog.type)}
+          title={dialog.type === 'discard' ? 'تجاهل التعديلات غير المحفوظة' : 'إرسال دفعة العلامات'}
+        />
+      )}
     </main>
   )
 }

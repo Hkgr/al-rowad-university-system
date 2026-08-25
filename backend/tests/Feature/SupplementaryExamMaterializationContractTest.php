@@ -272,7 +272,8 @@ class SupplementaryExamMaterializationContractTest extends TestCase
 
         $this->assertStringContainsString('exams/supplementary-offerings/{offering}/materialize', $routes);
         $this->assertStringContainsString('materialization.can_materialize', $page);
-        $this->assertStringContainsString('window.confirm(', $page);
+        $this->assertStringContainsString('SupplementaryConfirmDialog', $page);
+        $this->assertStringNotContainsString('window.confirm(', $page);
         $this->assertStringContainsString('ترحيل النتائج إلى السجل الرسمي', $page);
         $this->assertStringContainsString('العلامات العملية الأصلية دون تغيير', $page);
         $this->assertStringContainsString('السجل الأكاديمي الرسمي', $page);

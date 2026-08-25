@@ -152,6 +152,32 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
     }
 
     #[Test]
+    public function duplicate_latest_submission_version_blocks_materialization_and_reconciliation(): void
+    {
+        DB::table('supplementary_exam_grade_submissions')->insert([
+            'supplementary_exam_grade_submission_id' => 901,
+            'supplementary_exam_offering_id' => 600,
+            'submission_version' => 1,
+            'status' => 'published',
+            'published_at' => self::PUBLISHED_TIME,
+            'created_at' => self::PUBLISHED_TIME,
+            'updated_at' => self::PUBLISHED_TIME,
+        ]);
+
+        $this->expectGradeError(
+            fn () => $this->service()->materializeOffering($this->actor(), $this->offering()),
+            'supplementary_materialization_stale_submission',
+            409,
+        );
+        $this->assertDatabaseCount('supplementary_exam_materializations', 0);
+
+        $report = $this->reconciliation()->reconcile($this->actor(), $this->period());
+        $this->assertSame('CONFLICT', $report['state']);
+        $this->assertContains('source_submission_version_ambiguous', array_column($report['issues'], 'code'));
+        $this->assertNotContains('source_submission_missing', array_column($report['issues'], 'code'));
+    }
+
+    #[Test]
     public function published_source_changes_after_publication_fail_closed(): void
     {
         DB::table('supplementary_exam_grade_results')->where('supplementary_exam_grade_result_id', 800)->update([
@@ -249,7 +275,21 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
     {
         $beforeRegistrationCount = DB::table('student_course_registrations')->count();
         $beforeTheoretical = DB::table('student_grade_components')->where('student_grade_component_id', 500)->first();
-        $beforePractical = DB::table('student_grade_components')->where('student_grade_component_id', 501)->first();
+        $beforePractical = DB::table('student_grade_components as grades')
+            ->join('grade_components as components', 'components.grade_component_id', '=', 'grades.grade_component_id')
+            ->where('grades.student_course_registration_id', 300)
+            ->where('components.component_type', 'practical')
+            ->orderBy('grades.student_grade_component_id')
+            ->get([
+                'grades.student_grade_component_id',
+                'grades.grade_component_id',
+                'grades.mark',
+                'grades.grade_status',
+                'grades.updated_at',
+            ])->map(fn (object $row): array => (array) $row)->all();
+        $beforePracticalTotal = DB::table('student_course_results')
+            ->where('student_course_result_id', 400)
+            ->value('practical_total');
         $beforeAttendance = DB::table('student_attendance')->where('student_attendance_id', 1)->first();
         $beforeAnnouncement = DB::table('student_course_results')->where('student_course_result_id', 400)->value('result_announced_at');
 
@@ -274,8 +314,63 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
         $this->assertEquals(40, $afterTheoretical->mark);
         $this->assertSame($beforeTheoretical->grade_status, $afterTheoretical->grade_status);
         $this->assertSame($beforeTheoretical->created_at, $afterTheoretical->created_at);
-        $this->assertEquals($beforePractical, DB::table('student_grade_components')->where('student_grade_component_id', 501)->first());
+        $afterPractical = DB::table('student_grade_components as grades')
+            ->join('grade_components as components', 'components.grade_component_id', '=', 'grades.grade_component_id')
+            ->where('grades.student_course_registration_id', 300)
+            ->where('components.component_type', 'practical')
+            ->orderBy('grades.student_grade_component_id')
+            ->get([
+                'grades.student_grade_component_id',
+                'grades.grade_component_id',
+                'grades.mark',
+                'grades.grade_status',
+                'grades.updated_at',
+            ])->map(fn (object $row): array => (array) $row)->all();
+        $this->assertSame($beforePractical, $afterPractical);
+        $this->assertEquals(
+            $beforePracticalTotal,
+            DB::table('student_course_results')->where('student_course_result_id', 400)->value('practical_total'),
+        );
         $this->assertEquals($beforeAttendance, DB::table('student_attendance')->where('student_attendance_id', 1)->first());
+    }
+
+    #[Test]
+    public function materialization_updates_only_the_explicit_original_attempt_when_course_is_repeated(): void
+    {
+        $secondOffering = (array) DB::table('course_offerings')->where('course_offering_id', 100)->first();
+        $secondOffering['course_offering_id'] = 101;
+        DB::table('course_offerings')->insert($secondOffering);
+
+        $secondRegistration = (array) DB::table('student_course_registrations')
+            ->where('student_course_registration_id', 300)->first();
+        $secondRegistration['student_course_registration_id'] = 302;
+        $secondRegistration['course_offering_id'] = 101;
+        DB::table('student_course_registrations')->insert($secondRegistration);
+
+        $secondResult = (array) DB::table('student_course_results')
+            ->where('student_course_result_id', 400)->first();
+        $secondResult['student_course_result_id'] = 402;
+        $secondResult['student_course_registration_id'] = 302;
+        DB::table('student_course_results')->insert($secondResult);
+
+        $beforeRegistration = (array) DB::table('student_course_registrations')
+            ->where('student_course_registration_id', 302)->first();
+        $beforeResult = (array) DB::table('student_course_results')
+            ->where('student_course_result_id', 402)->first();
+
+        $this->service()->materializeOffering($this->actor(), $this->offering());
+
+        $this->assertSame($beforeRegistration, (array) DB::table('student_course_registrations')
+            ->where('student_course_registration_id', 302)->first());
+        $this->assertSame($beforeResult, (array) DB::table('student_course_results')
+            ->where('student_course_result_id', 402)->first());
+        $this->assertDatabaseHas('supplementary_exam_materializations', [
+            'student_course_registration_id' => 300,
+            'student_course_result_id' => 400,
+        ]);
+        $this->assertDatabaseMissing('supplementary_exam_materializations', [
+            'student_course_registration_id' => 302,
+        ]);
     }
 
     #[Test]
@@ -493,11 +588,28 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
             'to_status' => 'published',
         ]);
 
-        $beforePractical = DB::table('student_grade_components')->where('student_grade_component_id', 501)->first();
+        $beforePractical = DB::table('student_grade_components as grades')
+            ->join('grade_components as components', 'components.grade_component_id', '=', 'grades.grade_component_id')
+            ->where('grades.student_course_registration_id', 300)
+            ->where('components.component_type', 'practical')
+            ->orderBy('grades.student_grade_component_id')
+            ->get([
+                'grades.student_grade_component_id', 'grades.grade_component_id', 'grades.mark',
+                'grades.grade_status', 'grades.updated_at',
+            ])->map(fn (object $row): array => (array) $row)->all();
+        $beforePracticalTotal = DB::table('student_course_results')
+            ->where('student_course_result_id', 400)
+            ->value('practical_total');
         $beforeAttendance = DB::table('student_attendance')->where('student_attendance_id', 1)->first();
-        $this->service()->materializeOffering($this->actor(), $this->offering());
         $student = Student::query()->findOrFail(200);
         $grades = new GradeService();
+        $publishedOnlyTranscript = $grades->getTranscript($student);
+        $publishedOnlyCourse = $publishedOnlyTranscript['terms'][0]['courses'][0];
+        $publishedOnlyGpa = $grades->calculateGpa($student, 1, 1);
+        $this->assertSame(20.0, $publishedOnlyCourse['theoretical_mark']);
+        $this->assertSame(30.0, $publishedOnlyCourse['practical_mark']);
+        $this->assertSame(50.0, $publishedOnlyCourse['final_mark']);
+        $this->service()->materializeOffering($this->actor(), $this->offering());
 
         $this->expectGradeError(
             fn () => $grades->calculateRegistrationResult(300, 1),
@@ -530,10 +642,24 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
         $this->assertSame(1, $transcript['summary']['approved_courses_count']);
         $this->assertSame(1, $transcript['summary']['passed_courses_count']);
         $this->assertSame(2.5, $gpa['gpa']);
+        $this->assertNotSame($publishedOnlyGpa['gpa'], $gpa['gpa']);
         $this->assertSame(3, $gpa['total_included_credit_hours']);
         $this->assertSame(1, $gpa['included_courses_count']);
         $this->assertEquals(40, DB::table('student_grade_components')->where('student_grade_component_id', 500)->value('mark'));
-        $this->assertEquals($beforePractical, DB::table('student_grade_components')->where('student_grade_component_id', 501)->first());
+        $afterPractical = DB::table('student_grade_components as grades')
+            ->join('grade_components as components', 'components.grade_component_id', '=', 'grades.grade_component_id')
+            ->where('grades.student_course_registration_id', 300)
+            ->where('components.component_type', 'practical')
+            ->orderBy('grades.student_grade_component_id')
+            ->get([
+                'grades.student_grade_component_id', 'grades.grade_component_id', 'grades.mark',
+                'grades.grade_status', 'grades.updated_at',
+            ])->map(fn (object $row): array => (array) $row)->all();
+        $this->assertSame($beforePractical, $afterPractical);
+        $this->assertEquals(
+            $beforePracticalTotal,
+            DB::table('student_course_results')->where('student_course_result_id', 400)->value('practical_total'),
+        );
         $this->assertEquals($beforeAttendance, DB::table('student_attendance')->where('student_attendance_id', 1)->first());
 
         $reconciliation = $this->reconciliation()->reconcile($this->actor(), $this->period()->fresh());

@@ -17,7 +17,7 @@ const deanNav = [
       { to: '/dean/courses', Icon: FaBook, ar: 'المواد', en: 'Courses' },
       { to: '/dean/registration-offerings', Icon: FaLockOpen, ar: 'فتح المواد للتسجيل', en: 'Registration offerings' },
       { to: '/dean/registration-requests', Icon: FaClipboardList, ar: 'طلبات تسجيل الطلاب', en: 'Registration requests' },
-      { to: '/dean/supplementary-exams', Icon: FaClipboardCheck, ar: 'الامتحانات التكميلية', en: 'Supplementary exams' },
+      { to: '/dean/supplementary-exams', Icon: FaClipboardCheck, ar: 'الامتحانات التكميلية', en: 'Supplementary exams', allRoles: ['dean'], assignedPermissions: ['supplementary_exams.offerings.view'] },
     ],
   },
   {

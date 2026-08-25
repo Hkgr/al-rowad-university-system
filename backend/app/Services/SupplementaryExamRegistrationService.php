@@ -7,6 +7,7 @@ use App\Models\Student;
 use App\Models\StudentCourseRegistration;
 use App\Models\SupplementaryExamOffering;
 use App\Models\SupplementaryExamOfferingSource;
+use App\Models\SupplementaryExamGradeSubmission;
 use App\Models\SupplementaryExamRegistration;
 use App\Models\SupplementaryExamRegistrationEvent;
 use App\Models\User;
@@ -14,10 +15,150 @@ use App\Support\SupplementaryExamPolicy;
 use App\Support\SupplementaryExamRegistrationGovernance;
 use App\Support\SupplementaryExamTargetGuard;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Collection;
 
 class SupplementaryExamRegistrationService
 {
-    public function __construct(private readonly SupplementaryExamEligibilityService $eligibility, private readonly DataScopeService $scope) {}
+    public function __construct(
+        private readonly SupplementaryExamEligibilityService $eligibility,
+        private readonly DataScopeService $scope,
+        private readonly GradeService $grades,
+    ) {}
+
+    /**
+     * Student-safe supplementary history. Unpublished marks and audit actors are
+     * deliberately excluded; the official result is exposed only after posting.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function registrationsForStudent(User $actor): array
+    {
+        if (! $actor->isStudent()
+            || ! $actor->effectivePermissions()->contains(SupplementaryExamRegistrationGovernance::SELF)) {
+            $this->fail('غير مصرح بعرض هذه السجلات.', 'supplementary_exam_registration_not_owned', 403);
+        }
+        $this->ready();
+
+        $registrations = SupplementaryExamRegistration::query()
+            ->with([
+                'offering.period.academicYear',
+                'offering.period.semester',
+                'offering.course',
+                'offering.academicProgram',
+                'originalRegistration.courseOffering.semester',
+                'originalRegistration.courseOffering.gradeComponents',
+                'originalRegistration.studentCourseResult.resultStatus',
+                'gradeResult',
+                'materialization.targetResult.resultStatus',
+            ])
+            ->where('student_id', (int) $actor->student_id)
+            ->latest('registered_at')
+            ->get();
+
+        $latestSubmissions = $this->latestSubmissions(
+            $registrations->pluck('supplementary_exam_offering_id')->map(fn ($id): int => (int) $id),
+        );
+        $policy = $this->grades->defaultGradingPolicy();
+
+        return $registrations->map(function (SupplementaryExamRegistration $registration) use ($latestSubmissions, $policy): array {
+            $offering = $registration->offering;
+            $original = $registration->originalRegistration;
+            $official = $original?->studentCourseResult;
+            $gradeResult = $registration->gradeResult;
+            $submission = $latestSubmissions->get((int) $registration->supplementary_exam_offering_id);
+            $published = $submission !== null
+                && $submission->status === 'published'
+                && $submission->published_at !== null
+                && $gradeResult !== null
+                && $gradeResult->status === 'published'
+                && $gradeResult->published_at !== null
+                && (int) $gradeResult->submission_version === (int) $submission->submission_version;
+            $materialization = $registration->materialization;
+            $materialized = $materialization !== null
+                && (int) $materialization->supplementary_exam_registration_id === (int) $registration->getKey()
+                && (int) $materialization->student_course_registration_id === (int) $registration->student_course_registration_id
+                && (int) $materialization->supplementary_exam_grade_result_id === (int) ($gradeResult?->getKey() ?? 0)
+                && $materialization->targetResult !== null;
+
+            $components = $original?->courseOffering?->gradeComponents?->where('is_required', true) ?? collect();
+            $theoretical = $components->where('component_type', 'theoretical');
+            $practical = $components->where('component_type', 'practical');
+            $supplementaryResult = null;
+            if ($published && ! $materialized) {
+                $calculation = $this->grades->buildCalculationForRequiredParts(
+                    (float) $gradeResult->theoretical_mark,
+                    $practical->isEmpty() ? null : (float) $official?->practical_total,
+                    $theoretical->isNotEmpty(),
+                    $practical->isNotEmpty(),
+                    (float) $theoretical->sum('max_mark'),
+                    (float) $practical->sum('max_mark'),
+                );
+                $supplementaryResult = [
+                    'theoretical_mark' => (float) $gradeResult->theoretical_mark,
+                    'final_mark' => (float) $calculation['final_mark'],
+                    'result_status_code' => $calculation['result_status_code'],
+                    'record_state' => 'published_not_materialized',
+                ];
+            }
+
+            $officialResult = $materialized ? [
+                'theoretical_mark' => (float) $materialization->targetResult->theoretical_total,
+                'practical_mark' => $practical->isEmpty() ? null : (float) $materialization->targetResult->practical_total,
+                'final_mark' => (float) $materialization->targetResult->final_mark,
+                'result_status_code' => $materialization->targetResult->resultStatus?->status_code,
+                'record_state' => 'official_materialized',
+            ] : null;
+
+            return [
+                'supplementary_exam_registration_id' => (int) $registration->getKey(),
+                'supplementary_exam_offering_id' => (int) $registration->supplementary_exam_offering_id,
+                'student_course_registration_id' => (int) $registration->student_course_registration_id,
+                'status' => (string) $registration->status,
+                'eligibility_reason' => (string) $registration->eligibility_reason,
+                'registration_channel' => (string) $registration->registration_channel,
+                'registered_at' => $registration->registered_at,
+                'workflow_status' => $submission?->status ?? $gradeResult?->status ?? 'waiting',
+                'offering' => $offering === null ? null : [
+                    'supplementary_exam_offering_id' => (int) $offering->getKey(),
+                    'status' => (string) $offering->status,
+                    'course' => $offering->course,
+                    'academic_program' => $offering->academicProgram,
+                    'period' => $offering->period,
+                ],
+                'original_attempt' => $original === null ? null : [
+                    'student_course_registration_id' => (int) $original->getKey(),
+                    'course_offering_id' => (int) $original->course_offering_id,
+                    'semester' => $original->courseOffering?->semester,
+                ],
+                'preserved_practical_mark' => $practical->isEmpty() || $official?->practical_total === null
+                    ? null
+                    : (float) $official->practical_total,
+                'practical_minimum' => $practical->isEmpty() ? null : (float) $policy->minimum_practical_mark,
+                'published_supplementary_result' => $supplementaryResult,
+                'official_result' => $officialResult,
+                'official_record_updated' => $materialized,
+                'can_cancel' => $registration->status === 'registered'
+                    && (int) $registration->current_slot === 1
+                    && $offering?->period?->status === 'registration_open',
+            ];
+        })->values()->all();
+    }
+
+    /** @return Collection<int, SupplementaryExamGradeSubmission> */
+    private function latestSubmissions(Collection $offeringIds): Collection
+    {
+        if ($offeringIds->isEmpty()) {
+            return collect();
+        }
+
+        return SupplementaryExamGradeSubmission::query()
+            ->whereIn('supplementary_exam_offering_id', $offeringIds->unique()->values())
+            ->orderByDesc('submission_version')
+            ->orderByDesc('supplementary_exam_grade_submission_id')
+            ->get()
+            ->groupBy('supplementary_exam_offering_id')
+            ->map(fn (Collection $rows): SupplementaryExamGradeSubmission => $rows->first());
+    }
 
     public function registerSelf(User $actor,int $offeringId,int $registrationId): SupplementaryExamRegistration
     {

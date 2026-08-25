@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { getIdentity } from '../../auth/auth'
+import { PERMISSIONS, ROLES, getIdentity, hasAssignedPermission, hasRole } from '../../auth/auth'
 
 const OFFICES = {
   scientific: {
@@ -82,7 +82,9 @@ export default function VicePresidentShell({ office }) {
         <p className="text-[13px] text-text-light mt-1">مراجعة طلبات فتح الشعب استثنائيًا عند نقص تكليف المدرسين ضمن صلاحية هذه النيابة فقط.</p>
       </Link>
 
-      {copy.supplementaryPath && (
+      {copy.supplementaryPath
+        && hasRole(ROLES.vicePresidentScientific, identity)
+        && hasAssignedPermission(PERMISSIONS.supplementaryExamsPeriodsView, identity) && (
       <Link
         to={copy.supplementaryPath}
         className="bg-white border border-primary/15 rounded-[16px] p-5 shadow-sm hover:border-primary/40"

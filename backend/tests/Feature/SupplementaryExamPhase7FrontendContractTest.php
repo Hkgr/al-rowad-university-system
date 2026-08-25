@@ -22,7 +22,8 @@ class SupplementaryExamPhase7FrontendContractTest extends TestCase
         $this->assertStringContainsString('changedMarks', $source);
         $this->assertStringContainsString('dirty', $source);
         $this->assertStringContainsString('توجد تعديلات غير محفوظة', $source);
-        $this->assertStringContainsString('window.confirm', $source);
+        $this->assertStringContainsString('SupplementaryConfirmDialog', $source);
+        $this->assertStringNotContainsString('window.confirm', $source);
         $this->assertStringContainsString('action_flags?.can_submit', $source);
         $this->assertStringContainsString('action_flags?.can_resubmit', $source);
         $this->assertStringContainsString('!serverCanSubmit', $source);
@@ -35,6 +36,7 @@ class SupplementaryExamPhase7FrontendContractTest extends TestCase
         $source = $this->frontend('features/professor-dashboard/pages/ProfessorSupplementaryExams.jsx');
 
         $this->assertStringContainsString('serverCanEdit', $source);
+        $this->assertStringContainsString("sheet?.action_flags?.can_edit === true", $source);
         $this->assertStringContainsString("periodStatus === 'grading_open'", $source);
         $this->assertStringContainsString('max={limits.max}', $source);
         $this->assertStringContainsString('min={limits.min}', $source);
@@ -95,7 +97,9 @@ class SupplementaryExamPhase7FrontendContractTest extends TestCase
         $this->assertStringContainsString('/v1/exams/supplementary-offerings/${offeringId}/graders', $source);
         $this->assertStringContainsString('/v1/exams/supplementary-offerings/${offeringId}/grader', $source);
         $this->assertStringContainsString('/v1/exams/supplementary-periods/${periodId}/open-grading', $source);
-        $this->assertStringContainsString('window.confirm', $source);
+        $this->assertStringContainsString('SupplementaryConfirmDialog', $source);
+        $this->assertStringNotContainsString('window.confirm', $source);
+        $this->assertStringNotContainsString('window.prompt', $source);
         $this->assertStringContainsString('المسجلون', $source);
         $this->assertStringContainsString('أُدخلت علاماتهم', $source);
         $this->assertStringContainsString('المنشورة', $source);
@@ -116,7 +120,9 @@ class SupplementaryExamPhase7FrontendContractTest extends TestCase
     {
         $source = $this->frontend('features/student-affairs/pages/SupplementaryExamRegistrations.jsx');
 
-        $this->assertStringContainsString("action === 'close' && !window.confirm", $source);
+        $this->assertStringContainsString("setDialog({ type: 'close' })", $source);
+        $this->assertStringContainsString('SupplementaryConfirmDialog', $source);
+        $this->assertStringNotContainsString('window.confirm', $source);
         $this->assertStringContainsString('تثبيت القائمة النهائية', $source);
     }
 

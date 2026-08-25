@@ -115,7 +115,21 @@ class SupplementaryExamRegistrationOfficeController extends Controller
             403,
         );
 
-        $periodRecord = SupplementaryExamPeriod::query()->findOrFail((int) $period);
+        $filters = $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+            'offering_id' => ['nullable', 'integer', 'min:1'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+        $periodQuery = SupplementaryExamPeriod::query();
+        if (! $this->scope->hasActualUniversityScope($user)) {
+            $periodQuery->whereHas('supplementaryExamOfferings', function (Builder $offering) use ($user): void {
+                $offering->whereHas('academicProgram', function (Builder $program) use ($user): void {
+                    $this->scope->scopeProgramsForMutation($program, $user);
+                });
+            });
+        }
+        $periodRecord = $periodQuery->findOrFail((int) $period);
         $query = SupplementaryExamRegistration::query()
             ->with([
                 'student',
@@ -131,16 +145,69 @@ class SupplementaryExamRegistrationOfficeController extends Controller
                 $this->scope->scopeStudents($student, $user);
             })
             ->whereHas('offering.academicProgram', function (Builder $program) use ($user): void {
-                $this->scope->scopePrograms($program, $user);
+                $this->scope->scopeProgramsForMutation($program, $user);
             });
 
+        if (isset($filters['offering_id'])) {
+            $query->where('supplementary_exam_offering_id', (int) $filters['offering_id']);
+        }
+        $search = trim((string) ($filters['search'] ?? ''));
+        if ($search !== '') {
+            $this->applySearch($query, $search);
+        }
+
         $status = (string) $periodRecord->status;
+        $permissions = $user->effectivePermissions();
+        $actualRegistrationOfficer = $user->isRegistrationOfficer();
+        $summaryQuery = clone $query;
+        $paginator = $query
+            ->orderBy('supplementary_exam_registration_id')
+            ->paginate((int) ($filters['per_page'] ?? 25));
 
         return response()->json([
             'period_status' => $status,
             'list_status' => SupplementaryExamRegistrationGovernance::isRosterFixed($status) ? 'fixed' : 'draft',
-            'data' => $query->get(),
+            'capabilities' => [
+                'can_manage_registrations' => $actualRegistrationOfficer
+                    && $permissions->contains(SupplementaryExamRegistrationGovernance::MANAGE),
+                'can_manage_window' => $actualRegistrationOfficer
+                    && $permissions->contains(SupplementaryExamRegistrationGovernance::WINDOW),
+            ],
+            'summary' => [
+                'registered_students' => (clone $summaryQuery)->distinct()->count('student_id'),
+                'offerings_with_registrations' => (clone $summaryQuery)->distinct()->count('supplementary_exam_offering_id'),
+            ],
+            'data' => $paginator->items(),
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+            ],
         ]);
+    }
+
+    private function applySearch(Builder $query, string $search): void
+    {
+        $query->where(function (Builder $match) use ($search): void {
+            $match->whereHas('student', function (Builder $student) use ($search): void {
+                $student->where(function (Builder $fields) use ($search): void {
+                    $fields->where('student_number', 'like', "%{$search}%")
+                        ->orWhere('first_name', 'like', "%{$search}%")
+                        ->orWhere('last_name', 'like', "%{$search}%");
+                });
+            })->orWhereHas('offering.course', function (Builder $course) use ($search): void {
+                $course->where(function (Builder $fields) use ($search): void {
+                    $fields->where('course_code', 'like', "%{$search}%")
+                        ->orWhere('course_name', 'like', "%{$search}%");
+                });
+            })->orWhereHas('offering.academicProgram', function (Builder $program) use ($search): void {
+                $program->where(function (Builder $fields) use ($search): void {
+                    $fields->where('program_code', 'like', "%{$search}%")
+                        ->orWhere('program_name', 'like', "%{$search}%");
+                });
+            });
+        });
     }
 
     /** @param Collection<int, array{type: string, id: int}> $scopes */

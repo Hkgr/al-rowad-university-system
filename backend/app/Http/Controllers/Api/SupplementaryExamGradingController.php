@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\SupplementaryExamGrading\SaveSupplementaryExamGradesRequest;
 use App\Models\SupplementaryExamOffering;
 use App\Models\SupplementaryExamPeriod;
 use App\Services\SupplementaryExamGradingService;
@@ -28,7 +29,7 @@ class SupplementaryExamGradingController extends Controller
 
         return response()->json(['success' => true, 'data' => $payload]);
     }
-    public function save(Request $request, SupplementaryExamOffering $offering, SupplementaryExamGradingService $service): JsonResponse { $data=$request->validate(['marks'=>['required','array','min:1'],'marks.*.supplementary_exam_registration_id'=>['required','integer','distinct'],'marks.*.theoretical_mark'=>['required','numeric']]);return response()->json(['success'=>true,'data'=>$service->saveDrafts($request->user(),$offering,$data['marks'])]); }
+    public function save(SaveSupplementaryExamGradesRequest $request, SupplementaryExamOffering $offering, SupplementaryExamGradingService $service): JsonResponse { $data=$request->validated();return response()->json(['success'=>true,'data'=>$service->saveDrafts($request->user(),$offering,$data['marks'])]); }
     public function submit(Request $request, SupplementaryExamOffering $offering, SupplementaryExamGradingService $service): JsonResponse { return response()->json(['success'=>true,'data'=>$service->submit($request->user(),$offering)]); }
     public function resubmit(Request $request, SupplementaryExamOffering $offering, SupplementaryExamGradingService $service): JsonResponse { return response()->json(['success'=>true,'data'=>$service->submit($request->user(),$offering,true)]); }
     public function queue(
