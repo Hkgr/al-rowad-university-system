@@ -59,7 +59,12 @@ $contract = static function (string $backendRoot): array {
     $saveEnd = strpos($sources['dean'], 'const confirmBusy', $saveStart === false ? 0 : $saveStart);
     $save = $saveStart === false || $saveEnd === false ? '' : substr($sources['dean'], $saveStart, $saveEnd - $saveStart);
     $expect(str_contains($save, "mode: 'selected'") && str_contains($save, '/v1/dean/registration-offerings/bulk-prepare'), 'Dean Save must retain the selected bulk-prepare workflow.');
-    $expect(strpos($save, 'await reloadCatalog()') < strpos($save, 'setDraftIds(outcome.draftIds)'), 'Dean Save must reload authoritative data before final draft state.');
+    $expect(str_contains($save, 'executeBulkPreparationPhases') && str_contains($save, "execution.kind === 'mutation-failed'"), 'Dean Save must distinguish mutation failure from refresh failure.');
+    $expect(strpos($save, 'setDraftIds(outcome.draftIds)') < strpos($save, "execution.kind === 'refresh-failed'"), 'Successful mutation outcome must be retained even when refresh fails.');
+    $expect(str_contains($save, 'setCatalogRefreshRequired(true)') && str_contains($sources['dean'], '{BULK_PREPARE_REFRESH_WARNING}'), 'Refresh failure must mark the catalog stale and display its dedicated warning.');
+    $expect(str_contains($sources['dean'], 'catalogRefreshRequired') && str_contains($sources['dean'], 'إعادة تحميل الحالة'), 'Stale catalog state must expose a GET-only refresh action.');
+    $expect(str_contains($sources['dean'], '|| catalogRefreshRequired'), 'Bulk Save must remain disabled while the catalog is stale.');
+    $expect(str_contains($sources['planner'], 'export async function executeBulkPreparationPhases') && str_contains($sources['planner'], "kind: 'refresh-failed', outcome"), 'Two-phase preparation orchestration must preserve the authoritative server outcome.');
 
     // OPSRC-EXAM-01..11: persisted offering first, optional advisory metadata only.
     foreach ([

@@ -25,7 +25,7 @@ import {
   advisorySemesterLabel,
   actualTermPreparationRows,
   applyAdvisoryPlan,
-  applyBulkPrepareOutcome,
+  BULK_PREPARE_REFRESH_WARNING,
   canSubmitCurrentWorkflowRequest,
   catalogCoursesForAdvisoryLevel,
   currentWorkflowRequest,
@@ -34,6 +34,7 @@ import {
   pagedResourceRows,
   recommendedSemesterMatches,
   savePreview,
+  executeBulkPreparationPhases,
   uniqueProgramCourseIds,
 } from '../utils/deanOfferingPlanner'
 
@@ -440,6 +441,7 @@ export default function DeanRegistrationOfferings() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [noticeTone, setNoticeTone] = useState('success')
+  const [catalogRefreshRequired, setCatalogRefreshRequired] = useState(false)
   const [busyIds, setBusyIds] = useState({})
   const [confirm, setConfirm] = useState(null)
   const [addLevel, setAddLevel] = useState(null)
@@ -554,6 +556,7 @@ export default function DeanRegistrationOfferings() {
           semester: data.semester ?? null,
         })
         setClosureByOffering(await fetchCurrentClosureRequests(data.levels ?? []))
+        setCatalogRefreshRequired(false)
       } catch (requestError) {
         if (!active) return
         setLevels([])
@@ -573,6 +576,7 @@ export default function DeanRegistrationOfferings() {
     setClosureByOffering({})
     setAddLevel(null)
     setNotice('')
+    setCatalogRefreshRequired(false)
   }, [programId, semesterId, yearId])
 
   const programs = useMemo(() => {
@@ -801,30 +805,66 @@ export default function DeanRegistrationOfferings() {
     savingRef.current = true
     setBusyIds(current => ({ ...current, bulk: true }))
     setError('')
+    setNotice('')
     try {
-      const response = await apiRequest('/v1/dean/registration-offerings/bulk-prepare', {
-        method: 'POST',
-        body: JSON.stringify({
-          academic_program_id: Number(programId),
-          academic_year_id: Number(yearId),
-          semester_id: Number(semesterId),
-          mode: 'selected',
-          program_course_ids: preview.programCourseIds,
-        }),
+      const execution = await executeBulkPreparationPhases({
+        mutate: async () => {
+          const response = await apiRequest('/v1/dean/registration-offerings/bulk-prepare', {
+            method: 'POST',
+            body: JSON.stringify({
+              academic_program_id: Number(programId),
+              academic_year_id: Number(yearId),
+              semester_id: Number(semesterId),
+              mode: 'selected',
+              program_course_ids: preview.programCourseIds,
+            }),
+          })
+          return response?.data ?? {}
+        },
+        refresh: reloadCatalog,
       })
-      const result = response?.data ?? {}
-      const outcome = applyBulkPrepareOutcome(result)
-      await reloadCatalog()
+
+      if (execution.kind === 'mutation-failed') {
+        setError(handleRequestError(execution.error, 'تعذّر تجهيز طروحات المواد.'))
+        return
+      }
+
+      const { outcome } = execution
       setDraftIds(outcome.draftIds)
       setPrepareErrors(outcome.prepareErrors)
+
+      if (execution.kind === 'refresh-failed') {
+        setCatalogRefreshRequired(true)
+        return
+      }
+
+      setCatalogRefreshRequired(false)
       showNotice(outcome.notice, outcome.tone)
-    } catch (requestError) {
-      setError(handleRequestError(requestError, 'تعذّر تجهيز طروحات المواد.'))
     } finally {
       savingRef.current = false
       setBusyIds(current => {
         const next = { ...current }
         delete next.bulk
+        return next
+      })
+    }
+  }
+
+  async function refreshPreparationCatalog() {
+    if (busyIds.catalogRefresh) return
+    setBusyIds(current => ({ ...current, catalogRefresh: true }))
+    setError('')
+    try {
+      await reloadCatalog()
+      setCatalogRefreshRequired(false)
+      showNotice('تم تحديث عرض الطروحات من الخادم.')
+    } catch {
+      setCatalogRefreshRequired(true)
+      setNotice('')
+    } finally {
+      setBusyIds(current => {
+        const next = { ...current }
+        delete next.catalogRefresh
         return next
       })
     }
@@ -937,6 +977,20 @@ export default function DeanRegistrationOfferings() {
         </div>
       )}
 
+      {catalogRefreshRequired && (
+        <div className="mb-4 rounded-[12px] px-[18px] py-3 bg-amber-50 text-amber-800 border border-amber-200">
+          <p className="text-[13.5px] font-semibold whitespace-pre-line">{BULK_PREPARE_REFRESH_WARNING}</p>
+          <button
+            type="button"
+            className="mt-3 px-3 py-2 bg-white border border-amber-300 rounded-[9px] text-[12.5px] font-bold hover:bg-amber-100 disabled:opacity-40"
+            disabled={Boolean(busyIds.catalogRefresh)}
+            onClick={() => { void refreshPreparationCatalog() }}
+          >
+            {busyIds.catalogRefresh ? 'جاري إعادة التحميل' : 'إعادة تحميل الحالة'}
+          </button>
+        </div>
+      )}
+
       {!yearId || !semesterId || !programId ? (
         <p className="text-[13.5px] text-text-light bg-white border border-primary/12 rounded-[14px] px-4 py-8 text-center">
           اختر السنة الأكاديمية والفصل الفعلي والقسم والبرنامج لبدء تجهيز مواد الفصل.
@@ -1006,7 +1060,7 @@ export default function DeanRegistrationOfferings() {
               <button
                 type="button"
                 className="px-4 py-2 bg-primary text-white rounded-[10px] text-[13px] font-bold hover:enabled:bg-primary-dark disabled:opacity-40"
-                disabled={!canManageLocal || preview.total < 1 || Boolean(busyIds.bulk)}
+                disabled={!canManageLocal || preview.total < 1 || Boolean(busyIds.bulk) || catalogRefreshRequired}
                 onClick={savePreparation}
               >
                 {busyIds.bulk ? 'جاري الحفظ' : 'حفظ التجهيز'}

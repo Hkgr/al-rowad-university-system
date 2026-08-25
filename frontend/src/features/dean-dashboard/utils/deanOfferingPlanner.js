@@ -214,6 +214,8 @@ export const BULK_PREPARE_FULL_SUCCESS_PREFIX = 'تم حفظ تجهيز الفص
 
 export const BULK_PREPARE_PARTIAL_KEEP_DRAFT = 'بقيت المواد غير المحفوظة في التجهيز لتتمكن من المحاولة مرة أخرى.'
 
+export const BULK_PREPARE_REFRESH_WARNING = 'تم حفظ نتيجة التجهيز على الخادم، لكن تعذّر تحديث العرض.\nأعد تحميل الحالة لرؤية الحالة الحالية.'
+
 export const SAFE_PREPARE_ERROR_LABELS = {
   prepare_failed: 'تعذّر تجهيز هذه المادة.',
   invalid_program_course: 'المادة غير صالحة في خطة البرنامج.',
@@ -261,6 +263,26 @@ export function applyBulkPrepareOutcome(result) {
     notice: `تم إنشاء ${created} طروحات، و${existing} كانت محفوظة مسبقًا، وتعذّر تجهيز ${failed} مواد.\n${BULK_PREPARE_PARTIAL_KEEP_DRAFT}`,
     prepareErrors,
   }
+}
+
+export async function executeBulkPreparationPhases({ mutate, refresh }) {
+  let result
+
+  try {
+    result = await mutate()
+  } catch (error) {
+    return { kind: 'mutation-failed', error }
+  }
+
+  const outcome = applyBulkPrepareOutcome(result)
+
+  try {
+    await refresh()
+  } catch (error) {
+    return { kind: 'refresh-failed', outcome, error }
+  }
+
+  return { kind: 'refreshed', outcome }
 }
 
 export function pagedResourceRows(response) {
