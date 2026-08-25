@@ -76,6 +76,9 @@ final class MinistryPlacementNormalizer
             $day = (int) $parts[1];
             $month = (int) $parts[2];
             $year = (int) $parts[3];
+            if ($day === $month && checkdate($month, $day, $year)) {
+                return ['value' => sprintf('%04d-%02d-%02d', $year, $month, $day), 'error' => null];
+            }
             if ($day > 12 && checkdate($month, $day, $year)) {
                 return ['value' => sprintf('%04d-%02d-%02d', $year, $month, $day), 'error' => null];
             }

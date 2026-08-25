@@ -1,13 +1,17 @@
 # Ministry Placement Phase 1 API
 
-All endpoints require an authenticated, active account, the directly assigned
-permission listed below, and an actual university access scope. The
-`super_admin` role does not replace either requirement.
+All endpoints require an authenticated, active account, the effective/actually
+assigned RBAC permission listed below (excluding the virtual `super_admin`
+bypass), and an actual university access scope. The `super_admin` role does
+not replace either requirement.
 
 ## Excel contract
 
 - Row 1 is informational. A blank row produces `blank_title_row` only.
-- Row 2 contains the A:X headers and the required positional anchors.
+- Row 2 contains the A:X headers and the required positional anchors, including
+  accepted preference in K, date of birth in Q, and last name in T.
+- Non-empty data after X is a structural error; formatting outside A:X is
+  ignored.
 - Data starts at row 3 and follows the existing 24-column Ministry mapping.
 - Identifiers remain trimmed strings. Duplicate comparison alone normalizes
   Arabic digit forms and Unicode whitespace; it never casts to a number.

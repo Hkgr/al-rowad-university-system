@@ -19,6 +19,9 @@ final class MinistryPlacementService
         2 => ['max_total_score', 'المجموع الأعظمي', 'المجموع الاعظمي', 'العلامة العظمى'],
         3 => ['total_score', 'المجموع', 'العلامة'],
         7 => ['subscription_number', 'رقم الاكتتاب'],
+        10 => ['accepted_preference_text', 'الرغبة المقبولة', 'الرغبة'],
+        16 => ['date_of_birth', 'تاريخ الميلاد'],
+        19 => ['last_name', 'الكنية', 'اسم العائلة', 'الاسم الأخير', 'الاسم الاخير'],
         21 => ['first_name', 'الاسم', 'الاسم الأول', 'الاسم الاول'],
         22 => ['row_number', 'رقم السطر', 'التسلسل', 'م'],
         23 => ['national_civil_id', 'الرقم الوطني', 'رقم الهوية', 'الرقم المدني'],
@@ -159,7 +162,6 @@ final class MinistryPlacementService
                 'total_score' => $record['total_score'],
                 'errors' => $errors,
                 'status' => $errors === [] ? 'valid' : 'invalid',
-                '_validation_error' => $errors !== [],
             ];
         }
 
@@ -177,12 +179,12 @@ final class MinistryPlacementService
             }
         }
 
-        $invalidRows = count(array_filter($previewRows, fn (array $row): bool => $row['_validation_error']));
-        $duplicateRows = count(array_filter($previewRows, fn (array $row): bool => $row['status'] === 'duplicate'));
-        $validRows = count(array_filter($previewRows, fn (array $row): bool => $row['status'] === 'valid'));
+        $statusCounts = array_count_values(array_column($previewRows, 'status'));
+        $invalidRows = $statusCounts['invalid'] ?? 0;
+        $duplicateRows = $statusCounts['duplicate'] ?? 0;
+        $validRows = $statusCounts['valid'] ?? 0;
         $rowErrors = [];
         foreach ($previewRows as &$row) {
-            unset($row['_validation_error']);
             if ($row['errors'] !== []) {
                 $rowErrors[] = ['source_row' => $row['source_row'], 'errors' => $row['errors']];
             }

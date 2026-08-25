@@ -49,7 +49,7 @@ class MinistryPlacementPhase1ServiceTest extends TestCase
         self::assertSame(0, $preview['rows_count']);
     }
 
-    public function test_access_requires_direct_permission_and_actual_university_scope_without_role_bypass(): void
+    public function test_access_requires_effective_assigned_permission_and_actual_university_scope_without_virtual_role_bypass(): void
     {
         DB::table('roles')->insert([
             ['role_id' => 1, 'role_code' => 'registration_officer', 'is_active' => 1],
@@ -148,6 +148,82 @@ class MinistryPlacementPhase1ServiceTest extends TestCase
         self::assertContains('ambiguous_date', $preview['normalized_preview_rows'][0]['errors']['date_of_birth']);
     }
 
+    public function test_ministry_p1_31_and_32_equal_date_is_valid_while_genuinely_ambiguous_date_is_rejected(): void
+    {
+        $equal = $this->validRow('00123456789');
+        $equal[16] = '03/03/2026';
+        $equalPreview = $this->service->preview($this->workbook([$equal]));
+        self::assertSame(1, $equalPreview['valid_rows']);
+        self::assertSame('2026-03-03', $equalPreview['normalized_preview_rows'][0]['date_of_birth']);
+
+        $ambiguous = $this->validRow('00123456780');
+        $ambiguous[16] = '03/04/2026';
+        $ambiguousPreview = $this->service->preview($this->workbook([$ambiguous]));
+        self::assertContains('ambiguous_date', $ambiguousPreview['normalized_preview_rows'][0]['errors']['date_of_birth']);
+
+        $invalidUsOrder = $this->validRow('00123456781');
+        $invalidUsOrder[16] = '04/13/2026';
+        $invalidPreview = $this->service->preview($this->workbook([$invalidUsOrder]));
+        self::assertContains('invalid_date', $invalidPreview['normalized_preview_rows'][0]['errors']['date_of_birth']);
+    }
+
+    public function test_ministry_p1_27_k_accepted_preference_header_drift_blocks_preview_and_import(): void
+    {
+        $this->assertHeaderDriftBlocksPreviewAndImport(10, 'track');
+    }
+
+    public function test_ministry_p1_28_q_date_of_birth_header_drift_blocks_preview_and_import(): void
+    {
+        $this->assertHeaderDriftBlocksPreviewAndImport(16, 'gender');
+    }
+
+    public function test_ministry_p1_29_t_last_name_header_drift_blocks_preview_and_import(): void
+    {
+        $this->assertHeaderDriftBlocksPreviewAndImport(19, 'father_name');
+    }
+
+    public function test_ministry_p1_30_real_data_after_x_blocks_but_formatting_only_after_x_does_not(): void
+    {
+        $withData = $this->workbook([$this->validRow('00123456789')], configure: function ($sheet): void {
+            $sheet->setCellValue('Y3', 'unexpected');
+        });
+        $blocked = $this->service->preview($withData);
+        self::assertContains('unexpected_data_after_column_x', $blocked['structural_errors']);
+        try {
+            $this->service->import($withData, ['batch_name' => 'دفعة', 'academic_year_id' => 1], User::query()->findOrFail(7));
+            self::fail('Expected data after X to block import.');
+        } catch (\App\Exceptions\MinistryPlacementException $exception) {
+            self::assertSame('ministry_placement_workbook_invalid', $exception->errorCode);
+        }
+        self::assertSame(0, DB::table('ministry_placement_batches')->count());
+
+        $formattingOnly = $this->workbook([$this->validRow('00123456780')], configure: function ($sheet): void {
+            $sheet->getStyle('Y3')->getFont()->setBold(true);
+        });
+        $ready = $this->service->preview($formattingOnly);
+        self::assertSame([], $ready['structural_errors']);
+        self::assertSame(1, $ready['valid_rows']);
+    }
+
+    public function test_ministry_p1_33_and_34_duplicate_status_has_priority_without_double_counting(): void
+    {
+        $invalidDuplicate = $this->validRow('٠٠١٢٣٤٥٦٧٨٩');
+        $invalidDuplicate[1] = 'not-an-email';
+        $preview = $this->service->preview($this->workbook([
+            $invalidDuplicate,
+            $this->validRow('00123456789'),
+            $this->validRow('00123456780'),
+        ]));
+
+        self::assertSame('duplicate', $preview['normalized_preview_rows'][0]['status']);
+        self::assertContains('invalid_email', $preview['normalized_preview_rows'][0]['errors']['email']);
+        self::assertContains('duplicate_national_civil_id', $preview['normalized_preview_rows'][0]['errors']['national_civil_id']);
+        self::assertSame(1, $preview['valid_rows']);
+        self::assertSame(0, $preview['invalid_rows']);
+        self::assertSame(2, $preview['duplicate_rows']);
+        self::assertSame($preview['rows_count'], $preview['valid_rows'] + $preview['invalid_rows'] + $preview['duplicate_rows']);
+    }
+
     public function test_excel_serial_blank_rows_required_names_and_score_range_are_explicit(): void
     {
         $serial = $this->validRow('00123456789');
@@ -177,19 +253,48 @@ class MinistryPlacementPhase1ServiceTest extends TestCase
         ];
     }
 
-    /** @param array<int, array<int, mixed>> $rows */
-    private function workbook(array $rows, string $title = 'نتائج مفاضلة الوزارة'): UploadedFile
+    private function assertHeaderDriftBlocksPreviewAndImport(int $headerIndex, string $replacement): void
+    {
+        $headers = \App\Imports\MinistryPlacementImport::COLUMN_MAP;
+        $headers[$headerIndex] = $replacement;
+        $file = $this->workbook([$this->validRow('00123456789')], headers: $headers);
+        $preview = $this->service->preview($file);
+        self::assertContains('invalid_header_anchor_'.($headerIndex + 1), $preview['structural_errors']);
+
+        try {
+            $this->service->import($file, ['batch_name' => 'دفعة', 'academic_year_id' => 1], User::query()->findOrFail(7));
+            self::fail('Expected structural header drift to block import.');
+        } catch (\App\Exceptions\MinistryPlacementException $exception) {
+            self::assertSame('ministry_placement_workbook_invalid', $exception->errorCode);
+        }
+        self::assertSame(0, DB::table('ministry_placement_batches')->count());
+    }
+
+    /**
+     * @param array<int, array<int, mixed>> $rows
+     * @param null|array<int, string> $headers
+     * @param null|callable(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet): void $configure
+     */
+    private function workbook(
+        array $rows,
+        string $title = 'نتائج مفاضلة الوزارة',
+        ?array $headers = null,
+        ?callable $configure = null,
+    ): UploadedFile
     {
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setCellValue('A1', $title);
-        foreach (\App\Imports\MinistryPlacementImport::COLUMN_MAP as $index => $field) {
+        foreach ($headers ?? \App\Imports\MinistryPlacementImport::COLUMN_MAP as $index => $field) {
             $sheet->setCellValue([$index + 1, 2], $field);
         }
         foreach ($rows as $rowIndex => $row) {
             foreach ($row as $columnIndex => $value) {
                 $sheet->setCellValueExplicit([$columnIndex + 1, $rowIndex + 3], (string) $value, DataType::TYPE_STRING);
             }
+        }
+        if ($configure !== null) {
+            $configure($sheet);
         }
         $path = tempnam(sys_get_temp_dir(), 'ministry-placement-').'.xlsx';
         (new Xlsx($spreadsheet))->save($path);

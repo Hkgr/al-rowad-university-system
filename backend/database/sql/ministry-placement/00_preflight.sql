@@ -7,13 +7,47 @@ SELECT COUNT(*) = 1 INTO @mp_database_exists
 FROM information_schema.schemata
 WHERE schema_name = @mp_schema;
 
-SELECT COUNT(*) = 5 INTO @mp_required_tables
+SELECT COUNT(*) = 7 INTO @mp_required_tables
 FROM information_schema.tables
 WHERE table_schema = @mp_schema
   AND table_type = 'BASE TABLE'
   AND table_name IN (
-    'academic_years', 'users', 'user_activity_logs',
+    'academic_years', 'users', 'permissions', 'user_access_scopes', 'user_activity_logs',
     'ministry_placement_batches', 'ministry_placement_records'
+  );
+
+SELECT COUNT(*) = 3 INTO @mp_permission_required_columns
+FROM information_schema.columns
+WHERE table_schema = @mp_schema
+  AND table_name = 'permissions'
+  AND (
+    (column_name = 'permission_id' AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
+    (column_name = 'permission_code' AND data_type = 'varchar' AND character_maximum_length >= 120 AND is_nullable = 'NO') OR
+    (column_name = 'is_active' AND data_type = 'tinyint' AND is_nullable = 'NO')
+  );
+
+SET @mp_permissions_query := IF(
+  @mp_permission_required_columns,
+  'SELECT COUNT(*) = 2 INTO @mp_required_active_permissions FROM (SELECT permission_code FROM `alrowad_uni_rust`.`permissions` WHERE permission_code IN (''admissions.view'', ''admissions.manage'') GROUP BY permission_code HAVING COUNT(*) = 1 AND MAX(is_active = 1) = 1) AS required_active_permissions',
+  'SELECT 0 INTO @mp_required_active_permissions'
+);
+PREPARE mp_permissions_statement FROM @mp_permissions_query;
+EXECUTE mp_permissions_statement;
+DEALLOCATE PREPARE mp_permissions_statement;
+
+SELECT COUNT(*) = 5 INTO @mp_scope_required_columns
+FROM information_schema.columns
+WHERE table_schema = @mp_schema
+  AND table_name = 'user_access_scopes'
+  AND (
+    (column_name = 'user_access_scope_id' AND data_type IN ('int', 'bigint') AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO' AND extra LIKE '%auto_increment%') OR
+    (column_name = 'user_id' AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
+    (column_name = 'scope_type' AND is_nullable = 'NO' AND (
+      (data_type = 'varchar' AND character_maximum_length >= 20) OR
+      (data_type = 'enum' AND column_type LIKE '%''university''%')
+    )) OR
+    (column_name = 'scope_id' AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
+    (column_name = 'is_active' AND data_type = 'tinyint' AND is_nullable = 'NO')
   );
 
 SELECT COUNT(*) = 9 INTO @mp_batch_required_columns
@@ -91,6 +125,23 @@ WHERE constraint_schema = @mp_schema
     (table_name = 'user_activity_logs' AND column_name = 'activity_log_id')
   );
 
+SELECT COUNT(*) = 2 INTO @mp_authorization_primary_keys
+FROM information_schema.key_column_usage
+WHERE constraint_schema = @mp_schema
+  AND constraint_name = 'PRIMARY'
+  AND (
+    (table_name = 'permissions' AND column_name = 'permission_id') OR
+    (table_name = 'user_access_scopes' AND column_name = 'user_access_scope_id')
+  );
+
+SELECT COUNT(*) = 1 INTO @mp_scope_user_foreign_key
+FROM information_schema.key_column_usage
+WHERE constraint_schema = @mp_schema
+  AND table_name = 'user_access_scopes'
+  AND column_name = 'user_id'
+  AND referenced_table_name = 'users'
+  AND referenced_column_name = 'user_id';
+
 SELECT COUNT(*) = 1 INTO @mp_batch_unique_identifier
 FROM (
   SELECT index_name
@@ -117,15 +168,24 @@ WHERE constraint_schema = @mp_schema
 
 SET @mp_ready := @mp_database_exists
   AND @mp_required_tables
+  AND @mp_permission_required_columns
+  AND @mp_required_active_permissions
+  AND @mp_scope_required_columns
   AND @mp_batch_required_columns
   AND @mp_record_required_columns
   AND @mp_activity_required_columns
   AND @mp_parent_identity_types
   AND @mp_primary_keys
+  AND @mp_authorization_primary_keys
+  AND @mp_scope_user_foreign_key
   AND @mp_batch_unique_identifier
   AND @mp_required_foreign_keys;
 
 SELECT 'DATABASE_AND_TABLES' AS check_name, IF(@mp_database_exists AND @mp_required_tables, 'PASS', 'FAIL') AS result
+UNION ALL
+SELECT 'RBAC_PERMISSIONS', IF(@mp_permission_required_columns AND @mp_required_active_permissions AND @mp_authorization_primary_keys, 'PASS', 'FAIL')
+UNION ALL
+SELECT 'ACTUAL_SCOPE_STRUCTURE', IF(@mp_scope_required_columns AND @mp_scope_user_foreign_key AND @mp_authorization_primary_keys, 'PASS', 'FAIL')
 UNION ALL
 SELECT 'REQUIRED_COLUMNS', IF(@mp_batch_required_columns AND @mp_record_required_columns AND @mp_activity_required_columns, 'PASS', 'FAIL')
 UNION ALL

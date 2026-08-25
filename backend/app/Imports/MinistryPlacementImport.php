@@ -70,11 +70,17 @@ final class MinistryPlacementImport
                 $headers[$index] = $this->cell($sheet->getCell($coordinate)) + ['field' => $field];
             }
 
-            $highestDataColumn = Coordinate::columnIndexFromString($sheet->getHighestDataColumn());
-            if ($highestDataColumn < count(self::COLUMN_MAP)) {
-                $errors[] = 'missing_a_to_x_columns';
-            } elseif ($highestDataColumn > count(self::COLUMN_MAP)) {
-                $warnings[] = 'extra_columns_ignored';
+            foreach ($sheet->getCellCollection()->getCoordinates() as $coordinate) {
+                [$column] = Coordinate::coordinateFromString($coordinate);
+                if (Coordinate::columnIndexFromString($column) <= count(self::COLUMN_MAP)) {
+                    continue;
+                }
+
+                $cell = $sheet->getCell($coordinate);
+                if ($this->hasContent($cell)) {
+                    $errors[] = 'unexpected_data_after_column_x';
+                    break;
+                }
             }
 
             foreach ($spreadsheet->getAllSheets() as $sheetIndex => $candidate) {
@@ -122,5 +128,20 @@ final class MinistryPlacementImport
             'formatted' => (string) $cell->getFormattedValue(),
             'formula' => $cell->getDataType() === DataType::TYPE_FORMULA,
         ];
+    }
+
+    private function hasContent(\PhpOffice\PhpSpreadsheet\Cell\Cell $cell): bool
+    {
+        if ($cell->getDataType() === DataType::TYPE_FORMULA) {
+            return true;
+        }
+
+        foreach ([$cell->getValue(), $cell->getFormattedValue()] as $value) {
+            if ($value !== null && preg_replace('/^[\s\p{Z}]+|[\s\p{Z}]+$/u', '', (string) $value) !== '') {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

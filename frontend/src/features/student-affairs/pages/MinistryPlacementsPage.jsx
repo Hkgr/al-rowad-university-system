@@ -8,6 +8,8 @@ import {
   paginatedRows,
   paginationMeta,
   previewStatusLabel,
+  rowErrorLabels,
+  workbookIssueLabel,
 } from '../lib/ministryPlacement'
 
 const emptyForm = { file: null, academic_year_id: '', batch_name: '', notes: '' }
@@ -192,12 +194,12 @@ export default function MinistryPlacementsPage() {
           {metric('السجلات المكررة', preview.duplicate_rows, 'amber')}
         </div>
         {(preview.warnings?.length > 0 || preview.structural_errors?.length > 0) && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          {[...(preview.warnings ?? []), ...(preview.structural_errors ?? [])].map(item => <div key={item}>• {item}</div>)}
+          {[...(preview.warnings ?? []), ...(preview.structural_errors ?? [])].map(item => <div key={item}>• {workbookIssueLabel(item)} <span className="font-mono text-xs" dir="ltr">({item})</span></div>)}
         </div>}
         <div className="mt-5 overflow-x-auto rounded-xl border border-slate-200">
-          <table className="min-w-full text-sm"><thead className="bg-primary/8 text-text-dark"><tr>{['رقم الصف','الرقم الوطني','رقم الاكتتاب','الاسم','اسم الأب','تاريخ الميلاد','الرغبة المقبولة','المجموع','الحالة'].map(label => <th key={label} className="whitespace-nowrap p-3 text-right">{label}</th>)}</tr></thead>
+          <table className="min-w-full text-sm"><thead className="bg-primary/8 text-text-dark"><tr>{['رقم الصف','الرقم الوطني','رقم الاكتتاب','الاسم','اسم الأب','تاريخ الميلاد','الرغبة المقبولة','المجموع','الحالة','الأخطاء'].map(label => <th key={label} className="whitespace-nowrap p-3 text-right">{label}</th>)}</tr></thead>
             <tbody>{preview.normalized_preview_rows?.map(row => <tr key={row.source_row} className="border-t border-slate-100">
-              <td className="p-3">{row.source_row}</td><td className="p-3 font-mono" dir="ltr">{row.national_civil_id || '—'}</td><td className="p-3 font-mono" dir="ltr">{row.subscription_number || '—'}</td><td className="p-3">{row.full_name || '—'}</td><td className="p-3">{row.father_name || '—'}</td><td className="p-3">{row.date_of_birth || '—'}</td><td className="p-3">{row.accepted_preference_text || '—'}</td><td className="p-3">{row.total_score ?? '—'}</td><td className={`p-3 font-bold ${row.status === 'valid' ? 'text-green-700' : row.status === 'duplicate' ? 'text-amber-700' : 'text-red-700'}`}>{previewStatusLabel(row.status)}</td>
+              <td className="p-3">{row.source_row}</td><td className="p-3 font-mono" dir="ltr">{row.national_civil_id || '—'}</td><td className="p-3 font-mono" dir="ltr">{row.subscription_number || '—'}</td><td className="p-3">{row.full_name || '—'}</td><td className="p-3">{row.father_name || '—'}</td><td className="p-3">{row.date_of_birth || '—'}</td><td className="p-3">{row.accepted_preference_text || '—'}</td><td className="p-3">{row.total_score ?? '—'}</td><td className={`p-3 font-bold ${row.status === 'valid' ? 'text-green-700' : row.status === 'duplicate' ? 'text-amber-700' : 'text-red-700'}`}>{previewStatusLabel(row.status)}</td><td className="min-w-56 p-3 text-xs text-red-700">{rowErrorLabels(row.errors).length > 0 ? rowErrorLabels(row.errors).map(reason => <div key={reason}>• {reason}</div>) : '—'}</td>
             </tr>)}</tbody>
           </table>
         </div>
