@@ -34,4 +34,13 @@ const studentAffairsNav = [
   },
 ]
 
+export const ministryPlacementNav = [
+  {
+    label: 'القبول',
+    items: [
+      { to: '/student-affairs/ministry-placements', Icon: FaFileExcel, ar: 'استيراد مفاضلة الوزارة', en: 'Ministry placement', end: true, assignedPermissions: ['admissions.view'], actualUniversityScope: true },
+    ],
+  },
+]
+
 export default studentAffairsNav

@@ -13,6 +13,7 @@ $contract = static function (string $backendRoot): array {
         'preflight' => $backendRoot.'/database/sql/ministry-placement/00_preflight.sql',
         'composer' => $backendRoot.'/composer.json',
         'api_client' => $frontendRoot.'/src/services/apiClient.js',
+        'auth' => $frontendRoot.'/src/features/auth/auth.js',
         'page' => $frontendRoot.'/src/features/student-affairs/pages/MinistryPlacementsPage.jsx',
         'frontend_helper' => $frontendRoot.'/src/features/student-affairs/lib/ministryPlacement.js',
         'app' => $frontendRoot.'/src/app/App.jsx',
@@ -47,6 +48,8 @@ $contract = static function (string $backendRoot): array {
     }
     $expect(str_contains($sources['importer'], 'unexpected_data_after_column_x') && str_contains($sources['importer'], 'getCellCollection()->getCoordinates()'), 'Real data after X must fail closed based on cell content.');
     $expect(! str_contains($sources['importer'], 'extra_columns_ignored'), 'Data after X must never be silently ignored.');
+    $expect(str_contains($sources['importer'], "'data_type' => \$cell->getDataType()") && str_contains($sources['normalizer'], "(\$cell['data_type'] ?? null) === 'n'"), 'Excel serial dates must require the real numeric cell type.');
+    $expect(str_contains($sources['importer'], 'additional_empty_sheet_ignored'), 'Empty additional worksheets must emit a stable warning.');
     $expect(str_contains($sources['normalizer'], "'٠' => '0'") && str_contains($sources['normalizer'], "'۰' => '0'"), 'Both Arabic digit sets must normalize for duplicate comparison.');
     $expect(str_contains($sources['normalizer'], 'duplicateKey') && str_contains($sources['normalizer'], "preg_replace('/[\\s\\p{Z}]+/u', '', \$asciiDigits)"), 'Duplicate key must normalize Unicode whitespace.');
     $expect(! str_contains($sources['normalizer'], '(int) $identifier'), 'Identifiers must never be cast to integers.');
@@ -92,11 +95,22 @@ $contract = static function (string $backendRoot): array {
     foreach (['@mp_scope_required_columns', '@mp_scope_user_foreign_key', 'user_access_scope_id', 'ACTUAL_SCOPE_STRUCTURE'] as $required) {
         $expect(str_contains($sources['preflight'], $required), 'Preflight is missing actual-scope structure validation: '.$required);
     }
+    foreach (['OPERATOR_READINESS', '@mp_operator_report_tables', '@mp_operator_report_columns', 'user_roles', 'role_permissions', "ou.unit_code = ''PRES''", 'ou.is_active = 1'] as $required) {
+        $expect(str_contains($sources['preflight'], $required), 'Preflight operator-readiness report is incomplete: '.$required);
+    }
+    $readyStart = strpos($sources['preflight'], 'SET @mp_ready :=');
+    $readyEnd = strpos($sources['preflight'], ';', $readyStart === false ? 0 : $readyStart);
+    $readyExpression = $readyStart === false || $readyEnd === false ? '' : substr($sources['preflight'], $readyStart, $readyEnd - $readyStart);
+    $expect(! str_contains($readyExpression, 'operator'), 'Operator provisioning must remain informational and separate from schema readiness.');
 
     $expect(str_contains($sources['api_client'], 'options.body instanceof FormData') && str_contains($sources['api_client'], "!isFormData ? { 'Content-Type': 'application/json' }"), 'apiRequest must distinguish FormData and JSON.');
     $expect(str_contains($sources['page'], 'فحص الملف') && str_contains($sources['page'], 'اعتماد واستيراد الدفعة'), 'Preview-first UI is incomplete.');
     $expect(str_contains($sources['page'], "'الأخطاء'") && str_contains($sources['page'], 'rowErrorLabels(row.errors)'), 'Preview rows must visibly render localized validation reasons.');
     $expect(str_contains($sources['page'], 'workbookIssueLabel(item)') && str_contains($sources['frontend_helper'], 'unexpected_data_after_column_x'), 'Structural machine codes need Arabic presentation labels.');
+    $expect(str_contains($sources['frontend_helper'], 'additional_empty_sheet_ignored'), 'Empty-sheet warnings need Arabic presentation text.');
+    $expect(str_contains($sources['app'], 'ministryPlacementNav') && str_contains($sources['app'], 'assignedPermissions={[PERMISSIONS.admissionsView]} actualUniversityScope'), 'Ministry page needs a sibling parent with exact admissions/scope authority.');
+    $expect(substr_count($sources['app'], 'path="/student-affairs/ministry-placements"') === 1, 'Ministry route must be declared exactly once.');
+    $expect(str_contains($sources['auth'], 'assignedPermissions: [PERMISSIONS.admissionsView], actualUniversityScope: true') && str_contains($sources['auth'], "return '/student-affairs/ministry-placements'"), 'Admissions-only operators need a landing route with exact Ministry authority.');
     foreach (['ربط برنامج', 'تحويل لمتقدم', 'إنشاء طالب'] as $forbidden) {
         $expect(! str_contains($sources['page'], $forbidden), 'Phase 1 UI contains a later-stage control: '.$forbidden);
     }
@@ -128,14 +142,16 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
         fwrite(STDERR, "Stored identifier normalization changed its digits.\n");
         exit(1);
     }
-    $equalDate = \App\Support\MinistryPlacementNormalizer::date(['raw' => '03/03/2026', 'formatted' => '03/03/2026']);
-    $ambiguousDate = \App\Support\MinistryPlacementNormalizer::date(['raw' => '03/04/2026', 'formatted' => '03/04/2026']);
-    $unambiguousDate = \App\Support\MinistryPlacementNormalizer::date(['raw' => '13/04/2026', 'formatted' => '13/04/2026']);
-    $invalidUsDate = \App\Support\MinistryPlacementNormalizer::date(['raw' => '04/13/2026', 'formatted' => '04/13/2026']);
+    $equalDate = \App\Support\MinistryPlacementNormalizer::date(['raw' => '03/03/2026', 'formatted' => '03/03/2026', 'data_type' => 's']);
+    $ambiguousDate = \App\Support\MinistryPlacementNormalizer::date(['raw' => '03/04/2026', 'formatted' => '03/04/2026', 'data_type' => 's']);
+    $unambiguousDate = \App\Support\MinistryPlacementNormalizer::date(['raw' => '13/04/2026', 'formatted' => '13/04/2026', 'data_type' => 's']);
+    $invalidUsDate = \App\Support\MinistryPlacementNormalizer::date(['raw' => '04/13/2026', 'formatted' => '04/13/2026', 'data_type' => 's']);
+    $textSerialDate = \App\Support\MinistryPlacementNormalizer::date(['raw' => '45000', 'formatted' => '45000', 'data_type' => 's']);
     if ($equalDate !== ['value' => '2026-03-03', 'error' => null]
         || $ambiguousDate['error'] !== 'ambiguous_date'
         || $unambiguousDate !== ['value' => '2026-04-13', 'error' => null]
-        || $invalidUsDate['error'] !== 'invalid_date') {
+        || $invalidUsDate['error'] !== 'invalid_date'
+        || $textSerialDate['error'] !== 'invalid_date') {
         fwrite(STDERR, "Strict DD/MM date normalization failed.\n");
         exit(1);
     }

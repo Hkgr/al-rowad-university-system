@@ -227,11 +227,21 @@ class MinistryPlacementPhase1ServiceTest extends TestCase
     public function test_excel_serial_blank_rows_required_names_and_score_range_are_explicit(): void
     {
         $serial = $this->validRow('00123456789');
-        $serial[16] = '45000';
-        $validPreview = $this->service->preview($this->workbook([$serial, array_fill(0, 24, '')]));
+        $serial[16] = 'replaced-by-numeric-cell';
+        $numericWorkbook = $this->workbook([$serial, array_fill(0, 24, '')], configure: function ($sheet): void {
+            $sheet->setCellValue('Q3', 45000);
+        });
+        $validPreview = $this->service->preview($numericWorkbook);
         self::assertSame(1, $validPreview['valid_rows']);
         self::assertSame(1, $validPreview['ignored_blank_rows']);
         self::assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}$/', $validPreview['normalized_preview_rows'][0]['date_of_birth']);
+
+        foreach (['45000', '2026'] as $textDate) {
+            $textSerial = $this->validRow('0012345678'.$textDate[0]);
+            $textSerial[16] = $textDate;
+            $textPreview = $this->service->preview($this->workbook([$textSerial]));
+            self::assertContains('invalid_date', $textPreview['normalized_preview_rows'][0]['errors']['date_of_birth']);
+        }
 
         $invalid = $this->validRow('00123456780');
         $invalid[3] = '1000.000';
@@ -241,6 +251,24 @@ class MinistryPlacementPhase1ServiceTest extends TestCase
         self::assertContains('required', $preview['normalized_preview_rows'][0]['errors']['first_name']);
         self::assertContains('required', $preview['normalized_preview_rows'][0]['errors']['last_name']);
         self::assertContains('invalid_score', $preview['normalized_preview_rows'][0]['errors']['total_score']);
+    }
+
+    public function test_additional_empty_or_formatting_only_sheet_warns_while_actual_data_blocks(): void
+    {
+        $emptyExtra = $this->workbook([$this->validRow('00123456789')], configure: function ($sheet): void {
+            $extra = $sheet->getParent()->createSheet();
+            $extra->setTitle('Empty extra');
+            $extra->getStyle('A1')->getFont()->setBold(true);
+        });
+        $allowed = $this->service->preview($emptyExtra);
+        self::assertContains('additional_empty_sheet_ignored', $allowed['warnings']);
+        self::assertSame([], $allowed['structural_errors']);
+
+        $dataExtra = $this->workbook([$this->validRow('00123456780')], configure: function ($sheet): void {
+            $sheet->getParent()->createSheet()->setCellValue('A1', 'unexpected data');
+        });
+        $blocked = $this->service->preview($dataExtra);
+        self::assertContains('additional_data_sheet_not_supported', $blocked['structural_errors']);
     }
 
     /** @return array<int, mixed> */

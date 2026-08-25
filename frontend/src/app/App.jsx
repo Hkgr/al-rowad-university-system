@@ -9,7 +9,7 @@ import ForbiddenPage from '../features/auth/pages/ForbiddenPage'
 import { ACCESS, PERMISSIONS, canAccess, clearIdentity, getIdentity, landingRoute, storeIdentity } from '../features/auth/auth'
 
 // ── شؤون الطلاب (Student Affairs) ──────────────────────────────────────────
-import studentAffairsNav    from '../features/student-affairs/nav'
+import studentAffairsNav, { ministryPlacementNav } from '../features/student-affairs/nav'
 import StudentAffairsHome   from '../features/student-affairs/pages/StudentAffairsHome'
 import StudentsPage         from '../features/student-affairs/pages/StudentsPage'
 import AddStudentPage       from '../features/student-affairs/pages/AddStudentPage'
@@ -148,9 +148,19 @@ export default function App() {
           <Route path="/student-affairs/students/:id"      element={<StudentProfilePage />}    />
           <Route path="/student-affairs/students/:id/edit" element={protect(<EditStudentPage />, { permissions: ['students.manage'] })} />
           <Route path="/student-affairs/supplementary-exams" element={protect(<SupplementaryExamRegistrations />, { allRoles: ['registration_officer'], assignedPermissions: ['supplementary_exams.registrations.view'] })} />
-          <Route path="/student-affairs/ministry-placements" element={protect(<MinistryPlacementsPage />, { assignedPermissions: [PERMISSIONS.admissionsView], actualUniversityScope: true })} />
           <Route path="/student-affairs/approved-registration-requests" element={protect(<ApprovedRegistrationRequestsPage />, { permissions: ['registration.view'] })} />
           <Route path="/student-affairs/calendar" element={<AcademicCalendarPage />} />
+        </Route>
+
+        {/* ── Ministry Placement dashboard: admissions authority, not student-record authority ── */}
+        <Route
+          element={
+            <ProtectedRoute assignedPermissions={[PERMISSIONS.admissionsView]} actualUniversityScope>
+              <DashboardLayout nav={ministryPlacementNav} appTitle="شؤون الطلاب" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/student-affairs/ministry-placements" element={<MinistryPlacementsPage />} />
         </Route>
 
         {/* ── بوابة الطالب dashboard ── */}

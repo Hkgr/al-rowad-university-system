@@ -12,7 +12,11 @@ not replace either requirement.
   accepted preference in K, date of birth in Q, and last name in T.
 - Non-empty data after X is a structural error; formatting outside A:X is
   ignored.
+- An additional empty or formatting-only worksheet is ignored with
+  `additional_empty_sheet_ignored`; actual content on it is blocking.
 - Data starts at row 3 and follows the existing 24-column Ministry mapping.
+- Excel serial dates require a genuinely numeric workbook cell. Numeric-looking
+  text is validated as text and is not interpreted as a serial date.
 - Identifiers remain trimmed strings. Duplicate comparison alone normalizes
   Arabic digit forms and Unicode whitespace; it never casts to a number.
 - Preview writes nothing. Import parses and validates the workbook again.

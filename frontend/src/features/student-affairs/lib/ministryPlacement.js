@@ -38,6 +38,7 @@ const validationLabels = {
 
 const workbookIssueLabels = {
   blank_title_row: 'صف العنوان الأول فارغ (تنبيه فقط)',
+  additional_empty_sheet_ignored: 'تم تجاهل ورقة إضافية فارغة',
   missing_a_to_x_columns: 'بنية الأعمدة A:X غير مكتملة',
   unexpected_data_after_column_x: 'توجد بيانات غير متوقعة بعد العمود X',
   additional_data_sheet_not_supported: 'توجد بيانات في ورقة إضافية غير مدعومة',

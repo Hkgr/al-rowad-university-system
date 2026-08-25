@@ -21,6 +21,7 @@ assert.deepEqual(
   ['البريد الإلكتروني غير صالح', 'صيغة التاريخ ملتبسة', 'القيمة تتجاوز الطول المسموح'],
 )
 assert.equal(workbookIssueLabel('unexpected_data_after_column_x'), 'توجد بيانات غير متوقعة بعد العمود X')
+assert.equal(workbookIssueLabel('additional_empty_sheet_ignored'), 'تم تجاهل ورقة إضافية فارغة')
 // MINISTRY-UI-P1-09: structural machine codes have Arabic presentation text.
 assert.equal(workbookIssueLabel('invalid_header_anchor_11'), 'عنوان حرج في موضع غير صحيح')
 
@@ -50,5 +51,25 @@ for (const forbidden of ['ربط برنامج', 'تحويل لمتقدم', 'إن
 const auth = fs.readFileSync(path.join(root, 'src/features/auth/auth.js'), 'utf8')
 assert.match(auth, /actualUniversityScope/)
 assert.match(auth, /scope\?\.type === 'university'/)
+
+const { canAccess, landingRoute } = await import('../src/features/auth/auth.js')
+const ministryAuthority = { assignedPermissions: ['admissions.view'], actualUniversityScope: true }
+const admissionsOnly = { permissions: ['admissions.view'], access_scopes: [{ type: 'university', id: 3 }], roles: [] }
+const admissionsWithoutScope = { permissions: ['admissions.view'], access_scopes: [], roles: [] }
+const studentsOnly = { permissions: ['students.view'], access_scopes: [{ type: 'university', id: 3 }], roles: [] }
+assert.equal(canAccess(ministryAuthority, admissionsOnly), true, 'Admissions view plus actual university scope must allow Ministry access')
+assert.equal(landingRoute(admissionsOnly), '/student-affairs/ministry-placements', 'Admissions-only operator needs a valid landing page')
+assert.equal(canAccess(ministryAuthority, admissionsWithoutScope), false, 'Admissions view without actual university scope must fail closed')
+assert.equal(canAccess(ministryAuthority, studentsOnly), false, 'Students view alone must not grant Ministry access')
+
+const app = fs.readFileSync(path.join(root, 'src/app/App.jsx'), 'utf8')
+const studentGroupStart = app.indexOf('{/* ── شؤون الطلاب dashboard ── */}')
+const ministryGroupStart = app.indexOf('{/* ── Ministry Placement dashboard:')
+const studentGroup = app.slice(studentGroupStart, ministryGroupStart)
+const ministryGroup = app.slice(ministryGroupStart, app.indexOf('{/* ── بوابة الطالب dashboard ── */}'))
+assert.match(studentGroup, /permissions=\{\['students\.view'\]\}/, 'Existing Student Affairs pages must retain their students.view parent')
+assert.doesNotMatch(studentGroup, /path="\/student-affairs\/ministry-placements"/, 'Ministry route must not remain under the students.view parent')
+assert.match(ministryGroup, /assignedPermissions=\{\[PERMISSIONS\.admissionsView\]\} actualUniversityScope/, 'Ministry sibling parent must match backend authority')
+assert.doesNotMatch(ministryGroup, /students\.view|\/student-affairs\/students|\/student-affairs\/graduates/, 'Ministry sibling must not expose other Student Affairs pages')
 
 console.log('Ministry Placement Phase 1 frontend tests passed.')

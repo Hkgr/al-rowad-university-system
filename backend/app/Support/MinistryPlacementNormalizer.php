@@ -56,7 +56,7 @@ final class MinistryPlacementNormalizer
             return ['value' => null, 'error' => null];
         }
 
-        if (is_numeric($raw)) {
+        if (($cell['data_type'] ?? null) === 'n' && (is_int($raw) || is_float($raw))) {
             try {
                 $date = ExcelDate::excelToDateTimeObject((float) $raw, new DateTimeZone('UTC'));
 

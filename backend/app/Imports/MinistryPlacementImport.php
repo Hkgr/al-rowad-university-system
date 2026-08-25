@@ -88,17 +88,18 @@ final class MinistryPlacementImport
                     continue;
                 }
                 $hasData = false;
-                foreach ($candidate->getRowIterator() as $row) {
-                    foreach ($row->getCellIterator() as $cell) {
-                        if (trim((string) $cell->getFormattedValue()) !== '') {
-                            $hasData = true;
-                            break 2;
-                        }
+                foreach ($candidate->getCellCollection()->getCoordinates() as $coordinate) {
+                    if ($this->hasContent($candidate->getCell($coordinate))) {
+                        $hasData = true;
+                        break;
                     }
                 }
                 if ($hasData) {
                     $errors[] = 'additional_data_sheet_not_supported';
                     break;
+                }
+                if (! in_array('additional_empty_sheet_ignored', $warnings, true)) {
+                    $warnings[] = 'additional_empty_sheet_ignored';
                 }
             }
 
@@ -120,13 +121,14 @@ final class MinistryPlacementImport
         }
     }
 
-    /** @return array{raw: mixed, formatted: string, formula: bool} */
+    /** @return array{raw: mixed, formatted: string, formula: bool, data_type: string} */
     private function cell(\PhpOffice\PhpSpreadsheet\Cell\Cell $cell): array
     {
         return [
             'raw' => $cell->getValue(),
             'formatted' => (string) $cell->getFormattedValue(),
             'formula' => $cell->getDataType() === DataType::TYPE_FORMULA,
+            'data_type' => $cell->getDataType(),
         ];
     }
 

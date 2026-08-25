@@ -181,6 +181,39 @@ SET @mp_ready := @mp_database_exists
   AND @mp_batch_unique_identifier
   AND @mp_required_foreign_keys;
 
+-- Informational provisioning report only. This does not change @mp_ready:
+-- schema compatibility and operator assignment are deliberately separate.
+SELECT COUNT(*) = 7 INTO @mp_operator_report_tables
+FROM information_schema.tables
+WHERE table_schema = @mp_schema
+  AND table_type = 'BASE TABLE'
+  AND table_name IN (
+    'users', 'user_roles', 'roles', 'role_permissions', 'permissions',
+    'user_access_scopes', 'organizational_units'
+  );
+
+SELECT COUNT(*) = 20 INTO @mp_operator_report_columns
+FROM information_schema.columns
+WHERE table_schema = @mp_schema
+  AND (
+    (table_name = 'users' AND column_name IN ('user_id', 'username', 'is_active')) OR
+    (table_name = 'user_roles' AND column_name IN ('user_id', 'role_id', 'is_active')) OR
+    (table_name = 'roles' AND column_name IN ('role_id', 'is_active')) OR
+    (table_name = 'role_permissions' AND column_name IN ('role_id', 'permission_id')) OR
+    (table_name = 'permissions' AND column_name IN ('permission_id', 'permission_code', 'is_active')) OR
+    (table_name = 'user_access_scopes' AND column_name IN ('user_id', 'scope_type', 'scope_id', 'is_active')) OR
+    (table_name = 'organizational_units' AND column_name IN ('organizational_unit_id', 'unit_code', 'is_active'))
+  );
+
+SET @mp_operator_readiness_query := IF(
+  @mp_operator_report_tables AND @mp_operator_report_columns,
+  'SELECT ''OPERATOR_READINESS'' AS report_section, operator.user_id, operator.username, COALESCE(operator.has_view, 0) AS has_admissions_view, COALESCE(operator.has_manage, 0) AS has_admissions_manage, COALESCE(operator.has_valid_pres_scope, 0) AS has_valid_pres_scope, CASE WHEN operator.user_id IS NULL THEN ''NO_ACTIVE_ROLE_MAPPED_OPERATOR'' WHEN operator.has_valid_pres_scope = 1 THEN ''SCOPED'' ELSE ''MISSING_VALID_UNIVERSITY_SCOPE'' END AS provisioning_status FROM (SELECT 1 AS report_row) report LEFT JOIN (SELECT u.user_id, u.username, MAX(CASE WHEN p.permission_code = ''admissions.view'' THEN 1 ELSE 0 END) AS has_view, MAX(CASE WHEN p.permission_code = ''admissions.manage'' THEN 1 ELSE 0 END) AS has_manage, MAX(CASE WHEN ou.organizational_unit_id IS NOT NULL THEN 1 ELSE 0 END) AS has_valid_pres_scope FROM `alrowad_uni_rust`.`users` u JOIN `alrowad_uni_rust`.`user_roles` ur ON ur.user_id = u.user_id AND ur.is_active = 1 JOIN `alrowad_uni_rust`.`roles` r ON r.role_id = ur.role_id AND r.is_active = 1 JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id AND p.is_active = 1 AND p.permission_code IN (''admissions.view'', ''admissions.manage'') LEFT JOIN `alrowad_uni_rust`.`user_access_scopes` uas ON uas.user_id = u.user_id AND uas.scope_type = ''university'' AND uas.is_active = 1 LEFT JOIN `alrowad_uni_rust`.`organizational_units` ou ON ou.organizational_unit_id = uas.scope_id AND ou.unit_code = ''PRES'' AND ou.is_active = 1 WHERE u.is_active = 1 GROUP BY u.user_id, u.username HAVING MAX(CASE WHEN p.permission_code = ''admissions.view'' THEN 1 ELSE 0 END) = 1 OR MAX(CASE WHEN p.permission_code = ''admissions.manage'' THEN 1 ELSE 0 END) = 1) operator ON 1 = 1 ORDER BY operator.user_id',
+  'SELECT ''OPERATOR_READINESS'' AS report_section, NULL AS user_id, NULL AS username, 0 AS has_admissions_view, 0 AS has_admissions_manage, 0 AS has_valid_pres_scope, ''UNAVAILABLE_SCHEMA'' AS provisioning_status'
+);
+PREPARE mp_operator_readiness_statement FROM @mp_operator_readiness_query;
+EXECUTE mp_operator_readiness_statement;
+DEALLOCATE PREPARE mp_operator_readiness_statement;
+
 SELECT 'DATABASE_AND_TABLES' AS check_name, IF(@mp_database_exists AND @mp_required_tables, 'PASS', 'FAIL') AS result
 UNION ALL
 SELECT 'RBAC_PERMISSIONS', IF(@mp_permission_required_columns AND @mp_required_active_permissions AND @mp_authorization_primary_keys, 'PASS', 'FAIL')

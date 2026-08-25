@@ -104,6 +104,7 @@ export function landingRoute(user) {
   if (user?.student_id && canAny(['registration.view', 'grades.view', 'attendance.view'], user)) return '/student'
   if (hasPermission('academic_structure.view', user)) return '/academic-structure'
   if (hasPermission('students.view', user)) return '/student-affairs'
+  if (canAccess({ assignedPermissions: [PERMISSIONS.admissionsView], actualUniversityScope: true }, user)) return '/student-affairs/ministry-placements'
   // Permission fallback for VP-only identities. Exclude super_admin so existing
   // staff landings (exam board, HR, …) are not redirected to the VP shell.
   if (!hasRole('super_admin', user) && hasPermission(PERMISSIONS.vicePresidencyScientificAccess, user)) return '/vp/scientific'
