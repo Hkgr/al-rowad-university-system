@@ -31,6 +31,33 @@ export function flattenCatalogCourses(levels) {
   })))
 }
 
+export function catalogCoursesForAdvisoryLevel(levels, academicLevelId = null) {
+  const rows = flattenCatalogCourses(levels)
+  if (academicLevelId == null || academicLevelId === '') return rows
+  return rows.filter(row => Number(row.academic_level_id) === Number(academicLevelId))
+}
+
+export function advisoryLevelLabel(row) {
+  const id = row?.advisory_plan?.academic_level_id ?? row?.academic_level_id
+  if (id == null || id === '') return 'المستوى الإرشادي غير محدد'
+  const name = row?.advisory_plan?.academic_level_name ?? row?.academic_level_name
+  return name ? `المستوى الإرشادي: ${name}` : 'المستوى الإرشادي غير محدد'
+}
+
+export function advisoryPlanDiffers(row, selectedSemesterId, contextAcademicLevelId = null) {
+  const rowLevelId = row?.advisory_plan?.academic_level_id ?? row?.academic_level_id
+  const recommendedId = recommendedSemesterId(row)
+  const levelDiffers = contextAcademicLevelId != null
+    && contextAcademicLevelId !== ''
+    && rowLevelId != null
+    && Number(rowLevelId) !== Number(contextAcademicLevelId)
+  const semesterDiffers = selectedSemesterId != null
+    && selectedSemesterId !== ''
+    && recommendedId != null
+    && recommendedId !== Number(selectedSemesterId)
+  return levelDiffers || semesterDiffers
+}
+
 export function recommendedSemesterId(row) {
   const value = row?.advisory_plan?.recommended_semester_id
   if (value == null || value === '') return null

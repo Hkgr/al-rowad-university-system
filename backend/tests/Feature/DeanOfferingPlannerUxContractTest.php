@@ -80,17 +80,20 @@ class DeanOfferingPlannerUxContractTest extends TestCase
         self::assertStringNotContainsString('الخطة فارغة', $page);
     }
 
-    public function test_ux_plan_06_add_dialog_keeps_off_semester_courses_selectable(): void
+    public function test_offer_adv_01_add_dialog_searches_the_complete_program_catalog(): void
     {
         $page = self::frontend('src/features/dean-dashboard/pages/DeanRegistrationOfferings.jsx');
         $dialog = self::extractJsFunction($page, 'AddCourseDialog');
 
-        self::assertStringContainsString('إضافة مادة — {level?.level_name}', $dialog);
+        self::assertStringContainsString('إضافة مادة إلى هذا الفصل', $dialog);
         self::assertStringContainsString('ابحث باسم المادة أو رمزها', $dialog);
+        self::assertStringContainsString('catalogCoursesForAdvisoryLevel(levels, academicLevelId)', $dialog);
+        self::assertStringContainsString('كل المستويات', $dialog);
         self::assertStringContainsString('const blocked = persisted || added', $dialog);
         self::assertDoesNotMatchRegularExpression('/disabled=\{[^}]*advisory/', $dialog);
         self::assertStringNotContainsString('disabled={blocked || recommended', $dialog);
-        self::assertStringContainsString('coursesForAcademicLevel(levels, addLevel.academic_level_id)', $page);
+        self::assertStringContainsString('levels={levels}', $page);
+        self::assertStringNotContainsString('courses={coursesForAcademicLevel(', $page);
         self::assertStringContainsString('setAddLevel(null)', $page);
         self::assertStringNotContainsString('apiRequest', self::extractJsFunction($page, 'addCourseToDraft'));
     }

@@ -135,17 +135,19 @@ export default function CourseTablePage() {
     if (scopedProgramIds.length === 0 || !semId) return []
     const scopedSet = new Set(scopedProgramIds.map(String))
     return programCourses
-      .filter(pc => scopedSet.has(String(pc.academic_program_id)) && String(pc.recommended_semester_id) === String(semId))
+      .filter(pc => scopedSet.has(String(pc.academic_program_id)) && pc.is_active === true)
       .map(pc => {
         const course = courseMap[pc.course_id]
         const program = programMap[pc.academic_program_id]
         const level = activeLevels.find(l => l.academic_level_id === pc.academic_level_id)
+        const recommendedSemester = semesters.find(s => String(s.semester_id) === String(pc.recommended_semester_id))
         const offering = offeringFor(pc.course_id, pc.academic_program_id)
         return {
           key: `${pc.program_course_id}`,
           levelId: pc.academic_level_id,
-          levelName: level?.level_name ?? '—',
+          levelName: level?.level_name ?? 'المستوى الإرشادي غير محدد',
           levelOrder: level?.level_order ?? 0,
+          recommendedSemesterName: recommendedSemester?.semester_name ?? 'الفصل الإرشادي غير محدد',
           programName: program?.program_name ?? '—',
           courseCode: course?.course_code ?? '—',
           courseName: course?.course_name ?? '—',
@@ -157,7 +159,7 @@ export default function CourseTablePage() {
       })
       .sort((a, b) => a.levelOrder - b.levelOrder || a.programName.localeCompare(b.programName) || a.courseCode.localeCompare(b.courseCode))
       // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopedProgramIds, semId, programCourses, courseMap, programMap, activeLevels, offerings, yearId])
+  }, [scopedProgramIds, semId, programCourses, courseMap, programMap, activeLevels, semesters, offerings, yearId])
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -201,6 +203,7 @@ export default function CourseTablePage() {
         subtitle: `${scopeName || ''} — ${filteredRows.length} مادة`,
         columns: [
           { header: 'السنة الإرشادية', value: r => r.levelName },
+          { header: 'الفصل الإرشادي', value: r => r.recommendedSemesterName },
           { header: 'البرنامج / التخصص', value: r => r.programName },
           { header: 'رمز المادة', value: r => r.courseCode },
           { header: 'اسم المادة', value: r => r.courseName },
@@ -343,6 +346,7 @@ export default function CourseTablePage() {
               <DataTable
                 columns={[
                   { key: 'level', header: 'السنة الإرشادية', align: 'center', render: r => r.levelName },
+                  { key: 'recommended-semester', header: 'الفصل الإرشادي', align: 'center', render: r => r.recommendedSemesterName },
                   { key: 'program', header: 'البرنامج / التخصص', render: r => r.programName },
                   { key: 'code', header: 'رمز المادة', render: r => <span className="font-mono text-primary-dark font-bold">{r.courseCode}</span> },
                   { key: 'name', header: 'اسم المادة', render: r => r.courseName },
