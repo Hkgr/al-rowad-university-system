@@ -95,6 +95,31 @@ export function preparationIds(levels, draftIds) {
   return uniqueProgramCourseIds([...(existing ?? []), ...(draftIds ?? [])])
 }
 
+export function actualTermPreparationRows(levels, draftIds) {
+  const draftSet = new Set(uniqueProgramCourseIds(draftIds))
+  const rowsById = new Map()
+
+  flattenCatalogCourses(levels).forEach(row => {
+    const id = Number(row.program_course_id)
+    if (!Number.isFinite(id) || id < 1 || (!row.offering && !draftSet.has(id))) return
+
+    const current = rowsById.get(id)
+    if (!current || (!current.offering && row.offering)) rowsById.set(id, row)
+  })
+
+  const stateRank = row => {
+    if (row.offering?.status === 'open') return 0
+    if (row.offering) return 1
+    return 2
+  }
+
+  return [...rowsById.values()].sort((left, right) => (
+    stateRank(left) - stateRank(right)
+    || String(left.course?.course_code ?? '').localeCompare(String(right.course?.course_code ?? ''), 'ar')
+    || Number(left.program_course_id) - Number(right.program_course_id)
+  ))
+}
+
 export function applyAdvisoryPlan(currentIds, levels, selectedSemesterId) {
   const rows = flattenCatalogCourses(levels)
   if (rows.length > 0 && !hasAdvisorySemesterMetadata(rows)) {
@@ -189,6 +214,8 @@ export const BULK_PREPARE_FULL_SUCCESS_PREFIX = 'تم حفظ تجهيز الفص
 
 export const BULK_PREPARE_PARTIAL_KEEP_DRAFT = 'بقيت المواد غير المحفوظة في التجهيز لتتمكن من المحاولة مرة أخرى.'
 
+export const BULK_PREPARE_REFRESH_WARNING = 'تم حفظ نتيجة التجهيز على الخادم، لكن تعذّر تحديث العرض.\nأعد تحميل الحالة لرؤية الحالة الحالية.'
+
 export const SAFE_PREPARE_ERROR_LABELS = {
   prepare_failed: 'تعذّر تجهيز هذه المادة.',
   invalid_program_course: 'المادة غير صالحة في خطة البرنامج.',
@@ -236,6 +263,26 @@ export function applyBulkPrepareOutcome(result) {
     notice: `تم إنشاء ${created} طروحات، و${existing} كانت محفوظة مسبقًا، وتعذّر تجهيز ${failed} مواد.\n${BULK_PREPARE_PARTIAL_KEEP_DRAFT}`,
     prepareErrors,
   }
+}
+
+export async function executeBulkPreparationPhases({ mutate, refresh }) {
+  let result
+
+  try {
+    result = await mutate()
+  } catch (error) {
+    return { kind: 'mutation-failed', error }
+  }
+
+  const outcome = applyBulkPrepareOutcome(result)
+
+  try {
+    await refresh()
+  } catch (error) {
+    return { kind: 'refresh-failed', outcome, error }
+  }
+
+  return { kind: 'refreshed', outcome }
 }
 
 export function pagedResourceRows(response) {
