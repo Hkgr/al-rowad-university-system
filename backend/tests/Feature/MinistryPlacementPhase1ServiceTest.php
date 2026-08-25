@@ -24,6 +24,7 @@ class MinistryPlacementPhase1ServiceTest extends TestCase
         Schema::dropAllTables();
         $this->createSchema();
         DB::table('academic_years')->insert(['academic_year_id' => 1, 'year_name' => '2026-2027']);
+        DB::table('account_statuses')->insert(['account_status_id' => 1, 'status_code' => 'active', 'is_active' => 1]);
         DB::table('users')->insert(['user_id' => 7, 'username' => 'operator']);
         $this->service = app(MinistryPlacementService::class);
     }
@@ -47,6 +48,13 @@ class MinistryPlacementPhase1ServiceTest extends TestCase
 
         self::assertContains('no_data_rows', $preview['structural_errors']);
         self::assertSame(0, $preview['rows_count']);
+    }
+
+    public function test_user_fixture_matches_production_account_status_shape_without_users_is_active(): void
+    {
+        self::assertTrue(Schema::hasColumn('users', 'account_status_id'));
+        self::assertFalse(Schema::hasColumn('users', 'is_active'));
+        self::assertSame(1, DB::table('account_statuses')->where('status_code', 'active')->where('is_active', 1)->count());
     }
 
     public function test_access_requires_effective_assigned_permission_and_actual_university_scope_without_virtual_role_bypass(): void
@@ -334,9 +342,15 @@ class MinistryPlacementPhase1ServiceTest extends TestCase
     private function createSchema(): void
     {
         Schema::create('academic_years', fn (Blueprint $table) => $table->increments('academic_year_id')->string('year_name'));
+        Schema::create('account_statuses', function (Blueprint $table): void {
+            $table->increments('account_status_id');
+            $table->string('status_code');
+            $table->boolean('is_active');
+        });
         Schema::create('users', function (Blueprint $table): void {
             $table->increments('user_id');
             $table->string('username');
+            $table->integer('account_status_id')->default(1);
         });
         Schema::create('roles', function (Blueprint $table): void {
             $table->increments('role_id');

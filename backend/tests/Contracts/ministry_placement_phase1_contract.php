@@ -95,13 +95,24 @@ $contract = static function (string $backendRoot): array {
     foreach (['@mp_scope_required_columns', '@mp_scope_user_foreign_key', 'user_access_scope_id', 'ACTUAL_SCOPE_STRUCTURE'] as $required) {
         $expect(str_contains($sources['preflight'], $required), 'Preflight is missing actual-scope structure validation: '.$required);
     }
-    foreach (['OPERATOR_READINESS', '@mp_operator_report_tables', '@mp_operator_report_columns', 'user_roles', 'role_permissions', "ou.unit_code = ''PRES''", 'ou.is_active = 1'] as $required) {
+    foreach (['OPERATOR_READINESS', '@mp_operator_report_tables', '@mp_operator_report_columns', 'user_roles', 'role_permissions', "org.unit_code = ''PRES''", 'org.is_active = 1'] as $required) {
         $expect(str_contains($sources['preflight'], $required), 'Preflight operator-readiness report is incomplete: '.$required);
+    }
+    $expect(! str_contains($sources['preflight'], 'u.is_active'), 'Operator readiness must not reference the nonexistent users.is_active column.');
+    $expect(preg_match("/table_name\s*=\s*'users'[^\r\n]*\bis_active\b/i", $sources['preflight']) !== 1, 'Preflight must not require users.is_active.');
+    foreach (['account_statuses', '@mp_account_required_columns', '@mp_active_account_status', '@mp_user_account_status_foreign_key', "ast.account_status_id = u.account_status_id", "ast.status_code = ''active''", 'ast.is_active = 1', 'ACCOUNT_STATUS_STRUCTURE'] as $required) {
+        $expect(str_contains($sources['preflight'], $required), 'Active-account schema resolution is incomplete: '.$required);
+    }
+    foreach (['@mp_rbac_resolution_columns', 'roles', 'user_roles', 'role_permissions', 'ur.is_active = 1', 'r.is_active = 1', 'RBAC_RESOLUTION_STRUCTURE'] as $required) {
+        $expect(str_contains($sources['preflight'], $required), 'Effective-permission RBAC structure is incomplete: '.$required);
     }
     $readyStart = strpos($sources['preflight'], 'SET @mp_ready :=');
     $readyEnd = strpos($sources['preflight'], ';', $readyStart === false ? 0 : $readyStart);
     $readyExpression = $readyStart === false || $readyEnd === false ? '' : substr($sources['preflight'], $readyStart, $readyEnd - $readyStart);
     $expect(! str_contains($readyExpression, 'operator'), 'Operator provisioning must remain informational and separate from schema readiness.');
+    foreach (['@mp_account_required_columns', '@mp_active_account_status', '@mp_rbac_resolution_columns', '@mp_user_account_status_foreign_key'] as $required) {
+        $expect(str_contains($readyExpression, $required), 'Required account/RBAC structure is missing from OVERALL readiness: '.$required);
+    }
 
     $expect(str_contains($sources['api_client'], 'options.body instanceof FormData') && str_contains($sources['api_client'], "!isFormData ? { 'Content-Type': 'application/json' }"), 'apiRequest must distinguish FormData and JSON.');
     $expect(str_contains($sources['page'], 'فحص الملف') && str_contains($sources['page'], 'اعتماد واستيراد الدفعة'), 'Preview-first UI is incomplete.');

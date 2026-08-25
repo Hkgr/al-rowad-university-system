@@ -7,13 +7,44 @@ SELECT COUNT(*) = 1 INTO @mp_database_exists
 FROM information_schema.schemata
 WHERE schema_name = @mp_schema;
 
-SELECT COUNT(*) = 7 INTO @mp_required_tables
+SELECT COUNT(*) = 12 INTO @mp_required_tables
 FROM information_schema.tables
 WHERE table_schema = @mp_schema
   AND table_type = 'BASE TABLE'
   AND table_name IN (
-    'academic_years', 'users', 'permissions', 'user_access_scopes', 'user_activity_logs',
+    'academic_years', 'users', 'account_statuses', 'roles', 'user_roles',
+    'role_permissions', 'permissions', 'user_access_scopes', 'organizational_units', 'user_activity_logs',
     'ministry_placement_batches', 'ministry_placement_records'
+  );
+
+SELECT COUNT(*) = 4 INTO @mp_account_required_columns
+FROM information_schema.columns
+WHERE table_schema = @mp_schema
+  AND (
+    (table_name = 'users' AND column_name = 'account_status_id' AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
+    (table_name = 'account_statuses' AND column_name = 'account_status_id' AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
+    (table_name = 'account_statuses' AND column_name = 'status_code' AND data_type = 'varchar' AND character_maximum_length >= 50 AND is_nullable = 'NO') OR
+    (table_name = 'account_statuses' AND column_name = 'is_active' AND data_type = 'tinyint' AND is_nullable = 'NO')
+  );
+
+SET @mp_active_account_status_query := IF(
+  @mp_account_required_columns,
+  'SELECT COUNT(*) = 1 INTO @mp_active_account_status FROM `alrowad_uni_rust`.`account_statuses` WHERE status_code = ''active'' AND is_active = 1',
+  'SELECT 0 INTO @mp_active_account_status'
+);
+PREPARE mp_active_account_status_statement FROM @mp_active_account_status_query;
+EXECUTE mp_active_account_status_statement;
+DEALLOCATE PREPARE mp_active_account_status_statement;
+
+SELECT COUNT(*) = 7 INTO @mp_rbac_resolution_columns
+FROM information_schema.columns
+WHERE table_schema = @mp_schema
+  AND (
+    (table_name = 'roles' AND column_name = 'role_id' AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
+    (table_name = 'roles' AND column_name = 'is_active' AND data_type = 'tinyint' AND is_nullable = 'NO') OR
+    (table_name = 'user_roles' AND column_name IN ('user_id', 'role_id') AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
+    (table_name = 'user_roles' AND column_name = 'is_active' AND data_type = 'tinyint' AND is_nullable = 'NO') OR
+    (table_name = 'role_permissions' AND column_name IN ('role_id', 'permission_id') AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO')
   );
 
 SELECT COUNT(*) = 3 INTO @mp_permission_required_columns
@@ -142,6 +173,21 @@ WHERE constraint_schema = @mp_schema
   AND referenced_table_name = 'users'
   AND referenced_column_name = 'user_id';
 
+SELECT COUNT(*) = 1 INTO @mp_account_status_primary_key
+FROM information_schema.key_column_usage
+WHERE constraint_schema = @mp_schema
+  AND constraint_name = 'PRIMARY'
+  AND table_name = 'account_statuses'
+  AND column_name = 'account_status_id';
+
+SELECT COUNT(*) = 1 INTO @mp_user_account_status_foreign_key
+FROM information_schema.key_column_usage
+WHERE constraint_schema = @mp_schema
+  AND table_name = 'users'
+  AND column_name = 'account_status_id'
+  AND referenced_table_name = 'account_statuses'
+  AND referenced_column_name = 'account_status_id';
+
 SELECT COUNT(*) = 1 INTO @mp_batch_unique_identifier
 FROM (
   SELECT index_name
@@ -168,6 +214,9 @@ WHERE constraint_schema = @mp_schema
 
 SET @mp_ready := @mp_database_exists
   AND @mp_required_tables
+  AND @mp_account_required_columns
+  AND @mp_active_account_status
+  AND @mp_rbac_resolution_columns
   AND @mp_permission_required_columns
   AND @mp_required_active_permissions
   AND @mp_scope_required_columns
@@ -178,25 +227,28 @@ SET @mp_ready := @mp_database_exists
   AND @mp_primary_keys
   AND @mp_authorization_primary_keys
   AND @mp_scope_user_foreign_key
+  AND @mp_account_status_primary_key
+  AND @mp_user_account_status_foreign_key
   AND @mp_batch_unique_identifier
   AND @mp_required_foreign_keys;
 
 -- Informational provisioning report only. This does not change @mp_ready:
 -- schema compatibility and operator assignment are deliberately separate.
-SELECT COUNT(*) = 7 INTO @mp_operator_report_tables
+SELECT COUNT(*) = 8 INTO @mp_operator_report_tables
 FROM information_schema.tables
 WHERE table_schema = @mp_schema
   AND table_type = 'BASE TABLE'
   AND table_name IN (
-    'users', 'user_roles', 'roles', 'role_permissions', 'permissions',
+    'users', 'account_statuses', 'user_roles', 'roles', 'role_permissions', 'permissions',
     'user_access_scopes', 'organizational_units'
   );
 
-SELECT COUNT(*) = 20 INTO @mp_operator_report_columns
+SELECT COUNT(*) = 23 INTO @mp_operator_report_columns
 FROM information_schema.columns
 WHERE table_schema = @mp_schema
   AND (
-    (table_name = 'users' AND column_name IN ('user_id', 'username', 'is_active')) OR
+    (table_name = 'users' AND column_name IN ('user_id', 'username', 'account_status_id')) OR
+    (table_name = 'account_statuses' AND column_name IN ('account_status_id', 'status_code', 'is_active')) OR
     (table_name = 'user_roles' AND column_name IN ('user_id', 'role_id', 'is_active')) OR
     (table_name = 'roles' AND column_name IN ('role_id', 'is_active')) OR
     (table_name = 'role_permissions' AND column_name IN ('role_id', 'permission_id')) OR
@@ -207,7 +259,7 @@ WHERE table_schema = @mp_schema
 
 SET @mp_operator_readiness_query := IF(
   @mp_operator_report_tables AND @mp_operator_report_columns,
-  'SELECT ''OPERATOR_READINESS'' AS report_section, operator.user_id, operator.username, COALESCE(operator.has_view, 0) AS has_admissions_view, COALESCE(operator.has_manage, 0) AS has_admissions_manage, COALESCE(operator.has_valid_pres_scope, 0) AS has_valid_pres_scope, CASE WHEN operator.user_id IS NULL THEN ''NO_ACTIVE_ROLE_MAPPED_OPERATOR'' WHEN operator.has_valid_pres_scope = 1 THEN ''SCOPED'' ELSE ''MISSING_VALID_UNIVERSITY_SCOPE'' END AS provisioning_status FROM (SELECT 1 AS report_row) report LEFT JOIN (SELECT u.user_id, u.username, MAX(CASE WHEN p.permission_code = ''admissions.view'' THEN 1 ELSE 0 END) AS has_view, MAX(CASE WHEN p.permission_code = ''admissions.manage'' THEN 1 ELSE 0 END) AS has_manage, MAX(CASE WHEN ou.organizational_unit_id IS NOT NULL THEN 1 ELSE 0 END) AS has_valid_pres_scope FROM `alrowad_uni_rust`.`users` u JOIN `alrowad_uni_rust`.`user_roles` ur ON ur.user_id = u.user_id AND ur.is_active = 1 JOIN `alrowad_uni_rust`.`roles` r ON r.role_id = ur.role_id AND r.is_active = 1 JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id AND p.is_active = 1 AND p.permission_code IN (''admissions.view'', ''admissions.manage'') LEFT JOIN `alrowad_uni_rust`.`user_access_scopes` uas ON uas.user_id = u.user_id AND uas.scope_type = ''university'' AND uas.is_active = 1 LEFT JOIN `alrowad_uni_rust`.`organizational_units` ou ON ou.organizational_unit_id = uas.scope_id AND ou.unit_code = ''PRES'' AND ou.is_active = 1 WHERE u.is_active = 1 GROUP BY u.user_id, u.username HAVING MAX(CASE WHEN p.permission_code = ''admissions.view'' THEN 1 ELSE 0 END) = 1 OR MAX(CASE WHEN p.permission_code = ''admissions.manage'' THEN 1 ELSE 0 END) = 1) operator ON 1 = 1 ORDER BY operator.user_id',
+  'SELECT ''OPERATOR_READINESS'' AS report_section, operator.user_id, operator.username, COALESCE(operator.has_view, 0) AS has_admissions_view, COALESCE(operator.has_manage, 0) AS has_admissions_manage, COALESCE(operator.has_valid_pres_scope, 0) AS has_valid_pres_scope, CASE WHEN operator.user_id IS NULL THEN ''NO_ACTIVE_ROLE_MAPPED_OPERATOR'' WHEN operator.has_valid_pres_scope = 1 THEN ''SCOPED'' ELSE ''MISSING_VALID_UNIVERSITY_SCOPE'' END AS provisioning_status FROM (SELECT 1 AS report_row) report LEFT JOIN (SELECT u.user_id, u.username, MAX(CASE WHEN p.permission_code = ''admissions.view'' THEN 1 ELSE 0 END) AS has_view, MAX(CASE WHEN p.permission_code = ''admissions.manage'' THEN 1 ELSE 0 END) AS has_manage, MAX(CASE WHEN org.organizational_unit_id IS NOT NULL THEN 1 ELSE 0 END) AS has_valid_pres_scope FROM `alrowad_uni_rust`.`users` u JOIN `alrowad_uni_rust`.`account_statuses` ast ON ast.account_status_id = u.account_status_id AND ast.status_code = ''active'' AND ast.is_active = 1 JOIN `alrowad_uni_rust`.`user_roles` ur ON ur.user_id = u.user_id AND ur.is_active = 1 JOIN `alrowad_uni_rust`.`roles` r ON r.role_id = ur.role_id AND r.is_active = 1 JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id AND p.is_active = 1 AND p.permission_code IN (''admissions.view'', ''admissions.manage'') LEFT JOIN `alrowad_uni_rust`.`user_access_scopes` uas ON uas.user_id = u.user_id AND uas.scope_type = ''university'' AND uas.is_active = 1 LEFT JOIN `alrowad_uni_rust`.`organizational_units` org ON org.organizational_unit_id = uas.scope_id AND org.unit_code = ''PRES'' AND org.is_active = 1 GROUP BY u.user_id, u.username HAVING MAX(CASE WHEN p.permission_code = ''admissions.view'' THEN 1 ELSE 0 END) = 1 OR MAX(CASE WHEN p.permission_code = ''admissions.manage'' THEN 1 ELSE 0 END) = 1) operator ON 1 = 1 ORDER BY operator.user_id',
   'SELECT ''OPERATOR_READINESS'' AS report_section, NULL AS user_id, NULL AS username, 0 AS has_admissions_view, 0 AS has_admissions_manage, 0 AS has_valid_pres_scope, ''UNAVAILABLE_SCHEMA'' AS provisioning_status'
 );
 PREPARE mp_operator_readiness_statement FROM @mp_operator_readiness_query;
@@ -215,6 +267,10 @@ EXECUTE mp_operator_readiness_statement;
 DEALLOCATE PREPARE mp_operator_readiness_statement;
 
 SELECT 'DATABASE_AND_TABLES' AS check_name, IF(@mp_database_exists AND @mp_required_tables, 'PASS', 'FAIL') AS result
+UNION ALL
+SELECT 'ACCOUNT_STATUS_STRUCTURE', IF(@mp_account_required_columns AND @mp_active_account_status AND @mp_account_status_primary_key AND @mp_user_account_status_foreign_key, 'PASS', 'FAIL')
+UNION ALL
+SELECT 'RBAC_RESOLUTION_STRUCTURE', IF(@mp_rbac_resolution_columns AND @mp_permission_required_columns AND @mp_authorization_primary_keys, 'PASS', 'FAIL')
 UNION ALL
 SELECT 'RBAC_PERMISSIONS', IF(@mp_permission_required_columns AND @mp_required_active_permissions AND @mp_authorization_primary_keys, 'PASS', 'FAIL')
 UNION ALL
