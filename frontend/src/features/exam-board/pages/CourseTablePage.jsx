@@ -248,7 +248,7 @@ export default function CourseTablePage() {
       <div className="mb-5" dir="rtl">
         <h2 className="text-[20px] font-black text-text-dark mb-[3px]">جدول المواد الدراسية</h2>
         <p className="text-[12.5px] text-text-light">
-          عرض الخطة الإرشادية للفصل المختار. هذا العرض لا يقيّد أهلية التسجيل.
+          عرض مقررات البرنامج وحالة طرحها في الفصل الأكاديمي المختار، مع إظهار المستوى والفصل الإرشاديين للمعلومة فقط.
         </p>
       </div>
 
@@ -267,7 +267,7 @@ export default function CourseTablePage() {
             </select>
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-[12px] font-bold text-text-dark">الفصل الإرشادي</label>
+            <label className="text-[12px] font-bold text-text-dark">الفصل الأكاديمي الفعلي</label>
             <select
               className="px-3 py-2.5 border border-primary/20 rounded-[10px] text-[13.5px] text-text-dark outline-none focus:border-primary disabled:opacity-50"
               value={semId}
@@ -283,7 +283,7 @@ export default function CourseTablePage() {
       </div>
 
       {!semId ? (
-        <p className="text-center text-[13px] text-text-light py-8" dir="rtl">اختر السنة الدراسية والفصل الإرشادي أولاً</p>
+        <p className="text-center text-[13px] text-text-light py-8" dir="rtl">اختر السنة الدراسية والفصل الأكاديمي الفعلي أولاً</p>
       ) : (
         <>
           <div className="bg-white border border-primary/12 rounded-[16px] p-5 mb-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
