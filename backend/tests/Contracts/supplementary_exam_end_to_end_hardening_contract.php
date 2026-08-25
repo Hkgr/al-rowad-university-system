@@ -48,12 +48,17 @@ $expect(str_contains($source['grading'], '$latestSubmissions->count() !== 1')
     && str_contains($source['grading'], 'supplementary_grade_submission_integrity_error'), 'Review/approve/publish ambiguity guard is missing.');
 $expect(str_contains($source['materialization'], '$latestSubmissions->count() !== 1')
     && str_contains($source['materialization'], 'supplementary_materialization_stale_submission'), 'Materialization ambiguity guard is missing.');
-$expect(str_contains($source['reconciliation'], '$latestSubmissions->count() === 1 ? $latestSubmissions->first() : null')
-    && str_contains($source['reconciliation'], 'source_submission_version_ambiguous'), 'Reconciliation must not pick a winner on ambiguity.');
+$ambiguousPosition = strpos($source['reconciliation'], '$latestSubmissions->count() > 1');
+$missingPosition = strpos($source['reconciliation'], '$latestSubmissions->isEmpty()');
+$expect($ambiguousPosition !== false && $missingPosition !== false && $ambiguousPosition < $missingPosition
+    && str_contains($source['reconciliation'], 'source_submission_version_ambiguous'), 'Reconciliation must report ambiguity before missing-submission handling.');
 
 foreach (['published_supplementary_result', 'official_result', 'official_record_updated', 'preserved_practical_mark', 'practical_minimum'] as $field) {
     $expect(str_contains($source['registration'], "'{$field}'"), 'Student-safe result projection is missing '.$field);
 }
+$expect(str_contains($source['registration'], '$materialization->supplementary_exam_registration_id === (int) $registration->getKey()')
+    && str_contains($source['registration'], '$materialization->student_course_registration_id === (int) $registration->student_course_registration_id')
+    && str_contains($source['registration'], '$materialization->supplementary_exam_grade_result_id === (int) ($gradeResult?->getKey() ?? 0)'), 'Official result materialization must match the exact supplementary registration, original attempt, and grade result.');
 foreach (['reviewed_by_user_id', 'published_by_user_id', 'change_reason'] as $privateField) {
     $expect(! str_contains($source['registration'], "'{$privateField}'"), 'Student projection exposes provenance: '.$privateField);
 }
@@ -62,6 +67,10 @@ $expect(str_contains($source['office'], "'per_page' => ['nullable', 'integer', '
     && str_contains($source['office'], "'summary'")
     && str_contains($source['office'], "'meta'"), 'Student Affairs bounded read contract is incomplete.');
 $expect(str_contains($source['office'], 'hasActualUniversityScope($user)'), 'Student Affairs period DataScope guard is missing.');
+$expect(substr_count($source['office'], '$fields->where(') >= 3, 'Student Affairs relation search predicates are not grouped safely.');
+$expect(str_contains($source['student'], 'registrationsByAttempt')
+    && str_contains($source['student'], 'supplementaryRegistrationAttemptKey(')
+    && str_contains($source['student'], 'evaluation.original_registration_id'), 'Student registration state is not matched to the exact original attempt.');
 
 foreach (['student', 'professor', 'exam', 'affairs'] as $page) {
     $expect(! str_contains($source[$page], 'window.confirm'), 'Browser confirm remains in '.$page);

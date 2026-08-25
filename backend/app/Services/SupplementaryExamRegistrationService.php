@@ -75,6 +75,7 @@ class SupplementaryExamRegistrationService
                 && (int) $gradeResult->submission_version === (int) $submission->submission_version;
             $materialization = $registration->materialization;
             $materialized = $materialization !== null
+                && (int) $materialization->supplementary_exam_registration_id === (int) $registration->getKey()
                 && (int) $materialization->student_course_registration_id === (int) $registration->student_course_registration_id
                 && (int) $materialization->supplementary_exam_grade_result_id === (int) ($gradeResult?->getKey() ?? 0)
                 && $materialization->targetResult !== null;

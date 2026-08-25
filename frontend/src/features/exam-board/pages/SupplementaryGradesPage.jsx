@@ -12,7 +12,7 @@ import {
   supplementaryErrorMessage,
   workflowStatusLabel,
 } from '../../supplementary-exams/supplementaryStatus'
-import { SupplementaryConfirmDialog } from '../../supplementary-exams/SupplementaryUi'
+import { SupplementaryConfirmDialog, SupplementaryEmptyState, SupplementaryMetricCard, SupplementaryNotice, SupplementaryPeriodHeader, SupplementaryStatusBadge, SupplementaryWorkflowSteps } from '../../supplementary-exams/SupplementaryUi'
 
 const offeringOf = (row) => row?.offering ?? {}
 const offeringIdOf = (row) => offeringOf(row).supplementary_exam_offering_id
@@ -191,6 +191,21 @@ export default function SupplementaryGradesPage() {
     && Array.isArray(reconciliationView.reconciliation?.offerings)
     ? reconciliationView.reconciliation.offerings
     : []
+  const queueTotals = visibleRows.reduce((totals, row) => {
+    const counts = rowCounts(row)
+    return {
+      offerings: totals.offerings + 1,
+      registered: totals.registered + Number(counts.registered),
+      graded: totals.graded + Number(counts.graded),
+      materialized: totals.materialized + Number(counts.materialized),
+    }
+  }, { offerings: 0, registered: 0, graded: 0, materialized: 0 })
+  const workflowCodes = ['grading_open', 'grading_submitted', 'results_approved', 'results_published', 'results_materialized']
+  const workflowIndex = workflowCodes.indexOf(selectedPeriod?.status)
+  const workflowSteps = workflowCodes.map((code, index) => ({
+    code,
+    state: workflowIndex < 0 ? 'pending' : index < workflowIndex ? 'complete' : index === workflowIndex ? 'current' : 'pending',
+  }))
 
   const review = async (row, action, reason = '') => {
     const submissionId = row?.submission?.supplementary_exam_grade_submission_id
@@ -318,22 +333,13 @@ export default function SupplementaryGradesPage() {
   )
 
   return (
-    <main className="p-6" dir="rtl">
-      <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-black">تشغيل علامات الامتحانات التكميلية</h1>
-          <p className="text-sm text-gray-500">الإسناد والمراجعة والنشر والترحيل الرسمي، مع تقرير مطابقة للقراءة فقط.</p>
-        </div>
-        <button className="inline-flex items-center gap-2 rounded border px-3 py-2" disabled={loading || Boolean(busyAction)} onClick={() => { setNotice(''); void refreshAll() }} type="button">
-          <FaSyncAlt aria-hidden="true" /> {loading ? 'جارٍ التحديث...' : 'تحديث البيانات'}
-        </button>
-      </header>
-
-      <section className="mb-4 rounded-md border bg-white p-4">
-        <div className="flex flex-wrap items-end gap-3">
+    <main className="space-y-5 p-4 sm:p-6" dir="rtl">
+      <SupplementaryPeriodHeader period={selectedPeriod ?? null} title="تشغيل علامات الامتحانات التكميلية">
+        <p className="mt-3 text-sm text-text-gray">الإسناد والمراجعة والنشر والترحيل الرسمي وفق القدرات التي تعيدها الخدمة الخلفية.</p>
+        <div className="mt-4 flex flex-wrap items-end gap-3">
           <label className="grid gap-1 font-bold">
             الدورة
-            <select className="min-w-72 rounded border p-2 font-normal" onChange={(event) => {
+            <select className="min-w-72 rounded-[14px] border border-primary/20 bg-white p-2 font-normal" onChange={(event) => {
               const nextPeriodId = event.target.value
               reconciliationRequestSequenceRef.current += 1
               setReconciliation(null)
@@ -350,22 +356,34 @@ export default function SupplementaryGradesPage() {
             </select>
           </label>
           {canOpenGrading && (
-            <button className="inline-flex items-center gap-2 rounded bg-blue-700 px-3 py-2 text-white disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => setDialog({ type: 'open-grading' })} type="button">
+            <button className="inline-flex items-center gap-2 rounded-[14px] bg-primary px-4 py-2 font-bold text-white disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => setDialog({ type: 'open-grading' })} type="button">
               <FaLockOpen aria-hidden="true" /> {busyAction.startsWith('open-grading:') ? 'جارٍ الفتح...' : 'تثبيت القائمة وفتح العلامات'}
             </button>
           )}
+          <button className="inline-flex items-center gap-2 rounded-[14px] border border-primary/20 bg-white px-4 py-2 font-bold text-primary-dark disabled:opacity-50" disabled={loading || Boolean(busyAction)} onClick={() => { setNotice(''); void refreshAll() }} type="button">
+            <FaSyncAlt aria-hidden="true" /> {loading ? 'جارٍ التحديث...' : 'تحديث البيانات'}
+          </button>
         </div>
+      </SupplementaryPeriodHeader>
+
+      {periodId && <SupplementaryWorkflowSteps steps={workflowSteps} />}
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <SupplementaryMetricCard label="العروض" value={queueTotals.offerings} />
+        <SupplementaryMetricCard label="الطلاب المسجلون" value={queueTotals.registered} />
+        <SupplementaryMetricCard label="العلامات المدخلة" value={queueTotals.graded} />
+        <SupplementaryMetricCard label="النتائج المرحّلة" value={queueTotals.materialized} />
       </section>
 
-      {error && <p className="my-3 border-r-4 border-red-600 bg-red-50 px-3 py-2" role="alert">{error}</p>}
-      {notice && <p className="my-3 border-r-4 border-green-700 bg-green-50 px-3 py-2" role="status">{notice}</p>}
+      {error && <SupplementaryNotice tone="error">{error}</SupplementaryNotice>}
+      {notice && <SupplementaryNotice>{notice}</SupplementaryNotice>}
 
       {periodId && (
-        <section className="mb-5 rounded-md border bg-slate-50 p-4" aria-busy={reconciliationLoading}>
+        <section className="rounded-[18px] border border-primary/15 bg-primary/5 p-5 shadow-sm" aria-busy={reconciliationLoading}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="font-black">تقرير المطابقة التشغيلي</h2>
-              <p className="text-sm text-gray-600">للقراءة فقط؛ يعرض الفروقات ولا ينفذ أي تعديل أو معالجة للبيانات.</p>
+              <p className="text-sm text-text-gray">للقراءة فقط؛ يعرض الفروقات ولا ينفذ أي تعديل أو معالجة للبيانات.</p>
             </div>
             {!reconciliationLoading && reconciliationMatchesPeriod && (
               <span className={`rounded px-3 py-2 font-black ${reconciliationView.status === 'CONFLICT' ? 'bg-red-100 text-red-800' : reconciliationView.status === 'WARNING' ? 'bg-amber-100 text-amber-900' : 'bg-green-100 text-green-800'}`}>
@@ -373,20 +391,17 @@ export default function SupplementaryGradesPage() {
               </span>
             )}
           </div>
-          {reconciliationLoading && <p className="py-4 text-gray-500">جارٍ فحص المطابقة...</p>}
-          {reconciliationError && <p className="mt-3 rounded bg-red-50 p-3 text-red-800" role="alert">{reconciliationError}</p>}
+          {reconciliationLoading && <SupplementaryNotice>جارٍ فحص المطابقة...</SupplementaryNotice>}
+          {reconciliationError && <SupplementaryNotice tone="error">{reconciliationError}</SupplementaryNotice>}
           {!reconciliationLoading && !reconciliationError && reconciliationMatchesPeriod && (
             <>
               <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
                 {Object.entries(reconciliationView.counts).map(([key, value]) => (
-                  <div className="rounded border bg-white p-3" key={key}>
-                    <div className="text-xs text-gray-500">{reconciliationCountLabels[key] ?? 'قياس إضافي'}</div>
-                    <div className="text-xl font-black">{Number.isFinite(Number(value)) ? Number(value) : '—'}</div>
-                  </div>
+                  <SupplementaryMetricCard key={key} label={reconciliationCountLabels[key] ?? 'قياس إضافي'} value={Number.isFinite(Number(value)) ? Number(value) : '—'} />
                 ))}
               </div>
               {reconciliationView.issues.length === 0 ? (
-                <p className="mt-3 rounded bg-green-50 p-3">لم يُبلغ الفحص عن ملاحظات.</p>
+                <SupplementaryNotice>لم يُبلغ الفحص عن ملاحظات.</SupplementaryNotice>
               ) : (
                 <ul className="mt-3 space-y-2">
                   {reconciliationView.issues.map((issue, index) => (
@@ -407,9 +422,9 @@ export default function SupplementaryGradesPage() {
         </section>
       )}
 
-      {loading && <p className="rounded border bg-white p-8 text-center text-gray-500">جارٍ تحميل طابور العلامات التكميلية...</p>}
+      {loading && <SupplementaryNotice>جارٍ تحميل طابور العلامات التكميلية...</SupplementaryNotice>}
       {!loading && !error && visibleRows.length === 0 && (
-        <p className="rounded border bg-white p-8 text-center text-gray-500">لا توجد عروض تكميلية في طابور التشغيل للدورة المحددة.</p>
+        <SupplementaryEmptyState title="طابور التشغيل فارغ" description="لا توجد عروض تكميلية في طابور التشغيل للدورة المحددة." />
       )}
 
       {!loading && visibleRows.length === 0 && reconciliationOfferings.length > 0 && (
@@ -420,26 +435,26 @@ export default function SupplementaryGradesPage() {
             const offeringId = offeringIdOf(report)
 
             return (
-              <article className="rounded-md border bg-white p-4" key={offeringId}>
+              <article className="rounded-[18px] border border-primary/15 bg-white p-5 shadow-sm" key={offeringId}>
                 <header className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h3 className="font-black">
                       {report.course?.course_code ?? 'دون رمز'} — {report.course?.course_name ?? `المقرر ${report.course_id ?? 'غير المحدد'}`}
                     </h3>
-                    <p className="mt-1 text-sm text-gray-600">
+                    <p className="mt-1 text-sm text-text-gray">
                       البرنامج: {report.academic_program?.program_name ?? `البرنامج ${report.academic_program_id ?? 'غير المحدد'}`}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2 text-sm">
-                    <span className="rounded bg-blue-50 px-2 py-1 font-bold">{operationalStatusLabel(report)}</span>
+                    <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 font-bold text-primary-dark">{operationalStatusLabel(report)}</span>
                     <span className="rounded border px-2 py-1">{reconciliationStatusLabel(report.state)}</span>
                   </div>
                 </header>
                 <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
-                  <div className="rounded bg-gray-50 p-2"><small>المسجلون</small><strong className="block text-lg">{counts.registered}</strong></div>
-                  <div className="rounded bg-gray-50 p-2"><small>أُدخلت علاماتهم</small><strong className="block text-lg">{counts.graded}</strong></div>
-                  <div className="rounded bg-gray-50 p-2"><small>المنشورة</small><strong className="block text-lg">{counts.published}</strong></div>
-                  <div className="rounded bg-gray-50 p-2"><small>المُرحّلة رسمياً</small><strong className="block text-lg">{counts.materialized}</strong></div>
+                  <SupplementaryMetricCard label="المسجلون" value={counts.registered} />
+                  <SupplementaryMetricCard label="العلامات المدخلة" value={counts.graded} />
+                  <SupplementaryMetricCard label="المنشورة" value={counts.published} />
+                  <SupplementaryMetricCard label="المُرحّلة رسمياً" value={counts.materialized} />
                 </div>
                 {(report.issues ?? []).length > 0 && (
                   <p className="mt-3 rounded bg-amber-50 p-3">
@@ -466,11 +481,11 @@ export default function SupplementaryGradesPage() {
           const options = graderOptions[offeringId]
 
           return (
-            <article className="rounded-md border bg-white p-4" key={offeringId}>
+            <article className="rounded-[18px] border border-primary/15 bg-white p-5 shadow-sm" key={offeringId}>
               <header className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="font-black">{offering.course?.course_code ?? 'دون رمز'} — {offering.course?.course_name ?? 'مقرر غير مسمى'}</h2>
-                  <div className="mt-1 grid gap-1 text-sm text-gray-600 sm:grid-cols-2">
+                  <div className="mt-1 grid gap-1 text-sm text-text-gray sm:grid-cols-2">
                     <span>الدورة: {period.period_name ?? 'غير محددة'} ({periodStatusLabel(period.status)})</span>
                     <span>البرنامج: {programName(row)}</span>
                     <span>المصحح: {personName(currentGrader)}</span>
@@ -478,17 +493,17 @@ export default function SupplementaryGradesPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2 text-sm">
-                  <span className="rounded bg-blue-50 px-2 py-1 font-bold">{operationalStatusLabel(row)}</span>
-                  <span className="rounded border px-2 py-1">{workflowStatusLabel(row.workflow_status)}</span>
+                  <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 font-bold text-primary-dark">{operationalStatusLabel(row)}</span>
+                  <SupplementaryStatusBadge kind="workflow" status={row.workflow_status} />
                   <span className="rounded border px-2 py-1 font-bold">{materializationStatusLabel(materialization.state)}</span>
                 </div>
               </header>
 
               <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
-                <div className="rounded bg-gray-50 p-2"><small>المسجلون</small><strong className="block text-lg">{counts.registered}</strong></div>
-                <div className="rounded bg-gray-50 p-2"><small>أُدخلت علاماتهم</small><strong className="block text-lg">{counts.graded}</strong></div>
-                <div className="rounded bg-gray-50 p-2"><small>المنشورة</small><strong className="block text-lg">{counts.published}</strong></div>
-                <div className="rounded bg-gray-50 p-2"><small>المُرحّلة رسمياً</small><strong className="block text-lg">{counts.materialized}</strong></div>
+                <SupplementaryMetricCard label="المسجلون" value={counts.registered} />
+                <SupplementaryMetricCard label="العلامات المدخلة" value={counts.graded} />
+                <SupplementaryMetricCard label="المنشورة" value={counts.published} />
+                <SupplementaryMetricCard label="المُرحّلة رسمياً" value={counts.materialized} />
               </div>
 
               {materialization.reason && (
@@ -500,7 +515,7 @@ export default function SupplementaryGradesPage() {
               )}
 
               {canAssignGrader && (
-                <div className="mt-3 flex flex-wrap items-end gap-2 rounded border bg-gray-50 p-3">
+                <div className="mt-3 flex flex-wrap items-end gap-2 rounded-[14px] border border-primary/10 bg-primary/5 p-3">
                   <label className="grid gap-1 text-sm font-bold">
                     البحث عن مصحح
                     <input
@@ -524,8 +539,8 @@ export default function SupplementaryGradesPage() {
                           {options.map((grader) => <option key={graderId(grader)} value={graderId(grader)}>{personName(grader)}</option>)}
                         </select>
                       </label>
-                      {options.length === 0 && <span className="text-sm text-gray-500">لا يوجد مصححون متاحون ضمن نطاقك.</span>}
-                      <button className="rounded bg-gray-800 px-3 py-2 text-white disabled:opacity-50" disabled={!graderSelections[offeringId] || Boolean(busyAction)} onClick={() => setDialog({ type: 'assign', row })} type="button">
+                      {options.length === 0 && <span className="text-sm text-text-gray">لا يوجد مصححون متاحون ضمن نطاقك.</span>}
+                      <button className="rounded-[14px] bg-primary px-4 py-2 font-bold text-white disabled:opacity-50" disabled={!graderSelections[offeringId] || Boolean(busyAction)} onClick={() => setDialog({ type: 'assign', row })} type="button">
                         {busyAction === `grader:${offeringId}` ? 'جارٍ الحفظ...' : 'حفظ الإسناد'}
                       </button>
                     </>
@@ -534,7 +549,7 @@ export default function SupplementaryGradesPage() {
               )}
 
               {roster.length === 0 ? (
-                <p className="mt-3 rounded bg-gray-50 p-4 text-gray-500">لا يوجد طلاب في القائمة المثبتة لهذا العرض.</p>
+                <SupplementaryEmptyState title="القائمة المثبتة فارغة" description="لا يوجد طلاب في القائمة المثبتة لهذا العرض." />
               ) : (
                 <div className="mt-3 overflow-x-auto">
                   <table className="w-full min-w-[720px] text-right">
@@ -566,7 +581,7 @@ export default function SupplementaryGradesPage() {
                   <button className="inline-flex items-center gap-2 rounded bg-green-700 px-3 py-2 text-white disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => setDialog({ type: 'review', action: 'publish', row })} type="button"><FaUpload aria-hidden="true" /> نشر</button>
                 )}
                 {materialization.can_materialize && (
-                  <button className="inline-flex items-center gap-2 rounded bg-blue-700 px-3 py-2 text-white disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => setDialog({ type: 'materialize', row })} type="button"><FaDatabase aria-hidden="true" /> {busyAction === `materialize:${offeringId}` ? 'جارٍ الترحيل...' : 'ترحيل إلى السجل الرسمي'}</button>
+                  <button className="inline-flex items-center gap-2 rounded-[14px] bg-primary px-4 py-2 font-bold text-white disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => setDialog({ type: 'materialize', row })} type="button"><FaDatabase aria-hidden="true" /> {busyAction === `materialize:${offeringId}` ? 'جارٍ الترحيل...' : 'ترحيل إلى السجل الرسمي'}</button>
                 )}
               </div>
             </article>

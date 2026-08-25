@@ -174,6 +174,7 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
         $report = $this->reconciliation()->reconcile($this->actor(), $this->period());
         $this->assertSame('CONFLICT', $report['state']);
         $this->assertContains('source_submission_version_ambiguous', array_column($report['issues'], 'code'));
+        $this->assertNotContains('source_submission_missing', array_column($report['issues'], 'code'));
     }
 
     #[Test]

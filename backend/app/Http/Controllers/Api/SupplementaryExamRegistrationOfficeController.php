@@ -153,18 +153,7 @@ class SupplementaryExamRegistrationOfficeController extends Controller
         }
         $search = trim((string) ($filters['search'] ?? ''));
         if ($search !== '') {
-            $query->where(function (Builder $match) use ($search): void {
-                $match->whereHas('student', fn (Builder $student): Builder => $student
-                    ->where('student_number', 'like', "%{$search}%")
-                    ->orWhere('first_name', 'like', "%{$search}%")
-                    ->orWhere('last_name', 'like', "%{$search}%"))
-                    ->orWhereHas('offering.course', fn (Builder $course): Builder => $course
-                        ->where('course_code', 'like', "%{$search}%")
-                        ->orWhere('course_name', 'like', "%{$search}%"))
-                    ->orWhereHas('offering.academicProgram', fn (Builder $program): Builder => $program
-                        ->where('program_code', 'like', "%{$search}%")
-                        ->orWhere('program_name', 'like', "%{$search}%"));
-            });
+            $this->applySearch($query, $search);
         }
 
         $status = (string) $periodRecord->status;
@@ -196,6 +185,29 @@ class SupplementaryExamRegistrationOfficeController extends Controller
                 'total' => $paginator->total(),
             ],
         ]);
+    }
+
+    private function applySearch(Builder $query, string $search): void
+    {
+        $query->where(function (Builder $match) use ($search): void {
+            $match->whereHas('student', function (Builder $student) use ($search): void {
+                $student->where(function (Builder $fields) use ($search): void {
+                    $fields->where('student_number', 'like', "%{$search}%")
+                        ->orWhere('first_name', 'like', "%{$search}%")
+                        ->orWhere('last_name', 'like', "%{$search}%");
+                });
+            })->orWhereHas('offering.course', function (Builder $course) use ($search): void {
+                $course->where(function (Builder $fields) use ($search): void {
+                    $fields->where('course_code', 'like', "%{$search}%")
+                        ->orWhere('course_name', 'like', "%{$search}%");
+                });
+            })->orWhereHas('offering.academicProgram', function (Builder $program) use ($search): void {
+                $program->where(function (Builder $fields) use ($search): void {
+                    $fields->where('program_code', 'like', "%{$search}%")
+                        ->orWhere('program_name', 'like', "%{$search}%");
+                });
+            });
+        });
     }
 
     /** @param Collection<int, array{type: string, id: int}> $scopes */

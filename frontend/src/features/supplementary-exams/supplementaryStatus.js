@@ -183,6 +183,10 @@ export function registrationStatusLabel(status) {
   return localizedLabel(REGISTRATION_STATUS_LABELS, status, 'لم يبدأ التسجيل', 'حالة تسجيل غير معروفة')
 }
 
+export function supplementaryRegistrationAttemptKey(offeringId, studentCourseRegistrationId) {
+  return `${Number(offeringId)}:${Number(studentCourseRegistrationId)}`
+}
+
 export function reconciliationStatusLabel(status) {
   const normalized = typeof status === 'string' ? status.toUpperCase() : status
   return localizedLabel(RECONCILIATION_STATUS_LABELS, normalized, 'لم تُفحص بعد', 'حالة مطابقة غير معروفة')

@@ -8,6 +8,7 @@ import {
   reconciliationStatusLabel,
   registrationStatusLabel,
   resultStatusLabel,
+  supplementaryRegistrationAttemptKey,
   workflowStatusLabel,
 } from '../src/features/supplementary-exams/supplementaryStatus.js'
 import { canAccess } from '../src/features/auth/auth.js'
@@ -57,12 +58,51 @@ test('critical supplementary pages use native RTL dialogs and no browser prompts
   assert.ok(shared.includes('reasonRequired'))
 })
 
+test('role-specific supplementary pages use the shared Al-Rowad presentation without blue branding', () => {
+  const contracts = [
+    ['src/features/professor-dashboard/pages/ProfessorSupplementaryExams.jsx', ['SupplementaryPeriodHeader', 'SupplementaryStatusBadge', 'SupplementaryMetricCard', 'SupplementaryEmptyState', 'SupplementaryNotice']],
+    ['src/features/exam-board/pages/SupplementaryGradesPage.jsx', ['SupplementaryPeriodHeader', 'SupplementaryWorkflowSteps', 'SupplementaryStatusBadge', 'SupplementaryMetricCard', 'SupplementaryEmptyState', 'SupplementaryNotice']],
+    ['src/features/student-affairs/pages/SupplementaryExamRegistrations.jsx', ['SupplementaryPeriodHeader', 'SupplementaryWorkflowSteps', 'SupplementaryMetricCard', 'SupplementaryEmptyState', 'SupplementaryNotice']],
+  ]
+
+  for (const [path, components] of contracts) {
+    const source = read(path)
+    assert.equal(/(?:bg|text|border)-blue-/.test(source), false, path)
+    for (const component of components) assert.ok(source.includes(component), `${path}: ${component}`)
+  }
+
+  const professor = read(contracts[0][0])
+  assert.ok(professor.includes('الامتحان التكميلي نظري فقط'))
+  assert.ok(professor.includes('علامة العملي المعتمدة محفوظة ولا يمكن تعديلها من هذه الصفحة.'))
+})
+
 test('student result semantics never call an unmaterialized preview official', () => {
   const page = read('src/features/student-dashboard/pages/StudentSupplementaryExams.jsx')
   assert.ok(page.includes('published_supplementary_result'))
   assert.ok(page.includes('official_result'))
   assert.ok(page.includes('لم يُحدّث السجل الأكاديمي الرسمي بعد'))
   assert.ok(page.includes('تم تحديث نتيجتك الأكاديمية الرسمية'))
+})
+
+test('student registration state is matched by offering and exact original attempt regardless of order', () => {
+  const registrations = [
+    { supplementary_exam_registration_id: 1, supplementary_exam_offering_id: 70, student_course_registration_id: 100, status: 'cancelled' },
+    { supplementary_exam_registration_id: 2, supplementary_exam_offering_id: 70, student_course_registration_id: 200, status: 'registered' },
+  ]
+  const resolve = (rows, attemptId) => new Map(rows.map((row) => [
+    supplementaryRegistrationAttemptKey(row.supplementary_exam_offering_id, row.student_course_registration_id),
+    row,
+  ])).get(supplementaryRegistrationAttemptKey(70, attemptId))
+
+  for (const rows of [registrations, [...registrations].reverse()]) {
+    assert.equal(resolve(rows, 100)?.status, 'cancelled')
+    assert.equal(resolve(rows, 200)?.status, 'registered')
+  }
+
+  const studentPage = read('src/features/student-dashboard/pages/StudentSupplementaryExams.jsx')
+  assert.ok(studentPage.includes('registrationsByAttempt'))
+  assert.ok(studentPage.includes('evaluation.original_registration_id'))
+  assert.equal(studentPage.includes('registrationsByOffering'), false)
 })
 
 test('exam board uses canonical fields and backend capabilities without alias soup', () => {

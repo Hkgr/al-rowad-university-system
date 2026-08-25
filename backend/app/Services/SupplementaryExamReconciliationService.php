@@ -462,19 +462,19 @@ class SupplementaryExamReconciliationService
                 }
             }
             if ($offeringRoster->isNotEmpty()) {
-                if (! $submission) {
-                    $offeringIssues->push($this->issue(
-                        'source_submission_missing',
-                        $publicationRequired ? 'CONFLICT' : 'WARNING',
-                        'لا يوجد إرسال درجات للعرض.',
-                        ['supplementary_exam_offering_id' => $offeringId],
-                    ));
-                } elseif ($latestSubmissions->count() !== 1) {
+                if ($latestSubmissions->count() > 1) {
                     $offeringIssues->push($this->issue(
                         'source_submission_version_ambiguous',
                         'CONFLICT',
                         'إصدار الإرسال الأحدث غير فريد.',
                         ['supplementary_exam_offering_id' => $offeringId, 'submission_version' => (int) $latestVersion],
+                    ));
+                } elseif ($latestSubmissions->isEmpty()) {
+                    $offeringIssues->push($this->issue(
+                        'source_submission_missing',
+                        $publicationRequired ? 'CONFLICT' : 'WARNING',
+                        'لا يوجد إرسال درجات للعرض.',
+                        ['supplementary_exam_offering_id' => $offeringId],
                     ));
                 } elseif ($submission->status !== 'published' || $submission->published_at === null) {
                     $offeringIssues->push($this->issue(

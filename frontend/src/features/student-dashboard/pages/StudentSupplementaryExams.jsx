@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiRequest } from '../../../services/apiClient'
-import { eligibilityBlockerLabel, eligibilityReasonLabel, resultStatusLabel, supplementaryErrorMessage, workflowStatusLabel } from '../../supplementary-exams/supplementaryStatus'
+import { eligibilityBlockerLabel, eligibilityReasonLabel, resultStatusLabel, supplementaryErrorMessage, supplementaryRegistrationAttemptKey, workflowStatusLabel } from '../../supplementary-exams/supplementaryStatus'
 import { SupplementaryConfirmDialog, SupplementaryEmptyState, SupplementaryMetricCard, SupplementaryNotice, SupplementaryPeriodHeader, SupplementaryStatusBadge } from '../../supplementary-exams/SupplementaryUi'
 
 const offeringId = (row) => Number(row?.supplementary_offering?.supplementary_exam_offering_id ?? row?.supplementary_exam_offering_id)
@@ -42,7 +42,10 @@ export default function StudentSupplementaryExams() {
     return () => { requestSequenceRef.current += 1 }
   }, [load])
 
-  const registrationsByOffering = useMemo(() => new Map(registrations.map((row) => [Number(row.supplementary_exam_offering_id), row])), [registrations])
+  const registrationsByAttempt = useMemo(() => new Map(registrations.map((row) => [
+    supplementaryRegistrationAttemptKey(row.supplementary_exam_offering_id, row.student_course_registration_id),
+    row,
+  ])), [registrations])
   const currentPeriod = eligibilityRows[0]?.period ?? registrations[0]?.offering?.period ?? null
   const registeredCount = registrations.filter((row) => row.status === 'registered').length
   const materializedCount = registrations.filter((row) => row.official_record_updated === true).length
@@ -88,7 +91,10 @@ export default function StudentSupplementaryExams() {
       : <section className="grid gap-4 lg:grid-cols-2">{eligibilityRows.map((row) => {
         const evaluation = row.eligibility ?? {}
         const blocker = evaluation.blockers?.[0]
-        const registration = registrationsByOffering.get(offeringId(row))
+        const registration = registrationsByAttempt.get(supplementaryRegistrationAttemptKey(
+          offeringId(row),
+          evaluation.original_registration_id,
+        ))
         const meta = row.registration_meta ?? {}
         const periodStatus = row.period?.status
         const deferred = evaluation.eligibility_reason === 'voluntarily_deferred_theoretical'

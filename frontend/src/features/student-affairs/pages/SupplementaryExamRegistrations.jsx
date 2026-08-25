@@ -5,7 +5,7 @@ import {
   periodStatusLabel,
   supplementaryErrorMessage,
 } from '../../supplementary-exams/supplementaryStatus'
-import { SupplementaryConfirmDialog } from '../../supplementary-exams/SupplementaryUi'
+import { SupplementaryConfirmDialog, SupplementaryEmptyState, SupplementaryMetricCard, SupplementaryNotice, SupplementaryPeriodHeader, SupplementaryWorkflowSteps } from '../../supplementary-exams/SupplementaryUi'
 
 export default function SupplementaryExamRegistrations() {
   const [periods, setPeriods] = useState([])
@@ -385,66 +385,64 @@ export default function SupplementaryExamRegistrations() {
     && meta?.period_status === 'registration_open'
     && meta?.capabilities?.can_manage_window === true
   const mutationBusy = Boolean(busyAction)
+  const selectedPeriod = periods.find((item) => String(item.supplementary_exam_period_id) === String(period)) ?? null
+  const periodPresentation = selectedPeriod === null ? null : { ...selectedPeriod, status: meta?.period_status ?? selectedPeriod.status }
+  const workflowCodes = ['announced', 'registration_open', 'registration_closed', 'grading_open']
+  const workflowIndex = workflowCodes.indexOf(meta?.period_status)
+  const workflowSteps = workflowCodes.map((code, index) => ({
+    code,
+    state: workflowIndex < 0 ? 'pending' : index < workflowIndex ? 'complete' : index === workflowIndex ? 'current' : 'pending',
+  }))
 
   return (
     <main
       aria-busy={periodsLoading || listLoading || searchLoading || eligibilityLoading || mutationBusy}
-      className="p-6"
+      className="space-y-5 p-4 sm:p-6"
       dir="rtl"
     >
-      <h1 className="text-2xl font-bold">التسجيل في الامتحانات التكميلية</h1>
-      <p className="my-2 text-gray-600">لا يمكن تجاوز الأهلية الأكاديمية أو اختيار مصدر غير معتمد.</p>
+      <SupplementaryPeriodHeader period={periodPresentation} title="إدارة تسجيل الامتحانات التكميلية">
+        <p className="mt-3 text-sm text-text-gray">لا يمكن تجاوز الأهلية الأكاديمية أو اختيار مصدر غير معتمد.</p>
+        <div className="mt-4 flex flex-wrap items-end gap-2">
+          <label className="grid gap-1 text-sm font-bold text-text-dark">الدورة
+            <select className="min-w-64 rounded-[14px] border border-primary/20 bg-white p-2 font-normal" disabled={periodsLoading || mutationBusy} onChange={handlePeriodChange} value={period}>
+              <option value="">{periodsLoading ? 'جارٍ تحميل الدورات...' : 'اختر الدورة'}</option>
+              {periods.map((p) => <option key={p.supplementary_exam_period_id} value={p.supplementary_exam_period_id}>{p.period_name} — {periodStatusLabel(p.status)}</option>)}
+            </select>
+          </label>
+          <button className="rounded-[14px] bg-primary px-4 py-2 font-bold text-white disabled:opacity-40" disabled={!canOpenRegistration || listLoading || mutationBusy} onClick={() => void transition('open')} type="button">
+            {busyAction === 'open' ? 'جارٍ فتح التسجيل...' : 'فتح التسجيل'}
+          </button>
+          <button className="rounded-[14px] border border-red-200 bg-white px-4 py-2 font-bold text-red-700 disabled:opacity-40" disabled={!canCloseRegistration || listLoading || mutationBusy} onClick={() => setDialog({ type: 'close' })} type="button">
+            {busyAction === 'close' ? 'جارٍ تثبيت القائمة...' : 'إغلاق التسجيل وتثبيت القائمة'}
+          </button>
+        </div>
+      </SupplementaryPeriodHeader>
 
-      <div className="my-4 flex flex-wrap gap-2">
-        <select
-          className="rounded border p-2"
-          disabled={periodsLoading || mutationBusy}
-          onChange={handlePeriodChange}
-          value={period}
-        >
-          <option value="">{periodsLoading ? 'جارٍ تحميل الدورات...' : 'اختر الدورة'}</option>
-          {periods.map((p) => (
-            <option key={p.supplementary_exam_period_id} value={p.supplementary_exam_period_id}>
-              {p.period_name} — {periodStatusLabel(p.status)}
-            </option>
-          ))}
-        </select>
-        <button
-          className="rounded bg-primary p-2 text-white disabled:opacity-40"
-          disabled={!canOpenRegistration || listLoading || mutationBusy}
-          onClick={() => void transition('open')}
-          type="button"
-        >
-          {busyAction === 'open' ? 'جارٍ فتح التسجيل...' : 'فتح التسجيل'}
-        </button>
-        <button
-          className="rounded bg-red-700 p-2 text-white disabled:opacity-40"
-          disabled={!canCloseRegistration || listLoading || mutationBusy}
-              onClick={() => setDialog({ type: 'close' })}
-          type="button"
-        >
-          {busyAction === 'close' ? 'جارٍ تثبيت القائمة...' : 'إغلاق التسجيل وتثبيت القائمة'}
-        </button>
-      </div>
+      {periodContextMatches && <SupplementaryWorkflowSteps steps={workflowSteps} />}
 
-      {error && <p className="my-3 rounded bg-red-50 p-3 text-red-800" role="alert">{error}</p>}
-      {message && <p className="my-3 rounded bg-green-50 p-3 text-green-800" role="status">{message}</p>}
-      {listLoading && <p className="my-3 text-gray-500">جارٍ تحميل قائمة التسجيل...</p>}
-      <p className="font-bold">
-        حالة النافذة: {meta ? periodStatusLabel(meta.period_status) : '—'} — {meta ? (meta.list_status === 'fixed' ? 'القائمة النهائية' : 'قائمة أولية') : '—'}
-      </p>
+      <section className="grid gap-3 sm:grid-cols-3">
+        <SupplementaryMetricCard label="الطلاب المسجلون" value={meta?.summary?.registered_students ?? 0} />
+        <SupplementaryMetricCard label="العروض ذات التسجيلات" value={meta?.summary?.offerings_with_registrations ?? 0} />
+        <SupplementaryMetricCard label="حالة القائمة" value={meta ? (meta.list_status === 'fixed' ? 'نهائية' : 'أولية') : '—'} />
+      </section>
 
-      <section className="my-5 rounded border p-4">
-        <h2 className="font-bold">تسجيل طالب مؤهل</h2>
-        <div className="my-2 flex gap-2">
+      {error && <SupplementaryNotice tone="error">{error}</SupplementaryNotice>}
+      {message && <SupplementaryNotice>{message}</SupplementaryNotice>}
+      {listLoading && <SupplementaryNotice>جارٍ تحميل قائمة التسجيل...</SupplementaryNotice>}
+
+      <section className="rounded-[18px] border border-primary/15 bg-white p-5 shadow-sm">
+        <h2 className="font-black text-text-dark">تسجيل طالب مؤهل</h2>
+        <p className="mt-1 text-sm text-text-gray">تُعرض فقط الأهلية التي أعادتها الخدمة الخلفية للدورة المحددة.</p>
+        <div className="my-4 flex flex-wrap gap-2">
           <input
-            className="rounded border p-2 disabled:opacity-50"
+            className="min-w-64 rounded-[14px] border border-primary/20 p-2 disabled:opacity-50"
             disabled={!canManageRegistration || searchLoading || eligibilityLoading || mutationBusy}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="رقم أو اسم الطالب"
             value={query}
           />
           <button
+            className="rounded-[14px] border border-primary/20 bg-white px-4 py-2 font-bold text-primary-dark disabled:opacity-40"
             disabled={!canManageRegistration || searchLoading || eligibilityLoading || mutationBusy}
             onClick={() => void search()}
             type="button"
@@ -454,7 +452,7 @@ export default function SupplementaryExamRegistrations() {
         </div>
         {students.map((candidate) => (
           <button
-            className="block border-b p-2 disabled:opacity-40"
+            className="block w-full rounded-[14px] border border-transparent p-3 text-right text-text-dark hover:border-primary/10 hover:bg-primary/5 disabled:opacity-40"
             disabled={!canManageRegistration || eligibilityLoading || mutationBusy}
             key={candidate.student_id}
             onClick={() => void selectStudent(candidate)}
@@ -466,13 +464,13 @@ export default function SupplementaryExamRegistrations() {
         {student && <p className="my-2 font-bold">الطالب: {student.student_number}</p>}
         {eligibilityLoading && <p className="py-3 text-gray-500">جارٍ تحميل أهلية الطالب...</p>}
         {!eligibilityLoading && eligibilityLoadedSuccessfully && student && eligible.length === 0 && (
-          <p className="py-3 text-gray-500">لا توجد مقررات تكميلية مؤهلة لهذا الطالب في الدورة المختارة.</p>
+          <SupplementaryEmptyState title="لا توجد مقررات مؤهلة" description="لا توجد مقررات تكميلية مؤهلة لهذا الطالب في الدورة المختارة." />
         )}
         {eligible.map((item) => (
-          <div className="flex justify-between border-t p-2" key={`${item.supplementary_exam_offering_id}-${item.original_registration_id}`}>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-[14px] border border-primary/10 bg-primary/5 p-3" key={`${item.supplementary_exam_offering_id}-${item.original_registration_id}`}>
             <span>{item.course_name ?? `المقرر ${item.supplementary_exam_offering_id}`} — {eligibilityReasonLabel(item.eligibility_reason)}</span>
             <button
-              className="text-primary disabled:opacity-40"
+              className="rounded-[14px] bg-primary px-4 py-2 font-bold text-white disabled:opacity-40"
               disabled={!canManageRegistration || mutationBusy}
               onClick={() => void register(item)}
               type="button"
@@ -483,27 +481,28 @@ export default function SupplementaryExamRegistrations() {
         ))}
       </section>
 
-      <div className="my-3 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-bold">عدد المسجلين: {meta?.summary?.registered_students ?? '—'}</h2>
+      <section className="rounded-[18px] border border-primary/15 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div><h2 className="font-black text-text-dark">قائمة التسجيل الحالية</h2><p className="mt-1 text-sm text-text-gray">بحث مرقّم في الطالب أو المقرر أو البرنامج.</p></div>
         <input
-          className="min-w-64 rounded border px-3 py-2"
+          className="min-w-64 rounded-[14px] border border-primary/20 px-3 py-2"
           onChange={(event) => setRosterSearch(event.target.value)}
           placeholder="بحث في الطالب أو المقرر أو البرنامج"
           type="search"
           value={rosterSearch}
         />
       </div>
-      <div className="overflow-auto rounded border bg-white">
+      <div className="mt-4 overflow-auto rounded-[14px] border border-primary/10 bg-white">
         <table className="w-full">
-          <thead><tr><th>الطالب</th><th>المادة</th><th>البرنامج</th><th>سبب الأهلية</th><th>الإجراء</th></tr></thead>
+          <thead className="bg-primary/5 text-text-dark"><tr><th className="p-3">الطالب</th><th className="p-3">المادة</th><th className="p-3">البرنامج</th><th className="p-3">سبب الأهلية</th><th className="p-3">الإجراء</th></tr></thead>
           <tbody>
             {rows.map((row) => (
-              <tr className="border-t" key={row.supplementary_exam_registration_id}>
-                <td>{row.student?.student_number}</td>
-                <td>{row.offering?.course?.course_name}</td>
-                <td>{row.offering?.academic_program?.program_name}</td>
-                <td>{eligibilityReasonLabel(row.eligibility_reason)}</td>
-                <td>
+              <tr className="border-t border-primary/10" key={row.supplementary_exam_registration_id}>
+                <td className="p-3">{row.student?.student_number}</td>
+                <td className="p-3">{row.offering?.course?.course_name}</td>
+                <td className="p-3">{row.offering?.academic_program?.program_name}</td>
+                <td className="p-3">{eligibilityReasonLabel(row.eligibility_reason)}</td>
+                <td className="p-3">
                   <button
                     className="text-red-700 disabled:opacity-40"
                     disabled={!canManageRegistration || mutationBusy}
@@ -518,16 +517,17 @@ export default function SupplementaryExamRegistrations() {
           </tbody>
         </table>
         {!listLoading && meta && rows.length === 0 && (
-          <p className="p-4 text-gray-500">لا توجد تسجيلات في هذه الدورة.</p>
+          <SupplementaryEmptyState title="لا توجد تسجيلات" description="لا توجد تسجيلات مطابقة في هذه الدورة أو ضمن عبارة البحث الحالية." />
         )}
       </div>
       {meta?.meta?.last_page > 1 && (
         <nav aria-label="صفحات قائمة التسجيل" className="mt-3 flex items-center justify-center gap-3">
-          <button className="rounded border px-3 py-2 disabled:opacity-40" disabled={listLoading || rosterPage <= 1} onClick={() => setRosterPage((page) => page - 1)} type="button">السابق</button>
+          <button className="rounded-[14px] border border-primary/20 px-3 py-2 text-primary-dark disabled:opacity-40" disabled={listLoading || rosterPage <= 1} onClick={() => setRosterPage((page) => page - 1)} type="button">السابق</button>
           <span>صفحة {meta.meta.current_page} من {meta.meta.last_page}</span>
-          <button className="rounded border px-3 py-2 disabled:opacity-40" disabled={listLoading || rosterPage >= meta.meta.last_page} onClick={() => setRosterPage((page) => page + 1)} type="button">التالي</button>
+          <button className="rounded-[14px] border border-primary/20 px-3 py-2 text-primary-dark disabled:opacity-40" disabled={listLoading || rosterPage >= meta.meta.last_page} onClick={() => setRosterPage((page) => page + 1)} type="button">التالي</button>
         </nav>
       )}
+      </section>
       {dialog && (
         <SupplementaryConfirmDialog
           busy={mutationBusy}
