@@ -45,6 +45,16 @@ class MinistryPlacementException extends Exception
         );
     }
 
+    public static function groupNotBulkMatchable(): self
+    {
+        return new self(
+            'لا يمكن تطبيق مطابقة جماعية على سجلات لا تحتوي رغبة وزارة محددة.',
+            [],
+            422,
+            'ministry_placement_group_not_bulk_matchable',
+        );
+    }
+
     public static function programUnavailable(): self
     {
         return new self(

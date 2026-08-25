@@ -84,8 +84,14 @@ export function programMatchStateLabel(state) {
 export function programSuggestionStatusLabel(status) {
   if (status === 'unique') return 'اقتراح وحيد'
   if (status === 'ambiguous') return 'اقتراحات متعددة — يلزم الاختيار'
-  if (status === 'missing_preference') return 'لا توجد رغبة للمقارنة'
+  if (status === 'missing_preference') return 'لا توجد رغبة — يلزم مراجعة فردية'
   return 'لا يوجد اقتراح مطابق'
+}
+
+export function canBulkMatchProgramGroup(canManage, group) {
+  return canManage === true
+    && group?.bulk_matchable === true
+    && Number(group?.bulk_eligible_unmatched_count ?? 0) > 0
 }
 
 export function programOptionLabel(program) {

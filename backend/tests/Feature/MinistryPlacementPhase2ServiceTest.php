@@ -194,6 +194,52 @@ class MinistryPlacementPhase2ServiceTest extends TestCase
         self::assertSame(1, DB::table('user_activity_logs')->where('action_code', 'ministry_placement.program_match_bulk')->count());
     }
 
+    public function test_missing_preferences_are_reported_but_never_bulk_matchable(): void
+    {
+        $missingIds = [
+            $this->record(1, null),
+            $this->record(2, " \u{00A0}\t "),
+            $this->record(3, '...،؛ !!!'),
+        ];
+        $summary = $this->service->summary(1);
+        $missingKey = app(MinistryProgramMatcher::class)->preferenceKey('');
+        $group = collect($summary['groups'])->firstWhere('preference_key', $missingKey);
+
+        self::assertNotNull($group);
+        self::assertSame(3, $group['record_count']);
+        self::assertSame('missing_preference', $group['suggestion_status']);
+        self::assertFalse($group['bulk_matchable']);
+        self::assertSame(0, $group['bulk_eligible_unmatched_count']);
+        self::assertSame(3, $group['individual_review_count']);
+        self::assertSame(3, $summary['metrics']['missing_preference_records']);
+
+        $beforeRecords = DB::table('ministry_placement_records')->orderBy('placement_record_id')->get()->toJson();
+        $beforeAudits = DB::table('user_activity_logs')->count();
+        try {
+            $this->service->applyGroup(1, $missingKey, 10, 0, User::query()->findOrFail(7));
+            self::fail('Missing-preference groups must never be bulk matched.');
+        } catch (MinistryPlacementException $exception) {
+            self::assertSame(422, $exception->status);
+            self::assertSame('ministry_placement_group_not_bulk_matchable', $exception->errorCode);
+        }
+        self::assertSame($beforeRecords, DB::table('ministry_placement_records')->orderBy('placement_record_id')->get()->toJson());
+        self::assertSame($beforeAudits, DB::table('user_activity_logs')->count());
+
+        $matched = $this->service->match($missingIds[0], 10, User::query()->findOrFail(7));
+        self::assertSame(10, (int) $matched->matched_academic_program_id, 'Missing preferences must remain individually matchable.');
+
+        $this->record(4, 'الحقوق');
+        $this->record(5, 'الحقوق');
+        $bulk = $this->service->applyGroup(
+            1,
+            app(MinistryProgramMatcher::class)->preferenceKey('الحقوق'),
+            11,
+            2,
+            User::query()->findOrFail(7),
+        );
+        self::assertSame(2, $bulk['updated_count'], 'A non-empty shared preference must remain bulk matchable.');
+    }
+
     public function test_ministry_p2_24_and_25_audit_failure_rolls_back_individual_and_bulk(): void
     {
         $recordId = $this->record(1, 'إدارة الأعمال');

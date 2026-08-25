@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FaSpinner } from 'react-icons/fa'
 import { apiRequest } from '../../../services/apiClient'
-import { programOptionLabel, programSuggestionStatusLabel } from '../lib/ministryPlacement'
+import { canBulkMatchProgramGroup, programOptionLabel, programSuggestionStatusLabel } from '../lib/ministryPlacement'
 import { bindSelectionToBatch, createLatestRequestGuard, selectionForBatch } from '../lib/latestRequestGuard'
 import MinistryProgramPickerDialog from './MinistryProgramPickerDialog'
 
@@ -103,7 +103,7 @@ export default function MinistryProgramMatchingPanel({ batch, canManage, onChang
         <td className="max-w-72 p-3">{group.display_preference || 'غير محددة'}</td><td className="p-3">{group.record_count}</td><td className="p-3 font-bold text-primary">{group.bulk_eligible_unmatched_count}</td><td className="p-3">{group.already_matched_count}</td><td className="p-3 text-amber-700">{group.stale_match_count}</td><td className="p-3">{group.locked_count}</td>
         <td className="min-w-64 p-3"><span className="text-xs text-text-light">{programSuggestionStatusLabel(group.suggestion_status)}</span>{group.suggestions?.map(program => <div key={program.academic_program_id} className="mt-1 text-xs">{programOptionLabel(program)}</div>)}</td>
         <td className="min-w-52 p-3">{group.current_programs?.length ? group.current_programs.map(program => <div key={program.academic_program_id}>{program.program_name || `#${program.academic_program_id}`} ({program.record_count})</div>) : '—'}</td>
-        <td className="p-3">{canManage && group.bulk_eligible_unmatched_count > 0 ? <button type="button" onClick={() => setSelectedGroup(bindSelectionToBatch(batchId, group))} className="rounded-lg bg-primary px-3 py-2 font-bold text-white">اختيار وتطبيق</button> : <span className="text-xs text-text-light">للقراءة فقط</span>}</td>
+        <td className="p-3">{canBulkMatchProgramGroup(canManage, group) ? <button type="button" onClick={() => setSelectedGroup(bindSelectionToBatch(batchId, group))} className="rounded-lg bg-primary px-3 py-2 font-bold text-white">اختيار وتطبيق</button> : <span className="text-xs text-text-light">{group.bulk_matchable === false ? 'لا توجد رغبة — يلزم مراجعة فردية' : 'للقراءة فقط'}</span>}</td>
       </tr>)}
     </tbody></table></div>
     {(summary?.groups ?? []).length === 0 && <p className="p-8 text-center text-text-light">لا توجد سجلات في هذه الدفعة.</p>}

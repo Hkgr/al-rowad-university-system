@@ -6,6 +6,7 @@ $contract = static function (string $backendRoot): array {
     $paths = [
         'matcher' => $backendRoot.'/app/Support/MinistryProgramMatcher.php',
         'matching_service' => $backendRoot.'/app/Services/MinistryPlacementProgramMatchingService.php',
+        'exception' => $backendRoot.'/app/Exceptions/MinistryPlacementException.php',
         'model' => $backendRoot.'/app/Models/MinistryPlacementRecord.php',
         'resource' => $backendRoot.'/app/Http/Resources/MinistryPlacementRecordResource.php',
         'access' => $backendRoot.'/app/Support/MinistryPlacementAccess.php',
@@ -71,6 +72,9 @@ $contract = static function (string $backendRoot): array {
     }
     $expect(str_contains($sources['matching_service'], "\$states->get('unmatched', collect())"), 'Bulk eligibility must be canonical unmatched only.');
     $expect(str_contains($sources['matching_service'], 'eligible->count() !== $expectedEligibleCount') && str_contains($sources['matching_service'], 'groupStale()'), 'Bulk stale-count guard is missing.');
+    $expect(str_contains($sources['matching_service'], '$normalizedPreferences->count() !== 1') && str_contains($sources['matching_service'], "if (\$normalizedPreference === '')") && str_contains($sources['matching_service'], 'groupNotBulkMatchable()'), 'Bulk matching must recompute one non-empty normalized preference instead of trusting its hash.');
+    $expect(str_contains($sources['matching_service'], "'bulk_matchable' => \$bulkMatchable") && str_contains($sources['matching_service'], "'individual_review_count' => \$individualReviewCount"), 'Missing-preference groups need explicit bulk and individual-review counts.');
+    $expect(str_contains($sources['exception'], 'ministry_placement_group_not_bulk_matchable') && str_contains($sources['exception'], 'لا يمكن تطبيق مطابقة جماعية على سجلات لا تحتوي رغبة وزارة محددة.'), 'Missing-preference bulk rejection must use the stable typed error.');
     $expect(! str_contains($sources['matching_service'], "where('processing_status', 'program_matched')->update"), 'Bulk matching must not overwrite human matches.');
     foreach (['previous_program_id', 'new_program_id'] as $required) {
         $expect(str_contains($sources['matching_service'], $required), 'Individual rematch audit is incomplete: '.$required);
@@ -103,6 +107,7 @@ $contract = static function (string $backendRoot): array {
     $expect(str_contains($sources['request_guard'], 'generation') && str_contains($sources['request_guard'], 'sameContext'), 'Latest-request guard must validate both generation and captured context.');
     $expect(str_contains($sources['page'], 'setRecordMatch(null)') && str_contains($sources['page'], 'setRecordUnmatch(null)'), 'Changing batch must clear individual record dialogs.');
     $expect(str_contains($sources['panel'], 'bindSelectionToBatch') && str_contains($sources['panel'], 'selectionForBatch'), 'Group selections must be bound to and checked against their batch.');
+    $expect(str_contains($sources['panel'], 'canBulkMatchProgramGroup(canManage, group)') && str_contains($sources['frontend_helper'], 'group?.bulk_matchable === true') && str_contains($sources['panel'], 'لا توجد رغبة — يلزم مراجعة فردية'), 'Missing-preference groups must not expose a bulk action.');
     foreach (['إنشاء طالب', 'تحويل لمتقدم', 'إنشاء حساب'] as $forbidden) {
         $expect(! str_contains($sources['page'].$sources['panel'].$sources['picker'], $forbidden), 'Later-phase UI control found: '.$forbidden);
     }
@@ -157,6 +162,12 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     if ($nonLeading['suggestion_status'] !== 'no_match') {
         fwrite(STDERR, "Official wrapper must only be stripped at the beginning.\n");
         exit(1);
+    }
+    foreach ([null, '', " \u{00A0}\t ", '...،؛ !!!'] as $missingPreference) {
+        if ($matcher->normalize($missingPreference) !== '' || $matcher->suggestions($missingPreference, $wrappedCatalog)['suggestion_status'] !== 'missing_preference') {
+            fwrite(STDERR, "Null/blank/punctuation-only preferences must normalize to missing.\n");
+            exit(1);
+        }
     }
     fwrite(STDOUT, "Ministry Placement Phase 2 contract passed.\n");
 }

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const {
+  canBulkMatchProgramGroup,
   canMutateProgramMatch,
   programMatchStateLabel,
   programOptionLabel,
@@ -43,10 +44,14 @@ assert.equal(programMatchStateLabel('matched'), 'تمت المطابقة')
 assert.equal(programMatchStateLabel('stale_match'), 'يحتاج إلى مراجعة')
 assert.equal(programMatchStateLabel('locked'), 'مقفل')
 assert.equal(programSuggestionStatusLabel('ambiguous'), 'اقتراحات متعددة — يلزم الاختيار')
+assert.equal(programSuggestionStatusLabel('missing_preference'), 'لا توجد رغبة — يلزم مراجعة فردية')
 assert.equal(programOptionLabel({ program_code: 'BUS', program_name: 'إدارة الأعمال', college_name: 'كلية الإدارة' }), 'BUS — إدارة الأعمال — كلية الإدارة')
 assert.equal(canMutateProgramMatch(false, { program_match_state: 'unmatched' }), false, 'View-only operators must not receive mutation controls')
 assert.equal(canMutateProgramMatch(true, { program_match_state: 'locked' }), false, 'Locked records must stay read only')
 assert.equal(canMutateProgramMatch(true, { program_match_state: 'stale_match' }), true, 'Mutable stale matches must support individual correction')
+assert.equal(canBulkMatchProgramGroup(true, { bulk_matchable: false, bulk_eligible_unmatched_count: 3 }), false, 'Missing preferences must remain individual-review only')
+assert.equal(canBulkMatchProgramGroup(true, { bulk_matchable: true, bulk_eligible_unmatched_count: 2 }), true, 'Real shared preferences must remain bulk matchable')
+assert.equal(canBulkMatchProgramGroup(false, { bulk_matchable: true, bulk_eligible_unmatched_count: 2 }), false, 'View-only operators must not receive bulk controls')
 
 const page = fs.readFileSync(path.join(root, 'src/features/student-affairs/pages/MinistryPlacementsPage.jsx'), 'utf8')
 const panel = fs.readFileSync(path.join(root, 'src/features/student-affairs/components/MinistryProgramMatchingPanel.jsx'), 'utf8')
@@ -66,6 +71,8 @@ assert.match(picker, /تأكيد المطابقة/, 'Matching needs an explicit 
 assert.match(picker, /page: String\(page\), per_page: '15'/, 'Program search must remain paginated')
 
 assert.match(panel, /bulk_eligible_unmatched_count/, 'Bulk confirmation must use canonical unmatched count')
+assert.match(panel, /canBulkMatchProgramGroup\(canManage, group\)/, 'Bulk action visibility must use the tested capability')
+assert.match(panel, /group\.bulk_matchable === false \? 'لا توجد رغبة — يلزم مراجعة فردية'/)
 assert.match(panel, /expected_eligible_count: selected\.bulk_eligible_unmatched_count/)
 assert.match(panel, /setSelectedGroup\(null\)/, 'Changing batch must clear the selected group')
 assert.match(panel, /selectionForBatch\(selectedGroup, currentBatchId\.current\)/, 'Group mutations must verify batch identity')

@@ -158,6 +158,18 @@ final class MinistryPlacementProgramMatchingService
                 ->values();
             $records->load('matchedAcademicProgram.department.college');
 
+            $normalizedPreferences = $records
+                ->map(fn (MinistryPlacementRecord $record): string => $this->matcher->normalize($record->accepted_preference_text))
+                ->unique()
+                ->values();
+            if ($normalizedPreferences->count() !== 1) {
+                throw MinistryPlacementException::groupStale();
+            }
+            $normalizedPreference = (string) $normalizedPreferences->first();
+            if ($normalizedPreference === '') {
+                throw MinistryPlacementException::groupNotBulkMatchable();
+            }
+
             $states = $records->groupBy(fn (MinistryPlacementRecord $record): string => $record->programMatchState());
             /** @var Collection<int, MinistryPlacementRecord> $eligible */
             $eligible = $states->get('unmatched', collect());
@@ -200,6 +212,12 @@ final class MinistryPlacementProgramMatchingService
         $groupStates = $records->map(fn (MinistryPlacementRecord $record): string => $states->get((int) $record->placement_record_id));
         $displayPreference = $records->map(fn (MinistryPlacementRecord $record): ?string => $record->accepted_preference_text)
             ->first(fn (?string $value): bool => $this->matcher->normalize($value) !== '');
+        $normalizedPreferences = $records
+            ->map(fn (MinistryPlacementRecord $record): string => $this->matcher->normalize($record->accepted_preference_text))
+            ->unique()
+            ->values();
+        $bulkMatchable = $normalizedPreferences->count() === 1 && (string) $normalizedPreferences->first() !== '';
+        $individualReviewCount = $groupStates->filter(fn (string $state): bool => $state === 'unmatched')->count();
         $currentPrograms = $records->filter(fn (MinistryPlacementRecord $record): bool => $record->matched_academic_program_id !== null)
             ->groupBy('matched_academic_program_id')
             ->map(function (Collection $matched): array {
@@ -220,7 +238,9 @@ final class MinistryPlacementProgramMatchingService
             'preference_key' => $key,
             'display_preference' => $displayPreference,
             'record_count' => $records->count(),
-            'bulk_eligible_unmatched_count' => $groupStates->filter(fn (string $state): bool => $state === 'unmatched')->count(),
+            'bulk_matchable' => $bulkMatchable,
+            'bulk_eligible_unmatched_count' => $bulkMatchable ? $individualReviewCount : 0,
+            'individual_review_count' => $individualReviewCount,
             'already_matched_count' => $groupStates->filter(fn (string $state): bool => $state === 'matched')->count(),
             'stale_match_count' => $groupStates->filter(fn (string $state): bool => $state === 'stale_match')->count(),
             'locked_count' => $groupStates->filter(fn (string $state): bool => $state === 'locked')->count(),
