@@ -17,6 +17,7 @@ $contract = static function (string $backendRoot): array {
         'panel' => $frontendRoot.'/src/features/student-affairs/components/MinistryProgramMatchingPanel.jsx',
         'picker' => $frontendRoot.'/src/features/student-affairs/components/MinistryProgramPickerDialog.jsx',
         'frontend_helper' => $frontendRoot.'/src/features/student-affairs/lib/ministryPlacement.js',
+        'request_guard' => $frontendRoot.'/src/features/student-affairs/lib/latestRequestGuard.js',
     ];
     foreach ($paths as $name => $path) {
         if (! is_file($path)) $errors[] = 'Missing Ministry Placement Phase 2 file: '.$name;
@@ -54,6 +55,8 @@ $contract = static function (string $backendRoot): array {
     foreach (['EXACT', 'CONTAINS_PROGRAM_NAME', 'ambiguous', 'missing_preference'] as $token) {
         $expect(str_contains($sources['matcher'], $token), 'Matcher contract is missing '.$token);
     }
+    $expect(str_contains($sources['matcher'], 'GENERIC_LEADING_WRAPPERS') && str_contains($sources['matcher'], "'برنامج الإجازة في'"), 'Matcher must derive only the approved official leading-wrapper alias.');
+    $expect(str_contains($sources['matcher'], '$this->normalize($wrapper)') && str_contains($sources['matcher'], 'str_starts_with($fullName, $prefix)'), 'Wrapper aliases must use normalized prefix-only matching.');
     foreach (['Levenshtein', 'levenshtein', 'Http::', 'OpenAI', 'curl_'] as $forbidden) {
         $expect(! str_contains($sources['matcher'], $forbidden), 'Matcher contains forbidden fuzzy/external behavior: '.$forbidden);
     }
@@ -96,6 +99,10 @@ $contract = static function (string $backendRoot): array {
     }
     $expect(str_contains($sources['picker'], '/v1/ministry-placement-programs') && str_contains($sources['picker'], 'تأكيد المطابقة'), 'Program selection must use the Ministry endpoint and explicit confirmation.');
     $expect(str_contains($sources['panel'], 'ministry_placement_group_stale') && str_contains($sources['panel'], 'await Promise.all([load(), onChanged?.()])'), 'Stale group conflicts must refresh without blind retry.');
+    $expect(str_contains($sources['page'], 'createLatestRequestGuard') && str_contains($sources['page'], 'recordsRequestGuard.current.isCurrent'), 'Record requests must reject stale batch/page/search responses.');
+    $expect(str_contains($sources['request_guard'], 'generation') && str_contains($sources['request_guard'], 'sameContext'), 'Latest-request guard must validate both generation and captured context.');
+    $expect(str_contains($sources['page'], 'setRecordMatch(null)') && str_contains($sources['page'], 'setRecordUnmatch(null)'), 'Changing batch must clear individual record dialogs.');
+    $expect(str_contains($sources['panel'], 'bindSelectionToBatch') && str_contains($sources['panel'], 'selectionForBatch'), 'Group selections must be bound to and checked against their batch.');
     foreach (['إنشاء طالب', 'تحويل لمتقدم', 'إنشاء حساب'] as $forbidden) {
         $expect(! str_contains($sources['page'].$sources['panel'].$sources['picker'], $forbidden), 'Later-phase UI control found: '.$forbidden);
     }
@@ -123,6 +130,32 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     $suggestion = $matcher->suggestions('برنامج الإجازة في إدارة الأعمال', $catalog);
     if ($suggestion['suggestion_status'] !== 'unique' || $suggestion['match_tier'] !== 'CONTAINS_PROGRAM_NAME' || $suggestion['candidate_count'] !== 1) {
         fwrite(STDERR, "Deterministic suggestion matching failed.\n");
+        exit(1);
+    }
+    $wrappedCatalog = [
+        ['academic_program_id' => 10, 'program_code' => 'BUS', 'program_name' => 'برنامج الإجازة في إدارة الأعمال'],
+        ['academic_program_id' => 11, 'program_code' => 'SWE', 'program_name' => 'برنامج الإجازة في هندسة البرمجيات'],
+    ];
+    $originalCatalog = serialize($wrappedCatalog);
+    foreach ([
+        ['إدارة الأعمال', 'EXACT', 10],
+        ['هندسة البرمجيات', 'EXACT', 11],
+        ['قبول عام - إدارة الأعمال', 'CONTAINS_PROGRAM_NAME', 10],
+    ] as [$preference, $tier, $programId]) {
+        $result = $matcher->suggestions($preference, $wrappedCatalog);
+        if ($result['suggestion_status'] !== 'unique' || $result['match_tier'] !== $tier || $result['suggestions'][0]['academic_program_id'] !== $programId) {
+            fwrite(STDERR, "Official wrapper alias matching failed for {$preference}.\n");
+            exit(1);
+        }
+    }
+    $collision = $matcher->suggestions('إدارة الأعمال', [$wrappedCatalog[0], ['academic_program_id' => 12, 'program_code' => 'BUS2', 'program_name' => 'برنامج الإجازة في إدارة الأعمال']]);
+    if ($collision['suggestion_status'] !== 'ambiguous' || $collision['candidate_count'] !== 2 || serialize($wrappedCatalog) !== $originalCatalog) {
+        fwrite(STDERR, "Official wrapper collision/original-string safety failed.\n");
+        exit(1);
+    }
+    $nonLeading = $matcher->suggestions('الأعمال', [['academic_program_id' => 13, 'program_code' => 'ODD', 'program_name' => 'إدارة برنامج الإجازة في الأعمال']]);
+    if ($nonLeading['suggestion_status'] !== 'no_match') {
+        fwrite(STDERR, "Official wrapper must only be stripped at the beginning.\n");
         exit(1);
     }
     fwrite(STDOUT, "Ministry Placement Phase 2 contract passed.\n");

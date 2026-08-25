@@ -10,6 +10,33 @@ const {
   programOptionLabel,
   programSuggestionStatusLabel,
 } = await import('../src/features/student-affairs/lib/ministryPlacement.js')
+const {
+  bindSelectionToBatch,
+  createLatestRequestGuard,
+  selectionForBatch,
+} = await import('../src/features/student-affairs/lib/latestRequestGuard.js')
+
+const recordsGuard = createLatestRequestGuard()
+const batchA = recordsGuard.begin({ batchId: 10, page: 1, search: '' })
+const batchB = recordsGuard.begin({ batchId: 20, page: 1, search: '' })
+assert.equal(recordsGuard.isCurrent(batchA, { batchId: 20, page: 1, search: '' }), false, 'A late Batch A response must not overwrite Batch B')
+assert.equal(recordsGuard.isCurrent(batchB, { batchId: 20, page: 1, search: '' }), true)
+let committedBatch = null
+if (recordsGuard.isCurrent(batchB, { batchId: 20, page: 1, search: '' })) committedBatch = 'B'
+if (recordsGuard.isCurrent(batchA, { batchId: 20, page: 1, search: '' })) committedBatch = 'A'
+assert.equal(committedBatch, 'B', 'Out-of-order completion must leave the current Batch B response committed')
+recordsGuard.invalidate()
+assert.equal(recordsGuard.isCurrent(batchB, { batchId: 20, page: 1, search: '' }), false, 'Changing batch must invalidate a pending records response')
+
+const summaryGuard = createLatestRequestGuard()
+const summaryA = summaryGuard.begin({ batchId: 10 })
+summaryGuard.invalidate()
+assert.equal(summaryGuard.isCurrent(summaryA, { batchId: 10 }), false, 'Changing batch must invalidate a pending summary response')
+
+const group = { preference_key: 'old-preference', bulk_eligible_unmatched_count: 3 }
+const batchBoundGroup = bindSelectionToBatch(10, group)
+assert.equal(selectionForBatch(batchBoundGroup, 10), group)
+assert.equal(selectionForBatch(batchBoundGroup, 20), null, 'An old preference key must never be combined with a new batch ID')
 
 assert.equal(programMatchStateLabel('unmatched'), 'غير مطابق')
 assert.equal(programMatchStateLabel('matched'), 'تمت المطابقة')
@@ -39,11 +66,15 @@ assert.match(picker, /تأكيد المطابقة/, 'Matching needs an explicit 
 assert.match(picker, /page: String\(page\), per_page: '15'/, 'Program search must remain paginated')
 
 assert.match(panel, /bulk_eligible_unmatched_count/, 'Bulk confirmation must use canonical unmatched count')
-assert.match(panel, /expected_eligible_count: selectedGroup\.bulk_eligible_unmatched_count/)
+assert.match(panel, /expected_eligible_count: selected\.bulk_eligible_unmatched_count/)
+assert.match(panel, /setSelectedGroup\(null\)/, 'Changing batch must clear the selected group')
+assert.match(panel, /selectionForBatch\(selectedGroup, currentBatchId\.current\)/, 'Group mutations must verify batch identity')
+assert.match(panel, /\/ministry-placements\/\$\{selectedBatchId\}\/program-matching\/apply-group/, 'Group mutation must use the batch captured with the selection')
 assert.match(panel, /لن تتغير المطابقات الفردية أو السجلات المقفلة أو التي تحتاج مراجعة/)
 assert.match(panel, /ministry_placement_group_stale/)
 assert.match(panel, /await Promise\.all\(\[load\(\), onChanged\?\.\(\)\]\)/, 'Stale conflicts must force authoritative refresh')
 assert.doesNotMatch(panel, /academic_program_id:\s*group\.suggestions\[0\]/, 'A suggestion must never be auto-applied')
+assert.match(page, /recordsRequestGuard\.current\.invalidate\(\)[\s\S]*setRecords\(\[\]\)[\s\S]*setRecordMeta\(\{\}\)[\s\S]*setRecordMatch\(null\)[\s\S]*setRecordUnmatch\(null\)/, 'Changing batch must clear record state and dialogs')
 
 for (const forbidden of ['تحويل لمتقدم', 'إنشاء طالب', 'إنشاء حساب', 'Applicant', 'AdmissionApplication']) {
   assert.equal(`${page}\n${panel}\n${picker}`.includes(forbidden), false, `Later-phase control leaked: ${forbidden}`)

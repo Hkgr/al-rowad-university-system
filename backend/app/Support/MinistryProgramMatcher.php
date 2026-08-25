@@ -8,6 +8,11 @@ final class MinistryProgramMatcher
 
     public const CONTAINS_PROGRAM_NAME = 'CONTAINS_PROGRAM_NAME';
 
+    /** @var array<int, string> */
+    private const GENERIC_LEADING_WRAPPERS = [
+        'برنامج الإجازة في',
+    ];
+
     public function normalize(?string $value): string
     {
         $value = mb_strtolower((string) $value, 'UTF-8');
@@ -41,13 +46,13 @@ final class MinistryProgramMatcher
         $exact = [];
         $contains = [];
         foreach ($programs as $program) {
-            $name = $this->normalize((string) ($program['program_name'] ?? ''));
+            $names = $this->comparisonNames((string) ($program['program_name'] ?? ''));
             $code = $this->normalize((string) ($program['program_code'] ?? ''));
-            if (($name !== '' && $normalizedPreference === $name) || ($code !== '' && $normalizedPreference === $code)) {
+            if (in_array($normalizedPreference, $names, true) || ($code !== '' && $normalizedPreference === $code)) {
                 $exact[] = $program + ['match_tier' => self::EXACT];
                 continue;
             }
-            if ($name !== '' && str_contains($normalizedPreference, $name)) {
+            if ($this->containsAny($normalizedPreference, $names)) {
                 $contains[] = $program + ['match_tier' => self::CONTAINS_PROGRAM_NAME];
             }
         }
@@ -67,6 +72,41 @@ final class MinistryProgramMatcher
         $status = $candidates === [] ? 'no_match' : (count($candidates) === 1 ? 'unique' : 'ambiguous');
 
         return $this->result($status, $tier, $candidates, $limit);
+    }
+
+    /** @return array<int, string> */
+    private function comparisonNames(string $programName): array
+    {
+        $fullName = $this->normalize($programName);
+        if ($fullName === '') {
+            return [];
+        }
+
+        $names = [$fullName];
+        foreach (self::GENERIC_LEADING_WRAPPERS as $wrapper) {
+            $normalizedWrapper = $this->normalize($wrapper);
+            $prefix = $normalizedWrapper.' ';
+            if ($normalizedWrapper !== '' && str_starts_with($fullName, $prefix)) {
+                $remainder = trim(mb_substr($fullName, mb_strlen($prefix, 'UTF-8'), null, 'UTF-8'));
+                if ($remainder !== '') {
+                    $names[] = $remainder;
+                }
+            }
+        }
+
+        return array_values(array_unique($names));
+    }
+
+    /** @param array<int, string> $names */
+    private function containsAny(string $preference, array $names): bool
+    {
+        foreach ($names as $name) {
+            if (str_contains($preference, $name)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @param array<int, array<string, mixed>> $candidates */

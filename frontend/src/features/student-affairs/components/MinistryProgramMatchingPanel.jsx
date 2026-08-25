@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { FaSpinner } from 'react-icons/fa'
 import { apiRequest } from '../../../services/apiClient'
 import { programOptionLabel, programSuggestionStatusLabel } from '../lib/ministryPlacement'
+import { bindSelectionToBatch, createLatestRequestGuard, selectionForBatch } from '../lib/latestRequestGuard'
 import MinistryProgramPickerDialog from './MinistryProgramPickerDialog'
 
 function countCard(label, value, tone = 'text-primary') {
@@ -15,48 +16,72 @@ export default function MinistryProgramMatchingPanel({ batch, canManage, onChang
   const [success, setSuccess] = useState('')
   const [selectedGroup, setSelectedGroup] = useState(null)
   const [saving, setSaving] = useState(false)
+  const batchId = batch?.batch_id ?? null
+  const currentBatchId = useRef(batchId)
+  const summaryRequestGuard = useRef(createLatestRequestGuard())
+  currentBatchId.current = batchId
 
   const load = useCallback(async () => {
-    if (!batch) return
+    const capturedBatchId = currentBatchId.current
+    if (!capturedBatchId) return false
+    const request = summaryRequestGuard.current.begin({ batchId: capturedBatchId })
     setLoading(true)
     try {
-      const response = await apiRequest(`/v1/ministry-placements/${batch.batch_id}/program-matching`)
+      const response = await apiRequest(`/v1/ministry-placements/${capturedBatchId}/program-matching`)
+      if (!summaryRequestGuard.current.isCurrent(request, { batchId: currentBatchId.current })) return false
       setSummary(response.data)
+      return true
     } catch (err) {
+      if (!summaryRequestGuard.current.isCurrent(request, { batchId: currentBatchId.current })) return false
       setError(err.message)
+      return false
     } finally {
-      setLoading(false)
+      if (summaryRequestGuard.current.isCurrent(request, { batchId: currentBatchId.current })) setLoading(false)
     }
-  }, [batch])
+  }, [])
 
   useEffect(() => {
+    summaryRequestGuard.current.invalidate()
     setSummary(null)
+    setSelectedGroup(null)
     setSuccess('')
     setError('')
+    setLoading(true)
+    setSaving(false)
     load()
-  }, [load])
+    return () => summaryRequestGuard.current.invalidate()
+  }, [batchId, load])
 
   async function applyGroup(program) {
     if (!selectedGroup || saving) return
+    const selected = selectionForBatch(selectedGroup, currentBatchId.current)
+    if (!selected) {
+      setSelectedGroup(null)
+      await load()
+      return
+    }
+    const selectedBatchId = selectedGroup.batch_id
     setSaving(true)
     setError('')
     try {
-      await apiRequest(`/v1/ministry-placements/${batch.batch_id}/program-matching/apply-group`, {
+      await apiRequest(`/v1/ministry-placements/${selectedBatchId}/program-matching/apply-group`, {
         method: 'POST',
         body: JSON.stringify({
-          preference_key: selectedGroup.preference_key,
+          preference_key: selected.preference_key,
           academic_program_id: program.academic_program_id,
-          expected_eligible_count: selectedGroup.bulk_eligible_unmatched_count,
+          expected_eligible_count: selected.bulk_eligible_unmatched_count,
         }),
       })
+      if (currentBatchId.current !== selectedBatchId) return
       setSuccess('تمت مطابقة السجلات غير المطابقة فقط، مع الحفاظ على المطابقات الفردية.')
       setSelectedGroup(null)
       await Promise.all([load(), onChanged?.()])
     } catch (err) {
+      if (currentBatchId.current !== selectedBatchId) return
       setError(err.message)
       if (err.errorCode === 'ministry_placement_group_stale') await Promise.all([load(), onChanged?.()])
     } finally {
-      setSaving(false)
+      if (currentBatchId.current === selectedBatchId) setSaving(false)
     }
   }
 
@@ -78,10 +103,10 @@ export default function MinistryProgramMatchingPanel({ batch, canManage, onChang
         <td className="max-w-72 p-3">{group.display_preference || 'غير محددة'}</td><td className="p-3">{group.record_count}</td><td className="p-3 font-bold text-primary">{group.bulk_eligible_unmatched_count}</td><td className="p-3">{group.already_matched_count}</td><td className="p-3 text-amber-700">{group.stale_match_count}</td><td className="p-3">{group.locked_count}</td>
         <td className="min-w-64 p-3"><span className="text-xs text-text-light">{programSuggestionStatusLabel(group.suggestion_status)}</span>{group.suggestions?.map(program => <div key={program.academic_program_id} className="mt-1 text-xs">{programOptionLabel(program)}</div>)}</td>
         <td className="min-w-52 p-3">{group.current_programs?.length ? group.current_programs.map(program => <div key={program.academic_program_id}>{program.program_name || `#${program.academic_program_id}`} ({program.record_count})</div>) : '—'}</td>
-        <td className="p-3">{canManage && group.bulk_eligible_unmatched_count > 0 ? <button type="button" onClick={() => setSelectedGroup(group)} className="rounded-lg bg-primary px-3 py-2 font-bold text-white">اختيار وتطبيق</button> : <span className="text-xs text-text-light">للقراءة فقط</span>}</td>
+        <td className="p-3">{canManage && group.bulk_eligible_unmatched_count > 0 ? <button type="button" onClick={() => setSelectedGroup(bindSelectionToBatch(batchId, group))} className="rounded-lg bg-primary px-3 py-2 font-bold text-white">اختيار وتطبيق</button> : <span className="text-xs text-text-light">للقراءة فقط</span>}</td>
       </tr>)}
     </tbody></table></div>
     {(summary?.groups ?? []).length === 0 && <p className="p-8 text-center text-text-light">لا توجد سجلات في هذه الدفعة.</p>}
-    <MinistryProgramPickerDialog open={Boolean(selectedGroup)} title="تأكيد مطابقة مجموعة" message={selectedGroup ? `سيتم ربط ${selectedGroup.bulk_eligible_unmatched_count} سجلاً غير مطابق فقط. لن تتغير المطابقات الفردية أو السجلات المقفلة أو التي تحتاج مراجعة.` : ''} suggestions={selectedGroup?.suggestions ?? []} busy={saving} onClose={() => setSelectedGroup(null)} onConfirm={applyGroup} />
+    <MinistryProgramPickerDialog open={Boolean(selectedGroup)} title="تأكيد مطابقة مجموعة" message={selectedGroup ? `سيتم ربط ${selectedGroup.group.bulk_eligible_unmatched_count} سجلاً غير مطابق فقط. لن تتغير المطابقات الفردية أو السجلات المقفلة أو التي تحتاج مراجعة.` : ''} suggestions={selectedGroup?.group.suggestions ?? []} busy={saving} onClose={() => setSelectedGroup(null)} onConfirm={applyGroup} />
   </div>
 }

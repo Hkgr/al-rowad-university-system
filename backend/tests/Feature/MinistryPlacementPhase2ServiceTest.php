@@ -96,6 +96,39 @@ class MinistryPlacementPhase2ServiceTest extends TestCase
         self::assertSame(3, $unique['suggestions'][0]['academic_program_id']);
     }
 
+    public function test_official_program_name_wrappers_produce_safe_deterministic_aliases(): void
+    {
+        $matcher = app(MinistryProgramMatcher::class);
+        $catalog = [
+            ['academic_program_id' => 1, 'program_code' => 'BUS', 'program_name' => 'برنامج الإجازة في إدارة الأعمال'],
+            ['academic_program_id' => 2, 'program_code' => 'SWE', 'program_name' => 'برنامج الإجازة في هندسة البرمجيات'],
+        ];
+        $original = serialize($catalog);
+
+        $business = $matcher->suggestions('إدارة الأعمال', $catalog);
+        self::assertSame('unique', $business['suggestion_status']);
+        self::assertSame('EXACT', $business['match_tier']);
+        self::assertSame(1, $business['suggestions'][0]['academic_program_id']);
+
+        $engineering = $matcher->suggestions('هندسة البرمجيات', $catalog);
+        self::assertSame('unique', $engineering['suggestion_status']);
+        self::assertSame('EXACT', $engineering['match_tier']);
+        self::assertSame(2, $engineering['suggestions'][0]['academic_program_id']);
+
+        $contains = $matcher->suggestions('قبول عام - إدارة الأعمال', $catalog);
+        self::assertSame('unique', $contains['suggestion_status']);
+        self::assertSame('CONTAINS_PROGRAM_NAME', $contains['match_tier']);
+        self::assertSame(1, $contains['suggestions'][0]['academic_program_id']);
+
+        $collision = $matcher->suggestions('إدارة الأعمال', [
+            $catalog[0],
+            ['academic_program_id' => 3, 'program_code' => 'BUS2', 'program_name' => 'برنامج الإجازة في إدارة الأعمال'],
+        ]);
+        self::assertSame('ambiguous', $collision['suggestion_status']);
+        self::assertSame(2, $collision['candidate_count']);
+        self::assertSame($original, serialize($catalog), 'Suggestion comparison must not mutate stored catalog strings.');
+    }
+
     public function test_ministry_p2_12_to_18_individual_match_rematch_unmatch_idempotency_and_locking(): void
     {
         $recordId = $this->record(1, 'إدارة الأعمال');
