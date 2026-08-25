@@ -259,6 +259,7 @@ class SupplementaryExamGradingService
             $current = SupplementaryExamGradeSubmission::query()
                 ->where('supplementary_exam_offering_id', $offering->getKey())
                 ->orderByDesc('submission_version')
+                ->orderByDesc('supplementary_exam_grade_submission_id')
                 ->lockForUpdate()
                 ->first();
             if ($resubmit && $current?->status !== 'returned') {
@@ -338,8 +339,14 @@ class SupplementaryExamGradingService
             if (! $submission) {
                 $this->fail('The submission does not belong to the locked offering.', 'supplementary_grade_submission_mismatch', 409);
             }
-            $latest = $submissions->max('submission_version');
-            if ((int) $submission->submission_version !== (int) $latest) {
+            $latestVersion = $submissions->max('submission_version');
+            $latestSubmissions = $submissions
+                ->where('submission_version', $latestVersion)
+                ->values();
+            if ($latestSubmissions->count() !== 1) {
+                $this->fail('The latest submission version is not unique.', 'supplementary_grade_submission_integrity_error', 409);
+            }
+            if ((int) $submission->getKey() !== (int) $latestSubmissions->first()->getKey()) {
                 $this->fail('A stale submission version cannot be reviewed.', 'supplementary_grade_stale_submission', 409);
             }
 
@@ -432,6 +439,7 @@ class SupplementaryExamGradingService
             $latest = SupplementaryExamGradeSubmission::query()
                 ->where('supplementary_exam_offering_id', $offering->getKey())
                 ->orderByDesc('submission_version')
+                ->orderByDesc('supplementary_exam_grade_submission_id')
                 ->lockForUpdate()
                 ->first();
             if ($latest && in_array($latest->status, ['submitted', 'approved', 'published'], true)) {

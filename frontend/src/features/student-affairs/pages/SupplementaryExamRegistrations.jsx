@@ -5,6 +5,7 @@ import {
   periodStatusLabel,
   supplementaryErrorMessage,
 } from '../../supplementary-exams/supplementaryStatus'
+import { SupplementaryConfirmDialog } from '../../supplementary-exams/SupplementaryUi'
 
 export default function SupplementaryExamRegistrations() {
   const [periods, setPeriods] = useState([])
@@ -23,6 +24,10 @@ export default function SupplementaryExamRegistrations() {
   const [busyAction, setBusyAction] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [dialog, setDialog] = useState(null)
+  const [rosterSearch, setRosterSearch] = useState('')
+  const [debouncedRosterSearch, setDebouncedRosterSearch] = useState('')
+  const [rosterPage, setRosterPage] = useState(1)
 
   const mountedRef = useRef(true)
   const periodRef = useRef('')
@@ -62,7 +67,9 @@ export default function SupplementaryExamRegistrations() {
     setError('')
 
     try {
-      const payload = await apiRequest(`/v1/registration-office/supplementary-exam-periods/${requestedPeriod}/registrations`)
+      const params = new URLSearchParams({ page: String(rosterPage), per_page: '25' })
+      if (debouncedRosterSearch.trim()) params.set('search', debouncedRosterSearch.trim())
+      const payload = await apiRequest(`/v1/registration-office/supplementary-exam-periods/${requestedPeriod}/registrations?${params.toString()}`)
       if (
         !mountedRef.current
         || sequence !== listRequestSequenceRef.current
@@ -92,7 +99,15 @@ export default function SupplementaryExamRegistrations() {
         && periodRef.current === requestedPeriod
       ) setListLoading(false)
     }
-  }, [])
+  }, [debouncedRosterSearch, rosterPage])
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setRosterPage(1)
+      setDebouncedRosterSearch(rosterSearch)
+    }, 350)
+    return () => window.clearTimeout(timeout)
+  }, [rosterSearch])
 
   useEffect(()=>{void (async () => {
     mountedRef.current = true
@@ -101,6 +116,9 @@ export default function SupplementaryExamRegistrations() {
     periodsRequestSequenceRef.current = sequence
     setPeriodsLoading(true)
     setError('')
+    setRosterSearch('')
+    setDebouncedRosterSearch('')
+    setRosterPage(1)
     try {
       const payload = await apiRequest('/v1/supplementary-exam-registration-periods')
       if (!mountedRef.current || sequence !== periodsRequestSequenceRef.current) return
@@ -151,6 +169,9 @@ export default function SupplementaryExamRegistrations() {
     setSearchLoading(false)
     setEligibilityLoading(false)
     setEligibilityLoadedSuccessfully(false)
+    setRosterSearch('')
+    setDebouncedRosterSearch('')
+    setRosterPage(1)
     setMessage('')
     setError('')
   }
@@ -264,8 +285,6 @@ export default function SupplementaryExamRegistrations() {
     const requiredStatus = action === 'open' ? 'announced' : 'registration_open'
     const context = getPeriodContext(requiredStatus)
     if (!context) return
-    if (action === 'close' && !window.confirm('سيتم إغلاق التسجيل وتثبيت القائمة النهائية. لن يمكن تعديل التسجيلات بعد ذلك. هل تريد المتابعة؟')) return
-
     mutationBusyRef.current = true
     setBusyAction(action)
     setMessage('')
@@ -315,7 +334,7 @@ export default function SupplementaryExamRegistrations() {
     }
   }
 
-  const cancel = async (row) => {
+  const cancel = async (row, reason) => {
     if (mutationBusyRef.current) return
     let context = getPeriodContext('registration_open')
     if (!context) return
@@ -324,7 +343,6 @@ export default function SupplementaryExamRegistrations() {
       return
     }
 
-    const reason = window.prompt('سبب الإلغاء مطلوب')
     if (!reason?.trim()) return
 
     context = getPeriodContext('registration_open')
@@ -357,8 +375,15 @@ export default function SupplementaryExamRegistrations() {
     period
     && String(meta?.supplementary_exam_period_id ?? '') === String(period),
   )
-  const canOpenRegistration = periodContextMatches && meta?.period_status === 'announced'
-  const canManageRegistration = periodContextMatches && meta?.period_status === 'registration_open'
+  const canOpenRegistration = periodContextMatches
+    && meta?.period_status === 'announced'
+    && meta?.capabilities?.can_manage_window === true
+  const canManageRegistration = periodContextMatches
+    && meta?.period_status === 'registration_open'
+    && meta?.capabilities?.can_manage_registrations === true
+  const canCloseRegistration = periodContextMatches
+    && meta?.period_status === 'registration_open'
+    && meta?.capabilities?.can_manage_window === true
   const mutationBusy = Boolean(busyAction)
 
   return (
@@ -394,8 +419,8 @@ export default function SupplementaryExamRegistrations() {
         </button>
         <button
           className="rounded bg-red-700 p-2 text-white disabled:opacity-40"
-          disabled={!canManageRegistration || listLoading || mutationBusy}
-          onClick={() => void transition('close')}
+          disabled={!canCloseRegistration || listLoading || mutationBusy}
+              onClick={() => setDialog({ type: 'close' })}
           type="button"
         >
           {busyAction === 'close' ? 'جارٍ تثبيت القائمة...' : 'إغلاق التسجيل وتثبيت القائمة'}
@@ -458,7 +483,16 @@ export default function SupplementaryExamRegistrations() {
         ))}
       </section>
 
-      <h2 className="my-3 font-bold">عدد المسجلين: {meta ? rows.length : '—'}</h2>
+      <div className="my-3 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-bold">عدد المسجلين: {meta?.summary?.registered_students ?? '—'}</h2>
+        <input
+          className="min-w-64 rounded border px-3 py-2"
+          onChange={(event) => setRosterSearch(event.target.value)}
+          placeholder="بحث في الطالب أو المقرر أو البرنامج"
+          type="search"
+          value={rosterSearch}
+        />
+      </div>
       <div className="overflow-auto rounded border bg-white">
         <table className="w-full">
           <thead><tr><th>الطالب</th><th>المادة</th><th>البرنامج</th><th>سبب الأهلية</th><th>الإجراء</th></tr></thead>
@@ -473,7 +507,7 @@ export default function SupplementaryExamRegistrations() {
                   <button
                     className="text-red-700 disabled:opacity-40"
                     disabled={!canManageRegistration || mutationBusy}
-                    onClick={() => void cancel(row)}
+                    onClick={() => setDialog({ type: 'cancel', row })}
                     type="button"
                   >
                     {busyAction === 'cancel' ? 'جارٍ الإلغاء...' : 'إلغاء بسبب'}
@@ -487,6 +521,33 @@ export default function SupplementaryExamRegistrations() {
           <p className="p-4 text-gray-500">لا توجد تسجيلات في هذه الدورة.</p>
         )}
       </div>
+      {meta?.meta?.last_page > 1 && (
+        <nav aria-label="صفحات قائمة التسجيل" className="mt-3 flex items-center justify-center gap-3">
+          <button className="rounded border px-3 py-2 disabled:opacity-40" disabled={listLoading || rosterPage <= 1} onClick={() => setRosterPage((page) => page - 1)} type="button">السابق</button>
+          <span>صفحة {meta.meta.current_page} من {meta.meta.last_page}</span>
+          <button className="rounded border px-3 py-2 disabled:opacity-40" disabled={listLoading || rosterPage >= meta.meta.last_page} onClick={() => setRosterPage((page) => page + 1)} type="button">التالي</button>
+        </nav>
+      )}
+      {dialog && (
+        <SupplementaryConfirmDialog
+          busy={mutationBusy}
+          confirmLabel={dialog.type === 'cancel' ? 'إلغاء التسجيل' : 'تثبيت القائمة النهائية'}
+          danger={dialog.type === 'cancel'}
+          description={dialog.type === 'close'
+            ? 'سيتم إغلاق التسجيل وتثبيت القائمة النهائية، ولن يمكن تعديل التسجيلات بعد ذلك.'
+            : 'سيبقى سبب الإلغاء محفوظاً في سجل العملية.'}
+          onCancel={() => setDialog(null)}
+          onConfirm={(reason) => {
+            const current = dialog
+            setDialog(null)
+            if (current.type === 'close') void transition('close')
+            else void cancel(current.row, reason)
+          }}
+          reasonLabel={dialog.type === 'cancel' ? 'سبب الإلغاء' : undefined}
+          reasonRequired={dialog.type === 'cancel'}
+          title={dialog.type === 'cancel' ? 'إلغاء تسجيل الطالب' : 'تثبيت قائمة الامتحان التكميلية'}
+        />
+      )}
     </main>
   )
 }

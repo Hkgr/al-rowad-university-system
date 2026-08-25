@@ -1,11 +1,60 @@
 <?php
+
 namespace Tests\Feature;
+
 use Tests\TestCase;
+
 class SupplementaryExamRegistrationFrontendContractTest extends TestCase
 {
- public function test_supplementary_pages_use_real_api_request_contract():void{foreach(['student-dashboard/pages/StudentSupplementaryExams.jsx','student-affairs/pages/SupplementaryExamRegistrations.jsx','supplementary-exams/ReadOnlyRegistrationList.jsx']as$file){$source=file_get_contents(base_path('../frontend/src/features/'.$file));$this->assertStringContainsString('import { apiRequest }',$source);$this->assertStringNotContainsString('import apiClient',$source);$this->assertStringNotContainsString('apiClient.',$source);}}
- public function test_student_affairs_extracts_nested_student_paginator_and_serializes_posts():void{$source=file_get_contents(base_path('../frontend/src/features/student-affairs/pages/SupplementaryExamRegistrations.jsx'));$this->assertStringContainsString('setStudents(payload?.data?.data??[])',$source);$this->assertStringContainsString('new URLSearchParams',$source);$this->assertStringContainsString("method:'POST'",$source);$this->assertStringContainsString('body:JSON.stringify',$source);}
- public function test_student_payloads_are_decoded_json_not_axios_wrappers():void{$source=file_get_contents(base_path('../frontend/src/features/student-dashboard/pages/StudentSupplementaryExams.jsx'));$this->assertStringContainsString('setRows(eligibility?.data??[])',$source);$this->assertStringContainsString('setRegistrations(registrationPayload?.data??[])',$source);$this->assertStringNotContainsString('.data?.data',$source);}
- public function test_deferral_actions_follow_the_announced_period_lifecycle():void{$source=file_get_contents(base_path('../frontend/src/features/student-dashboard/pages/StudentSupplementaryExams.jsx'));$this->assertStringContainsString("const canDeclare=row.period?.status==='announced'&&!e.active_deferral_id",$source);$this->assertStringContainsString("const deferred=e.eligibility_reason==='voluntarily_deferred_theoretical'",$source);$this->assertStringContainsString("row.period?.status==='announced'&&<button disabled={busy} onClick={()=>cancel(row)}",$source);}
- public function test_supplementary_effects_do_not_return_async_promises():void{foreach(['student-dashboard/pages/StudentSupplementaryExams.jsx','student-affairs/pages/SupplementaryExamRegistrations.jsx','supplementary-exams/ReadOnlyRegistrationList.jsx']as$file){$source=file_get_contents(base_path('../frontend/src/features/'.$file));$this->assertStringNotContainsString('useEffect(async',$source);$this->assertStringNotContainsString('useEffect(load',$source);$this->assertMatchesRegularExpression('/useEffect\(\(\)=>\{void /',$source);}}
+    private function source(string $path): string
+    {
+        return file_get_contents(base_path('../frontend/src/features/'.$path));
+    }
+
+    public function test_supplementary_pages_use_the_shared_api_request_contract(): void
+    {
+        foreach ([
+            'student-dashboard/pages/StudentSupplementaryExams.jsx',
+            'student-affairs/pages/SupplementaryExamRegistrations.jsx',
+            'supplementary-exams/ReadOnlyRegistrationList.jsx',
+        ] as $file) {
+            $source = $this->source($file);
+            $this->assertStringContainsString('import { apiRequest }', $source);
+            $this->assertStringNotContainsString('apiClient.', $source);
+        }
+    }
+
+    public function test_student_payload_separates_published_preview_from_official_materialization(): void
+    {
+        $source = $this->source('student-dashboard/pages/StudentSupplementaryExams.jsx');
+        foreach (['published_supplementary_result', 'official_result'] as $field) {
+            $this->assertStringContainsString($field, $source);
+        }
+        $this->assertStringContainsString('لم يُحدّث السجل الأكاديمي الرسمي بعد', $source);
+        $this->assertStringContainsString('تم تحديث نتيجتك الأكاديمية الرسمية', $source);
+        $this->assertStringNotContainsString('window.confirm', $source);
+        $this->assertStringNotContainsString('window.prompt', $source);
+    }
+
+    public function test_student_affairs_uses_bounded_server_search_and_pagination(): void
+    {
+        $source = $this->source('student-affairs/pages/SupplementaryExamRegistrations.jsx');
+        foreach (['per_page', 'rosterSearch', 'rosterPage', '350', 'meta.meta.last_page'] as $proof) {
+            $this->assertStringContainsString($proof, $source);
+        }
+        $this->assertStringContainsString('SupplementaryConfirmDialog', $source);
+        $this->assertStringNotContainsString('window.confirm', $source);
+        $this->assertStringNotContainsString('window.prompt', $source);
+    }
+
+    public function test_supplementary_effects_do_not_return_async_promises(): void
+    {
+        foreach ([
+            'student-dashboard/pages/StudentSupplementaryExams.jsx',
+            'student-affairs/pages/SupplementaryExamRegistrations.jsx',
+            'supplementary-exams/ReadOnlyRegistrationList.jsx',
+        ] as $file) {
+            $this->assertStringNotContainsString('useEffect(async', $this->source($file));
+        }
+    }
 }

@@ -360,8 +360,9 @@ class SupplementaryExamReconciliationService
             $latestVersion = $offeringSubmissions->max('submission_version');
             $latestSubmissions = $offeringSubmissions
                 ->filter(fn (object $row): bool => (int) $row->submission_version === (int) $latestVersion)
+                ->sortByDesc('supplementary_exam_grade_submission_id')
                 ->values();
-            $submission = $latestSubmissions->first();
+            $submission = $latestSubmissions->count() === 1 ? $latestSubmissions->first() : null;
             $offeringMaterializedCount = 0;
             $offeringSources = $sourcesByOffering->get($offeringId, collect());
             $offeringMaterializations = $materializationsByOffering->get($offeringId, collect())->values();

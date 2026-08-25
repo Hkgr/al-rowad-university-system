@@ -94,7 +94,7 @@ import ExceptionalOpeningQueue from '../features/vice-presidency/pages/Exception
 import ExceptionalOpeningDetail from '../features/vice-presidency/pages/ExceptionalOpeningDetail'
 import SupplementaryExamPeriodsPage from '../features/vice-presidency/pages/SupplementaryExamPeriods'
 
-function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], studentIdentity = false, employeeIdentity = false }) {
+function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], studentIdentity = false, employeeIdentity = false }) {
   const token = localStorage.getItem('token')
   const [identity, setIdentity] = useState(getIdentity())
   const [checking, setChecking] = useState(Boolean(token))
@@ -117,7 +117,7 @@ function ProtectedRoute({ children, permissions = [], allPermissions = [], roles
   if (!token) return <Navigate to="/login" replace />
   if (checking) return null
   if (!identity) return <Navigate to="/login" replace />
-  return canAccess({ permissions, allPermissions, roles, studentIdentity, employeeIdentity }, identity) ? children : <Navigate to="/forbidden" replace />
+  return canAccess({ permissions, allPermissions, roles, allRoles, assignedPermissions, studentIdentity, employeeIdentity }, identity) ? children : <Navigate to="/forbidden" replace />
 }
 
 const protect = (element, access) => <ProtectedRoute {...access}>{element}</ProtectedRoute>
@@ -146,7 +146,7 @@ export default function App() {
           <Route path="/student-affairs/graduates"         element={<GraduatesPage />}         />
           <Route path="/student-affairs/students/:id"      element={<StudentProfilePage />}    />
           <Route path="/student-affairs/students/:id/edit" element={protect(<EditStudentPage />, { permissions: ['students.manage'] })} />
-          <Route path="/student-affairs/supplementary-exams" element={protect(<SupplementaryExamRegistrations />, { permissions: ['supplementary_exams.registrations.view'] })} />
+          <Route path="/student-affairs/supplementary-exams" element={protect(<SupplementaryExamRegistrations />, { allRoles: ['registration_officer'], assignedPermissions: ['supplementary_exams.registrations.view'] })} />
           <Route path="/student-affairs/approved-registration-requests" element={protect(<ApprovedRegistrationRequestsPage />, { permissions: ['registration.view'] })} />
           <Route path="/student-affairs/calendar" element={<AcademicCalendarPage />} />
         </Route>
@@ -166,7 +166,7 @@ export default function App() {
           <Route path="/student/registration" element={<StudentRegistration />} />
           <Route path="/student/requirements" element={<StudentRequirements />} />
           <Route path="/student/calendar" element={<StudentCalendar />} />
-          <Route path="/student/supplementary-exams" element={<StudentSupplementaryExams />} />
+          <Route path="/student/supplementary-exams" element={protect(<StudentSupplementaryExams />, { studentIdentity: true, allRoles: ['student'], assignedPermissions: ['supplementary_exams.deferrals.self', 'supplementary_exams.registrations.self'] })} />
         </Route>
 
         {/* ── هيئة الامتحانات dashboard ── */}
@@ -193,7 +193,7 @@ export default function App() {
           <Route path="/exam-board/approvals"     element={protect(<ApprovalsPage />, { permissions: ['exams.manage'] })} />
           <Route path="/exam-board/deprivation"   element={protect(<DeprivationPage />, { permissions: ['exams.manage'] })} />
           <Route path="/exam-board/supplementary" element={protect(<SupplementaryExamsPage />, { permissions: [PERMISSIONS.supplementaryExamsRegistrationsView] })} />
-          <Route path="/exam-board/supplementary-grades" element={protect(<SupplementaryGradesPage />, { permissions: ['supplementary_exams.grades.review'] })} />
+          <Route path="/exam-board/supplementary-grades" element={protect(<SupplementaryGradesPage />, { allRoles: ['exam_officer'], assignedPermissions: ['supplementary_exams.grades.review'] })} />
           <Route path="/exam-board/results"       element={protect(<ExamPlaceholder title="النتائج والتقارير" en="Results" />, { permissions: ['grades.view'] })} />
           <Route path="/exam-board/courses"             element={protect(<CoursesPage />, ACCESS.courseManagement)} />
           <Route path="/exam-board/course-offerings"    element={protect(<CourseOfferingsPage />, ACCESS.courseManagement)} />
@@ -246,7 +246,7 @@ export default function App() {
           <Route path="/professor"             element={<ProfessorHome />}             />
           <Route path="/professor/attendance"  element={<AttendanceDeprivationPage />}  />
           <Route path="/professor/grades" element={protect(<ProfessorGradesPage />, { employeeIdentity: true, permissions: ['grades.manage'] })} />
-          <Route path="/professor/supplementary-exams" element={protect(<ProfessorSupplementaryExams />, { employeeIdentity: true, permissions: ['supplementary_exams.grades.view'] })} />
+          <Route path="/professor/supplementary-exams" element={protect(<ProfessorSupplementaryExams />, { employeeIdentity: true, allRoles: ['doctor_instructor'], assignedPermissions: ['supplementary_exams.grades.view'] })} />
           <Route path="/professor/calendar" element={<AcademicCalendarPage />} />
         </Route>
 
@@ -268,7 +268,7 @@ export default function App() {
           <Route path="/dean/registration-offerings" element={<DeanRegistrationOfferings />} />
           <Route path="/dean/registration-requests" element={<DeanRegistrationRequests />} />
           <Route path="/dean/registration-requests/:id" element={<DeanRegistrationRequestDetail />} />
-          <Route path="/dean/supplementary-exams" element={<DeanSupplementaryExams />} />
+          <Route path="/dean/supplementary-exams" element={protect(<DeanSupplementaryExams />, { allRoles: ['dean'], assignedPermissions: ['supplementary_exams.offerings.view'] })} />
           <Route path="/dean/reports"       element={<DeanReports />} />
           <Route path="/dean/calendar"      element={<DeanCalendar />} />
         </Route>
@@ -286,7 +286,7 @@ export default function App() {
           <Route path="/vp/scientific/teaching-assignments/:id" element={<TeachingAssignmentDetail office="scientific" />} />
           <Route path="/vp/scientific/exceptional-openings" element={<ExceptionalOpeningQueue office="scientific" />} />
           <Route path="/vp/scientific/exceptional-openings/:id" element={<ExceptionalOpeningDetail office="scientific" />} />
-          <Route path="/vp/scientific/supplementary-exams" element={<SupplementaryExamPeriodsPage />} />
+          <Route path="/vp/scientific/supplementary-exams" element={protect(<SupplementaryExamPeriodsPage />, { allRoles: ['vice_president_scientific'], assignedPermissions: [PERMISSIONS.supplementaryExamsPeriodsView] })} />
           <Route path="/vp/scientific/calendar" element={<AcademicCalendarPage />} />
         </Route>
 

@@ -35,8 +35,8 @@ test('supplementary occurrence indicator is backend-driven and informational', (
 
 test('grading capabilities remain governed by the existing period workflow', () => {
   assert.match(page, /const editable = Boolean\(serverCanEdit && periodStatus === 'grading_open'\)/)
-  const save = sourceBetween('const save = async () =>', 'const submit = async () =>')
-  const submit = sourceBetween('const submit = async () =>', 'return (')
+  const save = sourceBetween('const save = async () =>', 'const submit = () =>')
+  const submit = sourceBetween('const performSubmit = async (action) =>', 'return (')
   for (const mutation of [save, submit]) {
     assert.equal(mutation.includes('occurrence'), false)
     assert.equal(mutation.includes('is_occurring'), false)
@@ -48,8 +48,8 @@ test('read refreshes separate occurrence state while mutations preserve it', () 
   assert.match(page, /setOccurrence\(nextSheet\?\.supplementary_exam_occurrence \?\? null\)/)
   assert.match(page, /setOccurrence\(null\)/)
 
-  const save = sourceBetween('const save = async () =>', 'const submit = async () =>')
-  const submit = sourceBetween('const submit = async () =>', 'return (')
+  const save = sourceBetween('const save = async () =>', 'const submit = () =>')
+  const submit = sourceBetween('const performSubmit = async (action) =>', 'return (')
   assert.equal(save.includes('setOccurrence('), false)
   assert.equal(submit.includes('setOccurrence('), false)
   assert.match(page, /<SupplementaryExamOccurrenceIndicator occurrence=\{occurrence\} \/>/)

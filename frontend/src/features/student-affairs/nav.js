@@ -21,7 +21,7 @@ const studentAffairsNav = [
   {
     label: 'التسجيل',
     items: [
-      { to: '/student-affairs/supplementary-exams', Icon: FaBookOpen, ar: 'التسجيل التكميلي', en: 'Supplementary registration', end: true, permissions: ['supplementary_exams.registrations.view'] },
+      { to: '/student-affairs/supplementary-exams', Icon: FaBookOpen, ar: 'التسجيل التكميلي', en: 'Supplementary registration', end: true, allRoles: ['registration_officer'], assignedPermissions: ['supplementary_exams.registrations.view'] },
       { to: '/student-affairs/approved-registration-requests', Icon: FaClipboardCheck, FaBookOpen, ar: 'طلبات التسجيل المعتمدة', en: 'Approved requests', end: true, permissions: ['registration.view'] },
     ],
   },

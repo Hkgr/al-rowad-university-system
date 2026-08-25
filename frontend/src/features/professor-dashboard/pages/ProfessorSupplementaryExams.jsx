@@ -6,8 +6,9 @@ import {
   supplementaryErrorMessage,
   workflowStatusLabel,
 } from '../../supplementary-exams/supplementaryStatus'
+import { SupplementaryConfirmDialog } from '../../supplementary-exams/SupplementaryUi'
 
-const offeringKey = (offering) => offering?.supplementary_exam_offering_id ?? offering?.id
+const offeringKey = (offering) => offering?.supplementary_exam_offering_id
 const normalizedMark = (value) => (value === null || value === undefined ? '' : String(value).trim())
 
 function marksFromRoster(roster = []) {
@@ -63,6 +64,7 @@ export default function ProfessorSupplementaryExams() {
   const [busyAction, setBusyAction] = useState(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [dialog, setDialog] = useState(null)
   const requestSequenceRef = useRef(0)
 
   const replaceSheet = useCallback((nextSheet) => {
@@ -80,7 +82,7 @@ export default function ProfessorSupplementaryExams() {
     try {
       const response = await apiRequest('/v1/professor/supplementary-exams')
       const data = response?.data
-      setOfferings(Array.isArray(data) ? data : data?.offerings ?? [])
+      setOfferings(Array.isArray(data) ? data : [])
       setOfferingsLoadedSuccessfully(true)
     } catch (requestError) {
       setError(supplementaryErrorMessage(requestError, 'تعذر تحميل المقررات التكميلية المكلف بها.'))
@@ -97,7 +99,6 @@ export default function ProfessorSupplementaryExams() {
   }, [loadOfferings])
 
   const loadSheet = async (offering) => {
-    if (dirty && !window.confirm('توجد تعديلات غير محفوظة في المقرر الحالي. هل تريد تجاهلها وإعادة تحميل ورقة العلامات؟')) return
     const sequence = requestSequenceRef.current + 1
     requestSequenceRef.current = sequence
     setSelectedOffering(offering)
@@ -126,19 +127,23 @@ export default function ProfessorSupplementaryExams() {
     }
   }
 
+  const requestSheet = (offering) => {
+    if (dirty) {
+      setDialog({ type: 'discard', offering })
+      return
+    }
+    void loadSheet(offering)
+  }
+
   const periodStatus = sheet?.period_status ?? sheet?.offering?.period?.status
-  const serverCanEdit = sheet?.can_edit
-    ?? sheet?.action_flags?.can_edit
-    ?? sheet?.actions?.can_edit
-    ?? selectedOffering?.can_edit
-    ?? false
+  const serverCanEdit = sheet?.action_flags?.can_edit === true
   const editable = Boolean(serverCanEdit && periodStatus === 'grading_open')
   const limits = gradingLimits(sheet)
   const roster = sheet?.roster ?? []
   const submitAction = sheet?.workflow_status === 'returned' ? 'resubmit' : 'submit'
-  const serverCanSubmit = Boolean(submitAction === 'resubmit'
-    ? (sheet?.action_flags?.can_resubmit ?? sheet?.actions?.can_resubmit ?? false)
-    : (sheet?.action_flags?.can_submit ?? sheet?.actions?.can_submit ?? false))
+  const serverCanSubmit = submitAction === 'resubmit'
+    ? sheet?.action_flags?.can_resubmit === true
+    : sheet?.action_flags?.can_submit === true
 
   const changedMarks = useMemo(() => Object.entries(marks)
     .filter(([registrationId, value]) => (
@@ -202,7 +207,7 @@ export default function ProfessorSupplementaryExams() {
     }
   }
 
-  const submit = async () => {
+  const submit = () => {
     if (!editable || busyAction) return
     if (dirty) {
       setError('توجد تعديلات غير محفوظة. احفظ المسودة قبل إرسال الدفعة للمراجعة.')
@@ -217,11 +222,11 @@ export default function ProfessorSupplementaryExams() {
       return
     }
 
-    const action = submitAction
-    const confirmation = action === 'resubmit'
-      ? 'سيُعاد إرسال الدفعة المصححة كاملة إلى لجنة الامتحانات. هل تريد المتابعة؟'
-      : 'سيُغلق تحرير هذه الدفعة بعد إرسالها إلى لجنة الامتحانات. هل تريد المتابعة؟'
-    if (!window.confirm(confirmation)) return
+    setDialog({ type: submitAction })
+  }
+
+  const performSubmit = async (action) => {
+    setDialog(null)
 
     setBusyAction(action)
     setError('')
@@ -268,7 +273,7 @@ export default function ProfessorSupplementaryExams() {
               className={`block w-full border-b p-3 text-right ${offeringKey(selectedOffering) === offeringKey(offering) ? 'bg-blue-50 font-bold' : ''}`}
               disabled={Boolean(busyAction)}
               key={offeringKey(offering)}
-              onClick={() => void loadSheet(offering)}
+              onClick={() => requestSheet(offering)}
               type="button"
             >
               {offering.course?.course_code ?? 'دون رمز'} — {offering.course?.course_name ?? 'مقرر غير مسمى'}
@@ -374,6 +379,23 @@ export default function ProfessorSupplementaryExams() {
           )}
         </section>
       </div>
+      {dialog && (
+        <SupplementaryConfirmDialog
+          busy={Boolean(busyAction)}
+          confirmLabel={dialog.type === 'discard' ? 'تجاهل التعديلات' : 'تأكيد الإرسال'}
+          danger={dialog.type === 'discard'}
+          description={dialog.type === 'discard'
+            ? 'توجد تعديلات غير محفوظة في المقرر الحالي. سيؤدي المتابعة إلى تجاهلها وإعادة تحميل ورقة العلامات.'
+            : dialog.type === 'resubmit'
+              ? 'سيُعاد إرسال الدفعة المصححة كاملة إلى لجنة الامتحانات.'
+              : 'سيُغلق تحرير هذه الدفعة بعد إرسالها إلى لجنة الامتحانات.'}
+          onCancel={() => setDialog(null)}
+          onConfirm={() => dialog.type === 'discard'
+            ? (setDialog(null), void loadSheet(dialog.offering))
+            : void performSubmit(dialog.type)}
+          title={dialog.type === 'discard' ? 'تجاهل التعديلات غير المحفوظة' : 'إرسال دفعة العلامات'}
+        />
+      )}
     </main>
   )
 }

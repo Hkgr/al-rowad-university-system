@@ -12,19 +12,18 @@ import {
   supplementaryErrorMessage,
   workflowStatusLabel,
 } from '../../supplementary-exams/supplementaryStatus'
+import { SupplementaryConfirmDialog } from '../../supplementary-exams/SupplementaryUi'
 
-const offeringOf = (row) => row?.offering ?? row?.supplementary_exam_offering ?? row ?? {}
-const offeringIdOf = (row) => offeringOf(row).supplementary_exam_offering_id ?? offeringOf(row).id
-const periodOf = (row) => offeringOf(row).period ?? row?.period ?? row?.supplementary_exam_period ?? {}
-const periodIdOf = (period) => period?.supplementary_exam_period_id ?? period?.id
-const candidateRows = (row) => row?.roster ?? row?.candidates ?? row?.registrations ?? []
+const offeringOf = (row) => row?.offering ?? {}
+const offeringIdOf = (row) => offeringOf(row).supplementary_exam_offering_id
+const periodOf = (row) => offeringOf(row).period ?? {}
+const periodIdOf = (period) => period?.supplementary_exam_period_id
+const candidateRows = (row) => row?.roster ?? []
 
 function extractQueue(response) {
-  const data = response?.data
-  if (Array.isArray(data)) return { rows: data, periods: response?.periods ?? [] }
   return {
-    rows: data?.rows ?? data?.offerings ?? data?.data ?? [],
-    periods: data?.periods ?? data?.supplementary_exam_periods ?? [],
+    rows: Array.isArray(response?.data) ? response.data : [],
+    periods: Array.isArray(response?.periods) ? response.periods : [],
   }
 }
 
@@ -39,12 +38,6 @@ function mergePeriods(explicitPeriods, rows) {
 
 function assignedGrader(row) {
   return row?.current_grader_assignment
-    ?? row?.grader_assignment
-    ?? row?.grader
-    ?? row?.assigned_grader
-    ?? offeringOf(row)?.grader
-    ?? offeringOf(row)?.assigned_grader
-    ?? offeringOf(row)?.faculty_member
 }
 
 function personName(person) {
@@ -58,27 +51,17 @@ function graderId(grader) {
 }
 
 function programName(row) {
-  const program = offeringOf(row)?.academic_program ?? row?.academic_program ?? row?.program
-  return program?.program_name ?? program?.name ?? 'برنامج غير محدد'
+  return offeringOf(row)?.academic_program?.program_name ?? 'برنامج غير محدد'
 }
 
 function rowCounts(row) {
-  const roster = candidateRows(row)
-  const counts = row?.counts ?? row?.summary?.counts ?? {}
-  const materialization = row?.materialization ?? {}
-  const graded = roster.filter((candidate) => (
-    candidate.supplementary_theoretical_mark !== null
-    && candidate.supplementary_theoretical_mark !== undefined
-    && candidate.supplementary_theoretical_mark !== ''
-  )).length
-  const published = roster.filter((candidate) => candidate.result_status || candidate.preview?.result_status_code).length
-  const materialized = roster.filter((candidate) => candidate.official_record_materialized).length
+  const counts = row?.counts ?? {}
 
   return {
-    registered: counts.registered ?? counts.roster ?? counts.candidates ?? roster.length,
-    graded: counts.graded ?? counts.marks ?? graded,
-    published: counts.published ?? (row?.workflow_status === 'published' ? (published || roster.length) : published),
-    materialized: counts.materialized ?? materialization.materialized_count ?? materialized,
+    registered: counts.registered ?? 0,
+    graded: counts.graded ?? 0,
+    published: counts.published ?? 0,
+    materialized: counts.materialized ?? 0,
   }
 }
 
@@ -125,6 +108,7 @@ export default function SupplementaryGradesPage() {
   const [graderSelections, setGraderSelections] = useState({})
   const [graderSearches, setGraderSearches] = useState({})
   const [graderLoading, setGraderLoading] = useState({})
+  const [dialog, setDialog] = useState(null)
 
   const loadQueue = useCallback(async () => {
     setLoading(true)
@@ -208,24 +192,15 @@ export default function SupplementaryGradesPage() {
     ? reconciliationView.reconciliation.offerings
     : []
 
-  const review = async (row, action) => {
-    const submissionId = row?.submission?.supplementary_exam_grade_submission_id ?? row?.submission?.id
+  const review = async (row, action, reason = '') => {
+    const submissionId = row?.submission?.supplementary_exam_grade_submission_id
     if (!submissionId) {
       setError('لا توجد دفعة علامات قابلة للمراجعة لهذا العرض.')
       return
     }
 
-    let body
-    if (action === 'return') {
-      const reason = window.prompt('سبب الإرجاع (إلزامي)')?.trim()
-      if (!reason) return
-      if (!window.confirm('سيعود العرض إلى المصحح مع السبب المدخل. هل تريد المتابعة؟')) return
-      body = { reason }
-    } else if (action === 'approve') {
-      if (!window.confirm('سيتم اعتماد هذه الدفعة كما هي ولن تعود للمصحح إلا بإرجاع صريح. هل تريد المتابعة؟')) return
-    } else if (action === 'publish') {
-      if (!window.confirm('سيتم نشر النتائج المعتمدة للطلاب، لكنها لن تصبح في السجل الرسمي قبل الترحيل. هل تريد المتابعة؟')) return
-    }
+    const body = action === 'return' ? { reason: reason.trim() } : undefined
+    if (action === 'return' && !body.reason) return
 
     const key = `${action}:${offeringIdOf(row)}`
     setBusyAction(key)
@@ -251,7 +226,6 @@ export default function SupplementaryGradesPage() {
   }
 
   const materialize = async (row) => {
-    if (!window.confirm('سيتم ترحيل النتائج المنشورة إلى السجل الأكاديمي الرسمي مع إبقاء العلامات العملية الأصلية دون تغيير. هذا الإجراء ليس عكساً للعلامة. هل تريد المتابعة؟')) return
     const offeringId = offeringIdOf(row)
     setBusyAction(`materialize:${offeringId}`)
     setError('')
@@ -271,7 +245,7 @@ export default function SupplementaryGradesPage() {
   }
 
   const openGrading = async () => {
-    if (!periodId || !window.confirm('سيتم تثبيت قائمة الطلاب وفتح إدخال العلامات للمصححين في هذه الدورة. هل تريد المتابعة؟')) return
+    if (!periodId) return
     setBusyAction(`open-grading:${periodId}`)
     setError('')
     setNotice('')
@@ -297,7 +271,7 @@ export default function SupplementaryGradesPage() {
     try {
       const response = await apiRequest(`/v1/exams/supplementary-offerings/${offeringId}/graders${query ? `?${query}` : ''}`, { method: 'GET' })
       const data = response?.data
-      const options = Array.isArray(data) ? data : data?.graders ?? data?.faculty_members ?? data?.data ?? []
+      const options = Array.isArray(data) ? data : []
       setGraderOptions((current) => ({ ...current, [offeringId]: options }))
       const currentGraderId = graderId(assignedGrader(row))
       setGraderSelections((current) => {
@@ -321,9 +295,6 @@ export default function SupplementaryGradesPage() {
       setError('اختر المصحح قبل حفظ الإسناد.')
       return
     }
-    const option = (graderOptions[offeringId] ?? []).find((grader) => String(graderId(grader)) === String(facultyMemberId))
-    if (!window.confirm(`سيتم إسناد التصحيح إلى ${personName(option)}. هل تريد المتابعة؟`)) return
-
     setBusyAction(`grader:${offeringId}`)
     setError('')
     setNotice('')
@@ -341,13 +312,10 @@ export default function SupplementaryGradesPage() {
     }
   }
 
-  const canOpenGrading = Boolean(reconciliationMatchesPeriod && (
-    reconciliationView.reconciliation?.action_flags?.can_open_grading
-    ?? reconciliationView.reconciliation?.actions?.can_open_grading
-    ?? selectedPeriod?.action_flags?.can_open_grading
-    ?? selectedPeriod?.actions?.can_open_grading
-    ?? false
-  ))
+  const canOpenGrading = Boolean(
+    reconciliationMatchesPeriod
+    && reconciliationView.reconciliation?.action_flags?.can_open_grading === true,
+  )
 
   return (
     <main className="p-6" dir="rtl">
@@ -382,7 +350,7 @@ export default function SupplementaryGradesPage() {
             </select>
           </label>
           {canOpenGrading && (
-            <button className="inline-flex items-center gap-2 rounded bg-blue-700 px-3 py-2 text-white disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => void openGrading()} type="button">
+            <button className="inline-flex items-center gap-2 rounded bg-blue-700 px-3 py-2 text-white disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => setDialog({ type: 'open-grading' })} type="button">
               <FaLockOpen aria-hidden="true" /> {busyAction.startsWith('open-grading:') ? 'جارٍ الفتح...' : 'تثبيت القائمة وفتح العلامات'}
             </button>
           )}
@@ -493,9 +461,7 @@ export default function SupplementaryGradesPage() {
           const counts = rowCounts(row)
           const materialization = row.materialization ?? { state: 'not_ready' }
           const currentGrader = assignedGrader(row)
-          const canAssignGrader = Boolean(row.action_flags?.can_assign_grader
-            ?? row.actions?.can_assign_grader
-            ?? false)
+          const canAssignGrader = row.action_flags?.can_assign_grader === true
           const rowBusy = busyAction.endsWith(`:${offeringId}`)
           const options = graderOptions[offeringId]
 
@@ -559,7 +525,7 @@ export default function SupplementaryGradesPage() {
                         </select>
                       </label>
                       {options.length === 0 && <span className="text-sm text-gray-500">لا يوجد مصححون متاحون ضمن نطاقك.</span>}
-                      <button className="rounded bg-gray-800 px-3 py-2 text-white disabled:opacity-50" disabled={!graderSelections[offeringId] || Boolean(busyAction)} onClick={() => void assignGrader(row)} type="button">
+                      <button className="rounded bg-gray-800 px-3 py-2 text-white disabled:opacity-50" disabled={!graderSelections[offeringId] || Boolean(busyAction)} onClick={() => setDialog({ type: 'assign', row })} type="button">
                         {busyAction === `grader:${offeringId}` ? 'جارٍ الحفظ...' : 'حفظ الإسناد'}
                       </button>
                     </>
@@ -575,12 +541,12 @@ export default function SupplementaryGradesPage() {
                     <thead><tr><th className="p-2">الطالب</th><th className="p-2">العملي المحفوظ</th><th className="p-2">النظري التكميلي</th><th className="p-2">المجموع المتوقع</th><th className="p-2">النتيجة</th><th className="p-2">السجل الرسمي</th></tr></thead>
                     <tbody>
                       {roster.map((candidate) => (
-                        <tr className="border-t" key={candidate.supplementary_exam_registration_id ?? candidate.id}>
+                        <tr className="border-t" key={candidate.supplementary_exam_registration_id}>
                           <td className="p-2">{candidate.student?.student_number ?? 'طالب غير معروف'}</td>
                           <td className="p-2">{candidate.preserved_practical_mark ?? '—'}</td>
                           <td className="p-2">{candidate.supplementary_theoretical_mark ?? '—'}</td>
-                          <td className="p-2">{candidate.preview?.final_mark ?? candidate.final_mark ?? '—'}</td>
-                          <td className="p-2">{resultStatusLabel(candidate.preview?.result_status_code ?? candidate.official_result_status)}</td>
+                          <td className="p-2">{candidate.preview?.final_mark ?? '—'}</td>
+                          <td className="p-2">{resultStatusLabel(candidate.preview?.result_status_code)}</td>
                           <td className="p-2">{candidate.official_record_materialized ? 'مُرحّل' : 'غير مُرحّل'}</td>
                         </tr>
                       ))}
@@ -592,21 +558,51 @@ export default function SupplementaryGradesPage() {
               <div className="mt-3 flex flex-wrap gap-2">
                 {(row.action_flags?.can_return || row.action_flags?.can_approve) && (
                   <>
-                    {row.action_flags?.can_return && <button className="inline-flex items-center gap-2 rounded border px-3 py-2 disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => void review(row, 'return')} type="button"><FaUndoAlt aria-hidden="true" /> إرجاع مع سبب</button>}
-                    {row.action_flags?.can_approve && <button className="inline-flex items-center gap-2 rounded bg-primary px-3 py-2 text-white disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => void review(row, 'approve')} type="button"><FaCheck aria-hidden="true" /> اعتماد</button>}
+                    {row.action_flags?.can_return && <button className="inline-flex items-center gap-2 rounded border px-3 py-2 disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => setDialog({ type: 'review', action: 'return', row })} type="button"><FaUndoAlt aria-hidden="true" /> إرجاع مع سبب</button>}
+                    {row.action_flags?.can_approve && <button className="inline-flex items-center gap-2 rounded bg-primary px-3 py-2 text-white disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => setDialog({ type: 'review', action: 'approve', row })} type="button"><FaCheck aria-hidden="true" /> اعتماد</button>}
                   </>
                 )}
                 {row.action_flags?.can_publish && (
-                  <button className="inline-flex items-center gap-2 rounded bg-green-700 px-3 py-2 text-white disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => void review(row, 'publish')} type="button"><FaUpload aria-hidden="true" /> نشر</button>
+                  <button className="inline-flex items-center gap-2 rounded bg-green-700 px-3 py-2 text-white disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => setDialog({ type: 'review', action: 'publish', row })} type="button"><FaUpload aria-hidden="true" /> نشر</button>
                 )}
                 {materialization.can_materialize && (
-                  <button className="inline-flex items-center gap-2 rounded bg-blue-700 px-3 py-2 text-white disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => void materialize(row)} type="button"><FaDatabase aria-hidden="true" /> {busyAction === `materialize:${offeringId}` ? 'جارٍ الترحيل...' : 'ترحيل إلى السجل الرسمي'}</button>
+                  <button className="inline-flex items-center gap-2 rounded bg-blue-700 px-3 py-2 text-white disabled:opacity-50" disabled={Boolean(busyAction)} onClick={() => setDialog({ type: 'materialize', row })} type="button"><FaDatabase aria-hidden="true" /> {busyAction === `materialize:${offeringId}` ? 'جارٍ الترحيل...' : 'ترحيل إلى السجل الرسمي'}</button>
                 )}
               </div>
             </article>
           )
         })}
       </div>
+      {dialog && (
+        <SupplementaryConfirmDialog
+          busy={Boolean(busyAction)}
+          confirmLabel="تأكيد الإجراء"
+          danger={dialog.type === 'review' && dialog.action === 'return'}
+          description={dialog.type === 'materialize'
+            ? 'سيتم ترحيل النتائج إلى السجل الأكاديمي الرسمي مع إبقاء العلامات العملية الأصلية دون تغيير.'
+            : dialog.type === 'open-grading'
+              ? 'سيتم تثبيت قائمة الطلاب وفتح إدخال العلامات للمصححين في هذه الدورة.'
+              : dialog.type === 'assign'
+                ? `سيتم إسناد التصحيح إلى ${personName((graderOptions[offeringIdOf(dialog.row)] ?? []).find((grader) => String(graderId(grader)) === String(graderSelections[offeringIdOf(dialog.row)])))}.`
+                : dialog.action === 'publish'
+                  ? 'ستظهر النتيجة التكميلية المنشورة للطالب، ولن تصبح نتيجة رسمية قبل الترحيل.'
+                  : dialog.action === 'approve'
+                    ? 'سيتم اعتماد هذه الدفعة كما هي.'
+                    : 'ستعود الدفعة إلى المصحح مع سبب الإرجاع.'}
+          onCancel={() => setDialog(null)}
+          onConfirm={(reason) => {
+            const current = dialog
+            setDialog(null)
+            if (current.type === 'review') void review(current.row, current.action, reason)
+            if (current.type === 'materialize') void materialize(current.row)
+            if (current.type === 'open-grading') void openGrading()
+            if (current.type === 'assign') void assignGrader(current.row)
+          }}
+          reasonLabel={dialog.type === 'review' && dialog.action === 'return' ? 'سبب الإرجاع' : undefined}
+          reasonRequired={dialog.type === 'review' && dialog.action === 'return'}
+          title="تأكيد عملية الامتحان التكميلي"
+        />
+      )}
     </main>
   )
 }

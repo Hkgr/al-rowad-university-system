@@ -61,6 +61,28 @@ export const ELIGIBILITY_REASON_LABELS = Object.freeze({
   voluntarily_deferred_theoretical: 'تأجيل اختياري للجزء النظري',
 })
 
+export const ELIGIBILITY_BLOCKER_LABELS = Object.freeze({
+  student_deprived: 'غير مؤهل — الطالب محروم في المحاولة النظامية',
+  practical_failed: 'غير مؤهل — الجزء العملي غير ناجح',
+  practical_mark_missing: 'بانتظار اعتماد علامة الجزء العملي',
+  practical_result_not_approved: 'بانتظار اعتماد الجزء العملي',
+  theoretical_not_required: 'المقرر لا يتضمن امتحاناً نظرياً',
+  regular_result_passed: 'غير مؤهل — النتيجة النظامية ناجحة',
+  regular_result_not_official: 'بانتظار اعتماد النتيجة النظامية',
+  supplementary_exam_target_already_materialized: 'سبق ترحيل نتيجة تكميلية لهذه المحاولة',
+})
+
+export const REGISTRATION_STATUS_LABELS = Object.freeze({
+  eligible: 'مؤهل',
+  registered: 'مسجل',
+  cancelled: 'ملغى',
+  fixed: 'مثبت ضمن القائمة النهائية',
+  waiting_grade: 'بانتظار إدخال العلامة',
+  under_review: 'قيد المراجعة',
+  published: 'النتيجة منشورة',
+  materialized: 'تم تحديث السجل الأكاديمي',
+})
+
 export const RECONCILIATION_STATUS_LABELS = Object.freeze({
   PASS: 'متناسق',
   WARNING: 'تحذيرات تحتاج إلى مراجعة',
@@ -105,6 +127,7 @@ const ISSUE_LABELS = Object.freeze({
   version_mismatch: 'إصدار الدفعة غير متطابق',
   official_record_mismatch: 'السجل الرسمي لا يطابق النتيجة المنشورة',
   materialization_conflict: 'تعارض في الترحيل إلى السجل الرسمي',
+  source_submission_version_ambiguous: 'إصدار الإرسال الأحدث غير فريد ويجب إيقاف المعالجة',
 })
 
 const FIXED_ROSTER_STATUSES = new Set([
@@ -150,6 +173,14 @@ export function resultStatusLabel(status) {
 
 export function eligibilityReasonLabel(reason) {
   return localizedLabel(ELIGIBILITY_REASON_LABELS, reason, 'غير محدد', 'سبب أهلية غير معروف')
+}
+
+export function eligibilityBlockerLabel(blocker) {
+  return localizedLabel(ELIGIBILITY_BLOCKER_LABELS, blocker, 'لا يوجد مانع مسجل', 'سبب عدم الأهلية غير معروف')
+}
+
+export function registrationStatusLabel(status) {
+  return localizedLabel(REGISTRATION_STATUS_LABELS, status, 'لم يبدأ التسجيل', 'حالة تسجيل غير معروفة')
 }
 
 export function reconciliationStatusLabel(status) {
@@ -198,6 +229,7 @@ const ERROR_MESSAGES = Object.freeze({
   supplementary_grade_batch_incomplete: 'لا يمكن الإرسال قبل إدخال علامات جميع الطلاب.',
   supplementary_grade_locked: 'العلامات مقفلة في الحالة الحالية.',
   supplementary_grade_stale_submission: 'هذه نسخة قديمة من دفعة العلامات. حدّث الصفحة ثم أعد المحاولة.',
+  supplementary_grade_submission_integrity_error: 'توجد أكثر من دفعة في أحدث إصدار. أُوقف الإجراء حفاظاً على سلامة النتائج وراجع مسؤول النظام.',
   supplementary_grade_version_mismatch: 'نسخة الدفعة لا تطابق النتائج الحالية. حدّث الصفحة.',
   supplementary_grade_period_invalid: 'حالة الدورة لا تسمح بهذا الإجراء.',
   supplementary_grader_assignment_locked: 'لا يمكن تغيير المصحح بعد إرسال الدفعة.',
