@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { FaSpinner, FaDownload, FaTable } from 'react-icons/fa'
 import DataTable from '../../../components/table/DataTable'
 import FilterBar from '../../../components/table/FilterBar'
@@ -6,17 +6,8 @@ import { exportRowsToPdf } from '../../../utils/pdfExport'
 import InstructorAssignment from '../components/InstructorAssignment'
 import { hasPermission, PERMISSIONS } from '../../auth/auth'
 import CourseRequirementBadges, { classificationPlainText } from '../../../components/academic/CourseRequirementBadges'
-
-const API = 'https://rust.alrowaduni.edu.sy/api/v1'
-
-function authHeaders() {
-  return { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }
-}
-
-async function get(url) {
-  const r = await fetch(url, { headers: authHeaders() })
-  return r.json()
-}
+import { apiRequest } from '../../../services/apiClient'
+import { findActualCourseOffering, loadCourseTableCatalog } from '../lib/courseCatalog'
 
 const TYPE_LABEL = { mandatory: 'إجباري', elective: 'اختياري' }
 
@@ -35,6 +26,7 @@ export default function CourseTablePage() {
   const [facultyMembers, setFacultyMembers] = useState([])
   const [employees, setEmployees]     = useState([])
   const [loading, setLoading]         = useState(true)
+  const [catalogError, setCatalogError] = useState('')
   const [pdfLoading, setPdfLoading]   = useState(false)
 
   const [yearId, setYearId]           = useState('')
@@ -48,33 +40,45 @@ export default function CourseTablePage() {
   const [typeFilter, setTypeFilter]   = useState('')
 
 
-  useEffect(() => {
-    Promise.all([
-      get(`${API}/academic-years?per_page=50`),
-      get(`${API}/semesters?per_page=20`),
-      get(`${API}/colleges?per_page=20`),
-      get(`${API}/departments?per_page=50`),
-      get(`${API}/academic-programs?per_page=50`),
-      get(`${API}/courses?per_page=200`),
-      get(`${API}/academic-levels?per_page=20`),
-      get(`${API}/program-courses?per_page=500`),
-      get(`${API}/course-offerings?per_page=500`),
-      canViewHr ? get(`${API}/faculty-members?per_page=100`) : Promise.resolve({ success: true, data: [] }),
-      canViewHr ? get(`${API}/employees?per_page=500`) : Promise.resolve({ success: true, data: [] }),
-    ]).then(([y, s, col, dep, prog, crs, lvl, pc, off, fac, emp]) => {
-      setYears(y.success ? (y.data?.data ?? []) : [])
-      setSemesters(s.success ? (s.data?.data ?? []) : [])
-      setColleges(col.success ? (col.data?.data ?? []) : [])
-      setDepartments(dep.success ? (dep.data?.data ?? []) : [])
-      setPrograms(prog.success ? (prog.data?.data ?? []) : [])
-      setCourses(crs.success ? (crs.data?.data ?? []) : [])
-      setLevels(lvl.success ? (lvl.data?.data ?? []) : [])
-      setProgramCourses(pc.success ? (pc.data?.data ?? []) : [])
-      setOfferings(off.success ? (off.data?.data ?? []) : [])
-      setFacultyMembers(fac.success ? (fac.data?.data ?? fac.data ?? []) : [])
-      setEmployees(emp.success ? (emp.data?.data ?? emp.data ?? []) : [])
-    }).finally(() => setLoading(false))
-  }, [canViewHr])
+  const clearCatalog = useCallback(() => {
+    setYears([])
+    setSemesters([])
+    setColleges([])
+    setDepartments([])
+    setPrograms([])
+    setCourses([])
+    setLevels([])
+    setProgramCourses([])
+    setOfferings([])
+    setFacultyMembers([])
+    setEmployees([])
+  }, [])
+
+  const loadAll = useCallback(async () => {
+    setLoading(true)
+    setCatalogError('')
+    try {
+      const snapshot = await loadCourseTableCatalog({ request: apiRequest, canViewHr })
+      setYears(snapshot.academicYears)
+      setSemesters(snapshot.semesters)
+      setColleges(snapshot.colleges)
+      setDepartments(snapshot.departments)
+      setPrograms(snapshot.programs)
+      setCourses(snapshot.courses)
+      setLevels(snapshot.levels)
+      setProgramCourses(snapshot.programCourses)
+      setOfferings(snapshot.offerings)
+      setFacultyMembers(snapshot.facultyMembers)
+      setEmployees(snapshot.employees)
+    } catch (error) {
+      clearCatalog()
+      setCatalogError(`تعذر تحميل بيانات جدول المواد كاملة. لن يتم عرض بيانات جزئية. ${error?.message || 'حاول مرة أخرى.'}`)
+    } finally {
+      setLoading(false)
+    }
+  }, [canViewHr, clearCatalog])
+
+  useEffect(() => { void loadAll() }, [loadAll])
 
   const courseMap = useMemo(() => Object.fromEntries(courses.map(c => [c.course_id, c])), [courses])
   const programMap = useMemo(() => Object.fromEntries(programs.map(p => [p.academic_program_id, p])), [programs])
@@ -123,12 +127,12 @@ export default function CourseTablePage() {
   }, [programId, departmentId, collegeId, programs, departmentsInCollege])
 
   function offeringFor(courseId, progId) {
-    return offerings.find(o =>
-      String(o.course_id) === String(courseId) &&
-      String(o.academic_program_id) === String(progId) &&
-      String(o.academic_year_id) === String(yearId) &&
-      String(o.semester_id) === String(semId)
-    )
+    return findActualCourseOffering(offerings, {
+      courseId,
+      academicProgramId: progId,
+      academicYearId: yearId,
+      semesterId: semId,
+    })
   }
 
   const rows = useMemo(() => {
@@ -222,6 +226,21 @@ export default function CourseTablePage() {
 
   if (loading) {
     return <div className="flex justify-center py-16 text-primary"><FaSpinner className="animate-spin text-[28px]" /></div>
+  }
+
+  if (catalogError) {
+    return (
+      <div className="bg-white border border-red-200 rounded-[16px] p-6 text-center" dir="rtl">
+        <p className="text-[13.5px] font-semibold text-red-700">{catalogError}</p>
+        <button
+          type="button"
+          className="mt-4 px-4 py-2 bg-primary text-white rounded-[10px] text-[13px] font-bold hover:bg-primary-dark"
+          onClick={() => { void loadAll() }}
+        >
+          إعادة المحاولة
+        </button>
+      </div>
+    )
   }
 
   return (

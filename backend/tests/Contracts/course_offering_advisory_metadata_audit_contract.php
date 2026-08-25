@@ -7,6 +7,7 @@ $contract = static function (string $backendRoot): array {
         'dean' => $frontendRoot.'/features/dean-dashboard/pages/DeanRegistrationOfferings.jsx',
         'planner' => $frontendRoot.'/features/dean-dashboard/utils/deanOfferingPlanner.js',
         'exam_board' => $frontendRoot.'/features/exam-board/pages/CourseTablePage.jsx',
+        'course_catalog' => $frontendRoot.'/features/exam-board/lib/courseCatalog.js',
         'student_ui' => $frontendRoot.'/features/student-dashboard/pages/StudentRegistration.jsx',
         'dean_service' => $backendRoot.'/app/Services/DeanRegistrationOfferingService.php',
         'context' => $backendRoot.'/app/Services/CourseOfferingContextService.php',
@@ -67,6 +68,8 @@ $contract = static function (string $backendRoot): array {
     $expect(str_contains($dean, 'levels={levels}'), 'OFFER-ADV-01 dialog must receive the complete curriculum levels.');
     $expect(! str_contains($dean, 'courses={coursesForAcademicLevel('), 'OFFER-ADV-01 dialog must not receive a section-limited course list.');
     $expect(str_contains($dean, 'كل المستويات'), 'OFFER-ADV-01 dialog must expose the all-level option.');
+    $expect(str_contains($dean, 'advisorySemesterDiffers(row, selectedSemesterId)'), 'Advisory warning must compare only the recommended semester with the actual selected semester.');
+    $expect(! str_contains($dean, 'advisorySemesterDiffers(row, selectedSemesterId,'), 'Advisory level filter must not trigger a mismatch warning.');
 
     // OFFER-ADV-02/03/04: selected preparation accepts active program rows and preserves metadata.
     $expect(str_contains($selected, "whereIn('program_course_id', \$requested)"), 'OFFER-ADV-02 selected mode must use explicit ProgramCourse IDs.');
@@ -113,7 +116,27 @@ $contract = static function (string $backendRoot): array {
     // The second discovered UI hard gate: the Exam Board table must show actual-term offerings.
     $expect(str_contains($sources['exam_board'], 'pc.is_active === true'), 'Exam Board table must keep active curriculum membership.');
     $expect(! preg_match('/filter\([^\n]*recommended_semester_id[^\n]*semId/', $sources['exam_board']), 'Exam Board table must not filter rows by recommended semester.');
-    $expect(str_contains($sources['exam_board'], "String(o.semester_id) === String(semId)"), 'Exam Board table must retain actual offering semester identity.');
+    $expect(str_contains($sources['exam_board'], 'loadCourseTableCatalog({ request: apiRequest, canViewHr })'), 'Exam Board table must consume the complete canonical catalog loader.');
+    $expect(str_contains($sources['course_catalog'], 'fetchAllPaginated(path, { request, primaryKey })'), 'Exam Board catalog loader must use the bounded canonical paginator.');
+    foreach ([
+        "'/v1/academic-years', 'academic_year_id'",
+        "'/v1/semesters', 'semester_id'",
+        "'/v1/colleges', 'college_id'",
+        "'/v1/departments', 'department_id'",
+        "'/v1/academic-programs', 'academic_program_id'",
+        "'/v1/courses', 'course_id'",
+        "'/v1/academic-levels', 'academic_level_id'",
+        "'/v1/program-courses', 'program_course_id'",
+        "'/v1/course-offerings', 'course_offering_id'",
+        "'/v1/faculty-members', 'faculty_member_id'",
+        "'/v1/employees', 'employee_id'",
+    ] as $catalogContract) {
+        $expect(str_contains($sources['course_catalog'], $catalogContract), 'Exam Board catalog loader is missing '.$catalogContract.'.');
+    }
+    $expect(! preg_match('/per_page=(?:200|500)/', $sources['exam_board']), 'Exam Board table must not rely on backend-clamped oversized page requests.');
+    $expect(str_contains($sources['exam_board'], 'clearCatalog()') && str_contains($sources['exam_board'], 'catalogError'), 'Exam Board catalog failure must clear partial state and expose retryable error UI.');
+    $expect(str_contains($sources['course_catalog'], 'String(offering.academic_year_id) === String(academicYearId)'), 'Exam Board table must retain actual offering year identity.');
+    $expect(str_contains($sources['course_catalog'], 'String(offering.semester_id) === String(semesterId)'), 'Exam Board table must retain actual offering semester identity.');
     $expect(str_contains($sources['exam_board'], 'recommendedSemesterName'), 'Exam Board table should retain advisory semester as presentation metadata.');
 
     // Existing advisory presentation remains non-blocking.

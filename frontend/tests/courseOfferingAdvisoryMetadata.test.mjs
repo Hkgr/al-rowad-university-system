@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import {
   advisoryLevelLabel,
-  advisoryPlanDiffers,
+  advisorySemesterDiffers,
   advisorySemesterLabel,
   catalogCoursesForAdvisoryLevel,
   flattenCatalogCourses,
@@ -60,7 +60,8 @@ assert.equal(flattenCatalogCourses(levels).length, 3)
 assert.equal(catalogCoursesForAdvisoryLevel(levels).length, 3)
 assert.deepEqual(catalogCoursesForAdvisoryLevel(levels, 4).map(row => row.program_course_id), [401])
 assert.equal(catalogCoursesForAdvisoryLevel(levels, '').find(row => matchesCourseSearch(row, 'FMF321'))?.program_course_id, 321)
-assert.equal(advisoryPlanDiffers(levels[0].courses[0], 2, 4), true)
+assert.equal(advisorySemesterDiffers(levels[0].courses[0], 2), true)
+assert.equal(advisorySemesterDiffers({ ...levels[0].courses[0], academic_level_id: 99 }, 1), false)
 assert.equal(advisoryLevelLabel(levels[2].courses[0]), 'المستوى الإرشادي غير محدد')
 assert.equal(advisorySemesterLabel(levels[2].courses[0], 2), 'الفصل الإرشادي غير محدد')
 

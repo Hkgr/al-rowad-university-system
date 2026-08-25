@@ -6,7 +6,7 @@ import {
   applyAdvisoryPlan,
   applyBulkPrepareOutcome,
   advisoryLevelLabel,
-  advisoryPlanDiffers,
+  advisorySemesterDiffers,
   canSubmitCurrentWorkflowRequest,
   catalogCoursesForAdvisoryLevel,
   clearUnsavedDraft,
@@ -185,7 +185,7 @@ test('OFFER-ADV-13 null advisory metadata stays searchable with explicit labels'
   const row = candidates.find(item => item.course.course_code === 'FMF321')
   assert.ok(row)
   assert.equal(advisoryLevelLabel(row), 'المستوى الإرشادي غير محدد')
-  assert.equal(advisoryPlanDiffers(row, 2, 4), false)
+  assert.equal(advisorySemesterDiffers(row, 2), false)
   assert.ok(uniqueProgramCourseIds([row.program_course_id]).includes(999))
 })
 

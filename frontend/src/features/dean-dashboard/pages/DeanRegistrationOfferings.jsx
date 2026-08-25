@@ -21,7 +21,7 @@ import {
   CLOSURE_REQUEST_SUBMITTED,
   CLOSURE_REQUEST_WARNING,
   advisoryLevelLabel,
-  advisoryPlanDiffers,
+  advisorySemesterDiffers,
   advisorySemesterLabel,
   applyAdvisoryPlan,
   applyBulkPrepareOutcome,
@@ -355,9 +355,9 @@ function AddCourseDialog({
                       </p>
                       <p className="text-[11.5px] text-text-light mt-1">{advisoryLevelLabel(row)}</p>
                       <p className="text-[11.5px] text-text-light mt-0.5">{advisorySemesterLabel(row, selectedSemesterId)}</p>
-                      {advisoryPlanDiffers(row, selectedSemesterId, level?.academic_level_id) ? (
+                      {advisorySemesterDiffers(row, selectedSemesterId) ? (
                         <p className="text-[11.5px] leading-5 text-amber-800 mt-1.5">
-                          هذه المادة موصى بها في مستوى/فصل مختلف، لكن يمكن طرحها في الفصل الأكاديمي المحدد.
+                          هذه المادة موصى بها في فصل إرشادي مختلف، لكن يمكن طرحها في الفصل الأكاديمي المحدد.
                         </p>
                       ) : null}
                     </div>
