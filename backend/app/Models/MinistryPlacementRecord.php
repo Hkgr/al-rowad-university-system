@@ -46,4 +46,40 @@ class MinistryPlacementRecord extends Model
     {
         return $this->belongsTo(MinistryPlacementBatch::class, 'batch_id', 'batch_id');
     }
+
+    public function matchedAcademicProgram(): BelongsTo
+    {
+        return $this->belongsTo(AcademicProgram::class, 'matched_academic_program_id', 'academic_program_id');
+    }
+
+    public function programMatchState(): string
+    {
+        if ($this->applicant_id !== null || ! in_array($this->processing_status, ['imported', 'program_matched'], true)) {
+            return 'locked';
+        }
+
+        $pairIsInconsistent = ($this->processing_status === 'program_matched' && $this->matched_academic_program_id === null)
+            || ($this->processing_status === 'imported' && $this->matched_academic_program_id !== null);
+        if ($pairIsInconsistent) {
+            return 'stale_match';
+        }
+
+        if ($this->matched_academic_program_id !== null) {
+            $program = $this->relationLoaded('matchedAcademicProgram') ? $this->matchedAcademicProgram : null;
+            if ($program === null
+                || ! $program->is_active
+                || ! $program->relationLoaded('department')
+                || $program->department === null
+                || ! $program->department->is_active
+                || ! $program->department->relationLoaded('college')
+                || $program->department->college === null
+                || ! $program->department->college->is_active) {
+                return 'stale_match';
+            }
+
+            return 'matched';
+        }
+
+        return 'unmatched';
+    }
 }

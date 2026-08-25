@@ -33,6 +33,35 @@ class MinistryPlacementRecordResource extends JsonResource
             'total_score' => $this->total_score,
             'max_total_score' => $this->max_total_score,
             'accepted_preference_text' => $this->accepted_preference_text,
+            'matched_academic_program_id' => $this->matched_academic_program_id === null ? null : (int) $this->matched_academic_program_id,
+            'matched_academic_program' => $this->whenLoaded('matchedAcademicProgram', function (): ?array {
+                $program = $this->matchedAcademicProgram;
+                if ($program === null) {
+                    return null;
+                }
+                $department = $program->relationLoaded('department') ? $program->department : null;
+                $college = $department?->relationLoaded('college') ? $department->college : null;
+
+                return [
+                    'academic_program_id' => (int) $program->academic_program_id,
+                    'program_code' => $program->program_code,
+                    'program_name' => $program->program_name,
+                    'is_active' => (bool) $program->is_active,
+                    'department' => $department === null ? null : [
+                        'department_id' => (int) $department->department_id,
+                        'department_code' => $department->department_code,
+                        'department_name' => $department->department_name,
+                        'is_active' => (bool) $department->is_active,
+                    ],
+                    'college' => $college === null ? null : [
+                        'college_id' => (int) $college->college_id,
+                        'college_code' => $college->college_code,
+                        'college_name' => $college->college_name,
+                        'is_active' => (bool) $college->is_active,
+                    ],
+                ];
+            }),
+            'program_match_state' => $this->programMatchState(),
             'track' => $this->track,
             'placement_round_name' => $this->placement_round_name,
             'registration_type' => $this->registration_type,

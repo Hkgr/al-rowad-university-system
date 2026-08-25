@@ -24,4 +24,34 @@ class MinistryPlacementException extends Exception
             'ministry_placement_workbook_invalid',
         );
     }
+
+    public static function recordLocked(): self
+    {
+        return new self(
+            'انتقل السجل إلى مرحلة لاحقة ولا يمكن تعديل مطابقته.',
+            [],
+            409,
+            'ministry_placement_record_locked',
+        );
+    }
+
+    public static function groupStale(): self
+    {
+        return new self(
+            'تغيرت سجلات المجموعة. حدّث البيانات قبل إعادة المحاولة.',
+            [],
+            409,
+            'ministry_placement_group_stale',
+        );
+    }
+
+    public static function programUnavailable(): self
+    {
+        return new self(
+            'البرنامج الأكاديمي المحدد أو بنيته الأكاديمية غير نشطة.',
+            ['academic_program_id' => ['ministry_placement_program_unavailable']],
+            422,
+            'ministry_placement_program_unavailable',
+        );
+    }
 }
