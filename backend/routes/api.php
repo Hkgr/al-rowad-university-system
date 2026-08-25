@@ -229,9 +229,14 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
 
     Route::post('ministry-placements/preview', [MinistryPlacementController::class, 'preview']);
     Route::post('ministry-placements/import', [MinistryPlacementController::class, 'import']);
+    Route::get('ministry-placement-programs', [MinistryPlacementController::class, 'programs']);
     Route::get('ministry-placements', [MinistryPlacementController::class, 'index']);
     Route::get('ministry-placements/{batch}', [MinistryPlacementController::class, 'show'])->whereNumber('batch');
     Route::get('ministry-placements/{batch}/records', [MinistryPlacementController::class, 'records'])->whereNumber('batch');
+    Route::get('ministry-placements/{batch}/program-matching', [MinistryPlacementController::class, 'programMatching'])->whereNumber('batch');
+    Route::post('ministry-placements/{batch}/program-matching/apply-group', [MinistryPlacementController::class, 'applyProgramGroup'])->whereNumber('batch');
+    Route::put('ministry-placement-records/{record}/program-match', [MinistryPlacementController::class, 'matchProgram'])->whereNumber('record');
+    Route::delete('ministry-placement-records/{record}/program-match', [MinistryPlacementController::class, 'unmatchProgram'])->whereNumber('record');
 
     /*
     |--------------------------------------------------------------------------

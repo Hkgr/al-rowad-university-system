@@ -72,3 +72,35 @@ export function buildMinistryPlacementFormData(file, fields = {}) {
   })
   return body
 }
+
+export function programMatchStateLabel(state) {
+  if (state === 'unmatched') return 'غير مطابق'
+  if (state === 'matched') return 'تمت المطابقة'
+  if (state === 'stale_match') return 'يحتاج إلى مراجعة'
+  if (state === 'locked') return 'مقفل'
+  return 'حالة غير معروفة'
+}
+
+export function programSuggestionStatusLabel(status) {
+  if (status === 'unique') return 'اقتراح وحيد'
+  if (status === 'ambiguous') return 'اقتراحات متعددة — يلزم الاختيار'
+  if (status === 'missing_preference') return 'لا توجد رغبة — يلزم مراجعة فردية'
+  return 'لا يوجد اقتراح مطابق'
+}
+
+export function canBulkMatchProgramGroup(canManage, group) {
+  return canManage === true
+    && group?.bulk_matchable === true
+    && Number(group?.bulk_eligible_unmatched_count ?? 0) > 0
+}
+
+export function programOptionLabel(program) {
+  if (!program) return '—'
+  return [program.program_code, program.program_name, program.department_name, program.college_name]
+    .filter(Boolean)
+    .join(' — ')
+}
+
+export function canMutateProgramMatch(canManage, record) {
+  return canManage === true && ['unmatched', 'matched', 'stale_match'].includes(record?.program_match_state)
+}

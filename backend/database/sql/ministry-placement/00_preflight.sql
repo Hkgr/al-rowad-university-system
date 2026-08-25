@@ -27,14 +27,10 @@ WHERE table_schema = @mp_schema
     (table_name = 'account_statuses' AND column_name = 'is_active' AND data_type = 'tinyint' AND is_nullable = 'NO')
   );
 
-SET @mp_active_account_status_query := IF(
-  @mp_account_required_columns,
-  'SELECT COUNT(*) = 1 INTO @mp_active_account_status FROM `alrowad_uni_rust`.`account_statuses` WHERE status_code = ''active'' AND is_active = 1',
-  'SELECT 0 INTO @mp_active_account_status'
-);
-PREPARE mp_active_account_status_statement FROM @mp_active_account_status_query;
-EXECUTE mp_active_account_status_statement;
-DEALLOCATE PREPARE mp_active_account_status_statement;
+SELECT COUNT(*) = 1 INTO @mp_active_account_status
+FROM `alrowad_uni_rust`.`account_statuses`
+WHERE status_code = 'active'
+  AND is_active = 1;
 
 SELECT COUNT(*) = 7 INTO @mp_rbac_resolution_columns
 FROM information_schema.columns
@@ -57,14 +53,14 @@ WHERE table_schema = @mp_schema
     (column_name = 'is_active' AND data_type = 'tinyint' AND is_nullable = 'NO')
   );
 
-SET @mp_permissions_query := IF(
-  @mp_permission_required_columns,
-  'SELECT COUNT(*) = 2 INTO @mp_required_active_permissions FROM (SELECT permission_code FROM `alrowad_uni_rust`.`permissions` WHERE permission_code IN (''admissions.view'', ''admissions.manage'') GROUP BY permission_code HAVING COUNT(*) = 1 AND MAX(is_active = 1) = 1) AS required_active_permissions',
-  'SELECT 0 INTO @mp_required_active_permissions'
-);
-PREPARE mp_permissions_statement FROM @mp_permissions_query;
-EXECUTE mp_permissions_statement;
-DEALLOCATE PREPARE mp_permissions_statement;
+SELECT COUNT(*) = 2 INTO @mp_required_active_permissions
+FROM (
+  SELECT permission_code
+  FROM `alrowad_uni_rust`.`permissions`
+  WHERE permission_code IN ('admissions.view', 'admissions.manage')
+  GROUP BY permission_code
+  HAVING COUNT(*) = 1 AND MAX(is_active = 1) = 1
+) AS required_active_permissions;
 
 SELECT COUNT(*) = 5 INTO @mp_scope_required_columns
 FROM information_schema.columns
@@ -257,14 +253,55 @@ WHERE table_schema = @mp_schema
     (table_name = 'organizational_units' AND column_name IN ('organizational_unit_id', 'unit_code', 'is_active'))
   );
 
-SET @mp_operator_readiness_query := IF(
-  @mp_operator_report_tables AND @mp_operator_report_columns,
-  'SELECT ''OPERATOR_READINESS'' AS report_section, operator.user_id, operator.username, COALESCE(operator.has_view, 0) AS has_admissions_view, COALESCE(operator.has_manage, 0) AS has_admissions_manage, COALESCE(operator.has_valid_pres_scope, 0) AS has_valid_pres_scope, CASE WHEN operator.user_id IS NULL THEN ''NO_ACTIVE_ROLE_MAPPED_OPERATOR'' WHEN operator.has_valid_pres_scope = 1 THEN ''SCOPED'' ELSE ''MISSING_VALID_UNIVERSITY_SCOPE'' END AS provisioning_status FROM (SELECT 1 AS report_row) report LEFT JOIN (SELECT u.user_id, u.username, MAX(CASE WHEN p.permission_code = ''admissions.view'' THEN 1 ELSE 0 END) AS has_view, MAX(CASE WHEN p.permission_code = ''admissions.manage'' THEN 1 ELSE 0 END) AS has_manage, MAX(CASE WHEN org.organizational_unit_id IS NOT NULL THEN 1 ELSE 0 END) AS has_valid_pres_scope FROM `alrowad_uni_rust`.`users` u JOIN `alrowad_uni_rust`.`account_statuses` ast ON ast.account_status_id = u.account_status_id AND ast.status_code = ''active'' AND ast.is_active = 1 JOIN `alrowad_uni_rust`.`user_roles` ur ON ur.user_id = u.user_id AND ur.is_active = 1 JOIN `alrowad_uni_rust`.`roles` r ON r.role_id = ur.role_id AND r.is_active = 1 JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id = rp.permission_id AND p.is_active = 1 AND p.permission_code IN (''admissions.view'', ''admissions.manage'') LEFT JOIN `alrowad_uni_rust`.`user_access_scopes` uas ON uas.user_id = u.user_id AND uas.scope_type = ''university'' AND uas.is_active = 1 LEFT JOIN `alrowad_uni_rust`.`organizational_units` org ON org.organizational_unit_id = uas.scope_id AND org.unit_code = ''PRES'' AND org.is_active = 1 GROUP BY u.user_id, u.username HAVING MAX(CASE WHEN p.permission_code = ''admissions.view'' THEN 1 ELSE 0 END) = 1 OR MAX(CASE WHEN p.permission_code = ''admissions.manage'' THEN 1 ELSE 0 END) = 1) operator ON 1 = 1 ORDER BY operator.user_id',
-  'SELECT ''OPERATOR_READINESS'' AS report_section, NULL AS user_id, NULL AS username, 0 AS has_admissions_view, 0 AS has_admissions_manage, 0 AS has_valid_pres_scope, ''UNAVAILABLE_SCHEMA'' AS provisioning_status'
-);
-PREPARE mp_operator_readiness_statement FROM @mp_operator_readiness_query;
-EXECUTE mp_operator_readiness_statement;
-DEALLOCATE PREPARE mp_operator_readiness_statement;
+SELECT
+  'OPERATOR_READINESS' AS report_section,
+  operator.user_id,
+  operator.username,
+  COALESCE(operator.has_view, 0) AS has_admissions_view,
+  COALESCE(operator.has_manage, 0) AS has_admissions_manage,
+  COALESCE(operator.has_valid_pres_scope, 0) AS has_valid_pres_scope,
+  CASE
+    WHEN operator.user_id IS NULL THEN 'NO_ACTIVE_ROLE_MAPPED_OPERATOR'
+    WHEN operator.has_valid_pres_scope = 1 THEN 'SCOPED'
+    ELSE 'MISSING_VALID_UNIVERSITY_SCOPE'
+  END AS provisioning_status
+FROM (SELECT 1 AS report_row) report
+LEFT JOIN (
+  SELECT
+    u.user_id,
+    u.username,
+    MAX(CASE WHEN p.permission_code = 'admissions.view' THEN 1 ELSE 0 END) AS has_view,
+    MAX(CASE WHEN p.permission_code = 'admissions.manage' THEN 1 ELSE 0 END) AS has_manage,
+    MAX(CASE WHEN org.organizational_unit_id IS NOT NULL THEN 1 ELSE 0 END) AS has_valid_pres_scope
+  FROM `alrowad_uni_rust`.`users` u
+  JOIN `alrowad_uni_rust`.`account_statuses` ast
+    ON ast.account_status_id = u.account_status_id
+   AND ast.status_code = 'active'
+   AND ast.is_active = 1
+  JOIN `alrowad_uni_rust`.`user_roles` ur
+    ON ur.user_id = u.user_id
+   AND ur.is_active = 1
+  JOIN `alrowad_uni_rust`.`roles` r
+    ON r.role_id = ur.role_id
+   AND r.is_active = 1
+  JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id = r.role_id
+  JOIN `alrowad_uni_rust`.`permissions` p
+    ON p.permission_id = rp.permission_id
+   AND p.is_active = 1
+   AND p.permission_code IN ('admissions.view', 'admissions.manage')
+  LEFT JOIN `alrowad_uni_rust`.`user_access_scopes` uas
+    ON uas.user_id = u.user_id
+   AND uas.scope_type = 'university'
+   AND uas.is_active = 1
+  LEFT JOIN `alrowad_uni_rust`.`organizational_units` org
+    ON org.organizational_unit_id = uas.scope_id
+   AND org.unit_code = 'PRES'
+   AND org.is_active = 1
+  GROUP BY u.user_id, u.username
+  HAVING MAX(CASE WHEN p.permission_code = 'admissions.view' THEN 1 ELSE 0 END) = 1
+      OR MAX(CASE WHEN p.permission_code = 'admissions.manage' THEN 1 ELSE 0 END) = 1
+) operator ON 1 = 1
+ORDER BY operator.user_id;
 
 SELECT 'DATABASE_AND_TABLES' AS check_name, IF(@mp_database_exists AND @mp_required_tables, 'PASS', 'FAIL') AS result
 UNION ALL

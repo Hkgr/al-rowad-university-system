@@ -80,7 +80,7 @@ $contract = static function (string $backendRoot): array {
     $expect(strpos($sources['service'], 'UserActivityLog::query()->create') > strpos($sources['service'], "DB::table('ministry_placement_records')->insert"), 'Audit must be the final transactional write.');
 
     $sqlUpper = strtoupper($sources['preflight']);
-    foreach (['INSERT ', 'UPDATE ', 'DELETE ', 'ALTER ', 'CREATE ', 'DROP ', 'SIGNAL', 'DELIMITER', 'DATABASE()'] as $forbidden) {
+    foreach (['INSERT ', 'UPDATE ', 'DELETE ', 'ALTER ', 'CREATE ', 'DROP ', 'SIGNAL', 'DELIMITER', 'DATABASE()', 'PREPARE', 'EXECUTE'] as $forbidden) {
         $expect(! str_contains($sqlUpper, $forbidden), 'Preflight is not read-only: '.$forbidden);
     }
     $expect(str_contains($sources['preflight'], "SELECT 'OVERALL', IF(@mp_ready, 'READY', 'BLOCKED')"), 'Preflight must visibly end READY/BLOCKED.');
@@ -95,12 +95,12 @@ $contract = static function (string $backendRoot): array {
     foreach (['@mp_scope_required_columns', '@mp_scope_user_foreign_key', 'user_access_scope_id', 'ACTUAL_SCOPE_STRUCTURE'] as $required) {
         $expect(str_contains($sources['preflight'], $required), 'Preflight is missing actual-scope structure validation: '.$required);
     }
-    foreach (['OPERATOR_READINESS', '@mp_operator_report_tables', '@mp_operator_report_columns', 'user_roles', 'role_permissions', "org.unit_code = ''PRES''", 'org.is_active = 1'] as $required) {
+    foreach (['OPERATOR_READINESS', '@mp_operator_report_tables', '@mp_operator_report_columns', 'user_roles', 'role_permissions', "org.unit_code = 'PRES'", 'org.is_active = 1'] as $required) {
         $expect(str_contains($sources['preflight'], $required), 'Preflight operator-readiness report is incomplete: '.$required);
     }
     $expect(! str_contains($sources['preflight'], 'u.is_active'), 'Operator readiness must not reference the nonexistent users.is_active column.');
     $expect(preg_match("/table_name\s*=\s*'users'[^\r\n]*\bis_active\b/i", $sources['preflight']) !== 1, 'Preflight must not require users.is_active.');
-    foreach (['account_statuses', '@mp_account_required_columns', '@mp_active_account_status', '@mp_user_account_status_foreign_key', "ast.account_status_id = u.account_status_id", "ast.status_code = ''active''", 'ast.is_active = 1', 'ACCOUNT_STATUS_STRUCTURE'] as $required) {
+    foreach (['account_statuses', '@mp_account_required_columns', '@mp_active_account_status', '@mp_user_account_status_foreign_key', "ast.account_status_id = u.account_status_id", "ast.status_code = 'active'", 'ast.is_active = 1', 'ACCOUNT_STATUS_STRUCTURE'] as $required) {
         $expect(str_contains($sources['preflight'], $required), 'Active-account schema resolution is incomplete: '.$required);
     }
     foreach (['@mp_rbac_resolution_columns', 'roles', 'user_roles', 'role_permissions', 'ur.is_active = 1', 'r.is_active = 1', 'RBAC_RESOLUTION_STRUCTURE'] as $required) {

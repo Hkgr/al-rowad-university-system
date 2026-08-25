@@ -1,13 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FaCheckCircle, FaExclamationTriangle, FaFileExcel, FaSearch, FaSpinner, FaUpload } from 'react-icons/fa'
 import { hasAssignedPermission, PERMISSIONS } from '../../auth/auth'
 import { apiRequest } from '../../../services/apiClient'
+import MinistryProgramMatchingPanel from '../components/MinistryProgramMatchingPanel'
+import MinistryProgramPickerDialog from '../components/MinistryProgramPickerDialog'
+import { createLatestRequestGuard } from '../lib/latestRequestGuard'
 import {
   buildMinistryPlacementFormData,
   canImportPreview,
   paginatedRows,
   paginationMeta,
   previewStatusLabel,
+  canMutateProgramMatch,
+  programMatchStateLabel,
   rowErrorLabels,
   workbookIssueLabel,
 } from '../lib/ministryPlacement'
@@ -37,11 +42,22 @@ export default function MinistryPlacementsPage() {
   const [recordMeta, setRecordMeta] = useState({})
   const [recordPage, setRecordPage] = useState(1)
   const [search, setSearch] = useState('')
+  const [batchView, setBatchView] = useState('records')
+  const [recordMatch, setRecordMatch] = useState(null)
+  const [recordUnmatch, setRecordUnmatch] = useState(null)
+  const [matchingRecord, setMatchingRecord] = useState(false)
   const [loading, setLoading] = useState(true)
   const [checking, setChecking] = useState(false)
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const recordsRequestGuard = useRef(createLatestRequestGuard())
+  const recordsContext = useRef({ batchId: null, page: 1, search: '' })
+  recordsContext.current = {
+    batchId: selectedBatch?.batch_id ?? null,
+    page: recordPage,
+    search: search.trim(),
+  }
 
   const loadBatches = useCallback(async (page = 1) => {
     const response = await apiRequest(`/v1/ministry-placements?page=${page}&per_page=15`)
@@ -63,20 +79,59 @@ export default function MinistryPlacementsPage() {
     return () => { active = false }
   }, [canManage])
 
-  useEffect(() => {
+  const loadRecords = useCallback(async () => {
     if (!selectedBatch) return
-    let active = true
-    const params = new URLSearchParams({ page: String(recordPage), per_page: '25' })
-    if (search.trim()) params.set('q', search.trim())
-    apiRequest(`/v1/ministry-placements/${selectedBatch.batch_id}/records?${params}`)
-      .then(response => {
-        if (!active) return
-        setRecords(paginatedRows(response))
-        setRecordMeta(paginationMeta(response))
-      })
-      .catch(err => active && setError(err.message))
-    return () => { active = false }
+    const context = {
+      batchId: selectedBatch.batch_id,
+      page: recordPage,
+      search: search.trim(),
+    }
+    const request = recordsRequestGuard.current.begin(context)
+    const params = new URLSearchParams({ page: String(context.page), per_page: '25' })
+    if (context.search) params.set('q', context.search)
+    try {
+      const response = await apiRequest(`/v1/ministry-placements/${context.batchId}/records?${params}`)
+      if (!recordsRequestGuard.current.isCurrent(request, recordsContext.current)) return false
+      setRecords(paginatedRows(response))
+      setRecordMeta(paginationMeta(response))
+      return true
+    } catch (err) {
+      if (!recordsRequestGuard.current.isCurrent(request, recordsContext.current)) return false
+      setError(err.message)
+      return false
+    }
   }, [selectedBatch, recordPage, search])
+
+  useEffect(() => {
+    loadRecords()
+    return () => recordsRequestGuard.current.invalidate()
+  }, [loadRecords])
+
+  const selectBatch = useCallback((batch) => {
+    recordsContext.current = { batchId: batch?.batch_id ?? null, page: 1, search: '' }
+    recordsRequestGuard.current.invalidate()
+    setRecords([])
+    setRecordMeta({})
+    setRecordMatch(null)
+    setRecordUnmatch(null)
+    setSelectedBatch(batch)
+    setRecordPage(1)
+    setSearch('')
+    setBatchView('records')
+  }, [])
+
+  function changeRecordSearch(value) {
+    recordsContext.current = { ...recordsContext.current, page: 1, search: value.trim() }
+    recordsRequestGuard.current.invalidate()
+    setSearch(value)
+    setRecordPage(1)
+  }
+
+  function changeRecordPage(page) {
+    recordsContext.current = { ...recordsContext.current, page }
+    recordsRequestGuard.current.invalidate()
+    setRecordPage(page)
+  }
 
   const importReady = useMemo(() => canImportPreview(preview), [preview])
 
@@ -121,8 +176,7 @@ export default function MinistryPlacementsPage() {
       setSuccess('تم اعتماد واستيراد الدفعة بنجاح.')
       setPreview(null)
       setForm(emptyForm)
-      setSelectedBatch(response.data)
-      setRecordPage(1)
+      selectBatch(response.data)
       await loadBatches(1)
       setBatchPage(1)
     } catch (err) {
@@ -142,6 +196,41 @@ export default function MinistryPlacementsPage() {
       setError(err.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function saveRecordMatch(program) {
+    if (!recordMatch || matchingRecord) return
+    setMatchingRecord(true)
+    setError('')
+    try {
+      await apiRequest(`/v1/ministry-placement-records/${recordMatch.placement_record_id}/program-match`, {
+        method: 'PUT',
+        body: JSON.stringify({ academic_program_id: program.academic_program_id }),
+      })
+      setSuccess('تم تحديث المطابقة الفردية بنجاح.')
+      setRecordMatch(null)
+      await loadRecords()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setMatchingRecord(false)
+    }
+  }
+
+  async function removeRecordMatch() {
+    if (!recordUnmatch || matchingRecord) return
+    setMatchingRecord(true)
+    setError('')
+    try {
+      await apiRequest(`/v1/ministry-placement-records/${recordUnmatch.placement_record_id}/program-match`, { method: 'DELETE' })
+      setSuccess('تمت إزالة المطابقة الفردية بنجاح.')
+      setRecordUnmatch(null)
+      await loadRecords()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setMatchingRecord(false)
     }
   }
 
@@ -210,7 +299,7 @@ export default function MinistryPlacementsPage() {
       <section className="rounded-2xl border border-primary/15 bg-white p-6 shadow-sm">
         <h2 className="mb-4 text-base font-black text-text-dark">الدفعات المستوردة</h2>
         {loading ? <div className="flex justify-center p-8"><FaSpinner className="animate-spin text-2xl text-primary" /></div> : batches.length === 0 ? <p className="p-8 text-center text-text-light">لا توجد دفعات مستوردة بعد.</p> : <div className="grid gap-3">
-          {batches.map(batch => <button key={batch.batch_id} onClick={() => { setSelectedBatch(batch); setRecordPage(1); setSearch('') }} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/15 p-4 text-right hover:bg-primary/5">
+          {batches.map(batch => <button key={batch.batch_id} onClick={() => selectBatch(batch)} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/15 p-4 text-right hover:bg-primary/5">
             <div><strong className="block text-text-dark">{batch.batch_name}</strong><span className="text-xs text-text-light">#{batch.batch_id} · {batch.academic_year?.year_name ?? batch.academic_year_id}</span></div>
             <div className="text-sm text-text-gray">{batch.records_count ?? 0} سجل · {batch.import_date}</div>
           </button>)}
@@ -219,13 +308,27 @@ export default function MinistryPlacementsPage() {
       </section>
 
       {selectedBatch && <section className="rounded-2xl border border-primary/15 bg-white p-6 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-base font-black">{selectedBatch.batch_name}</h2><p className="text-xs text-text-light">المصدر: {selectedBatch.source_file_name || '—'} · المستورد: {selectedBatch.imported_by?.username || selectedBatch.imported_by_user_id || '—'}</p></div>
-          <input value={search} onChange={event => { setSearch(event.target.value); setRecordPage(1) }} placeholder="بحث في السجلات" className="rounded-xl border border-primary/20 px-4 py-2" />
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-base font-black">{selectedBatch.batch_name}</h2><p className="text-xs text-text-light">المصدر: {selectedBatch.source_file_name || '—'} · المستورد: {selectedBatch.imported_by?.username || selectedBatch.imported_by_user_id || '—'}</p></div></div>
+        <div className="mt-4 flex gap-2 border-b border-slate-200 pb-3">
+          <button type="button" onClick={() => setBatchView('records')} className={`rounded-lg px-4 py-2 font-bold ${batchView === 'records' ? 'bg-primary text-white' : 'bg-slate-100 text-text-dark'}`}>السجلات</button>
+          <button type="button" onClick={() => setBatchView('program_matching')} className={`rounded-lg px-4 py-2 font-bold ${batchView === 'program_matching' ? 'bg-primary text-white' : 'bg-slate-100 text-text-dark'}`}>مطابقة البرامج</button>
         </div>
-        <div className="mt-4 overflow-x-auto"><table className="min-w-full text-sm"><thead className="bg-primary/8"><tr>{['الصف','الرقم الوطني','رقم الاكتتاب','الاسم','الرغبة المقبولة','الحالة'].map(label => <th key={label} className="p-3 text-right">{label}</th>)}</tr></thead><tbody>{records.map(row => <tr key={row.placement_record_id} className="border-t"><td className="p-3">{row.row_number}</td><td className="p-3 font-mono" dir="ltr">{row.national_civil_id}</td><td className="p-3 font-mono" dir="ltr">{row.subscription_number || '—'}</td><td className="p-3">{row.full_name}</td><td className="p-3">{row.accepted_preference_text || '—'}</td><td className="p-3">{row.processing_status}</td></tr>)}</tbody></table></div>
-        {records.length === 0 && <p className="p-8 text-center text-text-light">لا توجد سجلات مطابقة.</p>}
-        {(recordMeta.last_page ?? 1) > 1 && <div className="mt-4 flex justify-center gap-2"><button disabled={recordPage <= 1} onClick={() => setRecordPage(page => page - 1)} className="rounded-lg border px-3 py-2 disabled:opacity-40">السابق</button><span className="p-2">{recordPage} / {recordMeta.last_page}</span><button disabled={recordPage >= recordMeta.last_page} onClick={() => setRecordPage(page => page + 1)} className="rounded-lg border px-3 py-2 disabled:opacity-40">التالي</button></div>}
+
+        {batchView === 'program_matching' && <MinistryProgramMatchingPanel key={selectedBatch.batch_id} batch={selectedBatch} canManage={canManage} onChanged={loadRecords} />}
+
+        {batchView === 'records' && <>
+          <div className="mt-4 flex justify-end"><input value={search} onChange={event => changeRecordSearch(event.target.value)} placeholder="بحث في السجلات" className="rounded-xl border border-primary/20 px-4 py-2" /></div>
+          <div className="mt-4 overflow-x-auto"><table className="min-w-full text-sm"><thead className="bg-primary/8"><tr>{['الصف','الرقم الوطني','الاسم','رغبة الوزارة','البرنامج المطابق','حالة المطابقة','الإجراء'].map(label => <th key={label} className="p-3 text-right">{label}</th>)}</tr></thead><tbody>{records.map(row => {
+            const mutable = canMutateProgramMatch(canManage, row)
+            return <tr key={row.placement_record_id} className="border-t align-top"><td className="p-3">{row.row_number}</td><td className="p-3 font-mono" dir="ltr">{row.national_civil_id}</td><td className="p-3">{row.full_name}</td><td className="max-w-64 p-3">{row.accepted_preference_text || '—'}</td><td className="p-3">{row.matched_academic_program?.program_name || '—'}{row.program_match_state === 'stale_match' && row.matched_academic_program_id && <span className="mt-1 block text-xs font-bold text-amber-700">البرنامج المطابق غير نشط أو أن حالة السجل تحتاج مراجعة</span>}</td><td className="p-3 font-bold">{programMatchStateLabel(row.program_match_state)}{row.program_match_state === 'locked' && <span className="mt-1 block max-w-56 text-xs font-normal text-text-light">تم الانتقال إلى مرحلة لاحقة — المطابقة للقراءة فقط</span>}</td><td className="p-3"><div className="flex flex-wrap gap-2">{mutable && <button type="button" onClick={() => setRecordMatch(row)} className="rounded-lg bg-primary px-3 py-2 text-xs font-bold text-white">{row.matched_academic_program_id ? 'تعديل المطابقة' : 'مطابقة البرنامج'}</button>}{mutable && row.matched_academic_program_id && <button type="button" onClick={() => setRecordUnmatch(row)} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-700">إزالة المطابقة</button>}{!mutable && <span className="text-xs text-text-light">للقراءة فقط</span>}</div></td></tr>
+          })}</tbody></table></div>
+          {records.length === 0 && <p className="p-8 text-center text-text-light">لا توجد سجلات مطابقة.</p>}
+          {(recordMeta.last_page ?? 1) > 1 && <div className="mt-4 flex justify-center gap-2"><button disabled={recordPage <= 1} onClick={() => changeRecordPage(recordPage - 1)} className="rounded-lg border px-3 py-2 disabled:opacity-40">السابق</button><span className="p-2">{recordPage} / {recordMeta.last_page}</span><button disabled={recordPage >= recordMeta.last_page} onClick={() => changeRecordPage(recordPage + 1)} className="rounded-lg border px-3 py-2 disabled:opacity-40">التالي</button></div>}
+        </>}
       </section>}
+
+      <MinistryProgramPickerDialog open={Boolean(recordMatch)} title="تأكيد المطابقة الفردية" message={recordMatch?.matched_academic_program_id ? 'سيتم استبدال المطابقة الحالية بالبرنامج الذي تختاره. هذا الإجراء هو الاستثناء الفردي الصريح.' : 'اختر البرنامج النشط ثم أكّد المطابقة الفردية.'} busy={matchingRecord} onClose={() => setRecordMatch(null)} onConfirm={saveRecordMatch} />
+      {recordUnmatch && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" dir="rtl" role="dialog" aria-modal="true"><div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"><h3 className="text-lg font-black">إزالة المطابقة الفردية</h3><p className="mt-3 text-sm text-text-light">سيعود السجل إلى حالة غير مطابق. هل تريد المتابعة؟</p><div className="mt-5 flex justify-end gap-2"><button type="button" disabled={matchingRecord} onClick={() => setRecordUnmatch(null)} className="rounded-xl border px-4 py-2">إلغاء</button><button type="button" disabled={matchingRecord} onClick={removeRecordMatch} className="rounded-xl bg-red-700 px-4 py-2 font-bold text-white">{matchingRecord ? 'جارٍ الحفظ...' : 'تأكيد الإزالة'}</button></div></div></div>}
     </div>
   )
 }

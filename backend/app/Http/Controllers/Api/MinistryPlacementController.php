@@ -3,16 +3,20 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Requests\MinistryPlacement\ImportMinistryPlacementRequest;
+use App\Http\Requests\MinistryPlacement\ApplyMinistryPlacementProgramGroupRequest;
+use App\Http\Requests\MinistryPlacement\MatchMinistryPlacementProgramRequest;
 use App\Http\Requests\MinistryPlacement\PreviewMinistryPlacementRequest;
 use App\Http\Resources\MinistryPlacementBatchResource;
 use App\Http\Resources\MinistryPlacementRecordResource;
 use App\Models\MinistryPlacementBatch;
 use App\Models\MinistryPlacementRecord;
 use App\Services\MinistryPlacementService;
+use App\Services\MinistryPlacementProgramMatchingService;
 use App\Support\AcademicQueuePagination;
 use App\Support\MinistryPlacementAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
 
 class MinistryPlacementController extends ApiController
 {
@@ -61,7 +65,9 @@ class MinistryPlacementController extends ApiController
             'page' => ['sometimes', 'integer', 'min:1'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
         ]);
-        $query = MinistryPlacementRecord::query()->where('batch_id', $batch);
+        $query = MinistryPlacementRecord::query()
+            ->where('batch_id', $batch)
+            ->with('matchedAcademicProgram.department.college');
         $search = trim((string) ($validated['q'] ?? ''));
         if ($search !== '') {
             $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search);
@@ -79,5 +85,55 @@ class MinistryPlacementController extends ApiController
             ->paginate(AcademicQueuePagination::perPage(isset($validated['per_page']) ? (int) $validated['per_page'] : null, 15));
 
         return $this->successResponse(MinistryPlacementRecordResource::collection($records)->response($request)->getData(true));
+    }
+
+    public function programs(Request $request, MinistryPlacementAccess $access, MinistryPlacementProgramMatchingService $service): JsonResponse
+    {
+        abort_unless($access->canView($request->user()), 403);
+        $validated = $request->validate([
+            'q' => ['sometimes', 'nullable', 'string', 'max:150'],
+            'college_id' => ['sometimes', 'nullable', 'integer'],
+            'page' => ['sometimes', 'integer', 'min:1'],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+        ]);
+        $programs = $service->programs($validated);
+
+        return $this->successResponse(JsonResource::collection($programs)->response($request)->getData(true));
+    }
+
+    public function programMatching(Request $request, int $batch, MinistryPlacementAccess $access, MinistryPlacementProgramMatchingService $service): JsonResponse
+    {
+        abort_unless($access->canView($request->user()), 403);
+
+        return $this->successResponse($service->summary($batch));
+    }
+
+    public function matchProgram(MatchMinistryPlacementProgramRequest $request, int $record, MinistryPlacementProgramMatchingService $service): JsonResponse
+    {
+        $model = $service->match($record, (int) $request->validated('academic_program_id'), $request->user());
+
+        return $this->successResponse((new MinistryPlacementRecordResource($model))->resolve($request), 'تمت مطابقة البرنامج بنجاح.');
+    }
+
+    public function unmatchProgram(Request $request, int $record, MinistryPlacementAccess $access, MinistryPlacementProgramMatchingService $service): JsonResponse
+    {
+        abort_unless($access->canManage($request->user()), 403);
+        $model = $service->unmatch($record, $request->user());
+
+        return $this->successResponse((new MinistryPlacementRecordResource($model))->resolve($request), 'تمت إزالة مطابقة البرنامج.');
+    }
+
+    public function applyProgramGroup(ApplyMinistryPlacementProgramGroupRequest $request, int $batch, MinistryPlacementProgramMatchingService $service): JsonResponse
+    {
+        $validated = $request->validated();
+        $result = $service->applyGroup(
+            $batch,
+            $validated['preference_key'],
+            (int) $validated['academic_program_id'],
+            (int) $validated['expected_eligible_count'],
+            $request->user(),
+        );
+
+        return $this->successResponse($result, 'تم تطبيق مطابقة المجموعة بنجاح.');
     }
 }
