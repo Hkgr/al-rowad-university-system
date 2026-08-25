@@ -95,6 +95,31 @@ export function preparationIds(levels, draftIds) {
   return uniqueProgramCourseIds([...(existing ?? []), ...(draftIds ?? [])])
 }
 
+export function actualTermPreparationRows(levels, draftIds) {
+  const draftSet = new Set(uniqueProgramCourseIds(draftIds))
+  const rowsById = new Map()
+
+  flattenCatalogCourses(levels).forEach(row => {
+    const id = Number(row.program_course_id)
+    if (!Number.isFinite(id) || id < 1 || (!row.offering && !draftSet.has(id))) return
+
+    const current = rowsById.get(id)
+    if (!current || (!current.offering && row.offering)) rowsById.set(id, row)
+  })
+
+  const stateRank = row => {
+    if (row.offering?.status === 'open') return 0
+    if (row.offering) return 1
+    return 2
+  }
+
+  return [...rowsById.values()].sort((left, right) => (
+    stateRank(left) - stateRank(right)
+    || String(left.course?.course_code ?? '').localeCompare(String(right.course?.course_code ?? ''), 'ar')
+    || Number(left.program_course_id) - Number(right.program_course_id)
+  ))
+}
+
 export function applyAdvisoryPlan(currentIds, levels, selectedSemesterId) {
   const rows = flattenCatalogCourses(levels)
   if (rows.length > 0 && !hasAdvisorySemesterMetadata(rows)) {

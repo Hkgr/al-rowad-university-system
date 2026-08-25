@@ -169,6 +169,93 @@ export async function loadCourseTableCatalog({ request, canViewHr = false } = {}
   return snapshot
 }
 
+export async function loadCourseOfferingsCatalog({ request } = {}) {
+  const definitions = [
+    ['academicYears', '/v1/academic-years', 'academic_year_id'],
+    ['semesters', '/v1/semesters', 'semester_id'],
+    ['colleges', '/v1/colleges', 'college_id'],
+    ['departments', '/v1/departments', 'department_id'],
+    ['programs', '/v1/academic-programs', 'academic_program_id'],
+    ['levels', '/v1/academic-levels', 'academic_level_id'],
+    ['programCourses', '/v1/program-courses', 'program_course_id'],
+    ['offerings', '/v1/course-offerings', 'course_offering_id'],
+  ]
+  const collections = await Promise.all(definitions.map(([, path, primaryKey]) => (
+    fetchAllPaginated(path, { request, primaryKey })
+  )))
+
+  return Object.fromEntries(definitions.map(([name], index) => [name, collections[index]]))
+}
+
+function programCourseKey(programId, courseId) {
+  return `${String(programId)}:${String(courseId)}`
+}
+
+export function actualCourseOfferingRows(offerings, programCourses, levels, semesters) {
+  const levelNames = new Map((levels ?? []).map(level => [
+    String(level.academic_level_id),
+    level.level_name,
+  ]))
+  const semesterNames = new Map((semesters ?? []).map(semester => [
+    String(semester.semester_id),
+    semester.semester_name,
+  ]))
+  const advisoryByCourse = new Map()
+
+  ;[...(programCourses ?? [])]
+    .filter(row => row.is_active === true || row.is_active === 1 || row.is_active === '1')
+    .sort((left, right) => Number(left.program_course_id) - Number(right.program_course_id))
+    .forEach(row => {
+      const key = programCourseKey(row.academic_program_id, row.course_id)
+      if (!advisoryByCourse.has(key)) advisoryByCourse.set(key, row)
+    })
+
+  return (offerings ?? []).map(offering => {
+    const programCourse = advisoryByCourse.get(programCourseKey(
+      offering.academic_program_id,
+      offering.course_id,
+    )) ?? null
+    const academicLevelId = programCourse?.academic_level_id ?? null
+    const recommendedSemesterId = programCourse?.recommended_semester_id ?? null
+
+    return {
+      offering,
+      advisory: {
+        program_course_id: programCourse?.program_course_id ?? null,
+        academic_level_id: academicLevelId,
+        academic_level_name: academicLevelId == null
+          ? null
+          : (levelNames.get(String(academicLevelId)) ?? null),
+        recommended_semester_id: recommendedSemesterId,
+        recommended_semester_name: recommendedSemesterId == null
+          ? null
+          : (semesterNames.get(String(recommendedSemesterId)) ?? null),
+        requirement_classification: programCourse?.requirement_classification ?? null,
+      },
+    }
+  })
+}
+
+export function filterActualCourseOfferings(rows, {
+  courseId = '',
+  academicYearId,
+  semesterId,
+  collegeId = '',
+  departmentId = '',
+  academicProgramId = '',
+} = {}) {
+  return (rows ?? []).filter(row => {
+    const offering = row.offering
+    if (courseId !== '' && String(offering.course_id) !== String(courseId)) return false
+    if (academicYearId !== '' && String(offering.academic_year_id) !== String(academicYearId)) return false
+    if (semesterId !== '' && String(offering.semester_id) !== String(semesterId)) return false
+    if (academicProgramId !== '' && String(offering.academic_program_id) !== String(academicProgramId)) return false
+    if (departmentId !== '' && String(offering.department_id ?? offering.academic_program?.department_id ?? '') !== String(departmentId)) return false
+    if (collegeId !== '' && String(offering.college?.college_id ?? offering.academic_program?.department?.college_id ?? '') !== String(collegeId)) return false
+    return true
+  })
+}
+
 export function findActualCourseOffering(offerings, {
   courseId,
   academicProgramId,

@@ -72,11 +72,11 @@ class DeanOfferingPlannerUxContractTest extends TestCase
         $page = self::frontend('src/features/dean-dashboard/pages/DeanRegistrationOfferings.jsx');
         $util = self::frontend('src/features/dean-dashboard/utils/deanOfferingPlanner.js');
 
-        self::assertStringContainsString('rowsByAcademicLevel(levels, draftIds)', $page);
-        self::assertStringContainsString('لم تتم إضافة مواد إلى تجهيز هذه السنة بعد.', $page);
+        self::assertStringContainsString('actualTermPreparationRows(levels, draftIds)', $page);
+        self::assertStringContainsString('المواد المحددة للفصل الأكاديمي', $page);
+        self::assertStringContainsString('(level.courses ?? []).map(row => (', $page);
         self::assertStringContainsString('مادة في الخطة', $page);
-        self::assertStringContainsString('level.curriculumCount', $page);
-        self::assertStringContainsString('plannerRowsForLevel', $util);
+        self::assertStringContainsString('actualTermPreparationRows', $util);
         self::assertStringNotContainsString('الخطة فارغة', $page);
     }
 

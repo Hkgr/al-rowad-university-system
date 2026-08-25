@@ -23,6 +23,7 @@ import {
   advisoryLevelLabel,
   advisorySemesterDiffers,
   advisorySemesterLabel,
+  actualTermPreparationRows,
   applyAdvisoryPlan,
   applyBulkPrepareOutcome,
   canSubmitCurrentWorkflowRequest,
@@ -32,7 +33,6 @@ import {
   openOfferingIds,
   pagedResourceRows,
   recommendedSemesterMatches,
-  rowsByAcademicLevel,
   savePreview,
   uniqueProgramCourseIds,
 } from '../utils/deanOfferingPlanner'
@@ -87,13 +87,13 @@ function registrationState(offering) {
     if (offering.instructor_coverage && !instructorCoverageComplete(offering.instructor_coverage)) {
       return {
         key: 'pending_coverage',
-        label: 'بانتظار التكليف',
+        label: 'بانتظار اكتمال التكليف',
         className: 'bg-amber-500/10 text-amber-800 border-amber-500/20',
       }
     }
     return {
       key: 'closed',
-      label: 'مغلق',
+      label: 'محفوظ — مغلق',
       className: 'bg-slate-500/10 text-slate-600 border-slate-500/25',
     }
   }
@@ -170,6 +170,11 @@ function CourseCard({
 
       <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-2.5 text-[11.5px] text-text-light">
         <span><b className="text-text-dark">{displayValue(course?.credit_hours)}</b> ساعة</span>
+      </div>
+
+      <div className="mt-2 space-y-0.5 text-[11.5px] text-text-light">
+        <p>{advisoryLevelLabel(row)}</p>
+        <p>{advisorySemesterLabel(row, selectedSemesterId)}</p>
       </div>
 
       {offering && coverage && (
@@ -261,6 +266,31 @@ function CourseCard({
           </>
         )}
       </div>
+    </article>
+  )
+}
+
+function AdvisoryCourseCard({ row, selectedSemesterId, selected }) {
+  const course = row.course
+
+  return (
+    <article className="border border-primary/10 rounded-[12px] bg-primary/[0.02] px-3.5 py-3" dir="rtl">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="font-mono text-[12.5px] font-black text-primary-dark">{displayValue(course?.course_code)}</p>
+          <p className="text-[13px] font-bold text-text-dark mt-0.5 break-words">{displayValue(course?.course_name)}</p>
+        </div>
+        {row.offering ? (
+          <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-500/10 text-green-700">محفوظ</span>
+        ) : selected ? (
+          <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-800">محدد للتجهيز</span>
+        ) : null}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <CourseRequirementBadges classification={row.requirement_classification} compact />
+      </div>
+      <p className="mt-2 text-[11.5px] text-text-light">{advisoryLevelLabel(row)}</p>
+      <p className="mt-0.5 text-[11.5px] text-text-light">{advisorySemesterLabel(row, selectedSemesterId)}</p>
     </article>
   )
 }
@@ -367,7 +397,7 @@ function AddCourseDialog({
                       disabled={blocked}
                       onClick={() => onAdd(row)}
                     >
-                      {blocked ? (persisted ? 'محفوظة' : 'مضافة') : 'إضافة'}
+                      {blocked ? (persisted ? 'محفوظة' : 'مضافة') : 'إضافة إلى التجهيز'}
                     </button>
                   </div>
                 )
@@ -557,8 +587,8 @@ export default function DeanRegistrationOfferings() {
     [options.academic_programs, programId, programs],
   )
 
-  const levelCards = useMemo(
-    () => rowsByAcademicLevel(levels, draftIds),
+  const actualTermRows = useMemo(
+    () => actualTermPreparationRows(levels, draftIds),
     [draftIds, levels],
   )
 
@@ -602,6 +632,8 @@ export default function DeanRegistrationOfferings() {
 
   function addCourseToDraft(row) {
     setDraftIds(current => uniqueProgramCourseIds([...(current ?? []), row.program_course_id]))
+    const code = displayValue(row.course?.course_code)
+    showNotice(`تمت إضافة ${code} إلى التجهيز. اضغط «حفظ التجهيز» لإنشاء الطرح الفعلي.`)
     setAddLevel(null)
   }
 
@@ -782,10 +814,10 @@ export default function DeanRegistrationOfferings() {
       })
       const result = response?.data ?? {}
       const outcome = applyBulkPrepareOutcome(result)
+      await reloadCatalog()
       setDraftIds(outcome.draftIds)
       setPrepareErrors(outcome.prepareErrors)
       showNotice(outcome.notice, outcome.tone)
-      await reloadCatalog()
     } catch (requestError) {
       setError(handleRequestError(requestError, 'تعذّر تجهيز طروحات المواد.'))
     } finally {
@@ -950,51 +982,21 @@ export default function DeanRegistrationOfferings() {
             </div>
           </section>
 
-          {levels.length === 0 ? (
-            <p className="text-[13.5px] text-text-light bg-white border border-primary/12 rounded-[14px] px-4 py-8 text-center">
-              لا توجد مواد في خطة هذا البرنامج.
+          <section className="bg-white border border-primary/12 rounded-[16px] p-4 mb-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
+            <h3 className="text-[15px] font-black text-text-dark">المواد المحددة للفصل الأكاديمي</h3>
+            <p className="text-[12.5px] text-text-light mt-1 mb-4">
+              هذه هي المواد المحفوظة أو المحددة للتجهيز في السنة والفصل الأكاديميين المختارين. المستوى والفصل الإرشاديان للمعلومة فقط.
             </p>
-          ) : (
-            <div className="space-y-4">
-              {levelCards.map(level => (
-                <section
-                  key={level.academic_level_id ?? level.level_name}
-                  className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]"
-                >
-                  <div className="flex items-center justify-between px-4 py-3 bg-primary/[0.05] border-b border-primary/10">
-                    <h3 className="text-[14px] font-extrabold text-text-dark">
-                      {level.level_name}
-                    </h3>
-                    <span className="text-[11px] font-bold text-text-light bg-white px-2 py-0.5 rounded-full">
-                      {level.rows.length} مواد
-                      {level.curriculumCount > 0 ? ` · ${level.curriculumCount} مادة في الخطة` : ''}
-                    </span>
-                  </div>
-                  <div className="p-4 space-y-3">
-                    {level.rows.length === 0 ? (
-                      <p className="text-[13px] text-text-light">
-                        لم تتم إضافة مواد إلى تجهيز هذه السنة بعد.
-                      </p>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                        {level.rows.map(row => courseCard(row))}
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1.5 px-3 py-2 border border-primary/20 rounded-[10px] text-[12.5px] font-bold text-primary-dark hover:bg-primary/5"
-                      onClick={() => setAddLevel(level)}
-                    >
-                      <FaPlus className="text-[10px]" aria-hidden="true" />
-                      + إضافة مادة
-                    </button>
-                  </div>
-                </section>
-              ))}
-            </div>
-          )}
+            {actualTermRows.length === 0 ? (
+              <p className="text-[13px] text-text-light py-5 text-center">لم تُحدد أي مادة للتجهيز في هذا الفصل بعد.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                {actualTermRows.map(row => courseCard(row))}
+              </div>
+            )}
+          </section>
 
-          <section className="bg-white border border-primary/12 rounded-[16px] p-4 mt-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
+          <section className="bg-white border border-primary/12 rounded-[16px] p-4 mb-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="text-[13px] text-text-dark space-y-1">
                 <p><b>{preview.total}</b> مادة في التجهيز</p>
@@ -1011,6 +1013,59 @@ export default function DeanRegistrationOfferings() {
               </button>
             </div>
           </section>
+
+          <section className="mb-4">
+            <h3 className="text-[15px] font-black text-text-dark">الخطة الدراسية الإرشادية</h3>
+            <p className="text-[12.5px] text-text-light mt-1">
+              المستويات والفصول هنا تنظيم للخطة الدراسية فقط، ولا تحدد إمكانية طرح المادة في الفصل الأكاديمي المختار.
+            </p>
+          </section>
+
+          {levels.length === 0 ? (
+            <p className="text-[13.5px] text-text-light bg-white border border-primary/12 rounded-[14px] px-4 py-8 text-center">
+              لا توجد مواد في خطة هذا البرنامج.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {levels.map(level => (
+                <section
+                  key={level.academic_level_id ?? level.level_name}
+                  className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]"
+                >
+                  <div className="flex items-center justify-between px-4 py-3 bg-primary/[0.05] border-b border-primary/10">
+                    <h3 className="text-[14px] font-extrabold text-text-dark">{level.level_name}</h3>
+                    <span className="text-[11px] font-bold text-text-light bg-white px-2 py-0.5 rounded-full">
+                      {(level.courses ?? []).length} مادة في الخطة
+                    </span>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    {(level.courses ?? []).length === 0 ? (
+                      <p className="text-[13px] text-text-light">لا توجد مواد في هذا المستوى الإرشادي.</p>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                        {(level.courses ?? []).map(row => (
+                          <AdvisoryCourseCard
+                            key={row.program_course_id}
+                            row={row}
+                            selectedSemesterId={semesterId}
+                            selected={Boolean(row.offering) || draftIds.some(id => Number(id) === Number(row.program_course_id))}
+                          />
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 px-3 py-2 border border-primary/20 rounded-[10px] text-[12.5px] font-bold text-primary-dark hover:bg-primary/5"
+                      onClick={() => setAddLevel(level)}
+                    >
+                      <FaPlus className="text-[10px]" aria-hidden="true" />
+                      + إضافة مادة
+                    </button>
+                  </div>
+                </section>
+              ))}
+            </div>
+          )}
         </>
       )}
 

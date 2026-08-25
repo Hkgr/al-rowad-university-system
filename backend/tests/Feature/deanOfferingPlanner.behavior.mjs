@@ -7,6 +7,7 @@ import {
   applyBulkPrepareOutcome,
   advisoryLevelLabel,
   advisorySemesterDiffers,
+  actualTermPreparationRows,
   canSubmitCurrentWorkflowRequest,
   catalogCoursesForAdvisoryLevel,
   clearUnsavedDraft,
@@ -187,6 +188,46 @@ test('OFFER-ADV-13 null advisory metadata stays searchable with explicit labels'
   assert.equal(advisoryLevelLabel(row), 'المستوى الإرشادي غير محدد')
   assert.equal(advisorySemesterDiffers(row, 2), false)
   assert.ok(uniqueProgramCourseIds([row.program_course_id]).includes(999))
+})
+
+test('OPSRC-DEAN-01/02 cross-level draft appears in actual term and stays in its advisory group', () => {
+  const levels = businessAdministrationCurriculum()
+  levels[2].courses.push(course(321, 3, 1, 'FMF321', 'محاسبة متقدمة'))
+  const actualRows = actualTermPreparationRows(levels, [321])
+  const advisoryRows = rowsByAcademicLevel(levels, [321])
+
+  assert.deepEqual(actualRows.map(row => row.program_course_id), [321])
+  assert.equal(actualRows[0].academic_level_id, 3)
+  assert.equal(advisoryRows[2].rows.some(row => row.program_course_id === 321), true)
+  assert.equal(advisoryRows[3].rows.some(row => row.program_course_id === 321), false)
+})
+
+test('OPSRC-DEAN-05 actual-term rows combine persisted offerings and drafts without duplicates', () => {
+  const levels = businessAdministrationCurriculum()
+  levels[0].courses[0].offering = { course_offering_id: 1, status: 'closed' }
+  levels[1].courses[0].offering = { course_offering_id: 2, status: 'open' }
+  const actualRows = actualTermPreparationRows(levels, [101, 302])
+
+  assert.deepEqual(actualRows.map(row => row.program_course_id), [201, 101, 302])
+  assert.equal(actualRows.filter(row => row.program_course_id === 101).length, 1)
+})
+
+test('OPSRC-DEAN-06/08/09 removal reload and prepare failures preserve truthful visibility', () => {
+  const levels = businessAdministrationCurriculum()
+  assert.deepEqual(actualTermPreparationRows(levels, [202]).map(row => row.program_course_id), [202])
+  assert.deepEqual(actualTermPreparationRows(levels, []).map(row => row.program_course_id), [])
+
+  levels[1].courses[1].offering = { course_offering_id: 22, status: 'closed' }
+  assert.deepEqual(actualTermPreparationRows(levels, []).map(row => row.program_course_id), [202])
+
+  const outcome = applyBulkPrepareOutcome({
+    created_count: 0,
+    existing_count: 0,
+    failed_count: 1,
+    items: [{ program_course_id: 301, result: 'failed', error_code: 'conflict' }],
+  })
+  assert.deepEqual(actualTermPreparationRows(levels, outcome.draftIds).map(row => row.program_course_id), [202, 301])
+  assert.ok(outcome.prepareErrors[301])
 })
 
 test('UX-PLAN-07 clear removes unsaved only', () => {
