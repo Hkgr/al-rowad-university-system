@@ -13,6 +13,7 @@ use App\Exceptions\GraduationEligibilityException;
 use App\Exceptions\OfferingInstructorCoverageException;
 use App\Exceptions\RegistrationException;
 use App\Exceptions\RegistrationRequestException;
+use App\Exceptions\MinistryPlacementException;
 use App\Exceptions\SupplementaryExamOfferingException;
 use App\Exceptions\SupplementaryExamPeriodGovernanceException;
 use App\Exceptions\TeachingAssignmentException;
@@ -58,6 +59,19 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->render(function (AcademicCalendarException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (MinistryPlacementException $exception, Request $request) {
             if (! $request->is('api/*')) {
                 return null;
             }

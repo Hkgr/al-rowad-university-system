@@ -110,6 +110,7 @@ use App\Http\Controllers\Api\VicePresidencyCourseOfferingClosureController;
 use App\Http\Controllers\Api\VicePresidencyCourseOfferingExceptionController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\UserActivityLogController;
+use App\Http\Controllers\Api\MinistryPlacementController;
 use App\Http\Controllers\Api\UserRoleController;
 use App\Http\Controllers\Api\StudentSupplementaryExamController;
 use App\Http\Controllers\Api\SupplementaryExamEligibilityController;
@@ -225,6 +226,12 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
 
     Route::get('student-affairs/dashboard-stats', [StudentAffairsDashboardController::class, 'dashboardStats'])
         ->middleware(\App\Http\Middleware\RequirePermission::class.':students.view');
+
+    Route::post('ministry-placements/preview', [MinistryPlacementController::class, 'preview']);
+    Route::post('ministry-placements/import', [MinistryPlacementController::class, 'import']);
+    Route::get('ministry-placements', [MinistryPlacementController::class, 'index']);
+    Route::get('ministry-placements/{batch}', [MinistryPlacementController::class, 'show'])->whereNumber('batch');
+    Route::get('ministry-placements/{batch}/records', [MinistryPlacementController::class, 'records'])->whereNumber('batch');
 
     /*
     |--------------------------------------------------------------------------
