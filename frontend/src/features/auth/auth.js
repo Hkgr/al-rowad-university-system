@@ -42,6 +42,8 @@ export const PERMISSIONS = Object.freeze({
   supplementaryExamsRegistrationsView: 'supplementary_exams.registrations.view',
   supplementaryExamsGradesReview: 'supplementary_exams.grades.review',
   academicCalendarManage: 'academic_calendar.manage',
+  admissionsView: 'admissions.view',
+  admissionsManage: 'admissions.manage',
 })
 
 export const ACCESS = Object.freeze({
@@ -69,13 +71,17 @@ export function hasPermission(permission, user = getIdentity()) {
 export function hasAssignedPermission(permission, user = getIdentity()) {
   return user?.permissions?.includes(permission) ?? false
 }
+export function hasActualUniversityScope(user = getIdentity()) {
+  return user?.access_scopes?.some(scope => scope?.type === 'university') ?? false
+}
 export function can(permission, user = getIdentity()) { return hasPermission(permission, user) }
 export function canAny(permissions, user = getIdentity()) { return permissions.some(permission => can(permission, user)) }
 export function canAll(permissions, user = getIdentity()) { return permissions.every(permission => can(permission, user)) }
-export function canAccess({ permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], studentIdentity = false, employeeIdentity = false } = {}, user = getIdentity()) {
+export function canAccess({ permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], actualUniversityScope = false, studentIdentity = false, employeeIdentity = false } = {}, user = getIdentity()) {
   if (!user) return false
   if (studentIdentity && !user.student_id) return false
   if (employeeIdentity && !user.employee_id) return false
+  if (actualUniversityScope && !hasActualUniversityScope(user)) return false
   const hasEveryRequiredPermission = allPermissions.every(permission => hasPermission(permission, user))
   const hasEveryRequiredRole = allRoles.every(role => hasRole(role, user))
   const hasEveryAssignedPermission = assignedPermissions.every(permission => hasAssignedPermission(permission, user))

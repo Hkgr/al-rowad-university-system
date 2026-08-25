@@ -18,6 +18,7 @@ import StudentProfilePage   from '../features/student-affairs/pages/StudentProfi
 import ArchivedStudentsPage from '../features/student-affairs/pages/ArchivedStudentsPage'
 import GraduatesPage       from '../features/student-affairs/pages/GraduatesPage'
 import SupplementaryExamRegistrations from '../features/student-affairs/pages/SupplementaryExamRegistrations'
+import MinistryPlacementsPage from '../features/student-affairs/pages/MinistryPlacementsPage'
 
 // ── بوابة الطالب (Student Dashboard) ────────────────────────────────────────
 import studentNav        from '../features/student-dashboard/nav'
@@ -94,7 +95,7 @@ import ExceptionalOpeningQueue from '../features/vice-presidency/pages/Exception
 import ExceptionalOpeningDetail from '../features/vice-presidency/pages/ExceptionalOpeningDetail'
 import SupplementaryExamPeriodsPage from '../features/vice-presidency/pages/SupplementaryExamPeriods'
 
-function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], studentIdentity = false, employeeIdentity = false }) {
+function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], actualUniversityScope = false, studentIdentity = false, employeeIdentity = false }) {
   const token = localStorage.getItem('token')
   const [identity, setIdentity] = useState(getIdentity())
   const [checking, setChecking] = useState(Boolean(token))
@@ -117,7 +118,7 @@ function ProtectedRoute({ children, permissions = [], allPermissions = [], roles
   if (!token) return <Navigate to="/login" replace />
   if (checking) return null
   if (!identity) return <Navigate to="/login" replace />
-  return canAccess({ permissions, allPermissions, roles, allRoles, assignedPermissions, studentIdentity, employeeIdentity }, identity) ? children : <Navigate to="/forbidden" replace />
+  return canAccess({ permissions, allPermissions, roles, allRoles, assignedPermissions, actualUniversityScope, studentIdentity, employeeIdentity }, identity) ? children : <Navigate to="/forbidden" replace />
 }
 
 const protect = (element, access) => <ProtectedRoute {...access}>{element}</ProtectedRoute>
@@ -147,6 +148,7 @@ export default function App() {
           <Route path="/student-affairs/students/:id"      element={<StudentProfilePage />}    />
           <Route path="/student-affairs/students/:id/edit" element={protect(<EditStudentPage />, { permissions: ['students.manage'] })} />
           <Route path="/student-affairs/supplementary-exams" element={protect(<SupplementaryExamRegistrations />, { allRoles: ['registration_officer'], assignedPermissions: ['supplementary_exams.registrations.view'] })} />
+          <Route path="/student-affairs/ministry-placements" element={protect(<MinistryPlacementsPage />, { assignedPermissions: [PERMISSIONS.admissionsView], actualUniversityScope: true })} />
           <Route path="/student-affairs/approved-registration-requests" element={protect(<ApprovedRegistrationRequestsPage />, { permissions: ['registration.view'] })} />
           <Route path="/student-affairs/calendar" element={<AcademicCalendarPage />} />
         </Route>
