@@ -5,9 +5,11 @@ import {
   BULK_PREPARE_PARTIAL_KEEP_DRAFT,
   applyAdvisoryPlan,
   applyBulkPrepareOutcome,
+  advisoryLevelLabel,
+  advisorySemesterDiffers,
   canSubmitCurrentWorkflowRequest,
+  catalogCoursesForAdvisoryLevel,
   clearUnsavedDraft,
-  coursesForAcademicLevel,
   plannerRowsForLevel,
   rowsByAcademicLevel,
   savePreview,
@@ -137,11 +139,12 @@ test('UX-PLAN-05 duplicate click does not duplicate rows', () => {
   assert.equal(second.alreadyPresent, 4)
 })
 
-test('UX-PLAN-06 manual off-semester course remains selectable', () => {
+test('OFFER-ADV-01 global manual search includes courses from every advisory level', () => {
   const levels = businessAdministrationCurriculum()
-  const year2 = coursesForAcademicLevel(levels, 2)
-  const finance = year2.find(row => row.course.course_code === 'FMF204')
+  const allLevels = catalogCoursesForAdvisoryLevel(levels)
+  const finance = allLevels.find(row => row.course.course_code === 'FMF204')
   assert.ok(finance)
+  assert.equal(allLevels.length, 8)
   assert.equal(finance.advisory_plan.recommended_semester_id, 2)
   const afterAdvisory = applyAdvisoryPlan([], levels, 1)
   assert.equal(afterAdvisory.draftIds.includes(202), false)
@@ -149,6 +152,41 @@ test('UX-PLAN-06 manual off-semester course remains selectable', () => {
   assert.ok(withManual.includes(202))
   const visible = plannerRowsForLevel(levels[1], withManual).map(row => row.program_course_id)
   assert.deepEqual(visible, [201, 202])
+})
+
+test('OFFER-ADV-01 advisory level filter is optional over the complete universe', () => {
+  const levels = businessAdministrationCurriculum()
+  const year4 = catalogCoursesForAdvisoryLevel(levels, 4)
+  assert.deepEqual(year4.map(row => row.program_course_id), [401, 402])
+  const allLevels = catalogCoursesForAdvisoryLevel(levels, '')
+  assert.ok(allLevels.some(row => row.course.course_code === 'FMF204'))
+  assert.equal(allLevels.length, 8)
+})
+
+test('OFFER-ADV-13 null advisory metadata stays searchable with explicit labels', () => {
+  const levels = businessAdministrationCurriculum()
+  levels.push({
+    academic_level_id: null,
+    level_name: 'بدون مستوى دراسي',
+    courses: [{
+      program_course_id: 999,
+      academic_level_id: null,
+      course: { course_code: 'FMF321', course_name: 'محاسبة متقدمة', credit_hours: 3 },
+      advisory_plan: {
+        academic_level_id: null,
+        academic_level_name: null,
+        recommended_semester_id: null,
+        recommended_semester_name: null,
+      },
+      offering: null,
+    }],
+  })
+  const candidates = catalogCoursesForAdvisoryLevel(levels)
+  const row = candidates.find(item => item.course.course_code === 'FMF321')
+  assert.ok(row)
+  assert.equal(advisoryLevelLabel(row), 'المستوى الإرشادي غير محدد')
+  assert.equal(advisorySemesterDiffers(row, 2), false)
+  assert.ok(uniqueProgramCourseIds([row.program_course_id]).includes(999))
 })
 
 test('UX-PLAN-07 clear removes unsaved only', () => {

@@ -20,11 +20,13 @@ import {
   CLEAR_DRAFT_WARNING,
   CLOSURE_REQUEST_SUBMITTED,
   CLOSURE_REQUEST_WARNING,
+  advisoryLevelLabel,
+  advisorySemesterDiffers,
   advisorySemesterLabel,
   applyAdvisoryPlan,
   applyBulkPrepareOutcome,
   canSubmitCurrentWorkflowRequest,
-  coursesForAcademicLevel,
+  catalogCoursesForAdvisoryLevel,
   currentWorkflowRequest,
   matchesCourseSearch,
   openOfferingIds,
@@ -265,14 +267,16 @@ function CourseCard({
 
 function AddCourseDialog({
   level,
-  courses,
+  levels,
   draftIds,
   selectedSemesterId,
   onAdd,
   onClose,
 }) {
   const [query, setQuery] = useState('')
+  const [academicLevelId, setAcademicLevelId] = useState(level?.academic_level_id ?? '')
   const draftSet = new Set((draftIds ?? []).map(Number))
+  const courses = catalogCoursesForAdvisoryLevel(levels, academicLevelId)
   const visible = (courses ?? []).filter(row => matchesCourseSearch(row, query))
 
   return (
@@ -289,7 +293,7 @@ function AddCourseDialog({
       <div className="w-full sm:max-w-[560px] max-h-[96vh] overflow-y-auto bg-white rounded-t-[18px] sm:rounded-[18px] shadow-2xl">
         <div className="flex items-center justify-between border-b border-primary/10 px-5 py-4 sticky top-0 bg-white z-10">
           <h3 id="dean-add-course-title" className="text-[16px] font-black text-text-dark">
-            إضافة مادة — {level?.level_name}
+            إضافة مادة إلى هذا الفصل
           </h3>
           <button
             type="button"
@@ -303,6 +307,21 @@ function AddCourseDialog({
         </div>
 
         <div className="px-5 py-4 space-y-3">
+          <label className="block text-[12px] font-bold text-text-dark">
+            المستوى الإرشادي
+            <select
+              className="mt-1.5 w-full py-[11px] px-3 border-[1.5px] border-primary/20 rounded-[11px] bg-white text-[13px] text-text-dark outline-none focus:border-primary"
+              value={academicLevelId}
+              onChange={event => setAcademicLevelId(event.target.value)}
+            >
+              <option value="">كل المستويات</option>
+              {(levels ?? []).filter(item => item.academic_level_id != null).map(item => (
+                <option key={item.academic_level_id ?? item.level_name} value={item.academic_level_id ?? ''}>
+                  {item.level_name}
+                </option>
+              ))}
+            </select>
+          </label>
           <input
             className="w-full py-[13px] px-4 border-[1.5px] border-primary/20 rounded-[13px] bg-white text-[14px] font-medium text-text-dark outline-none focus:border-primary focus:shadow-[0_0_0_4px_rgba(86,153,51,0.1)]"
             type="search"
@@ -312,7 +331,7 @@ function AddCourseDialog({
           />
 
           {visible.length === 0 ? (
-            <p className="text-[13px] text-text-light py-6 text-center">لا توجد مواد مطابقة في هذه السنة.</p>
+            <p className="text-[13px] text-text-light py-6 text-center">لا توجد مواد مطابقة للبحث والفلتر الإرشادي المحددين.</p>
           ) : (
             <div className="space-y-2">
               {visible.map(row => {
@@ -333,9 +352,14 @@ function AddCourseDialog({
                       </p>
                       <p className="text-[11.5px] text-text-light mt-1">
                         {displayValue(row.course?.credit_hours)} ساعات
-                        {' · '}
-                        {advisorySemesterLabel(row, selectedSemesterId)}
                       </p>
+                      <p className="text-[11.5px] text-text-light mt-1">{advisoryLevelLabel(row)}</p>
+                      <p className="text-[11.5px] text-text-light mt-0.5">{advisorySemesterLabel(row, selectedSemesterId)}</p>
+                      {advisorySemesterDiffers(row, selectedSemesterId) ? (
+                        <p className="text-[11.5px] leading-5 text-amber-800 mt-1.5">
+                          هذه المادة موصى بها في فصل إرشادي مختلف، لكن يمكن طرحها في الفصل الأكاديمي المحدد.
+                        </p>
+                      ) : null}
                     </div>
                     <button
                       type="button"
@@ -900,6 +924,15 @@ export default function DeanRegistrationOfferings() {
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
+                className="px-3 py-2 border border-primary/25 text-primary-dark rounded-[10px] text-[12.5px] font-bold hover:bg-primary/5 disabled:opacity-40"
+                disabled={!canManageLocal || Boolean(busyIds.bulk)}
+                onClick={() => setAddLevel({ academic_level_id: null, level_name: 'كل المستويات' })}
+              >
+                <FaPlus className="inline-block ms-1 text-[10px]" aria-hidden="true" />
+                إضافة مادة إلى هذا الفصل
+              </button>
+              <button
+                type="button"
                 className="px-3 py-2 bg-primary text-white rounded-[10px] text-[12.5px] font-bold hover:enabled:bg-primary-dark disabled:opacity-40"
                 disabled={!canManageLocal || Boolean(busyIds.bulk)}
                 onClick={applyAdvisoryPlanClick}
@@ -984,7 +1017,7 @@ export default function DeanRegistrationOfferings() {
       {addLevel && (
         <AddCourseDialog
           level={addLevel}
-          courses={coursesForAcademicLevel(levels, addLevel.academic_level_id)}
+          levels={levels}
           draftIds={draftIds}
           selectedSemesterId={semesterId}
           onAdd={addCourseToDraft}

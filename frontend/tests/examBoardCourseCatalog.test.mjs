@@ -5,6 +5,8 @@ import {
   buildCourseCollegeMap,
   fetchAllPaginated,
   filterCoursesByAffiliation,
+  findActualCourseOffering,
+  loadCourseTableCatalog,
   planDepartmentLinkSync,
 } from '../src/features/exam-board/lib/courseCatalog.js'
 
@@ -35,6 +37,128 @@ function paginatedRequest(rows, { failPage, mutatePage } = {}) {
 
   return { request, calls }
 }
+
+function catalogRequest(collections, { failPath, failPage } = {}) {
+  const calls = []
+  const request = async path => {
+    const url = new URL(path, 'https://catalog.test')
+    const endpoint = url.pathname
+    const page = Number(url.searchParams.get('page'))
+    const perPage = Number(url.searchParams.get('per_page'))
+    calls.push({ endpoint, page, perPage })
+    if (endpoint === failPath && page === failPage) throw new Error('page failed')
+
+    const rows = collections[endpoint]
+    assert.ok(Array.isArray(rows), `Unexpected catalog endpoint: ${endpoint}`)
+
+    return {
+      success: true,
+      data: {
+        data: rows.slice((page - 1) * perPage, page * perPage),
+        meta: {
+          current_page: page,
+          per_page: perPage,
+          total: rows.length,
+          last_page: Math.max(1, Math.ceil(rows.length / perPage)),
+        },
+      },
+    }
+  }
+
+  return { request, calls }
+}
+
+function courseTableCollections() {
+  const courses = Array.from({ length: 101 }, (_, index) => ({
+    course_id: index + 1,
+    course_code: index === 100 ? 'FMF321' : `COURSE-${index + 1}`,
+  }))
+  const programCourses = Array.from({ length: 183 }, (_, index) => ({
+    program_course_id: index + 1,
+    academic_program_id: 7,
+    course_id: index === 182 ? 101 : ((index % 100) + 1),
+    is_active: true,
+  }))
+  const offerings = Array.from({ length: 183 }, (_, index) => ({
+    course_offering_id: index + 1,
+    course_id: index === 182 ? 101 : ((index % 100) + 1),
+    academic_program_id: 7,
+    academic_year_id: 26,
+    semester_id: index === 182 ? 2 : 1,
+  }))
+
+  return {
+    '/v1/academic-years': [{ academic_year_id: 26 }],
+    '/v1/semesters': [{ semester_id: 1 }, { semester_id: 2 }],
+    '/v1/colleges': [{ college_id: 1 }],
+    '/v1/departments': [{ department_id: 3, college_id: 1 }],
+    '/v1/academic-programs': [{ academic_program_id: 7, department_id: 3 }],
+    '/v1/courses': courses,
+    '/v1/academic-levels': [{ academic_level_id: 4 }],
+    '/v1/program-courses': programCourses,
+    '/v1/course-offerings': offerings,
+  }
+}
+
+test('course table snapshot loads page-two curriculum membership and actual offering', async () => {
+  const api = catalogRequest(courseTableCollections())
+  const snapshot = await loadCourseTableCatalog({ request: api.request })
+  const course = snapshot.courses.find(row => row.course_code === 'FMF321')
+  const membership = snapshot.programCourses.find(row => row.course_id === course.course_id)
+  const offering = findActualCourseOffering(snapshot.offerings, {
+    courseId: course.course_id,
+    academicProgramId: membership.academic_program_id,
+    academicYearId: 26,
+    semesterId: 2,
+  })
+
+  assert.equal(snapshot.programCourses.length, 183)
+  assert.equal(snapshot.offerings.length, 183)
+  assert.equal(membership.program_course_id, 183)
+  assert.equal(offering.course_offering_id, 183)
+  assert.equal(findActualCourseOffering(snapshot.offerings, {
+    courseId: course.course_id,
+    academicProgramId: membership.academic_program_id,
+    academicYearId: 26,
+    semesterId: 1,
+  }), undefined)
+  assert.equal(api.calls.some(call => (
+    call.endpoint === '/v1/program-courses' && call.page === 2 && call.perPage === 100
+  )), true)
+  assert.equal(api.calls.some(call => (
+    call.endpoint === '/v1/course-offerings' && call.page === 2 && call.perPage === 100
+  )), true)
+})
+
+test('course table snapshot fails as a whole when a required second page fails', async () => {
+  const api = catalogRequest(courseTableCollections(), {
+    failPath: '/v1/program-courses',
+    failPage: 2,
+  })
+
+  await assert.rejects(
+    loadCourseTableCatalog({ request: api.request }),
+    error => error.code === 'catalog_page_failed'
+      && error.message.includes('program-courses (/v1/program-courses)'),
+  )
+})
+
+test('course table snapshot completely loads HR catalogs only when HR is visible', async () => {
+  const collections = courseTableCollections()
+  collections['/v1/faculty-members'] = Array.from({ length: 101 }, (_, index) => ({
+    faculty_member_id: index + 1,
+  }))
+  collections['/v1/employees'] = Array.from({ length: 101 }, (_, index) => ({
+    employee_id: index + 1,
+  }))
+  const api = catalogRequest(collections)
+  const snapshot = await loadCourseTableCatalog({ request: api.request, canViewHr: true })
+
+  assert.equal(snapshot.facultyMembers.length, 101)
+  assert.equal(snapshot.employees.length, 101)
+  assert.equal(api.calls.some(call => call.endpoint === '/v1/faculty-members' && call.page === 2), true)
+  assert.equal(api.calls.some(call => call.endpoint === '/v1/employees' && call.page === 2), true)
+})
 
 test('loads the complete production-sized catalog and fixes the page-two classification regression', async () => {
   const courses = Array.from({ length: 111 }, (_, index) => ({ course_id: index + 1 }))
@@ -238,4 +362,50 @@ test('courses page uses the complete loader, common API client, and truthful fai
   assert.equal(page.includes('/v1/program-courses'), false)
   assert.match(page, /is_primary: false/)
   assert.match(page, /JSON\.stringify\(\{ is_primary: true \}\)/)
+})
+
+test('course table page uses the bounded complete catalog and atomic error state', () => {
+  const page = readFileSync(
+    new URL('../src/features/exam-board/pages/CourseTablePage.jsx', import.meta.url),
+    'utf8',
+  )
+  const catalog = readFileSync(
+    new URL('../src/features/exam-board/lib/courseCatalog.js', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(page, /import \{ apiRequest \} from '\.\.\/\.\.\/\.\.\/services\/apiClient'/)
+  assert.match(page, /loadCourseTableCatalog\(\{ request: apiRequest, canViewHr \}\)/)
+  assert.match(page, /clearCatalog\(\)/)
+  assert.match(page, /catalogError/)
+  assert.match(page, /إعادة المحاولة/)
+  assert.equal(page.includes('rust.alrowaduni.edu.sy'), false)
+  assert.equal(page.includes('localStorage'), false)
+  assert.equal(page.includes('fetch('), false)
+  assert.equal(/per_page=(?:200|500)/.test(page), false)
+
+  for (const [path, key] of [
+    ['/v1/academic-years', 'academic_year_id'],
+    ['/v1/semesters', 'semester_id'],
+    ['/v1/colleges', 'college_id'],
+    ['/v1/departments', 'department_id'],
+    ['/v1/academic-programs', 'academic_program_id'],
+    ['/v1/courses', 'course_id'],
+    ['/v1/academic-levels', 'academic_level_id'],
+    ['/v1/program-courses', 'program_course_id'],
+    ['/v1/course-offerings', 'course_offering_id'],
+    ['/v1/faculty-members', 'faculty_member_id'],
+    ['/v1/employees', 'employee_id'],
+  ]) {
+    assert.match(catalog, new RegExp(`'${path}', '${key}'`))
+  }
+  assert.match(catalog, /Promise\.all\(definitions\.map/)
+  assert.match(catalog, /fetchAllPaginated\(path, \{ request, primaryKey \}\)/)
+  assert.match(catalog, /String\(offering\.academic_year_id\) === String\(academicYearId\)/)
+  assert.match(catalog, /String\(offering\.semester_id\) === String\(semesterId\)/)
+  assert.match(page, /<label[^>]*>الفصل الأكاديمي الفعلي<\/label>\s*<select[\s\S]*?value=\{semId\}/)
+  assert.doesNotMatch(page, /<label[^>]*>الفصل الإرشادي<\/label>\s*<select[\s\S]*?value=\{semId\}/)
+  assert.match(page, /key: 'recommended-semester', header: 'الفصل الإرشادي'.*recommendedSemesterName/)
+  assert.match(page, /اختر السنة الدراسية والفصل الأكاديمي الفعلي أولاً/)
+  assert.match(page, /عرض مقررات البرنامج وحالة طرحها في الفصل الأكاديمي المختار، مع إظهار المستوى والفصل الإرشاديين للمعلومة فقط/)
 })

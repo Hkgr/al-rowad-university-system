@@ -149,6 +149,9 @@ class AdvisorySemesterOfferingContractTest extends TestCase
         $dean = self::frontend('src/features/dean-dashboard/pages/DeanRegistrationOfferings.jsx');
         $dialog = self::extractJsFunction($dean, 'AddCourseDialog');
         self::assertStringContainsString('+ إضافة مادة', $dean);
+        self::assertStringContainsString('كل المستويات', $dialog);
+        self::assertStringContainsString('catalogCoursesForAdvisoryLevel(levels, academicLevelId)', $dialog);
+        self::assertStringNotContainsString('courses={coursesForAcademicLevel(', $dean);
         self::assertStringContainsString('const blocked = persisted || added', $dialog);
         self::assertDoesNotMatchRegularExpression('/disabled=\{[^}]*advisory/', $dialog);
         self::assertStringNotContainsString('disabled={blocked || recommended', $dialog);

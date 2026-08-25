@@ -137,6 +137,52 @@ export async function fetchAllPaginated(path, {
   return rows
 }
 
+export async function loadCourseTableCatalog({ request, canViewHr = false } = {}) {
+  const required = [
+    ['academicYears', '/v1/academic-years', 'academic_year_id'],
+    ['semesters', '/v1/semesters', 'semester_id'],
+    ['colleges', '/v1/colleges', 'college_id'],
+    ['departments', '/v1/departments', 'department_id'],
+    ['programs', '/v1/academic-programs', 'academic_program_id'],
+    ['courses', '/v1/courses', 'course_id'],
+    ['levels', '/v1/academic-levels', 'academic_level_id'],
+    ['programCourses', '/v1/program-courses', 'program_course_id'],
+    ['offerings', '/v1/course-offerings', 'course_offering_id'],
+  ]
+  const hr = canViewHr
+    ? [
+      ['facultyMembers', '/v1/faculty-members', 'faculty_member_id'],
+      ['employees', '/v1/employees', 'employee_id'],
+    ]
+    : []
+  const definitions = [...required, ...hr]
+  const collections = await Promise.all(definitions.map(([, path, primaryKey]) => (
+    fetchAllPaginated(path, { request, primaryKey })
+  )))
+
+  const snapshot = Object.fromEntries(definitions.map(([name], index) => [name, collections[index]]))
+  if (!canViewHr) {
+    snapshot.facultyMembers = []
+    snapshot.employees = []
+  }
+
+  return snapshot
+}
+
+export function findActualCourseOffering(offerings, {
+  courseId,
+  academicProgramId,
+  academicYearId,
+  semesterId,
+}) {
+  return (offerings ?? []).find(offering => (
+    String(offering.course_id) === String(courseId)
+    && String(offering.academic_program_id) === String(academicProgramId)
+    && String(offering.academic_year_id) === String(academicYearId)
+    && String(offering.semester_id) === String(semesterId)
+  ))
+}
+
 export function buildCourseCollegeMap(courses, departments, assignments) {
   const courseIds = new Set(courses.map(course => String(course.course_id)))
   const departmentColleges = new Map(departments.map(department => [

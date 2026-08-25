@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { FaSpinner, FaDownload, FaTable } from 'react-icons/fa'
 import DataTable from '../../../components/table/DataTable'
 import FilterBar from '../../../components/table/FilterBar'
@@ -6,17 +6,8 @@ import { exportRowsToPdf } from '../../../utils/pdfExport'
 import InstructorAssignment from '../components/InstructorAssignment'
 import { hasPermission, PERMISSIONS } from '../../auth/auth'
 import CourseRequirementBadges, { classificationPlainText } from '../../../components/academic/CourseRequirementBadges'
-
-const API = 'https://rust.alrowaduni.edu.sy/api/v1'
-
-function authHeaders() {
-  return { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }
-}
-
-async function get(url) {
-  const r = await fetch(url, { headers: authHeaders() })
-  return r.json()
-}
+import { apiRequest } from '../../../services/apiClient'
+import { findActualCourseOffering, loadCourseTableCatalog } from '../lib/courseCatalog'
 
 const TYPE_LABEL = { mandatory: 'إجباري', elective: 'اختياري' }
 
@@ -35,6 +26,7 @@ export default function CourseTablePage() {
   const [facultyMembers, setFacultyMembers] = useState([])
   const [employees, setEmployees]     = useState([])
   const [loading, setLoading]         = useState(true)
+  const [catalogError, setCatalogError] = useState('')
   const [pdfLoading, setPdfLoading]   = useState(false)
 
   const [yearId, setYearId]           = useState('')
@@ -48,33 +40,45 @@ export default function CourseTablePage() {
   const [typeFilter, setTypeFilter]   = useState('')
 
 
-  useEffect(() => {
-    Promise.all([
-      get(`${API}/academic-years?per_page=50`),
-      get(`${API}/semesters?per_page=20`),
-      get(`${API}/colleges?per_page=20`),
-      get(`${API}/departments?per_page=50`),
-      get(`${API}/academic-programs?per_page=50`),
-      get(`${API}/courses?per_page=200`),
-      get(`${API}/academic-levels?per_page=20`),
-      get(`${API}/program-courses?per_page=500`),
-      get(`${API}/course-offerings?per_page=500`),
-      canViewHr ? get(`${API}/faculty-members?per_page=100`) : Promise.resolve({ success: true, data: [] }),
-      canViewHr ? get(`${API}/employees?per_page=500`) : Promise.resolve({ success: true, data: [] }),
-    ]).then(([y, s, col, dep, prog, crs, lvl, pc, off, fac, emp]) => {
-      setYears(y.success ? (y.data?.data ?? []) : [])
-      setSemesters(s.success ? (s.data?.data ?? []) : [])
-      setColleges(col.success ? (col.data?.data ?? []) : [])
-      setDepartments(dep.success ? (dep.data?.data ?? []) : [])
-      setPrograms(prog.success ? (prog.data?.data ?? []) : [])
-      setCourses(crs.success ? (crs.data?.data ?? []) : [])
-      setLevels(lvl.success ? (lvl.data?.data ?? []) : [])
-      setProgramCourses(pc.success ? (pc.data?.data ?? []) : [])
-      setOfferings(off.success ? (off.data?.data ?? []) : [])
-      setFacultyMembers(fac.success ? (fac.data?.data ?? fac.data ?? []) : [])
-      setEmployees(emp.success ? (emp.data?.data ?? emp.data ?? []) : [])
-    }).finally(() => setLoading(false))
-  }, [canViewHr])
+  const clearCatalog = useCallback(() => {
+    setYears([])
+    setSemesters([])
+    setColleges([])
+    setDepartments([])
+    setPrograms([])
+    setCourses([])
+    setLevels([])
+    setProgramCourses([])
+    setOfferings([])
+    setFacultyMembers([])
+    setEmployees([])
+  }, [])
+
+  const loadAll = useCallback(async () => {
+    setLoading(true)
+    setCatalogError('')
+    try {
+      const snapshot = await loadCourseTableCatalog({ request: apiRequest, canViewHr })
+      setYears(snapshot.academicYears)
+      setSemesters(snapshot.semesters)
+      setColleges(snapshot.colleges)
+      setDepartments(snapshot.departments)
+      setPrograms(snapshot.programs)
+      setCourses(snapshot.courses)
+      setLevels(snapshot.levels)
+      setProgramCourses(snapshot.programCourses)
+      setOfferings(snapshot.offerings)
+      setFacultyMembers(snapshot.facultyMembers)
+      setEmployees(snapshot.employees)
+    } catch (error) {
+      clearCatalog()
+      setCatalogError(`تعذر تحميل بيانات جدول المواد كاملة. لن يتم عرض بيانات جزئية. ${error?.message || 'حاول مرة أخرى.'}`)
+    } finally {
+      setLoading(false)
+    }
+  }, [canViewHr, clearCatalog])
+
+  useEffect(() => { void loadAll() }, [loadAll])
 
   const courseMap = useMemo(() => Object.fromEntries(courses.map(c => [c.course_id, c])), [courses])
   const programMap = useMemo(() => Object.fromEntries(programs.map(p => [p.academic_program_id, p])), [programs])
@@ -123,29 +127,31 @@ export default function CourseTablePage() {
   }, [programId, departmentId, collegeId, programs, departmentsInCollege])
 
   function offeringFor(courseId, progId) {
-    return offerings.find(o =>
-      String(o.course_id) === String(courseId) &&
-      String(o.academic_program_id) === String(progId) &&
-      String(o.academic_year_id) === String(yearId) &&
-      String(o.semester_id) === String(semId)
-    )
+    return findActualCourseOffering(offerings, {
+      courseId,
+      academicProgramId: progId,
+      academicYearId: yearId,
+      semesterId: semId,
+    })
   }
 
   const rows = useMemo(() => {
     if (scopedProgramIds.length === 0 || !semId) return []
     const scopedSet = new Set(scopedProgramIds.map(String))
     return programCourses
-      .filter(pc => scopedSet.has(String(pc.academic_program_id)) && String(pc.recommended_semester_id) === String(semId))
+      .filter(pc => scopedSet.has(String(pc.academic_program_id)) && pc.is_active === true)
       .map(pc => {
         const course = courseMap[pc.course_id]
         const program = programMap[pc.academic_program_id]
         const level = activeLevels.find(l => l.academic_level_id === pc.academic_level_id)
+        const recommendedSemester = semesters.find(s => String(s.semester_id) === String(pc.recommended_semester_id))
         const offering = offeringFor(pc.course_id, pc.academic_program_id)
         return {
           key: `${pc.program_course_id}`,
           levelId: pc.academic_level_id,
-          levelName: level?.level_name ?? '—',
+          levelName: level?.level_name ?? 'المستوى الإرشادي غير محدد',
           levelOrder: level?.level_order ?? 0,
+          recommendedSemesterName: recommendedSemester?.semester_name ?? 'الفصل الإرشادي غير محدد',
           programName: program?.program_name ?? '—',
           courseCode: course?.course_code ?? '—',
           courseName: course?.course_name ?? '—',
@@ -157,7 +163,7 @@ export default function CourseTablePage() {
       })
       .sort((a, b) => a.levelOrder - b.levelOrder || a.programName.localeCompare(b.programName) || a.courseCode.localeCompare(b.courseCode))
       // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopedProgramIds, semId, programCourses, courseMap, programMap, activeLevels, offerings, yearId])
+  }, [scopedProgramIds, semId, programCourses, courseMap, programMap, activeLevels, semesters, offerings, yearId])
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -201,6 +207,7 @@ export default function CourseTablePage() {
         subtitle: `${scopeName || ''} — ${filteredRows.length} مادة`,
         columns: [
           { header: 'السنة الإرشادية', value: r => r.levelName },
+          { header: 'الفصل الإرشادي', value: r => r.recommendedSemesterName },
           { header: 'البرنامج / التخصص', value: r => r.programName },
           { header: 'رمز المادة', value: r => r.courseCode },
           { header: 'اسم المادة', value: r => r.courseName },
@@ -221,12 +228,27 @@ export default function CourseTablePage() {
     return <div className="flex justify-center py-16 text-primary"><FaSpinner className="animate-spin text-[28px]" /></div>
   }
 
+  if (catalogError) {
+    return (
+      <div className="bg-white border border-red-200 rounded-[16px] p-6 text-center" dir="rtl">
+        <p className="text-[13.5px] font-semibold text-red-700">{catalogError}</p>
+        <button
+          type="button"
+          className="mt-4 px-4 py-2 bg-primary text-white rounded-[10px] text-[13px] font-bold hover:bg-primary-dark"
+          onClick={() => { void loadAll() }}
+        >
+          إعادة المحاولة
+        </button>
+      </div>
+    )
+  }
+
   return (
     <>
       <div className="mb-5" dir="rtl">
         <h2 className="text-[20px] font-black text-text-dark mb-[3px]">جدول المواد الدراسية</h2>
         <p className="text-[12.5px] text-text-light">
-          عرض الخطة الإرشادية للفصل المختار. هذا العرض لا يقيّد أهلية التسجيل.
+          عرض مقررات البرنامج وحالة طرحها في الفصل الأكاديمي المختار، مع إظهار المستوى والفصل الإرشاديين للمعلومة فقط.
         </p>
       </div>
 
@@ -245,7 +267,7 @@ export default function CourseTablePage() {
             </select>
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-[12px] font-bold text-text-dark">الفصل الإرشادي</label>
+            <label className="text-[12px] font-bold text-text-dark">الفصل الأكاديمي الفعلي</label>
             <select
               className="px-3 py-2.5 border border-primary/20 rounded-[10px] text-[13.5px] text-text-dark outline-none focus:border-primary disabled:opacity-50"
               value={semId}
@@ -261,7 +283,7 @@ export default function CourseTablePage() {
       </div>
 
       {!semId ? (
-        <p className="text-center text-[13px] text-text-light py-8" dir="rtl">اختر السنة الدراسية والفصل الإرشادي أولاً</p>
+        <p className="text-center text-[13px] text-text-light py-8" dir="rtl">اختر السنة الدراسية والفصل الأكاديمي الفعلي أولاً</p>
       ) : (
         <>
           <div className="bg-white border border-primary/12 rounded-[16px] p-5 mb-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
@@ -343,6 +365,7 @@ export default function CourseTablePage() {
               <DataTable
                 columns={[
                   { key: 'level', header: 'السنة الإرشادية', align: 'center', render: r => r.levelName },
+                  { key: 'recommended-semester', header: 'الفصل الإرشادي', align: 'center', render: r => r.recommendedSemesterName },
                   { key: 'program', header: 'البرنامج / التخصص', render: r => r.programName },
                   { key: 'code', header: 'رمز المادة', render: r => <span className="font-mono text-primary-dark font-bold">{r.courseCode}</span> },
                   { key: 'name', header: 'اسم المادة', render: r => r.courseName },
