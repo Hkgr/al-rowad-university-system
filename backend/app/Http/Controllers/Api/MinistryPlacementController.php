@@ -20,7 +20,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-class MinistryPlacementController extends ApiController
+class MinistryPlacementController extends ActionApiController
 {
     public function academicYears(Request $request, MinistryPlacementAccess $access): JsonResponse
     {

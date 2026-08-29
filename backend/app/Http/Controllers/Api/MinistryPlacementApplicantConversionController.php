@@ -9,7 +9,7 @@ use App\Support\MinistryPlacementAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-class MinistryPlacementApplicantConversionController extends ApiController
+class MinistryPlacementApplicantConversionController extends ActionApiController
 {
     public function summary(Request $request, int $batch, MinistryPlacementAccess $access, MinistryPlacementApplicantConversionService $service): JsonResponse
     {

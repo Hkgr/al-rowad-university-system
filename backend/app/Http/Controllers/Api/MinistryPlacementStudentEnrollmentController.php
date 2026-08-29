@@ -9,7 +9,7 @@ use App\Support\MinistryPlacementAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-class MinistryPlacementStudentEnrollmentController extends ApiController
+class MinistryPlacementStudentEnrollmentController extends ActionApiController
 {
     public function academicLevels(Request $request, MinistryPlacementAccess $access, MinistryPlacementStudentEnrollmentService $service): JsonResponse
     {

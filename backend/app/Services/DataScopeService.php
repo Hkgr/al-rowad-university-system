@@ -51,7 +51,7 @@ class DataScopeService
         $scopes = $this->grouped($user);
 
         return $query->where(function (Builder $q) use ($user, $scopes): void {
-            if ($user->student_id !== null) $q->orWhereKey($user->student_id);
+            if ($user->student_id !== null) $q->orWhere('student_id', $user->student_id);
             if ($scopes['university'] !== []) $q->orWhereRaw('1 = 1');
             $q->orWhereIn('academic_program_id', $scopes['program'])
                 ->orWhereHas('academicProgram', fn (Builder $program) => $program
