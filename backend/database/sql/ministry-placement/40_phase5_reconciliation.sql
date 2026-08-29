@@ -151,7 +151,7 @@ SET @mp5_audit_auth_columns := (
     (table_name = 'user_access_scopes' AND column_name = 'scope_type' AND data_type IN ('varchar', 'enum') AND is_nullable = 'NO') OR
     (table_name = 'user_access_scopes' AND column_name = 'is_active' AND data_type = 'tinyint' AND is_nullable = 'NO') OR
     (table_name = 'organizational_units' AND column_name = 'organizational_unit_id' AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
-    (table_name = 'organizational_units' AND column_name = 'unit_code' AND data_type = 'varchar' AND character_maximum_length >= 50 AND is_nullable = 'NO') OR
+    (table_name = 'organizational_units' AND column_name = 'unit_code' AND data_type = 'varchar' AND character_maximum_length >= 50) OR
     (table_name = 'organizational_units' AND column_name = 'is_active' AND data_type = 'tinyint' AND is_nullable = 'NO')
   )
 );

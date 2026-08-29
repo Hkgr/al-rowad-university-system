@@ -6,7 +6,7 @@ use App\Http\Requests\MinistryPlacement\ReconcileMinistryPlacementRequest;
 use App\Services\MinistryPlacementReconciliationService;
 use Illuminate\Http\JsonResponse;
 
-class MinistryPlacementReconciliationController extends ApiController
+class MinistryPlacementReconciliationController extends ActionApiController
 {
     public function index(ReconcileMinistryPlacementRequest $request, MinistryPlacementReconciliationService $service): JsonResponse
     {
