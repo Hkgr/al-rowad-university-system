@@ -67,7 +67,7 @@ SET @mp3_application_columns := (
       (column_name = 'admission_application_id' AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
       (column_name IN ('applicant_id', 'academic_program_id', 'academic_year_id') AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
       (column_name = 'application_date' AND data_type = 'date' AND is_nullable = 'NO') OR
-      (column_name = 'decision_status' AND data_type = 'varchar' AND character_maximum_length >= 50 AND is_nullable = 'NO' AND column_default = 'pending') OR
+      (column_name = 'decision_status' AND data_type = 'varchar' AND character_maximum_length >= 50 AND is_nullable = 'NO' AND TRIM(BOTH '''' FROM COALESCE(column_default, '')) = 'pending') OR
       (column_name = 'decision_date' AND data_type = 'date' AND is_nullable = 'YES') OR
       (column_name = 'decided_by_user_id' AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'YES') OR
       (column_name = 'notes' AND data_type IN ('text', 'mediumtext', 'longtext') AND is_nullable = 'YES')

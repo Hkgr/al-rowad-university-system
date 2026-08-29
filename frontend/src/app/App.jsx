@@ -9,7 +9,7 @@ import ForbiddenPage from '../features/auth/pages/ForbiddenPage'
 import { ACCESS, PERMISSIONS, canAccess, clearIdentity, getIdentity, landingRoute, storeIdentity } from '../features/auth/auth'
 
 // ── شؤون الطلاب (Student Affairs) ──────────────────────────────────────────
-import studentAffairsNav, { ministryPlacementNav } from '../features/student-affairs/nav'
+import studentAffairsNav from '../features/student-affairs/nav'
 import StudentAffairsHome   from '../features/student-affairs/pages/StudentAffairsHome'
 import StudentsPage         from '../features/student-affairs/pages/StudentsPage'
 import AddStudentPage       from '../features/student-affairs/pages/AddStudentPage'
@@ -95,7 +95,7 @@ import ExceptionalOpeningQueue from '../features/vice-presidency/pages/Exception
 import ExceptionalOpeningDetail from '../features/vice-presidency/pages/ExceptionalOpeningDetail'
 import SupplementaryExamPeriodsPage from '../features/vice-presidency/pages/SupplementaryExamPeriods'
 
-function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], actualUniversityScope = false, studentIdentity = false, employeeIdentity = false }) {
+function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], actualUniversityScope = false, studentIdentity = false, employeeIdentity = false, anyAccess = [] }) {
   const token = localStorage.getItem('token')
   const [identity, setIdentity] = useState(getIdentity())
   const [checking, setChecking] = useState(Boolean(token))
@@ -118,7 +118,10 @@ function ProtectedRoute({ children, permissions = [], allPermissions = [], roles
   if (!token) return <Navigate to="/login" replace />
   if (checking) return null
   if (!identity) return <Navigate to="/login" replace />
-  return canAccess({ permissions, allPermissions, roles, allRoles, assignedPermissions, actualUniversityScope, studentIdentity, employeeIdentity }, identity) ? children : <Navigate to="/forbidden" replace />
+  const allowed = anyAccess.length > 0
+    ? anyAccess.some(access => canAccess(access, identity))
+    : canAccess({ permissions, allPermissions, roles, allRoles, assignedPermissions, actualUniversityScope, studentIdentity, employeeIdentity }, identity)
+  return allowed ? children : <Navigate to="/forbidden" replace />
 }
 
 const protect = (element, access) => <ProtectedRoute {...access}>{element}</ProtectedRoute>
@@ -142,7 +145,6 @@ export default function App() {
         >
           <Route path="/student-affairs"                   element={<StudentAffairsHome />}   />
           <Route path="/student-affairs/students"          element={<StudentsPage />}          />
-          <Route path="/student-affairs/students/add"      element={protect(<AddStudentPage />, { permissions: ['students.manage'] })} />
           <Route path="/student-affairs/students/archived" element={protect(<ArchivedStudentsPage />, { permissions: ['students.manage'] })} />
           <Route path="/student-affairs/graduates"         element={<GraduatesPage />}         />
           <Route path="/student-affairs/students/:id"      element={<StudentProfilePage />}    />
@@ -152,11 +154,25 @@ export default function App() {
           <Route path="/student-affairs/calendar" element={<AcademicCalendarPage />} />
         </Route>
 
-        {/* ── Ministry Placement dashboard: admissions authority, not student-record authority ── */}
+        {/* Add Student safely hosts the manual and Ministry entry paths without widening other Student Affairs pages. */}
+        <Route
+          element={
+            <ProtectedRoute anyAccess={[
+              { allPermissions: [PERMISSIONS.studentsView, PERMISSIONS.studentsManage] },
+              { assignedPermissions: [PERMISSIONS.admissionsView], actualUniversityScope: true },
+            ]}>
+              <DashboardLayout nav={studentAffairsNav} appTitle="شؤون الطلاب" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/student-affairs/students/add" element={<AddStudentPage />} />
+        </Route>
+
+        {/* ── Ministry Placement dashboard: admissions authority with the normal Student Affairs shell ── */}
         <Route
           element={
             <ProtectedRoute assignedPermissions={[PERMISSIONS.admissionsView]} actualUniversityScope>
-              <DashboardLayout nav={ministryPlacementNav} appTitle="شؤون الطلاب" />
+              <DashboardLayout nav={studentAffairsNav} appTitle="شؤون الطلاب" />
             </ProtectedRoute>
           }
         >

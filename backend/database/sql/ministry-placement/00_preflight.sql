@@ -115,7 +115,7 @@ WHERE table_schema = @mp_schema
     (column_name = 'accepted_preference_text' AND data_type = 'varchar' AND character_maximum_length >= 500 AND is_nullable = 'YES') OR
     (column_name IN ('matched_academic_program_id', 'applicant_id') AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'YES') OR
     (column_name IN ('is_faculty_member_child', 'has_academic_sequence') AND data_type = 'tinyint' AND is_nullable = 'NO' AND column_default IN ('0', 0)) OR
-    (column_name = 'processing_status' AND data_type = 'varchar' AND character_maximum_length >= 50 AND is_nullable = 'NO' AND column_default = 'imported') OR
+    (column_name = 'processing_status' AND data_type = 'varchar' AND character_maximum_length >= 50 AND is_nullable = 'NO' AND TRIM(BOTH '''' FROM COALESCE(column_default, '')) = 'imported') OR
     (column_name IN ('created_at', 'updated_at') AND data_type = 'timestamp' AND is_nullable = 'NO' AND column_default IS NOT NULL)
   );
 

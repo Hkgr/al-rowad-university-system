@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { FaCheckCircle, FaExclamationTriangle, FaFileExcel, FaSearch, FaSpinner, FaUpload } from 'react-icons/fa'
+import { useNavigate } from 'react-router-dom'
+import { FaArrowRight, FaCheckCircle, FaExclamationTriangle, FaFileExcel, FaSearch, FaSpinner, FaUpload } from 'react-icons/fa'
 import { hasAssignedPermission, PERMISSIONS } from '../../auth/auth'
 import { apiRequest } from '../../../services/apiClient'
 import MinistryProgramMatchingPanel from '../components/MinistryProgramMatchingPanel'
 import MinistryApplicantConversionPanel from '../components/MinistryApplicantConversionPanel'
 import MinistryStudentEnrollmentPanel from '../components/MinistryStudentEnrollmentPanel'
 import MinistryProgramPickerDialog from '../components/MinistryProgramPickerDialog'
+import MinistryReconciliationPanel, { MinistryGlobalReconciliationCard } from '../components/MinistryReconciliationPanel'
 import { createLatestRequestGuard } from '../lib/latestRequestGuard'
 import {
   buildMinistryPlacementFormData,
@@ -32,6 +34,7 @@ function metric(label, value, tone = 'green') {
 }
 
 export default function MinistryPlacementsPage() {
+  const navigate = useNavigate()
   const canManage = hasAssignedPermission(PERMISSIONS.admissionsManage)
   const [form, setForm] = useState(emptyForm)
   const [preview, setPreview] = useState(null)
@@ -53,6 +56,8 @@ export default function MinistryPlacementsPage() {
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [initialErrors, setInitialErrors] = useState({})
+  const [reconciliationRevision, setReconciliationRevision] = useState(0)
   const recordsRequestGuard = useRef(createLatestRequestGuard())
   const recordsContext = useRef({ batchId: null, page: 1, search: '' })
   recordsContext.current = {
@@ -69,15 +74,25 @@ export default function MinistryPlacementsPage() {
 
   useEffect(() => {
     let active = true
-    Promise.all([
+    Promise.allSettled([
       apiRequest('/v1/ministry-placements?per_page=15'),
-      canManage ? apiRequest('/v1/academic-years?per_page=100') : Promise.resolve(null),
-    ]).then(([batchResponse, yearResponse]) => {
+      canManage ? apiRequest('/v1/ministry-placement-academic-years') : Promise.resolve(null),
+    ]).then(([batchResult, yearResult]) => {
       if (!active) return
-      setBatches(paginatedRows(batchResponse))
-      setBatchMeta(paginationMeta(batchResponse))
-      setYears(yearResponse ? paginatedRows(yearResponse) : [])
-    }).catch(err => active && setError(err.message)).finally(() => active && setLoading(false))
+      const errors = {}
+      if (batchResult.status === 'fulfilled') {
+        setBatches(paginatedRows(batchResult.value))
+        setBatchMeta(paginationMeta(batchResult.value))
+      } else {
+        errors.batches = 'تعذر تحميل دفعات المفاضلة. تحقق من صلاحية العرض ثم أعد المحاولة.'
+      }
+      if (yearResult.status === 'fulfilled') {
+        setYears(Array.isArray(yearResult.value?.data) ? yearResult.value.data : paginatedRows(yearResult.value))
+      } else {
+        errors.years = 'تعذر تحميل السنوات الأكاديمية المسموح استخدامها في الاستيراد.'
+      }
+      setInitialErrors(errors)
+    }).finally(() => active && setLoading(false))
     return () => { active = false }
   }, [canManage])
 
@@ -178,6 +193,7 @@ export default function MinistryPlacementsPage() {
       setSuccess('تم اعتماد واستيراد الدفعة بنجاح.')
       setPreview(null)
       setForm(emptyForm)
+      setReconciliationRevision(value => value + 1)
       selectBatch(response.data)
       await loadBatches(1)
       setBatchPage(1)
@@ -213,6 +229,7 @@ export default function MinistryPlacementsPage() {
       setSuccess('تم تحديث المطابقة الفردية بنجاح.')
       setRecordMatch(null)
       await loadRecords()
+      setReconciliationRevision(value => value + 1)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -229,6 +246,7 @@ export default function MinistryPlacementsPage() {
       setSuccess('تمت إزالة المطابقة الفردية بنجاح.')
       setRecordUnmatch(null)
       await loadRecords()
+      setReconciliationRevision(value => value + 1)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -238,6 +256,9 @@ export default function MinistryPlacementsPage() {
 
   return (
     <div className="space-y-6" dir="rtl">
+      <button type="button" onClick={() => navigate('/student-affairs/students/add')} className="inline-flex items-center gap-2 rounded-lg border border-primary/20 bg-white px-3 py-2 text-sm font-bold text-primary-dark hover:bg-primary/5">
+        <FaArrowRight /> العودة إلى إضافة طالب
+      </button>
       <section className="rounded-2xl border border-primary/15 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -249,6 +270,7 @@ export default function MinistryPlacementsPage() {
       </section>
 
       {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}
+      {Object.values(initialErrors).map(message => <div key={message} className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{message}</div>)}
       {success && <div className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-700"><FaCheckCircle />{success}</div>}
 
       {canManage && <section className="rounded-2xl border border-primary/15 bg-white p-6 shadow-sm">
@@ -309,6 +331,8 @@ export default function MinistryPlacementsPage() {
         {(batchMeta.last_page ?? 1) > 1 && <div className="mt-4 flex justify-center gap-2"><button disabled={batchPage <= 1} onClick={() => changeBatchPage(batchPage - 1)} className="rounded-lg border px-3 py-2 disabled:opacity-40">السابق</button><span className="p-2">{batchPage} / {batchMeta.last_page}</span><button disabled={batchPage >= batchMeta.last_page} onClick={() => changeBatchPage(batchPage + 1)} className="rounded-lg border px-3 py-2 disabled:opacity-40">التالي</button></div>}
       </section>
 
+      <MinistryGlobalReconciliationCard revision={reconciliationRevision} />
+
       {selectedBatch && <section className="rounded-2xl border border-primary/15 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-base font-black">{selectedBatch.batch_name}</h2><p className="text-xs text-text-light">المصدر: {selectedBatch.source_file_name || '—'} · المستورد: {selectedBatch.imported_by?.username || selectedBatch.imported_by_user_id || '—'}</p></div></div>
         <div className="mt-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3">
@@ -316,11 +340,13 @@ export default function MinistryPlacementsPage() {
           <button type="button" onClick={() => setBatchView('program_matching')} className={`rounded-lg px-4 py-2 font-bold ${batchView === 'program_matching' ? 'bg-primary text-white' : 'bg-slate-100 text-text-dark'}`}>مطابقة البرامج</button>
           <button type="button" onClick={() => setBatchView('applicant_conversion')} className={`rounded-lg px-4 py-2 font-bold ${batchView === 'applicant_conversion' ? 'bg-primary text-white' : 'bg-slate-100 text-text-dark'}`}>تحويل إلى متقدم</button>
           <button type="button" onClick={() => setBatchView('student_enrollment')} className={`rounded-lg px-4 py-2 font-bold ${batchView === 'student_enrollment' ? 'bg-primary text-white' : 'bg-slate-100 text-text-dark'}`}>اعتماد وإنشاء طالب</button>
+          <button type="button" onClick={() => setBatchView('reconciliation')} className={`rounded-lg px-4 py-2 font-bold ${batchView === 'reconciliation' ? 'bg-primary text-white' : 'bg-slate-100 text-text-dark'}`}>التدقيق النهائي</button>
         </div>
 
-        {batchView === 'program_matching' && <MinistryProgramMatchingPanel key={selectedBatch.batch_id} batch={selectedBatch} canManage={canManage} onChanged={loadRecords} />}
-        {batchView === 'applicant_conversion' && <MinistryApplicantConversionPanel key={selectedBatch.batch_id} batch={selectedBatch} canManage={canManage} onChanged={loadRecords} />}
-        {batchView === 'student_enrollment' && <MinistryStudentEnrollmentPanel key={selectedBatch.batch_id} batch={selectedBatch} canManage={canManage} onChanged={loadRecords} />}
+        {batchView === 'program_matching' && <MinistryProgramMatchingPanel key={selectedBatch.batch_id} batch={selectedBatch} canManage={canManage} onChanged={async () => { const result = await loadRecords(); setReconciliationRevision(value => value + 1); return result }} />}
+        {batchView === 'applicant_conversion' && <MinistryApplicantConversionPanel key={selectedBatch.batch_id} batch={selectedBatch} canManage={canManage} onChanged={async () => { const result = await loadRecords(); setReconciliationRevision(value => value + 1); return result }} />}
+        {batchView === 'student_enrollment' && <MinistryStudentEnrollmentPanel key={selectedBatch.batch_id} batch={selectedBatch} canManage={canManage} onChanged={async () => { const result = await loadRecords(); setReconciliationRevision(value => value + 1); return result }} />}
+        {batchView === 'reconciliation' && <MinistryReconciliationPanel key={selectedBatch.batch_id} batch={selectedBatch} revision={reconciliationRevision} />}
 
         {batchView === 'records' && <>
           <div className="mt-4 flex justify-end"><input value={search} onChange={event => changeRecordSearch(event.target.value)} placeholder="بحث في السجلات" className="rounded-xl border border-primary/20 px-4 py-2" /></div>

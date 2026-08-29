@@ -16,6 +16,7 @@ export const PERMISSIONS = Object.freeze({
   academicStructureView: 'academic_structure.view',
   academicStructureManage: 'academic_structure.manage',
   studentsView: 'students.view',
+  studentsManage: 'students.manage',
   hrView: 'hr.view',
   teachingStaffManage: 'teaching_staff.manage',
   teachingStaffView: 'teaching_staff.view',
@@ -103,6 +104,7 @@ export function landingRoute(user) {
   if (hasPermission('hr.view', user)) return '/hr'
   if (user?.student_id && canAny(['registration.view', 'grades.view', 'attendance.view'], user)) return '/student'
   if (hasPermission('academic_structure.view', user)) return '/academic-structure'
+  if (canAccess({ assignedPermissions: [PERMISSIONS.admissionsManage], actualUniversityScope: true }, user)) return '/student-affairs/students/add'
   if (hasPermission('students.view', user)) return '/student-affairs'
   if (canAccess({ assignedPermissions: [PERMISSIONS.admissionsView], actualUniversityScope: true }, user)) return '/student-affairs/ministry-placements'
   // Permission fallback for VP-only identities. Exclude super_admin so existing

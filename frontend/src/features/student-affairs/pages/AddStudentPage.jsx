@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { FaSpinner, FaCheckCircle, FaUserPlus, FaFolderOpen, FaListUl } from 'react-icons/fa'
+import { FaSpinner, FaCheckCircle, FaUserPlus, FaFolderOpen, FaListUl, FaFileExcel } from 'react-icons/fa'
+import { hasActualUniversityScope, hasAssignedPermission, hasPermission, PERMISSIONS } from '../../auth/auth'
 
 const API = `${import.meta.env.VITE_API_BASE_URL || 'https://rust.alrowaduni.edu.sy/api'}/v1`
 
@@ -65,8 +66,11 @@ export default function AddStudentPage() {
   const [levels, setLevels]     = useState([])
   const [statuses, setStatuses] = useState([])
   const navigate                = useNavigate()
+  const canImportMinistry = hasAssignedPermission(PERMISSIONS.admissionsManage) && hasActualUniversityScope()
+  const canCreateManualStudent = hasPermission(PERMISSIONS.studentsView) && hasPermission(PERMISSIONS.studentsManage)
 
   useEffect(() => {
+    if (!canCreateManualStudent) return undefined
     const h = { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }
     Promise.all([
       fetch(`${API}/academic-programs`, { headers: h }),
@@ -90,7 +94,7 @@ export default function AddStudentPage() {
         if (err !== '401')
 setErrors(prev => ({ ...prev, _load: 'تعذّر تحميل البيانات. تحقق من رابط الـ API أو صلاحية الاتصال بالسيرفر.' }))
             })
-  }, [navigate])
+  }, [canCreateManualStudent, navigate])
 
   const set = (field) => (e) => {
     setForm(prev => ({ ...prev, [field]: e.target.value }))
@@ -192,14 +196,24 @@ setErrors(prev => ({ ...prev, _load: 'تعذّر تحميل البيانات. ت
           </div>
         )}
 
-        <div className="flex items-center gap-3 mb-6" dir="rtl">
-          <div className="w-11 h-11 rounded-[13px] bg-primary/10 border border-primary/20 flex items-center justify-center text-[19px] text-primary flex-shrink-0">
-            <FaUserPlus />
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3" dir="rtl">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-[13px] bg-primary/10 border border-primary/20 flex items-center justify-center text-[19px] text-primary flex-shrink-0">
+              <FaUserPlus />
+            </div>
+            <div>
+              <h2 className="text-[19px] font-black text-text-dark">إضافة طالب جديد</h2>
+              <p className="text-[12px] text-text-light mt-0.5">Add New Student</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-[19px] font-black text-text-dark">إضافة طالب جديد</h2>
-            <p className="text-[12px] text-text-light mt-0.5">Add New Student</p>
-          </div>
+          {canImportMinistry && <button
+            type="button"
+            onClick={() => navigate('/student-affairs/ministry-placements')}
+            className="flex items-center gap-2 rounded-[11px] border border-primary/30 bg-white px-4 py-2.5 text-[13px] font-extrabold text-primary-dark shadow-sm transition-colors hover:bg-primary/7"
+          >
+            <FaFileExcel className="text-primary" />
+            رفع طلاب المفاضلة
+          </button>}
         </div>
 
         <AnimatePresence>
@@ -217,7 +231,7 @@ setErrors(prev => ({ ...prev, _load: 'تعذّر تحميل البيانات. ت
           )}
         </AnimatePresence>
 
-        <form onSubmit={handleSubmit} noValidate>
+        {canCreateManualStudent ? <form onSubmit={handleSubmit} noValidate>
           <div className="bg-white border border-primary/12 rounded-[18px] px-7 py-6 shadow-[0_2px_16px_rgba(26,46,16,0.06)] mb-5">
 
             <Section title="المعلومات الأساسية • Required" />
@@ -340,7 +354,9 @@ setErrors(prev => ({ ...prev, _load: 'تعذّر تحميل البيانات. ت
               )}
             </button>
           </div>
-        </form>
+        </form> : <section className="rounded-[18px] border border-primary/15 bg-white p-6 text-sm text-text-light shadow-sm">
+          الإضافة اليدوية تتطلب صلاحيات إدارة سجلات الطلاب. يمكن لمشغل المفاضلة المخوّل استخدام مسار رفع طلاب المفاضلة أعلاه.
+        </section>}
       </div>
   )
 }

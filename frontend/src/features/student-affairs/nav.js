@@ -1,5 +1,5 @@
 import {
-  FaHome, FaGraduationCap, FaUserPlus, FaArchive, FaUsers, FaClipboardCheck, FaBookOpen, FaCalendarAlt, FaFileExcel,
+  FaHome, FaGraduationCap, FaUserPlus, FaArchive, FaUsers, FaClipboardCheck, FaBookOpen, FaCalendarAlt,
 } from 'react-icons/fa'
 
 const studentAffairsNav = [
@@ -21,7 +21,6 @@ const studentAffairsNav = [
   {
     label: 'التسجيل',
     items: [
-      { to: '/student-affairs/ministry-placements', Icon: FaFileExcel, ar: 'استيراد مفاضلة الوزارة', en: 'Ministry placement', end: true, assignedPermissions: ['admissions.view'], actualUniversityScope: true },
       { to: '/student-affairs/supplementary-exams', Icon: FaBookOpen, ar: 'التسجيل التكميلي', en: 'Supplementary registration', end: true, allRoles: ['registration_officer'], assignedPermissions: ['supplementary_exams.registrations.view'] },
       { to: '/student-affairs/approved-registration-requests', Icon: FaClipboardCheck, FaBookOpen, ar: 'طلبات التسجيل المعتمدة', en: 'Approved requests', end: true, permissions: ['registration.view'] },
     ],
@@ -30,15 +29,6 @@ const studentAffairsNav = [
     label: 'الخريجون',
     items: [
       { to: '/student-affairs/graduates', Icon: FaGraduationCap, ar: 'قائمة الخريجين', en: 'Graduates', end: true },
-    ],
-  },
-]
-
-export const ministryPlacementNav = [
-  {
-    label: 'القبول',
-    items: [
-      { to: '/student-affairs/ministry-placements', Icon: FaFileExcel, ar: 'استيراد مفاضلة الوزارة', en: 'Ministry placement', end: true, assignedPermissions: ['admissions.view'], actualUniversityScope: true },
     ],
   },
 ]
