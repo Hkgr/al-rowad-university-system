@@ -118,9 +118,7 @@ function ProtectedRoute({ children, permissions = [], allPermissions = [], roles
   if (!token) return <Navigate to="/login" replace />
   if (checking) return null
   if (!identity) return <Navigate to="/login" replace />
-  const allowed = anyAccess.length > 0
-    ? anyAccess.some(access => canAccess(access, identity))
-    : canAccess({ permissions, allPermissions, roles, allRoles, assignedPermissions, actualUniversityScope, studentIdentity, employeeIdentity }, identity)
+  const allowed = canAccess({ permissions, allPermissions, roles, allRoles, assignedPermissions, actualUniversityScope, studentIdentity, employeeIdentity, anyAccess }, identity)
   return allowed ? children : <Navigate to="/forbidden" replace />
 }
 
@@ -157,10 +155,7 @@ export default function App() {
         {/* Add Student safely hosts the manual and Ministry entry paths without widening other Student Affairs pages. */}
         <Route
           element={
-            <ProtectedRoute anyAccess={[
-              { allPermissions: [PERMISSIONS.studentsView, PERMISSIONS.studentsManage] },
-              { assignedPermissions: [PERMISSIONS.admissionsView], actualUniversityScope: true },
-            ]}>
+            <ProtectedRoute {...ACCESS.studentAffairsAddStudent}>
               <DashboardLayout nav={studentAffairsNav} appTitle="شؤون الطلاب" />
             </ProtectedRoute>
           }

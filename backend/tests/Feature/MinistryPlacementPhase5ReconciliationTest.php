@@ -168,11 +168,12 @@ class MinistryPlacementPhase5ReconciliationTest extends TestCase
 
     public function test_ministry_p5_47_to_50_queries_are_bounded_audit_is_informational_and_service_writes_nothing(): void
     {
-        $this->record(1, 1, '00000000001', 'imported');
+        $this->orphanChain(1, true);
         DB::table('user_activity_logs')->insert(['activity_log_id' => 1, 'user_id' => 7, 'module_code' => 'admissions', 'action_code' => 'ministry_placement.program_match_bulk', 'description' => 'sensitive-not-returned']);
-        $before = $this->tableCounts();
+        $smallBefore = $this->tableCounts();
         $smallQueries = $this->queryCount(fn () => $this->service->globalSummary([]));
-        foreach (range(2, 31) as $id) $this->record($id, $id % 2 + 1, str_pad((string) $id, 11, '0', STR_PAD_LEFT), 'program_matched', 10);
+        self::assertSame($smallBefore, $this->tableCounts());
+        foreach (range(2, 31) as $id) $this->orphanChain($id, true, $id % 2 + 1);
         $largeBefore = $this->tableCounts();
         $largeQueries = $this->queryCount(fn () => $this->service->globalSummary([]));
         $payload = $this->service->globalSummary([]);
@@ -181,7 +182,67 @@ class MinistryPlacementPhase5ReconciliationTest extends TestCase
         self::assertSame($largeBefore, $this->tableCounts());
         self::assertSame(1, $payload['audit_coverage']['ministry_placement.program_match_bulk']);
         self::assertStringNotContainsString('sensitive-not-returned', json_encode($payload, JSON_THROW_ON_ERROR));
-        self::assertSame($before['applicants'], 0);
+    }
+
+    public function test_ministry_p5_51_to_56_orphan_expected_chains_are_reported_but_never_adopted_or_written(): void
+    {
+        $this->orphanChain(50, false);
+        $this->orphanChain(51, true);
+        $before = $this->tableCounts();
+
+        $payload = $this->service->globalSummary(['per_page' => 100]);
+        $records = collect($payload['records'])->keyBy('placement_record_id');
+        self::assertSame($before, $this->tableCounts());
+
+        foreach ([50, 51] as $id) {
+            self::assertSame('blocked', $records[$id]['reconciliation_severity']);
+            self::assertSame('inconsistent', $records[$id]['pipeline_state']);
+            self::assertNull($records[$id]['applicant']);
+            self::assertNull($records[$id]['admission_application']);
+            self::assertNull($records[$id]['student']);
+            self::assertContains('orphan_expected_applicant', array_column($records[$id]['issues'], 'code'));
+            self::assertContains('orphan_expected_application', array_column($records[$id]['issues'], 'code'));
+        }
+        self::assertNotContains('orphan_expected_student', array_column($records[50]['issues'], 'code'));
+        self::assertContains('orphan_expected_student', array_column($records[51]['issues'], 'code'));
+        $studentIssue = collect($records[51]['issues'])->firstWhere('code', 'orphan_expected_student');
+        self::assertSame(4051, $studentIssue['related_applicant_id']);
+        self::assertSame(5051, $studentIssue['related_application_id']);
+        self::assertSame(6051, $studentIssue['related_student_id']);
+    }
+
+    public function test_ministry_p5_57_to_58_checksum_tracks_safe_issue_relationship_ids(): void
+    {
+        $this->record(60, 1, '00000000060', 'program_matched', 10);
+        DB::table('applicants')->insert(['applicant_id' => 900, 'applicant_number' => 'MP-R60']);
+        $before = $this->service->globalSummary(['per_page' => 100]);
+        $beforeCodes = collect($before['records'])->firstWhere('placement_record_id', 60)['issues'];
+
+        DB::table('applicants')->where('applicant_id', 900)->update(['applicant_id' => 901]);
+        $after = $this->service->globalSummary(['per_page' => 100]);
+        $afterCodes = collect($after['records'])->firstWhere('placement_record_id', 60)['issues'];
+
+        self::assertSame(array_column($beforeCodes, 'code'), array_column($afterCodes, 'code'));
+        self::assertNotSame($before['reconciliation_checksum'], $after['reconciliation_checksum']);
+    }
+
+    private function orphanChain(int $id, bool $withStudent, int $batchId = 1): void
+    {
+        $applicantId = 4000 + $id;
+        $applicationId = 5000 + $id;
+        $this->record($id, $batchId, str_pad((string) $id, 11, '0', STR_PAD_LEFT), 'program_matched', 10);
+        DB::table('applicants')->insert(['applicant_id' => $applicantId, 'applicant_number' => 'MP-R'.$id]);
+        DB::table('admission_applications')->insert($this->applicationRow($applicationId, $applicantId, 10, 1, 'pending'));
+        if ($withStudent) {
+            DB::table('students')->insert([
+                'student_id' => 6000 + $id,
+                'student_number' => 'ORPHAN-'.$id,
+                'admission_application_id' => $applicationId,
+                'academic_program_id' => 10,
+                'current_academic_level_id' => 1,
+                'student_status_id' => 1,
+            ]);
+        }
     }
 
     private function pendingChain(int $id, string $processing): void

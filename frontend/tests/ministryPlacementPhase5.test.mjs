@@ -16,7 +16,7 @@ const panel = read('src/features/student-affairs/components/MinistryReconciliati
 const addStudent = read('src/features/student-affairs/pages/AddStudentPage.jsx')
 const nav = read('src/features/student-affairs/nav.js')
 const app = read('src/app/App.jsx')
-const { hasActualUniversityScope, hasAssignedPermission, landingRoute, PERMISSIONS } = await import('../src/features/auth/auth.js')
+const { ACCESS, canAccess, hasActualUniversityScope, hasAssignedPermission, landingRoute, PERMISSIONS } = await import('../src/features/auth/auth.js')
 
 assert.match(page, /setBatchView\('reconciliation'\)/, 'MINISTRY-UI-P5-01: fifth tab must exist')
 assert.match(page, /<MinistryGlobalReconciliationCard/, 'MINISTRY-UI-P5-02: global gate card must exist')
@@ -51,14 +51,41 @@ assert.doesNotMatch(nav + app, /ministryPlacementNav/, 'MINISTRY-UX-P5-05: dedic
 assert.match(app, /assignedPermissions=\{\[PERMISSIONS\.admissionsView\]\} actualUniversityScope>[\s\S]*?<DashboardLayout nav=\{studentAffairsNav\}/, 'MINISTRY-UX-P5-06: normal Student Affairs layout must wrap Ministry page')
 assert.match(page, /العودة إلى إضافة طالب/, 'MINISTRY-UX-P5-07: explicit return action is required')
 assert.match(page, /navigate\('\/student-affairs\/students\/add'\)/, 'MINISTRY-UX-P5-08: return action targets Add Student')
+assert.match(page, /\{canManage && <button[^>]*[\s\S]*?العودة إلى إضافة طالب/, 'MINISTRY-UX-P5-08B: read-only Ministry viewers must not receive an unauthorized Add Student action')
 assert.match(addStudent, /<form onSubmit=\{handleSubmit\}/, 'MINISTRY-UX-P5-09: manual Student form remains')
 const ministryManager = { permissions: ['admissions.view', 'admissions.manage'], access_scopes: [{ type: 'university', id: 1 }], roles: [] }
+const ministryViewer = { permissions: ['admissions.view'], access_scopes: [{ type: 'university', id: 1 }], roles: [] }
 const managerWithoutScope = { permissions: ['admissions.view', 'admissions.manage'], access_scopes: [], roles: [] }
 const superAdminWithoutAssignment = { permissions: [], access_scopes: [{ type: 'university', id: 1 }], roles: ['super_admin'] }
 assert.equal(hasAssignedPermission(PERMISSIONS.admissionsManage, ministryManager) && hasActualUniversityScope(ministryManager), true, 'MINISTRY-UX-P5-10: assigned manage plus scope shows entry')
 assert.equal(hasAssignedPermission(PERMISSIONS.admissionsManage, managerWithoutScope) && hasActualUniversityScope(managerWithoutScope), false, 'MINISTRY-UX-P5-11: missing scope hides entry')
 assert.equal(hasAssignedPermission(PERMISSIONS.admissionsManage, superAdminWithoutAssignment), false, 'MINISTRY-UX-P5-12: super admin role is not an assigned Ministry permission')
 assert.equal(landingRoute(ministryManager), '/student-affairs/students/add', 'MINISTRY-UX-P5-13: Ministry manager lands on the official Add Student entry')
+assert.equal(canAccess(ACCESS.studentAffairsAddStudent, ministryViewer), false, 'MINISTRY-UX-P5-14: admissions.view alone cannot enter Add Student')
+assert.equal(canAccess(ACCESS.studentAffairsAddStudent, ministryManager), true, 'MINISTRY-UX-P5-15: admissions.manage plus actual university scope can enter Add Student')
+for (const access of [ACCESS.studentAffairs, ACCESS.studentAffairsArchivedStudents, ACCESS.studentAffairsApprovedRegistrationRequests]) {
+  assert.equal(canAccess(access, ministryViewer), false, 'MINISTRY-UX-P5-16: Ministry-only viewer must not see unauthorized Student Affairs navigation')
+}
+assert.equal(canAccess({ allPermissions: ['students.view'], allRoles: ['registration_officer'], assignedPermissions: ['supplementary_exams.registrations.view'] }, ministryViewer), false, 'MINISTRY-UX-P5-16B: Ministry-only viewer must not see supplementary registration')
+assert.equal(canAccess(ACCESS.studentAffairsAddStudent, ministryViewer), false, 'MINISTRY-UX-P5-17: read-only Ministry viewer gets a sparse sidebar')
+assert.equal(canAccess(ACCESS.studentAffairsAddStudent, ministryManager), true, 'MINISTRY-UX-P5-18: Ministry manager sees only its authorized Add Student entry')
+
+const registrationOfficer = {
+  roles: ['registration_officer'],
+  permissions: [
+    'students.view', 'students.manage', 'admissions.view', 'admissions.manage',
+    'academic_structure.view', 'courses.view', 'registration.view', 'registration.manage',
+    'system_settings.view',
+  ],
+  access_scopes: [{ type: 'university', id: 1 }],
+}
+assert.equal(canAccess(ACCESS.courseRegistration, registrationOfficer), true, 'MINISTRY-UX-P5-19: real registration_officer permission set satisfies generic course registration')
+assert.equal(landingRoute(registrationOfficer), '/student-affairs', 'MINISTRY-UX-P5-20: explicit operational role wins before the generic Exam Board fallback')
+assert.equal(landingRoute({ roles: ['exam_officer'], permissions: [], access_scopes: [] }), '/exam-board', 'MINISTRY-UX-P5-20B: exam_officer keeps its portal')
+assert.match(app, /<ProtectedRoute \{\.\.\.ACCESS\.studentAffairsAddStudent\}>/, 'MINISTRY-UX-P5-21: Add Student route uses the centralized exact alternatives')
+for (const routeAccess of ['ACCESS.studentAffairs', 'ACCESS.studentAffairsAddStudent', 'ACCESS.studentAffairsArchivedStudents', 'ACCESS.studentAffairsApprovedRegistrationRequests']) {
+  assert.match(nav, new RegExp(routeAccess.replace('.', '\\.')), `MINISTRY-UX-P5-22: missing explicit nav contract ${routeAccess}`)
+}
 assert.match(page, /\/v1\/ministry-placement-academic-years/, 'MINISTRY-UX-P5-10: Ministry-specific year catalog is used')
 assert.match(page, /Promise\.allSettled/, 'MINISTRY-UX-P5-11: independent initial errors are supported')
 assert.match(page, /تعذر تحميل دفعات المفاضلة/, 'MINISTRY-UX-P5-12: batch error is granular')

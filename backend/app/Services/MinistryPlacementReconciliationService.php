@@ -49,6 +49,9 @@ final class MinistryPlacementReconciliationService
         'program_reference_missing',
         'program_hierarchy_inactive',
         'applicant_link_missing',
+        'orphan_expected_applicant',
+        'orphan_expected_application',
+        'orphan_expected_student',
         'linked_applicant_missing',
         'applicant_number_mismatch',
         'application_context_mismatch',
@@ -86,6 +89,9 @@ final class MinistryPlacementReconciliationService
         'program_hierarchy_inactive' => 'البرنامج أو القسم أو الكلية غير نشط قبل اكتمال المسار.',
         'historical_program_hierarchy_inactive' => 'أصبحت بنية البرنامج غير نشطة بعد اكتمال السلسلة التاريخية.',
         'applicant_link_missing' => 'مرحلة السجل تتطلب رابط متقدم صالحاً.',
+        'orphan_expected_applicant' => 'يوجد متقدم يحمل الرقم الحتمي المتوقع لكنه غير مرتبط بسجل المفاضلة.',
+        'orphan_expected_application' => 'يوجد طلب قبول تابع للمتقدم الحتمي اليتيم دون رابط مفاضلة متين.',
+        'orphan_expected_student' => 'يوجد طالب تابع لطلب القبول اليتيم دون رابط مفاضلة متين.',
         'linked_applicant_missing' => 'معرف المتقدم المرتبط لا يشير إلى سجل موجود.',
         'applicant_number_mismatch' => 'رقم المتقدم المرتبط لا يطابق الرقم الحتمي لسجل المفاضلة.',
         'application_context_mismatch' => 'سياق البرنامج أو السنة اللازم لطلب القبول غير مكتمل.',
@@ -180,10 +186,12 @@ final class MinistryPlacementReconciliationService
         $applicantsById = $applicants->keyBy('applicant_id');
         $applicantsByNumber = $applicants->keyBy('applicant_number');
 
+        $candidateApplicantIds = $applicants->pluck('applicant_id')->map(fn ($id): int => (int) $id)->unique()->values();
         $applicationQuery = AdmissionApplication::query()
-            ->whereIn('applicant_id', $linkedApplicantIds->all())
+            ->whereIn('applicant_id', $candidateApplicantIds->all())
             ->orderBy('admission_application_id');
-        $applications = $linkedApplicantIds->isEmpty() ? collect() : $applicationQuery->get();
+        $applications = $candidateApplicantIds->isEmpty() ? collect() : $applicationQuery->get();
+        $applicationsByApplicant = $applications->groupBy(fn (AdmissionApplication $application): int => (int) $application->applicant_id);
         $applicationsByContext = $applications->groupBy(fn (AdmissionApplication $application): string => $this->applicationContextKey(
             (int) $application->applicant_id,
             (int) $application->academic_program_id,
@@ -210,7 +218,7 @@ final class MinistryPlacementReconciliationService
         $decisionUsers = User::query()->whereIn('user_id', $applications->pluck('decided_by_user_id')->filter()->unique()->all())->get(['user_id'])->keyBy('user_id');
 
         $items = $records->map(function (MinistryPlacementRecord $record) use (
-            $batchMap, $applicantsById, $applicantsByNumber, $applicationsByContext,
+            $batchMap, $applicantsById, $applicantsByNumber, $applicationsByApplicant, $applicationsByContext,
             $studentsByApplication, $programs, $departments, $colleges, $levels,
             $statuses, $decisionUsers
         ): array {
@@ -222,6 +230,7 @@ final class MinistryPlacementReconciliationService
                 $batch,
                 $applicantsById,
                 $applicantsByNumber,
+                $applicationsByApplicant,
                 $applicationsByContext,
                 $studentsByApplication,
                 $programs,
@@ -247,6 +256,7 @@ final class MinistryPlacementReconciliationService
         MinistryPlacementBatch $batch,
         Collection $applicantsById,
         Collection $applicantsByNumber,
+        Collection $applicationsByApplicant,
         Collection $applicationsByContext,
         Collection $studentsByApplication,
         Collection $programs,
@@ -287,6 +297,27 @@ final class MinistryPlacementReconciliationService
             $issues[] = $this->issue('linked_applicant_missing', 'blocked', ['related_applicant_id' => (int) $record->applicant_id]);
         } elseif ($applicant !== null && $applicant->applicant_number !== $expectedApplicantNumber) {
             $issues[] = $this->issue('applicant_number_mismatch', 'blocked', ['related_applicant_id' => (int) $applicant->applicant_id]);
+        }
+
+        if ($record->applicant_id === null && $expectedApplicant !== null) {
+            $relatedApplicantId = (int) $expectedApplicant->applicant_id;
+            $issues[] = $this->issue('orphan_expected_applicant', 'blocked', [
+                'related_applicant_id' => $relatedApplicantId,
+            ]);
+            foreach ($applicationsByApplicant->get($relatedApplicantId, collect()) as $orphanApplication) {
+                $relatedApplicationId = (int) $orphanApplication->admission_application_id;
+                $issues[] = $this->issue('orphan_expected_application', 'blocked', [
+                    'related_applicant_id' => $relatedApplicantId,
+                    'related_application_id' => $relatedApplicationId,
+                ]);
+                foreach ($studentsByApplication->get($relatedApplicationId, collect()) as $orphanStudent) {
+                    $issues[] = $this->issue('orphan_expected_student', 'blocked', [
+                        'related_applicant_id' => $relatedApplicantId,
+                        'related_application_id' => $relatedApplicationId,
+                        'related_student_id' => (int) $orphanStudent->student_id,
+                    ]);
+                }
+            }
         }
 
         $expectedApplications = collect();
@@ -565,7 +596,7 @@ final class MinistryPlacementReconciliationService
             $item['batch_id'],
             $item['pipeline_state'],
             $item['reconciliation_severity'],
-            collect($item['issues'])->pluck('code')->unique()->sort()->implode(','),
+            $this->issueChecksumMaterial($item['issues']),
             $item['applicant']['applicant_id'] ?? '',
             $item['admission_application']['admission_application_id'] ?? '',
             $item['student']['student_id'] ?? '',
@@ -574,6 +605,28 @@ final class MinistryPlacementReconciliationService
         ]))->implode("\n");
 
         return hash('sha256', $canonical);
+    }
+
+    private function issueChecksumMaterial(array $issues): string
+    {
+        $relationshipKeys = [
+            'related_batch_id',
+            'related_record_id',
+            'related_applicant_id',
+            'related_application_id',
+            'related_student_id',
+        ];
+
+        return collect($issues)->map(function (array $issue) use ($relationshipKeys): string {
+            $material = [$issue['code']];
+            foreach ($relationshipKeys as $key) {
+                if (array_key_exists($key, $issue)) {
+                    $material[] = $key.'='.(int) $issue[$key];
+                }
+            }
+
+            return implode(':', $material);
+        })->unique()->sort()->implode(',');
     }
 
     /** @return array<string, int> */

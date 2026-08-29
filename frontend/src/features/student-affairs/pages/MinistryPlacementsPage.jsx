@@ -256,9 +256,9 @@ export default function MinistryPlacementsPage() {
 
   return (
     <div className="space-y-6" dir="rtl">
-      <button type="button" onClick={() => navigate('/student-affairs/students/add')} className="inline-flex items-center gap-2 rounded-lg border border-primary/20 bg-white px-3 py-2 text-sm font-bold text-primary-dark hover:bg-primary/5">
+      {canManage && <button type="button" onClick={() => navigate('/student-affairs/students/add')} className="inline-flex items-center gap-2 rounded-lg border border-primary/20 bg-white px-3 py-2 text-sm font-bold text-primary-dark hover:bg-primary/5">
         <FaArrowRight /> العودة إلى إضافة طالب
-      </button>
+      </button>}
       <section className="rounded-2xl border border-primary/15 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>

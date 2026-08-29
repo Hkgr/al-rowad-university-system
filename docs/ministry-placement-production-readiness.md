@@ -31,6 +31,8 @@ Afterward, an authorized operator opens the Ministry portal's **التدقيق �
 
 Checksums contain only internal identifiers, derived state/severity, and issue codes. They do not contain names, Ministry identity values, applicant/student numbers, contact details, or birth dates. Audit coverage reports action counts only and is informational.
 
+An Applicant whose deterministic `MP-R{placement_record_id}` number exists while `ministry_placement_records.applicant_id` is null is reported as an orphan, together with its orphan Application and Student IDs when present. The deterministic number is never adopted as the durable Ministry link. Checksum material includes sorted safe relationship IDs from these and other issues so a changed relationship produces a changed checkpoint without including PII.
+
 ## Intentional boundaries
 
 Phase 5 performs no repair, merge, relink, override, deletion, account provisioning, academic-term creation, course offering creation, or course registration. It adds no mutation route and makes no schema change.

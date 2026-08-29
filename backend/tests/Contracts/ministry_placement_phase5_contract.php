@@ -18,6 +18,7 @@ $contract = static function (string $backendRoot): array {
         'page' => $frontendRoot.'/src/features/student-affairs/pages/MinistryPlacementsPage.jsx',
         'panel' => $frontendRoot.'/src/features/student-affairs/components/MinistryReconciliationPanel.jsx',
         'add_student' => $frontendRoot.'/src/features/student-affairs/pages/AddStudentPage.jsx',
+        'auth' => $frontendRoot.'/src/features/auth/auth.js',
         'nav' => $frontendRoot.'/src/features/student-affairs/nav.js',
         'app' => $frontendRoot.'/src/app/App.jsx',
     ];
@@ -45,7 +46,7 @@ $contract = static function (string $backendRoot): array {
     foreach (['imported', 'matched', 'applicant_pending', 'documents_pending', 'enrolled', 'rejected', 'inconsistent'] as $state) {
         $expect(str_contains($sources['service'], "'{$state}'"), 'Missing derived state: '.$state);
     }
-    foreach (['identity_conflict_terminal_record', 'identity_conflict_multiple_terminal_records', 'identity_conflict', 'identity_missing_terminal_record', 'historical_program_hierarchy_inactive', 'ministry_state_chain_mismatch'] as $issue) {
+    foreach (['identity_conflict_terminal_record', 'identity_conflict_multiple_terminal_records', 'identity_conflict', 'identity_missing_terminal_record', 'historical_program_hierarchy_inactive', 'ministry_state_chain_mismatch', 'orphan_expected_applicant', 'orphan_expected_application', 'orphan_expected_student'] as $issue) {
         $expect(str_contains($sources['service'], "'{$issue}'"), 'Missing Phase 5 issue: '.$issue);
     }
     $expect(str_contains($sources['service'], 'MinistryPlacementNormalizer::duplicateKey'), 'Identity reconciliation must reuse duplicateKey().');
@@ -56,8 +57,13 @@ $contract = static function (string $backendRoot): array {
     $expect(str_contains($sources['service'], 'expectedApplications->count() > 1') && str_contains($sources['service'], 'expectedApplications->sole()'), 'Exact application ambiguity must fail closed.');
     $expect(! preg_match('/expectedApplications[^;]{0,400}->(first|latest|oldest)\s*\(/s', $sources['service']), 'Exact application ambiguity must not be guessed.');
     $expect(str_contains($sources['service'], 'Student::withTrashed()'), 'Soft-deleted Students must participate in reconciliation.');
+    $expect(str_contains($sources['service'], '$candidateApplicantIds') && str_contains($sources['service'], "whereIn('applicant_id', \$candidateApplicantIds->all())"), 'Expected orphan Applicants and their downstream rows must be bulk-loaded.');
+    $expect(str_contains($sources['service'], '$record->applicant_id === null && $expectedApplicant !== null'), 'Orphan reporting must not substitute the deterministic Applicant for the durable link.');
     $expect(str_contains($sources['service'], "orderBy('batch_id')") && str_contains($sources['service'], "orderBy('placement_record_id')"), 'Record ordering must be deterministic.');
-    $expect(str_contains($sources['service'], "hash('sha256'") && str_contains($sources['service'], "collect(\$item['issues'])->pluck('code')->unique()->sort()"), 'Checksums must use deterministic safe material.');
+    $expect(str_contains($sources['service'], "hash('sha256'") && str_contains($sources['service'], 'issueChecksumMaterial'), 'Checksums must use deterministic safe issue material.');
+    foreach (['related_batch_id', 'related_record_id', 'related_applicant_id', 'related_application_id', 'related_student_id'] as $safeRelationship) {
+        $expect(str_contains($sources['service'], "'{$safeRelationship}'"), 'Checksum omits safe relationship key: '.$safeRelationship);
+    }
     $checksumStart = strpos($sources['service'], 'private function checksum');
     $checksumEnd = strpos($sources['service'], 'private function auditCoverage', $checksumStart ?: 0);
     $checksum = $checksumStart === false || $checksumEnd === false ? '' : substr($sources['service'], $checksumStart, $checksumEnd - $checksumStart);
@@ -105,7 +111,15 @@ $contract = static function (string $backendRoot): array {
     $expect(! str_contains($sources['nav'], '/student-affairs/ministry-placements'), 'Ministry Placement must not be in Student Affairs navigation.');
     $expect(! str_contains($sources['nav'].$sources['app'], 'ministryPlacementNav'), 'Dedicated Ministry-only navigation must be removed.');
     $expect(str_contains($sources['app'], '<DashboardLayout nav={studentAffairsNav}') && str_contains($sources['page'], 'العودة إلى إضافة طالب'), 'Ministry page must use the normal shell and explicit return action.');
-    $expect(str_contains($sources['app'], 'anyAccess') && str_contains($sources['app'], 'PERMISSIONS.studentsManage') && str_contains($sources['add_student'], 'canCreateManualStudent'), 'Add Student entry must preserve manual authority while allowing scoped Ministry operators safely.');
+    $expect(str_contains($sources['app'], 'ACCESS.studentAffairsAddStudent') && str_contains($sources['auth'], 'PERMISSIONS.admissionsManage') && str_contains($sources['add_student'], 'canCreateManualStudent'), 'Add Student entry must preserve manual authority and require Ministry manage authority.');
+    $expect(! preg_match('/studentAffairsAddStudent[\s\S]{0,250}admissionsView/', $sources['auth']), 'Admissions view-only authority must not open Add Student.');
+    foreach (['studentAffairs', 'studentAffairsAddStudent', 'studentAffairsArchivedStudents', 'studentAffairsApprovedRegistrationRequests'] as $accessContract) {
+        $expect(str_contains($sources['nav'], 'ACCESS.'.$accessContract), 'Student Affairs nav item lacks explicit route-parity access: '.$accessContract);
+    }
+    $expect(str_contains($sources['nav'], "allPermissions: ['students.view'], allRoles: ['registration_officer'], assignedPermissions: ['supplementary_exams.registrations.view']"), 'Supplementary registration nav must match its nested route authority.');
+    $registrationLanding = strpos($sources['auth'], "hasRole(ROLES.registrationOfficer, user)");
+    $courseRegistrationLanding = strpos($sources['auth'], 'canAccess(ACCESS.courseRegistration, user)');
+    $expect($registrationLanding !== false && $courseRegistrationLanding !== false && $registrationLanding < $courseRegistrationLanding, 'registration_officer must land in Student Affairs before generic course-registration fallback.');
     $expect(str_contains($sources['routes'], "Route::get('ministry-placement-academic-years'") && str_contains($sources['ministry_controller'], 'public function academicYears') && str_contains($sources['ministry_controller'], 'canManage'), 'Ministry-specific academic-year catalog is missing or too broad.');
     $expect(str_contains($sources['page'], '/v1/ministry-placement-academic-years') && str_contains($sources['page'], 'Promise.allSettled'), 'Initial loading must use the Ministry catalog with granular failures.');
 
