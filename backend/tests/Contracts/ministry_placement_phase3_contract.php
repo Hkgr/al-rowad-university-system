@@ -42,6 +42,16 @@ $contract = static function (string $backendRoot): array {
     $expect(! str_contains($sources['access'], 'hasPermission(') && ! str_contains($sources['access'], 'super_admin'), 'Phase 3 must not inherit a role/scope bypass.');
     $expect(str_contains($sources['individual_request'], 'MinistryPlacementAccess::class') && str_contains($sources['individual_request'], 'canManage'), 'Individual conversion must authorize server side.');
     $expect(str_contains($sources['individual_request'], '$this->all() !== []') && str_contains($sources['individual_request'], 'ministry_placement_conversion_payload_not_allowed') && str_contains($sources['individual_request'], '422'), 'The no-input endpoint must explicitly reject every non-empty payload.');
+    $allowlistStart = strpos($sources['batch_request'], 'private const ALLOWED_KEYS');
+    $allowlistEnd = strpos($sources['batch_request'], 'private array $unexpectedKeys', $allowlistStart === false ? 0 : $allowlistStart);
+    $allowlist = $allowlistStart === false || $allowlistEnd === false ? '' : substr($sources['batch_request'], $allowlistStart, $allowlistEnd - $allowlistStart);
+    preg_match_all("/'([^']+)'/", $allowlist, $allowedKeyMatches);
+    $expect(($allowedKeyMatches[1] ?? []) === ['expected_eligible_count', 'expected_snapshot'], 'Bulk conversion allowlist must contain exactly its two concurrency fields.');
+    foreach (['academic_program_id', 'applicant_id', 'academic_year_id', 'applicant_number', 'decision_status', 'decided_by_user_id', 'student_id', 'user_id'] as $forbiddenBulkField) {
+        $expect(! str_contains($allowlist, $forbiddenBulkField), 'Bulk conversion allowlist contains a server-derived field: '.$forbiddenBulkField);
+    }
+    $expect(str_contains($sources['batch_request'], 'array_diff(array_keys($this->all()), self::ALLOWED_KEYS)') && str_contains($sources['batch_request'], 'ministry_placement_conversion_batch_payload_not_allowed') && str_contains($sources['batch_request'], '422'), 'Bulk conversion must reject unexpected top-level fields with its stable 422 code.');
+    $expect(str_contains($sources['batch_request'], 'parent::failedValidation($validator)'), 'Normal validation for the two legal bulk fields must remain unchanged.');
     foreach (['applicant_id', 'academic_program_id', 'academic_year_id', 'applicant_number', 'decision_status', 'decided_by_user_id'] as $serverDerived) {
         $expect(! str_contains($sources['controller'], "validated['{$serverDerived}']"), 'Client input controls a server-derived conversion field: '.$serverDerived);
     }
@@ -100,6 +110,31 @@ $contract = static function (string $backendRoot): array {
     }
     foreach (['CONVERSION_DATA_READINESS', 'potential_convertible_records', 'multiple_application_records', 'program_inactive_records', 'exact_duplicate_national_id_records', "SELECT 'OVERALL'", "'READY', 'BLOCKED'", '`alrowad_uni_rust`'] as $required) {
         $expect(str_contains($sources['preflight'], $required), 'Phase 3 preflight is incomplete: '.$required);
+    }
+    foreach (['@mp3_audit_columns', "column_name = 'created_at'", "data_type = 'timestamp'", '@mp3_authorization_columns', '@mp3_authorization_primary_keys', '@mp3_authorization_foreign_keys', '@mp3_active_account_status', "status_code = 'active'", '@mp3_active_permissions', '@mp3_active_pres_root', "unit_code = 'PRES'", 'RBAC_ACCOUNT_STRUCTURE', 'ACTUAL_UNIVERSITY_SCOPE_STRUCTURE'] as $required) {
+        $expect(str_contains($sources['preflight'], $required), 'Phase 3 runtime authorization/audit preflight is incomplete: '.$required);
+    }
+    foreach (['account_status_id', 'user_role_id', 'role_permission_id', 'permission_code', 'user_access_scope_id', 'scope_type', 'scope_id', 'organizational_unit_id', 'unit_code'] as $requiredColumn) {
+        $expect(str_contains($sources['preflight'], $requiredColumn), 'Phase 3 preflight lacks an authorization/scope column: '.$requiredColumn);
+    }
+    foreach (['users', 'account_statuses', 'roles', 'user_roles', 'role_permissions', 'permissions', 'user_access_scopes', 'organizational_units'] as $requiredAuthorizationTable) {
+        $expect(str_contains($sources['preflight'], "table_name = '{$requiredAuthorizationTable}'"), 'Phase 3 preflight lacks a structural authorization table check: '.$requiredAuthorizationTable);
+    }
+    foreach ([
+        "table_name = 'users' AND column_name = 'account_status_id' AND referenced_table_name = 'account_statuses'",
+        "table_name = 'user_roles' AND column_name = 'user_id' AND referenced_table_name = 'users'",
+        "table_name = 'user_roles' AND column_name = 'role_id' AND referenced_table_name = 'roles'",
+        "table_name = 'role_permissions' AND column_name = 'role_id' AND referenced_table_name = 'roles'",
+        "table_name = 'role_permissions' AND column_name = 'permission_id' AND referenced_table_name = 'permissions'",
+        "table_name = 'user_access_scopes' AND column_name = 'user_id' AND referenced_table_name = 'users'",
+    ] as $requiredAuthorizationForeignKey) {
+        $expect(str_contains($sources['preflight'], $requiredAuthorizationForeignKey), 'Phase 3 preflight lacks an authorization/account foreign key: '.$requiredAuthorizationForeignKey);
+    }
+    $readyStart = strpos($sources['preflight'], 'SET @mp3_ready');
+    $readyEnd = strpos($sources['preflight'], 'SELECT', $readyStart === false ? 0 : $readyStart);
+    $ready = $readyStart === false || $readyEnd === false ? '' : substr($sources['preflight'], $readyStart, $readyEnd - $readyStart);
+    foreach (['@mp3_audit_columns', '@mp3_authorization_columns', '@mp3_authorization_primary_keys', '@mp3_authorization_foreign_keys', '@mp3_active_account_status', '@mp3_active_permissions', '@mp3_active_pres_root'] as $requiredReadyCheck) {
+        $expect(str_contains($ready, $requiredReadyCheck), 'OVERALL readiness omits: '.$requiredReadyCheck);
     }
     $expect(! str_contains($sources['preflight'], 'admission_application_id` FROM `alrowad_uni_rust`.`ministry_placement_records'), 'Preflight must not invent a Ministry application FK column.');
 

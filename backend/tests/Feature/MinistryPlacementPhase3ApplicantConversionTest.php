@@ -79,6 +79,50 @@ class MinistryPlacementPhase3ApplicantConversionTest extends TestCase
         self::assertSame(0, DB::table('user_activity_logs')->count());
     }
 
+    public function test_bulk_endpoint_accepts_only_its_two_concurrency_fields_before_conversion(): void
+    {
+        $this->grantPermissions();
+        $recordId = $this->record(1, '00123456789');
+        $actor = User::query()->findOrFail(7);
+        $summary = $this->service->summary(1);
+        $legalPayload = [
+            'expected_eligible_count' => $summary['eligible_count'],
+            'expected_snapshot' => $summary['eligible_snapshot'],
+        ];
+        $recordBefore = (array) DB::table('ministry_placement_records')->where('placement_record_id', $recordId)->first();
+
+        foreach ([
+            'academic_program_id' => 11,
+            'applicant_id' => 900,
+            'decision_status' => 'accepted',
+        ] as $unexpectedField => $unexpectedValue) {
+            $this->actingAs($actor, 'sanctum')
+                ->postJson('/api/v1/ministry-placements/1/applicant-conversion/convert-all', [
+                    ...$legalPayload,
+                    $unexpectedField => $unexpectedValue,
+                ])
+                ->assertStatus(422)
+                ->assertJsonPath('error_code', 'ministry_placement_conversion_batch_payload_not_allowed');
+
+            self::assertSame(0, DB::table('applicants')->count());
+            self::assertSame(0, DB::table('admission_applications')->count());
+            self::assertSame(0, DB::table('user_activity_logs')->count());
+            self::assertSame(
+                $recordBefore,
+                (array) DB::table('ministry_placement_records')->where('placement_record_id', $recordId)->first(),
+            );
+        }
+
+        $this->actingAs($actor, 'sanctum')
+            ->postJson('/api/v1/ministry-placements/1/applicant-conversion/convert-all', $legalPayload)
+            ->assertOk()
+            ->assertJsonPath('data.converted_count', 1);
+
+        self::assertSame(1, DB::table('applicants')->count());
+        self::assertSame(1, DB::table('admission_applications')->count());
+        self::assertSame(1, DB::table('user_activity_logs')->where('action_code', 'ministry_placement.applicant_convert_bulk')->count());
+    }
+
     public function test_ministry_p3_05_to_18_conversion_rechecks_source_and_creates_only_server_derived_pending_rows(): void
     {
         $actor = User::query()->findOrFail(7);

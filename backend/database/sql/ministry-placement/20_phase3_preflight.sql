@@ -89,10 +89,71 @@ SET @mp3_hierarchy_columns := (
 );
 
 SET @mp3_audit_columns := (
-  SELECT COUNT(*) = 5
+  SELECT COUNT(*) = 6
   FROM information_schema.columns
   WHERE table_schema = 'alrowad_uni_rust' AND table_name = 'user_activity_logs'
-    AND column_name IN ('activity_log_id', 'user_id', 'module_code', 'action_code', 'description')
+    AND (
+      (column_name = 'activity_log_id' AND data_type = 'bigint' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
+      (column_name = 'user_id' AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
+      (column_name = 'module_code' AND data_type = 'varchar' AND character_maximum_length >= 80 AND is_nullable = 'YES') OR
+      (column_name = 'action_code' AND data_type = 'varchar' AND character_maximum_length >= 120 AND is_nullable = 'YES') OR
+      (column_name = 'description' AND data_type IN ('text', 'mediumtext', 'longtext') AND is_nullable = 'YES') OR
+      (column_name = 'created_at' AND data_type = 'timestamp' AND is_nullable = 'NO')
+    )
+);
+
+SET @mp3_authorization_columns := (
+  SELECT COUNT(*) = 23
+  FROM information_schema.columns
+  WHERE table_schema = 'alrowad_uni_rust' AND (
+    (table_name = 'users' AND column_name IN ('user_id', 'account_status_id') AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
+    (table_name = 'account_statuses' AND column_name = 'account_status_id' AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
+    (table_name = 'account_statuses' AND column_name = 'status_code' AND data_type = 'varchar' AND character_maximum_length >= 50 AND is_nullable = 'NO') OR
+    (table_name = 'account_statuses' AND column_name = 'is_active' AND data_type = 'tinyint' AND is_nullable = 'NO') OR
+    (table_name = 'roles' AND column_name = 'role_id' AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
+    (table_name = 'roles' AND column_name = 'is_active' AND data_type = 'tinyint' AND is_nullable = 'NO') OR
+    (table_name = 'user_roles' AND column_name IN ('user_id', 'role_id') AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
+    (table_name = 'user_roles' AND column_name = 'is_active' AND data_type = 'tinyint' AND is_nullable = 'NO') OR
+    (table_name = 'role_permissions' AND column_name IN ('role_id', 'permission_id') AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
+    (table_name = 'permissions' AND column_name = 'permission_id' AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
+    (table_name = 'permissions' AND column_name = 'permission_code' AND data_type = 'varchar' AND character_maximum_length >= 120 AND is_nullable = 'NO') OR
+    (table_name = 'permissions' AND column_name = 'is_active' AND data_type = 'tinyint' AND is_nullable = 'NO') OR
+    (table_name = 'user_access_scopes' AND column_name = 'user_access_scope_id' AND data_type = 'bigint' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
+    (table_name = 'user_access_scopes' AND column_name = 'user_id' AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
+    (table_name = 'user_access_scopes' AND column_name = 'scope_type' AND data_type IN ('enum', 'varchar') AND is_nullable = 'NO') OR
+    (table_name = 'user_access_scopes' AND column_name = 'scope_id' AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
+    (table_name = 'user_access_scopes' AND column_name = 'is_active' AND data_type = 'tinyint' AND is_nullable = 'NO') OR
+    (table_name = 'organizational_units' AND column_name = 'organizational_unit_id' AND data_type = 'int' AND column_type NOT LIKE '%unsigned%' AND is_nullable = 'NO') OR
+    (table_name = 'organizational_units' AND column_name = 'unit_code' AND data_type = 'varchar') OR
+    (table_name = 'organizational_units' AND column_name = 'is_active' AND data_type = 'tinyint' AND is_nullable = 'NO')
+  )
+);
+
+SET @mp3_authorization_primary_keys := (
+  SELECT COUNT(*) = 8
+  FROM information_schema.statistics
+  WHERE table_schema = 'alrowad_uni_rust' AND index_name = 'PRIMARY' AND seq_in_index = 1
+    AND ((table_name = 'users' AND column_name = 'user_id') OR
+         (table_name = 'account_statuses' AND column_name = 'account_status_id') OR
+         (table_name = 'roles' AND column_name = 'role_id') OR
+         (table_name = 'user_roles' AND column_name = 'user_role_id') OR
+         (table_name = 'role_permissions' AND column_name = 'role_permission_id') OR
+         (table_name = 'permissions' AND column_name = 'permission_id') OR
+         (table_name = 'user_access_scopes' AND column_name = 'user_access_scope_id') OR
+         (table_name = 'organizational_units' AND column_name = 'organizational_unit_id'))
+);
+
+SET @mp3_authorization_foreign_keys := (
+  SELECT COUNT(DISTINCT CONCAT(table_name, ':', column_name, ':', referenced_table_name, ':', referenced_column_name)) = 6
+  FROM information_schema.key_column_usage
+  WHERE table_schema = 'alrowad_uni_rust' AND referenced_table_name IS NOT NULL AND (
+    (table_name = 'users' AND column_name = 'account_status_id' AND referenced_table_name = 'account_statuses' AND referenced_column_name = 'account_status_id') OR
+    (table_name = 'user_roles' AND column_name = 'user_id' AND referenced_table_name = 'users' AND referenced_column_name = 'user_id') OR
+    (table_name = 'user_roles' AND column_name = 'role_id' AND referenced_table_name = 'roles' AND referenced_column_name = 'role_id') OR
+    (table_name = 'role_permissions' AND column_name = 'role_id' AND referenced_table_name = 'roles' AND referenced_column_name = 'role_id') OR
+    (table_name = 'role_permissions' AND column_name = 'permission_id' AND referenced_table_name = 'permissions' AND referenced_column_name = 'permission_id') OR
+    (table_name = 'user_access_scopes' AND column_name = 'user_id' AND referenced_table_name = 'users' AND referenced_column_name = 'user_id')
+  )
 );
 
 SET @mp3_primary_keys := (
@@ -123,7 +184,7 @@ SET @mp3_required_indexes := (
 );
 
 SET @mp3_required_foreign_keys := (
-  SELECT COUNT(DISTINCT CONCAT(table_name, ':', column_name, ':', referenced_table_name, ':', referenced_column_name)) = 8
+  SELECT COUNT(DISTINCT CONCAT(table_name, ':', column_name, ':', referenced_table_name, ':', referenced_column_name)) = 9
   FROM information_schema.key_column_usage
   WHERE table_schema = 'alrowad_uni_rust' AND referenced_table_name IS NOT NULL AND (
     (table_name = 'ministry_placement_records' AND column_name = 'batch_id' AND referenced_table_name = 'ministry_placement_batches' AND referenced_column_name = 'batch_id') OR
@@ -133,8 +194,14 @@ SET @mp3_required_foreign_keys := (
     (table_name = 'admission_applications' AND column_name = 'applicant_id' AND referenced_table_name = 'applicants' AND referenced_column_name = 'applicant_id') OR
     (table_name = 'admission_applications' AND column_name = 'academic_program_id' AND referenced_table_name = 'academic_programs' AND referenced_column_name = 'academic_program_id') OR
     (table_name = 'admission_applications' AND column_name = 'academic_year_id' AND referenced_table_name = 'academic_years' AND referenced_column_name = 'academic_year_id') OR
-    (table_name = 'admission_applications' AND column_name = 'decided_by_user_id' AND referenced_table_name = 'users' AND referenced_column_name = 'user_id')
+    (table_name = 'admission_applications' AND column_name = 'decided_by_user_id' AND referenced_table_name = 'users' AND referenced_column_name = 'user_id') OR
+    (table_name = 'user_activity_logs' AND column_name = 'user_id' AND referenced_table_name = 'users' AND referenced_column_name = 'user_id')
   )
+);
+
+SET @mp3_active_account_status := (
+  SELECT COUNT(*) = 1 FROM `alrowad_uni_rust`.`account_statuses`
+  WHERE status_code = 'active' AND is_active = 1
 );
 
 SET @mp3_active_permissions := (
@@ -142,11 +209,19 @@ SET @mp3_active_permissions := (
   WHERE permission_code IN ('admissions.view', 'admissions.manage') AND is_active = 1
 );
 
+SET @mp3_active_pres_root := (
+  SELECT COUNT(*) >= 1 FROM `alrowad_uni_rust`.`organizational_units`
+  WHERE unit_code = 'PRES' AND is_active = 1
+);
+
 SET @mp3_ready := @mp3_database_exists AND @mp3_required_tables AND @mp3_record_columns
   AND @mp3_batch_columns AND @mp3_applicant_columns AND @mp3_application_columns
-  AND @mp3_hierarchy_columns AND @mp3_audit_columns AND @mp3_primary_keys
+  AND @mp3_hierarchy_columns AND @mp3_audit_columns AND @mp3_authorization_columns
+  AND @mp3_authorization_primary_keys AND @mp3_authorization_foreign_keys
+  AND @mp3_primary_keys
   AND @mp3_applicant_number_unique AND @mp3_required_indexes
-  AND @mp3_required_foreign_keys AND @mp3_active_permissions;
+  AND @mp3_required_foreign_keys AND @mp3_active_account_status
+  AND @mp3_active_permissions AND @mp3_active_pres_root;
 
 SELECT
   'CONVERSION_DATA_READINESS' AS report_section,
@@ -188,5 +263,8 @@ GROUP BY records.batch_id WITH ROLLUP;
 SELECT 'DATABASE_AND_TABLES' AS check_name, IF(@mp3_database_exists AND @mp3_required_tables, 'PASS', 'FAIL') AS result
 UNION ALL SELECT 'REQUIRED_COLUMNS', IF(@mp3_record_columns AND @mp3_batch_columns AND @mp3_applicant_columns AND @mp3_application_columns AND @mp3_hierarchy_columns, 'PASS', 'FAIL')
 UNION ALL SELECT 'KEYS_INDEXES_AND_RELATIONSHIPS', IF(@mp3_primary_keys AND @mp3_applicant_number_unique AND @mp3_required_indexes AND @mp3_required_foreign_keys, 'PASS', 'FAIL')
-UNION ALL SELECT 'AUTHORIZATION_AND_AUDIT', IF(@mp3_active_permissions AND @mp3_audit_columns, 'PASS', 'FAIL')
+UNION ALL SELECT 'AUDIT_STRUCTURE', IF(@mp3_audit_columns, 'PASS', 'FAIL')
+UNION ALL SELECT 'RBAC_ACCOUNT_STRUCTURE', IF(@mp3_authorization_columns AND @mp3_authorization_primary_keys AND @mp3_authorization_foreign_keys, 'PASS', 'FAIL')
+UNION ALL SELECT 'AUTHORIZATION_REFERENCE_DATA', IF(@mp3_active_account_status AND @mp3_active_permissions, 'PASS', 'FAIL')
+UNION ALL SELECT 'ACTUAL_UNIVERSITY_SCOPE_STRUCTURE', IF(@mp3_active_pres_root, 'PASS', 'FAIL')
 UNION ALL SELECT 'OVERALL', IF(@mp3_ready, 'READY', 'BLOCKED');
