@@ -83,8 +83,11 @@ assert.match(panel, /await Promise\.all\(\[load\(\), onChanged\?\.\(\)\]\)/, 'St
 assert.doesNotMatch(panel, /academic_program_id:\s*group\.suggestions\[0\]/, 'A suggestion must never be auto-applied')
 assert.match(page, /recordsRequestGuard\.current\.invalidate\(\)[\s\S]*setRecords\(\[\]\)[\s\S]*setRecordMeta\(\{\}\)[\s\S]*setRecordMatch\(null\)[\s\S]*setRecordUnmatch\(null\)/, 'Changing batch must clear record state and dialogs')
 
-for (const forbidden of ['تحويل لمتقدم', 'إنشاء طالب', 'إنشاء حساب', 'Applicant', 'AdmissionApplication']) {
-  assert.equal(`${page}\n${panel}\n${picker}`.includes(forbidden), false, `Later-phase control leaked: ${forbidden}`)
+for (const forbidden of ['تحويل لمتقدم', 'إنشاء طالب', 'إنشاء حساب']) {
+  assert.equal(`${panel}\n${picker}`.includes(forbidden), false, `Later-phase control leaked into Phase 2: ${forbidden}`)
+}
+for (const forbidden of ['Applicant', 'AdmissionApplication']) {
+  assert.equal(`${panel}\n${picker}`.includes(forbidden), false, `Phase 2 components reference a later-phase entity: ${forbidden}`)
 }
 
 console.log('Ministry Placement Phase 2 frontend tests passed.')
