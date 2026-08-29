@@ -144,3 +144,54 @@ export function canBulkConvertMinistryApplicants(canManage, summary) {
     && Number(summary?.eligible_count ?? 0) > 0
     && /^[a-f0-9]{64}$/.test(String(summary?.eligible_snapshot ?? ''))
 }
+
+export function studentEnrollmentStateLabel(state) {
+  if (state === 'ready') return 'جاهز للاعتماد'
+  if (state === 'enrolled') return 'تم إنشاء الطالب'
+  if (state === 'not_ready') return 'غير جاهز'
+  if (state === 'rejected') return 'مرفوض'
+  if (state === 'inconsistent') return 'يحتاج مراجعة'
+  return 'حالة غير معروفة'
+}
+
+export function studentEnrollmentBlockerLabel(code) {
+  const labels = {
+    applicant_not_created: 'لم يكتمل تحويل السجل إلى متقدم',
+    linked_applicant_missing: 'سجل المتقدم المرتبط غير موجود',
+    expected_application_missing: 'طلب القبول المطابق غير موجود',
+    expected_application_ambiguous: 'يوجد أكثر من طلب قبول مطابق',
+    application_student_ambiguous: 'يوجد أكثر من طالب مرتبط بطلب القبول',
+    student_reference_missing: 'مرجع المستوى أو حالة الطالب غير موجود',
+    student_deleted: 'سجل الطالب المرتبط محذوف ويحتاج مراجعة',
+    program_hierarchy_inactive: 'البرنامج أو القسم أو الكلية لم تعد نشطة',
+    identity_missing: 'هوية الوزارة غير محددة',
+    identity_conflict: 'هوية الوزارة متعارضة مع سجل آخر',
+    decision_status_unsupported: 'حالة قرار طلب القبول غير مدعومة',
+    decision_provenance_inconsistent: 'بيانات قرار طلب القبول غير مكتملة',
+    student_with_nonaccepted_application: 'يوجد طالب مرتبط بطلب غير مقبول',
+    accepted_without_student: 'طلب مقبول دون سجل طالب',
+    student_program_mismatch: 'برنامج الطالب لا يطابق طلب القبول',
+    documents_pending: 'الوثائق ما زالت قيد الاستكمال',
+    processing_status_inconsistent: 'حالة سجل المفاضلة غير متسقة',
+  }
+  return labels[code] ?? 'تحتاج الحالة إلى مراجعة تشغيلية'
+}
+
+export function canEnrollMinistryStudent(canManage, record) {
+  return canManage === true && record?.enrollment_state === 'ready'
+}
+
+export function enrollmentInputComplete(input) {
+  return Boolean(String(input?.student_number ?? '').trim())
+    && Number(input?.current_academic_level_id) > 0
+    && /^\d{4}-\d{2}-\d{2}$/.test(String(input?.enrollment_date ?? ''))
+}
+
+export function canBulkEnrollMinistryStudents(canManage, summary, inputs) {
+  const ready = (summary?.records ?? []).filter(record => record.enrollment_state === 'ready')
+  return canManage === true
+    && ready.length > 0
+    && ready.length === Number(summary?.eligible_count ?? 0)
+    && /^[a-f0-9]{64}$/.test(String(summary?.eligible_snapshot ?? ''))
+    && ready.every(record => enrollmentInputComplete(inputs?.[record.placement_record_id]))
+}

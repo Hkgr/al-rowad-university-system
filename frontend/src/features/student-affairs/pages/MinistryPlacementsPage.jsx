@@ -4,6 +4,7 @@ import { hasAssignedPermission, PERMISSIONS } from '../../auth/auth'
 import { apiRequest } from '../../../services/apiClient'
 import MinistryProgramMatchingPanel from '../components/MinistryProgramMatchingPanel'
 import MinistryApplicantConversionPanel from '../components/MinistryApplicantConversionPanel'
+import MinistryStudentEnrollmentPanel from '../components/MinistryStudentEnrollmentPanel'
 import MinistryProgramPickerDialog from '../components/MinistryProgramPickerDialog'
 import { createLatestRequestGuard } from '../lib/latestRequestGuard'
 import {
@@ -241,7 +242,7 @@ export default function MinistryPlacementsPage() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-black text-text-dark">دفعات مفاضلة الوزارة</h1>
-            <p className="mt-1 text-sm text-text-light">فحص ملف الوزارة، مراجعة مطابقة البرامج، ثم التحويل الآمن إلى متقدم وطلب قبول معلق دون إنشاء طالب أو حساب مستخدم.</p>
+            <p className="mt-1 text-sm text-text-light">فحص ملف الوزارة، مطابقة البرامج، التحويل إلى متقدم، ثم اعتماد طلب القبول وإنشاء سجل الطالب دون إنشاء حساب مستخدم أو تسجيل مقررات.</p>
           </div>
           <div className="rounded-xl bg-primary/10 p-3 text-2xl text-primary"><FaFileExcel /></div>
         </div>
@@ -314,10 +315,12 @@ export default function MinistryPlacementsPage() {
           <button type="button" onClick={() => setBatchView('records')} className={`rounded-lg px-4 py-2 font-bold ${batchView === 'records' ? 'bg-primary text-white' : 'bg-slate-100 text-text-dark'}`}>السجلات</button>
           <button type="button" onClick={() => setBatchView('program_matching')} className={`rounded-lg px-4 py-2 font-bold ${batchView === 'program_matching' ? 'bg-primary text-white' : 'bg-slate-100 text-text-dark'}`}>مطابقة البرامج</button>
           <button type="button" onClick={() => setBatchView('applicant_conversion')} className={`rounded-lg px-4 py-2 font-bold ${batchView === 'applicant_conversion' ? 'bg-primary text-white' : 'bg-slate-100 text-text-dark'}`}>تحويل إلى متقدم</button>
+          <button type="button" onClick={() => setBatchView('student_enrollment')} className={`rounded-lg px-4 py-2 font-bold ${batchView === 'student_enrollment' ? 'bg-primary text-white' : 'bg-slate-100 text-text-dark'}`}>اعتماد وإنشاء طالب</button>
         </div>
 
         {batchView === 'program_matching' && <MinistryProgramMatchingPanel key={selectedBatch.batch_id} batch={selectedBatch} canManage={canManage} onChanged={loadRecords} />}
         {batchView === 'applicant_conversion' && <MinistryApplicantConversionPanel key={selectedBatch.batch_id} batch={selectedBatch} canManage={canManage} onChanged={loadRecords} />}
+        {batchView === 'student_enrollment' && <MinistryStudentEnrollmentPanel key={selectedBatch.batch_id} batch={selectedBatch} canManage={canManage} onChanged={loadRecords} />}
 
         {batchView === 'records' && <>
           <div className="mt-4 flex justify-end"><input value={search} onChange={event => changeRecordSearch(event.target.value)} placeholder="بحث في السجلات" className="rounded-xl border border-primary/20 px-4 py-2" /></div>

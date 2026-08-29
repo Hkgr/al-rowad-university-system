@@ -100,7 +100,7 @@ $contract = static function (string $backendRoot): array {
 
     $ministryRecordMutationRoutes = array_filter(preg_split('/\R/', $sources['routes']) ?: [], fn (string $line): bool => str_contains($line, 'ministry-placement-records/{record}') && preg_match('/Route::(put|patch|post|delete)/i', $line));
     foreach ($ministryRecordMutationRoutes as $line) {
-        $expect(str_contains($line, 'program-match') || str_contains($line, 'convert-to-applicant'), 'A Ministry API now edits immutable imported identity/profile fields: '.trim($line));
+        $expect(str_contains($line, 'program-match') || str_contains($line, 'convert-to-applicant') || str_contains($line, 'enroll-student'), 'A Ministry API now edits immutable imported identity/profile fields: '.trim($line));
     }
     $expect(! preg_match('/function\s+(update|editIdentity|updateProfile)\s*\(/', $sources['controller']), 'Phase 3 must preserve immutable Ministry staging identity/profile data.');
 
