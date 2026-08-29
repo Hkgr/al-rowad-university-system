@@ -195,3 +195,37 @@ export function canBulkEnrollMinistryStudents(canManage, summary, inputs) {
     && /^[a-f0-9]{64}$/.test(String(summary?.eligible_snapshot ?? ''))
     && ready.every(record => enrollmentInputComplete(inputs?.[record.placement_record_id]))
 }
+
+export function reconciliationGateLabel(gate) {
+  return gate === 'READY' ? 'جاهز للإنتاج' : gate === 'BLOCKED' ? 'الإنتاج محظور' : 'غير متاح'
+}
+
+export function reconciliationSeverityLabel(severity) {
+  if (severity === 'clean') return 'سليم'
+  if (severity === 'warning') return 'تحذير'
+  if (severity === 'blocked') return 'محظور'
+  return 'غير معروف'
+}
+
+export function reconciliationStateLabel(state) {
+  const labels = {
+    imported: 'مستورد',
+    matched: 'مطابق للبرنامج',
+    applicant_pending: 'متقدم — قرار معلّق',
+    documents_pending: 'وثائق قيد الاستكمال',
+    enrolled: 'طالب منشأ',
+    rejected: 'مرفوض',
+    inconsistent: 'غير متسق',
+  }
+  return labels[state] ?? 'غير معروف'
+}
+
+export function reconciliationIssueLabel(issue) {
+  if (issue?.code === 'identity_conflict_multiple_terminal_records') {
+    return 'تعارض هوية بين عدة سلاسل نهائية — يلزم تحقيق يدوي قبل الإنتاج'
+  }
+  if (issue?.code === 'identity_conflict_terminal_record') {
+    return 'سجل نهائي متسق له سجل غير نهائي مماثل — تحذير تاريخي'
+  }
+  return issue?.message || 'مشكلة مصالحة غير معروفة'
+}

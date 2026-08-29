@@ -117,7 +117,7 @@ $contract = static function (string $backendRoot): array {
     $expect(str_contains($sources['page'], "'الأخطاء'") && str_contains($sources['page'], 'rowErrorLabels(row.errors)'), 'Preview rows must visibly render localized validation reasons.');
     $expect(str_contains($sources['page'], 'workbookIssueLabel(item)') && str_contains($sources['frontend_helper'], 'unexpected_data_after_column_x'), 'Structural machine codes need Arabic presentation labels.');
     $expect(str_contains($sources['frontend_helper'], 'additional_empty_sheet_ignored'), 'Empty-sheet warnings need Arabic presentation text.');
-    $expect(str_contains($sources['app'], 'ministryPlacementNav') && str_contains($sources['app'], 'assignedPermissions={[PERMISSIONS.admissionsView]} actualUniversityScope'), 'Ministry page needs a sibling parent with exact admissions/scope authority.');
+    $expect(str_contains($sources['app'], '<DashboardLayout nav={studentAffairsNav}') && str_contains($sources['app'], 'assignedPermissions={[PERMISSIONS.admissionsView]} actualUniversityScope'), 'Ministry page needs a sibling parent with exact admissions/scope authority and normal Student Affairs layout.');
     $expect(substr_count($sources['app'], 'path="/student-affairs/ministry-placements"') === 1, 'Ministry route must be declared exactly once.');
     $expect(str_contains($sources['auth'], 'assignedPermissions: [PERMISSIONS.admissionsView], actualUniversityScope: true') && str_contains($sources['auth'], "return '/student-affairs/ministry-placements'"), 'Admissions-only operators need a landing route with exact Ministry authority.');
     $importStart = strpos($sources['page'], 'async function importBatch');
@@ -126,7 +126,7 @@ $contract = static function (string $backendRoot): array {
     foreach (['program-match', 'convert-to-applicant', 'Applicant', 'AdmissionApplication', 'Student'] as $forbidden) {
         $expect(! str_contains($importUi, $forbidden), 'Phase 1 import UI crosses into a later phase: '.$forbidden);
     }
-    $expect(str_contains($sources['app'], '/student-affairs/ministry-placements') && str_contains($sources['nav'], '/student-affairs/ministry-placements'), 'Student Affairs route/nav is missing.');
+    $expect(str_contains($sources['app'], '/student-affairs/ministry-placements') && ! str_contains($sources['nav'], '/student-affairs/ministry-placements'), 'Ministry route must exist without becoming a first-level Student Affairs nav item.');
     $expect(str_contains($sources['composer'], '"maatwebsite/excel": "^4.0"'), 'Excel dependency is missing.');
     $expect((glob($backendRoot.'/database/migrations/*ministry*placement*') ?: []) === [], 'Ministry Placement migrations are forbidden.');
 

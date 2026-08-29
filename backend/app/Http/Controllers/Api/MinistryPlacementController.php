@@ -2,16 +2,18 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Http\Requests\MinistryPlacement\ImportMinistryPlacementRequest;
 use App\Http\Requests\MinistryPlacement\ApplyMinistryPlacementProgramGroupRequest;
+use App\Http\Requests\MinistryPlacement\ImportMinistryPlacementRequest;
 use App\Http\Requests\MinistryPlacement\MatchMinistryPlacementProgramRequest;
 use App\Http\Requests\MinistryPlacement\PreviewMinistryPlacementRequest;
+use App\Http\Resources\AcademicYearResource;
 use App\Http\Resources\MinistryPlacementBatchResource;
 use App\Http\Resources\MinistryPlacementRecordResource;
+use App\Models\AcademicYear;
 use App\Models\MinistryPlacementBatch;
 use App\Models\MinistryPlacementRecord;
-use App\Services\MinistryPlacementService;
 use App\Services\MinistryPlacementProgramMatchingService;
+use App\Services\MinistryPlacementService;
 use App\Support\AcademicQueuePagination;
 use App\Support\MinistryPlacementAccess;
 use Illuminate\Http\JsonResponse;
@@ -20,6 +22,17 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class MinistryPlacementController extends ApiController
 {
+    public function academicYears(Request $request, MinistryPlacementAccess $access): JsonResponse
+    {
+        abort_unless($access->canManage($request->user()), 403);
+        $years = AcademicYear::query()
+            ->orderByDesc('start_date')
+            ->orderByDesc('academic_year_id')
+            ->get();
+
+        return $this->successResponse(AcademicYearResource::collection($years)->resolve($request));
+    }
+
     public function preview(PreviewMinistryPlacementRequest $request, MinistryPlacementService $service): JsonResponse
     {
         return $this->successResponse($service->preview($request->file('file')));

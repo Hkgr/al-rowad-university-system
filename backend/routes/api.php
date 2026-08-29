@@ -113,6 +113,7 @@ use App\Http\Controllers\Api\UserActivityLogController;
 use App\Http\Controllers\Api\MinistryPlacementController;
 use App\Http\Controllers\Api\MinistryPlacementApplicantConversionController;
 use App\Http\Controllers\Api\MinistryPlacementStudentEnrollmentController;
+use App\Http\Controllers\Api\MinistryPlacementReconciliationController;
 use App\Http\Controllers\Api\UserRoleController;
 use App\Http\Controllers\Api\StudentSupplementaryExamController;
 use App\Http\Controllers\Api\SupplementaryExamEligibilityController;
@@ -231,6 +232,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
 
     Route::post('ministry-placements/preview', [MinistryPlacementController::class, 'preview']);
     Route::post('ministry-placements/import', [MinistryPlacementController::class, 'import']);
+    Route::get('ministry-placement-academic-years', [MinistryPlacementController::class, 'academicYears']);
     Route::get('ministry-placement-programs', [MinistryPlacementController::class, 'programs']);
     Route::get('ministry-placements', [MinistryPlacementController::class, 'index']);
     Route::get('ministry-placements/{batch}', [MinistryPlacementController::class, 'show'])->whereNumber('batch');
@@ -246,6 +248,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('ministry-placements/{batch}/student-enrollment', [MinistryPlacementStudentEnrollmentController::class, 'summary'])->whereNumber('batch');
     Route::post('ministry-placement-records/{record}/enroll-student', [MinistryPlacementStudentEnrollmentController::class, 'enroll'])->whereNumber('record');
     Route::post('ministry-placements/{batch}/student-enrollment/enroll-all', [MinistryPlacementStudentEnrollmentController::class, 'enrollAll'])->whereNumber('batch');
+    Route::get('ministry-placement-reconciliation', [MinistryPlacementReconciliationController::class, 'index']);
+    Route::get('ministry-placements/{batch}/reconciliation', [MinistryPlacementReconciliationController::class, 'batch'])->whereNumber('batch');
 
     /*
     |--------------------------------------------------------------------------

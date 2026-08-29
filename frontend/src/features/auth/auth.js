@@ -2,6 +2,8 @@ const IDENTITY_KEY = 'user'
 
 export const ROLES = Object.freeze({
   dean: 'dean',
+  examOfficer: 'exam_officer',
+  registrationOfficer: 'registration_officer',
   vicePresidentScientific: 'vice_president_scientific',
   vicePresidentAdministrative: 'vice_president_administrative',
   vicePresidentLegacy: 'vice_president',
@@ -16,6 +18,7 @@ export const PERMISSIONS = Object.freeze({
   academicStructureView: 'academic_structure.view',
   academicStructureManage: 'academic_structure.manage',
   studentsView: 'students.view',
+  studentsManage: 'students.manage',
   hrView: 'hr.view',
   teachingStaffManage: 'teaching_staff.manage',
   teachingStaffView: 'teaching_staff.view',
@@ -49,6 +52,13 @@ export const PERMISSIONS = Object.freeze({
 export const ACCESS = Object.freeze({
   courseRegistration: { allPermissions: [PERMISSIONS.registrationView, PERMISSIONS.studentsView, PERMISSIONS.academicStructureView, PERMISSIONS.coursesView, PERMISSIONS.systemSettingsView] },
   courseManagement: { allPermissions: [PERMISSIONS.coursesView, PERMISSIONS.academicStructureView, PERMISSIONS.systemSettingsView] },
+  studentAffairs: { allPermissions: [PERMISSIONS.studentsView] },
+  studentAffairsAddStudent: { anyAccess: [
+    { allPermissions: [PERMISSIONS.studentsView, PERMISSIONS.studentsManage] },
+    { assignedPermissions: [PERMISSIONS.admissionsManage], actualUniversityScope: true },
+  ] },
+  studentAffairsArchivedStudents: { allPermissions: [PERMISSIONS.studentsView, PERMISSIONS.studentsManage] },
+  studentAffairsApprovedRegistrationRequests: { allPermissions: [PERMISSIONS.studentsView, PERMISSIONS.registrationView] },
   scientificVicePresident: { permissions: [PERMISSIONS.vicePresidencyScientificAccess] },
   administrativeVicePresident: { permissions: [PERMISSIONS.vicePresidencyAdministrativeAccess] },
 })
@@ -77,8 +87,9 @@ export function hasActualUniversityScope(user = getIdentity()) {
 export function can(permission, user = getIdentity()) { return hasPermission(permission, user) }
 export function canAny(permissions, user = getIdentity()) { return permissions.some(permission => can(permission, user)) }
 export function canAll(permissions, user = getIdentity()) { return permissions.every(permission => can(permission, user)) }
-export function canAccess({ permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], actualUniversityScope = false, studentIdentity = false, employeeIdentity = false } = {}, user = getIdentity()) {
+export function canAccess({ permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], actualUniversityScope = false, studentIdentity = false, employeeIdentity = false, anyAccess = [] } = {}, user = getIdentity()) {
   if (!user) return false
+  if (anyAccess.length > 0) return anyAccess.some(access => canAccess(access, user))
   if (studentIdentity && !user.student_id) return false
   if (employeeIdentity && !user.employee_id) return false
   if (actualUniversityScope && !hasActualUniversityScope(user)) return false
@@ -96,6 +107,8 @@ export function landingRoute(user) {
   if (hasRole(ROLES.dean, user)) return '/dean'
   if (hasRole(ROLES.vicePresidentScientific, user)) return '/vp/scientific'
   if (hasRole(ROLES.vicePresidentAdministrative, user)) return '/vp/administrative'
+  if (hasRole(ROLES.examOfficer, user)) return '/exam-board'
+  if (hasRole(ROLES.registrationOfficer, user)) return '/student-affairs'
   if (canAll(['exams.view', 'exams.manage'], user)) return '/exam-board'
   if (canAccess(ACCESS.courseRegistration, user) && hasPermission('registration.manage', user)) return '/exam-board/course-registration'
   if (canAny(['attendance.manage', 'grades.manage'], user) && user?.employee_id) return '/professor'
@@ -103,6 +116,7 @@ export function landingRoute(user) {
   if (hasPermission('hr.view', user)) return '/hr'
   if (user?.student_id && canAny(['registration.view', 'grades.view', 'attendance.view'], user)) return '/student'
   if (hasPermission('academic_structure.view', user)) return '/academic-structure'
+  if (canAccess({ assignedPermissions: [PERMISSIONS.admissionsManage], actualUniversityScope: true }, user)) return '/student-affairs/students/add'
   if (hasPermission('students.view', user)) return '/student-affairs'
   if (canAccess({ assignedPermissions: [PERMISSIONS.admissionsView], actualUniversityScope: true }, user)) return '/student-affairs/ministry-placements'
   // Permission fallback for VP-only identities. Exclude super_admin so existing
