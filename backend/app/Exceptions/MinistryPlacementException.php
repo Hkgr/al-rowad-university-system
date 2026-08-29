@@ -64,4 +64,10 @@ class MinistryPlacementException extends Exception
             'ministry_placement_program_unavailable',
         );
     }
+
+    /** @param array<string, mixed> $errors */
+    public static function conversionConflict(string $code, string $message, array $errors = [], int $status = 409): self
+    {
+        return new self($message, $errors, $status, $code);
+    }
 }

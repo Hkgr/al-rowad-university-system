@@ -64,9 +64,7 @@ $contract = static function (string $backendRoot): array {
     }
     $expect(! str_contains($sources['controller'], 'first_parsed_row_debug'), 'Raw debug row leakage is forbidden.');
     $expect(str_contains($sources['controller'], "'per_page' => ['sometimes', 'integer', 'min:1', 'max:100']"), 'Record pagination must cap per_page at 100.');
-    foreach (['match-program', 'convert-to-applicant'] as $forbidden) {
-        $expect(! str_contains($sources['routes'], $forbidden), 'Phase 1 exposes forbidden endpoint: '.$forbidden);
-    }
+    $expect(! preg_match("/convert-to-applicant[^\n]*MinistryPlacementController::class/", $sources['routes']), 'The Phase 1 controller must never own applicant conversion.');
     $expect(str_contains($sources['access'], 'effectivePermissions()->contains') && str_contains($sources['access'], 'hasActualUniversityScope'), 'Authorization must use effective/actually assigned RBAC permission and actual university scope.');
     $expect(! str_contains($sources['access'], 'hasPermission(') && ! str_contains($sources['access'], 'super_admin'), 'Ministry authorization must not use role bypasses.');
 
@@ -122,8 +120,11 @@ $contract = static function (string $backendRoot): array {
     $expect(str_contains($sources['app'], 'ministryPlacementNav') && str_contains($sources['app'], 'assignedPermissions={[PERMISSIONS.admissionsView]} actualUniversityScope'), 'Ministry page needs a sibling parent with exact admissions/scope authority.');
     $expect(substr_count($sources['app'], 'path="/student-affairs/ministry-placements"') === 1, 'Ministry route must be declared exactly once.');
     $expect(str_contains($sources['auth'], 'assignedPermissions: [PERMISSIONS.admissionsView], actualUniversityScope: true') && str_contains($sources['auth'], "return '/student-affairs/ministry-placements'"), 'Admissions-only operators need a landing route with exact Ministry authority.');
-    foreach (['ربط برنامج', 'تحويل لمتقدم', 'إنشاء طالب'] as $forbidden) {
-        $expect(! str_contains($sources['page'], $forbidden), 'Phase 1 UI contains a later-stage control: '.$forbidden);
+    $importStart = strpos($sources['page'], 'async function importBatch');
+    $importEnd = strpos($sources['page'], 'async function changeBatchPage', $importStart === false ? 0 : $importStart);
+    $importUi = $importStart === false || $importEnd === false ? '' : substr($sources['page'], $importStart, $importEnd - $importStart);
+    foreach (['program-match', 'convert-to-applicant', 'Applicant', 'AdmissionApplication', 'Student'] as $forbidden) {
+        $expect(! str_contains($importUi, $forbidden), 'Phase 1 import UI crosses into a later phase: '.$forbidden);
     }
     $expect(str_contains($sources['app'], '/student-affairs/ministry-placements') && str_contains($sources['nav'], '/student-affairs/ministry-placements'), 'Student Affairs route/nav is missing.');
     $expect(str_contains($sources['composer'], '"maatwebsite/excel": "^4.0"'), 'Excel dependency is missing.');

@@ -104,3 +104,43 @@ export function programOptionLabel(program) {
 export function canMutateProgramMatch(canManage, record) {
   return canManage === true && ['unmatched', 'matched', 'stale_match'].includes(record?.program_match_state)
 }
+
+export function applicantConversionStateLabel(state) {
+  if (state === 'convertible') return 'جاهز للتحويل'
+  if (state === 'converted') return 'تم إنشاء المتقدم'
+  if (state === 'not_ready') return 'غير جاهز'
+  if (state === 'inconsistent') return 'يحتاج مراجعة'
+  if (state === 'later_stage') return 'مرحلة لاحقة'
+  return 'حالة غير معروفة'
+}
+
+export function applicantConversionBlockerLabel(code) {
+  const labels = {
+    program_not_matched: 'لم تتم مطابقة البرنامج',
+    program_match_stale: 'مطابقة البرنامج تحتاج مراجعة',
+    identity_missing: 'هوية الوزارة غير محددة',
+    identity_conflict: 'هوية الوزارة مكررة في سجل آخر',
+    applicant_data_invalid: 'بيانات المتقدم الأساسية غير مكتملة',
+    applicant_number_conflict: 'رقم المتقدم الحتمي مستخدم مسبقاً',
+    conversion_link_missing: 'حالة التحويل لا تحتوي رابط متقدم',
+    linked_applicant_missing: 'رابط المتقدم يشير إلى سجل غير موجود',
+    expected_application_missing: 'طلب القبول المتوقع غير موجود',
+    expected_application_ambiguous: 'يوجد أكثر من طلب قبول مطابق',
+    application_context_mismatch: 'برنامج أو سنة طلب القبول غير متطابقين',
+    conversion_status_inconsistent: 'حالة التحويل غير متسقة',
+    decision_status_unsupported: 'حالة قرار طلب القبول غير مدعومة',
+    decision_provenance_inconsistent: 'بيانات قرار طلب القبول غير مكتملة',
+    academic_year_missing: 'السنة الأكاديمية للدفعة غير متاحة',
+  }
+  return labels[code] ?? 'حالة التحويل غير متسقة'
+}
+
+export function canConvertMinistryRecord(canManage, record) {
+  return canManage === true && record?.conversion_state === 'convertible'
+}
+
+export function canBulkConvertMinistryApplicants(canManage, summary) {
+  return canManage === true
+    && Number(summary?.eligible_count ?? 0) > 0
+    && /^[a-f0-9]{64}$/.test(String(summary?.eligible_snapshot ?? ''))
+}

@@ -111,6 +111,7 @@ use App\Http\Controllers\Api\VicePresidencyCourseOfferingExceptionController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\UserActivityLogController;
 use App\Http\Controllers\Api\MinistryPlacementController;
+use App\Http\Controllers\Api\MinistryPlacementApplicantConversionController;
 use App\Http\Controllers\Api\UserRoleController;
 use App\Http\Controllers\Api\StudentSupplementaryExamController;
 use App\Http\Controllers\Api\SupplementaryExamEligibilityController;
@@ -237,6 +238,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::post('ministry-placements/{batch}/program-matching/apply-group', [MinistryPlacementController::class, 'applyProgramGroup'])->whereNumber('batch');
     Route::put('ministry-placement-records/{record}/program-match', [MinistryPlacementController::class, 'matchProgram'])->whereNumber('record');
     Route::delete('ministry-placement-records/{record}/program-match', [MinistryPlacementController::class, 'unmatchProgram'])->whereNumber('record');
+    Route::get('ministry-placements/{batch}/applicant-conversion', [MinistryPlacementApplicantConversionController::class, 'summary'])->whereNumber('batch');
+    Route::post('ministry-placement-records/{record}/convert-to-applicant', [MinistryPlacementApplicantConversionController::class, 'convert'])->whereNumber('record');
+    Route::post('ministry-placements/{batch}/applicant-conversion/convert-all', [MinistryPlacementApplicantConversionController::class, 'convertAll'])->whereNumber('batch');
 
     /*
     |--------------------------------------------------------------------------

@@ -37,7 +37,8 @@ $contract = static function (string $backendRoot): array {
         "Route::put('ministry-placement-records/{record}/program-match'",
         "Route::delete('ministry-placement-records/{record}/program-match'",
     ] as $route) $expect(str_contains($sources['routes'], $route), 'Missing Phase 2 route: '.$route);
-    $expect(! str_contains($sources['routes'], 'convert-to-applicant'), 'Applicant conversion route is forbidden.');
+    $expect(! preg_match("/convert-to-applicant[^\n]*MinistryPlacementController::class/", $sources['routes']), 'The Phase 2 matching controller must never own applicant conversion.');
+    $expect(str_contains($sources['routes'], "[MinistryPlacementApplicantConversionController::class, 'convert']"), 'Later conversion must remain isolated in its dedicated Phase 3 controller.');
 
     $expect(str_contains($sources['access'], 'effectivePermissions()->contains') && str_contains($sources['access'], 'hasActualUniversityScope'), 'Phase 2 must retain exact Ministry authority.');
     $expect(! str_contains($sources['access'], 'hasPermission(') && ! str_contains($sources['access'], 'super_admin'), 'Phase 2 access must not use a role bypass.');
@@ -109,7 +110,7 @@ $contract = static function (string $backendRoot): array {
     $expect(str_contains($sources['panel'], 'bindSelectionToBatch') && str_contains($sources['panel'], 'selectionForBatch'), 'Group selections must be bound to and checked against their batch.');
     $expect(str_contains($sources['panel'], 'canBulkMatchProgramGroup(canManage, group)') && str_contains($sources['frontend_helper'], 'group?.bulk_matchable === true') && str_contains($sources['panel'], 'لا توجد رغبة — يلزم مراجعة فردية'), 'Missing-preference groups must not expose a bulk action.');
     foreach (['إنشاء طالب', 'تحويل لمتقدم', 'إنشاء حساب'] as $forbidden) {
-        $expect(! str_contains($sources['page'].$sources['panel'].$sources['picker'], $forbidden), 'Later-phase UI control found: '.$forbidden);
+        $expect(! str_contains($sources['panel'].$sources['picker'], $forbidden), 'Later-phase UI control found in Phase 2 components: '.$forbidden);
     }
 
     return $errors;

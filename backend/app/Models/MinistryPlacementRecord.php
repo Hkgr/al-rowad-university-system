@@ -52,6 +52,11 @@ class MinistryPlacementRecord extends Model
         return $this->belongsTo(AcademicProgram::class, 'matched_academic_program_id', 'academic_program_id');
     }
 
+    public function applicant(): BelongsTo
+    {
+        return $this->belongsTo(Applicant::class, 'applicant_id', 'applicant_id');
+    }
+
     public function programMatchState(): string
     {
         if ($this->applicant_id !== null || ! in_array($this->processing_status, ['imported', 'program_matched'], true)) {
