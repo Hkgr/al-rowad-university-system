@@ -46,10 +46,33 @@ $contract = static function (string $backendRoot): array {
     }
     $expect(str_contains($sources['individual_request'], 'array_diff(array_keys($this->all()), self::ALLOWED_KEYS)') && str_contains($sources['individual_request'], 'ministry_placement_enrollment_payload_not_allowed'), 'Individual request must reject unknown top-level fields.');
     $expect(str_contains($sources['batch_request'], 'ALLOWED_ITEM_KEYS') && str_contains($sources['batch_request'], 'unexpectedItemKeys') && str_contains($sources['batch_request'], 'ministry_placement_enrollment_batch_payload_not_allowed'), 'Bulk request must reject unknown top-level and nested fields.');
+    $expect(str_contains($sources['individual_request'], 'is_string($studentNumber)'), 'Individual student-number normalization must run only for a string value.');
+    $expect(str_contains($sources['batch_request'], "is_string(\$item['student_number'])"), 'Bulk student-number normalization must run only for string item values.');
+    $expect(str_contains($sources['batch_request'], 'if (! is_array($items))') && str_contains($sources['batch_request'], 'foreach ($items as $index => $item)'), 'Malformed bulk items must not be passed to foreach.');
 
     foreach (['DB::transaction', 'lockForUpdate', 'MinistryPlacementNormalizer::duplicateKey', "where('status_code', 'active')", "where('is_active', true)", "'decision_status' => self::ACCEPTED", "'decided_by_user_id' => (int) \$actor->user_id", "'processing_status' => 'enrolled'", 'Student::query()->create'] as $required) {
         $expect(str_contains($sources['service'], $required), 'Phase 4 transaction/mapping is incomplete: '.$required);
     }
+    $individualStart = strpos($sources['service'], 'public function enroll(');
+    $bulkStart = strpos($sources['service'], 'public function enrollAll(');
+    $individual = $individualStart === false || $bulkStart === false ? '' : substr($sources['service'], $individualStart, $bulkStart - $individualStart);
+    $bulkEnd = strpos($sources['service'], 'private function recordsQuery', $bulkStart === false ? 0 : $bulkStart);
+    $bulk = $bulkStart === false || $bulkEnd === false ? '' : substr($sources['service'], $bulkStart, $bulkEnd - $bulkStart);
+    $locatorPosition = strpos($individual, "value('batch_id')");
+    $transactionPosition = strpos($individual, 'DB::transaction');
+    $individualBatchLock = strpos($individual, 'MinistryPlacementBatch::query()');
+    $individualRecordLock = strpos($individual, 'MinistryPlacementRecord::query()->whereKey($recordId)->lockForUpdate()');
+    $expect($locatorPosition !== false && $transactionPosition !== false && $locatorPosition < $transactionPosition, 'Individual enrollment must locate batch_id before its mutation transaction.');
+    $expect($individualBatchLock !== false && $individualRecordLock !== false && $individualBatchLock < $individualRecordLock, 'Individual enrollment must lock batch before record.');
+    $bulkBatchLock = strpos($bulk, 'MinistryPlacementBatch::query()');
+    $bulkRecordLock = strpos($bulk, 'MinistryPlacementRecord::query()');
+    $expect($bulkBatchLock !== false && $bulkRecordLock !== false && $bulkBatchLock < $bulkRecordLock, 'Bulk enrollment must lock batch before records.');
+    $expect(substr_count($sources['service'], '}, 3);') >= 2, 'Both Phase 4 mutation transactions need bounded Laravel deadlock retries.');
+    $identityStart = strpos($sources['service'], 'private function identityReferences()');
+    $identityEnd = strpos($sources['service'], 'private function programIsActive', $identityStart === false ? 0 : $identityStart);
+    $identityMethod = $identityStart === false || $identityEnd === false ? '' : substr($sources['service'], $identityStart, $identityEnd - $identityStart);
+    $expect(! str_contains($identityMethod, 'lockForUpdate'), 'The committed global identity recheck must not acquire a late table-wide write lock.');
+    $expect(str_contains($sources['service'], 'UNIQUE guarantee') && str_contains($sources['service'], 'Phase 5'), 'The cross-batch identity concurrency limitation must be documented accurately.');
     $expect(str_contains($sources['service'], "->where('applicant_id'") || str_contains($sources['service'], "whereIn('applicant_id'"), 'Phase 4 must resolve applications through the linked Applicant.');
     $expect(str_contains($sources['service'], 'expectedApplications->count() !== 1') && str_contains($sources['service'], 'expectedApplications->sole()'), 'Phase 4 must fail closed on an ambiguous exact application triple.');
     $expect(! preg_match('/application(Query)?[^;]{0,500}->(first|latest|oldest)\s*\(/s', $sources['service']), 'Application ambiguity must not be resolved with first/latest/oldest.');
@@ -105,6 +128,12 @@ $contract = static function (string $backendRoot): array {
     }
     $expect(str_contains($sources['panel'], 'role="dialog"') && str_contains($sources['panel'], 'لن يتم إنشاء حساب مستخدم أو كلمة مرور') && str_contains($sources['panel'], 'لن يتم إنشاء حسابات مستخدمين أو كلمات مرور أو تسجيل مقررات'), 'Phase 4 mutations require explicit scope-safe confirmation.');
     $expect(str_contains($sources['panel'], "err.errorCode === 'ministry_placement_enrollment_batch_stale'") && str_contains($sources['panel'], 'setConfirmation(null)'), 'Stale bulk UI must refresh without retrying.');
+    $confirmationStart = strpos($sources['panel'], 'async function confirmEnrollment()');
+    $confirmationEnd = strpos($sources['panel'], 'if (loading && !summary)', $confirmationStart === false ? 0 : $confirmationStart);
+    $confirmationMethod = $confirmationStart === false || $confirmationEnd === false ? '' : substr($sources['panel'], $confirmationStart, $confirmationEnd - $confirmationStart);
+    $responseBatchGuard = strpos($confirmationMethod, 'if (currentBatchId.current !== selection.batch_id) return');
+    $successWrite = strpos($confirmationMethod, 'setSuccess(successMessage)');
+    $expect($responseBatchGuard !== false && $successWrite !== false && $responseBatchGuard < $successWrite, 'A stale Batch A response must be rejected before writing success under Batch B.');
     foreach (['إنشاء حساب', 'توليد كلمة مرور', 'تسجيل مقررات'] as $forbiddenControl) {
         $expect(! preg_match('/<button[^>]*>[^<]*'.preg_quote($forbiddenControl, '/').'/u', $sources['panel']), 'Phase 4 UI exposes a forbidden control: '.$forbiddenControl);
     }

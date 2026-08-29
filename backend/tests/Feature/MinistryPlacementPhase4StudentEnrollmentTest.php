@@ -72,6 +72,46 @@ class MinistryPlacementPhase4StudentEnrollmentTest extends TestCase
         self::assertSame(1, DB::table('students')->count());
     }
 
+    public function test_phase4_malformed_student_numbers_and_bulk_items_fail_validation_without_writes(): void
+    {
+        $this->grantPermissions();
+        $this->seedReady(1);
+        $actor = User::query()->findOrFail(7);
+        $endpoint = '/api/v1/ministry-placement-records/1/enroll-student';
+
+        foreach ([[], (object) []] as $malformedStudentNumber) {
+            $this->actingAs($actor, 'sanctum')->postJson($endpoint, [
+                ...$this->validInput(),
+                'student_number' => $malformedStudentNumber,
+            ])->assertStatus(422);
+            $this->assertRecordHasNoPhase4Writes(1, 101);
+        }
+
+        $summary = $this->service->summary(1);
+        $bulkEndpoint = '/api/v1/ministry-placements/1/student-enrollment/enroll-all';
+        $base = [
+            'expected_eligible_count' => 1,
+            'expected_snapshot' => $summary['eligible_snapshot'],
+        ];
+        foreach ([
+            'invalid',
+            123,
+            ['invalid'],
+            [[
+                'placement_record_id' => 1,
+                'student_number' => [],
+                'current_academic_level_id' => 1,
+                'enrollment_date' => '2026-09-01',
+            ]],
+        ] as $malformedItems) {
+            $this->actingAs($actor, 'sanctum')->postJson($bulkEndpoint, [
+                ...$base,
+                'items' => $malformedItems,
+            ])->assertStatus(422);
+            $this->assertRecordHasNoPhase4Writes(1, 101);
+        }
+    }
+
     public function test_ministry_p4_07_to_17_phase3_chain_decisions_hierarchy_and_identity_fail_closed(): void
     {
         $actor = User::query()->findOrFail(7);
@@ -403,6 +443,14 @@ class MinistryPlacementPhase4StudentEnrollmentTest extends TestCase
     private function phase4Counts(): array
     {
         return [DB::table('students')->count(), DB::table('admission_applications')->where('decision_status', 'accepted')->count(), DB::table('user_activity_logs')->count()];
+    }
+
+    private function assertRecordHasNoPhase4Writes(int $recordId, int $applicationId): void
+    {
+        self::assertSame(0, DB::table('students')->count());
+        self::assertSame('pending', DB::table('admission_applications')->where('admission_application_id', $applicationId)->value('decision_status'));
+        self::assertSame('applicant_created', DB::table('ministry_placement_records')->where('placement_record_id', $recordId)->value('processing_status'));
+        self::assertSame(0, DB::table('user_activity_logs')->count());
     }
 
     private function createSchema(): void

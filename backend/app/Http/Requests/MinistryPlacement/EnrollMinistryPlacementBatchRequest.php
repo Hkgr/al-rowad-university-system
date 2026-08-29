@@ -29,7 +29,7 @@ class EnrollMinistryPlacementBatchRequest extends FormRequest
     {
         if (is_array($this->input('items'))) {
             $items = array_map(function ($item) {
-                if (is_array($item) && array_key_exists('student_number', $item)) {
+                if (is_array($item) && isset($item['student_number']) && is_string($item['student_number'])) {
                     $item['student_number'] = MinistryPlacementNormalizer::text($item['student_number']);
                 }
 
@@ -56,7 +56,11 @@ class EnrollMinistryPlacementBatchRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $this->unexpectedKeys = array_values(array_diff(array_keys($this->all()), self::ALLOWED_KEYS));
-        foreach ($this->input('items', []) as $index => $item) {
+        $items = $this->input('items');
+        if (! is_array($items)) {
+            return;
+        }
+        foreach ($items as $index => $item) {
             if (! is_array($item)) {
                 continue;
             }

@@ -26,8 +26,9 @@ class EnrollMinistryPlacementStudentRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        if (array_key_exists('student_number', $this->all())) {
-            $this->merge(['student_number' => MinistryPlacementNormalizer::text($this->input('student_number'))]);
+        $studentNumber = $this->input('student_number');
+        if (is_string($studentNumber)) {
+            $this->merge(['student_number' => MinistryPlacementNormalizer::text($studentNumber)]);
         }
     }
 

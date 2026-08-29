@@ -113,6 +113,7 @@ export default function MinistryStudentEnrollmentPanel({ batch, canManage, onCha
     setSaving(true)
     setError('')
     try {
+      let successMessage = ''
       if (selection.type === 'individual') {
         await apiRequest(`/v1/ministry-placement-records/${selection.record.placement_record_id}/enroll-student`, {
           method: 'POST',
@@ -122,15 +123,16 @@ export default function MinistryStudentEnrollmentPanel({ batch, canManage, onCha
             enrollment_date: selection.input.enrollment_date,
           }),
         })
-        setSuccess('تم اعتماد طلب القبول وإنشاء سجل الطالب دون إنشاء حساب أو تسجيل مقررات.')
+        successMessage = 'تم اعتماد طلب القبول وإنشاء سجل الطالب دون إنشاء حساب أو تسجيل مقررات.'
       } else {
         await apiRequest(`/v1/ministry-placements/${selection.batch_id}/student-enrollment/enroll-all`, {
           method: 'POST',
           body: JSON.stringify({ expected_eligible_count: selection.eligible_count, expected_snapshot: selection.eligible_snapshot, items: selection.items }),
         })
-        setSuccess(`تم اعتماد ${selection.count} طلب قبول وإنشاء ${selection.count} سجل طالب دون إنشاء حسابات أو تسجيل مقررات.`)
+        successMessage = `تم اعتماد ${selection.count} طلب قبول وإنشاء ${selection.count} سجل طالب دون إنشاء حسابات أو تسجيل مقررات.`
       }
       if (currentBatchId.current !== selection.batch_id) return
+      setSuccess(successMessage)
       setConfirmation(null)
       await Promise.all([load(), onChanged?.()])
     } catch (err) {

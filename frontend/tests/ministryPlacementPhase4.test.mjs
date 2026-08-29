@@ -42,6 +42,12 @@ assert.match(panel, /err\.errorCode === 'ministry_placement_enrollment_batch_sta
 assert.match(panel, /setConfirmation\(null\)[\s\S]*await Promise\.all\(\[load\(\), onChanged\?\.\(\)\]\)/, 'MINISTRY-UI-P4-11: stale response must clear confirmation and refresh without retry')
 assert.match(panel, /createLatestRequestGuard/, 'MINISTRY-UI-P4-12: response guard must be present')
 assert.match(panel, /currentBatchId\.current !== selection\.batch_id/, 'MINISTRY-UI-P4-12: batch-bound mutations must reject stale completion')
+const confirmationStart = panel.indexOf('async function confirmEnrollment()')
+const confirmationEnd = panel.indexOf('if (loading && !summary)', confirmationStart)
+const confirmationMethod = panel.slice(confirmationStart, confirmationEnd)
+const responseBatchGuard = confirmationMethod.indexOf('if (currentBatchId.current !== selection.batch_id) return')
+const successWrite = confirmationMethod.indexOf('setSuccess(successMessage)')
+assert.ok(responseBatchGuard >= 0 && successWrite > responseBatchGuard, 'MINISTRY-UI-P4-12: stale Batch A success must be rejected before Batch B success state is written')
 
 for (const forbiddenButton of ['إنشاء حساب', 'توليد كلمة مرور', 'تسجيل مقررات']) {
   assert.doesNotMatch(panel, new RegExp(`<button[^>]*>[^<]*${forbiddenButton}`), `MINISTRY-UI-P4-13..15: forbidden control ${forbiddenButton}`)

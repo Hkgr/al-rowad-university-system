@@ -18,6 +18,7 @@ use App\Models\UserActivityLog;
 use App\Support\MinistryPlacementNormalizer;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -59,9 +60,21 @@ final class MinistryPlacementStudentEnrollmentService
     /** @param array{student_number: string, current_academic_level_id: int, enrollment_date: string} $input @return array<string, mixed> */
     public function enroll(int $recordId, array $input, User $actor): array
     {
-        return DB::transaction(function () use ($recordId, $input, $actor): array {
-            $record = MinistryPlacementRecord::query()->lockForUpdate()->findOrFail($recordId);
-            $batch = MinistryPlacementBatch::query()->with('academicYear')->lockForUpdate()->findOrFail((int) $record->batch_id);
+        $batchId = MinistryPlacementRecord::query()->whereKey($recordId)->value('batch_id');
+        if ($batchId === null) {
+            throw (new ModelNotFoundException)->setModel(MinistryPlacementRecord::class, [$recordId]);
+        }
+        $batchId = (int) $batchId;
+
+        return DB::transaction(function () use ($recordId, $batchId, $input, $actor): array {
+            $batch = MinistryPlacementBatch::query()->with('academicYear')->lockForUpdate()->findOrFail($batchId);
+            $record = MinistryPlacementRecord::query()->whereKey($recordId)->lockForUpdate()->first();
+            if ($record === null || (int) $record->batch_id !== $batchId) {
+                throw MinistryPlacementException::conversionConflict(
+                    'ministry_placement_enrollment_record_stale',
+                    'تغير موضع سجل المفاضلة أو لم يعد متاحاً. حدّث البيانات قبل إعادة المحاولة.',
+                );
+            }
             $records = collect([$record]);
             $this->loadLockedApplicants($records);
             $this->loadLockedProgramHierarchy($records);
@@ -136,7 +149,7 @@ final class MinistryPlacementStudentEnrollmentService
                 'created' => true,
                 'enrollment' => $this->recordPayload($item, $batch),
             ];
-        });
+        }, 3);
     }
 
     /**
@@ -266,7 +279,7 @@ final class MinistryPlacementStudentEnrollmentService
                 'academic_year_id' => (int) $batch->academic_year_id,
                 'enrolled_count' => $prepared->count(),
             ];
-        });
+        }, 3);
     }
 
     private function recordsQuery(int $batchId): Builder
@@ -308,7 +321,7 @@ final class MinistryPlacementStudentEnrollmentService
     /** @return array{items: Collection<int, array<string, mixed>>, identity_conflict_records: int} */
     private function analyse(MinistryPlacementBatch $batch, Collection $records, bool $lockRelated = false): array
     {
-        $identityReferences = $this->identityReferences($lockRelated);
+        $identityReferences = $this->identityReferences();
         $applicantIds = $records->pluck('applicant_id')->filter()->map(fn ($id): int => (int) $id)->unique()->values();
         $applicationQuery = AdmissionApplication::query()->whereIn('applicant_id', $applicantIds->all())->orderBy('admission_application_id');
         if ($lockRelated) {
@@ -448,16 +461,20 @@ final class MinistryPlacementStudentEnrollmentService
         ];
     }
 
-    /** @return array<string, array<int, array<string, int|null>>> */
-    private function identityReferences(bool $lock): array
+    /**
+     * Rechecks committed Ministry identities without a late global write lock.
+     * Phase 4 has no canonical schema-level cross-batch identity key, so a future
+     * concurrent import is not covered by a UNIQUE guarantee; Phase 5
+     * reconciliation remains the final safety net.
+     *
+     * @return array<string, array<int, array<string, int|null>>>
+     */
+    private function identityReferences(): array
     {
         $references = [];
         $query = MinistryPlacementRecord::query()
             ->select(['placement_record_id', 'batch_id', 'national_civil_id', 'applicant_id'])
             ->orderBy('placement_record_id');
-        if ($lock) {
-            $query->lockForUpdate();
-        }
         foreach ($query->get() as $record) {
             $key = MinistryPlacementNormalizer::duplicateKey($record->national_civil_id);
             if ($key !== null) {
