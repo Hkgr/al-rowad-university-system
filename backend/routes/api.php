@@ -112,6 +112,7 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\UserActivityLogController;
 use App\Http\Controllers\Api\MinistryPlacementController;
 use App\Http\Controllers\Api\MinistryPlacementApplicantConversionController;
+use App\Http\Controllers\Api\MinistryPlacementStudentEnrollmentController;
 use App\Http\Controllers\Api\UserRoleController;
 use App\Http\Controllers\Api\StudentSupplementaryExamController;
 use App\Http\Controllers\Api\SupplementaryExamEligibilityController;
@@ -241,6 +242,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('ministry-placements/{batch}/applicant-conversion', [MinistryPlacementApplicantConversionController::class, 'summary'])->whereNumber('batch');
     Route::post('ministry-placement-records/{record}/convert-to-applicant', [MinistryPlacementApplicantConversionController::class, 'convert'])->whereNumber('record');
     Route::post('ministry-placements/{batch}/applicant-conversion/convert-all', [MinistryPlacementApplicantConversionController::class, 'convertAll'])->whereNumber('batch');
+    Route::get('ministry-placement-academic-levels', [MinistryPlacementStudentEnrollmentController::class, 'academicLevels']);
+    Route::get('ministry-placements/{batch}/student-enrollment', [MinistryPlacementStudentEnrollmentController::class, 'summary'])->whereNumber('batch');
+    Route::post('ministry-placement-records/{record}/enroll-student', [MinistryPlacementStudentEnrollmentController::class, 'enroll'])->whereNumber('record');
+    Route::post('ministry-placements/{batch}/student-enrollment/enroll-all', [MinistryPlacementStudentEnrollmentController::class, 'enrollAll'])->whereNumber('batch');
 
     /*
     |--------------------------------------------------------------------------
