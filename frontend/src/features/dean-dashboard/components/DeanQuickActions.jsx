@@ -2,21 +2,24 @@ import { Link } from 'react-router-dom'
 import {
   FaBook, FaChalkboardTeacher, FaLockOpen, FaUsers, FaUserCog, FaClipboardList,
 } from 'react-icons/fa'
+import { hasAssignedPermission, PERMISSIONS } from '../../auth/auth'
 
-export default function DeanQuickActions({ canManageTeachers, canManageRegistration }) {
+export default function DeanQuickActions({ canManageTeachers }) {
   const navigation = [
     { to: '/dean/students', label: 'عرض الطلاب', Icon: FaUsers },
     { to: '/dean/teachers', label: 'عرض المدرسين', Icon: FaChalkboardTeacher },
     { to: '/dean/courses', label: 'عرض المواد', Icon: FaBook },
-    { to: '/dean/registration-offerings', label: 'فتح المواد للتسجيل', Icon: FaLockOpen },
-  ]
+    hasAssignedPermission(PERMISSIONS.semesterOfferingGovernanceView)
+      ? { to: '/dean/registration-offerings', label: 'حوكمة طروحات الفصل', Icon: FaLockOpen }
+      : null,
+  ].filter(Boolean)
 
   const management = [
     canManageTeachers
       ? { to: '/dean/teachers', label: 'إدارة تكليفات المدرسين', Icon: FaUserCog }
       : null,
-    canManageRegistration
-      ? { to: '/dean/registration-offerings', label: 'إدارة فتح المواد للتسجيل', Icon: FaClipboardList }
+    hasAssignedPermission(PERMISSIONS.semesterOfferingGovernanceManage)
+      ? { to: '/dean/registration-offerings', label: 'تجهيز وإرسال الطروحات', Icon: FaClipboardList }
       : null,
   ].filter(Boolean)
 

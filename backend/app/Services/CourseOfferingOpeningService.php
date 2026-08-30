@@ -12,6 +12,7 @@ use App\Models\CourseOfferingInstructor;
 use App\Models\TeachingAssignmentRequest;
 use App\Models\User;
 use App\Support\ExceptionalOpeningWorkflow;
+use App\Support\SemesterOfferingOpeningProof;
 use App\Support\TeachingAssignmentWorkflow;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
@@ -25,6 +26,7 @@ class CourseOfferingOpeningService
     public function __construct(
         private CourseOfferingInstructorCoverageService $coverage,
         private CourseOfferingExceptionInvalidationService $exceptionInvalidation,
+        private SemesterOfferingNormalOpenGate $semesterGovernance,
     ) {
     }
 
@@ -32,9 +34,13 @@ class CourseOfferingOpeningService
      * Normal closed → open transition. Coverage is an academic invariant:
      * no role, including Super Admin, bypasses it.
      */
-    public function normalOpen(CourseOffering $offering, ?User $actor = null): CourseOffering
+    public function normalOpen(
+        CourseOffering $offering,
+        ?User $actor = null,
+        ?SemesterOfferingOpeningProof $semesterProof = null,
+    ): CourseOffering
     {
-        return $this->applyThenGuardOpenCoverage($offering, static function (): void {}, true, $actor);
+        return $this->applyThenGuardOpenCoverage($offering, static function (): void {}, true, $actor, $semesterProof);
     }
 
     /**
@@ -43,9 +49,14 @@ class CourseOfferingOpeningService
      *
      * @param  callable(CourseOffering): void  $mutate
      */
-    public function applyThenNormalOpen(CourseOffering $offering, callable $mutate, ?User $actor = null): CourseOffering
+    public function applyThenNormalOpen(
+        CourseOffering $offering,
+        callable $mutate,
+        ?User $actor = null,
+        ?SemesterOfferingOpeningProof $semesterProof = null,
+    ): CourseOffering
     {
-        return $this->applyThenGuardOpenCoverage($offering, $mutate, true, $actor);
+        return $this->applyThenGuardOpenCoverage($offering, $mutate, true, $actor, $semesterProof);
     }
 
     /**
@@ -62,8 +73,9 @@ class CourseOfferingOpeningService
         callable $mutate,
         bool $ensureOpen,
         ?User $actor = null,
+        ?SemesterOfferingOpeningProof $semesterProof = null,
     ): CourseOffering {
-        return $this->withLockedOffering($offering, function (CourseOffering $locked) use ($mutate, $ensureOpen, $actor): CourseOffering {
+        return $this->withLockedOffering($offering, function (CourseOffering $locked) use ($mutate, $ensureOpen, $actor, $semesterProof): CourseOffering {
             $originalCourseId = (int) $locked->course_id;
             $originalStatus = (string) $locked->status;
 
@@ -84,6 +96,7 @@ class CourseOfferingOpeningService
                 $originalStatus,
                 $ensureOpen,
                 $actor,
+                $semesterProof,
             );
         });
     }
@@ -195,6 +208,7 @@ class CourseOfferingOpeningService
         string $originalStatus,
         bool $ensureOpen,
         ?User $actor,
+        ?SemesterOfferingOpeningProof $semesterProof,
     ): CourseOffering {
         $this->reloadCoverageGraph($locked);
 
@@ -206,7 +220,18 @@ class CourseOfferingOpeningService
                 return $locked;
             }
 
+            if ($originalStatus === self::STATUS_CLOSED) {
+                $this->semesterGovernance->authorize($locked, $semesterProof);
+            }
+
             $this->coverage->assertCompleteForNormalOpening($locked);
+
+            if ($originalStatus === self::STATUS_CLOSED) {
+                if ($semesterProof !== null && $locked->academic_program_id !== null) {
+                    $this->semesterGovernance->consume($locked, $semesterProof);
+                }
+                $this->exceptionInvalidation->supersedeCurrentForNormalOpen($locked, $actor);
+            }
 
             return $locked;
         }
@@ -219,12 +244,16 @@ class CourseOfferingOpeningService
             throw new ConflictHttpException('تعذّر تنفيذ العملية بسبب تغير حالة المادة. أعد تحميل البيانات وحاول مجددًا.');
         }
 
+        $this->semesterGovernance->authorize($locked, $semesterProof);
         $this->assertNoPendingInstructorRemoval($locked);
-
         $this->coverage->assertCompleteForNormalOpening($locked);
 
         $locked->status = self::STATUS_OPEN;
         $locked->save();
+
+        if ($semesterProof !== null && $locked->academic_program_id !== null) {
+            $this->semesterGovernance->consume($locked, $semesterProof);
+        }
 
         $this->exceptionInvalidation->supersedeCurrentForNormalOpen($locked, $actor);
 

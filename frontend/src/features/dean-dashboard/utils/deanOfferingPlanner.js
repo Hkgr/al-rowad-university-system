@@ -120,6 +120,64 @@ export function actualTermPreparationRows(levels, draftIds) {
   ))
 }
 
+export function isRegularMandatoryCourse(row, semesterCode) {
+  return ['first', 'second'].includes(String(semesterCode ?? ''))
+    && String(row?.course_type ?? '').toLowerCase() === 'mandatory'
+}
+
+export function requiresSemesterOfferingMinimum(row, semesterCode) {
+  return String(semesterCode ?? '') === 'summer'
+    || String(row?.course_type ?? '').toLowerCase() === 'elective'
+}
+
+export function governancePreparationIds(levels, draftIds, semesterCode) {
+  const mandatory = flattenCatalogCourses(levels)
+    .filter(row => isRegularMandatoryCourse(row, semesterCode))
+    .map(row => row.program_course_id)
+
+  return uniqueProgramCourseIds([...(draftIds ?? []), ...mandatory])
+}
+
+export function governanceSavePreview(levels, selectedIds) {
+  const byId = new Map(flattenCatalogCourses(levels).map(row => [Number(row.program_course_id), row]))
+  const selected = uniqueProgramCourseIds(selectedIds).map(id => byId.get(id)).filter(Boolean)
+
+  return {
+    total: selected.length,
+    existing: selected.filter(row => Boolean(row.offering)).length,
+    creating: selected.filter(row => !row.offering).length,
+    programCourseIds: selected.map(row => Number(row.program_course_id)),
+  }
+}
+
+export function governanceStatusLabel(status, materializedAt = null, offeringStatus = null) {
+  if (status === 'approved') {
+    if (materializedAt && offeringStatus === 'closed') return 'اعتماد مستهلك — الطرح مغلق'
+    if (materializedAt && offeringStatus === 'open') return 'معتمد ومفتوح'
+    return 'معتمد'
+  }
+
+  return ({
+    draft: 'مسودة',
+    submitted: 'مرسل للمراجعة العلمية',
+    returned: 'معاد للتعديل',
+  })[status] || 'غير مجهز'
+}
+
+export function governanceProposalEditable(governance) {
+  return ['draft', 'returned'].includes(String(governance?.status ?? ''))
+    && !governance?.materialized_at
+}
+
+export function existingGovernanceMinimums(levels) {
+  const result = {}
+  flattenCatalogCourses(levels).forEach(row => {
+    const value = row?.offering?.semester_offering_governance?.minimum_enrollment
+    if (value != null) result[Number(row.program_course_id)] = String(value)
+  })
+  return result
+}
+
 export function applyAdvisoryPlan(currentIds, levels, selectedSemesterId) {
   const rows = flattenCatalogCourses(levels)
   if (rows.length > 0 && !hasAdvisorySemesterMetadata(rows)) {
