@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Exceptions\CourseOfferingClosureException;
+use App\Exceptions\CourseOfferingContextException;
 use App\Exceptions\ExceptionalOpeningException;
 use App\Exceptions\TeachingAssignmentException;
 use App\Models\CourseOffering;
@@ -12,6 +13,7 @@ use App\Models\CourseOfferingInstructor;
 use App\Models\TeachingAssignmentRequest;
 use App\Models\User;
 use App\Support\ExceptionalOpeningWorkflow;
+use App\Support\SemesterOfferingOpeningProof;
 use App\Support\TeachingAssignmentWorkflow;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
@@ -25,6 +27,7 @@ class CourseOfferingOpeningService
     public function __construct(
         private CourseOfferingInstructorCoverageService $coverage,
         private CourseOfferingExceptionInvalidationService $exceptionInvalidation,
+        private SemesterOfferingNormalOpenGate $semesterGovernance,
     ) {
     }
 
@@ -32,9 +35,13 @@ class CourseOfferingOpeningService
      * Normal closed → open transition. Coverage is an academic invariant:
      * no role, including Super Admin, bypasses it.
      */
-    public function normalOpen(CourseOffering $offering, ?User $actor = null): CourseOffering
+    public function normalOpen(
+        CourseOffering $offering,
+        ?User $actor = null,
+        ?SemesterOfferingOpeningProof $semesterProof = null,
+    ): CourseOffering
     {
-        return $this->applyThenGuardOpenCoverage($offering, static function (): void {}, true, $actor);
+        return $this->applyThenGuardOpenCoverage($offering, static function (): void {}, true, $actor, $semesterProof);
     }
 
     /**
@@ -43,16 +50,21 @@ class CourseOfferingOpeningService
      *
      * @param  callable(CourseOffering): void  $mutate
      */
-    public function applyThenNormalOpen(CourseOffering $offering, callable $mutate, ?User $actor = null): CourseOffering
+    public function applyThenNormalOpen(
+        CourseOffering $offering,
+        callable $mutate,
+        ?User $actor = null,
+        ?SemesterOfferingOpeningProof $semesterProof = null,
+    ): CourseOffering
     {
-        return $this->applyThenGuardOpenCoverage($offering, $mutate, true, $actor);
+        return $this->applyThenGuardOpenCoverage($offering, $mutate, true, $actor, $semesterProof);
     }
 
     /**
      * Apply Offering metadata inside one locked transaction.
      * If the Offering remains or becomes OPEN, coverage is enforced against
      * the FINAL Course whenever this request is a true open transition or
-     * the coverage-driving course_id changed. Unchanged already-open
+     * the immutable academic identity changed. Unchanged already-open
      * Offerings stay idempotent and are not retroactively rejected.
      *
      * @param  callable(CourseOffering): void  $mutate
@@ -62,9 +74,10 @@ class CourseOfferingOpeningService
         callable $mutate,
         bool $ensureOpen,
         ?User $actor = null,
+        ?SemesterOfferingOpeningProof $semesterProof = null,
     ): CourseOffering {
-        return $this->withLockedOffering($offering, function (CourseOffering $locked) use ($mutate, $ensureOpen, $actor): CourseOffering {
-            $originalCourseId = (int) $locked->course_id;
+        return $this->withLockedOffering($offering, function (CourseOffering $locked) use ($mutate, $ensureOpen, $actor, $semesterProof): CourseOffering {
+            $originalIdentity = $this->academicIdentity($locked);
             $originalStatus = (string) $locked->status;
 
             $mutate($locked);
@@ -80,10 +93,11 @@ class CourseOfferingOpeningService
 
             return $this->finalizeLockedOpenInvariant(
                 $locked,
-                $originalCourseId,
+                $originalIdentity,
                 $originalStatus,
                 $ensureOpen,
                 $actor,
+                $semesterProof,
             );
         });
     }
@@ -164,12 +178,7 @@ class CourseOfferingOpeningService
         }
     }
 
-    /**
-     * Canonical lock order: course_offerings, then pending removal requests,
-     * then course_offering_instructors. Never lock instructors before the offering.
-     *
-     * @param  callable(CourseOffering): CourseOffering  $then
-     */
+    /** @param  callable(CourseOffering): CourseOffering  $then */
     private function withLockedOffering(CourseOffering $offering, callable $then): CourseOffering
     {
         return DB::transaction(function () use ($offering, $then): CourseOffering {
@@ -178,35 +187,47 @@ class CourseOfferingOpeningService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $this->lockPendingRemovalRequests($locked);
-
-            CourseOfferingInstructor::query()
-                ->where('course_offering_id', $locked->course_offering_id)
-                ->lockForUpdate()
-                ->get();
-
             return $then($locked);
         });
     }
 
     private function finalizeLockedOpenInvariant(
         CourseOffering $locked,
-        int $originalCourseId,
+        array $originalIdentity,
         string $originalStatus,
         bool $ensureOpen,
         ?User $actor,
+        ?SemesterOfferingOpeningProof $semesterProof,
     ): CourseOffering {
-        $this->reloadCoverageGraph($locked);
+        $identityChanged = $this->academicIdentity($locked) !== $originalIdentity;
 
-        $courseIdentityChanged = (int) $locked->course_id !== $originalCourseId;
+        // OPEN Offerings are historical academic facts. Their complete
+        // operational identity is immutable even for legacy rows whose
+        // academic_program_id is NULL; no governance history is fabricated.
+        if ($originalStatus === self::STATUS_OPEN && $identityChanged) {
+            throw CourseOfferingContextException::identityLocked();
+        }
 
         if ($locked->status === self::STATUS_OPEN) {
-            $unchangedOpen = $originalStatus === self::STATUS_OPEN && ! $courseIdentityChanged;
+            $unchangedOpen = $originalStatus === self::STATUS_OPEN;
             if ($unchangedOpen) {
                 return $locked;
             }
 
+            if ($originalStatus === self::STATUS_CLOSED) {
+                $this->semesterGovernance->authorize($locked, $semesterProof);
+            }
+
+            $this->lockNormalOpeningGraph($locked);
+            $this->reloadCoverageGraph($locked);
             $this->coverage->assertCompleteForNormalOpening($locked);
+
+            if ($originalStatus === self::STATUS_CLOSED) {
+                if ($semesterProof !== null && $locked->academic_program_id !== null) {
+                    $this->semesterGovernance->consume($locked, $semesterProof);
+                }
+                $this->exceptionInvalidation->supersedeCurrentForNormalOpen($locked, $actor);
+            }
 
             return $locked;
         }
@@ -219,16 +240,36 @@ class CourseOfferingOpeningService
             throw new ConflictHttpException('تعذّر تنفيذ العملية بسبب تغير حالة المادة. أعد تحميل البيانات وحاول مجددًا.');
         }
 
-        $this->assertNoPendingInstructorRemoval($locked);
-
+        $this->semesterGovernance->authorize($locked, $semesterProof);
+        $this->lockNormalOpeningGraph($locked);
+        $this->reloadCoverageGraph($locked);
         $this->coverage->assertCompleteForNormalOpening($locked);
 
         $locked->status = self::STATUS_OPEN;
         $locked->save();
 
+        if ($semesterProof !== null && $locked->academic_program_id !== null) {
+            $this->semesterGovernance->consume($locked, $semesterProof);
+        }
+
         $this->exceptionInvalidation->supersedeCurrentForNormalOpen($locked, $actor);
 
         return $locked;
+    }
+
+    /**
+     * @return array{course_id: int, academic_program_id: ?int, academic_year_id: int, semester_id: int}
+     */
+    private function academicIdentity(CourseOffering $offering): array
+    {
+        return [
+            'course_id' => (int) $offering->course_id,
+            'academic_program_id' => $offering->academic_program_id === null
+                ? null
+                : (int) $offering->academic_program_id,
+            'academic_year_id' => (int) $offering->academic_year_id,
+            'semester_id' => (int) $offering->semester_id,
+        ];
     }
 
     /**
@@ -270,6 +311,21 @@ class CourseOfferingOpeningService
             ->where('action_type', TeachingAssignmentWorkflow::ACTION_REMOVE)
             ->where('current_slot', 1)
             ->orderBy('teaching_assignment_request_id')
+            ->lockForUpdate()
+            ->get();
+    }
+
+    /**
+     * Normal-opening graph is locked only after the Offering and governance
+     * proof/current curriculum have been locked and revalidated by the caller.
+     */
+    private function lockNormalOpeningGraph(CourseOffering $lockedOffering): void
+    {
+        $this->assertNoPendingInstructorRemoval($lockedOffering);
+
+        CourseOfferingInstructor::query()
+            ->where('course_offering_id', $lockedOffering->course_offering_id)
+            ->orderBy('course_offering_instructor_id')
             ->lockForUpdate()
             ->get();
     }

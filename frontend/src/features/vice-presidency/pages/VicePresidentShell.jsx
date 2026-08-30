@@ -1,11 +1,12 @@
 import { Link } from 'react-router-dom'
-import { PERMISSIONS, ROLES, getIdentity, hasAssignedPermission, hasRole } from '../../auth/auth'
+import { PERMISSIONS, ROLES, getIdentity, hasActualUniversityScope, hasAssignedPermission, hasRole } from '../../auth/auth'
 
 const OFFICES = {
   scientific: {
     title: 'نائب رئيس الجامعة للشؤون العلمية',
     scopeNote: 'نطاق العمل: الجامعة كاملة. الصلاحيات تُحدد لكل إجراء على حدة.',
     assignmentsPath: '/vp/scientific/teaching-assignments',
+    semesterOfferingsPath: '/vp/scientific/semester-offerings',
     exceptionalPath: '/vp/scientific/exceptional-openings',
     supplementaryPath: '/vp/scientific/supplementary-exams',
     futureSections: [
@@ -73,6 +74,16 @@ export default function VicePresidentShell({ office }) {
         <p className="text-[15px] font-black text-text-dark">تكليفات المدرسين</p>
         <p className="text-[13px] text-text-light mt-1">مراجعة طلبات تكليف المدرسين ضمن صلاحية هذه النيابة فقط.</p>
       </Link>
+
+      {copy.semesterOfferingsPath
+        && hasRole(ROLES.vicePresidentScientific, identity)
+        && hasAssignedPermission(PERMISSIONS.semesterOfferingGovernanceView, identity)
+        && hasActualUniversityScope(identity) && (
+      <Link to={copy.semesterOfferingsPath} className="bg-white border border-primary/15 rounded-[16px] p-5 shadow-sm hover:border-primary/40">
+        <p className="text-[15px] font-black text-text-dark">اعتماد الطروحات الفصلية</p>
+        <p className="text-[13px] text-text-light mt-1">مراجعة كل طرح فصلي بعد اكتمال التكليف الفعّال واعتماده أو إعادته للعميد.</p>
+      </Link>
+      )}
 
       <Link
         to={copy.exceptionalPath}

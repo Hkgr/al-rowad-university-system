@@ -83,6 +83,11 @@ class CourseOffering extends Model
             ->where('current_slot', 1);
     }
 
+    public function semesterOfferingRequest(): HasOne
+    {
+        return $this->hasOne(SemesterOfferingRequest::class, 'course_offering_id', 'course_offering_id');
+    }
+
     public function academicProgram(): BelongsTo
     {
         return $this->belongsTo(AcademicProgram::class, 'academic_program_id', 'academic_program_id');

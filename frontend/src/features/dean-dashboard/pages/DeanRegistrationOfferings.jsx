@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FaLockOpen, FaPlus, FaSpinner, FaTimes } from 'react-icons/fa'
+import { FaPaperPlane, FaPlus, FaSpinner, FaTimes } from 'react-icons/fa'
 import { apiRequest } from '../../../services/apiClient'
-import { hasPermission, PERMISSIONS } from '../../auth/auth'
+import { hasAssignedPermission, hasPermission, PERMISSIONS } from '../../auth/auth'
 import DeanConfirmDialog from '../components/DeanConfirmDialog'
 import { firstApiErrorMessage, offeringStatusLabel, displayValue } from '../utils/teacherDisplay'
 import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
@@ -33,8 +33,14 @@ import {
   openOfferingIds,
   pagedResourceRows,
   recommendedSemesterMatches,
-  savePreview,
   executeBulkPreparationPhases,
+  existingGovernanceMinimums,
+  governancePreparationIds,
+  governanceProposalEditable,
+  governanceSavePreview,
+  governanceStatusLabel,
+  isRegularMandatoryCourse,
+  requiresSemesterOfferingMinimum,
   uniqueProgramCourseIds,
 } from '../utils/deanOfferingPlanner'
 
@@ -108,6 +114,7 @@ function registrationState(offering) {
 function CourseCard({
   row,
   selectedSemesterId,
+  semesterCode,
   canManage,
   canRequestException,
   canRequestClosure,
@@ -115,7 +122,12 @@ function CourseCard({
   prepareError,
   closureRequest,
   onRemoveDraft,
-  onReopen,
+  locallySelected,
+  onToggleLocalSelection,
+  minimumEnrollment,
+  onMinimumEnrollmentChange,
+  onSubmitGovernance,
+  onToggleSelection,
   onManageOffering,
   onManageInstructors,
   onRequestException,
@@ -125,6 +137,10 @@ function CourseCard({
 }) {
   const course = row.course
   const offering = row.offering
+  const governance = offering?.semester_offering_governance
+  const proposalEditable = governanceProposalEditable(governance)
+  const minimumRequired = requiresSemesterOfferingMinimum(row, semesterCode)
+  const mandatoryRegular = isRegularMandatoryCourse(row, semesterCode)
   const state = registrationState(offering)
   const coverage = offering?.instructor_coverage
   const coverageLabel = instructorCoverageSummary(coverage)
@@ -161,12 +177,20 @@ function CourseCard({
 
       <div className="flex items-center flex-wrap gap-1.5 mt-2.5">
         <CourseRequirementBadges classification={row.requirement_classification} compact />
+        <span className="inline-block rounded-full border border-slate-500/20 bg-slate-500/10 px-2 py-0.5 text-[10.5px] font-bold text-slate-700">
+          {row.course_type === 'mandatory' ? 'إجباري' : row.course_type === 'elective' ? 'اختياري' : 'نوع غير محدد'}
+        </span>
         <span className={`inline-block text-[10.5px] font-bold px-2 py-0.5 rounded-full border ${state.className}`}>
           {state.label}
         </span>
         <span className={`inline-block text-[10.5px] font-bold px-2 py-0.5 rounded-full border ${advisoryClass}`}>
           {advisory}
         </span>
+        {offering ? (
+          <span className="inline-block text-[10.5px] font-bold px-2 py-0.5 rounded-full border bg-sky-500/10 text-sky-800 border-sky-500/20">
+            الحوكمة: {governanceStatusLabel(governance?.status, governance?.materialized_at, offering?.status)}
+          </span>
+        ) : null}
       </div>
 
       <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-2.5 text-[11.5px] text-text-light">
@@ -185,6 +209,29 @@ function CourseCard({
           {requiredRoles.includes('practical') ? ` · عملي: ${practicalName || '—'}` : ''}
         </p>
       )}
+
+      {governance?.return_note ? (
+        <p className="mt-2 rounded-[9px] border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
+          ملاحظة الإعادة: {governance.return_note}
+        </p>
+      ) : null}
+
+      {(minimumRequired && (!offering || (governance && proposalEditable) || (!governance && locallySelected))) ? (
+        <label className="mt-3 flex flex-col gap-1">
+          <span className="text-[11px] font-bold text-text-dark">الحد الأدنى للتسجيل</span>
+          <input
+            type="number"
+            min="1"
+            className="w-full rounded-[9px] border border-primary/20 px-3 py-2 text-[13px]"
+            value={minimumEnrollment ?? ''}
+            onChange={event => onMinimumEnrollmentChange(row.program_course_id, event.target.value)}
+            disabled={!canManage || busy}
+            required
+          />
+        </label>
+      ) : governance?.minimum_enrollment ? (
+        <p className="mt-2 text-[11.5px] text-text-light">الحد الأدنى للتسجيل: {governance.minimum_enrollment}</p>
+      ) : null}
 
       {showExceptionStatus && (
         <div className="mt-2 rounded-[10px] border border-primary/15 bg-primary/[0.04] px-3 py-2 text-[12px] text-text-dark space-y-1">
@@ -208,13 +255,19 @@ function CourseCard({
 
       <div className="mt-3 flex flex-wrap gap-2">
         {!offering ? (
-          <button
-            type="button"
-            className="px-3 py-2 border border-primary/20 rounded-[10px] text-[12.5px] font-bold text-text-gray hover:bg-primary/5"
-            onClick={() => onRemoveDraft(row.program_course_id)}
-          >
-            إزالة
-          </button>
+          mandatoryRegular ? (
+            <span className="px-3 py-2 rounded-[10px] bg-primary/5 text-[12px] font-bold text-primary-dark">
+              مقرر إجباري للفصل النظامي
+            </span>
+          ) : (
+            <button
+              type="button"
+              className="px-3 py-2 border border-primary/20 rounded-[10px] text-[12.5px] font-bold text-text-gray hover:bg-primary/5"
+              onClick={() => onRemoveDraft(row.program_course_id)}
+            >
+              إزالة
+            </button>
+          )
         ) : (
           <>
             <button
@@ -224,15 +277,35 @@ function CourseCard({
             >
               إدارة الطرح
             </button>
-            {canManage && state.key === 'closed' ? (
+            {canManage && offering.status === 'closed' && proposalEditable ? (
               <button
                 type="button"
                 className="flex items-center justify-center gap-1.5 px-3 py-2 bg-primary text-white rounded-[10px] text-[12.5px] font-bold hover:enabled:bg-primary-dark disabled:opacity-40"
-                onClick={() => onReopen(row)}
+                onClick={() => onSubmitGovernance(row)}
+                disabled={busy || governance?.is_selected !== true || !instructorCoverageComplete(coverage) || (minimumRequired && !Number(minimumEnrollment))}
+              >
+                {busy ? <FaSpinner className="animate-spin text-[11px]" aria-hidden="true" /> : <FaPaperPlane className="text-[11px]" aria-hidden="true" />}
+                {governance?.status === 'returned' ? 'تصحيح وإعادة الإرسال' : 'إرسال للاعتماد العلمي'}
+              </button>
+            ) : null}
+            {canManage && offering.status === 'closed' && proposalEditable && !mandatoryRegular ? (
+              <button
+                type="button"
+                className="px-3 py-2 border border-primary/20 rounded-[10px] text-[12.5px] font-bold text-text-gray hover:bg-primary/5 disabled:opacity-40"
+                onClick={() => onToggleSelection(row, !governance?.is_selected)}
                 disabled={busy}
               >
-                {busy ? <FaSpinner className="animate-spin text-[11px]" aria-hidden="true" /> : <FaLockOpen className="text-[11px]" aria-hidden="true" />}
-                فتح المادة
+                {governance?.is_selected ? 'إلغاء التحديد' : 'تحديد الطرح'}
+              </button>
+            ) : null}
+            {canManage && offering.status === 'closed' && !governance && !mandatoryRegular ? (
+              <button
+                type="button"
+                className="px-3 py-2 border border-primary/20 rounded-[10px] text-[12.5px] font-bold text-text-gray hover:bg-primary/5 disabled:opacity-40"
+                onClick={() => onToggleLocalSelection(row.program_course_id, !locallySelected)}
+                disabled={busy}
+              >
+                {locallySelected ? 'إزالة من التجهيز' : 'تحديد الطرح للتجهيز'}
               </button>
             ) : null}
             {canManage && state.key === 'pending_coverage' ? (
@@ -413,8 +486,7 @@ function AddCourseDialog({
 
 export default function DeanRegistrationOfferings() {
   const navigate = useNavigate()
-  const canManageLocal = hasPermission(PERMISSIONS.courseOfferingsManage)
-    || hasPermission(PERMISSIONS.coursesManage)
+  const canManageLocal = hasAssignedPermission(PERMISSIONS.semesterOfferingGovernanceManage)
   const canRequestException = hasPermission(PERMISSIONS.exceptionalOpenRequest)
   const canRequestClosure = hasPermission(PERMISSIONS.closureRequest)
   const [exceptionReason, setExceptionReason] = useState('')
@@ -432,7 +504,9 @@ export default function DeanRegistrationOfferings() {
   const [departmentId, setDepartmentId] = useState('')
   const [programId, setProgramId] = useState('')
   const [levels, setLevels] = useState([])
+  const [summary, setSummary] = useState({})
   const [draftIds, setDraftIds] = useState([])
+  const [minimumEnrollments, setMinimumEnrollments] = useState({})
   const [prepareErrors, setPrepareErrors] = useState({})
   const [closureByOffering, setClosureByOffering] = useState({})
   const [context, setContext] = useState({ academic_year: null, semester: null })
@@ -550,6 +624,8 @@ export default function DeanRegistrationOfferings() {
         if (!active) return
         const data = response?.data ?? {}
         setLevels(data.levels ?? [])
+        setSummary(data.summary ?? {})
+        setMinimumEnrollments(existingGovernanceMinimums(data.levels ?? []))
         setCollege(data.college ?? null)
         setContext({
           academic_year: data.academic_year ?? null,
@@ -572,6 +648,8 @@ export default function DeanRegistrationOfferings() {
 
   useEffect(() => {
     setDraftIds([])
+    setSummary({})
+    setMinimumEnrollments({})
     setPrepareErrors({})
     setClosureByOffering({})
     setAddLevel(null)
@@ -591,29 +669,27 @@ export default function DeanRegistrationOfferings() {
     [options.academic_programs, programId, programs],
   )
 
+  const semesterCode = context.semester?.semester_code ?? ''
+
+  const preparationDraftIds = useMemo(
+    () => governancePreparationIds(levels, draftIds, semesterCode),
+    [draftIds, levels, semesterCode],
+  )
+
   const actualTermRows = useMemo(
-    () => actualTermPreparationRows(levels, draftIds),
-    [draftIds, levels],
+    () => actualTermPreparationRows(levels, preparationDraftIds),
+    [levels, preparationDraftIds],
   )
 
   const preview = useMemo(
-    () => savePreview(levels, draftIds),
-    [draftIds, levels],
+    () => governanceSavePreview(levels, preparationDraftIds),
+    [levels, preparationDraftIds],
   )
 
   const yearName = context.academic_year?.year_name
     || options.academic_years.find(year => String(year.academic_year_id) === String(yearId))?.year_name
   const semesterName = context.semester?.semester_name
     || options.semesters.find(semester => String(semester.semester_id) === String(semesterId))?.semester_name
-
-  function patchOffering(programCourseId, offering) {
-    setLevels(current => current.map(level => ({
-      ...level,
-      courses: (level.courses ?? []).map(row => (
-        row.program_course_id === programCourseId ? { ...row, offering } : row
-      )),
-    })))
-  }
 
   function showNotice(message, tone = 'success') {
     setNoticeTone(tone)
@@ -647,6 +723,7 @@ export default function DeanRegistrationOfferings() {
         key={row.program_course_id}
         row={row}
         selectedSemesterId={semesterId}
+        semesterCode={semesterCode}
         canManage={canManageLocal}
         canRequestException={canRequestException}
         canRequestClosure={canRequestClosure}
@@ -654,11 +731,14 @@ export default function DeanRegistrationOfferings() {
         prepareError={prepareErrors[row.program_course_id]}
         closureRequest={row.offering ? closureByOffering[row.offering.course_offering_id] : null}
         onRemoveDraft={id => setDraftIds(current => current.filter(item => Number(item) !== Number(id)))}
-        onReopen={item => setConfirm({
-          type: 'reopen',
-          key: `off-${item.offering.course_offering_id}`,
-          row: item,
-        })}
+        locallySelected={preparationDraftIds.includes(Number(row.program_course_id))}
+        onToggleLocalSelection={(id, selected) => setDraftIds(current => selected
+          ? uniqueProgramCourseIds([...(current ?? []), id])
+          : current.filter(item => Number(item) !== Number(id)))}
+        minimumEnrollment={minimumEnrollments[row.program_course_id] ?? row.offering?.semester_offering_governance?.minimum_enrollment ?? ''}
+        onMinimumEnrollmentChange={(id, value) => setMinimumEnrollments(current => ({ ...current, [id]: value }))}
+        onSubmitGovernance={item => { void submitGovernance(item) }}
+        onToggleSelection={(item, selected) => { void updateGovernanceSelection(item, selected) }}
         onManageOffering={id => navigate(`/dean/courses/${id}`)}
         onManageInstructors={id => navigate(`/dean/courses/${id}`)}
         onRequestException={item => {
@@ -698,20 +778,59 @@ export default function DeanRegistrationOfferings() {
     )
   }
 
-  async function runMutation(key, request, programCourseId, successFallback) {
-    if (savingRef.current) return
+  async function submitGovernance(row) {
+    if (savingRef.current || !row.offering) return
+    const offeringId = row.offering.course_offering_id
+    const key = `off-${offeringId}`
     savingRef.current = true
     setBusyIds(current => ({ ...current, [key]: true }))
     setError('')
     try {
-      const response = await request()
-      const offering = response?.data?.offering ?? null
-      const rowId = response?.data?.program_course_id ?? programCourseId
-      if (offering) patchOffering(rowId, offering)
-      showNotice(response?.message || successFallback)
-      setConfirm(null)
+      const minimum = minimumEnrollments[row.program_course_id]
+      await apiRequest(`/v1/dean/registration-offerings/${offeringId}/proposal`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          is_selected: true,
+          minimum_enrollment: minimum === '' || minimum == null ? null : Number(minimum),
+        }),
+      })
+      const response = await apiRequest(`/v1/dean/registration-offerings/${offeringId}/submit`, {
+        method: 'POST',
+      })
+      await reloadCatalog()
+      showNotice(response?.message || 'تم إرسال الطرح إلى نائب الرئيس العلمي.')
     } catch (requestError) {
-      setError(handleRequestError(requestError, 'تعذّر تحديث إتاحة المادة للتسجيل.'))
+      setError(handleRequestError(requestError, 'تعذّر إرسال الطرح إلى نائب الرئيس العلمي.'))
+    } finally {
+      savingRef.current = false
+      setBusyIds(current => {
+        const next = { ...current }
+        delete next[key]
+        return next
+      })
+    }
+  }
+
+  async function updateGovernanceSelection(row, selected) {
+    if (savingRef.current || !row.offering) return
+    const offeringId = row.offering.course_offering_id
+    const key = `off-${offeringId}`
+    savingRef.current = true
+    setBusyIds(current => ({ ...current, [key]: true }))
+    setError('')
+    try {
+      const minimum = minimumEnrollments[row.program_course_id]
+      const response = await apiRequest(`/v1/dean/registration-offerings/${offeringId}/proposal`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          is_selected: selected,
+          minimum_enrollment: selected && minimum !== '' && minimum != null ? Number(minimum) : null,
+        }),
+      })
+      await reloadCatalog()
+      showNotice(response?.message || 'تم حفظ إعدادات الطرح الفصلي.')
+    } catch (requestError) {
+      setError(handleRequestError(requestError, 'تعذّر حفظ إعدادات الطرح الفصلي.'))
     } finally {
       savingRef.current = false
       setBusyIds(current => {
@@ -792,6 +911,8 @@ export default function DeanRegistrationOfferings() {
     const response = await apiRequest(`/v1/dean/registration-offerings?${params.toString()}`)
     const data = response?.data ?? {}
     setLevels(data.levels ?? [])
+    setSummary(data.summary ?? {})
+    setMinimumEnrollments(existingGovernanceMinimums(data.levels ?? []))
     setCollege(data.college ?? null)
     setContext({
       academic_year: data.academic_year ?? null,
@@ -817,6 +938,11 @@ export default function DeanRegistrationOfferings() {
               semester_id: Number(semesterId),
               mode: 'selected',
               program_course_ids: preview.programCourseIds,
+              minimum_enrollments: Object.fromEntries(
+                preview.programCourseIds
+                  .filter(id => minimumEnrollments[id] !== '' && minimumEnrollments[id] != null)
+                  .map(id => [String(id), Number(minimumEnrollments[id])]),
+              ),
             }),
           })
           return response?.data ?? {}
@@ -886,9 +1012,9 @@ export default function DeanRegistrationOfferings() {
   return (
     <div dir="rtl">
       <div className="mb-5">
-        <h2 className="text-[20px] font-black text-text-dark mb-[3px]">فتح المواد للتسجيل</h2>
+        <h2 className="text-[20px] font-black text-text-dark mb-[3px]">حوكمة طروحات الفصل</h2>
         <p className="text-[12.5px] text-text-light">
-          جهّز مواد الفصل ثم تابع إدارة كل طرح بعد الحفظ.
+          جهّز مواد الفصل، استكمل التكليفات الفعالة، ثم أرسل كل طرح لاعتماد نائب الرئيس العلمي وفتحه ذريًا.
         </p>
       </div>
 
@@ -1002,6 +1128,21 @@ export default function DeanRegistrationOfferings() {
         </div>
       ) : (
         <>
+          <section className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-6">
+            {[
+              ['تحتاج تجهيزاً', summary.needs_preparation_count ?? 0],
+              ['جاهزة للإرسال', summary.ready_to_submit_count ?? 0],
+              ['تكليف غير مكتمل', summary.incomplete_coverage_count ?? 0],
+              ['بانتظار المراجعة', summary.submitted_count ?? 0],
+              ['معادة للتعديل', summary.returned_count ?? 0],
+              ['اعتمادات مكتملة', summary.approved_count ?? 0],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-[14px] border border-primary/12 bg-white px-4 py-3 text-center shadow-[0_1px_8px_rgba(26,46,16,0.04)]">
+                <p className="text-[21px] font-black text-primary-dark">{value}</p>
+                <p className="text-[11.5px] font-semibold text-text-light">{label}</p>
+              </div>
+            ))}
+          </section>
           <section className="bg-white border border-primary/12 rounded-[16px] p-4 mb-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
             <h3 className="text-[14px] font-extrabold text-text-dark mb-1">تجهيز مواد الفصل</h3>
             <p className="text-[12.5px] text-text-light mb-4">
@@ -1139,27 +1280,21 @@ export default function DeanRegistrationOfferings() {
           title={
             confirm.type === 'clear-draft'
               ? 'تفريغ التجهيز'
-              : confirm.type === 'reopen'
-                ? 'تأكيد فتح المادة'
-                : confirm.type === 'exception' || confirm.type === 'exception-resubmit'
+              : confirm.type === 'exception' || confirm.type === 'exception-resubmit'
                   ? 'طلب فتح استثنائي'
                   : 'طلب إغلاق التسجيل'
           }
           warning={
             confirm.type === 'clear-draft'
               ? CLEAR_DRAFT_WARNING
-              : confirm.type === 'reopen'
-                ? 'سيتم فتح المادة للتسجيل بعد التحقق من اكتمال تكليف المدرسين المعتمدين.'
-                : confirm.type === 'exception' || confirm.type === 'exception-resubmit'
+              : confirm.type === 'exception' || confirm.type === 'exception-resubmit'
                   ? 'لن تُفتح المادة من هذه الشاشة. يبقى الطرح مغلقًا إلى أن يوافق النائب العلمي والنائب الإداري معًا.'
                   : CLOSURE_REQUEST_WARNING
           }
           confirmLabel={
             confirm.type === 'clear-draft'
               ? 'تفريغ غير المحفوظ'
-              : confirm.type === 'reopen'
-                ? 'تأكيد الفتح'
-                : confirm.type === 'exception' || confirm.type === 'closure'
+              : confirm.type === 'exception' || confirm.type === 'closure'
                   ? 'إرسال الطلب'
                   : confirm.type === 'exception-resubmit' || confirm.type === 'closure-resubmit'
                     ? 'إعادة الإرسال'
@@ -1180,17 +1315,6 @@ export default function DeanRegistrationOfferings() {
               return
             }
             const row = confirm.row
-            if (confirm.type === 'reopen') {
-              runMutation(
-                confirm.key,
-                () => apiRequest(`/v1/dean/registration-offerings/${row.offering.course_offering_id}/open`, {
-                  method: 'POST',
-                }),
-                row.program_course_id,
-                'تمت إعادة فتح التسجيل للمادة بنجاح.',
-              )
-              return
-            }
             if (confirm.type === 'exception') {
               runException(
                 confirm.key,

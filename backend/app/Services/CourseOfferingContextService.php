@@ -13,6 +13,7 @@ use App\Models\Semester;
 use App\Models\StudentCourseRegistration;
 use App\Models\User;
 use App\Support\CourseOfferingContext;
+use App\Support\SemesterOfferingGovernance;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Schema;
 
@@ -243,6 +244,15 @@ class CourseOfferingContextService
 
     public function hasHistoricalDependents(CourseOffering $offering): bool
     {
+        // Governance history and every already-open Offering make the
+        // operational identity immutable. Legacy OPEN rows stay readable;
+        // no governance row is fabricated for them.
+        if ((SemesterOfferingGovernance::schemaReady()
+                && $offering->semesterOfferingRequest()->exists())
+            || (string) $offering->status === CourseOfferingOpeningService::STATUS_OPEN) {
+            return true;
+        }
+
         return $offering->studentCourseRegistrations()->exists()
             || $offering->attendanceSessions()->exists()
             || $offering->gradeApprovals()->exists()
@@ -258,5 +268,13 @@ class CourseOfferingContextService
             || (int) ($offering->academic_program_id ?? 0) !== $programId
             || (int) $offering->academic_year_id !== $yearId
             || (int) $offering->semester_id !== $semesterId;
+    }
+
+    public function assertIdentityChangeAllowed(CourseOffering $offering, int $courseId, int $programId, int $yearId, int $semesterId): void
+    {
+        if ($this->identityWouldChange($offering, $courseId, $programId, $yearId, $semesterId)
+            && $this->hasHistoricalDependents($offering)) {
+            throw CourseOfferingContextException::identityLocked();
+        }
     }
 }

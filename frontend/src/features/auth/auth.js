@@ -45,6 +45,9 @@ export const PERMISSIONS = Object.freeze({
   supplementaryExamsRegistrationsView: 'supplementary_exams.registrations.view',
   supplementaryExamsGradesReview: 'supplementary_exams.grades.review',
   academicCalendarManage: 'academic_calendar.manage',
+  semesterOfferingGovernanceView: 'course_offerings.semester_governance.view',
+  semesterOfferingGovernanceManage: 'course_offerings.semester_governance.manage',
+  semesterOfferingGovernanceReviewScientific: 'course_offerings.semester_governance.review_scientific',
   admissionsView: 'admissions.view',
   admissionsManage: 'admissions.manage',
 })

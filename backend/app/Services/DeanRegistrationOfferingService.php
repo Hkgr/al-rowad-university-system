@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Exceptions\CourseOfferingClosureException;
 use App\Exceptions\CourseOfferingContextException;
+use App\Exceptions\SemesterOfferingGovernanceException;
 use App\Models\AcademicProgram;
 use App\Models\AcademicYear;
 use App\Models\College;
@@ -13,6 +14,7 @@ use App\Models\ProgramCourse;
 use App\Models\Semester;
 use App\Models\User;
 use App\Support\CourseRequirementClassification;
+use App\Support\SemesterOfferingGovernance;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -35,11 +37,16 @@ class DeanRegistrationOfferingService
         private CourseOfferingOpeningService $opening,
         private CourseOfferingInstructorCoverageService $coverage,
         private CourseOfferingExceptionWorkflowService $exceptionWorkflow,
+        private SemesterOfferingGovernanceService $semesterGovernance,
     ) {
     }
 
     public function catalog(User $user, array $filters): array
     {
+        $this->semesterGovernance->assertDeanView($user);
+        if (! SemesterOfferingGovernance::schemaReady()) {
+            throw SemesterOfferingGovernanceException::schemaNotReady();
+        }
         $collegeIds = $this->accessibleCollegeIdList($user);
         $colleges = $this->accessibleColleges($collegeIds);
         $departmentId = isset($filters['department_id']) ? (int) $filters['department_id'] : null;
@@ -68,6 +75,12 @@ class DeanRegistrationOfferingService
             'open_count' => 0,
             'closed_count' => 0,
             'missing_count' => 0,
+            'needs_preparation_count' => 0,
+            'incomplete_coverage_count' => 0,
+            'ready_to_submit_count' => 0,
+            'submitted_count' => 0,
+            'returned_count' => 0,
+            'approved_count' => 0,
         ];
 
         if ($selectedProgram !== null && $yearId !== null && $semesterId !== null) {
@@ -93,6 +106,7 @@ class DeanRegistrationOfferingService
             'semester' => $semester === null ? null : [
                 'semester_id' => $semester->semester_id,
                 'semester_name' => $semester->semester_name,
+                'semester_code' => $semester->semester_code,
                 'semester_order' => $semester->semester_order,
             ],
             'college' => $college === null ? null : [
@@ -106,7 +120,7 @@ class DeanRegistrationOfferingService
                     ->all(),
                 'semesters' => Semester::query()
                     ->orderBy('semester_order')
-                    ->get(['semester_id', 'semester_name', 'semester_order', 'is_active'])
+                    ->get(['semester_id', 'semester_code', 'semester_name', 'semester_order', 'is_active'])
                     ->all(),
                 'departments' => $departments
                     ->map(fn (Department $department) => [
@@ -134,9 +148,12 @@ class DeanRegistrationOfferingService
     public function openFromProgramCourse(User $user, array $payload): array
     {
         $this->assertCanManage($user);
+        $this->assertGovernanceReady();
 
         return DB::transaction(function () use ($user, $payload): array {
-            $programCourse = $this->lockProgramCourse((int) $payload['program_course_id']);
+            // Do not lock ProgramCourse before the CourseOffering. Governance
+            // preparation revalidates and locks it after the Offering/root lock.
+            $programCourse = $this->loadProgramCourse((int) $payload['program_course_id']);
 
             $yearId = (int) $payload['academic_year_id'];
             $semesterId = (int) $payload['semester_id'];
@@ -160,6 +177,12 @@ class DeanRegistrationOfferingService
             $collegeIds = $this->accessibleCollegeIdList($user);
 
             if ($resolved['created']) {
+                $this->semesterGovernance->prepareDraft(
+                    $user,
+                    $offering,
+                    $programCourse,
+                    isset($payload['minimum_enrollment']) ? (int) $payload['minimum_enrollment'] : null,
+                );
                 return [
                     'action' => self::ACTION_CREATED_PENDING_COVERAGE,
                     'program_course_id' => $programCourse->program_course_id,
@@ -182,10 +205,15 @@ class DeanRegistrationOfferingService
                 throw new ConflictHttpException('تعذّر تنفيذ العملية بسبب تغير حالة المادة. أعد تحميل البيانات وحاول مجددًا.');
             }
 
-            $offering = $this->opening->normalOpen($offering, $user);
+            $this->semesterGovernance->prepareDraft(
+                $user,
+                $offering,
+                $programCourse,
+                isset($payload['minimum_enrollment']) ? (int) $payload['minimum_enrollment'] : null,
+            );
 
             return [
-                'action' => 'reopened',
+                'action' => 'prepared',
                 'program_course_id' => $programCourse->program_course_id,
                 'offering' => $this->offeringPayload($this->hydrateOffering($offering)),
             ];
@@ -202,6 +230,7 @@ class DeanRegistrationOfferingService
     public function bulkPrepare(User $user, array $payload): array
     {
         $this->assertCanManage($user);
+        $this->assertGovernanceReady();
 
         $programId = (int) $payload['academic_program_id'];
         $yearId = (int) $payload['academic_year_id'];
@@ -228,12 +257,16 @@ class DeanRegistrationOfferingService
         );
 
         $items = [];
+        $minimums = $payload['minimum_enrollments'] ?? [];
         foreach ($programCourses as $programCourse) {
             $items[] = $this->prepareOneClosedOffering(
                 $user,
                 $programCourse,
                 $yearId,
                 $semesterId,
+                isset($minimums[(string) $programCourse->program_course_id])
+                    ? (int) $minimums[(string) $programCourse->program_course_id]
+                    : null,
             );
         }
 
@@ -351,6 +384,7 @@ class DeanRegistrationOfferingService
         ProgramCourse $programCourse,
         int $yearId,
         int $semesterId,
+        ?int $minimumEnrollment,
     ): array {
         $base = [
             'program_course_id' => (int) $programCourse->program_course_id,
@@ -363,16 +397,34 @@ class DeanRegistrationOfferingService
         ];
 
         try {
-            $resolved = DB::transaction(function () use ($user, $programCourse, $yearId, $semesterId): array {
-                $locked = $this->lockProgramCourse((int) $programCourse->program_course_id);
-
-                return $this->findOrCreateClosedOffering(
+            $resolved = DB::transaction(function () use ($user, $programCourse, $yearId, $semesterId, $minimumEnrollment): array {
+                $resolved = $this->findOrCreateClosedOffering(
                     $user,
-                    $locked,
+                    $programCourse,
                     $yearId,
                     $semesterId,
                     40,
                 );
+                if ((string) $resolved['offering']->status === self::STATUS_CLOSED) {
+                    $existingGovernance = $resolved['offering']->semesterOfferingRequest()
+                        ->lockForUpdate()
+                        ->first();
+                    if ($existingGovernance !== null
+                        && (! in_array((string) $existingGovernance->status, [
+                            SemesterOfferingGovernance::STATUS_DRAFT,
+                            SemesterOfferingGovernance::STATUS_RETURNED,
+                        ], true) || $existingGovernance->materialized_at !== null)) {
+                        return $resolved;
+                    }
+                    $this->semesterGovernance->prepareDraft(
+                        $user,
+                        $resolved['offering'],
+                        $programCourse,
+                        $minimumEnrollment,
+                    );
+                }
+
+                return $resolved;
             });
         } catch (CourseOfferingContextException $exception) {
             $base['error_code'] = $exception->errorCode ?? 'prepare_failed';
@@ -388,6 +440,10 @@ class DeanRegistrationOfferingService
             return $base;
         } catch (ConflictHttpException) {
             $base['error_code'] = 'conflict';
+
+            return $base;
+        } catch (SemesterOfferingGovernanceException $exception) {
+            $base['error_code'] = $exception->errorCode;
 
             return $base;
         }
@@ -414,9 +470,41 @@ class DeanRegistrationOfferingService
         array $programCourseIds,
     ) {
         $programId = (int) $program->academic_program_id;
+        $semester = Semester::query()->findOrFail($semesterId);
+        $regularSemester = in_array((string) $semester->semester_code, ['first', 'second'], true);
+
+        if ((string) $semester->semester_code === 'summer' && $mode !== 'selected') {
+            throw ValidationException::withMessages([
+                'mode' => ['يتطلب الفصل الصيفي تحديد كل مقرر مطلوب طرحه صراحةً.'],
+            ]);
+        }
 
         if ($mode === 'selected') {
-            return $this->selectedProgramCoursesForBulkPrepare($programId, $programCourseIds);
+            $selected = $this->selectedProgramCoursesForBulkPrepare($programId, $programCourseIds);
+            if ($regularSemester) {
+                return ProgramCourse::query()
+                    ->with('course')
+                    ->where('academic_program_id', $programId)
+                    ->where('is_active', true)
+                    ->where('course_type', 'mandatory')
+                    ->get()
+                    ->concat($selected)
+                    ->unique('program_course_id')
+                    ->sortBy('program_course_id')
+                    ->values();
+            }
+
+            return $selected;
+        }
+
+        if ($regularSemester) {
+            return ProgramCourse::query()
+                ->with('course')
+                ->where('academic_program_id', $programId)
+                ->where('is_active', true)
+                ->where('course_type', 'mandatory')
+                ->orderBy('program_course_id')
+                ->get();
         }
 
         $query = ProgramCourse::query()
@@ -468,9 +556,7 @@ class DeanRegistrationOfferingService
         )));
 
         if ($requested === []) {
-            throw ValidationException::withMessages([
-                'program_course_ids' => ['يجب تحديد مادة واحدة على الأقل.'],
-            ]);
+            return collect();
         }
 
         $rows = ProgramCourse::query()
@@ -505,12 +591,9 @@ class DeanRegistrationOfferingService
             ->values();
     }
 
-    private function lockProgramCourse(int $programCourseId): ProgramCourse
+    private function loadProgramCourse(int $programCourseId): ProgramCourse
     {
-        $programCourse = ProgramCourse::query()
-            ->whereKey($programCourseId)
-            ->lockForUpdate()
-            ->first();
+        $programCourse = ProgramCourse::query()->find($programCourseId);
 
         if ($programCourse === null) {
             throw (new ModelNotFoundException())->setModel(ProgramCourse::class, [$programCourseId]);
@@ -576,8 +659,14 @@ class DeanRegistrationOfferingService
 
         $permissions = $user->effectivePermissions();
 
-        return $permissions->contains('course_offerings.manage')
-            || $permissions->contains('courses.manage');
+        return $permissions->contains(SemesterOfferingGovernance::PERMISSION_MANAGE);
+    }
+
+    private function assertGovernanceReady(): void
+    {
+        if (! SemesterOfferingGovernance::schemaReady()) {
+            throw SemesterOfferingGovernanceException::schemaNotReady();
+        }
     }
 
     private function curriculumLevels(
@@ -614,6 +703,12 @@ class DeanRegistrationOfferingService
             'open_count' => 0,
             'closed_count' => 0,
             'missing_count' => 0,
+            'needs_preparation_count' => 0,
+            'incomplete_coverage_count' => 0,
+            'ready_to_submit_count' => 0,
+            'submitted_count' => 0,
+            'returned_count' => 0,
+            'approved_count' => 0,
         ];
 
         $grouped = $rows
@@ -630,6 +725,29 @@ class DeanRegistrationOfferingService
                             $summary['open_count']++;
                         } elseif ($offering->status === self::STATUS_CLOSED) {
                             $summary['closed_count']++;
+                        }
+
+                        if ($offering !== null) {
+                            $governanceRequest = $offering->semesterOfferingRequest;
+                            $governanceStatus = $governanceRequest?->status;
+                            $coverage = $this->coverage->describe($offering);
+                            if ($governanceStatus === null && $offering->status === self::STATUS_CLOSED) {
+                                $summary['needs_preparation_count']++;
+                            } elseif ($governanceStatus === SemesterOfferingGovernance::STATUS_SUBMITTED) {
+                                $summary['submitted_count']++;
+                            } elseif ($governanceStatus === SemesterOfferingGovernance::STATUS_RETURNED) {
+                                $summary['returned_count']++;
+                            } elseif ($governanceStatus === SemesterOfferingGovernance::STATUS_APPROVED) {
+                                $summary['approved_count']++;
+                            } elseif ($governanceStatus === SemesterOfferingGovernance::STATUS_DRAFT
+                                && $governanceRequest->is_selected
+                                && $coverage['complete'] === true) {
+                                $summary['ready_to_submit_count']++;
+                            } elseif ($governanceStatus === SemesterOfferingGovernance::STATUS_DRAFT
+                                && $governanceRequest->is_selected
+                                && $coverage['complete'] !== true) {
+                                $summary['incomplete_coverage_count']++;
+                            }
                         }
 
                         return [
@@ -692,7 +810,8 @@ class DeanRegistrationOfferingService
                 array_map(
                     static fn (string $relation): string => 'currentExceptionRequest.'.$relation,
                     $this->exceptionWorkflow->deanCardRelations()
-                )
+                ),
+                ['semesterOfferingRequest.reviews']
             ))
             ->withCount([
                 'studentCourseRegistrations as registered_students_count' => fn (Builder $registrations) => $registrations->current(),
@@ -733,7 +852,8 @@ class DeanRegistrationOfferingService
             array_map(
                 static fn (string $relation): string => 'currentExceptionRequest.'.$relation,
                 $this->exceptionWorkflow->deanCardRelations()
-            )
+            ),
+            ['semesterOfferingRequest.reviews']
         ));
         $offering->loadCount([
             'studentCourseRegistrations as registered_students_count' => fn (Builder $registrations) => $registrations->current(),
@@ -754,6 +874,11 @@ class DeanRegistrationOfferingService
             'exceptional_opening_request' => $this->exceptionWorkflow->cardSummary(
                 $offering->relationLoaded('currentExceptionRequest')
                     ? $offering->currentExceptionRequest
+                    : null
+            ),
+            'semester_offering_governance' => $this->semesterGovernance->summary(
+                $offering->relationLoaded('semesterOfferingRequest')
+                    ? $offering->semesterOfferingRequest
                     : null
             ),
         ];

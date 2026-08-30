@@ -5,16 +5,20 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Dean\BulkPrepareDeanRegistrationOfferingRequest;
 use App\Http\Requests\Dean\OpenDeanRegistrationOfferingRequest;
+use App\Http\Requests\Dean\UpdateSemesterOfferingProposalRequest;
 use App\Models\CourseOffering;
 use App\Services\DeanRegistrationOfferingService;
+use App\Services\SemesterOfferingGovernanceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 class DeanRegistrationOfferingController extends Controller
 {
-    public function __construct(private DeanRegistrationOfferingService $registrationOfferings)
-    {
+    public function __construct(
+        private DeanRegistrationOfferingService $registrationOfferings,
+        private SemesterOfferingGovernanceService $governance,
+    ) {
     }
 
     public function index(Request $request): JsonResponse
@@ -79,10 +83,34 @@ class DeanRegistrationOfferingController extends Controller
         return $this->successResponse($result, $this->successMessage('closed'));
     }
 
+    public function updateProposal(
+        UpdateSemesterOfferingProposalRequest $request,
+        CourseOffering $courseOffering,
+    ): JsonResponse {
+        $this->assertCanView($request);
+        $updated = $this->governance->updateProposal($request->user(), $courseOffering, $request->validated());
+
+        return $this->successResponse($this->governance->payload($updated), 'تم حفظ إعدادات الطرح الفصلي.');
+    }
+
+    public function submit(Request $request, CourseOffering $courseOffering): JsonResponse
+    {
+        $this->assertCanView($request);
+        $request->validate([
+            'status' => ['prohibited'],
+            'submission_version' => ['prohibited'],
+            'materialized_at' => ['prohibited'],
+        ]);
+        $updated = $this->governance->submit($request->user(), $courseOffering);
+
+        return $this->successResponse($this->governance->payload($updated), 'تم إرسال الطرح إلى نائب الرئيس العلمي.');
+    }
+
     private function successMessage(?string $action): string
     {
         return match ($action) {
             'created', 'created_pending_coverage', 'created_closed' => 'تم إنشاء طرح المادة. يجب استكمال تكليف المدرسين المعتمدين قبل فتحها.',
+            'prepared' => 'تم حفظ تجهيز الطرح الفصلي، ولم يُفتح التسجيل بعد.',
             'reopened' => 'تمت إعادة فتح التسجيل للمادة بنجاح.',
             'closed' => 'تم إغلاق التسجيل للمادة بنجاح.',
             default => 'تمت إتاحة المادة للتسجيل بنجاح.',

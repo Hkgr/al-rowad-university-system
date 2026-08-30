@@ -18,6 +18,7 @@ class OpenDeanRegistrationOfferingRequest extends FormRequest
             'academic_year_id' => ['required', 'integer', 'min:1', 'exists:academic_years,academic_year_id'],
             'semester_id' => ['required', 'integer', 'min:1', 'exists:semesters,semester_id'],
             'capacity' => ['sometimes', 'integer', 'min:1'],
+            'minimum_enrollment' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'college_id' => ['prohibited'],
             'course_id' => ['prohibited'],
             'academic_program_id' => ['prohibited'],

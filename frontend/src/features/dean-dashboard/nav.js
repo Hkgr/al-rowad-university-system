@@ -15,7 +15,7 @@ const deanNav = [
       { to: '/dean/students', Icon: FaUsers, ar: 'الطلاب', en: 'Students' },
       { to: '/dean/teachers', Icon: FaChalkboardTeacher, ar: 'المدرسين', en: 'Teachers' },
       { to: '/dean/courses', Icon: FaBook, ar: 'المواد', en: 'Courses' },
-      { to: '/dean/registration-offerings', Icon: FaLockOpen, ar: 'فتح المواد للتسجيل', en: 'Registration offerings' },
+      { to: '/dean/registration-offerings', Icon: FaLockOpen, ar: 'حوكمة طروحات الفصل', en: 'Semester offering governance', assignedPermissions: ['course_offerings.semester_governance.view'] },
       { to: '/dean/registration-requests', Icon: FaClipboardList, ar: 'طلبات تسجيل الطلاب', en: 'Registration requests' },
       { to: '/dean/supplementary-exams', Icon: FaClipboardCheck, ar: 'الامتحانات التكميلية', en: 'Supplementary exams', allRoles: ['dean'], assignedPermissions: ['supplementary_exams.offerings.view'] },
     ],

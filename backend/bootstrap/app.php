@@ -13,6 +13,7 @@ use App\Exceptions\GraduationEligibilityException;
 use App\Exceptions\OfferingInstructorCoverageException;
 use App\Exceptions\RegistrationException;
 use App\Exceptions\RegistrationRequestException;
+use App\Exceptions\SemesterOfferingGovernanceException;
 use App\Exceptions\MinistryPlacementException;
 use App\Exceptions\SupplementaryExamOfferingException;
 use App\Exceptions\SupplementaryExamPeriodGovernanceException;
@@ -198,6 +199,19 @@ return Application::configure(basePath: dirname(__DIR__))
                 'error_code' => $exception->errorCode,
                 'errors' => $exception->errors,
                 'coverage' => $exception->coverage,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (SemesterOfferingGovernanceException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
             ], $exception->status);
         });
 

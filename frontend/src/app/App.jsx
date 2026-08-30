@@ -6,7 +6,7 @@ import DashboardLayout from '../components/layout/DashboardLayout'
 // ── Auth ────────────────────────────────────────────────────────────────────
 import LoginPage from '../features/auth/pages/LoginPage'
 import ForbiddenPage from '../features/auth/pages/ForbiddenPage'
-import { ACCESS, PERMISSIONS, canAccess, clearIdentity, getIdentity, landingRoute, storeIdentity } from '../features/auth/auth'
+import { ACCESS, PERMISSIONS, ROLES, canAccess, clearIdentity, getIdentity, landingRoute, storeIdentity } from '../features/auth/auth'
 
 // ── شؤون الطلاب (Student Affairs) ──────────────────────────────────────────
 import studentAffairsNav from '../features/student-affairs/nav'
@@ -95,6 +95,8 @@ import TeachingAssignmentDetail from '../features/vice-presidency/pages/Teaching
 import ExceptionalOpeningQueue from '../features/vice-presidency/pages/ExceptionalOpeningQueue'
 import ExceptionalOpeningDetail from '../features/vice-presidency/pages/ExceptionalOpeningDetail'
 import SupplementaryExamPeriodsPage from '../features/vice-presidency/pages/SupplementaryExamPeriods'
+import SemesterOfferingQueue from '../features/vice-presidency/pages/SemesterOfferingQueue'
+import SemesterOfferingDetail from '../features/vice-presidency/pages/SemesterOfferingDetail'
 
 function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], actualUniversityScope = false, studentIdentity = false, employeeIdentity = false, anyAccess = [] }) {
   const token = localStorage.getItem('token')
@@ -290,7 +292,7 @@ export default function App() {
           <Route path="/dean/teachers/:id"  element={<DeanTeacherProfile />} />
           <Route path="/dean/courses"       element={<DeanCourses />} />
           <Route path="/dean/courses/:id"   element={<DeanCourseOfferingProfile />} />
-          <Route path="/dean/registration-offerings" element={<DeanRegistrationOfferings />} />
+          <Route path="/dean/registration-offerings" element={protect(<DeanRegistrationOfferings />, { allRoles: [ROLES.dean], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView] })} />
           <Route path="/dean/registration-requests" element={<DeanRegistrationRequests />} />
           <Route path="/dean/registration-requests/:id" element={<DeanRegistrationRequestDetail />} />
           <Route path="/dean/supplementary-exams" element={protect(<DeanSupplementaryExams />, { allRoles: ['dean'], assignedPermissions: ['supplementary_exams.offerings.view'] })} />
@@ -308,6 +310,8 @@ export default function App() {
         >
           <Route path="/vp/scientific" element={<VicePresidentShell office="scientific" />} />
           <Route path="/vp/scientific/teaching-assignments" element={<TeachingAssignmentQueue office="scientific" />} />
+          <Route path="/vp/scientific/semester-offerings" element={protect(<SemesterOfferingQueue />, { allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView], actualUniversityScope: true })} />
+          <Route path="/vp/scientific/semester-offerings/:id" element={protect(<SemesterOfferingDetail />, { allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView], actualUniversityScope: true })} />
           <Route path="/vp/scientific/teaching-assignments/:id" element={<TeachingAssignmentDetail office="scientific" />} />
           <Route path="/vp/scientific/exceptional-openings" element={<ExceptionalOpeningQueue office="scientific" />} />
           <Route path="/vp/scientific/exceptional-openings/:id" element={<ExceptionalOpeningDetail office="scientific" />} />
