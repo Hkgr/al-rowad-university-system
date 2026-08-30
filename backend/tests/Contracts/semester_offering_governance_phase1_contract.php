@@ -76,7 +76,7 @@ $contract = static function (string $backendRoot): array {
     $expect((str_contains($source['apply'], "r.role_code='dean'") || str_contains($source['apply'], "r.role_code=''dean''"))
         && (str_contains($source['apply'], "r.role_code='vice_president_scientific'") || str_contains($source['apply'], "r.role_code=''vice_president_scientific''")), 'RBAC mappings must be limited to Dean and Scientific VP responsibilities.');
     $expect(! preg_match("/vice_president_administrative[^\n]{0,250}semester_governance/", $source['apply']), 'Administrative VP must receive no governance permission.');
-    foreach (['minimum_enrollment_not_allowed', 'incomplete_effective_coverage_blocks_submission', 'return_edit_resubmit', 'scientific_decision_requires_actual_role', 'atomically_opens_and_materializes', 'opening_failure_rolls_back', 'consumed_approval', 'stale_submitted_course_type', 'lock_generic_identity_changes', 'exceptional_opening_remains'] as $behavior) {
+    foreach (['minimum_enrollment_not_allowed', 'incomplete_effective_coverage_blocks_submission', 'return_edit_resubmit', 'scientific_decision_requires_actual_role', 'atomically_opens_and_materializes', 'opening_failure_rolls_back', 'never_governed_closed_program_offering_cannot_normal_open_without_proof', 'consumed_approval', 'open_legacy_null_program_identity_cannot_be_assigned_a_program', 'open_program_offering_cannot_be_repurposed_to_another_identity', 'stale_submitted_course_type', 'lock_generic_identity_changes', 'exceptional_opening_remains'] as $behavior) {
         $expect(str_contains($source['behavior_tests'], $behavior), 'Missing real backend behavior regression: '.$behavior.'.');
     }
 
@@ -86,7 +86,13 @@ $contract = static function (string $backendRoot): array {
     $expect(strpos($source['gate'], 'schemaReady()') < strpos($source['gate'], 'if ($proof === null)'), 'Schema readiness must fail before a missing proof can be treated as normal workflow state.');
     $expect(str_contains($source['gate'], 'semester_offering_schema_not_ready') || str_contains($source['gate'], 'schemaNotReady()'), 'Missing expected governance schema must surface the controlled readiness failure.');
     $expect(str_contains($source['gate'], 'approvalRequired()') && str_contains($source['gate'], '$request->materialized_at !== null'), 'Missing and consumed approvals must never open an applicable offering.');
-    $expect(str_contains($source['opening'], '$unchangedOpen = $originalStatus === self::STATUS_OPEN') && str_contains($source['opening'], 'if ($unchangedOpen)'), 'Already-open legacy offerings must remain grandfathered/idempotent.');
+    foreach (['course_id', 'academic_program_id', 'academic_year_id', 'semester_id'] as $identityField) {
+        $expect(str_contains($source['opening'], "'{$identityField}' =>"), 'The central OPEN identity snapshot is missing '.$identityField.'.');
+    }
+    $expect(str_contains($source['opening'], '$identityChanged = $this->academicIdentity($locked) !== $originalIdentity')
+        && str_contains($source['opening'], '$originalStatus === self::STATUS_OPEN && $identityChanged')
+        && str_contains($source['opening'], 'throw CourseOfferingContextException::identityLocked()'), 'Already-OPEN identity mutation must fail centrally across all four operational identity fields.');
+    $expect(str_contains($source['opening'], '$unchangedOpen = $originalStatus === self::STATUS_OPEN') && str_contains($source['opening'], 'if ($unchangedOpen)'), 'Unmodified already-open legacy offerings must remain grandfathered/idempotent.');
     $expect(substr_count($source['opening'], '$this->semesterGovernance->authorize($locked, $semesterProof)') >= 2, 'Every CLOSED to OPEN shape must pass the central governance gate.');
     preg_match_all('/\$this->semesterGovernance->authorize\(\$locked, \$semesterProof\)/', $source['opening'], $openingGateMatches, PREG_OFFSET_CAPTURE);
     preg_match_all('/\$this->coverage->assertCompleteForNormalOpening\(\$locked\)/', $source['opening'], $openingCoverageMatches, PREG_OFFSET_CAPTURE);
@@ -96,8 +102,19 @@ $contract = static function (string $backendRoot): array {
     $expect(strpos($source['opening'], '$this->semesterGovernance->authorize($locked, $semesterProof)') < strpos($source['opening'], '$this->lockNormalOpeningGraph($locked)'), 'Normal opening must lock/revalidate governance and curriculum before the teaching-assignment/effective-slot graph.');
     $expect(str_contains($source['generic_offerings'], '$this->opening->applyThenGuardOpenCoverage(') && str_contains($source['generic_offerings'], "'status' => CourseOfferingOpeningService::STATUS_CLOSED"), 'Generic create/update paths must create CLOSED and delegate all possible normal opening to the central gate.');
     $expect(str_contains($source['offering_context'], 'SemesterOfferingGovernance::schemaReady()') && str_contains($source['offering_context'], '$offering->semesterOfferingRequest()->exists()'), 'A governance root must be an offering identity/history dependent.');
-    $expect(str_contains($source['offering_context'], 'CourseOfferingOpeningService::STATUS_OPEN') && str_contains($source['offering_context'], '$offering->academic_program_id !== null'), 'Already-open program offerings must not be repurposed through generic update.');
+    $historyStart = strpos($source['offering_context'], 'public function hasHistoricalDependents');
+    $identityStart = strpos($source['offering_context'], 'public function identityWouldChange', $historyStart ?: 0);
+    $historyMethod = ($historyStart !== false && $identityStart !== false)
+        ? substr($source['offering_context'], $historyStart, $identityStart - $historyStart)
+        : '';
+    $expect($historyMethod !== ''
+        && str_contains($historyMethod, 'CourseOfferingOpeningService::STATUS_OPEN')
+        && ! str_contains($historyMethod, 'academic_program_id !== null'), 'Every already-open offering, including a legacy NULL-program row, must lock its operational identity.');
     $expect(str_contains($source['generic_offerings'], '$this->offeringContext->assertIdentityChangeAllowed(') && str_contains($source['offering_context'], 'throw CourseOfferingContextException::identityLocked()'), 'Generic update must enforce the centralized identity-history guard.');
+    $expect(! preg_match("/increments\\([^;]+\)->(?:string|integer|unsignedInteger|text|boolean|dateTime)\\(/", $source['behavior_tests']), 'SQLite fixture columns must not be chained from increments().');
+    foreach (['action_type', 'action_reason', 'target_course_offering_instructor_id'] as $teachingColumn) {
+        $expect(str_contains($source['behavior_tests'], "\$t->".(($teachingColumn === 'action_reason') ? 'text' : (($teachingColumn === 'target_course_offering_instructor_id') ? 'integer' : 'string'))."('{$teachingColumn}')"), 'SQLite fixture is missing TeachingAssignmentWorkflow schema column '.$teachingColumn.'.');
+    }
     $expect(str_contains($source['dean'], '$this->opening->normalOpen($offering, $user)') && ! str_contains($source['dean'], 'new SemesterOfferingOpeningProof'), 'Legacy Dean normal-open endpoint must not fabricate governance proof or bypass the central gate.');
     $exceptionStart = strpos($source['opening'], 'public function openFromApprovedException');
     $exceptionEnd = strpos($source['opening'], 'private function assertCurrentApprovedReview', $exceptionStart ?: 0);

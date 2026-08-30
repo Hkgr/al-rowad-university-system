@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Exceptions\CourseOfferingClosureException;
+use App\Exceptions\CourseOfferingContextException;
 use App\Exceptions\ExceptionalOpeningException;
 use App\Exceptions\TeachingAssignmentException;
 use App\Models\CourseOffering;
@@ -63,7 +64,7 @@ class CourseOfferingOpeningService
      * Apply Offering metadata inside one locked transaction.
      * If the Offering remains or becomes OPEN, coverage is enforced against
      * the FINAL Course whenever this request is a true open transition or
-     * the coverage-driving course_id changed. Unchanged already-open
+     * the immutable academic identity changed. Unchanged already-open
      * Offerings stay idempotent and are not retroactively rejected.
      *
      * @param  callable(CourseOffering): void  $mutate
@@ -76,7 +77,7 @@ class CourseOfferingOpeningService
         ?SemesterOfferingOpeningProof $semesterProof = null,
     ): CourseOffering {
         return $this->withLockedOffering($offering, function (CourseOffering $locked) use ($mutate, $ensureOpen, $actor, $semesterProof): CourseOffering {
-            $originalCourseId = (int) $locked->course_id;
+            $originalIdentity = $this->academicIdentity($locked);
             $originalStatus = (string) $locked->status;
 
             $mutate($locked);
@@ -92,7 +93,7 @@ class CourseOfferingOpeningService
 
             return $this->finalizeLockedOpenInvariant(
                 $locked,
-                $originalCourseId,
+                $originalIdentity,
                 $originalStatus,
                 $ensureOpen,
                 $actor,
@@ -192,16 +193,23 @@ class CourseOfferingOpeningService
 
     private function finalizeLockedOpenInvariant(
         CourseOffering $locked,
-        int $originalCourseId,
+        array $originalIdentity,
         string $originalStatus,
         bool $ensureOpen,
         ?User $actor,
         ?SemesterOfferingOpeningProof $semesterProof,
     ): CourseOffering {
-        $courseIdentityChanged = (int) $locked->course_id !== $originalCourseId;
+        $identityChanged = $this->academicIdentity($locked) !== $originalIdentity;
+
+        // OPEN Offerings are historical academic facts. Their complete
+        // operational identity is immutable even for legacy rows whose
+        // academic_program_id is NULL; no governance history is fabricated.
+        if ($originalStatus === self::STATUS_OPEN && $identityChanged) {
+            throw CourseOfferingContextException::identityLocked();
+        }
 
         if ($locked->status === self::STATUS_OPEN) {
-            $unchangedOpen = $originalStatus === self::STATUS_OPEN && ! $courseIdentityChanged;
+            $unchangedOpen = $originalStatus === self::STATUS_OPEN;
             if ($unchangedOpen) {
                 return $locked;
             }
@@ -247,6 +255,21 @@ class CourseOfferingOpeningService
         $this->exceptionInvalidation->supersedeCurrentForNormalOpen($locked, $actor);
 
         return $locked;
+    }
+
+    /**
+     * @return array{course_id: int, academic_program_id: ?int, academic_year_id: int, semester_id: int}
+     */
+    private function academicIdentity(CourseOffering $offering): array
+    {
+        return [
+            'course_id' => (int) $offering->course_id,
+            'academic_program_id' => $offering->academic_program_id === null
+                ? null
+                : (int) $offering->academic_program_id,
+            'academic_year_id' => (int) $offering->academic_year_id,
+            'semester_id' => (int) $offering->semester_id,
+        ];
     }
 
     /**

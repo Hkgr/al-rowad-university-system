@@ -244,13 +244,12 @@ class CourseOfferingContextService
 
     public function hasHistoricalDependents(CourseOffering $offering): bool
     {
-        // Governance history and already-open program offerings make the
+        // Governance history and every already-open Offering make the
         // operational identity immutable. Legacy OPEN rows stay readable;
         // no governance row is fabricated for them.
         if ((SemesterOfferingGovernance::schemaReady()
                 && $offering->semesterOfferingRequest()->exists())
-            || ((string) $offering->status === CourseOfferingOpeningService::STATUS_OPEN
-                && $offering->academic_program_id !== null)) {
+            || (string) $offering->status === CourseOfferingOpeningService::STATUS_OPEN) {
             return true;
         }
 

@@ -169,6 +169,23 @@ class SemesterOfferingGovernancePhase1BehaviorTest extends TestCase
     }
 
     #[Test]
+    public function never_governed_closed_program_offering_cannot_normal_open_without_proof(): void
+    {
+        self::assertSame(0, DB::table('semester_offering_requests')->count());
+
+        $this->assertDomainCode(
+            fn () => $this->opening($this->passingCoverage())->normalOpen(
+                CourseOffering::query()->findOrFail(1),
+                $this->actor(dean: true),
+            ),
+            'semester_offering_scientific_approval_required',
+        );
+
+        self::assertSame('closed', CourseOffering::query()->findOrFail(1)->status);
+        self::assertSame(0, DB::table('semester_offering_requests')->count());
+    }
+
+    #[Test]
     public function consumed_approval_and_generic_open_without_proof_cannot_reopen_after_closure(): void
     {
         $request = $this->submittedRequest();
@@ -182,6 +199,69 @@ class SemesterOfferingGovernancePhase1BehaviorTest extends TestCase
             'semester_offering_scientific_approval_required',
         );
         self::assertSame('closed', $approved->courseOffering->fresh()->status);
+    }
+
+    #[Test]
+    public function open_legacy_null_program_identity_cannot_be_assigned_a_program(): void
+    {
+        DB::table('course_offerings')->where('course_offering_id', 1)->update([
+            'academic_program_id' => null,
+            'status' => 'open',
+        ]);
+        $coverage = Mockery::mock(CourseOfferingInstructorCoverageService::class);
+        $coverage->shouldNotReceive('assertCompleteForNormalOpening');
+
+        try {
+            $this->opening($coverage)->applyThenGuardOpenCoverage(
+                CourseOffering::query()->findOrFail(1),
+                static function (CourseOffering $locked): void {
+                    $locked->academic_program_id = 1;
+                    $locked->save();
+                },
+                false,
+                $this->actor(dean: true),
+            );
+            self::fail('An OPEN legacy NULL-program identity must be immutable.');
+        } catch (CourseOfferingContextException $exception) {
+            self::assertSame(CourseOfferingContextException::OFFERING_IDENTITY_LOCKED, $exception->errorCode);
+        }
+
+        $offering = CourseOffering::query()->findOrFail(1);
+        self::assertSame('open', $offering->status);
+        self::assertNull($offering->academic_program_id);
+    }
+
+    #[Test]
+    public function open_program_offering_cannot_be_repurposed_to_another_identity(): void
+    {
+        DB::table('course_offerings')->where('course_offering_id', 1)->update(['status' => 'open']);
+        $coverage = Mockery::mock(CourseOfferingInstructorCoverageService::class);
+        $coverage->shouldNotReceive('assertCompleteForNormalOpening');
+
+        try {
+            $this->opening($coverage)->applyThenGuardOpenCoverage(
+                CourseOffering::query()->findOrFail(1),
+                static function (CourseOffering $locked): void {
+                    $locked->course_id = 2;
+                    $locked->academic_program_id = 2;
+                    $locked->academic_year_id = 2;
+                    $locked->semester_id = 2;
+                    $locked->save();
+                },
+                false,
+                $this->actor(dean: true),
+            );
+            self::fail('An OPEN program offering identity must be immutable.');
+        } catch (CourseOfferingContextException $exception) {
+            self::assertSame(CourseOfferingContextException::OFFERING_IDENTITY_LOCKED, $exception->errorCode);
+        }
+
+        $offering = CourseOffering::query()->findOrFail(1);
+        self::assertSame(1, (int) $offering->course_id);
+        self::assertSame(1, (int) $offering->academic_program_id);
+        self::assertSame(1, (int) $offering->academic_year_id);
+        self::assertSame(1, (int) $offering->semester_id);
+        self::assertSame('open', $offering->status);
     }
 
     #[Test]
@@ -374,17 +454,43 @@ class SemesterOfferingGovernancePhase1BehaviorTest extends TestCase
 
     private function schema(): void
     {
-        Schema::create('users', fn (Blueprint $t) => $t->increments('user_id')->string('username')->nullable());
-        Schema::create('colleges', fn (Blueprint $t) => $t->increments('college_id'));
-        Schema::create('departments', fn (Blueprint $t) => $t->increments('department_id')->unsignedInteger('college_id')->nullable());
-        Schema::create('academic_programs', fn (Blueprint $t) => $t->increments('academic_program_id')->unsignedInteger('department_id')->nullable());
-        Schema::create('academic_years', fn (Blueprint $t) => $t->increments('academic_year_id'));
-        Schema::create('semesters', fn (Blueprint $t) => $t->increments('semester_id')->string('semester_code'));
+        Schema::create('users', function (Blueprint $t): void {
+            $t->increments('user_id');
+            $t->string('username')->nullable();
+        });
+        Schema::create('colleges', function (Blueprint $t): void {
+            $t->increments('college_id');
+        });
+        Schema::create('departments', function (Blueprint $t): void {
+            $t->increments('department_id');
+            $t->unsignedInteger('college_id')->nullable();
+        });
+        Schema::create('academic_programs', function (Blueprint $t): void {
+            $t->increments('academic_program_id');
+            $t->unsignedInteger('department_id')->nullable();
+        });
+        Schema::create('academic_years', function (Blueprint $t): void {
+            $t->increments('academic_year_id');
+        });
+        Schema::create('semesters', function (Blueprint $t): void {
+            $t->increments('semester_id');
+            $t->string('semester_code');
+        });
         Schema::create('courses', function (Blueprint $t): void { $t->increments('course_id'); $t->integer('theoretical_hours')->default(0); $t->integer('practical_hours')->default(0); });
         Schema::create('program_courses', function (Blueprint $t): void { $t->increments('program_course_id'); $t->integer('academic_program_id'); $t->integer('course_id'); $t->string('course_type'); $t->boolean('is_active'); });
         Schema::create('course_offerings', function (Blueprint $t): void { $t->increments('course_offering_id'); $t->integer('course_id'); $t->integer('academic_program_id')->nullable(); $t->integer('academic_year_id'); $t->integer('semester_id'); $t->integer('faculty_member_id')->nullable(); $t->integer('capacity')->default(40); $t->integer('available_seats')->default(40); $t->string('status'); $t->timestamps(); });
         Schema::create('course_offering_instructors', function (Blueprint $t): void { $t->increments('course_offering_instructor_id'); $t->integer('course_offering_id'); $t->integer('faculty_member_id')->nullable(); $t->string('instructor_role'); $t->boolean('is_active')->default(true); });
-        Schema::create('teaching_assignment_requests', function (Blueprint $t): void { $t->increments('teaching_assignment_request_id'); $t->integer('course_offering_id'); $t->integer('current_slot')->nullable(); $t->string('action_type')->nullable(); $t->string('status')->nullable(); });
+        Schema::create('teaching_assignment_requests', function (Blueprint $t): void {
+            $t->increments('teaching_assignment_request_id');
+            $t->integer('course_offering_id');
+            $t->integer('faculty_member_id')->nullable();
+            $t->string('instructor_role')->nullable();
+            $t->integer('current_slot')->nullable();
+            $t->string('action_type')->nullable();
+            $t->text('action_reason')->nullable();
+            $t->integer('target_course_offering_instructor_id')->nullable();
+            $t->string('status')->nullable();
+        });
         Schema::create('course_offering_exception_requests', function (Blueprint $t): void { $t->increments('course_offering_exception_request_id'); $t->integer('course_offering_id'); $t->integer('requested_by_user_id'); $t->text('reason'); $t->string('status'); $t->integer('submission_version'); $t->integer('current_slot')->nullable(); $t->integer('snapshot_course_id'); $t->integer('snapshot_academic_program_id')->nullable(); $t->integer('snapshot_academic_year_id'); $t->integer('snapshot_semester_id'); $t->integer('snapshot_department_id')->nullable(); $t->dateTime('approved_at')->nullable(); $t->dateTime('materialized_at')->nullable(); $t->timestamps(); });
         Schema::create('course_offering_exception_reviews', function (Blueprint $t): void { $t->increments('course_offering_exception_review_id'); $t->integer('course_offering_exception_request_id'); $t->integer('submission_version'); $t->string('review_authority'); $t->string('status'); $t->integer('reviewed_by_user_id')->nullable(); $t->dateTime('reviewed_at')->nullable(); $t->text('notes')->nullable(); $t->timestamps(); });
         Schema::create('semester_offering_requests', function (Blueprint $t): void { $t->increments('semester_offering_request_id'); $t->integer('course_offering_id'); $t->integer('program_course_id'); $t->string('course_type'); $t->boolean('is_selected'); $t->integer('minimum_enrollment')->nullable(); $t->string('status'); $t->integer('submission_version')->default(0); $t->integer('created_by_user_id'); $t->integer('submitted_by_user_id')->nullable(); $t->dateTime('submitted_at')->nullable(); $t->dateTime('approved_at')->nullable(); $t->dateTime('materialized_at')->nullable(); $t->timestamps(); });
