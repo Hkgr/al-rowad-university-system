@@ -278,7 +278,9 @@ export default function AcademicRequirementProgress({ progress, eligibility, sel
       <section className={`${view.eligible ? 'bg-green-50 border-green-200' : 'bg-primary/[0.06] border-primary/15'} border rounded-[16px] px-5 py-4`}>
         <p className={`text-[14.5px] font-black ${view.eligible ? 'text-green-900' : 'text-text-dark'}`}>{view.eligible ? 'تم استيفاء المتطلبات الأكاديمية للتخرج' : 'متطلبات التخرج الأكاديمية غير مكتملة بعد'}</p>
         <p className={`mt-1 text-[13px] leading-7 ${view.eligible ? 'text-green-800' : 'text-text-gray'}`}>
-          {view.eligible ? 'استوفيت متطلبات الخطة الأكاديمية. اعتماد حالة التخرج يبقى إجراءً إدارياً منفصلاً.' : <>يتبقى <span className="font-black text-text-dark tabular-nums">{view.remainingHours}</span> ساعة محتسبة لاستيفاء الخطة.</>}
+          {view.eligible
+            ? (selfView ? 'استوفيت متطلبات الخطة الأكاديمية. اعتماد حالة التخرج يبقى إجراءً إدارياً منفصلاً.' : 'استوفى الطالب متطلبات الخطة الأكاديمية. اعتماد حالة التخرج يبقى إجراءً إدارياً منفصلاً.')
+            : <>يتبقى <span className="font-black text-text-dark tabular-nums">{view.remainingHours}</span> ساعة محتسبة لاستيفاء الخطة.</>}
         </p>
         {!view.eligible && view.readableBlockers.length ? <ul className="mt-2 space-y-1">{view.readableBlockers.map(label => <li key={label} className="text-[12.5px] text-text-dark">{label}</li>)}</ul> : null}
       </section>

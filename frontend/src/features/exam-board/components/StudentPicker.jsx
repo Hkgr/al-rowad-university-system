@@ -1,38 +1,50 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { FaRedo, FaSearch, FaSpinner, FaUserGraduate } from 'react-icons/fa'
 import { apiRequest } from '../../../services/apiClient'
+import {
+  isLatestStudentPickerRequest,
+  STUDENT_PICKER_DEBOUNCE_MS,
+  studentPickerSearchPath,
+} from '../lib/studentPickerSearch'
 
 export default function StudentPicker({ onSelect, selected }) {
   const [students, setStudents] = useState([])
-  const [query,    setQuery]    = useState('')
-  const [loading,  setLoading]  = useState(true)
+  const [query, setQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
+  const requestSequenceRef = useRef(0)
 
   useEffect(() => {
-    let active = true
+    const timer = setTimeout(
+      () => setDebouncedQuery(query.trim()),
+      STUDENT_PICKER_DEBOUNCE_MS,
+    )
+    return () => clearTimeout(timer)
+  }, [query])
+
+  useEffect(() => {
+    let cancelled = false
+    const sequence = requestSequenceRef.current + 1
+    requestSequenceRef.current = sequence
     setLoading(true)
     setError('')
-    apiRequest('/v1/students?per_page=100')
+    apiRequest(studentPickerSearchPath(debouncedQuery))
       .then(json => {
-        if (active && json.success) setStudents(json.data?.data ?? json.data ?? [])
+        if (cancelled || !isLatestStudentPickerRequest(sequence, requestSequenceRef.current)) return
+        setStudents(json?.data?.data ?? json?.data ?? [])
       })
       .catch(() => {
-        if (active) {
-          setStudents([])
-          setError('تعذّر تحميل قائمة الطلاب. يرجى المحاولة مجدداً.')
-        }
+        if (cancelled || !isLatestStudentPickerRequest(sequence, requestSequenceRef.current)) return
+        setStudents([])
+        setError('تعذّر تحميل قائمة الطلاب. يرجى المحاولة مجدداً.')
       })
-      .finally(() => { if (active) setLoading(false) })
-    return () => { active = false }
-  }, [reloadKey])
-
-  const filtered = students.filter(s => {
-    const q = query.trim().toLowerCase()
-    if (!q) return true
-    const name = `${s.first_name} ${s.last_name}`.toLowerCase()
-    return name.includes(q) || (s.student_number || '').toLowerCase().includes(q)
-  })
+      .finally(() => {
+        if (!cancelled && isLatestStudentPickerRequest(sequence, requestSequenceRef.current)) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [debouncedQuery, reloadKey])
 
   return (
     <div className="bg-white border border-primary/12 rounded-[18px] p-5 mb-6 shadow-[0_2px_12px_rgba(26,46,16,0.05)]">
@@ -73,9 +85,9 @@ export default function StudentPicker({ onSelect, selected }) {
         </div>
       ) : (
         <div className="max-h-[220px] overflow-y-auto rounded-[10px] border border-primary/10 divide-y divide-primary/6">
-          {filtered.length === 0 ? (
+          {students.length === 0 ? (
             <p className="text-center text-[13px] text-text-light py-5" dir="rtl">لا توجد نتائج</p>
-          ) : filtered.map(s => {
+          ) : students.map(s => {
             const isSelected = selected?.student_id === s.student_id
             return (
               <button

@@ -6,7 +6,6 @@ use App\Exceptions\AcademicRequirementConfigurationException;
 use App\Models\Student;
 use App\Models\User;
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Facades\DB;
 
 class ExamStudentAcademicRecordService
 {
@@ -29,37 +28,35 @@ class ExamStudentAcademicRecordService
      */
     public function snapshot(Student $student, User $actor): array
     {
-        return DB::transaction(function () use ($student, $actor): array {
-            $transcript = $this->grades->getTranscript($student);
-            $student->loadMissing('studentStatus');
+        $transcript = $this->grades->getTranscript($student);
+        $student->loadMissing('studentStatus');
 
-            try {
-                $progress = $this->requirements->getStudentRequirementProgress($student);
-                $eligibility = $this->graduation->evaluateFromProgress($student, $progress);
-                $requirementPayload = [
-                    'status' => 'available',
-                    'error_code' => null,
-                    'progress' => $progress,
-                    'graduation_eligibility' => $eligibility,
-                ];
-            } catch (AcademicRequirementConfigurationException $exception) {
-                $requirementPayload = [
-                    'status' => 'unavailable',
-                    'error_code' => $exception->errorCode,
-                    'progress' => null,
-                    'graduation_eligibility' => null,
-                ];
-            }
-
-            return [
-                'transcript' => $transcript,
-                'requirements' => $requirementPayload,
-                'generation' => [
-                    'generated_at' => CarbonImmutable::now('UTC')->toIso8601String(),
-                    'timezone' => self::DISPLAY_TIMEZONE,
-                    'generated_by' => $this->identities->documentGenerator($actor),
-                ],
+        try {
+            $progress = $this->requirements->getStudentRequirementProgress($student);
+            $eligibility = $this->graduation->evaluateFromProgress($student, $progress);
+            $requirementPayload = [
+                'status' => 'available',
+                'error_code' => null,
+                'progress' => $progress,
+                'graduation_eligibility' => $eligibility,
             ];
-        });
+        } catch (AcademicRequirementConfigurationException $exception) {
+            $requirementPayload = [
+                'status' => 'unavailable',
+                'error_code' => $exception->errorCode,
+                'progress' => null,
+                'graduation_eligibility' => null,
+            ];
+        }
+
+        return [
+            'transcript' => $transcript,
+            'requirements' => $requirementPayload,
+            'generation' => [
+                'generated_at' => CarbonImmutable::now('UTC')->toIso8601String(),
+                'timezone' => self::DISPLAY_TIMEZONE,
+                'generated_by' => $this->identities->documentGenerator($actor),
+            ],
+        ];
     }
 }

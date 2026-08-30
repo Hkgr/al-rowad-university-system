@@ -9,8 +9,11 @@ $contract = static function (string $backendRoot): array {
         'aggregate' => $backendRoot.'/app/Services/ExamStudentAcademicRecordService.php',
         'graduation' => $backendRoot.'/app/Services/GraduationEligibilityService.php',
         'identity' => $backendRoot.'/app/Services/UserIdentityService.php',
+        'student_policy' => $backendRoot.'/app/Policies/StudentPolicy.php',
         'app' => $frontendRoot.'/app/App.jsx',
         'search' => $frontendRoot.'/features/exam-board/pages/GradeSheetPage.jsx',
+        'student_picker' => $frontendRoot.'/features/exam-board/components/StudentPicker.jsx',
+        'student_picker_search' => $frontendRoot.'/features/exam-board/lib/studentPickerSearch.js',
         'record' => $frontendRoot.'/features/exam-board/pages/ExamStudentAcademicRecordPage.jsx',
         'student_requirements' => $frontendRoot.'/features/student-dashboard/pages/StudentRequirements.jsx',
         'shared_requirements' => $frontendRoot.'/components/academic/AcademicRequirementProgress.jsx',
@@ -53,10 +56,13 @@ $contract = static function (string $backendRoot): array {
     foreach (['DB::', '::query()', 'selectRaw(', 'SUM(', 'AVG('] as $forbidden) {
         $expect(! str_contains($sources['controller'], $forbidden), 'Controller contains query/formula logic: '.$forbidden);
     }
+    $expect(str_contains($sources['student_policy'], "hasPermission('students.view')") && str_contains($sources['student_policy'], 'canAccessStudent($user, $student)'), 'Student policy must compose students.view with actual DataScope access.');
 
     $expect(substr_count($sources['aggregate'], 'getTranscript($student)') === 1, 'Aggregate must obtain the canonical transcript exactly once.');
     $expect(substr_count($sources['aggregate'], 'getStudentRequirementProgress($student)') === 1, 'Aggregate must obtain canonical requirement progress exactly once.');
-    $expect(str_contains($sources['aggregate'], 'DB::transaction(function () use ($student, $actor)'), 'Aggregate reads must share one consistent transaction snapshot.');
+    foreach (['DB::transaction', 'beginTransaction', 'lockForUpdate', 'sharedLock'] as $forbidden) {
+        $expect(! str_contains($sources['aggregate'], $forbidden), 'Read-only aggregate must not introduce transaction/locking primitive: '.$forbidden);
+    }
     $expect(str_contains($sources['aggregate'], 'evaluateFromProgress($student, $progress)'), 'Aggregate must reuse precomputed progress for graduation eligibility.');
     $expect(str_contains($sources['aggregate'], 'catch (AcademicRequirementConfigurationException $exception)'), 'Only the expected requirement configuration failure may make the subsection unavailable.');
     foreach (['Throwable', 'QueryException', 'schemaReady', 'information_schema', 'Schema::has'] as $forbidden) {
@@ -69,6 +75,10 @@ $contract = static function (string $backendRoot): array {
     $expect(str_contains($sources['app'], 'path="/exam-board/grade-sheet/:studentId"'), 'Missing protected standalone academic-record route.');
     $expect(str_contains($sources['search'], 'navigate(`/exam-board/grade-sheet/${student.student_id}`)'), 'Grade sheet search must navigate using only the selected student ID.');
     $expect(! str_contains($sources['search'], '/transcript') && ! str_contains($sources['search'], '/cgpa'), 'Search gateway must not load transcript or CGPA itself.');
+    $expect(str_contains($sources['student_picker'], 'studentPickerSearchPath(debouncedQuery)') && str_contains($sources['student_picker'], 'STUDENT_PICKER_DEBOUNCE_MS'), 'Student picker must use debounced server-side search.');
+    $expect(str_contains($sources['student_picker'], 'requestSequenceRef') && str_contains($sources['student_picker'], 'isLatestStudentPickerRequest'), 'Student picker must reject stale search responses.');
+    $expect(str_contains($sources['student_picker_search'], "params.set('q', normalized)") && str_contains($sources['student_picker_search'], 'STUDENT_PICKER_PER_PAGE = 25'), 'Student picker search must use bounded existing q pagination.');
+    $expect(! str_contains($sources['student_picker'], 'per_page=100') && ! str_contains($sources['student_picker'], '.filter('), 'Student picker must not search only a browser-filtered first-100 snapshot.');
     $expect(str_contains($sources['record'], 'apiRequest(endpoint)') && str_contains($sources['record'], 'const fresh = await apiRequest(endpoint)'), 'Page and export must use the same aggregate endpoint, with one fresh export snapshot.');
     $expect(! str_contains($sources['record'], '/cgpa'), 'Academic-record workflow must not issue a separate CGPA request.');
     $expect(str_contains($sources['student_requirements'], 'AcademicRequirementProgress') && str_contains($sources['record'], 'AcademicRequirementProgress'), 'Student and Exam Board pages must share requirement presentation.');

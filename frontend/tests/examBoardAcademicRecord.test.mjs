@@ -95,6 +95,10 @@ test('student and Exam Board pages use one presentation component without changi
   assert.match(sharedProgress, /REQUIREMENT_SCOPE_LABELS\[scope\] \|\| scope/)
   assert.match(sharedProgress, /isMandatory && view\.courseCount > 0/)
   assert.match(sharedProgress, /isElective/)
+  assert.match(sharedProgress, /selfView \? 'استوفيت متطلبات الخطة الأكاديمية/)
+  assert.match(sharedProgress, /: 'استوفى الطالب متطلبات الخطة الأكاديمية/)
+  assert.match(studentRequirements, /eligibility=\{eligibility\} selfView/)
+  assert.match(recordPage, /eligibility=\{record\.requirements\.graduation_eligibility\} \/>/)
 })
 
 test('generation identity and time are backend supplied with safe PDF fallbacks', () => {
