@@ -151,7 +151,9 @@ class DeanRegistrationOfferingService
         $this->assertGovernanceReady();
 
         return DB::transaction(function () use ($user, $payload): array {
-            $programCourse = $this->lockProgramCourse((int) $payload['program_course_id']);
+            // Do not lock ProgramCourse before the CourseOffering. Governance
+            // preparation revalidates and locks it after the Offering/root lock.
+            $programCourse = $this->loadProgramCourse((int) $payload['program_course_id']);
 
             $yearId = (int) $payload['academic_year_id'];
             $semesterId = (int) $payload['semester_id'];
@@ -396,11 +398,9 @@ class DeanRegistrationOfferingService
 
         try {
             $resolved = DB::transaction(function () use ($user, $programCourse, $yearId, $semesterId, $minimumEnrollment): array {
-                $locked = $this->lockProgramCourse((int) $programCourse->program_course_id);
-
                 $resolved = $this->findOrCreateClosedOffering(
                     $user,
-                    $locked,
+                    $programCourse,
                     $yearId,
                     $semesterId,
                     40,
@@ -419,7 +419,7 @@ class DeanRegistrationOfferingService
                     $this->semesterGovernance->prepareDraft(
                         $user,
                         $resolved['offering'],
-                        $locked,
+                        $programCourse,
                         $minimumEnrollment,
                     );
                 }
@@ -591,12 +591,9 @@ class DeanRegistrationOfferingService
             ->values();
     }
 
-    private function lockProgramCourse(int $programCourseId): ProgramCourse
+    private function loadProgramCourse(int $programCourseId): ProgramCourse
     {
-        $programCourse = ProgramCourse::query()
-            ->whereKey($programCourseId)
-            ->lockForUpdate()
-            ->first();
+        $programCourse = ProgramCourse::query()->find($programCourseId);
 
         if ($programCourse === null) {
             throw (new ModelNotFoundException())->setModel(ProgramCourse::class, [$programCourseId]);

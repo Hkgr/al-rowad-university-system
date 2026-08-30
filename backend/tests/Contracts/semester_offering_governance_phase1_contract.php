@@ -13,10 +13,12 @@ $contract = static function (string $backendRoot): array {
         'coverage' => $backendRoot.'/app/Services/CourseOfferingInstructorCoverageService.php',
         'dean' => $backendRoot.'/app/Services/DeanRegistrationOfferingService.php',
         'generic_offerings' => $backendRoot.'/app/Http/Controllers/Api/CourseOfferingController.php',
+        'offering_context' => $backendRoot.'/app/Services/CourseOfferingContextService.php',
         'routes' => $backendRoot.'/routes/api.php',
         'frontend_dean' => $frontendRoot.'/features/dean-dashboard/pages/DeanRegistrationOfferings.jsx',
         'frontend_scientific' => $frontendRoot.'/features/vice-presidency/pages/SemesterOfferingDetail.jsx',
         'frontend_routes' => $frontendRoot.'/app/App.jsx',
+        'behavior_tests' => $backendRoot.'/tests/Feature/SemesterOfferingGovernancePhase1BehaviorTest.php',
     ];
     foreach ($paths as $name => $path) {
         if (! is_file($path)) {
@@ -49,18 +51,34 @@ $contract = static function (string $backendRoot): array {
     foreach (['semester_offering_requests', 'semester_offering_reviews', 'semester_offering_events'] as $table) {
         $expect(str_contains($source['apply'], 'CREATE TABLE IF NOT EXISTS `alrowad_uni_rust`.`'.$table.'`'), 'Apply is missing '.$table.'.');
     }
+    $expect(str_contains($source['apply'], '@sog_apply_ready') && str_contains($source['apply'], "IF(@sog_apply_ready,'APPLIED','BLOCKED')"), 'Apply must independently recompute and visibly report its fail-closed guard.');
+    $expect(substr_count($source['apply'], 'IF(@sog_apply_ready') >= 5 && substr_count($source['apply'], 'PREPARE sog_apply_stmt') >= 5, 'All Phase 1 DDL/RBAC writes must be conditional on the apply-local guard.');
+    foreach (['@sog_apply_core_tables=23', '@sog_apply_core_columns=89', '@sog_apply_parent_keys=6', '@sog_apply_roles=3', '@sog_apply_module=1', "@sog_apply_target_state<>'CONFLICTING'", '@sog_apply_permission_conflicts=0', '@sog_apply_mapping_conflicts=0'] as $guard) {
+        $expect(str_contains($source['apply'], $guard), 'Apply guard is missing '.$guard.'.');
+    }
     foreach (['materialized_at', 'uq_sor_offering', 'uq_sorv_request_version', 'chk_sor_materialization', 'chk_sorv_provenance', 'scientific_returned', 'scientific_approved', 'materialized'] as $invariant) {
         $expect(str_contains($source['apply'], $invariant), 'SQL persistence contract is missing '.$invariant.'.');
     }
     $expect(str_contains($source['preflight'], '@sog_target_shape=31') && str_contains($source['preflight'], '@sog_target_fks=8') && str_contains($source['preflight'], '@sog_target_fk_rules=8') && str_contains($source['preflight'], '@sog_target_checks=13'), 'Preflight must semantically classify all required columns, restrictive FKs, and checks.');
     $expect(str_contains($source['preflight'], '@sog_core_tables=23') && str_contains($source['preflight'], '@sog_core_columns=89') && str_contains($source['preflight'], "event_type_code='course_registration' AND is_active=1"), 'Preflight must protect the complete curriculum, teaching-assignment, RBAC-write, and Academic Calendar prerequisites.');
     $expect(str_contains($source['verify'], '@sog_shape=31') && str_contains($source['verify'], '@sog_unique=2') && str_contains($source['verify'], '@sog_indexes=6') && str_contains($source['verify'], '@sog_fks=8') && str_contains($source['verify'], '@sog_fk_rules=8') && str_contains($source['verify'], '@sog_checks=13'), 'Verify must protect exact compatible shapes and fixed metadata counts.');
+    foreach (['preflight', 'apply', 'verify'] as $sqlName) {
+        $expect(str_contains($source[$sqlName], "constraint_name='fk_sor_offering'")
+            && str_contains($source[$sqlName], "k.table_name='semester_offering_requests'")
+            && str_contains($source[$sqlName], "k.referenced_table_schema='alrowad_uni_rust'")
+            && str_contains($source[$sqlName], "rc.update_rule='RESTRICT'")
+            && str_contains($source[$sqlName], "rc.delete_rule='RESTRICT'"), $sqlName.' must verify FK name, child, parent, and both restrictive rules as one contract.');
+    }
     $expect(substr_count($source['apply'], 'ON UPDATE RESTRICT ON DELETE RESTRICT') === 8, 'All eight parent/audit foreign keys must be restrictive.');
     foreach (['course_offerings.semester_governance.view', 'course_offerings.semester_governance.manage', 'course_offerings.semester_governance.review_scientific'] as $permission) {
         $expect(str_contains($source['apply'], $permission), 'Missing governance permission '.$permission.'.');
     }
-    $expect(str_contains($source['apply'], "r.role_code='dean'") && str_contains($source['apply'], "r.role_code='vice_president_scientific'"), 'RBAC mappings must be limited to Dean and Scientific VP responsibilities.');
+    $expect((str_contains($source['apply'], "r.role_code='dean'") || str_contains($source['apply'], "r.role_code=''dean''"))
+        && (str_contains($source['apply'], "r.role_code='vice_president_scientific'") || str_contains($source['apply'], "r.role_code=''vice_president_scientific''")), 'RBAC mappings must be limited to Dean and Scientific VP responsibilities.');
     $expect(! preg_match("/vice_president_administrative[^\n]{0,250}semester_governance/", $source['apply']), 'Administrative VP must receive no governance permission.');
+    foreach (['minimum_enrollment_not_allowed', 'incomplete_effective_coverage_blocks_submission', 'return_edit_resubmit', 'scientific_decision_requires_actual_role', 'atomically_opens_and_materializes', 'opening_failure_rolls_back', 'consumed_approval', 'stale_submitted_course_type', 'lock_generic_identity_changes', 'exceptional_opening_remains'] as $behavior) {
+        $expect(str_contains($source['behavior_tests'], $behavior), 'Missing real backend behavior regression: '.$behavior.'.');
+    }
 
     // Server-derived applicability: request absence never determines applicability.
     $expect(str_contains($source['gate'], "->where('academic_program_id', \$lockedOffering->academic_program_id)") && str_contains($source['gate'], "->where('course_id', \$lockedOffering->course_id)") && str_contains($source['gate'], "->where('is_active', true)"), 'Normal-opening applicability must derive from current ProgramCourse identity.');
@@ -75,7 +93,11 @@ $contract = static function (string $backendRoot): array {
     $expect(count($openingGateMatches[0] ?? []) >= 2 && count($openingCoverageMatches[0] ?? []) >= 2
         && $openingGateMatches[0][0][1] < $openingCoverageMatches[0][0][1]
         && $openingGateMatches[0][1][1] < $openingCoverageMatches[0][1][1], 'Governance readiness/proof must fail closed before coverage evaluation in both normal CLOSED to OPEN shapes.');
+    $expect(strpos($source['opening'], '$this->semesterGovernance->authorize($locked, $semesterProof)') < strpos($source['opening'], '$this->lockNormalOpeningGraph($locked)'), 'Normal opening must lock/revalidate governance and curriculum before the teaching-assignment/effective-slot graph.');
     $expect(str_contains($source['generic_offerings'], '$this->opening->applyThenGuardOpenCoverage(') && str_contains($source['generic_offerings'], "'status' => CourseOfferingOpeningService::STATUS_CLOSED"), 'Generic create/update paths must create CLOSED and delegate all possible normal opening to the central gate.');
+    $expect(str_contains($source['offering_context'], 'SemesterOfferingGovernance::schemaReady()') && str_contains($source['offering_context'], '$offering->semesterOfferingRequest()->exists()'), 'A governance root must be an offering identity/history dependent.');
+    $expect(str_contains($source['offering_context'], 'CourseOfferingOpeningService::STATUS_OPEN') && str_contains($source['offering_context'], '$offering->academic_program_id !== null'), 'Already-open program offerings must not be repurposed through generic update.');
+    $expect(str_contains($source['generic_offerings'], '$this->offeringContext->assertIdentityChangeAllowed(') && str_contains($source['offering_context'], 'throw CourseOfferingContextException::identityLocked()'), 'Generic update must enforce the centralized identity-history guard.');
     $expect(str_contains($source['dean'], '$this->opening->normalOpen($offering, $user)') && ! str_contains($source['dean'], 'new SemesterOfferingOpeningProof'), 'Legacy Dean normal-open endpoint must not fabricate governance proof or bypass the central gate.');
     $exceptionStart = strpos($source['opening'], 'public function openFromApprovedException');
     $exceptionEnd = strpos($source['opening'], 'private function assertCurrentApprovedReview', $exceptionStart ?: 0);
@@ -90,14 +112,29 @@ $contract = static function (string $backendRoot): array {
         '$this->lockOffering($offeringId)',
         '->lockForUpdate()',
         '$this->lockCurrentReview($request)',
-        '$this->lockCoverageGraph($lockedOffering)',
+        'ProgramCourse::query()',
         '$this->opening->normalOpen($lockedOffering, $actor, $proof)',
     ]);
-    $expect(! in_array(false, $positions, true), 'Approval must include the canonical offering/request/review/coverage/open sequence.');
-    $expect($positions[0] < $positions[1] && $positions[1] < $positions[2] && $positions[2] < $positions[3] && $positions[3] < $positions[4], 'Approval lock/use ordering must be offering then request/review then coverage then opening.');
-    $expect(str_contains($source['workflow'], '$this->coverage->assertCompleteForNormalOpening($lockedOffering)') && ! str_contains($source['workflow'], "status', 'approved'"), 'Governance must delegate coverage to the canonical coverage service without reinterpreting teaching status.');
+    $expect(! in_array(false, $positions, true), 'Approval must include the canonical offering/request/review/curriculum/open sequence.');
+    $expect($positions[0] < $positions[1] && $positions[1] < $positions[2] && $positions[2] < $positions[3] && $positions[3] < $positions[4], 'Approval lock/use ordering must be offering then request/review then ProgramCourse then normal opening.');
+    $expect(! str_contains($approve, 'lockCoverageGraph(') && ! str_contains($approve, 'assertCompleteForNormalOpening('), 'Scientific approval must not duplicate the final opening coverage lock/check.');
+    $submitStart = strpos($source['workflow'], 'public function submit');
+    $submitEnd = strpos($source['workflow'], 'public function approve', $submitStart ?: 0);
+    $submit = ($submitStart !== false && $submitEnd !== false) ? substr($source['workflow'], $submitStart, $submitEnd - $submitStart) : '';
+    $expect(str_contains($submit, '$this->lockCoverageGraph($lockedOffering)') && str_contains($submit, '$this->coverage->assertCompleteForNormalOpening($lockedOffering)'), 'Dean submission must still use canonical effective coverage and block incomplete proposals.');
     $expect(str_contains($source['gate'], '$request->materialized_at = now()') && str_contains($source['workflow'], 'DB::transaction(function () use ($actor, $routeRequest)'), 'Approval consumption and opening must share the approval transaction.');
     $expect(str_contains($source['workflow'], "['first', 'second']") && str_contains($source['workflow'], "\$semesterCode === 'summer'") && str_contains($source['workflow'], "\$courseType === 'elective'"), 'Proposal validation must protect regular mandatory and summer/elective minimum rules.');
+    $expect(str_contains($source['workflow'], '$regularMandatory && $minimum !== null') && str_contains($source['workflow'], 'minimumEnrollmentNotAllowed()'), 'Regular mandatory proposals must reject and never persist a minimum enrollment.');
+    $expect(str_contains($approve, '$programCourse->course_type') && str_contains($approve, '$request->course_type') && str_contains($approve, 'proposalStale()'), 'Scientific approval must reject a stale submitted course-type snapshot.');
+    $expect(! str_contains($source['dean'], 'lockProgramCourse(') && str_contains($source['dean'], 'loadProgramCourse('), 'Dean preparation must not lock ProgramCourse before locating/locking the CourseOffering.');
+    $prepareStart = strpos($source['workflow'], 'public function prepareDraft');
+    $prepareEnd = strpos($source['workflow'], 'public function updateProposal', $prepareStart ?: 0);
+    $prepare = ($prepareStart !== false && $prepareEnd !== false) ? substr($source['workflow'], $prepareStart, $prepareEnd - $prepareStart) : '';
+    $prepareOffering = strpos($prepare, '$this->lockOffering(');
+    $prepareRequest = strpos($prepare, 'SemesterOfferingRequest::query()');
+    $prepareCurriculum = strpos($prepare, 'ProgramCourse::query()');
+    $expect($prepareOffering !== false && $prepareRequest !== false && $prepareCurriculum !== false
+        && $prepareOffering < $prepareRequest && $prepareRequest < $prepareCurriculum, 'Preparation lock order must be Offering then governance root then ProgramCourse.');
     $expect(substr_count($source['workflow'], 'effectivePermissions()->contains(') >= 2 && ! str_contains($source['workflow'], 'hasPermission('), 'Governance mutations must require directly effective assigned permissions without the super-admin permission shortcut.');
     $expect(str_contains($source['workflow'], 'hasActualUniversityScope($actor)') && str_contains($source['workflow'], 'canAccessProgram($actor, $programId)'), 'Scientific and Dean governance must retain actual university/program DataScope checks.');
     $expect(str_contains($source['dean'], "->where('course_type', 'mandatory')") && ! preg_match('/course_type[^\n]{0,180}recommended_semester_id/', $source['dean']), 'Regular mandatory preparation must not be gated by advisory semester metadata.');

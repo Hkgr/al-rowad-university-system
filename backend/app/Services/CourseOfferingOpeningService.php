@@ -177,12 +177,7 @@ class CourseOfferingOpeningService
         }
     }
 
-    /**
-     * Canonical lock order: course_offerings, then pending removal requests,
-     * then course_offering_instructors. Never lock instructors before the offering.
-     *
-     * @param  callable(CourseOffering): CourseOffering  $then
-     */
+    /** @param  callable(CourseOffering): CourseOffering  $then */
     private function withLockedOffering(CourseOffering $offering, callable $then): CourseOffering
     {
         return DB::transaction(function () use ($offering, $then): CourseOffering {
@@ -190,13 +185,6 @@ class CourseOfferingOpeningService
                 ->whereKey($offering->course_offering_id)
                 ->lockForUpdate()
                 ->firstOrFail();
-
-            $this->lockPendingRemovalRequests($locked);
-
-            CourseOfferingInstructor::query()
-                ->where('course_offering_id', $locked->course_offering_id)
-                ->lockForUpdate()
-                ->get();
 
             return $then($locked);
         });
@@ -210,8 +198,6 @@ class CourseOfferingOpeningService
         ?User $actor,
         ?SemesterOfferingOpeningProof $semesterProof,
     ): CourseOffering {
-        $this->reloadCoverageGraph($locked);
-
         $courseIdentityChanged = (int) $locked->course_id !== $originalCourseId;
 
         if ($locked->status === self::STATUS_OPEN) {
@@ -224,6 +210,8 @@ class CourseOfferingOpeningService
                 $this->semesterGovernance->authorize($locked, $semesterProof);
             }
 
+            $this->lockNormalOpeningGraph($locked);
+            $this->reloadCoverageGraph($locked);
             $this->coverage->assertCompleteForNormalOpening($locked);
 
             if ($originalStatus === self::STATUS_CLOSED) {
@@ -245,7 +233,8 @@ class CourseOfferingOpeningService
         }
 
         $this->semesterGovernance->authorize($locked, $semesterProof);
-        $this->assertNoPendingInstructorRemoval($locked);
+        $this->lockNormalOpeningGraph($locked);
+        $this->reloadCoverageGraph($locked);
         $this->coverage->assertCompleteForNormalOpening($locked);
 
         $locked->status = self::STATUS_OPEN;
@@ -299,6 +288,21 @@ class CourseOfferingOpeningService
             ->where('action_type', TeachingAssignmentWorkflow::ACTION_REMOVE)
             ->where('current_slot', 1)
             ->orderBy('teaching_assignment_request_id')
+            ->lockForUpdate()
+            ->get();
+    }
+
+    /**
+     * Normal-opening graph is locked only after the Offering and governance
+     * proof/current curriculum have been locked and revalidated by the caller.
+     */
+    private function lockNormalOpeningGraph(CourseOffering $lockedOffering): void
+    {
+        $this->assertNoPendingInstructorRemoval($lockedOffering);
+
+        CourseOfferingInstructor::query()
+            ->where('course_offering_id', $lockedOffering->course_offering_id)
+            ->orderBy('course_offering_instructor_id')
             ->lockForUpdate()
             ->get();
     }

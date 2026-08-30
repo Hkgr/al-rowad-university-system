@@ -59,6 +59,18 @@ class SemesterOfferingGovernanceException extends Exception
         ]);
     }
 
+    public static function minimumEnrollmentNotAllowed(): self
+    {
+        return new self('لا يجوز تحديد حد أدنى للتسجيل للمقرر الإجباري في الفصل النظامي.', 'semester_offering_minimum_enrollment_not_allowed', 422, [
+            'minimum_enrollment' => ['يجب أن يكون الحد الأدنى للتسجيل فارغًا للمقرر الإجباري في الفصل الأول أو الثاني.'],
+        ]);
+    }
+
+    public static function proposalStale(): self
+    {
+        return new self('تغيّر نوع المقرر في الخطة الحالية بعد إرسال المقترح. أعد المقترح للتعديل ثم أرسله من جديد.', 'semester_offering_proposal_stale', 409);
+    }
+
     public static function mandatorySelectionRequired(): self
     {
         return new self('المقرر الإجباري مطلوب طرحه في الفصل النظامي ولا يمكن إلغاء تحديده.', 'semester_offering_mandatory_selection_required', 422);

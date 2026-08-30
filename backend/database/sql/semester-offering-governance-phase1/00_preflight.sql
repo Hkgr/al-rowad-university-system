@@ -171,34 +171,32 @@ SET @sog_target_indexes := (
     (table_name='semester_offering_events' AND index_name='idx_soe_type_time' AND columns_in_order='event_type,occurred_at')
 );
 SET @sog_target_fks := (
-  SELECT COUNT(*) FROM information_schema.key_column_usage
-  WHERE table_schema='alrowad_uni_rust' AND referenced_table_name IS NOT NULL
+  SELECT COUNT(*)
+  FROM information_schema.key_column_usage k
+  JOIN information_schema.referential_constraints rc
+    ON rc.constraint_schema=k.table_schema
+   AND rc.table_name=k.table_name
+   AND rc.constraint_name=k.constraint_name
+  WHERE k.table_schema='alrowad_uni_rust' AND k.referenced_table_schema='alrowad_uni_rust'
+    AND rc.update_rule='RESTRICT' AND rc.delete_rule='RESTRICT'
     AND (
-      (table_name='semester_offering_requests' AND column_name='course_offering_id' AND referenced_table_name='course_offerings' AND referenced_column_name='course_offering_id') OR
-      (table_name='semester_offering_requests' AND column_name='program_course_id' AND referenced_table_name='program_courses' AND referenced_column_name='program_course_id') OR
-      (table_name='semester_offering_requests' AND column_name='created_by_user_id' AND referenced_table_name='users' AND referenced_column_name='user_id') OR
-      (table_name='semester_offering_requests' AND column_name='submitted_by_user_id' AND referenced_table_name='users' AND referenced_column_name='user_id') OR
-      (table_name='semester_offering_reviews' AND column_name='semester_offering_request_id' AND referenced_table_name='semester_offering_requests' AND referenced_column_name='semester_offering_request_id') OR
-      (table_name='semester_offering_reviews' AND column_name='reviewed_by_user_id' AND referenced_table_name='users' AND referenced_column_name='user_id') OR
-      (table_name='semester_offering_events' AND column_name='semester_offering_request_id' AND referenced_table_name='semester_offering_requests' AND referenced_column_name='semester_offering_request_id') OR
-      (table_name='semester_offering_events' AND column_name='actor_user_id' AND referenced_table_name='users' AND referenced_column_name='user_id')
+      (k.constraint_name='fk_sor_offering' AND k.table_name='semester_offering_requests' AND k.column_name='course_offering_id' AND k.referenced_table_name='course_offerings' AND k.referenced_column_name='course_offering_id') OR
+      (k.constraint_name='fk_sor_program_course' AND k.table_name='semester_offering_requests' AND k.column_name='program_course_id' AND k.referenced_table_name='program_courses' AND k.referenced_column_name='program_course_id') OR
+      (k.constraint_name='fk_sor_created_by' AND k.table_name='semester_offering_requests' AND k.column_name='created_by_user_id' AND k.referenced_table_name='users' AND k.referenced_column_name='user_id') OR
+      (k.constraint_name='fk_sor_submitted_by' AND k.table_name='semester_offering_requests' AND k.column_name='submitted_by_user_id' AND k.referenced_table_name='users' AND k.referenced_column_name='user_id') OR
+      (k.constraint_name='fk_sorv_request' AND k.table_name='semester_offering_reviews' AND k.column_name='semester_offering_request_id' AND k.referenced_table_name='semester_offering_requests' AND k.referenced_column_name='semester_offering_request_id') OR
+      (k.constraint_name='fk_sorv_reviewer' AND k.table_name='semester_offering_reviews' AND k.column_name='reviewed_by_user_id' AND k.referenced_table_name='users' AND k.referenced_column_name='user_id') OR
+      (k.constraint_name='fk_soe_request' AND k.table_name='semester_offering_events' AND k.column_name='semester_offering_request_id' AND k.referenced_table_name='semester_offering_requests' AND k.referenced_column_name='semester_offering_request_id') OR
+      (k.constraint_name='fk_soe_actor' AND k.table_name='semester_offering_events' AND k.column_name='actor_user_id' AND k.referenced_table_name='users' AND k.referenced_column_name='user_id')
     )
 );
-SET @sog_target_fk_rules := (
-  SELECT COUNT(*) FROM information_schema.referential_constraints
-  WHERE constraint_schema='alrowad_uni_rust'
-    AND constraint_name IN (
-      'fk_sor_offering','fk_sor_program_course','fk_sor_created_by','fk_sor_submitted_by',
-      'fk_sorv_request','fk_sorv_reviewer','fk_soe_request','fk_soe_actor'
-    )
-    AND update_rule='RESTRICT' AND delete_rule='RESTRICT'
-);
+SET @sog_target_fk_rules := @sog_target_fks;
 SET @sog_target_checks := (
   SELECT COUNT(*) FROM information_schema.table_constraints
-  WHERE table_schema='alrowad_uni_rust' AND constraint_type='CHECK' AND constraint_name IN (
-    'chk_sor_course_type','chk_sor_selected','chk_sor_minimum','chk_sor_status','chk_sor_version',
-    'chk_sor_submission','chk_sor_approval','chk_sor_materialization',
-    'chk_sorv_version','chk_sorv_status','chk_sorv_provenance','chk_soe_version','chk_soe_type'
+  WHERE constraint_schema='alrowad_uni_rust' AND constraint_type='CHECK' AND (
+    (table_name='semester_offering_requests' AND constraint_name IN ('chk_sor_course_type','chk_sor_selected','chk_sor_minimum','chk_sor_status','chk_sor_version','chk_sor_submission','chk_sor_approval','chk_sor_materialization')) OR
+    (table_name='semester_offering_reviews' AND constraint_name IN ('chk_sorv_version','chk_sorv_status','chk_sorv_provenance')) OR
+    (table_name='semester_offering_events' AND constraint_name IN ('chk_soe_version','chk_soe_type'))
   )
 );
 SET @sog_target_comments := (
@@ -214,9 +212,10 @@ SET @sog_target_state := IF(
     AND @sog_target_comments=3,'COMPATIBLE','CONFLICTING')
 );
 SET @sog_roles := (
-  SELECT COUNT(*) FROM `alrowad_uni_rust`.`roles`
+  SELECT COUNT(DISTINCT role_code) FROM `alrowad_uni_rust`.`roles`
   WHERE role_code IN ('dean','vice_president_scientific','vice_president_administrative') AND is_active=1
 );
+SET @sog_role_duplicates := (SELECT COUNT(*) FROM (SELECT role_code FROM `alrowad_uni_rust`.`roles` WHERE role_code IN ('dean','vice_president_scientific','vice_president_administrative') AND is_active=1 GROUP BY role_code HAVING COUNT(*)>1) x);
 SET @sog_module := (
   SELECT COUNT(*) FROM `alrowad_uni_rust`.`system_modules` WHERE module_code='courses' AND is_active=1
 );
@@ -248,7 +247,7 @@ SET @sog_mapping_conflicts := (
 SET @sog_ready := (
   @sog_core_tables=23 AND @sog_core_columns=89 AND @sog_signed_keys=3
   AND @sog_semesters=3 AND @sog_effective_slot_indexes=2 AND @sog_calendar_registration_type=1 AND @sog_pres_scope=1
-  AND @sog_target_state<>'CONFLICTING' AND @sog_roles=3 AND @sog_module=1
+  AND @sog_target_state<>'CONFLICTING' AND @sog_roles=3 AND @sog_role_duplicates=0 AND @sog_module=1
   AND @sog_permission_conflicts=0 AND @sog_mapping_conflicts=0
 );
 
@@ -262,6 +261,6 @@ SELECT 'PHASE1_OBJECTS' AS report_section,
        IF(@sog_target_state='CONFLICTING','FAIL','PASS') AS result,
        CONCAT('classification=',@sog_target_state,'; tables=',@sog_target_tables,'; required_columns=',@sog_target_columns,'/31; compatible_shapes=',@sog_target_shape,'/31; pks=',@sog_target_pks,'/3; unique=',@sog_target_unique,'/2; indexes=',@sog_target_indexes,'/6; fks=',@sog_target_fks,'/8; restrictive_fk_rules=',@sog_target_fk_rules,'/8; checks=',@sog_target_checks,'/13; ownership=',@sog_target_comments,'/3') AS detail;
 SELECT 'RBAC' AS report_section,
-       IF(@sog_roles=3 AND @sog_module=1 AND @sog_permission_conflicts=0 AND @sog_mapping_conflicts=0,'PASS','FAIL') AS result,
-       CONCAT('roles=',@sog_roles,'/3; courses_module=',@sog_module,'; permission_conflicts=',@sog_permission_conflicts,'; mapping_conflicts=',@sog_mapping_conflicts) AS detail;
+       IF(@sog_roles=3 AND @sog_role_duplicates=0 AND @sog_module=1 AND @sog_permission_conflicts=0 AND @sog_mapping_conflicts=0,'PASS','FAIL') AS result,
+       CONCAT('roles=',@sog_roles,'/3; duplicate_roles=',@sog_role_duplicates,'; courses_module=',@sog_module,'; permission_conflicts=',@sog_permission_conflicts,'; mapping_conflicts=',@sog_mapping_conflicts) AS detail;
 SELECT 'OVERALL' AS report_section, IF(@sog_ready,'READY','BLOCKED') AS result;

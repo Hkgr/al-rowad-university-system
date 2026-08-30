@@ -36,6 +36,10 @@ class SemesterOfferingGovernanceService
 
         return DB::transaction(function () use ($actor, $offering, $programCourse, $minimumEnrollment): SemesterOfferingRequest {
             $lockedOffering = $this->lockOffering((int) $offering->course_offering_id);
+            $request = SemesterOfferingRequest::query()
+                ->where('course_offering_id', $lockedOffering->course_offering_id)
+                ->lockForUpdate()
+                ->first();
             $lockedProgramCourse = ProgramCourse::query()
                 ->whereKey($programCourse->program_course_id)
                 ->lockForUpdate()
@@ -47,11 +51,6 @@ class SemesterOfferingGovernanceService
             }
 
             $this->validateProposal($lockedOffering, $lockedProgramCourse, true, $minimumEnrollment);
-
-            $request = SemesterOfferingRequest::query()
-                ->where('course_offering_id', $lockedOffering->course_offering_id)
-                ->lockForUpdate()
-                ->first();
 
             if ($request === null) {
                 $request = SemesterOfferingRequest::query()->create([
@@ -110,6 +109,9 @@ class SemesterOfferingGovernanceService
             $this->assertCurrentCurriculumIdentity($lockedOffering, $programCourse, true);
             $this->validateProposal($lockedOffering, $programCourse, $selected, $minimum);
 
+            // Draft/returned proposals follow the current curriculum; the value
+            // becomes an immutable submitted-version snapshot on submit.
+            $request->course_type = $programCourse->course_type;
             $request->is_selected = $selected;
             $request->minimum_enrollment = $selected ? $minimum : null;
             $request->save();
@@ -197,9 +199,10 @@ class SemesterOfferingGovernanceService
                 ->lockForUpdate()
                 ->firstOrFail();
             $this->assertCurrentCurriculumIdentity($lockedOffering, $programCourse, true);
+            if (strtolower((string) $programCourse->course_type) !== strtolower((string) $request->course_type)) {
+                throw SemesterOfferingGovernanceException::proposalStale();
+            }
             $this->validateProposal($lockedOffering, $programCourse, (bool) $request->is_selected, $request->minimum_enrollment);
-            $this->lockCoverageGraph($lockedOffering);
-            $this->coverage->assertCompleteForNormalOpening($lockedOffering);
 
             $review->status = SemesterOfferingGovernance::REVIEW_APPROVED;
             $review->reviewed_by_user_id = $actor->user_id;
@@ -340,6 +343,10 @@ class SemesterOfferingGovernanceService
 
         if ($regularMandatory && ! $selected) {
             throw SemesterOfferingGovernanceException::mandatorySelectionRequired();
+        }
+
+        if ($regularMandatory && $minimum !== null) {
+            throw SemesterOfferingGovernanceException::minimumEnrollmentNotAllowed();
         }
 
         $minimumRequired = $selected && ($semesterCode === 'summer' || $courseType === 'elective');

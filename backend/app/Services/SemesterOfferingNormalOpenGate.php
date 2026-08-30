@@ -30,7 +30,9 @@ class SemesterOfferingNormalOpenGate
             ->where('academic_program_id', $lockedOffering->academic_program_id)
             ->where('course_id', $lockedOffering->course_id)
             ->where('is_active', true)
-            ->get(['program_course_id']);
+            ->orderBy('program_course_id')
+            ->lockForUpdate()
+            ->get(['program_course_id', 'course_type']);
 
         if ($programCourses->count() !== 1) {
             throw SemesterOfferingGovernanceException::curriculumUnavailable();
@@ -53,6 +55,7 @@ class SemesterOfferingNormalOpenGate
             || ! $review->exists
             || (int) $request->course_offering_id !== (int) $lockedOffering->course_offering_id
             || (int) $request->program_course_id !== (int) $programCourses->first()->program_course_id
+            || strtolower((string) $request->course_type) !== strtolower((string) $programCourses->first()->course_type)
             || (string) $request->status !== SemesterOfferingGovernance::STATUS_APPROVED
             || ! $request->is_selected
             || (int) $review->semester_offering_request_id !== (int) $request->semester_offering_request_id

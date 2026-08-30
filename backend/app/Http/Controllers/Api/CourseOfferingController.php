@@ -344,10 +344,7 @@ class CourseOfferingController extends ApiController
             throw CourseOfferingContextException::programContextIncomplete();
         }
 
-        if ($this->offeringContext->identityWouldChange($offering, $courseId, $programId, $yearId, $semesterId)
-            && $this->offeringContext->hasHistoricalDependents($offering)) {
-            throw CourseOfferingContextException::identityLocked();
-        }
+        $this->offeringContext->assertIdentityChangeAllowed($offering, $courseId, $programId, $yearId, $semesterId);
 
         $context = $this->offeringContext->resolveContext(
             $courseId,
