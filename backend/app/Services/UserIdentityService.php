@@ -9,6 +9,30 @@ class UserIdentityService
 {
     public function __construct(private readonly DataScopeService $dataScopes) {}
 
+    /**
+     * Trusted, presentation-safe identity for generated documents.
+     * Internal identifiers and contact data are intentionally excluded.
+     *
+     * @return array<string, mixed>
+     */
+    public function documentGenerator(User $user): array
+    {
+        $user->loadMissing('employee.organizationalUnit');
+        $employeeName = trim(implode(' ', array_filter([
+            $user->employee?->first_name,
+            $user->employee?->last_name,
+        ], fn ($part): bool => is_string($part) && trim($part) !== '')));
+
+        return [
+            'display_name' => $employeeName !== '' ? $employeeName : $user->username,
+            'username' => $user->username,
+            'organizational_unit' => $user->employee?->organizationalUnit ? [
+                'code' => $user->employee->organizationalUnit->unit_code,
+                'name' => $user->employee->organizationalUnit->unit_name,
+            ] : null,
+        ];
+    }
+
     public function payload(User $user): array
     {
         return [

@@ -4,7 +4,9 @@ import test from 'node:test'
 
 const pdfEngine = readFileSync(new URL('../src/utils/pdfExport.js', import.meta.url), 'utf8')
 const transcriptPdf = readFileSync(new URL('../src/features/exam-board/lib/transcriptPdf.js', import.meta.url), 'utf8')
+const academicRecordPresentation = readFileSync(new URL('../src/features/exam-board/lib/academicRecordPresentation.js', import.meta.url), 'utf8')
 const gradeSheet = readFileSync(new URL('../src/features/exam-board/pages/GradeSheetPage.jsx', import.meta.url), 'utf8')
+const academicRecord = readFileSync(new URL('../src/features/exam-board/pages/ExamStudentAcademicRecordPage.jsx', import.meta.url), 'utf8')
 
 function ordered(source, markers) {
   let cursor = -1
@@ -65,12 +67,14 @@ test('generic export preserves its public signature and removes giant-canvas sli
 
 test('transcript uses only official payload data and the authoritative classification formatter', () => {
   assert.match(transcriptPdf, /classificationPlainText\(course\?\.requirement_classification\)/)
-  assert.match(transcriptPdf, /transcript\?\.student/)
+  assert.match(transcriptPdf, /academicRecord\?\.student/)
+  assert.match(transcriptPdf, /academicRecord\?\.requirements/)
+  assert.match(transcriptPdf, /academicRecord\?\.generation/)
   assert.match(transcriptPdf, /transcript\?\.summary/)
   assert.match(transcriptPdf, /transcript\?\.terms/)
   assert.match(transcriptPdf, /summary\.cgpa/)
   assert.match(transcriptPdf, /summary\.total_attempted_credit_hours/)
-  assert.match(transcriptPdf, /Asia\/Damascus/)
+  assert.match(academicRecordPresentation, /Asia\/Damascus/)
   assert.match(transcriptPdf, /requiredImages: \['\/logo\.png'\]/)
   assert.match(transcriptPdf, /direction: 'rtl'|dir="rtl"/)
   assert.equal(transcriptPdf.includes('reduce((sum'), false)
@@ -90,17 +94,19 @@ test('unofficial disclaimer, blank signatures, footer numbering, and safe filena
   }
 })
 
-test('grade sheet uses apiRequest and keeps PDF failure separate from transcript state', () => {
-  assert.match(gradeSheet, /import \{ apiRequest \} from '\.\.\/\.\.\/\.\.\/services\/apiClient'/)
-  assert.match(gradeSheet, /apiRequest\(`\/v1\/students\/\$\{student\.student_id\}\/transcript`\)/)
-  assert.match(gradeSheet, /apiRequest\(`\/v1\/students\/\$\{student\.student_id\}\/cgpa`\)/)
+test('grade sheet is search-only and the independent record page refreshes before PDF generation', () => {
+  assert.match(gradeSheet, /navigate\(`\/exam-board\/grade-sheet\/\$\{student\.student_id\}`\)/)
+  assert.equal(gradeSheet.includes('/transcript'), false)
+  assert.equal(gradeSheet.includes('/cgpa'), false)
+  assert.match(academicRecord, /const endpoint = `\/v1\/students\/\$\{studentId\}\/academic-record`/)
+  assert.match(academicRecord, /const fresh = await apiRequest\(endpoint\)/)
+  assert.match(academicRecord, /exportTranscriptPdf\(\{ academicRecord: fresh\.data \}\)/)
   assert.equal(gradeSheet.includes('rust.alrowaduni.edu.sy'), false)
   assert.equal(gradeSheet.includes('localStorage'), false)
   assert.equal(gradeSheet.includes('fetch('), false)
-  assert.match(gradeSheet, /const \[pdfError, setPdfError\]/)
-  assert.match(gradeSheet, /if \(!transcript \|\| pdfExporting\.current\) return/)
-  assert.match(gradeSheet, /جاري إنشاء الملف\.\.\./)
-  assert.match(gradeSheet, /استخراج كشف PDF/)
-  const exportHandler = gradeSheet.slice(gradeSheet.indexOf('async function handlePdfExport'), gradeSheet.indexOf('const terms'))
-  assert.equal(exportHandler.includes('setTranscript('), false)
+  assert.match(academicRecord, /const \[pdfError, setPdfError\]/)
+  assert.match(academicRecord, /if \(pdfExporting\.current\) return/)
+  assert.match(academicRecord, /جاري إنشاء الملف\.\.\./)
+  assert.match(academicRecord, /استخراج كشف العلامات الإلكتروني/)
+  assert.equal(academicRecord.includes('/cgpa'), false)
 })

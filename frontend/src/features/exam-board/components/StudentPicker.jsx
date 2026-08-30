@@ -1,31 +1,50 @@
-import { useState, useEffect } from 'react'
-import { FaSearch, FaSpinner, FaUserGraduate } from 'react-icons/fa'
-
-const API = 'https://rust.alrowaduni.edu.sy/api/v1'
-function authHeaders() {
-  return { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }
-}
+import { useEffect, useRef, useState } from 'react'
+import { FaRedo, FaSearch, FaSpinner, FaUserGraduate } from 'react-icons/fa'
+import { apiRequest } from '../../../services/apiClient'
+import {
+  isLatestStudentPickerRequest,
+  STUDENT_PICKER_DEBOUNCE_MS,
+  studentPickerSearchPath,
+} from '../lib/studentPickerSearch'
 
 export default function StudentPicker({ onSelect, selected }) {
   const [students, setStudents] = useState([])
-  const [query,    setQuery]    = useState('')
-  const [loading,  setLoading]  = useState(true)
+  const [query, setQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
+  const requestSequenceRef = useRef(0)
 
   useEffect(() => {
-    fetch(`${API}/students?per_page=100`, { headers: authHeaders() })
-      .then(r => r.json())
-      .then(json => {
-        if (json.success) setStudents(json.data?.data ?? json.data ?? [])
-      })
-      .finally(() => setLoading(false))
-  }, [])
+    const timer = setTimeout(
+      () => setDebouncedQuery(query.trim()),
+      STUDENT_PICKER_DEBOUNCE_MS,
+    )
+    return () => clearTimeout(timer)
+  }, [query])
 
-  const filtered = students.filter(s => {
-    const q = query.trim().toLowerCase()
-    if (!q) return true
-    const name = `${s.first_name} ${s.last_name}`.toLowerCase()
-    return name.includes(q) || (s.student_number || '').toLowerCase().includes(q)
-  })
+  useEffect(() => {
+    let cancelled = false
+    const sequence = requestSequenceRef.current + 1
+    requestSequenceRef.current = sequence
+    setLoading(true)
+    setError('')
+    apiRequest(studentPickerSearchPath(debouncedQuery))
+      .then(json => {
+        if (cancelled || !isLatestStudentPickerRequest(sequence, requestSequenceRef.current)) return
+        setStudents(json?.data?.data ?? json?.data ?? [])
+      })
+      .catch(() => {
+        if (cancelled || !isLatestStudentPickerRequest(sequence, requestSequenceRef.current)) return
+        setStudents([])
+        setError('تعذّر تحميل قائمة الطلاب. يرجى المحاولة مجدداً.')
+      })
+      .finally(() => {
+        if (!cancelled && isLatestStudentPickerRequest(sequence, requestSequenceRef.current)) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [debouncedQuery, reloadKey])
 
   return (
     <div className="bg-white border border-primary/12 rounded-[18px] p-5 mb-6 shadow-[0_2px_12px_rgba(26,46,16,0.05)]">
@@ -52,11 +71,23 @@ export default function StudentPicker({ onSelect, selected }) {
         <div className="flex justify-center py-4 text-primary">
           <FaSpinner className="animate-spin text-[20px]" />
         </div>
+      ) : error ? (
+        <div className="flex flex-col items-center gap-3 py-5 text-center" role="alert">
+          <p className="text-[13px] text-red-600">{error}</p>
+          <button
+            type="button"
+            onClick={() => setReloadKey(value => value + 1)}
+            className="inline-flex items-center gap-2 rounded-[9px] border border-red-200 px-3 py-2 text-[12px] font-bold text-red-700"
+          >
+            <FaRedo aria-hidden="true" />
+            إعادة المحاولة
+          </button>
+        </div>
       ) : (
         <div className="max-h-[220px] overflow-y-auto rounded-[10px] border border-primary/10 divide-y divide-primary/6">
-          {filtered.length === 0 ? (
+          {students.length === 0 ? (
             <p className="text-center text-[13px] text-text-light py-5" dir="rtl">لا توجد نتائج</p>
-          ) : filtered.map(s => {
+          ) : students.map(s => {
             const isSelected = selected?.student_id === s.student_id
             return (
               <button
