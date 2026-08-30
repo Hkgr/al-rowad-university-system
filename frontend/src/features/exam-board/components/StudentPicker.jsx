@@ -1,24 +1,31 @@
 import { useState, useEffect } from 'react'
-import { FaSearch, FaSpinner, FaUserGraduate } from 'react-icons/fa'
-
-const API = 'https://rust.alrowaduni.edu.sy/api/v1'
-function authHeaders() {
-  return { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }
-}
+import { FaRedo, FaSearch, FaSpinner, FaUserGraduate } from 'react-icons/fa'
+import { apiRequest } from '../../../services/apiClient'
 
 export default function StudentPicker({ onSelect, selected }) {
   const [students, setStudents] = useState([])
   const [query,    setQuery]    = useState('')
   const [loading,  setLoading]  = useState(true)
+  const [error, setError] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
-    fetch(`${API}/students?per_page=100`, { headers: authHeaders() })
-      .then(r => r.json())
+    let active = true
+    setLoading(true)
+    setError('')
+    apiRequest('/v1/students?per_page=100')
       .then(json => {
-        if (json.success) setStudents(json.data?.data ?? json.data ?? [])
+        if (active && json.success) setStudents(json.data?.data ?? json.data ?? [])
       })
-      .finally(() => setLoading(false))
-  }, [])
+      .catch(() => {
+        if (active) {
+          setStudents([])
+          setError('تعذّر تحميل قائمة الطلاب. يرجى المحاولة مجدداً.')
+        }
+      })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [reloadKey])
 
   const filtered = students.filter(s => {
     const q = query.trim().toLowerCase()
@@ -51,6 +58,18 @@ export default function StudentPicker({ onSelect, selected }) {
       {loading ? (
         <div className="flex justify-center py-4 text-primary">
           <FaSpinner className="animate-spin text-[20px]" />
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center gap-3 py-5 text-center" role="alert">
+          <p className="text-[13px] text-red-600">{error}</p>
+          <button
+            type="button"
+            onClick={() => setReloadKey(value => value + 1)}
+            className="inline-flex items-center gap-2 rounded-[9px] border border-red-200 px-3 py-2 text-[12px] font-bold text-red-700"
+          >
+            <FaRedo aria-hidden="true" />
+            إعادة المحاولة
+          </button>
         </div>
       ) : (
         <div className="max-h-[220px] overflow-y-auto rounded-[10px] border border-primary/10 divide-y divide-primary/6">

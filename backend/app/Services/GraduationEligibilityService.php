@@ -35,6 +35,29 @@ class GraduationEligibilityService
         return $this->eligibilityFromProgress($student, $progress);
     }
 
+    /**
+     * Evaluate an already-calculated canonical requirement snapshot.
+     *
+     * This keeps aggregate read endpoints from calculating requirement progress
+     * twice while preserving evaluate() as the existing public entry point.
+     *
+     * @param  array<string, mixed>  $progress
+     * @return array<string, mixed>
+     */
+    public function evaluateFromProgress(Student $student, array $progress): array
+    {
+        if ($student->academic_program_id === null) {
+            return $this->ineligibleWithoutProgram(
+                $student,
+                $progress['outside_current_curriculum'] ?? []
+            );
+        }
+
+        $this->requirements->assertProgramGraduationConfiguration((int) $student->academic_program_id);
+
+        return $this->eligibilityFromProgress($student, $progress);
+    }
+
     public function assertEligible(Student $student): array
     {
         $eligibility = $this->evaluate($student);

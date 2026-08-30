@@ -51,6 +51,7 @@ import ProgramsPage          from '../features/academic-structure/pages/Programs
 import examBoardNav      from '../features/exam-board/nav'
 import ExamBoardHome     from '../features/exam-board/pages/ExamBoardHome'
 import GradeSheetPage    from '../features/exam-board/pages/GradeSheetPage'
+import ExamStudentAcademicRecordPage from '../features/exam-board/pages/ExamStudentAcademicRecordPage'
 import ApprovalsPage     from '../features/exam-board/pages/ApprovalsPage'
 import DeprivationPage        from '../features/exam-board/pages/DeprivationPage'
 import CoursesPage            from '../features/exam-board/pages/CoursesPage'
@@ -213,6 +214,7 @@ export default function App() {
         >
           <Route path="/exam-board"                element={protect(<ExamBoardHome />, { allPermissions: ['exams.view', 'exams.manage'] })} />
           <Route path="/exam-board/grade-sheet"   element={protect(<GradeSheetPage />, { permissions: ['grades.view'] })} />
+          <Route path="/exam-board/grade-sheet/:studentId" element={protect(<ExamStudentAcademicRecordPage />, { permissions: ['grades.view'] })} />
           <Route path="/exam-board/approvals"     element={protect(<ApprovalsPage />, { permissions: ['exams.manage'] })} />
           <Route path="/exam-board/deprivation"   element={protect(<DeprivationPage />, { permissions: ['exams.manage'] })} />
           <Route path="/exam-board/supplementary" element={protect(<SupplementaryExamsPage />, { permissions: [PERMISSIONS.supplementaryExamsRegistrationsView] })} />

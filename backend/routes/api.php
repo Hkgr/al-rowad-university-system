@@ -45,6 +45,7 @@ use App\Http\Controllers\Api\EmployeePositionController;
 use App\Http\Controllers\Api\EmployeeStatusController;
 use App\Http\Controllers\Api\EmployeeTypeController;
 use App\Http\Controllers\Api\EmployeeUnitAssignmentController;
+use App\Http\Controllers\Api\ExamStudentAcademicRecordController;
 use App\Http\Controllers\Api\FacultyMemberController;
 use App\Http\Controllers\Api\GradeAppealController;
 use App\Http\Controllers\Api\GradeApprovalController;
@@ -309,6 +310,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('students/{student}/academic-info', [StudentController::class, 'academicInfo']);
     Route::get('students/{student}/requirements', [StudentController::class, 'requirements']);
     Route::get('students/{student}/graduation-eligibility', [StudentController::class, 'graduationEligibility']);
+    Route::get('students/{student}/academic-record', [ExamStudentAcademicRecordController::class, 'show']);
     Route::get('students/{student}/documents', [StudentController::class, 'documents']);
     Route::post('students/{student}/documents', [StudentDocumentController::class, 'upload']);
     Route::get('students/{student}/registrations', [StudentController::class, 'registrations']);
