@@ -57,6 +57,8 @@ $contract = static function (string $backendRoot): array {
     $expect(! str_contains($requests, 'available_seats'), 'Request preparation/approval must not read or expose legacy seat counters.');
 
     $expect(str_contains($requests, "'below_recommended_minimum' =>"), 'Backend must expose the 12-hour recommendation as a warning.');
+    $expect(str_contains($requests, '$liveRequestHours > 0 && $liveProjected < $recommendedMinimum'), 'Live minimum-load advice must compare the projected term load, not request hours alone.');
+    $expect(str_contains($requests, "\$approvedSnapshot['projected_hours_at_approval'] < \$recommendedMinimum"), 'Approved minimum-load advice must preserve the projected-hours snapshot semantics.');
     $expect(str_contains($studentUi, 'below_recommended_minimum') && str_contains($studentUi, 'يمكنك متابعة إرسال الطلب'), 'Student UI must render the non-blocking load warning.');
     $expect(str_contains($advisorUi, 'below_recommended_minimum'), 'Advisor detail must render the authoritative load warning.');
     $expect(str_contains($studentUi, 'course_already_passed') && str_contains($advisorUi, 'course_already_passed'), 'Both UIs must explain the official passed-course block.');

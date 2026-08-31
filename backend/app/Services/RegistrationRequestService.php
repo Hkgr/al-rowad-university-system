@@ -1138,7 +1138,7 @@ class RegistrationRequestService
         $liveMax = (int) $base['max_allowed_hours'];
         $liveProjected = $liveRegistered + $liveRequestHours;
         $recommendedMinimum = (int) $base['recommended_minimum_hours'];
-        $belowRecommendedMinimum = $liveRequestHours > 0 && $liveRequestHours < $recommendedMinimum;
+        $belowRecommendedMinimum = $liveRequestHours > 0 && $liveProjected < $recommendedMinimum;
         $live = [
             'registered_hours' => $liveRegistered,
             'request_hours' => $liveRequestHours,
@@ -1178,7 +1178,7 @@ class RegistrationRequestService
             'recommended_minimum_hours' => $recommendedMinimum,
             'below_recommended_minimum' => $approvedSnapshot !== null
                 ? (int) $approvedSnapshot['request_hours_at_approval'] > 0
-                    && (int) $approvedSnapshot['request_hours_at_approval'] < $recommendedMinimum
+                    && (int) $approvedSnapshot['projected_hours_at_approval'] < $recommendedMinimum
                 : $belowRecommendedMinimum,
             'live' => $live,
             'approved_snapshot' => $approvedSnapshot,

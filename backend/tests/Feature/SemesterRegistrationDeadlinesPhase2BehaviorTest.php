@@ -468,6 +468,71 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
         self::assertSame(18, $hours['max_allowed_hours']);
     }
 
+    public function test_phase3_recommended_minimum_uses_projected_term_hours_for_live_and_approved_snapshots(): void
+    {
+        $this->seedRegistrationRequestContext();
+        $student = \App\Models\Student::query()->findOrFail(1);
+        $request = StudentRegistrationRequest::query()->findOrFail(1);
+
+        $liveRegistration = Mockery::mock(RegistrationService::class);
+        $liveRegistration->shouldReceive('hoursSnapshot')->once()->andReturn([
+            'registered_hours' => 9,
+            'official_cgpa' => 2.75,
+            'max_allowed_hours' => 18,
+            'remaining_hours' => 9,
+            'recommended_minimum_hours' => 12,
+            'official_passed_course_ids' => [],
+        ]);
+        $liveRegistration->shouldReceive('currentOfferingIds')->once()->andReturn([]);
+        $liveService = new RegistrationRequestService(
+            $liveRegistration,
+            Mockery::mock(AcademicTermResolver::class),
+            Mockery::mock(DataScopeService::class),
+            Mockery::mock(AcademicRequirementService::class),
+        );
+        $hoursFor = new ReflectionMethod($liveService, 'hoursFor');
+        $live = $hoursFor->invoke($liveService, $student, 1, 1, $request);
+
+        self::assertSame(12, $live['projected_hours']);
+        self::assertFalse($live['below_recommended_minimum']);
+
+        DB::table('student_registration_requests')->where('student_registration_request_id', 1)->update([
+            'status' => 'approved',
+            'registered_hours_before_approval' => 9,
+            'request_hours_at_approval' => 3,
+            'projected_hours_at_approval' => 12,
+            'max_allowed_hours_at_approval' => 18,
+            'remaining_hours_after_approval' => 6,
+        ]);
+        $approvedRegistration = Mockery::mock(RegistrationService::class);
+        $approvedRegistration->shouldReceive('hoursSnapshot')->once()->andReturn([
+            'registered_hours' => 12,
+            'official_cgpa' => 2.75,
+            'max_allowed_hours' => 18,
+            'remaining_hours' => 6,
+            'recommended_minimum_hours' => 12,
+            'official_passed_course_ids' => [],
+        ]);
+        $approvedRegistration->shouldReceive('currentOfferingIds')->once()->andReturn([1]);
+        $approvedService = new RegistrationRequestService(
+            $approvedRegistration,
+            Mockery::mock(AcademicTermResolver::class),
+            Mockery::mock(DataScopeService::class),
+            Mockery::mock(AcademicRequirementService::class),
+        );
+        $approvedHoursFor = new ReflectionMethod($approvedService, 'hoursFor');
+        $approved = $approvedHoursFor->invoke(
+            $approvedService,
+            $student,
+            1,
+            1,
+            StudentRegistrationRequest::query()->findOrFail(1),
+        );
+
+        self::assertSame('approved_snapshot', $approved['source']);
+        self::assertFalse($approved['below_recommended_minimum']);
+    }
+
     public function test_phase3_zero_legacy_seats_do_not_block_request_addition(): void
     {
         $this->registrationWindow();
