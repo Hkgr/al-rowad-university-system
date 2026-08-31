@@ -468,6 +468,61 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
         self::assertSame(18, $hours['max_allowed_hours']);
     }
 
+    public function test_phase3_zero_legacy_seats_do_not_block_request_addition(): void
+    {
+        $this->registrationWindow();
+        $this->seedRegistrationRequestContext('draft');
+        DB::table('student_registration_request_items')->delete();
+        DB::table('course_offerings')->where('course_offering_id', 1)->update(['available_seats' => 0]);
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-03T00:00:00Z'));
+
+        $registration = $this->realRegistrationService([
+            'cumulative_gpa' => null,
+            'official_completed_courses' => [],
+        ]);
+        $registration->shouldReceive('selfRegistrationOpenSemesters')->once()->andReturn(
+            collect([\App\Models\Semester::query()->findOrFail(1)])
+        );
+        [$requests, $actor] = $this->advisorWorkflow($registration);
+
+        $request = $requests->addItem(
+            \App\Models\Student::query()->findOrFail(1),
+            \App\Models\CourseOffering::query()->findOrFail(1),
+            $actor,
+        );
+
+        self::assertSame('draft', $request->status);
+        self::assertSame(1, DB::table('student_registration_request_items')->count());
+        self::assertSame(0, (int) DB::table('course_offerings')->where('course_offering_id', 1)->value('available_seats'));
+    }
+
+    public function test_phase3_three_hour_request_can_be_submitted_below_the_recommended_twelve_hours(): void
+    {
+        $this->registrationWindow();
+        $this->seedRegistrationRequestContext('draft');
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-03T00:00:00Z'));
+
+        $registration = $this->realRegistrationService([
+            'cumulative_gpa' => 2.75,
+            'official_completed_courses' => [],
+        ]);
+        $registration->shouldReceive('selfRegistrationOpenSemesters')->twice()->andReturn(
+            collect([\App\Models\Semester::query()->findOrFail(1)])
+        );
+        [$requests, $actor] = $this->advisorWorkflow($registration);
+
+        $request = $requests->submit(
+            \App\Models\Student::query()->findOrFail(1),
+            $actor,
+            1,
+        );
+
+        self::assertSame('submitted', $request->status);
+        self::assertSame(1, (int) $request->submission_version);
+        self::assertSame('submitted', DB::table('student_registration_request_events')->value('event_type'));
+        self::assertSame(0, DB::table('student_course_registrations')->count());
+    }
+
     public function test_phase3_advisor_approval_recomputes_current_cgpa_and_rolls_back_an_over_limit_request(): void
     {
         $this->registrationWindow();

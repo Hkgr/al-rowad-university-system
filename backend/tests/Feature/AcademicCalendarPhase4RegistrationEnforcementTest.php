@@ -71,9 +71,10 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
         self::assertTrue(true);
     }
 
-    public function test_every_materialization_gets_a_fresh_evaluation_with_locked_offering_context(): void
+    public function test_every_materialization_gets_a_fresh_evaluation_and_zero_legacy_seats_allow_two_students(): void
     {
         DB::table('students')->insert(['student_id' => 2, 'academic_program_id' => null]);
+        DB::table('course_offerings')->where('course_offering_id', 1)->update(['available_seats' => 0]);
         $policy = $this->createMock(AcademicCalendarPolicyService::class);
         $policy->expects($this->exactly(2))
             ->method('courseRegistrationDeadlines')
@@ -91,7 +92,7 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
         ], 7));
 
         self::assertSame(2, DB::table('student_course_registrations')->count());
-        self::assertSame(2, (int) DB::table('course_offerings')->where('course_offering_id', 1)->value('available_seats'));
+        self::assertSame(0, (int) DB::table('course_offerings')->where('course_offering_id', 1)->value('available_seats'));
     }
 
     public function test_trusted_advisor_materialization_reuses_all_registration_rules_without_the_student_cutoff(): void
@@ -289,6 +290,38 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
         $this->expectRegistrationMessage(fn () => $this->register(), 'not open for registration');
     }
 
+    public function test_phase3_canonical_academic_requirement_curriculum_and_elective_denials_remain_authoritative(): void
+    {
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-03T12:00:00Z'));
+        $this->createWindow();
+
+        foreach ([
+            AcademicRequirementService::REASON_COURSE_OUTSIDE_CURRENT_CURRICULUM,
+            AcademicRequirementService::REASON_ELECTIVE_REQUIREMENT_LIMIT_EXCEEDED,
+        ] as $reason) {
+            $requirements = Mockery::mock(AcademicRequirementService::class);
+            $requirements->shouldReceive('assertRegistrationCandidateAllowed')
+                ->once()
+                ->andThrow(new RegistrationException(
+                    'Canonical academic requirement denial.',
+                    ['course_offering_id' => [$reason]],
+                    422,
+                    $reason,
+                ));
+
+            $this->expectRegistrationCode(
+                fn () => DB::transaction(fn () => $this->service(requirements: $requirements)
+                    ->registerStudentWithinTransaction([
+                        'student_id' => 1,
+                        'course_offering_id' => 1,
+                    ], 7)),
+                $reason,
+            );
+        }
+
+        self::assertSame(0, DB::table('student_course_registrations')->count());
+    }
+
     public function test_phase3_credit_cap_uses_only_the_official_grade_service_cgpa(): void
     {
         foreach ([null => 18, '0' => 18, '2.999' => 18, '3.0' => 21, '3.75' => 21] as $cgpa => $expected) {
@@ -349,6 +382,33 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
                 'course_name' => 'Prerequisite',
             ],
         ], $service->getMissingPrerequisites($student, 1));
+    }
+
+    public function test_phase3_multiple_missing_prerequisites_return_stable_structured_course_details(): void
+    {
+        DB::table('courses')->insert([
+            'course_id' => 3,
+            'course_code' => 'C200',
+            'course_name' => 'Second prerequisite',
+            'credit_hours' => 3,
+        ]);
+        DB::table('course_prerequisites')->insert([
+            ['course_id' => 1, 'prerequisite_course_id' => 2],
+            ['course_id' => 1, 'prerequisite_course_id' => 3],
+        ]);
+
+        $missing = collect($this->service(metrics: [
+            'cumulative_gpa' => 2.5,
+            'official_completed_courses' => [],
+        ])->getMissingPrerequisites(\App\Models\Student::query()->findOrFail(1), 1))
+            ->sortBy('course_id')
+            ->values()
+            ->all();
+
+        self::assertSame([
+            ['course_id' => 2, 'course_code' => 'C100', 'course_name' => 'Prerequisite'],
+            ['course_id' => 3, 'course_code' => 'C200', 'course_name' => 'Second prerequisite'],
+        ], $missing);
     }
 
     public function test_phase3_officially_passed_course_blocks_normal_materialization_by_course_id(): void
@@ -481,6 +541,45 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
         self::assertSame(2, (int) DB::table('course_offerings')->where('course_offering_id', 1)->value('available_seats'));
     }
 
+    public function test_phase3_drop_and_withdraw_transitions_do_not_release_legacy_seats(): void
+    {
+        DB::table('students')->insert(['student_id' => 2, 'academic_program_id' => null]);
+        DB::table('course_offerings')->where('course_offering_id', 1)->update(['available_seats' => 0]);
+        DB::table('student_course_registrations')->insert([
+            [
+                'student_course_registration_id' => 30,
+                'student_id' => 1,
+                'course_offering_id' => 1,
+                'registration_status_id' => 1,
+            ],
+            [
+                'student_course_registration_id' => 31,
+                'student_id' => 2,
+                'course_offering_id' => 1,
+                'registration_status_id' => 1,
+            ],
+        ]);
+        $service = $this->service();
+        $offering = \App\Models\CourseOffering::query()->findOrFail(1);
+
+        DB::transaction(function () use ($service, $offering): void {
+            $service->transitionRegisteredToDropped(
+                \App\Models\StudentCourseRegistration::query()->with('registrationStatus')->findOrFail(30),
+                $offering,
+            );
+        });
+        DB::transaction(function () use ($service, $offering): void {
+            $service->transitionRegisteredToWithdrawn(
+                \App\Models\StudentCourseRegistration::query()->with('registrationStatus')->findOrFail(31),
+                $offering,
+            );
+        });
+
+        self::assertSame(2, (int) DB::table('student_course_registrations')->where('student_course_registration_id', 30)->value('registration_status_id'));
+        self::assertSame(3, (int) DB::table('student_course_registrations')->where('student_course_registration_id', 31)->value('registration_status_id'));
+        self::assertSame(0, (int) DB::table('course_offerings')->where('course_offering_id', 1)->value('available_seats'));
+    }
+
     public function test_closed_window_has_no_role_bypass_and_does_not_block_reads(): void
     {
         CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-03T12:00:00Z'));
@@ -549,10 +648,13 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
     private function service(
         ?AcademicCalendarPolicyService $policy = null,
         ?array $metrics = null,
+        ?AcademicRequirementService $requirements = null,
     ): RegistrationService
     {
-        $requirements = Mockery::mock(AcademicRequirementService::class);
-        $requirements->shouldReceive('assertRegistrationCandidateAllowed')->zeroOrMoreTimes();
+        if ($requirements === null) {
+            $requirements = Mockery::mock(AcademicRequirementService::class);
+            $requirements->shouldReceive('assertRegistrationCandidateAllowed')->zeroOrMoreTimes();
+        }
         $grades = Mockery::mock(GradeService::class);
         $grades->shouldReceive('officialCumulativeMetrics')->zeroOrMoreTimes()->andReturn($metrics ?? [
             'cumulative_gpa' => null,
@@ -867,6 +969,25 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
             $table->integer('student_registration_request_id');
             $table->integer('course_offering_id');
             $table->integer('student_course_registration_id')->nullable();
+        });
+        Schema::create('supplementary_exam_materializations', function (Blueprint $table): void {
+            $table->increments('supplementary_exam_materialization_id');
+            $table->integer('student_course_registration_id');
+        });
+        Schema::create('supplementary_exam_periods', function (Blueprint $table): void {
+            $table->increments('supplementary_exam_period_id');
+            $table->string('status');
+        });
+        Schema::create('supplementary_exam_offerings', function (Blueprint $table): void {
+            $table->increments('supplementary_exam_offering_id');
+            $table->integer('supplementary_exam_period_id');
+        });
+        Schema::create('supplementary_exam_registrations', function (Blueprint $table): void {
+            $table->increments('supplementary_exam_registration_id');
+            $table->integer('supplementary_exam_offering_id');
+            $table->integer('student_course_registration_id');
+            $table->string('status');
+            $table->integer('current_slot');
         });
     }
 }
