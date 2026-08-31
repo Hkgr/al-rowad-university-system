@@ -3,11 +3,14 @@
 namespace App\Services;
 
 use App\Models\AcademicCalendarEventType;
+use App\Models\AcademicCalendarEvent;
 use App\Models\AcademicCalendarEventVersion;
 use App\Models\AcademicYear;
 use App\Models\Semester;
 use App\Support\AcademicCalendarPolicyResult;
 use App\Support\AcademicCalendarPolicyStatus;
+use App\Support\CourseRegistrationDeadlineResult;
+use App\Support\CourseRegistrationPhase;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 
@@ -21,6 +24,8 @@ use Carbon\CarbonInterface;
  */
 class AcademicCalendarPolicyService
 {
+    private const COURSE_REGISTRATION_EVENT_TYPE = 'course_registration';
+
     public function evaluate(
         string $eventTypeCode,
         ?int $academicYearId = null,
@@ -160,6 +165,156 @@ class AcademicCalendarPolicyService
             $evaluatedAt,
             $matchingWindowCount,
             $matchingWindowCount > 0 ? 'effective_window_found' : 'no_effective_window',
+        );
+    }
+
+    /**
+     * Resolve the one authoritative university registration window for an
+     * explicit academic term. Legacy published versions with both specialised
+     * deadlines NULL retain their historical ends_at semantics.
+     */
+    public function courseRegistrationDeadlines(
+        int $academicYearId,
+        int $semesterId,
+        ?CarbonInterface $at = null,
+    ): CourseRegistrationDeadlineResult {
+        $evaluatedAt = $at === null
+            ? CarbonImmutable::now('UTC')
+            : CarbonImmutable::instance($at)->utc();
+
+        $configurationError = fn (string $reason): CourseRegistrationDeadlineResult => new CourseRegistrationDeadlineResult(
+            CourseRegistrationPhase::CONFIGURATION_ERROR,
+            $academicYearId,
+            $semesterId,
+            $evaluatedAt,
+            reasonCode: $reason,
+        );
+
+        $types = AcademicCalendarEventType::query()
+            ->where('event_type_code', self::COURSE_REGISTRATION_EVENT_TYPE)
+            ->limit(2)
+            ->get(['academic_calendar_event_type_id', 'is_active']);
+        if ($types->count() !== 1) {
+            return $configurationError($types->isEmpty()
+                ? 'course_registration_event_type_missing'
+                : 'course_registration_event_type_ambiguous');
+        }
+        $type = $types->first();
+        if (! $type->is_active) {
+            return $configurationError('course_registration_event_type_inactive');
+        }
+
+        $explicitYear = $academicYearId > 0
+            ? AcademicYear::query()->find($academicYearId, $this->yearColumns())
+            : null;
+        if ($explicitYear === null || ! $this->isOperationalYear($explicitYear)) {
+            return $configurationError($explicitYear === null
+                ? 'unknown_academic_year'
+                : 'academic_year_not_operational');
+        }
+        $canonicalYear = $this->resolveCanonicalYear();
+        if (is_string($canonicalYear)) {
+            return $configurationError($canonicalYear);
+        }
+        if ((int) $canonicalYear->getKey() !== $academicYearId) {
+            return $configurationError('academic_year_not_operational');
+        }
+
+        $semester = $semesterId > 0
+            ? Semester::query()->find($semesterId, ['semester_id', 'is_active'])
+            : null;
+        if ($semester === null || ! $semester->is_active) {
+            return $configurationError($semester === null ? 'unknown_semester' : 'semester_inactive');
+        }
+
+        $roots = AcademicCalendarEvent::query()
+            ->where('academic_calendar_event_type_id', $type->getKey())
+            ->where('academic_year_id', $academicYearId)
+            ->where('semester_id', $semesterId)
+            ->whereNull('cancelled_at')
+            ->limit(2)
+            ->get(['academic_calendar_event_id']);
+        if ($roots->count() !== 1) {
+            return $configurationError($roots->isEmpty()
+                ? 'course_registration_window_missing'
+                : 'course_registration_window_ambiguous');
+        }
+
+        $versions = AcademicCalendarEventVersion::query()
+            ->from('academic_calendar_event_versions as acev')
+            ->join('academic_calendar_events as ace', 'ace.academic_calendar_event_id', '=', 'acev.academic_calendar_event_id')
+            ->where('ace.academic_calendar_event_id', $roots->first()->getKey())
+            ->where('acev.publication_status', 'published')
+            ->whereNull('acev.superseded_at')
+            ->limit(2)
+            ->get([
+                'ace.academic_calendar_event_id',
+                'acev.academic_calendar_event_version_id',
+                'acev.starts_at',
+                'acev.ends_at',
+                'acev.student_registration_ends_at',
+                'acev.advisor_approval_ends_at',
+                'acev.is_enforcement',
+            ]);
+
+        if ($versions->count() !== 1) {
+            return $configurationError($versions->isEmpty()
+                ? 'course_registration_published_version_missing'
+                : 'course_registration_published_version_ambiguous');
+        }
+        $version = $versions->first();
+        if (! $version->is_enforcement) {
+            return $configurationError('course_registration_window_not_enforcement');
+        }
+
+        $startsAt = CarbonImmutable::instance($version->starts_at)->utc();
+        $genericEndsAt = CarbonImmutable::instance($version->ends_at)->utc();
+        $studentValue = $version->student_registration_ends_at;
+        $advisorValue = $version->advisor_approval_ends_at;
+        $legacyFallback = $studentValue === null && $advisorValue === null;
+
+        if (($studentValue === null) !== ($advisorValue === null)) {
+            return $configurationError('course_registration_deadlines_incomplete');
+        }
+
+        $studentEndsAt = $legacyFallback
+            ? $genericEndsAt
+            : CarbonImmutable::instance($studentValue)->utc();
+        $advisorEndsAt = $legacyFallback
+            ? $genericEndsAt
+            : CarbonImmutable::instance($advisorValue)->utc();
+
+        if ($startsAt->gt($studentEndsAt)
+            || $studentEndsAt->gt($advisorEndsAt)
+            || (! $legacyFallback && ! $genericEndsAt->equalTo($advisorEndsAt))) {
+            return $configurationError('course_registration_deadlines_invalid');
+        }
+
+        $phase = match (true) {
+            $evaluatedAt->lt($startsAt) => CourseRegistrationPhase::NOT_STARTED,
+            $evaluatedAt->lte($studentEndsAt) => CourseRegistrationPhase::STUDENT_OPEN,
+            $evaluatedAt->lte($advisorEndsAt) => CourseRegistrationPhase::ADVISOR_REVIEW,
+            default => CourseRegistrationPhase::CLOSED,
+        };
+
+        return new CourseRegistrationDeadlineResult(
+            $phase,
+            $academicYearId,
+            $semesterId,
+            $evaluatedAt,
+            $startsAt,
+            $studentEndsAt,
+            $advisorEndsAt,
+            (int) $version->academic_calendar_event_id,
+            (int) $version->academic_calendar_event_version_id,
+            match ($phase) {
+                CourseRegistrationPhase::NOT_STARTED => 'course_registration_not_started',
+                CourseRegistrationPhase::STUDENT_OPEN => 'course_registration_student_open',
+                CourseRegistrationPhase::ADVISOR_REVIEW => 'course_registration_advisor_review',
+                CourseRegistrationPhase::CLOSED => 'course_registration_closed',
+                CourseRegistrationPhase::CONFIGURATION_ERROR => 'course_registration_configuration_error',
+            },
+            $legacyFallback,
         );
     }
 

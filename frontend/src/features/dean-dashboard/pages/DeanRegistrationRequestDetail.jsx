@@ -4,12 +4,14 @@ import { FaSpinner } from 'react-icons/fa'
 import { apiRequest } from '../../../services/apiClient'
 import DeanConfirmDialog from '../components/DeanConfirmDialog'
 import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
+import { advisorActionsVisible, formatUniversityDateTime, registrationPhaseLabel } from '../../registration-requests/registrationDeadlinePresentation'
 
 const STATUS_LABELS = {
   draft: 'مسودة',
   submitted: 'بانتظار مراجعة المرشد الأكاديمي',
   returned: 'أعيد للتعديل',
   approved: 'معتمد',
+  expired: 'انتهت المهلة دون اعتماد',
 }
 
 const REASON_LABELS = {
@@ -66,7 +68,7 @@ export default function DeanRegistrationRequestDetail() {
   const hours = request?.hours
   const snapshot = hours?.approved_snapshot
   const approvedHours = request?.status === 'approved' && snapshot
-  const canReview = request?.status === 'submitted'
+  const canReview = advisorActionsVisible(request)
 
   async function confirmReturn() {
     setBusy(true)
@@ -143,6 +145,16 @@ export default function DeanRegistrationRequestDetail() {
 
       {toast ? <p className="px-4 py-2.5 text-[12.5px] text-green-700 bg-green-50 border border-green-200 rounded-[10px]">{toast}</p> : null}
       {error ? <p className="px-4 py-2.5 text-[12.5px] text-red-600 bg-red-50 border border-red-200 rounded-[10px]">⚠ {error}</p> : null}
+
+      <section className="rounded-[16px] border border-primary/12 bg-white p-5 text-[13px] text-text-dark">
+        <h2 className="font-black">{registrationPhaseLabel(request.registration_calendar)}</h2>
+        <div className="mt-2 flex flex-wrap gap-4 text-text-light">
+          <span>نهاية تسجيل الطلاب: {formatUniversityDateTime(request.registration_calendar?.student_registration_ends_at)}</span>
+          <span>نهاية اعتماد المرشد: {formatUniversityDateTime(request.registration_calendar?.advisor_approval_ends_at)}</span>
+          <span>تاريخ الإرسال: {formatDateTime(request.last_submitted_at)}</span>
+        </div>
+        {request.status === 'expired' ? <p className="mt-3 font-bold text-red-700">انتهت المهلة دون اعتماد، ولا تتوفر إجراءات مراجعة لهذا الطلب.</p> : null}
+      </section>
 
       {hours ? (
         <section className="bg-white border border-primary/12 rounded-[16px] p-5 grid grid-cols-5 max-[900px]:grid-cols-2 gap-3">

@@ -23,6 +23,8 @@ class StudentRegistrationRequestEvent extends Model
 
     public const TYPE_APPROVED = 'approved';
 
+    public const TYPE_EXPIRED_DEADLINE = 'expired_deadline';
+
     protected $table = 'student_registration_request_events';
 
     protected $primaryKey = 'student_registration_request_event_id';

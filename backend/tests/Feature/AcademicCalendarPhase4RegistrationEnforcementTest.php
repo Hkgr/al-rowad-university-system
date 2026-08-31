@@ -8,6 +8,8 @@ use App\Services\AcademicRequirementService;
 use App\Services\RegistrationService;
 use App\Support\AcademicCalendarPolicyResult;
 use App\Support\AcademicCalendarPolicyStatus;
+use App\Support\CourseRegistrationDeadlineResult;
+use App\Support\CourseRegistrationPhase;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
@@ -35,23 +37,22 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
     public function test_typed_policy_statuses_map_to_four_distinct_registration_errors(): void
     {
         $cases = [
-            [AcademicCalendarPolicyStatus::CLOSED, RegistrationException::COURSE_REGISTRATION_WINDOW_CLOSED],
-            [AcademicCalendarPolicyStatus::INVALID_EVENT_TYPE, RegistrationException::ACADEMIC_CALENDAR_CONFIGURATION_INVALID],
-            [AcademicCalendarPolicyStatus::CALENDAR_CONFIGURATION_ERROR, RegistrationException::ACADEMIC_CALENDAR_CONFIGURATION_INVALID],
-            [AcademicCalendarPolicyStatus::INVALID_ACADEMIC_YEAR, RegistrationException::ACADEMIC_CALENDAR_YEAR_CONTEXT_INVALID],
-            [AcademicCalendarPolicyStatus::INVALID_SEMESTER_CONTEXT, RegistrationException::ACADEMIC_CALENDAR_SEMESTER_CONTEXT_INVALID],
+            [CourseRegistrationPhase::CLOSED, 'course_registration_closed', RegistrationException::COURSE_REGISTRATION_WINDOW_CLOSED],
+            [CourseRegistrationPhase::CONFIGURATION_ERROR, 'course_registration_event_type_missing', RegistrationException::ACADEMIC_CALENDAR_CONFIGURATION_INVALID],
+            [CourseRegistrationPhase::CONFIGURATION_ERROR, 'unknown_academic_year', RegistrationException::ACADEMIC_CALENDAR_YEAR_CONTEXT_INVALID],
+            [CourseRegistrationPhase::CONFIGURATION_ERROR, 'unknown_semester', RegistrationException::ACADEMIC_CALENDAR_SEMESTER_CONTEXT_INVALID],
         ];
 
-        foreach ($cases as [$status, $errorCode]) {
+        foreach ($cases as [$phase, $reason, $errorCode]) {
             $policy = $this->createMock(AcademicCalendarPolicyService::class);
             $policy->expects($this->once())
-                ->method('evaluate')
-                ->with('course_registration', 1, 1)
-                ->willReturn($this->policyResult($status));
+                ->method('courseRegistrationDeadlines')
+                ->with(1, 1, null)
+                ->willReturn($this->deadlineResult($phase, $reason));
 
             try {
                 $this->service($policy)->assertCourseRegistrationWindowOpen(1, 1);
-                self::fail('Expected fail-closed registration policy status '.$status->value);
+                self::fail('Expected fail-closed registration deadline phase '.$phase->value);
             } catch (RegistrationException $exception) {
                 self::assertSame(409, $exception->status);
                 self::assertSame($errorCode, $exception->errorCode);
@@ -60,9 +61,9 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
 
         $openPolicy = $this->createMock(AcademicCalendarPolicyService::class);
         $openPolicy->expects($this->once())
-            ->method('evaluate')
-            ->with('course_registration', 1, 1)
-            ->willReturn($this->policyResult(AcademicCalendarPolicyStatus::OPEN));
+            ->method('courseRegistrationDeadlines')
+            ->with(1, 1, null)
+            ->willReturn($this->deadlineResult(CourseRegistrationPhase::STUDENT_OPEN));
         $this->service($openPolicy)->assertCourseRegistrationWindowOpen(1, 1);
         self::assertTrue(true);
     }
@@ -72,9 +73,9 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
         DB::table('students')->insert(['student_id' => 2, 'academic_program_id' => null]);
         $policy = $this->createMock(AcademicCalendarPolicyService::class);
         $policy->expects($this->exactly(2))
-            ->method('evaluate')
-            ->with('course_registration', 1, 1)
-            ->willReturn($this->policyResult(AcademicCalendarPolicyStatus::OPEN));
+            ->method('courseRegistrationDeadlines')
+            ->with(1, 1, null)
+            ->willReturn($this->deadlineResult(CourseRegistrationPhase::STUDENT_OPEN));
         $service = $this->service($policy);
 
         DB::transaction(fn () => $service->registerStudentWithinTransaction([
@@ -88,6 +89,22 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
 
         self::assertSame(2, DB::table('student_course_registrations')->count());
         self::assertSame(0, (int) DB::table('course_offerings')->where('course_offering_id', 1)->value('available_seats'));
+    }
+
+    public function test_trusted_advisor_materialization_reuses_all_registration_rules_without_the_student_cutoff(): void
+    {
+        $policy = $this->createMock(AcademicCalendarPolicyService::class);
+        $policy->expects($this->never())->method('courseRegistrationDeadlines');
+
+        DB::transaction(fn () => $this->service($policy)->materializeAdvisorApprovedRequestItemWithinTransaction([
+            'student_id' => 1,
+            'course_offering_id' => 1,
+            'advisor_user_id' => 7,
+            'registration_date' => '2026-09-05',
+        ], 7));
+
+        self::assertSame(1, DB::table('student_course_registrations')->count());
+        self::assertSame(1, (int) DB::table('course_offerings')->where('course_offering_id', 1)->value('available_seats'));
     }
 
     public function test_real_policy_wiring_honors_inclusive_boundaries_and_rejects_outside_seconds(): void
@@ -110,9 +127,9 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
         ]);
         $policy = $this->createMock(AcademicCalendarPolicyService::class);
         $policy->expects($this->once())
-            ->method('evaluate')
-            ->with('course_registration', 1, 1)
-            ->willReturn($this->policyResult(AcademicCalendarPolicyStatus::OPEN));
+            ->method('courseRegistrationDeadlines')
+            ->with(1, 1, null)
+            ->willReturn($this->deadlineResult(CourseRegistrationPhase::STUDENT_OPEN));
 
         DB::transaction(fn () => $this->service($policy)->registerStudentWithinTransaction([
             'student_id' => 1,
@@ -124,7 +141,7 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
         self::assertSame(1, (int) DB::table('course_offerings')->where('course_offering_id', 1)->value('available_seats'));
     }
 
-    public function test_real_policy_uses_explicit_year_semester_and_year_wide_wildcard(): void
+    public function test_real_student_deadline_policy_requires_an_exact_semester_root(): void
     {
         CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-03T12:00:00Z'));
         $this->createWindow(semesterId: 2);
@@ -136,8 +153,11 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
         DB::table('academic_calendar_events')->delete();
         DB::table('academic_calendar_event_versions')->delete();
         $this->createWindow(semesterId: null);
-        $this->register();
-        self::assertSame(1, DB::table('student_course_registrations')->count());
+        $this->expectRegistrationCode(
+            fn () => $this->register(),
+            RegistrationException::ACADEMIC_CALENDAR_CONFIGURATION_INVALID,
+        );
+        self::assertSame(0, DB::table('student_course_registrations')->count());
 
         $this->resetRegistration();
         DB::table('course_offerings')->where('course_offering_id', 1)->update(['academic_year_id' => 2]);
@@ -162,11 +182,11 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
         CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-03T12:00:00Z'));
 
         $this->createWindow(isEnforcement: false);
-        $this->expectClosedRegistration();
+        $this->expectRegistrationCode(fn () => $this->register(), RegistrationException::ACADEMIC_CALENDAR_CONFIGURATION_INVALID);
         $this->clearWindows();
 
         $this->createWindow(cancelled: true);
-        $this->expectClosedRegistration();
+        $this->expectRegistrationCode(fn () => $this->register(), RegistrationException::ACADEMIC_CALENDAR_CONFIGURATION_INVALID);
         $this->clearWindows();
 
         $eventId = $this->createWindow(publicationStatus: 'superseded', supersededAt: '2026-08-25 00:00:00');
@@ -186,15 +206,20 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
     {
         $this->createWindow(startsAt: '2026-09-01 00:00:00', endsAt: '2026-09-05 23:59:59');
         $this->createWindow(startsAt: '2026-09-10 00:00:00', endsAt: '2026-09-15 23:59:59');
+        $service = $this->service();
 
-        $this->attemptAt('2026-09-03T12:00:00Z', succeeds: true);
-        $this->attemptAt('2026-09-07T12:00:00Z', succeeds: false);
-        $this->attemptAt('2026-09-12T12:00:00Z', succeeds: true);
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-03T12:00:00Z'));
+        self::assertTrue($service->courseRegistrationWindow(1, 1)->isOpen());
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-07T12:00:00Z'));
+        self::assertFalse($service->courseRegistrationWindow(1, 1)->isOpen());
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-12T12:00:00Z'));
+        self::assertTrue($service->courseRegistrationWindow(1, 1)->isOpen());
     }
 
     public function test_closed_gate_preserves_dropped_row_and_available_seats(): void
     {
         CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-03T12:00:00Z'));
+        $this->createWindow(startsAt: '2026-09-01 00:00:00', endsAt: '2026-09-02 23:59:59');
         DB::table('student_course_registrations')->insert([
             'student_course_registration_id' => 10,
             'student_id' => 1,
@@ -245,6 +270,7 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
     public function test_closed_window_has_no_role_bypass_and_does_not_block_reads(): void
     {
         CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-03T12:00:00Z'));
+        $this->createWindow(startsAt: '2026-09-01 00:00:00', endsAt: '2026-09-02 23:59:59');
         foreach ([7, 999] as $actorId) {
             $this->expectRegistrationCode(
                 fn () => $this->register($actorId),
@@ -449,6 +475,20 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
         );
     }
 
+    private function deadlineResult(CourseRegistrationPhase $phase, ?string $reason = null): CourseRegistrationDeadlineResult
+    {
+        return new CourseRegistrationDeadlineResult(
+            $phase,
+            1,
+            1,
+            CarbonImmutable::parse('2026-09-03T12:00:00Z'),
+            CarbonImmutable::parse('2026-09-01T00:00:00Z'),
+            CarbonImmutable::parse('2026-09-04T00:00:00Z'),
+            CarbonImmutable::parse('2026-09-05T00:00:00Z'),
+            reasonCode: $reason,
+        );
+    }
+
     private function seedBaseData(): void
     {
         DB::table('academic_years')->insert([
@@ -523,6 +563,8 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
             $table->string('title');
             $table->dateTime('starts_at');
             $table->dateTime('ends_at');
+            $table->dateTime('student_registration_ends_at')->nullable();
+            $table->dateTime('advisor_approval_ends_at')->nullable();
             $table->boolean('is_enforcement');
             $table->text('change_reason');
             $table->integer('created_by_user_id');

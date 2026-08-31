@@ -14,8 +14,8 @@ use App\Services\AcademicTermResolver;
 use App\Services\DataScopeService;
 use App\Services\RegistrationRequestService;
 use App\Services\RegistrationService;
-use App\Support\AcademicCalendarPolicyResult;
-use App\Support\AcademicCalendarPolicyStatus;
+use App\Support\CourseRegistrationDeadlineResult;
+use App\Support\CourseRegistrationPhase;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -37,6 +37,7 @@ class AcademicCalendarPhase4RegistrationRequestTest extends TestCase
             $table->string('status');
             $table->integer('submission_version')->default(0);
             $table->text('student_notes')->nullable();
+            $table->dateTime('expired_at')->nullable();
             $table->timestamps();
         });
         Schema::create('students', function (Blueprint $table): void {
@@ -83,7 +84,7 @@ class AcademicCalendarPhase4RegistrationRequestTest extends TestCase
         [$year, $semester, $student] = $this->contextModels();
         $registration = Mockery::mock(RegistrationService::class);
         $registration->shouldReceive('selfRegistrationOpenSemesters')->once()->andReturn(collect([$semester]));
-        $registration->shouldReceive('courseRegistrationWindow')->once()->with(1, 1)->andReturn($this->closedResult());
+        $registration->shouldReceive('courseRegistrationDeadlines')->once()->with(1, 1)->andReturn($this->closedResult());
         $registration->shouldReceive('hoursSnapshot')->once()->andReturn([
             'registered_hours' => 0,
             'max_allowed_hours' => 18,
@@ -96,7 +97,7 @@ class AcademicCalendarPhase4RegistrationRequestTest extends TestCase
         $workspace = $this->requestService($registration, $year)->studentWorkspace($student, 1);
 
         self::assertFalse($workspace['registration_open']);
-        self::assertTrue($workspace['request_item_removal_open']);
+        self::assertFalse($workspace['request_item_removal_open']);
         self::assertSame([], $workspace['available_courses']->all());
         self::assertSame(1, (int) $workspace['semester']->semester_id);
     }
@@ -131,6 +132,70 @@ class AcademicCalendarPhase4RegistrationRequestTest extends TestCase
         self::assertSame(0, DB::table('student_registration_requests')->count());
     }
 
+    public function test_remove_item_is_blocked_after_the_student_deadline_and_keeps_the_draft_item(): void
+    {
+        [, , $student] = $this->contextModels();
+        $actor = new User;
+        $actor->setAttribute('user_id', 7);
+        DB::table('student_registration_requests')->insert([
+            'student_registration_request_id' => 1,
+            'student_id' => 1,
+            'academic_year_id' => 1,
+            'semester_id' => 1,
+            'status' => 'draft',
+            'submission_version' => 0,
+        ]);
+        DB::table('student_registration_request_items')->insert([
+            'student_registration_request_item_id' => 1,
+            'student_registration_request_id' => 1,
+            'course_offering_id' => 10,
+        ]);
+        $registration = Mockery::mock(RegistrationService::class);
+        $registration->shouldReceive('assertCourseRegistrationStudentWindowOpen')
+            ->once()->with(1, 1)->andThrow(RegistrationException::courseRegistrationWindowClosed());
+
+        $this->expectClosed(fn () => $this->requestService($registration, new AcademicYear)->removeItem(
+            $student,
+            \App\Models\StudentRegistrationRequestItem::query()->findOrFail(1),
+            $actor,
+        ));
+
+        self::assertSame(1, DB::table('student_registration_request_items')->count());
+        self::assertSame(0, DB::table('student_registration_request_events')->count());
+    }
+
+    public function test_remove_item_succeeds_during_student_open_using_the_same_deadline_gate(): void
+    {
+        [, $semester, $student] = $this->contextModels();
+        $actor = new User;
+        $actor->setAttribute('user_id', 7);
+        DB::table('student_registration_requests')->insert([
+            'student_registration_request_id' => 1,
+            'student_id' => 1,
+            'academic_year_id' => 1,
+            'semester_id' => 1,
+            'status' => 'draft',
+            'submission_version' => 0,
+        ]);
+        DB::table('student_registration_request_items')->insert([
+            'student_registration_request_item_id' => 1,
+            'student_registration_request_id' => 1,
+            'course_offering_id' => 10,
+        ]);
+        $registration = Mockery::mock(RegistrationService::class);
+        $registration->shouldReceive('assertCourseRegistrationStudentWindowOpen')->once()->with(1, 1);
+        $registration->shouldReceive('selfRegistrationOpenSemesters')->once()->with($student, 1)->andReturn(collect([$semester]));
+
+        $this->requestService($registration, new AcademicYear)->removeItem(
+            $student,
+            \App\Models\StudentRegistrationRequestItem::query()->findOrFail(1),
+            $actor,
+        );
+
+        self::assertSame(0, DB::table('student_registration_request_items')->count());
+        self::assertSame('item_removed', DB::table('student_registration_request_events')->value('event_type'));
+    }
+
     public function test_workspace_prefers_the_calendar_open_semester_but_keeps_a_closed_request_semester_selectable(): void
     {
         [$year, $semesterOne, $student] = $this->contextModels();
@@ -152,8 +217,8 @@ class AcademicCalendarPhase4RegistrationRequestTest extends TestCase
 
         $registration = Mockery::mock(RegistrationService::class);
         $registration->shouldReceive('selfRegistrationOpenSemesters')->twice()->andReturn(collect([$semesterOne, $semesterTwo]));
-        $registration->shouldReceive('courseRegistrationWindow')->twice()->with(1, 1)->andReturn($this->closedResult());
-        $registration->shouldReceive('courseRegistrationWindow')->twice()->with(1, 2)->andReturn($this->openResult(2));
+        $registration->shouldReceive('courseRegistrationDeadlines')->withArgs(fn (...$args): bool => $args[0] === 1 && $args[1] === 1)->zeroOrMoreTimes()->andReturn($this->closedResult());
+        $registration->shouldReceive('courseRegistrationDeadlines')->withArgs(fn (...$args): bool => $args[0] === 1 && $args[1] === 2)->zeroOrMoreTimes()->andReturn($this->openResult(2));
         $registration->shouldReceive('hoursSnapshot')->zeroOrMoreTimes()->andReturn([
             'registered_hours' => 0,
             'max_allowed_hours' => 18,
@@ -172,9 +237,38 @@ class AcademicCalendarPhase4RegistrationRequestTest extends TestCase
         $closedWorkspace = $service->studentWorkspace($student, 1);
         self::assertSame(1, (int) $closedWorkspace['semester']->semester_id);
         self::assertFalse($closedWorkspace['registration_open']);
-        self::assertTrue($closedWorkspace['request_item_removal_open']);
+        self::assertFalse($closedWorkspace['request_item_removal_open']);
         self::assertSame([1, 2], $closedWorkspace['semesters']->pluck('semester_id')->map(fn ($id): int => (int) $id)->all());
         self::assertNotNull($closedWorkspace['request']);
+    }
+
+    public function test_submitted_request_remains_viewable_during_advisor_review_after_student_cutoff(): void
+    {
+        [$year, $semester, $student] = $this->contextModels();
+        DB::table('students')->insert(['student_id' => 1]);
+        DB::table('academic_years')->insert(['academic_year_id' => 1, 'academic_year_name' => '2026-2027']);
+        DB::table('semesters')->insert(['semester_id' => 1, 'semester_name' => 'First', 'semester_order' => 1]);
+        DB::table('student_registration_requests')->insert([
+            'student_registration_request_id' => 1,
+            'student_id' => 1,
+            'academic_year_id' => 1,
+            'semester_id' => 1,
+            'status' => 'submitted',
+            'submission_version' => 1,
+        ]);
+        $registration = Mockery::mock(RegistrationService::class);
+        $registration->shouldReceive('selfRegistrationOpenSemesters')->once()->andReturn(collect([$semester]));
+        $registration->shouldReceive('courseRegistrationDeadlines')->zeroOrMoreTimes()->andReturn($this->advisorReviewResult());
+        $registration->shouldReceive('hoursSnapshot')->zeroOrMoreTimes()->andReturn(['registered_hours' => 0, 'max_allowed_hours' => 18, 'remaining_hours' => 18]);
+        $registration->shouldReceive('currentOfferingIds')->zeroOrMoreTimes()->andReturn([]);
+        $registration->shouldReceive('getRegistrationSummary')->once()->andReturn([]);
+
+        $workspace = $this->requestService($registration, $year)->studentWorkspace($student, 1);
+
+        self::assertFalse($workspace['registration_open']);
+        self::assertFalse($workspace['request_item_removal_open']);
+        self::assertSame('submitted', $workspace['request']['status']);
+        self::assertSame('advisor_review', $workspace['registration_calendar']['phase']);
     }
 
     public function test_workflow_closed_request_semester_stays_viewable_but_removal_is_unavailable(): void
@@ -194,7 +288,7 @@ class AcademicCalendarPhase4RegistrationRequestTest extends TestCase
 
         $registration = Mockery::mock(RegistrationService::class);
         $registration->shouldReceive('selfRegistrationOpenSemesters')->once()->andReturn(collect());
-        $registration->shouldNotReceive('courseRegistrationWindow');
+        $registration->shouldReceive('courseRegistrationDeadlines')->zeroOrMoreTimes()->andReturn($this->closedResult());
         $registration->shouldReceive('hoursSnapshot')->zeroOrMoreTimes()->andReturn([
             'registered_hours' => 0,
             'max_allowed_hours' => 18,
@@ -228,7 +322,7 @@ class AcademicCalendarPhase4RegistrationRequestTest extends TestCase
     {
         $registration = Mockery::mock(RegistrationService::class);
         $registration->shouldReceive('selfRegistrationOpenSemesters')->once()->andReturn(collect([$semester]));
-        $registration->shouldReceive('assertCourseRegistrationWindowOpen')
+        $registration->shouldReceive('assertCourseRegistrationStudentWindowOpen')
             ->once()
             ->with(1, 1)
             ->andThrow(RegistrationException::courseRegistrationWindowClosed());
@@ -267,29 +361,42 @@ class AcademicCalendarPhase4RegistrationRequestTest extends TestCase
         return $semester;
     }
 
-    private function closedResult(): AcademicCalendarPolicyResult
+    private function closedResult(): CourseRegistrationDeadlineResult
     {
-        return new AcademicCalendarPolicyResult(
-            AcademicCalendarPolicyStatus::CLOSED,
-            'course_registration',
+        return new CourseRegistrationDeadlineResult(
+            CourseRegistrationPhase::CLOSED,
             1,
             1,
             CarbonImmutable::parse('2026-09-03T12:00:00Z'),
-            0,
-            'no_effective_window',
+            CarbonImmutable::parse('2026-09-01T00:00:00Z'),
+            CarbonImmutable::parse('2026-09-02T00:00:00Z'),
+            CarbonImmutable::parse('2026-09-02T12:00:00Z'),
         );
     }
 
-    private function openResult(int $semesterId): AcademicCalendarPolicyResult
+    private function openResult(int $semesterId): CourseRegistrationDeadlineResult
     {
-        return new AcademicCalendarPolicyResult(
-            AcademicCalendarPolicyStatus::OPEN,
-            'course_registration',
+        return new CourseRegistrationDeadlineResult(
+            CourseRegistrationPhase::STUDENT_OPEN,
             1,
             $semesterId,
             CarbonImmutable::parse('2026-09-03T12:00:00Z'),
+            CarbonImmutable::parse('2026-09-01T00:00:00Z'),
+            CarbonImmutable::parse('2026-09-04T00:00:00Z'),
+            CarbonImmutable::parse('2026-09-05T00:00:00Z'),
+        );
+    }
+
+    private function advisorReviewResult(): CourseRegistrationDeadlineResult
+    {
+        return new CourseRegistrationDeadlineResult(
+            CourseRegistrationPhase::ADVISOR_REVIEW,
             1,
-            'effective_window_found',
+            1,
+            CarbonImmutable::parse('2026-09-04T12:00:00Z'),
+            CarbonImmutable::parse('2026-09-01T00:00:00Z'),
+            CarbonImmutable::parse('2026-09-04T00:00:00Z'),
+            CarbonImmutable::parse('2026-09-05T00:00:00Z'),
         );
     }
 }

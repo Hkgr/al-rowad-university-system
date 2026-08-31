@@ -18,6 +18,8 @@ use Illuminate\Support\Facades\DB;
 
 class AcademicCalendarService
 {
+    private const COURSE_REGISTRATION_EVENT_TYPE = 'course_registration';
+
     public function catalog(?User $manager = null): array
     {
         $this->assertSchemaReady();
@@ -96,12 +98,34 @@ class AcademicCalendarService
         $this->assertSchemaReady();
 
         return DB::transaction(function () use ($user, $data): array {
+            AcademicCalendarEvent::query()
+                ->where('academic_year_id', $data['academic_year_id'])
+                ->where('academic_calendar_event_type_id', $data['academic_calendar_event_type_id'])
+                ->when(
+                    ($data['semester_id'] ?? null) === null,
+                    fn ($query) => $query->whereNull('semester_id'),
+                    fn ($query) => $query->where('semester_id', $data['semester_id']),
+                )
+                ->orderBy('academic_calendar_event_id')
+                ->lockForUpdate()
+                ->get(['academic_calendar_event_id']);
             $year = AcademicYear::query()->lockForUpdate()->findOrFail($data['academic_year_id']);
             $this->assertYearMutable($year);
-            AcademicCalendarEventType::query()->where('is_active', true)->lockForUpdate()->findOrFail($data['academic_calendar_event_type_id']);
+            $eventType = AcademicCalendarEventType::query()->where('is_active', true)->lockForUpdate()->findOrFail($data['academic_calendar_event_type_id']);
             if (($data['semester_id'] ?? null) !== null) {
                 Semester::query()->lockForUpdate()->findOrFail($data['semester_id']);
             }
+            $this->assertUniqueRegistrationRoot(
+                $eventType,
+                (int) $year->academic_year_id,
+                isset($data['semester_id']) ? (int) $data['semester_id'] : null,
+            );
+            $data = $this->enforceRegistrationDeadlineSemantics(
+                $eventType,
+                isset($data['semester_id']) ? (int) $data['semester_id'] : null,
+                $data,
+                requireExplicitSpecialized: true,
+            );
 
             $event = AcademicCalendarEvent::query()->create([
                 'academic_year_id' => $year->academic_year_id,
@@ -157,7 +181,23 @@ class AcademicCalendarService
                 }
                 $lockedEvent->save();
             }
-            $draft->fill(array_filter($this->versionData($data), fn ($value) => $value !== null));
+            $eventType = AcademicCalendarEventType::query()
+                ->where('is_active', true)
+                ->lockForUpdate()
+                ->findOrFail($lockedEvent->academic_calendar_event_type_id);
+            $this->assertUniqueRegistrationRoot(
+                $eventType,
+                (int) $lockedEvent->academic_year_id,
+                $lockedEvent->semester_id === null ? null : (int) $lockedEvent->semester_id,
+                (int) $lockedEvent->getKey(),
+            );
+            $data = $this->enforceRegistrationDeadlineSemantics(
+                $eventType,
+                $lockedEvent->semester_id === null ? null : (int) $lockedEvent->semester_id,
+                $data,
+                $draft,
+            );
+            $draft->fill($this->versionData($data));
             if (array_key_exists('public_notes', $data)) {
                 $draft->public_notes = $data['public_notes'];
             }
@@ -188,12 +228,21 @@ class AcademicCalendarService
                 throw AcademicCalendarException::conflict('لا يمكن إنشاء بديل لحدث ملغى.');
             }
             $versions = $locked->versions()->lockForUpdate()->get();
+            $eventType = AcademicCalendarEventType::query()
+                ->where('is_active', true)
+                ->lockForUpdate()
+                ->findOrFail($locked->academic_calendar_event_type_id);
             $published = $versions->firstWhere('publication_status', 'published');
             if ($published === null || $versions->contains('publication_status', 'draft')) {
                 throw AcademicCalendarException::conflict('يجب وجود نسخة منشورة واحدة وألا توجد مسودة معلقة.');
             }
             if (blank($data['change_reason'] ?? null)) {
                 throw AcademicCalendarException::conflict('سبب التغيير مطلوب.');
+            }
+            if ($eventType->event_type_code === self::COURSE_REGISTRATION_EVENT_TYPE
+                && collect(['starts_at', 'student_registration_ends_at', 'advisor_approval_ends_at'])
+                    ->contains(fn (string $key): bool => ! array_key_exists($key, $data) || $data[$key] === null)) {
+                throw AcademicCalendarException::conflict('يجب تحديد بداية التسجيل وموعد الطالب وموعد اعتماد المرشد صراحةً في النسخة البديلة.');
             }
             $payload = array_merge([
                 'title' => $published->title,
@@ -202,6 +251,13 @@ class AcademicCalendarService
                 'ends_at' => $published->ends_at,
                 'is_enforcement' => $published->is_enforcement,
             ], $data);
+            $payload = $this->enforceRegistrationDeadlineSemantics(
+                $eventType,
+                $locked->semester_id === null ? null : (int) $locked->semester_id,
+                $payload,
+                $published,
+                requireExplicitSpecialized: $eventType->event_type_code === self::COURSE_REGISTRATION_EVENT_TYPE,
+            );
             if (CarbonImmutable::parse($payload['ends_at'])->lt(CarbonImmutable::parse($payload['starts_at']))) {
                 throw AcademicCalendarException::conflict('يجب ألا يسبق وقت النهاية وقت البداية.');
             }
@@ -231,6 +287,10 @@ class AcademicCalendarService
                     throw AcademicCalendarException::conflict('لا يمكن نشر حدث ملغى.');
                 }
                 $versions = $locked->versions()->lockForUpdate()->get();
+                $eventType = AcademicCalendarEventType::query()
+                    ->where('is_active', true)
+                    ->lockForUpdate()
+                    ->findOrFail($locked->academic_calendar_event_type_id);
                 $draft = $versions->firstWhere('academic_calendar_event_version_id', $version->getKey());
                 if ($draft === null || $draft->publication_status !== 'draft') {
                     throw AcademicCalendarException::conflict('المسودة تغيرت أو نُشرت مسبقاً.');
@@ -242,6 +302,18 @@ class AcademicCalendarService
                 if ($draft->replaces_version_id !== null && ($published === null || (int) $draft->replaces_version_id !== (int) $published->getKey())) {
                     throw AcademicCalendarException::conflict('لم تعد المسودة تستبدل النسخة المنشورة الحالية.');
                 }
+                $this->assertUniqueRegistrationRoot(
+                    $eventType,
+                    (int) $locked->academic_year_id,
+                    $locked->semester_id === null ? null : (int) $locked->semester_id,
+                    (int) $locked->getKey(),
+                );
+                $this->enforceRegistrationDeadlineSemantics(
+                    $eventType,
+                    $locked->semester_id === null ? null : (int) $locked->semester_id,
+                    [],
+                    $draft,
+                );
                 $now = now();
                 if ($published !== null) {
                     $published->publication_status = 'superseded';
@@ -389,6 +461,85 @@ class AcademicCalendarService
         }
     }
 
+    private function assertUniqueRegistrationRoot(
+        AcademicCalendarEventType $eventType,
+        int $academicYearId,
+        ?int $semesterId,
+        ?int $exceptEventId = null,
+    ): void {
+        if ($eventType->event_type_code !== self::COURSE_REGISTRATION_EVENT_TYPE) {
+            return;
+        }
+        if ($semesterId === null) {
+            throw AcademicCalendarException::conflict('يجب ربط نافذة تسجيل المقررات بفصل دراسي محدد.');
+        }
+
+        $duplicate = AcademicCalendarEvent::query()
+            ->where('academic_year_id', $academicYearId)
+            ->where('semester_id', $semesterId)
+            ->where('academic_calendar_event_type_id', $eventType->getKey())
+            ->whereNull('cancelled_at')
+            ->when($exceptEventId !== null, fn ($query) => $query->whereKeyNot($exceptEventId))
+            ->lockForUpdate()
+            ->exists();
+
+        if ($duplicate) {
+            throw AcademicCalendarException::conflict('توجد نافذة تسجيل مقررات غير ملغاة لهذه السنة والفصل بالفعل.');
+        }
+    }
+
+    private function enforceRegistrationDeadlineSemantics(
+        AcademicCalendarEventType $eventType,
+        ?int $semesterId,
+        array $data,
+        ?AcademicCalendarEventVersion $base = null,
+        bool $requireExplicitSpecialized = false,
+    ): array {
+        $specialized = ['student_registration_ends_at', 'advisor_approval_ends_at'];
+        if ($eventType->event_type_code !== self::COURSE_REGISTRATION_EVENT_TYPE) {
+            foreach ($specialized as $key) {
+                if (array_key_exists($key, $data) && $data[$key] !== null) {
+                    throw AcademicCalendarException::conflict('المواعيد النهائية المتخصصة متاحة لنافذة تسجيل المقررات فقط.');
+                }
+                $data[$key] = null;
+            }
+
+            return $data;
+        }
+
+        if ($semesterId === null) {
+            throw AcademicCalendarException::conflict('يجب ربط نافذة تسجيل المقررات بفصل دراسي محدد.');
+        }
+        if ($requireExplicitSpecialized) {
+            foreach ($specialized as $key) {
+                if (! array_key_exists($key, $data) || $data[$key] === null || trim((string) $data[$key]) === '') {
+                    throw AcademicCalendarException::conflict('يجب تحديد الموعد النهائي للطالب والموعد النهائي لاعتماد المرشد صراحةً.');
+                }
+            }
+        }
+
+        $startsAt = $data['starts_at'] ?? $base?->starts_at;
+        $studentEndsAt = $data['student_registration_ends_at'] ?? $base?->student_registration_ends_at;
+        $advisorEndsAt = $data['advisor_approval_ends_at'] ?? $base?->advisor_approval_ends_at;
+        if ($startsAt === null || $studentEndsAt === null || $advisorEndsAt === null) {
+            throw AcademicCalendarException::conflict('إعداد نافذة تسجيل المقررات غير مكتمل.');
+        }
+
+        $starts = CarbonImmutable::parse($startsAt)->utc();
+        $studentEnds = CarbonImmutable::parse($studentEndsAt)->utc();
+        $advisorEnds = CarbonImmutable::parse($advisorEndsAt)->utc();
+        if ($studentEnds->lt($starts) || $advisorEnds->lt($studentEnds)) {
+            throw AcademicCalendarException::conflict('يجب أن يبدأ التسجيل قبل موعد الطالب، وأن يسبق موعد الطالب موعد اعتماد المرشد أو يساويه.');
+        }
+
+        $data['student_registration_ends_at'] = $studentEnds;
+        $data['advisor_approval_ends_at'] = $advisorEnds;
+        $data['ends_at'] = $advisorEnds;
+        $data['is_enforcement'] = true;
+
+        return $data;
+    }
+
     private function versionData(array $data): array
     {
         $result = [];
@@ -397,9 +548,11 @@ class AcademicCalendarService
                 $result[$key] = $data[$key];
             }
         }
-        foreach (['starts_at', 'ends_at'] as $key) {
+        foreach (['starts_at', 'ends_at', 'student_registration_ends_at', 'advisor_approval_ends_at'] as $key) {
             if (array_key_exists($key, $data)) {
-                $result[$key] = CarbonImmutable::parse($data[$key])->utc()->format('Y-m-d H:i:s');
+                $result[$key] = $data[$key] === null
+                    ? null
+                    : CarbonImmutable::parse($data[$key])->utc()->format('Y-m-d H:i:s');
             }
         }
         return $result;
@@ -445,6 +598,8 @@ class AcademicCalendarService
             'public_notes' => $version->public_notes,
             'starts_at' => $version->starts_at?->utc()->toIso8601String(),
             'ends_at' => $version->ends_at?->utc()->toIso8601String(),
+            'student_registration_ends_at' => $version->student_registration_ends_at?->utc()->toIso8601String(),
+            'advisor_approval_ends_at' => $version->advisor_approval_ends_at?->utc()->toIso8601String(),
             'is_enforcement' => (bool) $version->is_enforcement,
             'cancelled' => $event->cancelled_at !== null,
             'cancelled_at' => $event->cancelled_at?->utc()->toIso8601String(),
@@ -465,6 +620,8 @@ class AcademicCalendarService
                 'academic_calendar_event_version_id' => $v->getKey(), 'version_number' => $v->version_number,
                 'replaces_version_id' => $v->replaces_version_id, 'title' => $v->title, 'public_notes' => $v->public_notes,
                 'starts_at' => $v->starts_at?->utc()->toIso8601String(), 'ends_at' => $v->ends_at?->utc()->toIso8601String(),
+                'student_registration_ends_at' => $v->student_registration_ends_at?->utc()->toIso8601String(),
+                'advisor_approval_ends_at' => $v->advisor_approval_ends_at?->utc()->toIso8601String(),
                 'is_enforcement' => (bool) $v->is_enforcement, 'change_reason' => $v->change_reason,
                 'publication_status' => $v->publication_status, 'created_by_user_id' => $v->created_by_user_id,
                 'created_at' => $v->created_at?->utc()->toIso8601String(), 'published_by_user_id' => $v->published_by_user_id,

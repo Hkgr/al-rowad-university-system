@@ -48,6 +48,7 @@ $contract = static function (string $backendRoot): array {
     $frontend = $sources['frontend'];
     $window = $method($registration, 'courseRegistrationWindow');
     $assertWindow = $method($registration, 'assertCourseRegistrationWindowOpen');
+    $assertStudentWindow = $method($registration, 'assertCourseRegistrationStudentWindowOpen');
     $materialize = $method($registration, 'performRegisterStudent');
 
     $expect(str_contains($registration, 'private AcademicCalendarPolicyService $academicCalendarPolicy'), 'RegistrationService must own the Phase 3 dependency.');
@@ -57,10 +58,8 @@ $contract = static function (string $backendRoot): array {
     $expect(str_contains($window, '$academicYearId') && str_contains($window, '$semesterId'), 'Registration window evaluation must receive explicit year and semester context.');
     $expect(substr_count($window, '$this->academicCalendarPolicy->evaluate(') === 1, 'Registration window method must delegate once to the canonical evaluator.');
 
-    foreach (['OPEN', 'CLOSED', 'INVALID_EVENT_TYPE', 'INVALID_ACADEMIC_YEAR', 'INVALID_SEMESTER_CONTEXT', 'CALENDAR_CONFIGURATION_ERROR'] as $status) {
-        $expect(str_contains($assertWindow, 'AcademicCalendarPolicyStatus::'.$status), 'Missing exhaustive Phase 4 status mapping: '.$status);
-    }
-    $expect(! str_contains($assertWindow, 'default =>'), 'Policy mapping must remain exhaustive when the enum changes.');
+    $expect(str_contains($assertWindow, 'assertCourseRegistrationStudentWindowOpen('), 'The legacy Phase 4 assertion must delegate to the Phase 2 student-deadline assertion.');
+    $expect(str_contains($assertStudentWindow, 'CourseRegistrationPhase::STUDENT_OPEN') && str_contains($assertStudentWindow, 'CourseRegistrationPhase::CONFIGURATION_ERROR'), 'Student registration must retain typed fail-closed calendar mapping.');
 
     foreach ([
         'COURSE_REGISTRATION_WINDOW_CLOSED' => 'course_registration_window_closed',
@@ -71,7 +70,7 @@ $contract = static function (string $backendRoot): array {
         $expect(str_contains($exception, 'public const '.$constant." = '".$code."'"), 'Missing stable registration error code: '.$code);
     }
 
-    $gate = strpos($materialize, '$this->assertCourseRegistrationWindowOpen(');
+    $gate = strpos($materialize, '$this->assertCourseRegistrationStudentWindowOpen(');
     $offeringLock = strpos($materialize, "->lockForUpdate()\n            ->first();", strpos($materialize, 'CourseOffering::query()'));
     $reactivation = strpos($materialize, '$this->findReactivatableRegistration(');
     $create = strpos($materialize, 'StudentCourseRegistration::query()->create([');
@@ -96,18 +95,18 @@ $contract = static function (string $backendRoot): array {
     $notes = $method($requests, 'updateNotes');
     $submit = $method($requests, 'submit');
     $approve = $method($requests, 'approve');
-    $expect(str_contains($workspace, 'courseRegistrationWindow(') && str_contains($workspace, '->isOpen()'), 'registration_open must include the calendar window result.');
+    $expect(str_contains($workspace, 'courseRegistrationDeadlines(') && str_contains($workspace, '->isStudentOpen()'), 'registration_open must include the canonical student-deadline result.');
     $expect(str_contains($workspace, '$calendarWindowBySemesterId') && str_contains($workspace, '->mapWithKeys('), 'Workspace must build a local evaluation map for every workflow-open semester.');
     $expect(str_contains($workspace, '$liveOpenSemesters') && str_contains($workspace, 'resolveWorkspaceSemester($selectableSemesters, $liveOpenSemesters'), 'Workspace selection must use calendar-filtered live-open semesters.');
     $expect(str_contains($workspace, '$liveOpenSemesters->contains('), 'registration_open must be derived from the filtered live-open semester collection.');
     $expect(str_contains($workspace, "'request_item_removal_open' => \$requestItemRemovalOpen"), 'Workspace must expose the separate request-item removal capability.');
-    $expect(str_contains($workspace, '$requestItemRemovalOpen') && str_contains($workspace, '$openSemesters->contains('), 'Removal capability must use legacy workflow-open semesters.');
+    $expect(str_contains($workspace, '$requestItemRemovalOpen = $registrationOpen'), 'Removal capability must now close at the canonical student deadline.');
     $expect(str_contains($controller, "'request_item_removal_open' => \$workspace['request_item_removal_open']"), 'Student registration API must expose the removal capability.');
     foreach (['addItem' => $add, 'updateNotes' => $notes, 'submit' => $submit] as $name => $source) {
-        $expect(str_contains($source, 'assertCourseRegistrationWindowOpen('), $name.' must reject closed preparation mutations.');
+        $expect(str_contains($source, 'assertCourseRegistrationStudentWindowOpen('), $name.' must reject mutations outside the student deadline.');
     }
-    $expect(! str_contains($remove, 'courseRegistrationWindow') && ! str_contains($remove, 'assertCourseRegistrationWindowOpen'), 'removeItem must remain ungated by Academic Calendar.');
-    $expect(str_contains($approve, 'DB::transaction(') && str_contains($approve, 'registerStudentWithinTransaction('), 'Approval must preserve canonical transactional materialization.');
+    $expect(str_contains($remove, 'assertCourseRegistrationStudentWindowOpen('), 'removeItem must close at the same canonical student deadline as every other edit.');
+    $expect(str_contains($approve, 'DB::transaction(') && str_contains($approve, 'materializeAdvisorApprovedRequestItemWithinTransaction('), 'Approval must preserve canonical materialization through the explicit advisor context.');
     $expect(str_contains($requests, 'approvalErrorCode(') && str_contains($requests, 'COURSE_REGISTRATION_WINDOW_CLOSED'), 'Approval must preserve calendar machine codes.');
 
     $expect(str_contains($frontend, 'const requestItemRemovalOpen = payload?.request_item_removal_open === true'), 'Frontend must consume the removal capability.');

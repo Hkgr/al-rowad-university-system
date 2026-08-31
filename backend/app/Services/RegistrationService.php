@@ -13,8 +13,11 @@ use App\Models\Student;
 use App\Models\StudentCourseRegistration;
 use App\Models\StudentCreditLimit;
 use App\Support\AcademicCalendarPolicyResult;
-use App\Support\AcademicCalendarPolicyStatus;
 use App\Support\CourseRequirementClassification;
+use App\Support\CourseRegistrationDeadlineResult;
+use App\Support\CourseRegistrationPhase;
+use App\Support\RegistrationMaterializationContext;
+use Carbon\CarbonInterface;
 use App\Support\SupplementaryExamTargetGuard;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -66,7 +69,34 @@ class RegistrationService
     public function registerStudentWithinTransaction(array $data, ?int $authenticatedUserId = null): array
     {
         try {
-            return $this->performRegisterStudent($data, $authenticatedUserId);
+            return $this->performRegisterStudent(
+                $data,
+                $authenticatedUserId,
+                RegistrationMaterializationContext::STUDENT_WINDOW,
+            );
+        } catch (QueryException $exception) {
+            if ($this->isDuplicateRegistrationQueryException($exception)) {
+                $this->throwDuplicateRegistrationException();
+            }
+
+            throw $exception;
+        }
+    }
+
+    /**
+     * Trusted materialization entry point for the existing advisor request
+     * workflow. The caller must hold and validate the request deadline lock.
+     */
+    public function materializeAdvisorApprovedRequestItemWithinTransaction(
+        array $data,
+        ?int $authenticatedUserId = null,
+    ): array {
+        try {
+            return $this->performRegisterStudent(
+                $data,
+                $authenticatedUserId,
+                RegistrationMaterializationContext::ADVISOR_APPROVAL,
+            );
         } catch (QueryException $exception) {
             if ($this->isDuplicateRegistrationQueryException($exception)) {
                 $this->throwDuplicateRegistrationException();
@@ -95,21 +125,50 @@ class RegistrationService
         );
     }
 
-    public function assertCourseRegistrationWindowOpen(int $academicYearId, int $semesterId): void
-    {
-        $result = $this->courseRegistrationWindow($academicYearId, $semesterId);
-
-        match ($result->status) {
-            AcademicCalendarPolicyStatus::OPEN => null,
-            AcademicCalendarPolicyStatus::CLOSED => throw RegistrationException::courseRegistrationWindowClosed(),
-            AcademicCalendarPolicyStatus::INVALID_EVENT_TYPE,
-            AcademicCalendarPolicyStatus::CALENDAR_CONFIGURATION_ERROR => throw RegistrationException::academicCalendarConfigurationInvalid(),
-            AcademicCalendarPolicyStatus::INVALID_ACADEMIC_YEAR => throw RegistrationException::academicCalendarYearContextInvalid(),
-            AcademicCalendarPolicyStatus::INVALID_SEMESTER_CONTEXT => throw RegistrationException::academicCalendarSemesterContextInvalid(),
-        };
+    public function courseRegistrationDeadlines(
+        int $academicYearId,
+        int $semesterId,
+        ?CarbonInterface $at = null,
+    ): CourseRegistrationDeadlineResult {
+        return $this->academicCalendarPolicy->courseRegistrationDeadlines(
+            $academicYearId,
+            $semesterId,
+            $at,
+        );
     }
 
-    private function performRegisterStudent(array $data, ?int $authenticatedUserId): array
+    public function assertCourseRegistrationWindowOpen(int $academicYearId, int $semesterId): void
+    {
+        $this->assertCourseRegistrationStudentWindowOpen($academicYearId, $semesterId);
+    }
+
+    public function assertCourseRegistrationStudentWindowOpen(
+        int $academicYearId,
+        int $semesterId,
+        ?CarbonInterface $at = null,
+    ): void {
+        $result = $this->courseRegistrationDeadlines($academicYearId, $semesterId, $at);
+        if ($result->phase === CourseRegistrationPhase::STUDENT_OPEN) {
+            return;
+        }
+        if ($result->phase !== CourseRegistrationPhase::CONFIGURATION_ERROR) {
+            throw RegistrationException::courseRegistrationWindowClosed();
+        }
+        if (in_array($result->reasonCode, ['unknown_academic_year', 'academic_year_not_operational'], true)) {
+            throw RegistrationException::academicCalendarYearContextInvalid();
+        }
+        if (in_array($result->reasonCode, ['unknown_semester', 'semester_inactive'], true)) {
+            throw RegistrationException::academicCalendarSemesterContextInvalid();
+        }
+
+        throw RegistrationException::academicCalendarConfigurationInvalid();
+    }
+
+    private function performRegisterStudent(
+        array $data,
+        ?int $authenticatedUserId,
+        RegistrationMaterializationContext $context,
+    ): array
     {
         $student = Student::query()
             ->whereKey($data['student_id'])
@@ -204,12 +263,16 @@ class RegistrationService
             throw new ModelNotFoundException('Registration status "registered" was not found.');
         }
 
-        // This is the authoritative write-time gate. Preparation checks are
-        // never reused: each create/reactivation evaluates the locked offering.
-        $this->assertCourseRegistrationWindowOpen(
-            (int) $courseOffering->academic_year_id,
-            (int) $courseOffering->semester_id,
-        );
+        // Direct/student materialization always receives a fresh evaluation
+        // after locking the authoritative Offering. Advisor materialization is
+        // a distinct trusted entry point whose request deadline was validated
+        // while holding the request lock in RegistrationRequestService.
+        if ($context === RegistrationMaterializationContext::STUDENT_WINDOW) {
+            $this->assertCourseRegistrationStudentWindowOpen(
+                (int) $courseOffering->academic_year_id,
+                (int) $courseOffering->semester_id,
+            );
+        }
 
         $registrationDate = $data['registration_date'] ?? now()->toDateString();
         $reactivatable = $this->findReactivatableRegistration(

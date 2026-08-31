@@ -15,7 +15,9 @@ class AcademicCalendarEventVersion extends Model
     protected function casts(): array
     {
         return [
-            'starts_at' => 'datetime', 'ends_at' => 'datetime', 'is_enforcement' => 'boolean',
+            'starts_at' => 'datetime', 'ends_at' => 'datetime',
+            'student_registration_ends_at' => 'datetime', 'advisor_approval_ends_at' => 'datetime',
+            'is_enforcement' => 'boolean',
             'created_at' => 'datetime', 'published_at' => 'datetime', 'superseded_at' => 'datetime',
         ];
     }
