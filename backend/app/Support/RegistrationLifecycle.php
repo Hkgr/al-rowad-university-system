@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Schema;
  * request row first because it is a distinct workflow-root table and is
  * never locked by drop or withdrawal. Shared resources then follow 1–3.
  *
+ * Registration does not reserve or release seats.
  * Legacy CourseOffering capacity fields are not registration policy and are
  * not mutated by create, reactivation, drop, or withdrawal transitions.
  */

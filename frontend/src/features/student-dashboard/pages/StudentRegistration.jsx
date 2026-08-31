@@ -114,7 +114,7 @@ function HoursPanel({ hours, requestStatus }) {
     <section className="bg-white border border-primary/12 rounded-[16px] p-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]" dir="rtl">
       <div className="grid grid-cols-6 max-[1050px]:grid-cols-3 max-[700px]:grid-cols-2 max-[520px]:grid-cols-1 gap-4 mb-4">
         <div>
-          <p className="text-[11.5px] font-semibold text-text-light mb-1">المعدل التراكمي الرسمي</p>
+          <p className="text-[11.5px] font-semibold text-text-light mb-1">{approved ? 'المعدل التراكمي الرسمي الحالي' : 'المعدل التراكمي الرسمي'}</p>
           <p className="text-[22px] font-black text-text-dark tabular-nums">
             {officialCgpa == null ? 'لا يوجد معدل تراكمي رسمي حتى الآن' : Number(officialCgpa).toFixed(2)}
           </p>

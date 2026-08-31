@@ -588,6 +588,52 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
         self::assertSame(0, DB::table('student_course_registrations')->count());
     }
 
+    public function test_phase3_six_hour_request_submits_with_warning_and_is_fully_approved(): void
+    {
+        $this->registrationWindow();
+        $this->seedRegistrationRequestContext('draft');
+        $this->addThreeHourRequestOfferings(2);
+
+        $registration = $this->realRegistrationService([
+            'cumulative_gpa' => 2.75,
+            'official_completed_courses' => [],
+        ]);
+        $registration->shouldReceive('selfRegistrationOpenSemesters')->zeroOrMoreTimes()->andReturn(
+            collect([\App\Models\Semester::query()->findOrFail(1)])
+        );
+        [$requests, $actor] = $this->advisorWorkflow($registration);
+        $student = \App\Models\Student::query()->findOrFail(1);
+
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-03T00:00:00Z'));
+        $submitted = $requests->submit($student, $actor, 1);
+        $studentView = $requests->studentRequestView($student, $submitted);
+
+        self::assertSame('submitted', $submitted->status);
+        self::assertSame(6, $studentView['hours']['request_hours']);
+        self::assertSame(6, $studentView['hours']['projected_hours']);
+        self::assertSame(12, $studentView['hours']['recommended_minimum_hours']);
+        self::assertTrue($studentView['hours']['below_recommended_minimum']);
+        self::assertSame(0, DB::table('student_course_registrations')->count());
+
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-06T00:00:00Z'));
+        $approved = $requests->approve(
+            $actor,
+            StudentRegistrationRequest::query()->findOrFail($submitted->student_registration_request_id),
+        );
+
+        $stored = DB::table('student_registration_requests')
+            ->where('student_registration_request_id', $submitted->student_registration_request_id)
+            ->first();
+        self::assertSame('approved', $approved['status']);
+        self::assertSame('approved', $stored->status);
+        self::assertSame(6, (int) $stored->request_hours_at_approval);
+        self::assertSame(6, (int) $stored->projected_hours_at_approval);
+        self::assertSame(18, (int) $stored->max_allowed_hours_at_approval);
+        self::assertTrue($approved['hours']['below_recommended_minimum']);
+        self::assertSame(2, DB::table('student_course_registrations')->count());
+        self::assertSame(2, collect($approved['finalized_registrations'])->count());
+    }
+
     public function test_phase3_advisor_approval_recomputes_current_cgpa_and_rolls_back_an_over_limit_request(): void
     {
         $this->registrationWindow();

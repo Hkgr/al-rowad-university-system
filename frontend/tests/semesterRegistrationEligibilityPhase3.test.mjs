@@ -10,6 +10,7 @@ test('student eligibility presentation uses official backend credit and prerequi
   const source = await readFile(studentPageUrl, 'utf8')
 
   assert.match(source, /hours\?\.official_cgpa/)
+  assert.match(source, /المعدل التراكمي الرسمي الحالي/)
   assert.match(source, /hours\?\.max_allowed_hours/)
   assert.match(source, /officialCgpa == null/)
   assert.match(source, /Number\(officialCgpa\)\.toFixed\(2\)/)
