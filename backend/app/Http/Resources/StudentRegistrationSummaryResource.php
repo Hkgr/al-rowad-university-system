@@ -17,8 +17,10 @@ class StudentRegistrationSummaryResource extends JsonResource
             'semester_id' => $this->resource['semester_id'] ?? null,
             'total_registered_courses' => $this->resource['total_registered_courses'] ?? 0,
             'total_registered_hours' => $this->resource['total_registered_hours'] ?? 0,
+            'official_cgpa' => $this->resource['official_cgpa'] ?? null,
             'max_allowed_hours' => $this->resource['max_allowed_hours'] ?? 0,
             'remaining_hours' => $this->resource['remaining_hours'] ?? 0,
+            'recommended_minimum_hours' => $this->resource['recommended_minimum_hours'] ?? 12,
             'registrations' => RegistrationSummaryItemResource::collection($this->resource['registrations'] ?? []),
         ];
     }

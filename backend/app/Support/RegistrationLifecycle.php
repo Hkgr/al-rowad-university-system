@@ -7,8 +7,8 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Phase 9 student semester registration lifecycle.
  *
- * Canonical lock order for every registration mutation that shares seats
- * or lifecycle status (advisor materialization, self-drop, withdrawal
+ * Canonical lock order for every registration mutation that shares
+ * lifecycle status (advisor materialization, self-drop, withdrawal
  * submit/return/resubmit/approve, and dropped reactivation):
  *
  *   1. students (student_id)
@@ -20,11 +20,9 @@ use Illuminate\Support\Facades\Schema;
  * request row first because it is a distinct workflow-root table and is
  * never locked by drop or withdrawal. Shared resources then follow 1–3.
  *
- * Seat-count invariant:
- *   registered create/reactivation: available_seats -= 1 exactly once
- *   registered -> dropped:          available_seats += 1 exactly once
- *   registered -> withdrawn:        available_seats += 1 exactly once
- *   retries must not apply the delta twice; available_seats never < 0
+ * Registration does not reserve or release seats.
+ * Legacy CourseOffering capacity fields are not registration policy and are
+ * not mutated by create, reactivation, drop, or withdrawal transitions.
  */
 final class RegistrationLifecycle
 {

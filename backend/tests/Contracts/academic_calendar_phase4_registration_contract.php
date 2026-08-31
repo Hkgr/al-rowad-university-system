@@ -74,11 +74,11 @@ $contract = static function (string $backendRoot): array {
     $offeringLock = strpos($materialize, "->lockForUpdate()\n            ->first();", strpos($materialize, 'CourseOffering::query()'));
     $reactivation = strpos($materialize, '$this->findReactivatableRegistration(');
     $create = strpos($materialize, 'StudentCourseRegistration::query()->create([');
-    $seat = strpos($materialize, '$this->decrementAvailableSeats(');
     $expect($gate !== false && $offeringLock !== false && $gate > $offeringLock, 'Final policy gate must follow the locked CourseOffering lookup.');
     $expect($gate !== false && $reactivation !== false && $gate < $reactivation, 'Final policy gate must precede reactivation selection and write.');
     $expect($gate !== false && $create !== false && $gate < $create, 'Final policy gate must precede registration creation.');
-    $expect($gate !== false && $seat !== false && $gate < $seat, 'Final policy gate must precede seat decrement.');
+    $expect(! str_contains($materialize, 'decrementAvailableSeats'), 'Phase 3 removes seat reservation mutations.');
+    $expect(! str_contains($materialize, "where('available_seats', '>', 0)"), 'Phase 3 removes capacity as a registration gate.');
     $expect(str_contains($materialize, '(int) $courseOffering->academic_year_id') && str_contains($materialize, '(int) $courseOffering->semester_id'), 'The locked offering must supply both policy context IDs.');
 
     foreach (['policyCache', 'policy_cache', 'evaluationCache', 'cacheScope', 'beginPolicy', 'resetPolicy'] as $cacheMarker) {

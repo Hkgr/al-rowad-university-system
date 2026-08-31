@@ -16,8 +16,8 @@ const STATUS_LABELS = {
 
 const REASON_LABELS = {
   already_registered: 'مسجل مسبقاً',
+  course_already_passed: 'تم اجتياز هذا المقرر سابقاً ولا يمكن تسجيله مجدداً ضمن التسجيل العادي.',
   missing_prerequisites: 'متطلب سابق غير محقق',
-  no_available_seats: 'لا توجد مقاعد',
   credit_limit_exceeded: 'تجاوز الساعات',
   offering_closed: 'المادة مغلقة',
   wrong_program: 'ليست ضمن برنامج الطالب',
@@ -157,7 +157,14 @@ export default function DeanRegistrationRequestDetail() {
       </section>
 
       {hours ? (
-        <section className="bg-white border border-primary/12 rounded-[16px] p-5 grid grid-cols-5 max-[900px]:grid-cols-2 gap-3">
+        <section className="bg-white border border-primary/12 rounded-[16px] p-5">
+          <div className="grid grid-cols-6 max-[1050px]:grid-cols-3 max-[700px]:grid-cols-2 gap-3">
+          <div>
+            <p className="text-[11px] text-text-light">المعدل التراكمي الرسمي الحالي</p>
+            <p className="text-[20px] font-black">
+              {hours.official_cgpa == null ? 'لا يوجد معدل رسمي' : Number(hours.official_cgpa).toFixed(2)}
+            </p>
+          </div>
           <div>
             <p className="text-[11px] text-text-light">{approvedHours ? 'الساعات قبل الاعتماد' : 'الساعات المسجلة حالياً'}</p>
             <p className="text-[20px] font-black">{approvedHours ? snapshot.registered_hours_before_approval : hours.registered_hours}</p>
@@ -178,6 +185,12 @@ export default function DeanRegistrationRequestDetail() {
             <p className="text-[11px] text-text-light">المتبقي بعد الاعتماد</p>
             <p className="text-[20px] font-black">{approvedHours ? snapshot.remaining_hours_after_approval : hours.remaining_after_approval}</p>
           </div>
+          </div>
+          {hours.below_recommended_minimum === true ? (
+            <p className="mt-4 rounded-[10px] border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] font-semibold text-amber-900">
+              ساعات الطلب أقل من العبء الدراسي المعتاد ({hours.recommended_minimum_hours ?? 12} ساعة). هذا تنبيه إرشادي ولا يمنع الاعتماد.
+            </p>
+          ) : null}
         </section>
       ) : null}
 
@@ -199,6 +212,15 @@ export default function DeanRegistrationRequestDetail() {
                 <p className="text-[12px] text-text-light mt-1">
                   {item.course_code} — {item.credit_hours} ساعات
                 </p>
+                {(item.missing_prerequisites ?? []).length > 0 ? (
+                  <ul className="mt-2 space-y-1 text-[12px] text-amber-900">
+                    {(item.missing_prerequisites ?? []).map(prerequisite => (
+                      <li key={prerequisite.course_id}>
+                        {[prerequisite.course_code, prerequisite.course_name].filter(Boolean).join(' — ')}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
               <span className={`text-[11px] font-bold px-2 py-1 rounded-full ${
                 item.eligibility_status === 'eligible' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-900'

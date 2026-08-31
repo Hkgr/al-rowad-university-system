@@ -85,7 +85,8 @@ class AdvisorySemesterOfferingContractTest extends TestCase
 
         self::assertStringContainsString('already_registered', $annotate);
         self::assertStringContainsString('missing_prerequisites', $annotate);
-        self::assertStringContainsString('no_available_seats', $annotate);
+        self::assertStringContainsString('course_already_passed', $annotate);
+        self::assertStringNotContainsString('no_available_seats', $annotate);
         self::assertStringContainsString('credit_limit_exceeded', $annotate);
         self::assertStringContainsString('evaluateRegistrationCandidate', $annotate);
         self::assertStringNotContainsString('recommended_semester', $annotate);

@@ -205,8 +205,9 @@ class CourseOfferingContextService
     }
 
     /**
-     * Offering-first lock, then current registered rows. Compatible with
-     * RegistrationService seat mutation. Client never supplies available_seats.
+     * Offering-first lock, then current registered rows. This maintains the
+     * legacy administrative capacity snapshot only; registration eligibility
+     * and lifecycle transitions neither consume nor mutate available_seats.
      *
      * occupied = current StudentCourseRegistration rows with status_code registered.
      * available_seats = new_capacity - occupied.
