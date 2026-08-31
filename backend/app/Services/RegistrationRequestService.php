@@ -19,7 +19,10 @@ use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use App\Support\AcademicQueuePagination;
+use App\Support\CourseRegistrationDeadlineResult;
+use App\Support\CourseRegistrationPhase;
 use App\Support\CourseRequirementClassification;
+use Carbon\CarbonImmutable;
 
 class RegistrationRequestService
 {
@@ -48,7 +51,7 @@ class RegistrationRequestService
                 $semesterId = (int) $semester->semester_id;
 
                 return [
-                    $semesterId => $this->registration->courseRegistrationWindow(
+                    $semesterId => $this->registration->courseRegistrationDeadlines(
                         (int) $year->academic_year_id,
                         $semesterId,
                     ),
@@ -57,7 +60,7 @@ class RegistrationRequestService
         $liveOpenSemesters = $openSemesters
             ->filter(fn ($semester): bool => $calendarWindowBySemesterId
                 ->get((int) $semester->semester_id)
-                ?->isOpen() === true)
+                ?->isStudentOpen() === true)
             ->values();
 
         $yearRequests = $year === null
@@ -69,18 +72,26 @@ class RegistrationRequestService
         $semester = $this->resolveWorkspaceSemester($selectableSemesters, $liveOpenSemesters, $yearRequests, $semesterId);
         $registrationOpen = $semester !== null
             && $liveOpenSemesters->contains(fn ($open) => (int) $open->semester_id === (int) $semester->semester_id);
-        $requestItemRemovalOpen = $semester !== null
-            && $openSemesters->contains(fn ($open) => (int) $open->semester_id === (int) $semester->semester_id);
+        $requestItemRemovalOpen = $registrationOpen;
 
         $request = null;
         $available = collect();
         $summary = null;
         $hours = null;
+        $registrationCalendar = null;
 
         if ($year !== null && $semester !== null) {
+            $registrationCalendar = $calendarWindowBySemesterId->get((int) $semester->semester_id)
+                ?? $this->registration->courseRegistrationDeadlines(
+                    (int) $year->academic_year_id,
+                    (int) $semester->semester_id,
+                );
             $request = $yearRequests->first(
                 fn (StudentRegistrationRequest $candidate): bool => (int) $candidate->semester_id === (int) $semester->semester_id
             );
+            if ($request !== null) {
+                $request = $this->reconcileRequestExpiration($request);
+            }
             $hours = $this->hoursFor($student, (int) $year->academic_year_id, (int) $semester->semester_id, $request);
             if ($registrationOpen) {
                 $available = $this->registration->getSelfRegistrationOfferings(
@@ -107,6 +118,7 @@ class RegistrationRequestService
         return [
             'registration_open' => $registrationOpen,
             'request_item_removal_open' => $requestItemRemovalOpen,
+            'registration_calendar' => $registrationCalendar?->toArray(),
             'academic_year' => $year,
             'semester' => $semester,
             'semesters' => $selectableSemesters,
@@ -137,7 +149,7 @@ class RegistrationRequestService
         }
 
         return DB::transaction(function () use ($student, $offering, $actor, $year): StudentRegistrationRequest {
-            $this->registration->assertCourseRegistrationWindowOpen(
+            $this->registration->assertCourseRegistrationStudentWindowOpen(
                 (int) $offering->academic_year_id,
                 (int) $offering->semester_id,
             );
@@ -220,6 +232,10 @@ class RegistrationRequestService
 
             $this->assertStudentOwns($student, $request);
             $this->assertEditable($request);
+            $this->registration->assertCourseRegistrationStudentWindowOpen(
+                (int) $request->academic_year_id,
+                (int) $request->semester_id,
+            );
             $this->assertSemesterOpenForEdits($student, (int) $request->academic_year_id, (int) $request->semester_id);
 
             $offeringId = (int) $item->course_offering_id;
@@ -245,7 +261,7 @@ class RegistrationRequestService
         $normalized = $this->normalizeStudentNotes($notes);
 
         return DB::transaction(function () use ($student, $normalized, $actor, $year, $semesterId): StudentRegistrationRequest {
-            $this->registration->assertCourseRegistrationWindowOpen(
+            $this->registration->assertCourseRegistrationStudentWindowOpen(
                 (int) $year->academic_year_id,
                 $semesterId,
             );
@@ -272,7 +288,7 @@ class RegistrationRequestService
         $semesterId = $this->resolveOpenSemesterId($student, (int) $year->academic_year_id, $semesterId);
 
         return DB::transaction(function () use ($student, $actor, $year, $semesterId): StudentRegistrationRequest {
-            $this->registration->assertCourseRegistrationWindowOpen(
+            $this->registration->assertCourseRegistrationStudentWindowOpen(
                 (int) $year->academic_year_id,
                 $semesterId,
             );
@@ -326,6 +342,7 @@ class RegistrationRequestService
     public function advisorIndex(User $user, ?string $status = null, ?int $perPage = null): array
     {
         $this->assertCanViewRequests($user);
+        $this->reconcileScopedExpirations($user);
 
         $query = $this->scopedRequestsQuery($user)
             ->with([
@@ -340,6 +357,7 @@ class RegistrationRequestService
             'submitted' => (clone $query)->where('status', StudentRegistrationRequest::STATUS_SUBMITTED)->count(),
             'returned' => (clone $query)->where('status', StudentRegistrationRequest::STATUS_RETURNED)->count(),
             'approved' => (clone $query)->where('status', StudentRegistrationRequest::STATUS_APPROVED)->count(),
+            'expired' => (clone $query)->where('status', StudentRegistrationRequest::STATUS_EXPIRED)->count(),
         ];
 
         $status = $status ?: StudentRegistrationRequest::STATUS_SUBMITTED;
@@ -347,6 +365,7 @@ class RegistrationRequestService
             StudentRegistrationRequest::STATUS_SUBMITTED,
             StudentRegistrationRequest::STATUS_RETURNED,
             StudentRegistrationRequest::STATUS_APPROVED,
+            StudentRegistrationRequest::STATUS_EXPIRED,
         ], true)) {
             $status = StudentRegistrationRequest::STATUS_SUBMITTED;
         }
@@ -356,12 +375,20 @@ class RegistrationRequestService
             ->orderByDesc('last_submitted_at')
             ->orderByDesc('student_registration_request_id')
             ->paginate(AcademicQueuePagination::perPage($perPage));
+        $deadlineByTerm = $paginator->getCollection()
+            ->map(fn (StudentRegistrationRequest $request): string => $request->academic_year_id.':'.$request->semester_id)
+            ->unique()
+            ->mapWithKeys(function (string $term): array {
+                [$yearId, $semesterId] = array_map('intval', explode(':', $term, 2));
+
+                return [$term => $this->registration->courseRegistrationDeadlines($yearId, $semesterId)];
+            });
 
         return [
             'summary' => $counts,
             'status' => $status,
             'requests' => $paginator->getCollection()
-                ->map(fn (StudentRegistrationRequest $request) => $this->presentAdvisorListItem($request))
+                ->map(fn (StudentRegistrationRequest $request) => $this->presentAdvisorListItem($request, $deadlineByTerm))
                 ->values()
                 ->all(),
             'meta' => AcademicQueuePagination::meta($paginator),
@@ -372,9 +399,8 @@ class RegistrationRequestService
     {
         $this->assertCanViewRequests($user);
         $this->assertCanAccessRequest($user, $request);
+        $request = $this->reconcileRequestExpiration($request);
         $this->assertAdvisorVisible($request);
-
-        $request = $this->freshRequest($request);
 
         return $this->presentRequest($request, $request->student, includeActor: true, includeEligibility: true);
     }
@@ -391,7 +417,7 @@ class RegistrationRequestService
             ]);
         }
 
-        return DB::transaction(function () use ($user, $request, $normalized): array {
+        $outcome = DB::transaction(function () use ($user, $request, $normalized): array {
             $locked = StudentRegistrationRequest::query()
                 ->lockForUpdate()
                 ->findOrFail($request->student_registration_request_id);
@@ -399,12 +425,23 @@ class RegistrationRequestService
             $this->assertCanAccessRequest($user, $locked);
             $this->assertAdvisorVisible($locked);
 
+            $now = CarbonImmutable::now('UTC');
+            $deadline = $this->registration->courseRegistrationDeadlines(
+                (int) $locked->academic_year_id,
+                (int) $locked->semester_id,
+                $now,
+            );
+            $this->assertDeadlineConfigured($deadline);
+            if ($this->expireLockedIfDeadlineClosed($locked, $deadline)) {
+                return ['__expired' => true];
+            }
+            $this->assertAdvisorDecisionAllowed($locked, $deadline);
+
             if (! $locked->isSubmitted()) {
                 throw new ConflictHttpException('Only a submitted registration request can be returned for modification.');
             }
 
             $from = $locked->status;
-            $now = now();
             $locked->update([
                 'status' => StudentRegistrationRequest::STATUS_RETURNED,
                 'advisor_user_id' => $user->user_id,
@@ -423,6 +460,12 @@ class RegistrationRequestService
 
             return $this->presentRequest($this->freshRequest($locked), $locked->student, includeActor: true, includeEligibility: true);
         });
+
+        if (($outcome['__expired'] ?? false) === true) {
+            throw RegistrationRequestException::advisorDeadlineClosed();
+        }
+
+        return $outcome;
     }
 
     public function approve(User $user, StudentRegistrationRequest $request): array
@@ -434,7 +477,7 @@ class RegistrationRequestService
 
         $currentOfferingId = 0;
         try {
-            return DB::transaction(function () use ($user, $request, &$currentOfferingId): array {
+            $outcome = DB::transaction(function () use ($user, $request, &$currentOfferingId): array {
                 $locked = StudentRegistrationRequest::query()
                     ->lockForUpdate()
                     ->findOrFail($request->student_registration_request_id);
@@ -450,6 +493,18 @@ class RegistrationRequestService
                         includeEligibility: true
                     );
                 }
+
+                $now = CarbonImmutable::now('UTC');
+                $deadline = $this->registration->courseRegistrationDeadlines(
+                    (int) $locked->academic_year_id,
+                    (int) $locked->semester_id,
+                    $now,
+                );
+                $this->assertDeadlineConfigured($deadline);
+                if ($this->expireLockedIfDeadlineClosed($locked, $deadline)) {
+                    return ['__expired' => true];
+                }
+                $this->assertAdvisorDecisionAllowed($locked, $deadline);
 
                 if (! $locked->isSubmitted()) {
                     throw new ConflictHttpException('Only a submitted registration request can be approved.');
@@ -520,18 +575,14 @@ class RegistrationRequestService
                     'remaining_hours_after_approval' => max($maxAllowedHours - $projectedHours, 0),
                 ];
 
-                $now = now();
                 $registrations = [];
                 foreach ($locked->items->sortBy('student_registration_request_item_id') as $item) {
                     $currentOfferingId = (int) $item->course_offering_id;
-                    $result = $this->registration->registerStudentWithinTransaction(
-                        [
-                            'student_id' => $student->student_id,
-                            'course_offering_id' => $item->course_offering_id,
-                            'advisor_user_id' => $user->user_id,
-                            'registration_date' => $now->toDateString(),
-                        ],
-                        (int) $user->user_id
+                    $result = $this->registration->materializeAdvisorApprovedRequestItemWithinTransaction(
+                        $locked,
+                        $item,
+                        (int) $user->user_id,
+                        $now,
                     );
                     $registration = $result['registration'];
                     $item->update([
@@ -564,6 +615,11 @@ class RegistrationRequestService
                     registrations: $registrations
                 );
             });
+            if (($outcome['__expired'] ?? false) === true) {
+                throw RegistrationRequestException::advisorDeadlineClosed();
+            }
+
+            return $outcome;
         } catch (RegistrationException $exception) {
             $offeringId = $this->offeringIdFromRegistrationException($exception, $currentOfferingId);
             $failures = $offeringId > 0
@@ -757,6 +813,107 @@ class RegistrationRequestService
         }
     }
 
+    private function reconcileScopedExpirations(User $user): void
+    {
+        StudentRegistrationRequest::query()
+            ->whereIn('status', StudentRegistrationRequest::OPEN_STATUSES)
+            ->whereHas(
+                'student',
+                fn (Builder $student) => $this->dataScopes->scopeStaffStudents($student, $user)
+            )
+            ->chunkById(100, function (Collection $requests): void {
+                foreach ($requests as $request) {
+                    $this->reconcileRequestExpiration($request);
+                }
+            }, 'student_registration_request_id');
+    }
+
+    private function reconcileRequestExpiration(StudentRegistrationRequest $request): StudentRegistrationRequest
+    {
+        if ($request->isApproved() || $request->isExpired()) {
+            return $this->freshRequest($request);
+        }
+
+        return DB::transaction(function () use ($request): StudentRegistrationRequest {
+            $locked = StudentRegistrationRequest::query()
+                ->lockForUpdate()
+                ->findOrFail($request->student_registration_request_id);
+            if ($locked->isApproved() || $locked->isExpired()) {
+                return $this->freshRequest($locked);
+            }
+
+            $deadline = $this->registration->courseRegistrationDeadlines(
+                (int) $locked->academic_year_id,
+                (int) $locked->semester_id,
+                CarbonImmutable::now('UTC'),
+            );
+            if ($deadline->phase !== CourseRegistrationPhase::CONFIGURATION_ERROR) {
+                $this->expireLockedIfDeadlineClosed($locked, $deadline);
+            }
+
+            return $this->freshRequest($locked);
+        });
+    }
+
+    private function assertDeadlineConfigured(CourseRegistrationDeadlineResult $deadline): void
+    {
+        if ($deadline->phase === CourseRegistrationPhase::CONFIGURATION_ERROR) {
+            throw RegistrationRequestException::calendarConfigurationInvalid($deadline->reasonCode);
+        }
+    }
+
+    private function assertAdvisorDecisionAllowed(
+        StudentRegistrationRequest $request,
+        CourseRegistrationDeadlineResult $deadline,
+    ): void {
+        if (! $deadline->isAdvisorDecisionOpen()) {
+            throw RegistrationRequestException::advisorDeadlineClosed();
+        }
+
+        $submittedAt = $request->last_submitted_at;
+        if ($submittedAt === null
+            || $deadline->startsAt === null
+            || $deadline->studentRegistrationEndsAt === null
+            || CarbonImmutable::instance($submittedAt)->utc()->lt($deadline->startsAt)
+            || CarbonImmutable::instance($submittedAt)->utc()->gt($deadline->studentRegistrationEndsAt)) {
+            throw RegistrationRequestException::submissionOutsideStudentDeadline();
+        }
+    }
+
+    private function expireLockedIfDeadlineClosed(
+        StudentRegistrationRequest $request,
+        CourseRegistrationDeadlineResult $deadline,
+    ): bool {
+        if ($deadline->phase !== CourseRegistrationPhase::CLOSED) {
+            return false;
+        }
+        if ($request->isApproved()) {
+            return false;
+        }
+        if ($request->isExpired()) {
+            return true;
+        }
+        if (! in_array($request->status, StudentRegistrationRequest::OPEN_STATUSES, true)) {
+            return false;
+        }
+
+        $from = $request->status;
+        $request->update([
+            'status' => StudentRegistrationRequest::STATUS_EXPIRED,
+            'expired_at' => $deadline->evaluatedAt,
+        ]);
+        $this->writeEvent(
+            $request,
+            StudentRegistrationRequestEvent::TYPE_EXPIRED_DEADLINE,
+            null,
+            $from,
+            StudentRegistrationRequest::STATUS_EXPIRED,
+            'انتهت مهلة اعتماد المرشد الأكاديمي دون اعتماد الطلب.',
+        );
+
+        return true;
+    }
+
     private function assertSemesterOpenForSubmit(Student $student, int $academicYearId, int $semesterId): void
     {
         $openSemesters = $this->registration->selfRegistrationOpenSemesters($student, $academicYearId);
@@ -944,6 +1101,7 @@ class RegistrationRequestService
                 StudentRegistrationRequest::STATUS_SUBMITTED,
                 StudentRegistrationRequest::STATUS_RETURNED,
                 StudentRegistrationRequest::STATUS_APPROVED,
+                StudentRegistrationRequest::STATUS_EXPIRED,
             ])
             ->whereHas(
                 'student',
@@ -1178,7 +1336,7 @@ class RegistrationRequestService
     private function writeEvent(
         StudentRegistrationRequest $request,
         string $type,
-        User $actor,
+        ?User $actor,
         ?string $from,
         ?string $to,
         ?string $notes = null
@@ -1186,7 +1344,7 @@ class RegistrationRequestService
         StudentRegistrationRequestEvent::query()->create([
             'student_registration_request_id' => $request->student_registration_request_id,
             'event_type' => $type,
-            'actor_user_id' => $actor->user_id,
+            'actor_user_id' => $actor?->user_id,
             'from_status' => $from,
             'to_status' => $to,
             'submission_version' => $request->submission_version,
@@ -1243,6 +1401,10 @@ class RegistrationRequestService
         array $registrations = []
     ): array {
         $student ??= $request->student;
+        $registrationCalendar = $this->registration->courseRegistrationDeadlines(
+            (int) $request->academic_year_id,
+            (int) $request->semester_id,
+        );
         $hours = $this->hoursFor(
             $student,
             (int) $request->academic_year_id,
@@ -1313,6 +1475,8 @@ class RegistrationRequestService
             'last_submitted_at' => optional($request->last_submitted_at)?->toDateTimeString(),
             'reviewed_at' => optional($request->reviewed_at)?->toDateTimeString(),
             'approved_at' => optional($request->approved_at)?->toDateTimeString(),
+            'expired_at' => optional($request->expired_at)?->toDateTimeString(),
+            'registration_calendar' => $registrationCalendar->toArray(),
             'student' => $this->compactStudent($request->student),
             'academic_year' => $this->compactYear($request->academicYear),
             'semester' => $this->compactSemester($request->semester),
@@ -1330,7 +1494,7 @@ class RegistrationRequestService
         ];
     }
 
-    private function presentAdvisorListItem(StudentRegistrationRequest $request): array
+    private function presentAdvisorListItem(StudentRegistrationRequest $request, Collection $deadlineByTerm): array
     {
         $student = $request->student;
         $hours = $this->hoursFor(
@@ -1339,12 +1503,19 @@ class RegistrationRequestService
             (int) $request->semester_id,
             $request
         );
+        $registrationCalendar = $deadlineByTerm->get($request->academic_year_id.':'.$request->semester_id)
+            ?? $this->registration->courseRegistrationDeadlines(
+                (int) $request->academic_year_id,
+                (int) $request->semester_id,
+            );
 
         return [
             'student_registration_request_id' => $request->student_registration_request_id,
             'status' => $request->status,
             'submission_version' => (int) $request->submission_version,
             'last_submitted_at' => optional($request->last_submitted_at)?->toDateTimeString(),
+            'expired_at' => optional($request->expired_at)?->toDateTimeString(),
+            'registration_calendar' => $registrationCalendar->toArray(),
             'student' => $this->compactStudent($student),
             'academic_year' => $this->compactYear($request->academicYear),
             'semester' => $this->compactSemester($request->semester),

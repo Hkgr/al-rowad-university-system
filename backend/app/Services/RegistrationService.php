@@ -12,10 +12,16 @@ use App\Models\Semester;
 use App\Models\Student;
 use App\Models\StudentCourseRegistration;
 use App\Models\StudentCreditLimit;
+use App\Models\StudentRegistrationRequest;
+use App\Models\StudentRegistrationRequestItem;
 use App\Support\AcademicCalendarPolicyResult;
-use App\Support\AcademicCalendarPolicyStatus;
 use App\Support\CourseRequirementClassification;
+use App\Support\CourseRegistrationDeadlineResult;
+use App\Support\CourseRegistrationPhase;
+use App\Support\RegistrationMaterializationContext;
 use App\Support\SupplementaryExamTargetGuard;
+use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
@@ -66,7 +72,94 @@ class RegistrationService
     public function registerStudentWithinTransaction(array $data, ?int $authenticatedUserId = null): array
     {
         try {
-            return $this->performRegisterStudent($data, $authenticatedUserId);
+            return $this->performRegisterStudent(
+                $data,
+                $authenticatedUserId,
+                RegistrationMaterializationContext::STUDENT_WINDOW,
+            );
+        } catch (QueryException $exception) {
+            if ($this->isDuplicateRegistrationQueryException($exception)) {
+                $this->throwDuplicateRegistrationException();
+            }
+
+            throw $exception;
+        }
+    }
+
+    /** Trusted boundary bound to a current submitted request and its item. */
+    public function materializeAdvisorApprovedRequestItemWithinTransaction(
+        StudentRegistrationRequest $request,
+        StudentRegistrationRequestItem $item,
+        int $advisorUserId,
+        ?CarbonInterface $at = null,
+    ): array {
+        if (DB::transactionLevel() < 1 || ! $request->exists || ! $item->exists) {
+            throw RegistrationException::liveWorkflowRequired();
+        }
+
+        $lockedRequest = StudentRegistrationRequest::query()
+            ->whereKey($request->getKey())
+            ->lockForUpdate()
+            ->first();
+        $lockedItem = StudentRegistrationRequestItem::query()
+            ->whereKey($item->getKey())
+            ->lockForUpdate()
+            ->first();
+
+        if ($lockedRequest === null
+            || $lockedItem === null
+            || ! $lockedRequest->isSubmitted()
+            || $lockedRequest->expired_at !== null
+            || $lockedRequest->approved_at !== null
+            || (int) $lockedItem->student_registration_request_id !== (int) $lockedRequest->getKey()
+            || $lockedItem->student_course_registration_id !== null
+        ) {
+            throw RegistrationException::liveWorkflowRequired();
+        }
+
+        $offering = CourseOffering::query()
+            ->whereKey($lockedItem->course_offering_id)
+            ->lockForUpdate()
+            ->first();
+        if ($offering === null
+            || (int) $offering->academic_year_id !== (int) $lockedRequest->academic_year_id
+            || (int) $offering->semester_id !== (int) $lockedRequest->semester_id
+        ) {
+            throw RegistrationException::liveWorkflowRequired();
+        }
+
+        $evaluatedAt = $at === null
+            ? CarbonImmutable::now('UTC')
+            : CarbonImmutable::instance($at)->utc();
+        $deadline = $this->courseRegistrationDeadlines(
+            (int) $lockedRequest->academic_year_id,
+            (int) $lockedRequest->semester_id,
+            $evaluatedAt,
+        );
+        if ($deadline->phase === CourseRegistrationPhase::CONFIGURATION_ERROR) {
+            $this->throwDeadlineConfigurationException($deadline);
+        }
+        if (! $deadline->isAdvisorDecisionOpen()
+            || $lockedRequest->last_submitted_at === null
+            || $deadline->startsAt === null
+            || $deadline->studentRegistrationEndsAt === null
+            || CarbonImmutable::instance($lockedRequest->last_submitted_at)->utc()->lt($deadline->startsAt)
+            || CarbonImmutable::instance($lockedRequest->last_submitted_at)->utc()->gt($deadline->studentRegistrationEndsAt)
+        ) {
+            throw RegistrationException::courseRegistrationWindowClosed();
+        }
+
+        try {
+            return $this->performRegisterStudent(
+                [
+                    'student_id' => (int) $lockedRequest->student_id,
+                    'course_offering_id' => (int) $lockedItem->course_offering_id,
+                    'advisor_user_id' => $advisorUserId,
+                    'registration_date' => $evaluatedAt->toDateString(),
+                ],
+                $advisorUserId,
+                RegistrationMaterializationContext::ADVISOR_APPROVAL,
+            );
         } catch (QueryException $exception) {
             if ($this->isDuplicateRegistrationQueryException($exception)) {
                 $this->throwDuplicateRegistrationException();
@@ -95,21 +188,55 @@ class RegistrationService
         );
     }
 
-    public function assertCourseRegistrationWindowOpen(int $academicYearId, int $semesterId): void
-    {
-        $result = $this->courseRegistrationWindow($academicYearId, $semesterId);
-
-        match ($result->status) {
-            AcademicCalendarPolicyStatus::OPEN => null,
-            AcademicCalendarPolicyStatus::CLOSED => throw RegistrationException::courseRegistrationWindowClosed(),
-            AcademicCalendarPolicyStatus::INVALID_EVENT_TYPE,
-            AcademicCalendarPolicyStatus::CALENDAR_CONFIGURATION_ERROR => throw RegistrationException::academicCalendarConfigurationInvalid(),
-            AcademicCalendarPolicyStatus::INVALID_ACADEMIC_YEAR => throw RegistrationException::academicCalendarYearContextInvalid(),
-            AcademicCalendarPolicyStatus::INVALID_SEMESTER_CONTEXT => throw RegistrationException::academicCalendarSemesterContextInvalid(),
-        };
+    public function courseRegistrationDeadlines(
+        int $academicYearId,
+        int $semesterId,
+        ?CarbonInterface $at = null,
+    ): CourseRegistrationDeadlineResult {
+        return $this->academicCalendarPolicy->courseRegistrationDeadlines(
+            $academicYearId,
+            $semesterId,
+            $at,
+        );
     }
 
-    private function performRegisterStudent(array $data, ?int $authenticatedUserId): array
+    public function assertCourseRegistrationWindowOpen(int $academicYearId, int $semesterId): void
+    {
+        $this->assertCourseRegistrationStudentWindowOpen($academicYearId, $semesterId);
+    }
+
+    public function assertCourseRegistrationStudentWindowOpen(
+        int $academicYearId,
+        int $semesterId,
+        ?CarbonInterface $at = null,
+    ): void {
+        $result = $this->courseRegistrationDeadlines($academicYearId, $semesterId, $at);
+        if ($result->phase === CourseRegistrationPhase::STUDENT_OPEN) {
+            return;
+        }
+        if ($result->phase !== CourseRegistrationPhase::CONFIGURATION_ERROR) {
+            throw RegistrationException::courseRegistrationWindowClosed();
+        }
+        $this->throwDeadlineConfigurationException($result);
+    }
+
+    private function throwDeadlineConfigurationException(CourseRegistrationDeadlineResult $result): never
+    {
+        if (in_array($result->reasonCode, ['unknown_academic_year', 'academic_year_not_operational'], true)) {
+            throw RegistrationException::academicCalendarYearContextInvalid();
+        }
+        if (in_array($result->reasonCode, ['unknown_semester', 'semester_inactive'], true)) {
+            throw RegistrationException::academicCalendarSemesterContextInvalid();
+        }
+
+        throw RegistrationException::academicCalendarConfigurationInvalid();
+    }
+
+    private function performRegisterStudent(
+        array $data,
+        ?int $authenticatedUserId,
+        RegistrationMaterializationContext $context,
+    ): array
     {
         $student = Student::query()
             ->whereKey($data['student_id'])
@@ -204,12 +331,16 @@ class RegistrationService
             throw new ModelNotFoundException('Registration status "registered" was not found.');
         }
 
-        // This is the authoritative write-time gate. Preparation checks are
-        // never reused: each create/reactivation evaluates the locked offering.
-        $this->assertCourseRegistrationWindowOpen(
-            (int) $courseOffering->academic_year_id,
-            (int) $courseOffering->semester_id,
-        );
+        // Direct/student materialization always receives a fresh evaluation
+        // after locking the authoritative Offering. The advisor entry point
+        // independently re-locks and validates its submitted request proof and
+        // deadlines before it can reach this shared persistence core.
+        if ($context === RegistrationMaterializationContext::STUDENT_WINDOW) {
+            $this->assertCourseRegistrationStudentWindowOpen(
+                (int) $courseOffering->academic_year_id,
+                (int) $courseOffering->semester_id,
+            );
+        }
 
         $registrationDate = $data['registration_date'] ?? now()->toDateString();
         $reactivatable = $this->findReactivatableRegistration(

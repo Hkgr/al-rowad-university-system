@@ -6,6 +6,7 @@ import {
 import { apiRequest } from '../../../services/apiClient'
 import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 import StudentConfirmDialog from '../components/StudentConfirmDialog'
+import { formatUniversityDateTime, studentRegistrationNotice } from '../../registration-requests/registrationDeadlinePresentation'
 
 const REASON_LABELS = {
   already_registered: { ar: 'مسجل مسبقاً', tone: 'registered' },
@@ -34,6 +35,7 @@ const STATUS_LABELS = {
   submitted: { ar: 'بانتظار مراجعة المرشد الأكاديمي', className: 'bg-amber-100 text-amber-900 border-amber-200' },
   returned: { ar: 'أعيد للتعديل', className: 'bg-orange-100 text-orange-800 border-orange-200' },
   approved: { ar: 'تم اعتماد طلب التسجيل', className: 'bg-green-100 text-green-800 border-green-200' },
+  expired: { ar: 'انتهت المهلة دون اعتماد', className: 'bg-red-100 text-red-800 border-red-200' },
 }
 
 function knownReasonLabel(code) {
@@ -353,6 +355,7 @@ export default function StudentRegistration() {
   const selectedSemesterId = semesterId || String(payload?.semester?.semester_id || '')
   const registrationOpen = payload?.registration_open === true
   const requestItemRemovalOpen = payload?.request_item_removal_open === true
+  const registrationCalendar = payload?.registration_calendar ?? null
   const termReady = Boolean(academicYear?.academic_year_id && selectedSemesterId)
   const available = payload?.available_courses ?? []
   const workspaceSemesterId = payload?.semester?.semester_id ?? selectedSemesterId
@@ -372,7 +375,7 @@ export default function StudentRegistration() {
     && termReady
     && Boolean(request)
     && (status === 'draft' || status === 'returned')
-  const readOnly = status === 'submitted' || status === 'approved'
+  const readOnly = status === 'submitted' || status === 'approved' || status === 'expired'
   const busy = loading || refreshing
   const statusMeta = STATUS_LABELS[status] ?? STATUS_LABELS.draft
 
@@ -598,6 +601,14 @@ export default function StudentRegistration() {
         <p className="px-4 py-2.5 text-[12.5px] text-red-600 bg-red-50 border border-red-200 rounded-[10px]">⚠ {error}</p>
       ) : null}
 
+      {registrationCalendar ? (
+        <section className="rounded-[14px] border border-primary/15 bg-white px-5 py-4 text-[13px] text-text-dark">
+          <p className="font-black">{studentRegistrationNotice(registrationCalendar, request?.status)}</p>
+          {registrationCalendar.student_registration_ends_at ? <p className="mt-1 text-text-light">نهاية تسجيل الطلاب: {formatUniversityDateTime(registrationCalendar.student_registration_ends_at)}</p> : null}
+          {registrationCalendar.advisor_approval_ends_at ? <p className="mt-1 text-text-light">نهاية اعتماد المرشد: {formatUniversityDateTime(registrationCalendar.advisor_approval_ends_at)}</p> : null}
+        </section>
+      ) : null}
+
       {hours ? <HoursPanel hours={hours} requestStatus={request ? status : null} /> : null}
 
       <p className="text-[12.5px] text-text-gray bg-primary/5 border border-primary/12 rounded-[12px] px-4 py-3">
@@ -630,6 +641,12 @@ export default function StudentRegistration() {
               <p>الحد الأقصى وقت الاعتماد: {hours.approved_snapshot.max_allowed_hours_at_approval}</p>
             </>
           ) : null}
+        </section>
+      ) : null}
+
+      {status === 'expired' ? (
+        <section className="border border-red-200 bg-red-50 rounded-[16px] px-5 py-4 text-[13px] font-semibold text-red-900">
+          انتهت مهلة اعتماد المرشد الأكاديمي دون اعتماد الطلب. بقي الطلب وسجله متاحين للعرض ولم يُنشأ تسجيل رسمي بسببه.
         </section>
       ) : null}
 

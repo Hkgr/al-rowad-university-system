@@ -18,7 +18,7 @@ class AcademicAdvisingRegistrationRequestController extends Controller
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'status' => ['sometimes', 'string', 'in:submitted,returned,approved'],
+            'status' => ['sometimes', 'string', 'in:submitted,returned,approved,expired'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:'.AcademicQueuePagination::MAX_PER_PAGE],
         ]);
 

@@ -4,12 +4,14 @@ import { FaSpinner } from 'react-icons/fa'
 import DataTable from '../../../components/table/DataTable'
 import FilterBar from '../../../components/table/FilterBar'
 import { apiRequest } from '../../../services/apiClient'
+import { formatUniversityDateTime, registrationPhaseLabel } from '../../registration-requests/registrationDeadlinePresentation'
 
 const STATUS_LABELS = {
   submitted: 'بانتظار المراجعة',
   returned: 'أعيد للتعديل',
   approved: 'معتمد',
   draft: 'مسودة',
+  expired: 'انتهت المهلة دون اعتماد',
 }
 
 function formatDateTime(value) {
@@ -67,7 +69,7 @@ export default function DeanRegistrationRequests() {
     })
   }, [payload, search])
 
-  const summary = payload?.summary ?? { submitted: 0, returned: 0, approved: 0 }
+  const summary = payload?.summary ?? { submitted: 0, returned: 0, approved: 0, expired: 0 }
 
   return (
     <div className="space-y-5" dir="rtl">
@@ -78,11 +80,12 @@ export default function DeanRegistrationRequests() {
         </p>
       </header>
 
-      <div className="grid grid-cols-3 max-[800px]:grid-cols-1 gap-3">
+      <div className="grid grid-cols-4 max-[1000px]:grid-cols-2 max-[600px]:grid-cols-1 gap-3">
         {[
           { key: 'submitted', label: 'طلبات بانتظار المراجعة', value: summary.submitted },
           { key: 'returned', label: 'المعادة للتعديل', value: summary.returned },
           { key: 'approved', label: 'المعتمدة', value: summary.approved },
+          { key: 'expired', label: 'انتهت دون اعتماد', value: summary.expired },
         ].map(card => (
           <button
             key={card.key}
@@ -124,6 +127,8 @@ export default function DeanRegistrationRequests() {
             { key: 'projected', header: 'الإجمالي المتوقع', render: row => row.hours?.approved_snapshot?.projected_hours_at_approval ?? row.hours?.projected_hours ?? 0 },
             { key: 'max', header: 'الحد الأقصى', render: row => row.hours?.approved_snapshot?.max_allowed_hours_at_approval ?? row.hours?.max_allowed_hours ?? 0 },
             { key: 'submitted_at', header: 'تاريخ الإرسال', render: row => formatDateTime(row.last_submitted_at) },
+            { key: 'phase', header: 'مرحلة التسجيل', render: row => registrationPhaseLabel(row.registration_calendar) },
+            { key: 'advisor_deadline', header: 'مهلة المرشد', render: row => formatUniversityDateTime(row.registration_calendar?.advisor_approval_ends_at) },
             { key: 'status', header: 'الحالة', render: row => STATUS_LABELS[row.status] || row.status },
             {
               key: 'open',

@@ -25,6 +25,18 @@ final class AcademicCalendar
             }
         }
 
-        return Schema::hasColumns('academic_years', ['calendar_lifecycle_status', 'calendar_active_slot']);
+        return Schema::hasColumns('academic_years', ['calendar_lifecycle_status', 'calendar_active_slot'])
+            && self::registrationDeadlineSchemaReady();
+    }
+
+    public static function registrationDeadlineSchemaReady(): bool
+    {
+        return Schema::hasTable('academic_calendar_event_versions')
+            && Schema::hasTable('student_registration_requests')
+            && Schema::hasColumns('academic_calendar_event_versions', [
+                'student_registration_ends_at',
+                'advisor_approval_ends_at',
+            ])
+            && Schema::hasColumn('student_registration_requests', 'expired_at');
     }
 }

@@ -48,6 +48,8 @@ class ScientificVicePresidentAcademicCalendarController extends Controller
         $data = $request->validate([
             'title' => ['sometimes', 'string', 'max:255'], 'public_notes' => ['sometimes', 'nullable', 'string'],
             'starts_at' => ['sometimes', 'date'], 'ends_at' => ['sometimes', 'date'],
+            'student_registration_ends_at' => ['sometimes', 'nullable', 'date'],
+            'advisor_approval_ends_at' => ['sometimes', 'nullable', 'date'],
             'is_enforcement' => ['sometimes', 'boolean'], 'change_reason' => ['required', 'string', 'max:2000', 'not_regex:/^\s*$/u'],
         ]);
         if (isset($data['starts_at'], $data['ends_at']) && strtotime($data['ends_at']) < strtotime($data['starts_at'])) {
@@ -110,6 +112,8 @@ class ScientificVicePresidentAcademicCalendarController extends Controller
             'public_notes' => ['sometimes', 'nullable', 'string'],
             'starts_at' => [$presence, 'date'],
             'ends_at' => [$presence, 'date', 'after_or_equal:starts_at'],
+            'student_registration_ends_at' => ['sometimes', 'nullable', 'date'],
+            'advisor_approval_ends_at' => ['sometimes', 'nullable', 'date'],
             'is_enforcement' => [$presence, 'boolean'],
             'change_reason' => ['sometimes', 'nullable', 'string', 'max:2000'],
         ];

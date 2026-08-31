@@ -36,16 +36,34 @@ function EventForm({ mode, event, catalog, defaultYearId, busy, onClose, onSubmi
   const replacement = mode === 'replacement' || Boolean(version?.replaces_version_id)
   const showReason = replacement || mode === 'edit'
   const reasonRequired = replacement || Boolean(version?.starts_at && new Date(version.starts_at) <= new Date())
+  const initialEventTypeId = event?.event_type?.academic_calendar_event_type_id || catalog.event_types.find(t => t.is_active)?.academic_calendar_event_type_id || ''
   const [form, setForm] = useState({
     academic_year_id: event?.academic_year?.academic_year_id || defaultYearId || catalog.academic_years.find(y => y.is_current)?.academic_year_id || '',
     semester_id: event?.semester?.semester_id || '',
-    academic_calendar_event_type_id: event?.event_type?.academic_calendar_event_type_id || catalog.event_types.find(t => t.is_active)?.academic_calendar_event_type_id || '',
+    academic_calendar_event_type_id: initialEventTypeId,
     title: version?.title || '', public_notes: version?.public_notes || '', starts_at: toUniversityInput(version?.starts_at), ends_at: toUniversityInput(version?.ends_at),
+    student_registration_ends_at: toUniversityInput(version?.student_registration_ends_at || version?.ends_at),
+    advisor_approval_ends_at: toUniversityInput(version?.advisor_approval_ends_at || version?.ends_at),
     is_enforcement: Boolean(version?.is_enforcement), change_reason: '',
   })
+  const selectedEventType = event?.event_type || catalog.event_types.find(type => String(type.academic_calendar_event_type_id) === String(form.academic_calendar_event_type_id))
+  const isCourseRegistration = selectedEventType?.event_type_code === 'course_registration'
   const set = (key, value) => setForm(current => ({ ...current, [key]: value }))
   const submit = () => {
-    const payload = withOptionalChangeReason({ ...form, semester_id: form.semester_id || null, starts_at: fromUniversityInput(form.starts_at), ends_at: fromUniversityInput(form.ends_at) }, reasonRequired)
+    const payload = withOptionalChangeReason({
+      ...form,
+      semester_id: form.semester_id || null,
+      starts_at: fromUniversityInput(form.starts_at),
+      ends_at: fromUniversityInput(isCourseRegistration ? form.advisor_approval_ends_at : form.ends_at),
+      is_enforcement: isCourseRegistration ? true : form.is_enforcement,
+    }, reasonRequired)
+    if (isCourseRegistration) {
+      payload.student_registration_ends_at = fromUniversityInput(form.student_registration_ends_at)
+      payload.advisor_approval_ends_at = fromUniversityInput(form.advisor_approval_ends_at)
+    } else {
+      delete payload.student_registration_ends_at
+      delete payload.advisor_approval_ends_at
+    }
     if (replacement && mode !== 'replacement') {
       delete payload.academic_year_id
       delete payload.semester_id
@@ -57,14 +75,18 @@ function EventForm({ mode, event, catalog, defaultYearId, busy, onClose, onSubmi
     {replacement && <p className="mb-4 rounded-[10px] border border-blue-200 bg-blue-50 p-3 text-[12.5px] text-blue-800">يبقى الإصدار المنشور ظاهراً حتى نشر البديل. تغيير السنة أو الفصل أو النوع يتطلب إلغاء الحدث وإنشاء حدث جديد.</p>}
     <form onSubmit={e => { e.preventDefault(); submit() }} className="grid gap-4 md:grid-cols-2">
       <label className="text-[13px] font-bold text-text-dark">السنة<select disabled={replacement} required value={form.academic_year_id} onChange={e => set('academic_year_id', e.target.value)} className={fieldClass}>{catalog.academic_years.map(y => <option key={y.academic_year_id} value={y.academic_year_id}>{y.year_name}</option>)}</select></label>
-      <label className="text-[13px] font-bold text-text-dark">الفصل<select disabled={replacement} value={form.semester_id} onChange={e => set('semester_id', e.target.value)} className={fieldClass}><option value="">على مستوى السنة</option>{catalog.semesters.map(s => <option key={s.semester_id} value={s.semester_id}>{s.semester_name}</option>)}</select></label>
+      <label className="text-[13px] font-bold text-text-dark">الفصل<select disabled={replacement} required={isCourseRegistration} value={form.semester_id} onChange={e => set('semester_id', e.target.value)} className={fieldClass}><option value="">على مستوى السنة</option>{catalog.semesters.map(s => <option key={s.semester_id} value={s.semester_id}>{s.semester_name}</option>)}</select></label>
       <label className="text-[13px] font-bold text-text-dark md:col-span-2">نوع الحدث<select disabled={replacement} required value={form.academic_calendar_event_type_id} onChange={e => set('academic_calendar_event_type_id', e.target.value)} className={fieldClass}>{catalog.event_types.filter(t => t.is_active).map(t => <option key={t.academic_calendar_event_type_id} value={t.academic_calendar_event_type_id}>{t.name_ar}</option>)}</select></label>
       <label className="text-[13px] font-bold text-text-dark md:col-span-2">العنوان<input required maxLength={255} value={form.title} onChange={e => set('title', e.target.value)} className={fieldClass} /></label>
-      <label className="text-[13px] font-bold text-text-dark">البداية <span className="font-normal text-text-light">(بتوقيت الجامعة)</span><input required type="datetime-local" value={form.starts_at} onChange={e => set('starts_at', e.target.value)} className={fieldClass} /></label>
-      <label className="text-[13px] font-bold text-text-dark">النهاية <span className="font-normal text-text-light">(بتوقيت الجامعة)</span><input required type="datetime-local" value={form.ends_at} onChange={e => set('ends_at', e.target.value)} className={fieldClass} /></label>
+      <label className="text-[13px] font-bold text-text-dark">{isCourseRegistration ? 'بداية تسجيل الطلاب' : 'البداية'} <span className="font-normal text-text-light">(بتوقيت الجامعة)</span><input required type="datetime-local" value={form.starts_at} onChange={e => set('starts_at', e.target.value)} className={fieldClass} /></label>
+      {isCourseRegistration ? <>
+        <label className="text-[13px] font-bold text-text-dark">نهاية تسجيل الطلاب <span className="font-normal text-text-light">(بتوقيت الجامعة)</span><input required type="datetime-local" min={form.starts_at} value={form.student_registration_ends_at} onChange={e => set('student_registration_ends_at', e.target.value)} className={fieldClass} /></label>
+        <label className="text-[13px] font-bold text-text-dark md:col-span-2">نهاية اعتماد المرشد الأكاديمي <span className="font-normal text-text-light">(بتوقيت الجامعة)</span><input required type="datetime-local" min={form.student_registration_ends_at} value={form.advisor_approval_ends_at} onChange={e => set('advisor_approval_ends_at', e.target.value)} className={fieldClass} /></label>
+        <p className="rounded-[10px] border border-emerald-200 bg-emerald-50 p-3 text-[12.5px] leading-6 text-emerald-900 md:col-span-2">الطلاب يمكنهم الإضافة والتعديل حتى نهاية تسجيل الطلاب. طلبات الطلاب المرسلة تبقى متاحة للمرشد حتى نهاية مهلة الاعتماد.</p>
+      </> : <label className="text-[13px] font-bold text-text-dark">النهاية <span className="font-normal text-text-light">(بتوقيت الجامعة)</span><input required type="datetime-local" value={form.ends_at} onChange={e => set('ends_at', e.target.value)} className={fieldClass} /></label>}
       <label className="text-[13px] font-bold text-text-dark md:col-span-2">ملاحظات عامة<textarea rows={3} value={form.public_notes} onChange={e => set('public_notes', e.target.value)} className={fieldClass} /></label>
       {showReason && <label className="text-[13px] font-bold text-text-dark md:col-span-2">سبب التغيير {reasonRequired ? '(مطلوب)' : '(اختياري)'}<textarea required={reasonRequired} rows={2} value={form.change_reason} onChange={e => set('change_reason', e.target.value)} className={fieldClass} /></label>}
-      <label className="flex items-center gap-2 text-[13px] font-bold text-text-dark md:col-span-2"><input type="checkbox" checked={form.is_enforcement} onChange={e => set('is_enforcement', e.target.checked)} /> نافذة تنفيذية (وصف فقط في المرحلة الثانية)</label>
+      <label className="flex items-center gap-2 text-[13px] font-bold text-text-dark md:col-span-2"><input type="checkbox" disabled={isCourseRegistration} checked={isCourseRegistration || form.is_enforcement} onChange={e => set('is_enforcement', e.target.checked)} /> نافذة تنفيذية</label>
       <div className="flex justify-end gap-2 border-t border-primary/10 pt-4 md:col-span-2"><button type="button" onClick={onClose} className={secondaryButtonClass}>إلغاء</button><button disabled={busy} className={primaryButtonClass}>حفظ المسودة</button></div>
     </form>
   </Modal>
@@ -201,6 +223,7 @@ export default function AcademicCalendarPage() {
     {selected && !formMode && <Modal title={eventVersion(selected).title} onClose={() => setSelected(null)} wide><div className="space-y-4 text-[13px] text-text-dark">
       <div className="flex flex-wrap gap-2"><Badge status={eventVersion(selected).publication_status} cancelled={selected.cancelled} canManage={canManage} /><span className={`rounded-full border px-2.5 py-1 text-[11.5px] font-bold ${eventColor(selected.event_type.event_type_code, selected.event_type.event_type_kind)}`}>{selected.event_type.name_ar}</span></div>
       <p className="flex items-center gap-2 text-text-light"><FaClock /> {dateLabel.format(new Date(eventVersion(selected).starts_at))} {timeLabel.format(new Date(eventVersion(selected).starts_at))} — {dateLabel.format(new Date(eventVersion(selected).ends_at))} {timeLabel.format(new Date(eventVersion(selected).ends_at))} · بتوقيت الجامعة</p>
+      {selected.event_type.event_type_code === 'course_registration' && <div className="grid gap-2 rounded-[10px] border border-emerald-200 bg-emerald-50 p-4 text-emerald-950 sm:grid-cols-2"><p><strong>نهاية تسجيل الطلاب:</strong> {dateLabel.format(new Date(eventVersion(selected).student_registration_ends_at || eventVersion(selected).ends_at))} {timeLabel.format(new Date(eventVersion(selected).student_registration_ends_at || eventVersion(selected).ends_at))}</p><p><strong>نهاية اعتماد المرشد:</strong> {dateLabel.format(new Date(eventVersion(selected).advisor_approval_ends_at || eventVersion(selected).ends_at))} {timeLabel.format(new Date(eventVersion(selected).advisor_approval_ends_at || eventVersion(selected).ends_at))}</p></div>}
       <p><strong>السنة:</strong> {selected.academic_year.year_name} · <strong>الفصل:</strong> {selected.semester?.semester_name || 'على مستوى السنة'}</p>
       {eventVersion(selected).public_notes && <p className="whitespace-pre-wrap rounded-[10px] bg-[#fafaf8] p-4 leading-7">{eventVersion(selected).public_notes}</p>}
       {selected.cancelled && <p className="rounded-[10px] border border-red-200 bg-red-50 p-4 text-red-800">{canManage ? <><strong>سبب الإلغاء:</strong> {selected.cancellation_reason}</> : 'هذا الحدث ملغى'}</p>}

@@ -16,6 +16,8 @@ class StudentRegistrationRequest extends Model
 
     public const STATUS_APPROVED = 'approved';
 
+    public const STATUS_EXPIRED = 'expired';
+
     public const EDITABLE_STATUSES = [
         self::STATUS_DRAFT,
         self::STATUS_RETURNED,
@@ -44,6 +46,7 @@ class StudentRegistrationRequest extends Model
         'last_submitted_at',
         'reviewed_at',
         'approved_at',
+        'expired_at',
         'registered_hours_before_approval',
         'request_hours_at_approval',
         'projected_hours_at_approval',
@@ -61,6 +64,7 @@ class StudentRegistrationRequest extends Model
             'last_submitted_at' => 'datetime',
             'reviewed_at' => 'datetime',
             'approved_at' => 'datetime',
+            'expired_at' => 'datetime',
             'registered_hours_before_approval' => 'integer',
             'request_hours_at_approval' => 'integer',
             'projected_hours_at_approval' => 'integer',
@@ -84,6 +88,11 @@ class StudentRegistrationRequest extends Model
     public function isApproved(): bool
     {
         return $this->status === self::STATUS_APPROVED;
+    }
+
+    public function isExpired(): bool
+    {
+        return $this->status === self::STATUS_EXPIRED;
     }
 
     public function student(): BelongsTo

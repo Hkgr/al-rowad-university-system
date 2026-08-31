@@ -41,6 +41,7 @@ class StudentSelfRegistrationController extends Controller
         return $this->successResponse([
             'registration_open' => $workspace['registration_open'],
             'request_item_removal_open' => $workspace['request_item_removal_open'],
+            'registration_calendar' => $workspace['registration_calendar'],
             'academic_year' => $workspace['academic_year'] === null
                 ? null
                 : (new AcademicYearResource($workspace['academic_year']))->resolve($request),
