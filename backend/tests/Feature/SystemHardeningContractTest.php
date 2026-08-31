@@ -172,8 +172,8 @@ class SystemHardeningContractTest extends TestCase
     public function test_hard11_17_through_19_drop_and_withdrawal_seat_and_reactivation(): void
     {
         $service = self::source('app/Services/RegistrationService.php');
-        self::assertStringContainsString('available_seats - 1', $service);
-        self::assertStringContainsString('available_seats + 1', $service);
+        self::assertStringNotContainsString('available_seats - 1', $service);
+        self::assertStringNotContainsString('available_seats + 1', $service);
         self::assertStringContainsString('withdrawnNotReactivatable()', $service);
         self::assertStringContainsString("REACTIVATABLE_STATUSES = ['dropped']", self::source('app/Models/StudentCourseRegistration.php'));
     }
@@ -466,9 +466,8 @@ class SystemHardeningContractTest extends TestCase
         self::assertNotFalse($registrationLockPos);
         self::assertLessThan($registrationLockPos, $offeringLockPos);
         self::assertStringContainsString('lockForUpdate()', $apply);
-        self::assertTrue(
-            strpos($register, 'CourseOffering::query()') < strpos($register, 'decrementAvailableSeats')
-        );
+        self::assertStringNotContainsString('decrementAvailableSeats', $register);
+        self::assertStringNotContainsString('incrementAvailableSeats', $register);
         self::assertStringContainsString('lockForUpdate()', $register);
         self::assertStringContainsString('Never lock instructors before the offering', $opening);
         self::assertStringContainsString('applyThenGuardOpenCoverage', self::extractMethod(

@@ -42,6 +42,8 @@ class RegistrationException extends Exception
 
     public const ACADEMIC_CALENDAR_SEMESTER_CONTEXT_INVALID = 'academic_calendar_semester_context_invalid';
 
+    public const COURSE_ALREADY_PASSED = 'course_already_passed';
+
     public function __construct(
         string $message,
         public readonly array $errors = [],
@@ -175,5 +177,17 @@ class RegistrationException extends Exception
         $message = 'The course offering semester is not valid for live registration.';
 
         return new self($message, ['course_offering_id' => [$message]], 409, self::ACADEMIC_CALENDAR_SEMESTER_CONTEXT_INVALID);
+    }
+
+    public static function courseAlreadyPassed(): self
+    {
+        $message = 'The student has already officially passed this course and cannot register it again in the normal workflow.';
+
+        return new self(
+            $message,
+            ['course_offering_id' => [self::COURSE_ALREADY_PASSED]],
+            422,
+            self::COURSE_ALREADY_PASSED,
+        );
     }
 }

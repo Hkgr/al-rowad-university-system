@@ -57,9 +57,9 @@ class StudentRegistrationLifecycleContractTest extends TestCase
         );
         self::assertStringContainsString('transitionRegisteredToDropped(', $selfDrop);
         self::assertStringNotContainsString('->delete()', $selfDrop);
-        self::assertStringContainsString('available_seats - 1', $service);
-        self::assertStringContainsString('available_seats + 1', $service);
-        self::assertStringContainsString("where('available_seats', '>', 0)", $service);
+        self::assertStringNotContainsString('available_seats - 1', $service);
+        self::assertStringNotContainsString('available_seats + 1', $service);
+        self::assertStringNotContainsString("where('available_seats', '>', 0)", $service);
     }
 
     public function test_stale_withdrawal_http_conflict_is_raised_after_transaction_commits(): void
@@ -135,7 +135,7 @@ class StudentRegistrationLifecycleContractTest extends TestCase
 
         $lifecycle = self::source('app/Support/RegistrationLifecycle.php');
         self::assertStringContainsString('Canonical lock order', $lifecycle);
-        self::assertStringContainsString('available_seats -= 1 exactly once', $lifecycle);
+        self::assertStringContainsString('does not reserve or release seats', $lifecycle);
 
         $rollback = self::source('database/sql/student-registration-lifecycle/03_rollback.sql');
         self::assertStringContainsString('PREPARE stmt FROM @sql', $rollback);

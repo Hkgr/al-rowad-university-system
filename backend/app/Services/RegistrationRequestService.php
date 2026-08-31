@@ -177,18 +177,34 @@ class RegistrationRequestService
                 ]);
             }
 
+            $hours = $this->registration->hoursSnapshot(
+                $student,
+                (int) $year->academic_year_id,
+                (int) $offering->semester_id,
+            );
             $failure = $this->itemFailureReason(
                 $student,
                 $offering->fresh() ?? $offering,
-                $this->registration->hoursSnapshot($student, (int) $year->academic_year_id, (int) $offering->semester_id),
+                $hours,
                 $registeredIds,
                 $this->requestHours($request, $registeredIds),
                 $this->requirements->buildRegistrationCommitmentContext($student)
             );
             if ($failure !== null) {
+                $itemFailure = [
+                    'course_offering_id' => (int) $offering->course_offering_id,
+                    'reason' => $failure,
+                ];
+                if ($failure === 'missing_prerequisites') {
+                    $itemFailure['missing_prerequisites'] = $this->registration->getMissingPrerequisites(
+                        $student,
+                        (int) $offering->course_id,
+                        $hours,
+                    );
+                }
                 throw new RegistrationRequestException('This course cannot be added to the registration request.', [
                     'course_offering_id' => [$failure],
-                ]);
+                ], 422, $failure, [$itemFailure]);
             }
 
             $item = $request->items()->create([
@@ -1121,13 +1137,18 @@ class RegistrationRequestService
         $liveRegistered = (int) $base['registered_hours'];
         $liveMax = (int) $base['max_allowed_hours'];
         $liveProjected = $liveRegistered + $liveRequestHours;
+        $recommendedMinimum = (int) $base['recommended_minimum_hours'];
+        $belowRecommendedMinimum = $liveRequestHours > 0 && $liveRequestHours < $recommendedMinimum;
         $live = [
             'registered_hours' => $liveRegistered,
             'request_hours' => $liveRequestHours,
             'projected_hours' => $liveProjected,
+            'official_cgpa' => $base['official_cgpa'],
             'max_allowed_hours' => $liveMax,
             'remaining_before_request' => max($liveMax - $liveRegistered, 0),
             'remaining_after_approval' => max($liveMax - $liveProjected, 0),
+            'recommended_minimum_hours' => $recommendedMinimum,
+            'below_recommended_minimum' => $belowRecommendedMinimum,
         ];
 
         $approvedSnapshot = null;
@@ -1150,9 +1171,15 @@ class RegistrationRequestService
             'registered_hours' => $liveRegistered,
             'request_hours' => $liveRequestHours,
             'projected_hours' => $liveProjected,
+            'official_cgpa' => $base['official_cgpa'],
             'max_allowed_hours' => $liveMax,
             'remaining_before_request' => $live['remaining_before_request'],
             'remaining_after_approval' => $live['remaining_after_approval'],
+            'recommended_minimum_hours' => $recommendedMinimum,
+            'below_recommended_minimum' => $approvedSnapshot !== null
+                ? (int) $approvedSnapshot['request_hours_at_approval'] > 0
+                    && (int) $approvedSnapshot['request_hours_at_approval'] < $recommendedMinimum
+                : $belowRecommendedMinimum,
             'live' => $live,
             'approved_snapshot' => $approvedSnapshot,
         ];
@@ -1223,10 +1250,18 @@ class RegistrationRequestService
                 $requirementContext
             );
             if ($reason !== null) {
-                $failures[] = [
+                $failure = [
                     'course_offering_id' => (int) $offering->course_offering_id,
                     'reason' => $reason,
                 ];
+                if ($reason === 'missing_prerequisites') {
+                    $failure['missing_prerequisites'] = $this->registration->getMissingPrerequisites(
+                        $student,
+                        (int) $offering->course_id,
+                        $hours,
+                    );
+                }
+                $failures[] = $failure;
                 $failedOfferingIds[(int) $offering->course_offering_id] = true;
                 continue;
             }
@@ -1267,13 +1302,17 @@ class RegistrationRequestService
             return 'already_registered';
         }
 
-        $missing = $this->registration->getMissingPrerequisites($student, (int) $offering->course_id);
-        if ($missing !== []) {
-            return 'missing_prerequisites';
+        if ($this->registration->hasPassedCourse($student, (int) $offering->course_id, $hours)) {
+            return RegistrationException::COURSE_ALREADY_PASSED;
         }
 
-        if ((int) $offering->available_seats <= 0) {
-            return 'no_available_seats';
+        $missing = $this->registration->getMissingPrerequisites(
+            $student,
+            (int) $offering->course_id,
+            $hours,
+        );
+        if ($missing !== []) {
+            return 'missing_prerequisites';
         }
 
         $courseHours = (int) ($offering->course?->credit_hours ?? 0);
@@ -1298,9 +1337,6 @@ class RegistrationRequestService
         $message = $exception->getMessage();
         if (str_contains($message, 'not open for registration')) {
             return 'offering_closed';
-        }
-        if (str_contains($message, 'No available seats') || str_contains($message, 'no available seats')) {
-            return 'no_available_seats';
         }
         if (str_contains($message, 'Credit hour limit')) {
             return 'credit_limit_exceeded';
@@ -1415,7 +1451,7 @@ class RegistrationRequestService
         $failureByOffering = [];
         if ($includeEligibility) {
             foreach ($this->collectItemFailures($student, $request) as $failure) {
-                $failureByOffering[(int) $failure['course_offering_id']] = $failure['reason'];
+                $failureByOffering[(int) $failure['course_offering_id']] = $failure;
             }
         }
 
@@ -1444,8 +1480,6 @@ class RegistrationRequestService
                     'course_code' => $offering?->course?->course_code,
                     'course_name' => $offering?->course?->course_name,
                     'credit_hours' => (int) ($offering?->course?->credit_hours ?? 0),
-                    'available_seats' => $offering?->available_seats,
-                    'capacity' => $offering?->capacity,
                     'offering_status' => $offering?->status,
                     'requirement_classification' => CourseRequirementClassification::forStudentFromMap(
                         $programId,
@@ -1455,9 +1489,11 @@ class RegistrationRequestService
                 ];
 
                 if ($includeEligibility) {
-                    $reason = $failureByOffering[(int) $item->course_offering_id] ?? null;
+                    $failure = $failureByOffering[(int) $item->course_offering_id] ?? null;
+                    $reason = $failure['reason'] ?? null;
                     $payload['eligibility_reason'] = $reason;
                     $payload['eligibility_status'] = $reason === null ? 'eligible' : 'not_eligible';
+                    $payload['missing_prerequisites'] = $failure['missing_prerequisites'] ?? [];
                 }
 
                 return $payload;

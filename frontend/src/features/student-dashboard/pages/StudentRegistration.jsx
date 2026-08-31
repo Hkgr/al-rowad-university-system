@@ -11,8 +11,8 @@ import { formatUniversityDateTime, studentRegistrationNotice } from '../../regis
 const REASON_LABELS = {
   already_registered: { ar: 'مسجل مسبقاً', tone: 'registered' },
   already_in_request: { ar: 'مضاف إلى الطلب', tone: 'request' },
+  course_already_passed: { ar: 'تم اجتياز هذا المقرر سابقاً ولا يمكن تسجيله مجدداً ضمن التسجيل العادي.', tone: 'registered' },
   missing_prerequisites: { ar: 'متطلب سابق غير محقق', tone: 'prerequisite' },
-  no_available_seats: { ar: 'لا توجد مقاعد', tone: 'full' },
   credit_limit_exceeded: { ar: 'تجاوز الساعات', tone: 'hours' },
   elective_requirement_completed: { ar: 'لقد استوفيت الساعات المطلوبة لهذا المتطلب الاختياري.', tone: 'hours' },
   elective_requirement_fully_committed: { ar: 'تم حجز كامل الساعات المطلوبة لهذا المتطلب ضمن مقرراتك المسجلة أو طلبات التسجيل الحالية.', tone: 'hours' },
@@ -104,12 +104,21 @@ function HoursPanel({ hours, requestStatus }) {
   const projected = approved ? (snapshot.projected_hours_at_approval ?? registered + requestHours) : (hours?.projected_hours ?? registered + requestHours)
   const max = approved ? (snapshot.max_allowed_hours_at_approval ?? 0) : (hours?.max_allowed_hours ?? 0)
   const remaining = approved ? (snapshot.remaining_hours_after_approval ?? 0) : (hours?.remaining_after_approval ?? 0)
+  const officialCgpa = hours?.official_cgpa
+  const recommendedMinimum = hours?.recommended_minimum_hours ?? 12
+  const belowRecommendedMinimum = hours?.below_recommended_minimum === true
   const pct = max > 0 ? Math.min((projected / max) * 100, 100) : 0
   const color = pct >= 100 ? 'bg-red-500' : pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-primary'
 
   return (
     <section className="bg-white border border-primary/12 rounded-[16px] p-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]" dir="rtl">
-      <div className="grid grid-cols-5 max-[900px]:grid-cols-2 max-[520px]:grid-cols-1 gap-4 mb-4">
+      <div className="grid grid-cols-6 max-[1050px]:grid-cols-3 max-[700px]:grid-cols-2 max-[520px]:grid-cols-1 gap-4 mb-4">
+        <div>
+          <p className="text-[11.5px] font-semibold text-text-light mb-1">المعدل التراكمي الرسمي</p>
+          <p className="text-[22px] font-black text-text-dark tabular-nums">
+            {officialCgpa == null ? 'لا يوجد معدل تراكمي رسمي حتى الآن' : Number(officialCgpa).toFixed(2)}
+          </p>
+        </div>
         <div>
           <p className="text-[11.5px] font-semibold text-text-light mb-1">{approved ? 'الساعات قبل الاعتماد' : 'الساعات المسجلة حالياً'}</p>
           <p className="text-[22px] font-black text-text-dark tabular-nums">{registered}</p>
@@ -134,6 +143,11 @@ function HoursPanel({ hours, requestStatus }) {
       <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
         <div className={`h-full rounded-full transition-all duration-500 ${color}`} style={{ width: `${pct}%` }} />
       </div>
+      {belowRecommendedMinimum ? (
+        <p className="mt-3 rounded-[10px] border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] font-semibold leading-6 text-amber-900">
+          عدد الساعات المختارة أقل من العبء الدراسي المعتاد ({recommendedMinimum} ساعة)، ويمكنك متابعة إرسال الطلب.
+        </p>
+      ) : null}
     </section>
   )
 }
@@ -222,11 +236,11 @@ function statusBadge(course) {
   if (reasons.includes('already_in_request')) {
     return { label: REASON_LABELS.already_in_request.ar, className: BADGE_CLASS.request }
   }
+  if (reasons.includes('course_already_passed')) {
+    return { label: 'تم اجتياز المقرر', className: BADGE_CLASS.registered }
+  }
   if (reasons.includes('missing_prerequisites')) {
     return { label: 'متطلب سابق غير محقق', className: BADGE_CLASS.prerequisite }
-  }
-  if (reasons.includes('no_available_seats')) {
-    return { label: 'لا توجد مقاعد', className: BADGE_CLASS.full }
   }
   if (reasons.includes('credit_limit_exceeded')) {
     return { label: 'تجاوز الساعات', className: BADGE_CLASS.hours }
@@ -253,8 +267,6 @@ function CourseRow({ course, onAdd, adding, canEdit, advisoryMode }) {
   const eligible = course.eligibility_status === 'eligible'
   const reasons = course.eligibility_reasons ?? []
   const missing = course.missing_prerequisites ?? []
-  const seats = course.available_seats ?? 0
-  const capacity = course.capacity ?? 0
   const badge = statusBadge(course)
   const busy = Boolean(adding[course.course_offering_id])
   const planLabel = advisoryPlanLabel(course)
@@ -287,9 +299,6 @@ function CourseRow({ course, onAdd, adding, canEdit, advisoryMode }) {
           <div className="flex items-center gap-2 mt-1 flex-wrap text-[11.5px] text-text-light">
             <span className="font-mono">{course.course_code}</span>
             <span className="text-primary font-bold">{course.credit_hours} ساعات</span>
-            <span className={seats > 0 ? 'text-green-700 font-semibold' : 'text-orange-700 font-semibold'}>
-              {seats}/{capacity} مقعد
-            </span>
           </div>
           {reasons
             .filter(reason => reason !== 'already_registered' && reason !== 'already_in_request')
@@ -553,7 +562,7 @@ export default function StudentRegistration() {
         <h1 className="text-[22px] font-black text-text-dark">تسجيل المواد</h1>
         <p className="mt-2 text-[13.5px] text-text-light leading-7">
           ابنِ طلب التسجيل ثم أرسله إلى المرشد الأكاديمي. الخطة الدراسية إرشادية فقط، ويمكنك طلب أي مقرر مفتوح ومستوفٍ للمتطلبات.
-          إرسال الطلب لا يعني حجز المقعد نهائياً.
+          يصبح التسجيل رسميًا بعد اعتماد المرشد الأكاديمي.
         </p>
         <div className="mt-4 flex flex-wrap items-end gap-3">
           <div className="min-w-[200px]">
@@ -612,7 +621,7 @@ export default function StudentRegistration() {
       {hours ? <HoursPanel hours={hours} requestStatus={request ? status : null} /> : null}
 
       <p className="text-[12.5px] text-text-gray bg-primary/5 border border-primary/12 rounded-[12px] px-4 py-3">
-        إرسال الطلب لا يعني حجز المقعد نهائياً. يتم تثبيت التسجيل بعد اعتماد المرشد الأكاديمي.
+        الطلب المرسل يبقى قيد المراجعة، ويصبح التسجيل رسميًا بعد اعتماد المرشد الأكاديمي.
       </p>
 
       {status === 'submitted' ? (

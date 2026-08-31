@@ -15,6 +15,7 @@ use App\Services\AcademicCalendarPolicyService;
 use App\Services\AcademicRequirementService;
 use App\Services\AcademicTermResolver;
 use App\Services\DataScopeService;
+use App\Services\GradeService;
 use App\Services\RegistrationRequestService;
 use App\Services\RegistrationService;
 use App\Support\CourseRegistrationDeadlineResult;
@@ -432,6 +433,88 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
         self::assertSame(0, DB::table('student_course_registrations')->count());
     }
 
+    public function test_phase3_below_twelve_hours_is_an_advisory_response_not_a_registration_failure(): void
+    {
+        $this->seedRegistrationRequestContext();
+        $registration = Mockery::mock(RegistrationService::class);
+        $registration->shouldReceive('hoursSnapshot')->once()->andReturn([
+            'registered_hours' => 0,
+            'official_cgpa' => 2.75,
+            'max_allowed_hours' => 18,
+            'remaining_hours' => 18,
+            'recommended_minimum_hours' => 12,
+            'official_passed_course_ids' => [],
+        ]);
+        $registration->shouldReceive('currentOfferingIds')->once()->andReturn([]);
+        $service = new RegistrationRequestService(
+            $registration,
+            Mockery::mock(AcademicTermResolver::class),
+            Mockery::mock(DataScopeService::class),
+            Mockery::mock(AcademicRequirementService::class),
+        );
+        $hoursFor = new ReflectionMethod($service, 'hoursFor');
+
+        $hours = $hoursFor->invoke(
+            $service,
+            \App\Models\Student::query()->findOrFail(1),
+            1,
+            1,
+            StudentRegistrationRequest::query()->findOrFail(1),
+        );
+
+        self::assertSame(3, $hours['request_hours']);
+        self::assertSame(12, $hours['recommended_minimum_hours']);
+        self::assertTrue($hours['below_recommended_minimum']);
+        self::assertSame(18, $hours['max_allowed_hours']);
+    }
+
+    public function test_phase3_advisor_approval_recomputes_current_cgpa_and_rolls_back_an_over_limit_request(): void
+    {
+        $this->registrationWindow();
+        $this->seedRegistrationRequestContext();
+        $this->addThreeHourRequestOfferings(7);
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-06T00:00:00Z'));
+        [$requests, $actor] = $this->advisorWorkflow($this->realRegistrationService([
+            'cumulative_gpa' => 2.99,
+            'official_completed_courses' => [],
+        ]));
+
+        try {
+            $requests->approve($actor, StudentRegistrationRequest::query()->findOrFail(1));
+            self::fail('A request submitted under an earlier higher cap must use the current official CGPA at approval.');
+        } catch (RegistrationRequestException $exception) {
+            self::assertSame('registration_request_approval_failed', $exception->errorCode);
+        }
+
+        self::assertSame('submitted', DB::table('student_registration_requests')->where('student_registration_request_id', 1)->value('status'));
+        self::assertNull(DB::table('student_registration_requests')->where('student_registration_request_id', 1)->value('max_allowed_hours_at_approval'));
+        self::assertSame(0, DB::table('student_course_registrations')->count());
+        self::assertSame(2, (int) DB::table('course_offerings')->where('course_offering_id', 1)->value('available_seats'));
+    }
+
+    public function test_phase3_approval_snapshot_persists_the_current_twenty_one_hour_policy_without_seat_mutation(): void
+    {
+        $this->registrationWindow();
+        $this->seedRegistrationRequestContext();
+        $this->addThreeHourRequestOfferings(7);
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-06T00:00:00Z'));
+        [$requests, $actor] = $this->advisorWorkflow($this->realRegistrationService([
+            'cumulative_gpa' => 3.0,
+            'official_completed_courses' => [],
+        ]));
+
+        $requests->approve($actor, StudentRegistrationRequest::query()->findOrFail(1));
+
+        $request = DB::table('student_registration_requests')->where('student_registration_request_id', 1)->first();
+        self::assertSame('approved', $request->status);
+        self::assertSame(21, (int) $request->request_hours_at_approval);
+        self::assertSame(21, (int) $request->projected_hours_at_approval);
+        self::assertSame(21, (int) $request->max_allowed_hours_at_approval);
+        self::assertSame(0, (int) $request->remaining_hours_after_approval);
+        self::assertSame(7, DB::table('student_course_registrations')->count());
+        self::assertSame(2, (int) DB::table('course_offerings')->where('course_offering_id', 1)->value('available_seats'));
+    }
+
     private function requestService(): RegistrationRequestService
     {
         return new RegistrationRequestService(
@@ -442,17 +525,23 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
         );
     }
 
-    private function realRegistrationService(): RegistrationService
+    private function realRegistrationService(?array $metrics = null): RegistrationService
     {
         $requirements = Mockery::mock(AcademicRequirementService::class);
         $requirements->shouldReceive('assertRegistrationCandidateAllowed')->zeroOrMoreTimes();
         $requirements->shouldReceive('buildRegistrationCommitmentContext')->zeroOrMoreTimes()->andReturn([]);
         $requirements->shouldReceive('evaluateRegistrationCandidate')->zeroOrMoreTimes()->andReturn(['allowed' => true, 'reason' => null]);
         $requirements->shouldReceive('validateRegistrationRequestCommitment')->zeroOrMoreTimes()->andReturn([]);
+        $grades = Mockery::mock(GradeService::class);
+        $grades->shouldReceive('officialCumulativeMetrics')->zeroOrMoreTimes()->andReturn($metrics ?? [
+            'cumulative_gpa' => null,
+            'official_completed_courses' => [],
+        ]);
 
         $service = Mockery::mock(RegistrationService::class, [
             $requirements,
             app(AcademicCalendarPolicyService::class),
+            $grades,
         ])->makePartial();
         $service->shouldReceive('assertSelfRegistrationAllowed')->zeroOrMoreTimes();
         $service->shouldReceive('getMissingPrerequisites')->zeroOrMoreTimes()->andReturn([]);
@@ -515,6 +604,32 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
             'student_registration_request_id' => 1,
             'course_offering_id' => 1,
         ]);
+    }
+
+    private function addThreeHourRequestOfferings(int $throughOfferingId): void
+    {
+        foreach (range(2, $throughOfferingId) as $id) {
+            DB::table('courses')->insert([
+                'course_id' => $id,
+                'course_code' => 'C'.$id,
+                'course_name' => 'Course '.$id,
+                'credit_hours' => 3,
+            ]);
+            DB::table('course_offerings')->insert([
+                'course_offering_id' => $id,
+                'course_id' => $id,
+                'academic_year_id' => 1,
+                'semester_id' => 1,
+                'capacity' => 0,
+                'available_seats' => 0,
+                'status' => 'open',
+            ]);
+            DB::table('student_registration_request_items')->insert([
+                'student_registration_request_item_id' => $id,
+                'student_registration_request_id' => 1,
+                'course_offering_id' => $id,
+            ]);
+        }
     }
 
     private function expectRegistrationCode(callable $operation, string $errorCode): void

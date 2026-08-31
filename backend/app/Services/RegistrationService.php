@@ -11,7 +11,6 @@ use App\Models\RegistrationStatus;
 use App\Models\Semester;
 use App\Models\Student;
 use App\Models\StudentCourseRegistration;
-use App\Models\StudentCreditLimit;
 use App\Models\StudentRegistrationRequest;
 use App\Models\StudentRegistrationRequestItem;
 use App\Support\AcademicCalendarPolicyResult;
@@ -33,19 +32,24 @@ class RegistrationService
 {
     public const DEFAULT_MAX_CREDIT_HOURS = 18;
 
+    public const HIGH_CGPA_MAX_CREDIT_HOURS = 21;
+
+    public const HIGH_CGPA_THRESHOLD = 3.0;
+
+    public const RECOMMENDED_MINIMUM_CREDIT_HOURS = 12;
+
     /**
      * Canonical lock order: Student -> CourseOffering (ascending id) ->
      * StudentCourseRegistration (ascending id) -> current withdrawal request.
      * See RegistrationLifecycle.
      */
 
-    private const UNSATISFACTORY_RESULT_STATUSES = ['deprived', 'withdrawn', 'incomplete', 'failed'];
-
     private const COURSE_REGISTRATION_EVENT_TYPE = 'course_registration';
 
     public function __construct(
         private AcademicRequirementService $requirements,
         private AcademicCalendarPolicyService $academicCalendarPolicy,
+        private GradeService $grades,
     ) {
     }
 
@@ -286,13 +290,16 @@ class RegistrationService
             throw RegistrationException::withdrawnNotReactivatable();
         }
 
-        if ((int) $courseOffering->available_seats <= 0) {
-            throw new RegistrationException('No available seats remain for the selected course offering.', [
-                'course_offering_id' => ['No available seats remain for the selected course offering.'],
-            ]);
+        $academicStanding = $this->officialRegistrationAcademicStanding($student);
+        if ($this->hasPassedCourse($student, (int) $courseOffering->course_id, $academicStanding)) {
+            throw RegistrationException::courseAlreadyPassed();
         }
 
-        $missingPrerequisites = $this->getMissingPrerequisites($student, (int) $courseOffering->course_id);
+        $missingPrerequisites = $this->getMissingPrerequisites(
+            $student,
+            (int) $courseOffering->course_id,
+            $academicStanding,
+        );
         if ($missingPrerequisites !== []) {
             $labels = collect($missingPrerequisites)
                 ->map(fn (array $course): string => $course['course_code'].' - '.$course['course_name'])
@@ -308,7 +315,8 @@ class RegistrationService
         $hours = $this->getHoursSnapshot(
             $student,
             (int) $courseOffering->academic_year_id,
-            (int) $courseOffering->semester_id
+            (int) $courseOffering->semester_id,
+            $academicStanding,
         );
 
         if (($hours['registered_hours'] + $courseCreditHours) > $hours['max_allowed_hours']) {
@@ -371,8 +379,6 @@ class RegistrationService
             ]);
         }
 
-        $this->decrementAvailableSeats($courseOffering);
-
         $registration->load([
             'student',
             'courseOffering.course',
@@ -384,7 +390,8 @@ class RegistrationService
         $updatedHours = $this->getHoursSnapshot(
             $student,
             (int) $courseOffering->academic_year_id,
-            (int) $courseOffering->semester_id
+            (int) $courseOffering->semester_id,
+            $academicStanding,
         );
 
         return [
@@ -392,7 +399,6 @@ class RegistrationService
             'registered_hours' => $updatedHours['registered_hours'],
             'max_allowed_hours' => $updatedHours['max_allowed_hours'],
             'remaining_hours' => $updatedHours['remaining_hours'],
-            'available_seats' => (int) $courseOffering->available_seats,
         ];
     }
 
@@ -511,7 +517,6 @@ class RegistrationService
         }
 
         $lockedRegistration->update(['registration_status_id' => $droppedStatusId]);
-        $this->incrementAvailableSeats($lockedOffering);
     }
 
     public function transitionRegisteredToWithdrawn(
@@ -527,7 +532,6 @@ class RegistrationService
         }
 
         $lockedRegistration->update(['registration_status_id' => $withdrawnStatusId]);
-        $this->incrementAvailableSeats($lockedOffering);
     }
 
     public function lockStudent(int $studentId): Student
@@ -572,8 +576,10 @@ class RegistrationService
             'academic_year_id' => $academicYearId,
             'semester_id' => $semesterId,
             'registered_hours' => $hours['registered_hours'],
+            'official_cgpa' => $hours['official_cgpa'],
             'max_allowed_hours' => $hours['max_allowed_hours'],
             'remaining_hours' => $hours['remaining_hours'],
+            'recommended_minimum_hours' => $hours['recommended_minimum_hours'],
         ];
     }
 
@@ -613,13 +619,16 @@ class RegistrationService
 
         $resolvedYearId = $academicYearId ?? (int) ($registrations->first()?->courseOffering?->academic_year_id ?? 0);
         $resolvedSemesterId = $semesterId ?? (int) ($registrations->first()?->courseOffering?->semester_id ?? 0);
+        $academicStanding = $this->officialRegistrationAcademicStanding($student);
 
         $hours = $resolvedYearId > 0 && $resolvedSemesterId > 0
-            ? $this->getHoursSnapshot($student, $resolvedYearId, $resolvedSemesterId)
+            ? $this->getHoursSnapshot($student, $resolvedYearId, $resolvedSemesterId, $academicStanding)
             : [
                 'registered_hours' => 0,
-                'max_allowed_hours' => self::DEFAULT_MAX_CREDIT_HOURS,
-                'remaining_hours' => self::DEFAULT_MAX_CREDIT_HOURS,
+                'official_cgpa' => $academicStanding['official_cgpa'],
+                'max_allowed_hours' => $academicStanding['max_allowed_hours'],
+                'remaining_hours' => $academicStanding['max_allowed_hours'],
+                'recommended_minimum_hours' => self::RECOMMENDED_MINIMUM_CREDIT_HOURS,
             ];
 
         $academicYear = $academicYearId !== null
@@ -638,8 +647,10 @@ class RegistrationService
             'semester_id' => $semesterId ?? ($resolvedSemesterId > 0 ? $resolvedSemesterId : null),
             'total_registered_courses' => $registrations->count(),
             'total_registered_hours' => $hours['registered_hours'],
+            'official_cgpa' => $hours['official_cgpa'],
             'max_allowed_hours' => $hours['max_allowed_hours'],
             'remaining_hours' => $hours['remaining_hours'],
+            'recommended_minimum_hours' => $hours['recommended_minimum_hours'],
             'registrations' => $registrations,
         ];
     }
@@ -676,15 +687,23 @@ class RegistrationService
         );
 
         $registeredOfferingIds = $this->currentRegisteredOfferingIds($student);
+        $academicStanding = $this->officialRegistrationAcademicStanding($student);
 
         $hours = ($academicYearId !== null && $semesterId !== null)
-            ? $this->getHoursSnapshot($student, $academicYearId, $semesterId)
+            ? $this->getHoursSnapshot($student, $academicYearId, $semesterId, $academicStanding)
             : null;
 
         $requirementContext = $this->requirements->buildRegistrationCommitmentContext($student);
 
-        return $offerings->map(function (CourseOffering $offering) use ($student, $registeredOfferingIds, $hours, $requirementContext): CourseOffering {
-            return $this->annotateOfferingEligibility($offering, $student, $registeredOfferingIds, $hours, requirementContext: $requirementContext);
+        return $offerings->map(function (CourseOffering $offering) use ($student, $registeredOfferingIds, $hours, $requirementContext, $academicStanding): CourseOffering {
+            return $this->annotateOfferingEligibility(
+                $offering,
+                $student,
+                $registeredOfferingIds,
+                $hours,
+                requirementContext: $requirementContext,
+                academicStanding: $academicStanding,
+            );
         });
     }
 
@@ -706,8 +725,13 @@ class RegistrationService
             ->paginate($perPage);
     }
 
-    public function getMissingPrerequisites(Student $student, int $courseId): array
+    public function getMissingPrerequisites(
+        Student $student,
+        int $courseId,
+        ?array $academicStanding = null,
+    ): array
     {
+        $academicStanding ??= $this->officialRegistrationAcademicStanding($student);
         $prerequisites = CoursePrerequisite::query()
             ->with('prerequisiteCourse')
             ->where('course_id', $courseId)
@@ -716,7 +740,11 @@ class RegistrationService
         $missing = [];
 
         foreach ($prerequisites as $prerequisite) {
-            if (! $this->hasPassedCourse($student, (int) $prerequisite->prerequisite_course_id)) {
+            if (! $this->hasPassedCourse(
+                $student,
+                (int) $prerequisite->prerequisite_course_id,
+                $academicStanding,
+            )) {
                 $course = $prerequisite->prerequisiteCourse;
                 $missing[] = [
                     'course_id' => $prerequisite->prerequisite_course_id,
@@ -729,21 +757,15 @@ class RegistrationService
         return $missing;
     }
 
-    public function hasPassedCourse(Student $student, int $prerequisiteCourseId): bool
+    public function hasPassedCourse(
+        Student $student,
+        int $courseId,
+        ?array $academicStanding = null,
+    ): bool
     {
-        $registrations = StudentCourseRegistration::query()
-            ->where('student_id', $student->student_id)
-            ->whereHas('courseOffering', fn (Builder $query) => $query->where('course_id', $prerequisiteCourseId))
-            ->with(['studentCourseResult.resultStatus', 'resultStatus'])
-            ->get();
+        $academicStanding ??= $this->officialRegistrationAcademicStanding($student);
 
-        foreach ($registrations as $registration) {
-            if ($this->attemptSatisfiesPrerequisite($registration)) {
-                return true;
-            }
-        }
-
-        return false;
+        return in_array($courseId, $academicStanding['official_passed_course_ids'], true);
     }
 
     public function getSelfRegistrationOfferings(
@@ -774,7 +796,8 @@ class RegistrationService
             $offerings
         );
         $registeredOfferingIds = $this->currentRegisteredOfferingIds($student);
-        $hours = $this->getHoursSnapshot($student, $academicYearId, $semesterId);
+        $academicStanding = $this->officialRegistrationAcademicStanding($student);
+        $hours = $this->getHoursSnapshot($student, $academicYearId, $semesterId, $academicStanding);
         $requirementContext = $this->requirements->buildRegistrationCommitmentContext($student);
 
         return $offerings->map(function (CourseOffering $offering) use (
@@ -783,7 +806,8 @@ class RegistrationService
             $hours,
             $pendingRequestHours,
             $requestOfferingIds,
-            $requirementContext
+            $requirementContext,
+            $academicStanding,
         ): CourseOffering {
             return $this->annotateOfferingEligibility(
                 $offering,
@@ -792,7 +816,8 @@ class RegistrationService
                 $hours,
                 $pendingRequestHours,
                 $requestOfferingIds,
-                $requirementContext
+                $requirementContext,
+                $academicStanding,
             );
         });
     }
@@ -901,9 +926,15 @@ class RegistrationService
         ?array $hours,
         int $pendingRequestHours = 0,
         array $requestOfferingIds = [],
-        ?array $requirementContext = null
+        ?array $requirementContext = null,
+        ?array $academicStanding = null,
     ): CourseOffering {
-        $missing = $this->getMissingPrerequisites($student, (int) $offering->course_id);
+        $academicStanding ??= $this->officialRegistrationAcademicStanding($student);
+        $missing = $this->getMissingPrerequisites(
+            $student,
+            (int) $offering->course_id,
+            $academicStanding,
+        );
         $reasons = [];
         $courseCreditHours = (int) ($offering->course?->credit_hours ?? 0);
         $offeringId = (int) $offering->course_offering_id;
@@ -917,12 +948,12 @@ class RegistrationService
             $reasons[] = 'already_in_request';
         }
 
-        if ($missing !== []) {
-            $reasons[] = 'missing_prerequisites';
+        if ($this->hasPassedCourse($student, (int) $offering->course_id, $academicStanding)) {
+            $reasons[] = RegistrationException::COURSE_ALREADY_PASSED;
         }
 
-        if ((int) $offering->available_seats <= 0) {
-            $reasons[] = 'no_available_seats';
+        if ($missing !== []) {
+            $reasons[] = 'missing_prerequisites';
         }
 
         $committedHours = $hours === null ? null : ((int) $hours['registered_hours'] + max($pendingRequestHours, 0));
@@ -1003,32 +1034,14 @@ class RegistrationService
             ->all();
     }
 
-    private function attemptSatisfiesPrerequisite(StudentCourseRegistration $registration): bool
+    private function getHoursSnapshot(
+        Student $student,
+        int $academicYearId,
+        int $semesterId,
+        ?array $academicStanding = null,
+    ): array
     {
-        $result = $registration->studentCourseResult;
-        if ($result !== null) {
-            if ($result->is_deprived) {
-                return false;
-            }
-
-            $statusCode = $result->resultStatus?->status_code;
-            if (in_array($statusCode, self::UNSATISFACTORY_RESULT_STATUSES, true)) {
-                return false;
-            }
-
-            return $statusCode === 'passed';
-        }
-
-        $registrationStatusCode = $registration->resultStatus?->status_code;
-        if (in_array($registrationStatusCode, self::UNSATISFACTORY_RESULT_STATUSES, true)) {
-            return false;
-        }
-
-        return $registrationStatusCode === 'passed';
-    }
-
-    private function getHoursSnapshot(Student $student, int $academicYearId, int $semesterId): array
-    {
+        $academicStanding ??= $this->officialRegistrationAcademicStanding($student);
         $registeredHours = (int) StudentCourseRegistration::query()
             ->join('course_offerings', 'course_offerings.course_offering_id', '=', 'student_course_registrations.course_offering_id')
             ->join('courses', 'courses.course_id', '=', 'course_offerings.course_id')
@@ -1039,16 +1052,46 @@ class RegistrationService
             ->where('registration_statuses.status_code', StudentCourseRegistration::CURRENT_STATUS)
             ->sum('courses.credit_hours');
 
-        $maxAllowedHours = (int) (StudentCreditLimit::query()
-            ->where('student_id', $student->student_id)
-            ->where('academic_year_id', $academicYearId)
-            ->where('semester_id', $semesterId)
-            ->max('max_credit_hours') ?? self::DEFAULT_MAX_CREDIT_HOURS);
+        $maxAllowedHours = (int) $academicStanding['max_allowed_hours'];
 
         return [
             'registered_hours' => $registeredHours,
+            'official_cgpa' => $academicStanding['official_cgpa'],
             'max_allowed_hours' => $maxAllowedHours,
             'remaining_hours' => max($maxAllowedHours - $registeredHours, 0),
+            'recommended_minimum_hours' => self::RECOMMENDED_MINIMUM_CREDIT_HOURS,
+            'official_passed_course_ids' => $academicStanding['official_passed_course_ids'],
+        ];
+    }
+
+    /**
+     * Registration-facing projection of GradeService's canonical official
+     * cumulative metrics. No GPA or grade-approval mathematics lives here.
+     *
+     * @return array{official_cgpa: ?float, max_allowed_hours: int, official_passed_course_ids: list<int>}
+     */
+    private function officialRegistrationAcademicStanding(Student $student): array
+    {
+        $metrics = $this->grades->officialCumulativeMetrics($student);
+        $canonicalCgpa = $metrics['cumulative_gpa'] ?? null;
+        $cgpa = $canonicalCgpa === null
+            ? null
+            : (float) $canonicalCgpa;
+        $passedCourseIds = collect($metrics['official_completed_courses'] ?? [])
+            ->pluck('course_id')
+            ->filter(fn ($courseId): bool => $courseId !== null)
+            ->map(fn ($courseId): int => (int) $courseId)
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+
+        return [
+            'official_cgpa' => $cgpa,
+            'max_allowed_hours' => $cgpa !== null && $cgpa >= self::HIGH_CGPA_THRESHOLD
+                ? self::HIGH_CGPA_MAX_CREDIT_HOURS
+                : self::DEFAULT_MAX_CREDIT_HOURS,
+            'official_passed_course_ids' => $passedCourseIds,
         ];
     }
 
@@ -1067,32 +1110,4 @@ class RegistrationService
         }
     }
 
-    private function decrementAvailableSeats(CourseOffering $offering): void
-    {
-        $affected = CourseOffering::query()
-            ->whereKey($offering->course_offering_id)
-            ->where('available_seats', '>', 0)
-            ->update(['available_seats' => DB::raw('available_seats - 1')]);
-
-        if ($affected !== 1) {
-            throw new RegistrationException('No available seats remain for the selected course offering.', [
-                'course_offering_id' => ['No available seats remain for the selected course offering.'],
-            ]);
-        }
-
-        $offering->refresh();
-        if ((int) $offering->available_seats < 0) {
-            throw new RegistrationException('No available seats remain for the selected course offering.', [
-                'course_offering_id' => ['No available seats remain for the selected course offering.'],
-            ]);
-        }
-    }
-
-    private function incrementAvailableSeats(CourseOffering $offering): void
-    {
-        CourseOffering::query()
-            ->whereKey($offering->course_offering_id)
-            ->update(['available_seats' => DB::raw('available_seats + 1')]);
-        $offering->refresh();
-    }
 }

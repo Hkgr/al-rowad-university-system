@@ -45,7 +45,7 @@ async function searchStudents(query) {
 const REASON_LABELS = {
   already_registered:    { ar: 'مسجل مسبقاً',         color: 'bg-blue-100 text-blue-700'    },
   missing_prerequisites:  { ar: 'متطلبات سابقة ناقصة',  color: 'bg-red-100 text-red-700'      },
-  no_available_seats:     { ar: 'لا توجد مقاعد',        color: 'bg-orange-100 text-orange-700'},
+  course_already_passed:  { ar: 'تم اجتياز المقرر سابقاً', color: 'bg-blue-100 text-blue-700' },
   credit_limit_exceeded:  { ar: 'تجاوز الحد الأقصى',    color: 'bg-yellow-100 text-yellow-700'},
 }
 
@@ -283,8 +283,6 @@ function AvailablePanel({ courses, levels, programCourseMap, currentLevelId, onR
 function CourseRow({ course, onRegister, registering, canManage }) {
   const eligible = course.eligibility_status === 'eligible'
   const reasons  = course.eligibility_reasons ?? []
-  const seats    = course.available_seats ?? 0
-  const capacity = course.capacity ?? 0
 
   return (
     <div className={`flex items-start justify-between gap-3 px-5 py-3.5 transition-colors ${eligible ? 'hover:bg-primary/[0.02]' : 'opacity-70'}`} dir="rtl">
@@ -301,9 +299,6 @@ function CourseRow({ course, onRegister, registering, canManage }) {
         </div>
         <div className="flex items-center gap-2 mt-1 flex-wrap">
           <CourseRequirementBadges classification={pickRequirementClassification(course)} compact />
-          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${seats > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
-            {seats}/{capacity} مقعد
-          </span>
           {reasons.map(r => {
             const info = REASON_LABELS[r] ?? { ar: r, color: 'bg-gray-100 text-text-light' }
             return (
