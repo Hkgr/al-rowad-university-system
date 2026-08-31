@@ -12,13 +12,16 @@ use App\Models\Semester;
 use App\Models\Student;
 use App\Models\StudentCourseRegistration;
 use App\Models\StudentCreditLimit;
+use App\Models\StudentRegistrationRequest;
+use App\Models\StudentRegistrationRequestItem;
 use App\Support\AcademicCalendarPolicyResult;
 use App\Support\CourseRequirementClassification;
 use App\Support\CourseRegistrationDeadlineResult;
 use App\Support\CourseRegistrationPhase;
 use App\Support\RegistrationMaterializationContext;
-use Carbon\CarbonInterface;
 use App\Support\SupplementaryExamTargetGuard;
+use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
@@ -83,18 +86,78 @@ class RegistrationService
         }
     }
 
-    /**
-     * Trusted materialization entry point for the existing advisor request
-     * workflow. The caller must hold and validate the request deadline lock.
-     */
+    /** Trusted boundary bound to a current submitted request and its item. */
     public function materializeAdvisorApprovedRequestItemWithinTransaction(
-        array $data,
-        ?int $authenticatedUserId = null,
+        StudentRegistrationRequest $request,
+        StudentRegistrationRequestItem $item,
+        int $advisorUserId,
+        ?CarbonInterface $at = null,
     ): array {
+        if (DB::transactionLevel() < 1 || ! $request->exists || ! $item->exists) {
+            throw RegistrationException::liveWorkflowRequired();
+        }
+
+        $lockedRequest = StudentRegistrationRequest::query()
+            ->whereKey($request->getKey())
+            ->lockForUpdate()
+            ->first();
+        $lockedItem = StudentRegistrationRequestItem::query()
+            ->whereKey($item->getKey())
+            ->lockForUpdate()
+            ->first();
+
+        if ($lockedRequest === null
+            || $lockedItem === null
+            || ! $lockedRequest->isSubmitted()
+            || $lockedRequest->expired_at !== null
+            || $lockedRequest->approved_at !== null
+            || (int) $lockedItem->student_registration_request_id !== (int) $lockedRequest->getKey()
+            || $lockedItem->student_course_registration_id !== null
+        ) {
+            throw RegistrationException::liveWorkflowRequired();
+        }
+
+        $offering = CourseOffering::query()
+            ->whereKey($lockedItem->course_offering_id)
+            ->lockForUpdate()
+            ->first();
+        if ($offering === null
+            || (int) $offering->academic_year_id !== (int) $lockedRequest->academic_year_id
+            || (int) $offering->semester_id !== (int) $lockedRequest->semester_id
+        ) {
+            throw RegistrationException::liveWorkflowRequired();
+        }
+
+        $evaluatedAt = $at === null
+            ? CarbonImmutable::now('UTC')
+            : CarbonImmutable::instance($at)->utc();
+        $deadline = $this->courseRegistrationDeadlines(
+            (int) $lockedRequest->academic_year_id,
+            (int) $lockedRequest->semester_id,
+            $evaluatedAt,
+        );
+        if ($deadline->phase === CourseRegistrationPhase::CONFIGURATION_ERROR) {
+            $this->throwDeadlineConfigurationException($deadline);
+        }
+        if (! $deadline->isAdvisorDecisionOpen()
+            || $lockedRequest->last_submitted_at === null
+            || $deadline->startsAt === null
+            || $deadline->studentRegistrationEndsAt === null
+            || CarbonImmutable::instance($lockedRequest->last_submitted_at)->utc()->lt($deadline->startsAt)
+            || CarbonImmutable::instance($lockedRequest->last_submitted_at)->utc()->gt($deadline->studentRegistrationEndsAt)
+        ) {
+            throw RegistrationException::courseRegistrationWindowClosed();
+        }
+
         try {
             return $this->performRegisterStudent(
-                $data,
-                $authenticatedUserId,
+                [
+                    'student_id' => (int) $lockedRequest->student_id,
+                    'course_offering_id' => (int) $lockedItem->course_offering_id,
+                    'advisor_user_id' => $advisorUserId,
+                    'registration_date' => $evaluatedAt->toDateString(),
+                ],
+                $advisorUserId,
                 RegistrationMaterializationContext::ADVISOR_APPROVAL,
             );
         } catch (QueryException $exception) {
@@ -154,6 +217,11 @@ class RegistrationService
         if ($result->phase !== CourseRegistrationPhase::CONFIGURATION_ERROR) {
             throw RegistrationException::courseRegistrationWindowClosed();
         }
+        $this->throwDeadlineConfigurationException($result);
+    }
+
+    private function throwDeadlineConfigurationException(CourseRegistrationDeadlineResult $result): never
+    {
         if (in_array($result->reasonCode, ['unknown_academic_year', 'academic_year_not_operational'], true)) {
             throw RegistrationException::academicCalendarYearContextInvalid();
         }
@@ -264,9 +332,9 @@ class RegistrationService
         }
 
         // Direct/student materialization always receives a fresh evaluation
-        // after locking the authoritative Offering. Advisor materialization is
-        // a distinct trusted entry point whose request deadline was validated
-        // while holding the request lock in RegistrationRequestService.
+        // after locking the authoritative Offering. The advisor entry point
+        // independently re-locks and validates its submitted request proof and
+        // deadlines before it can reach this shared persistence core.
         if ($context === RegistrationMaterializationContext::STUDENT_WINDOW) {
             $this->assertCourseRegistrationStudentWindowOpen(
                 (int) $courseOffering->academic_year_id,

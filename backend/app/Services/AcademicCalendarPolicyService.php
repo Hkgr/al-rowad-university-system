@@ -7,6 +7,7 @@ use App\Models\AcademicCalendarEvent;
 use App\Models\AcademicCalendarEventVersion;
 use App\Models\AcademicYear;
 use App\Models\Semester;
+use App\Support\AcademicCalendar;
 use App\Support\AcademicCalendarPolicyResult;
 use App\Support\AcademicCalendarPolicyStatus;
 use App\Support\CourseRegistrationDeadlineResult;
@@ -189,6 +190,10 @@ class AcademicCalendarPolicyService
             $evaluatedAt,
             reasonCode: $reason,
         );
+
+        if (! AcademicCalendar::registrationDeadlineSchemaReady()) {
+            return $configurationError('course_registration_deadline_schema_not_ready');
+        }
 
         $types = AcademicCalendarEventType::query()
             ->where('event_type_code', self::COURSE_REGISTRATION_EVENT_TYPE)

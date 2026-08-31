@@ -33,12 +33,20 @@ $contract = static function (string $backendRoot): array {
     $expect(str_contains($apply, 'ADD COLUMN IF NOT EXISTS') && ! preg_match('/\b(?:INSERT|UPDATE|DELETE|CREATE TABLE)\b/i', $apply), 'Apply must be additive, rerunnable DDL without historical rewrites.');
     $expect(str_contains($verify, 'legacy_fallback_rows'), 'Verify must report rather than rewrite legacy null deadlines.');
     $expect(str_contains($preflight, '@srd_request_text_contract=4') && str_contains($apply, '@srd_apply_runtime_contract=5') && str_contains($verify, '@srd_verify_runtime_contract=5'), 'SQL guards must prove expired status/event storage and nullable system provenance are compatible.');
+    foreach (['@srd_apply_core_tables=21', '@srd_apply_core_columns=76', '@srd_apply_signed_keys=11', '@srd_apply_version_indexes=4', '@srd_apply_request_indexes=3', '@srd_apply_registration_type=1', '@srd_apply_advisor_role=1', '@srd_apply_advisor_mappings=2', '@srd_apply_root_duplicates=0'] as $guard) {
+        $expect(str_contains($apply, $guard), 'Apply must independently enforce prerequisite '.$guard);
+    }
+    $expect(str_contains($apply, "SELECT 'OVERALL'") && str_contains($apply, "'APPLIED','BLOCKED'"), 'Apply must visibly fail closed without relying on preflight.');
+    foreach (['@srd_verify_core_tables=21', '@srd_verify_core_columns=76', '@srd_verify_signed_keys=11', '@srd_verify_version_indexes=4', '@srd_verify_request_indexes=3'] as $guard) {
+        $expect(str_contains($verify, $guard), 'Verify must retain installed prerequisite '.$guard);
+    }
     $expect(str_contains($preflight, "@srd_root_duplicates=0") && str_contains($verify, "@srd_verify_root_duplicates=0"), 'One non-cancelled registration root per term must be verified.');
     foreach (['registration_requests.view', 'registration_requests.review', 'academic_advisor'] as $rbac) {
         $expect(str_contains($preflight, $rbac) && str_contains($verify, $rbac), 'Existing advisor authority must be preserved: '.$rbac);
     }
 
     $policy = $read($backendRoot.'/app/Services/AcademicCalendarPolicyService.php');
+    $calendarSupport = $read($backendRoot.'/app/Support/AcademicCalendar.php');
     $calendar = $read($backendRoot.'/app/Services/AcademicCalendarService.php');
     $registration = $read($backendRoot.'/app/Services/RegistrationService.php');
     $requests = $read($backendRoot.'/app/Services/RegistrationRequestService.php');
@@ -54,6 +62,11 @@ $contract = static function (string $backendRoot): array {
         $expect(str_contains($deadlineResult, $field), 'Deadline result is missing '.$field);
     }
     $deadlineEvaluation = $method($policy, 'courseRegistrationDeadlines');
+    $schemaGuard = strpos($deadlineEvaluation, 'AcademicCalendar::registrationDeadlineSchemaReady()');
+    $deadlineColumnQuery = strpos($deadlineEvaluation, 'student_registration_ends_at');
+    $expect($schemaGuard !== false && $deadlineColumnQuery !== false && $schemaGuard < $deadlineColumnQuery, 'Deadline schema readiness must precede every query that selects Phase 2 columns.');
+    $expect(str_contains($deadlineEvaluation, 'course_registration_deadline_schema_not_ready'), 'Missing Phase 2 columns must return a stable controlled reason.');
+    $expect(str_contains($calendarSupport, "Schema::hasColumn('student_registration_requests', 'expired_at')"), 'Deadline schema readiness must reject a partially installed request-expiration column set.');
     $expect(str_contains($deadlineEvaluation, 'whereNull(\'cancelled_at\')') && str_contains($deadlineEvaluation, "publication_status', 'published") && str_contains($deadlineEvaluation, "whereNull('acev.superseded_at')"), 'Deadline evaluation must use the current non-cancelled published version.');
     $expect(str_contains($deadlineEvaluation, '$legacyFallback') && str_contains($deadlineEvaluation, '$genericEndsAt'), 'Legacy null deadlines must fall back to generic ends_at.');
     $expect(str_contains($deadlineEvaluation, '->lte($studentEndsAt)') && str_contains($deadlineEvaluation, '->lte($advisorEndsAt)'), 'Student and advisor boundaries must be inclusive.');
@@ -69,6 +82,11 @@ $contract = static function (string $backendRoot): array {
     $materialize = $method($registration, 'performRegisterStudent');
     $expect(str_contains($studentEntry, 'RegistrationMaterializationContext::STUDENT_WINDOW'), 'Student materialization must use the explicit student context.');
     $expect(str_contains($advisorEntry, 'RegistrationMaterializationContext::ADVISOR_APPROVAL'), 'Advisor materialization must use a distinct trusted context.');
+    foreach (['StudentRegistrationRequest $request', 'StudentRegistrationRequestItem $item', 'DB::transactionLevel()', 'isSubmitted()', 'expired_at', 'approved_at', 'student_registration_request_id', 'academic_year_id', 'semester_id', 'last_submitted_at', 'isAdvisorDecisionOpen()'] as $proof) {
+        $expect(str_contains($advisorEntry, $proof), 'Advisor materialization boundary is missing proof invariant '.$proof);
+    }
+    $expect(! str_contains($advisorEntry, 'array $data'), 'Advisor materialization must not accept arbitrary registration data.');
+    $expect(str_contains($advisorEntry, "'student_id' => (int) \$lockedRequest->student_id") && str_contains($advisorEntry, "'course_offering_id' => (int) \$lockedItem->course_offering_id"), 'Advisor materialization identities must be derived from locked request state.');
     $expect(! preg_match('/ignoreCalendar|bypassCalendar|skipCalendar/i', $registration), 'A generic calendar bypass is forbidden.');
     $gate = strpos($materialize, 'assertCourseRegistrationStudentWindowOpen(');
     $offeringLock = strpos($materialize, 'CourseOffering::query()');

@@ -579,13 +579,10 @@ class RegistrationRequestService
                 foreach ($locked->items->sortBy('student_registration_request_item_id') as $item) {
                     $currentOfferingId = (int) $item->course_offering_id;
                     $result = $this->registration->materializeAdvisorApprovedRequestItemWithinTransaction(
-                        [
-                            'student_id' => $student->student_id,
-                            'course_offering_id' => $item->course_offering_id,
-                            'advisor_user_id' => $user->user_id,
-                            'registration_date' => $now->toDateString(),
-                        ],
-                        (int) $user->user_id
+                        $locked,
+                        $item,
+                        (int) $user->user_id,
+                        $now,
                     );
                     $registration = $result['registration'];
                     $item->update([

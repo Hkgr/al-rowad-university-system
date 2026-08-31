@@ -3,9 +3,13 @@
 namespace Tests\Feature;
 
 use App\Exceptions\AcademicCalendarException;
+use App\Exceptions\RegistrationException;
 use App\Exceptions\RegistrationRequestException;
+use App\Models\AcademicYear;
 use App\Models\AcademicCalendarEventType;
 use App\Models\StudentRegistrationRequest;
+use App\Models\StudentRegistrationRequestItem;
+use App\Models\User;
 use App\Services\AcademicCalendarService;
 use App\Services\AcademicCalendarPolicyService;
 use App\Services\AcademicRequirementService;
@@ -86,6 +90,22 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
         self::assertTrue($result->legacyDeadlineFallback);
         self::assertTrue($result->studentRegistrationEndsAt?->equalTo($result->advisorApprovalEndsAt));
         self::assertNull(DB::table('academic_calendar_event_versions')->where('academic_calendar_event_version_id', $versionId)->value('student_registration_ends_at'));
+    }
+
+    public function test_missing_phase_two_deadline_columns_return_controlled_configuration_error(): void
+    {
+        Schema::table('academic_calendar_event_versions', function (Blueprint $table): void {
+            $table->dropColumn(['student_registration_ends_at', 'advisor_approval_ends_at']);
+        });
+        Schema::table('student_registration_requests', function (Blueprint $table): void {
+            $table->dropColumn('expired_at');
+        });
+
+        $result = app(AcademicCalendarPolicyService::class)->courseRegistrationDeadlines(1, 1);
+
+        self::assertSame(CourseRegistrationPhase::CONFIGURATION_ERROR, $result->phase);
+        self::assertSame('course_registration_deadline_schema_not_ready', $result->reasonCode);
+        self::assertSame(0, DB::table('academic_calendar_events')->count());
     }
 
     /** @dataProvider invalidWindowMutations */
@@ -273,6 +293,145 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
         self::assertSame(0, DB::table('student_registration_request_events')->count());
     }
 
+    public function test_student_materialization_is_blocked_after_student_cutoff_while_valid_advisor_request_materializes(): void
+    {
+        $this->registrationWindow(
+            startsAt: '2026-09-01 00:00:00',
+            studentEndsAt: '2026-09-05 00:00:00',
+            advisorEndsAt: '2026-09-07 00:00:00',
+        );
+        $this->seedRegistrationRequestContext();
+        $at = CarbonImmutable::parse('2026-09-06T00:00:00Z');
+        CarbonImmutable::setTestNow($at);
+        $registration = $this->realRegistrationService();
+
+        try {
+            DB::transaction(fn () => $registration->registerStudentWithinTransaction([
+                'student_id' => 1,
+                'course_offering_id' => 1,
+            ], 7));
+            self::fail('Direct materialization after the student cutoff must fail.');
+        } catch (RegistrationException $exception) {
+            self::assertSame(RegistrationException::COURSE_REGISTRATION_WINDOW_CLOSED, $exception->errorCode);
+        }
+
+        [$requests, $actor] = $this->advisorWorkflow($registration);
+        $requests->approve($actor, StudentRegistrationRequest::query()->findOrFail(1));
+
+        self::assertSame(1, DB::table('student_course_registrations')->count());
+        self::assertSame('approved', DB::table('student_registration_requests')->where('student_registration_request_id', 1)->value('status'));
+        self::assertNotNull(DB::table('student_registration_request_items')->where('student_registration_request_item_id', 1)->value('student_course_registration_id'));
+    }
+
+    public function test_full_advisor_path_one_second_after_deadline_expires_without_materialization(): void
+    {
+        $this->registrationWindow(
+            startsAt: '2026-09-01 00:00:00',
+            studentEndsAt: '2026-09-05 00:00:00',
+            advisorEndsAt: '2026-09-07 00:00:00',
+        );
+        $this->seedRegistrationRequestContext();
+        [$requests, $actor] = $this->advisorWorkflow($this->realRegistrationService());
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-07T00:00:01Z'));
+
+        try {
+            $requests->approve($actor, StudentRegistrationRequest::query()->findOrFail(1));
+            self::fail('Advisor approval after the deadline must fail.');
+        } catch (RegistrationRequestException $exception) {
+            self::assertSame(RegistrationRequestException::ADVISOR_DEADLINE_CLOSED, $exception->errorCode);
+        }
+
+        self::assertSame('expired', DB::table('student_registration_requests')->where('student_registration_request_id', 1)->value('status'));
+        self::assertSame(0, DB::table('student_course_registrations')->count());
+        self::assertSame(1, DB::table('student_registration_request_events')->where('event_type', 'expired_deadline')->count());
+    }
+
+    /** @dataProvider invalidAdvisorRequestStates */
+    public function test_advisor_materialization_boundary_rejects_non_submitted_states(string $status): void
+    {
+        $this->registrationWindow();
+        $this->seedRegistrationRequestContext($status);
+        $service = $this->realRegistrationService();
+
+        $this->expectRegistrationCode(
+            fn () => DB::transaction(fn () => $service->materializeAdvisorApprovedRequestItemWithinTransaction(
+                StudentRegistrationRequest::query()->findOrFail(1),
+                StudentRegistrationRequestItem::query()->findOrFail(1),
+                7,
+                CarbonImmutable::parse('2026-09-06T00:00:00Z'),
+            )),
+            RegistrationException::LIVE_WORKFLOW_REQUIRED,
+        );
+        self::assertSame(0, DB::table('student_course_registrations')->count());
+    }
+
+    public static function invalidAdvisorRequestStates(): array
+    {
+        return [['draft'], ['returned'], ['expired'], ['approved']];
+    }
+
+    public function test_advisor_materialization_boundary_requires_transaction_request_item_and_matching_term(): void
+    {
+        $this->registrationWindow();
+        $this->seedRegistrationRequestContext();
+        $service = $this->realRegistrationService();
+        $request = StudentRegistrationRequest::query()->findOrFail(1);
+        $item = StudentRegistrationRequestItem::query()->findOrFail(1);
+
+        $this->expectRegistrationCode(
+            fn () => $service->materializeAdvisorApprovedRequestItemWithinTransaction($request, $item, 7),
+            RegistrationException::LIVE_WORKFLOW_REQUIRED,
+        );
+        $this->expectRegistrationCode(
+            fn () => DB::transaction(fn () => $service->materializeAdvisorApprovedRequestItemWithinTransaction(
+                new StudentRegistrationRequest,
+                new StudentRegistrationRequestItem,
+                7,
+            )),
+            RegistrationException::LIVE_WORKFLOW_REQUIRED,
+        );
+
+        DB::table('student_registration_request_items')->where('student_registration_request_item_id', 1)->update(['student_registration_request_id' => 999]);
+        $this->expectRegistrationCode(
+            fn () => DB::transaction(fn () => $service->materializeAdvisorApprovedRequestItemWithinTransaction($request, $item->fresh(), 7)),
+            RegistrationException::LIVE_WORKFLOW_REQUIRED,
+        );
+
+        DB::table('student_registration_request_items')->where('student_registration_request_item_id', 1)->update(['student_registration_request_id' => 1]);
+        DB::table('course_offerings')->where('course_offering_id', 1)->update(['semester_id' => 2]);
+        $this->expectRegistrationCode(
+            fn () => DB::transaction(fn () => $service->materializeAdvisorApprovedRequestItemWithinTransaction($request, $item->fresh(), 7)),
+            RegistrationException::LIVE_WORKFLOW_REQUIRED,
+        );
+        self::assertSame(0, DB::table('student_course_registrations')->count());
+    }
+
+    public function test_advisor_materialization_boundary_rechecks_submission_and_advisor_deadlines(): void
+    {
+        $this->registrationWindow(
+            startsAt: '2026-09-01 00:00:00',
+            studentEndsAt: '2026-09-05 00:00:00',
+            advisorEndsAt: '2026-09-07 00:00:00',
+        );
+        $this->seedRegistrationRequestContext();
+        $service = $this->realRegistrationService();
+        $request = StudentRegistrationRequest::query()->findOrFail(1);
+        $item = StudentRegistrationRequestItem::query()->findOrFail(1);
+
+        DB::table('student_registration_requests')->where('student_registration_request_id', 1)->update(['last_submitted_at' => '2026-09-05 00:00:01']);
+        $this->expectRegistrationCode(
+            fn () => DB::transaction(fn () => $service->materializeAdvisorApprovedRequestItemWithinTransaction($request->fresh(), $item, 7, CarbonImmutable::parse('2026-09-06T00:00:00Z'))),
+            RegistrationException::COURSE_REGISTRATION_WINDOW_CLOSED,
+        );
+
+        DB::table('student_registration_requests')->where('student_registration_request_id', 1)->update(['last_submitted_at' => '2026-09-05 00:00:00']);
+        $this->expectRegistrationCode(
+            fn () => DB::transaction(fn () => $service->materializeAdvisorApprovedRequestItemWithinTransaction($request->fresh(), $item, 7, CarbonImmutable::parse('2026-09-07T00:00:01Z'))),
+            RegistrationException::COURSE_REGISTRATION_WINDOW_CLOSED,
+        );
+        self::assertSame(0, DB::table('student_course_registrations')->count());
+    }
+
     private function requestService(): RegistrationRequestService
     {
         return new RegistrationRequestService(
@@ -281,6 +440,91 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
             Mockery::mock(DataScopeService::class),
             Mockery::mock(AcademicRequirementService::class),
         );
+    }
+
+    private function realRegistrationService(): RegistrationService
+    {
+        $requirements = Mockery::mock(AcademicRequirementService::class);
+        $requirements->shouldReceive('assertRegistrationCandidateAllowed')->zeroOrMoreTimes();
+        $requirements->shouldReceive('buildRegistrationCommitmentContext')->zeroOrMoreTimes()->andReturn([]);
+        $requirements->shouldReceive('evaluateRegistrationCandidate')->zeroOrMoreTimes()->andReturn(['allowed' => true, 'reason' => null]);
+        $requirements->shouldReceive('validateRegistrationRequestCommitment')->zeroOrMoreTimes()->andReturn([]);
+
+        $service = Mockery::mock(RegistrationService::class, [
+            $requirements,
+            app(AcademicCalendarPolicyService::class),
+        ])->makePartial();
+        $service->shouldReceive('assertSelfRegistrationAllowed')->zeroOrMoreTimes();
+        $service->shouldReceive('getMissingPrerequisites')->zeroOrMoreTimes()->andReturn([]);
+
+        return $service;
+    }
+
+    /** @return array{RegistrationRequestService, User} */
+    private function advisorWorkflow(RegistrationService $registration): array
+    {
+        $terms = Mockery::mock(AcademicTermResolver::class);
+        $terms->shouldReceive('uniqueCurrentAcademicYear')->zeroOrMoreTimes()->andReturn(AcademicYear::query()->findOrFail(1));
+        $scopes = Mockery::mock(DataScopeService::class);
+        $scopes->shouldReceive('canStaffAccessStudent')->zeroOrMoreTimes()->andReturn(true);
+        $requirements = Mockery::mock(AcademicRequirementService::class);
+        $requirements->shouldReceive('buildRegistrationCommitmentContext')->zeroOrMoreTimes()->andReturn([]);
+        $requirements->shouldReceive('evaluateRegistrationCandidate')->zeroOrMoreTimes()->andReturn(['allowed' => true, 'reason' => null]);
+        $requirements->shouldReceive('validateRegistrationRequestCommitment')->zeroOrMoreTimes()->andReturn([]);
+
+        $actor = Mockery::mock(User::class)->makePartial();
+        $actor->setAttribute('user_id', 7);
+        $actor->exists = true;
+        $actor->shouldReceive('hasPermission')->with('registration_requests.review')->andReturn(true);
+
+        return [new RegistrationRequestService($registration, $terms, $scopes, $requirements), $actor];
+    }
+
+    private function seedRegistrationRequestContext(string $status = 'submitted'): void
+    {
+        DB::table('users')->insert(['user_id' => 7, 'username' => 'advisor']);
+        DB::table('courses')->insert(['course_id' => 1, 'course_code' => 'C101', 'course_name' => 'Course 101', 'credit_hours' => 3]);
+        DB::table('course_offerings')->insert([
+            'course_offering_id' => 1,
+            'course_id' => 1,
+            'academic_year_id' => 1,
+            'semester_id' => 1,
+            'capacity' => 2,
+            'available_seats' => 2,
+            'status' => 'open',
+        ]);
+        DB::table('registration_statuses')->insert([
+            ['registration_status_id' => 1, 'status_code' => 'registered'],
+            ['registration_status_id' => 2, 'status_code' => 'dropped'],
+            ['registration_status_id' => 3, 'status_code' => 'withdrawn'],
+        ]);
+        DB::table('student_registration_requests')->insert([
+            'student_registration_request_id' => 1,
+            'student_id' => 1,
+            'academic_year_id' => 1,
+            'semester_id' => 1,
+            'status' => $status,
+            'submission_version' => $status === 'draft' ? 0 : 1,
+            'first_submitted_at' => $status === 'draft' ? null : '2026-09-05 00:00:00',
+            'last_submitted_at' => $status === 'draft' ? null : '2026-09-05 00:00:00',
+            'expired_at' => $status === 'expired' ? '2026-09-08 00:00:00' : null,
+            'approved_at' => $status === 'approved' ? '2026-09-06 00:00:00' : null,
+        ]);
+        DB::table('student_registration_request_items')->insert([
+            'student_registration_request_item_id' => 1,
+            'student_registration_request_id' => 1,
+            'course_offering_id' => 1,
+        ]);
+    }
+
+    private function expectRegistrationCode(callable $operation, string $errorCode): void
+    {
+        try {
+            $operation();
+            self::fail('Expected registration failure '.$errorCode);
+        } catch (RegistrationException $exception) {
+            self::assertSame($errorCode, $exception->errorCode);
+        }
     }
 
     private function closedDeadline(): CourseRegistrationDeadlineResult
@@ -346,6 +590,7 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
     {
         Schema::create('academic_years', function (Blueprint $table): void {
             $table->increments('academic_year_id');
+            $table->string('year_name')->nullable();
             $table->boolean('is_current');
             $table->boolean('is_active');
             $table->string('calendar_lifecycle_status');
@@ -353,6 +598,7 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
         Schema::create('semesters', function (Blueprint $table): void {
             $table->increments('semester_id');
             $table->string('semester_code');
+            $table->string('semester_name')->nullable();
             $table->boolean('is_active');
         });
         Schema::create('academic_calendar_event_types', function (Blueprint $table): void {
@@ -381,7 +627,52 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
         });
         Schema::create('students', function (Blueprint $table): void {
             $table->increments('student_id');
+            $table->string('student_number')->nullable();
+            $table->string('first_name')->nullable();
+            $table->string('last_name')->nullable();
+            $table->integer('academic_program_id')->nullable();
+            $table->integer('current_academic_level_id')->nullable();
+            $table->softDeletes();
             $table->timestamps();
+        });
+        Schema::create('users', function (Blueprint $table): void {
+            $table->increments('user_id');
+            $table->string('username')->nullable();
+            $table->integer('employee_id')->nullable();
+            $table->timestamps();
+        });
+        Schema::create('courses', function (Blueprint $table): void {
+            $table->increments('course_id');
+            $table->string('course_code');
+            $table->string('course_name');
+            $table->integer('credit_hours');
+        });
+        Schema::create('course_offerings', function (Blueprint $table): void {
+            $table->increments('course_offering_id');
+            $table->integer('course_id');
+            $table->integer('academic_year_id');
+            $table->integer('semester_id');
+            $table->integer('academic_program_id')->nullable();
+            $table->integer('capacity');
+            $table->integer('available_seats');
+            $table->string('status');
+            $table->timestamps();
+        });
+        Schema::create('registration_statuses', function (Blueprint $table): void {
+            $table->increments('registration_status_id');
+            $table->string('status_code')->unique();
+        });
+        Schema::create('course_prerequisites', function (Blueprint $table): void {
+            $table->increments('course_prerequisite_id');
+            $table->integer('course_id');
+            $table->integer('prerequisite_course_id');
+        });
+        Schema::create('student_credit_limits', function (Blueprint $table): void {
+            $table->increments('student_credit_limit_id');
+            $table->integer('student_id');
+            $table->integer('academic_year_id');
+            $table->integer('semester_id');
+            $table->integer('max_credit_hours');
         });
         Schema::create('student_registration_requests', function (Blueprint $table): void {
             $table->increments('student_registration_request_id');
@@ -390,8 +681,26 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
             $table->integer('semester_id');
             $table->string('status');
             $table->integer('submission_version')->default(0);
+            $table->text('student_notes')->nullable();
+            $table->integer('advisor_user_id')->nullable();
             $table->text('advisor_notes')->nullable();
+            $table->dateTime('first_submitted_at')->nullable();
+            $table->dateTime('last_submitted_at')->nullable();
+            $table->dateTime('reviewed_at')->nullable();
+            $table->dateTime('approved_at')->nullable();
             $table->dateTime('expired_at')->nullable();
+            $table->integer('registered_hours_before_approval')->nullable();
+            $table->integer('request_hours_at_approval')->nullable();
+            $table->integer('projected_hours_at_approval')->nullable();
+            $table->integer('max_allowed_hours_at_approval')->nullable();
+            $table->integer('remaining_hours_after_approval')->nullable();
+            $table->timestamps();
+        });
+        Schema::create('student_registration_request_items', function (Blueprint $table): void {
+            $table->increments('student_registration_request_item_id');
+            $table->integer('student_registration_request_id');
+            $table->integer('course_offering_id');
+            $table->integer('student_course_registration_id')->nullable();
             $table->timestamps();
         });
         Schema::create('student_registration_request_events', function (Blueprint $table): void {
@@ -408,6 +717,15 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
         Schema::create('student_course_registrations', function (Blueprint $table): void {
             $table->increments('student_course_registration_id');
             $table->integer('student_id');
+            $table->integer('course_offering_id');
+            $table->date('registration_date')->nullable();
+            $table->integer('registered_by_user_id')->nullable();
+            $table->integer('advisor_user_id')->nullable();
+            $table->integer('registration_status_id')->nullable();
+            $table->integer('result_status_id')->nullable();
+            $table->text('notes')->nullable();
+            $table->timestamps();
+            $table->unique(['student_id', 'course_offering_id']);
         });
     }
 }

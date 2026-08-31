@@ -6,6 +6,8 @@ use App\Exceptions\RegistrationException;
 use App\Services\AcademicCalendarPolicyService;
 use App\Services\AcademicRequirementService;
 use App\Services\RegistrationService;
+use App\Models\StudentRegistrationRequest;
+use App\Models\StudentRegistrationRequestItem;
 use App\Support\AcademicCalendarPolicyResult;
 use App\Support\AcademicCalendarPolicyStatus;
 use App\Support\CourseRegistrationDeadlineResult;
@@ -93,15 +95,31 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
 
     public function test_trusted_advisor_materialization_reuses_all_registration_rules_without_the_student_cutoff(): void
     {
-        $policy = $this->createMock(AcademicCalendarPolicyService::class);
-        $policy->expects($this->never())->method('courseRegistrationDeadlines');
-
-        DB::transaction(fn () => $this->service($policy)->materializeAdvisorApprovedRequestItemWithinTransaction([
+        DB::table('student_registration_requests')->insert([
+            'student_registration_request_id' => 1,
             'student_id' => 1,
+            'academic_year_id' => 1,
+            'semester_id' => 1,
+            'status' => 'submitted',
+            'submission_version' => 1,
+            'last_submitted_at' => '2026-09-04 00:00:00',
+        ]);
+        DB::table('student_registration_request_items')->insert([
+            'student_registration_request_item_id' => 1,
+            'student_registration_request_id' => 1,
             'course_offering_id' => 1,
-            'advisor_user_id' => 7,
-            'registration_date' => '2026-09-05',
-        ], 7));
+        ]);
+        $policy = $this->createMock(AcademicCalendarPolicyService::class);
+        $policy->expects($this->once())
+            ->method('courseRegistrationDeadlines')
+            ->willReturn($this->deadlineResult(CourseRegistrationPhase::ADVISOR_REVIEW));
+
+        DB::transaction(fn () => $this->service($policy)->materializeAdvisorApprovedRequestItemWithinTransaction(
+            StudentRegistrationRequest::query()->findOrFail(1),
+            StudentRegistrationRequestItem::query()->findOrFail(1),
+            7,
+            CarbonImmutable::parse('2026-09-05T00:00:00Z'),
+        ));
 
         self::assertSame(1, DB::table('student_course_registrations')->count());
         self::assertSame(1, (int) DB::table('course_offerings')->where('course_offering_id', 1)->value('available_seats'));
@@ -632,6 +650,16 @@ class AcademicCalendarPhase4RegistrationEnforcementTest extends TestCase
             $table->integer('academic_year_id');
             $table->integer('semester_id');
             $table->string('status');
+            $table->integer('submission_version')->default(0);
+            $table->dateTime('last_submitted_at')->nullable();
+            $table->dateTime('approved_at')->nullable();
+            $table->dateTime('expired_at')->nullable();
+        });
+        Schema::create('student_registration_request_items', function (Blueprint $table): void {
+            $table->increments('student_registration_request_item_id');
+            $table->integer('student_registration_request_id');
+            $table->integer('course_offering_id');
+            $table->integer('student_course_registration_id')->nullable();
         });
     }
 }
