@@ -50,6 +50,7 @@ class RegistrationService
         private AcademicRequirementService $requirements,
         private AcademicCalendarPolicyService $academicCalendarPolicy,
         private GradeService $grades,
+        private CourseOfferingScheduleService $schedules,
     ) {
     }
 
@@ -350,6 +351,14 @@ class RegistrationService
             );
         }
 
+        $timetable = $this->schedules->registrationEvaluations(
+            $student,
+            collect([$courseOffering]),
+            $this->currentRegisteredOfferingIds($student),
+            [],
+        )[(int) $courseOffering->course_offering_id];
+        $this->assertTimetableEvaluation($timetable);
+
         $registrationDate = $data['registration_date'] ?? now()->toDateString();
         $reactivatable = $this->findReactivatableRegistration(
             $student->student_id,
@@ -616,6 +625,18 @@ class RegistrationService
         $registrations->each(
             fn (StudentCourseRegistration $registration) => $registration->setRelation('student', $student)
         );
+        $registrationOfferings = $registrations
+            ->pluck('courseOffering')
+            ->filter()
+            ->unique('course_offering_id')
+            ->values();
+        $registrationSchedules = $this->schedules->describeMany($registrationOfferings);
+        $registrationOfferings->each(function (CourseOffering $offering) use ($registrationSchedules): void {
+            $offering->setAttribute(
+                'official_timetable',
+                $registrationSchedules[(int) $offering->course_offering_id] ?? null,
+            );
+        });
 
         $resolvedYearId = $academicYearId ?? (int) ($registrations->first()?->courseOffering?->academic_year_id ?? 0);
         $resolvedSemesterId = $semesterId ?? (int) ($registrations->first()?->courseOffering?->semester_id ?? 0);
@@ -694,8 +715,14 @@ class RegistrationService
             : null;
 
         $requirementContext = $this->requirements->buildRegistrationCommitmentContext($student);
+        $timetable = $this->schedules->registrationEvaluations(
+            $student,
+            $offerings,
+            $registeredOfferingIds,
+            [],
+        );
 
-        return $offerings->map(function (CourseOffering $offering) use ($student, $registeredOfferingIds, $hours, $requirementContext, $academicStanding): CourseOffering {
+        return $offerings->map(function (CourseOffering $offering) use ($student, $registeredOfferingIds, $hours, $requirementContext, $academicStanding, $timetable): CourseOffering {
             return $this->annotateOfferingEligibility(
                 $offering,
                 $student,
@@ -703,6 +730,7 @@ class RegistrationService
                 $hours,
                 requirementContext: $requirementContext,
                 academicStanding: $academicStanding,
+                timetable: $timetable[(int) $offering->course_offering_id] ?? null,
             );
         });
     }
@@ -799,6 +827,12 @@ class RegistrationService
         $academicStanding = $this->officialRegistrationAcademicStanding($student);
         $hours = $this->getHoursSnapshot($student, $academicYearId, $semesterId, $academicStanding);
         $requirementContext = $this->requirements->buildRegistrationCommitmentContext($student);
+        $timetable = $this->schedules->registrationEvaluations(
+            $student,
+            $offerings,
+            $registeredOfferingIds,
+            $requestOfferingIds,
+        );
 
         return $offerings->map(function (CourseOffering $offering) use (
             $student,
@@ -808,6 +842,7 @@ class RegistrationService
             $requestOfferingIds,
             $requirementContext,
             $academicStanding,
+            $timetable,
         ): CourseOffering {
             return $this->annotateOfferingEligibility(
                 $offering,
@@ -818,6 +853,7 @@ class RegistrationService
                 $requestOfferingIds,
                 $requirementContext,
                 $academicStanding,
+                $timetable[(int) $offering->course_offering_id] ?? null,
             );
         });
     }
@@ -928,6 +964,7 @@ class RegistrationService
         array $requestOfferingIds = [],
         ?array $requirementContext = null,
         ?array $academicStanding = null,
+        ?array $timetable = null,
     ): CourseOffering {
         $academicStanding ??= $this->officialRegistrationAcademicStanding($student);
         $missing = $this->getMissingPrerequisites(
@@ -970,11 +1007,48 @@ class RegistrationService
             $reasons[] = $evaluation['reason'];
         }
 
+        if ($timetable !== null && is_string($timetable['reason'] ?? null)) {
+            $reasons[] = $timetable['reason'];
+        }
+
         $offering->setAttribute('eligibility_status', $reasons === [] ? 'eligible' : 'not_eligible');
-        $offering->setAttribute('eligibility_reasons', $reasons);
+        $offering->setAttribute('eligibility_reasons', array_values(array_unique($reasons)));
         $offering->setAttribute('missing_prerequisites', $missing);
+        $offering->setAttribute('official_timetable', $timetable['schedule'] ?? null);
+        $offering->setAttribute('timetable_conflicts', $timetable['conflicts'] ?? []);
 
         return $offering;
+    }
+
+    public function timetableEvaluations(
+        Student $student,
+        Collection $offerings,
+        array $officialOfferingIds,
+        array $requestOfferingIds,
+    ): array {
+        return $this->schedules->registrationEvaluations(
+            $student,
+            $offerings,
+            $officialOfferingIds,
+            $requestOfferingIds,
+        );
+    }
+
+    private function assertTimetableEvaluation(array $evaluation): void
+    {
+        $reason = $evaluation['reason'] ?? null;
+        if ($reason === null) {
+            return;
+        }
+        if ($reason === RegistrationException::TIMETABLE_SCHEMA_NOT_READY) {
+            throw RegistrationException::timetableSchemaNotReady();
+        }
+        if ($reason === RegistrationException::OFFERING_SCHEDULE_INCOMPLETE) {
+            throw RegistrationException::offeringScheduleIncomplete($evaluation['schedule'] ?? []);
+        }
+        if ($reason === RegistrationException::TIMETABLE_CONFLICT) {
+            throw RegistrationException::timetableConflict($evaluation['conflicts'] ?? []);
+        }
     }
 
     private function constrainSelfRegistrationOfferings(Builder $query, Student $student): Builder

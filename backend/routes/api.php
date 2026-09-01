@@ -599,6 +599,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::post('dean/registration-offerings/{courseOffering}/close', [DeanRegistrationOfferingController::class, 'close']);
     Route::put('dean/registration-offerings/{courseOffering}/proposal', [DeanRegistrationOfferingController::class, 'updateProposal']);
     Route::post('dean/registration-offerings/{courseOffering}/submit', [DeanRegistrationOfferingController::class, 'submit']);
+    Route::put('dean/registration-offerings/{courseOffering}/timetable', [DeanRegistrationOfferingController::class, 'replaceTimetable']);
     Route::get('vice-presidency/scientific/semester-offerings', [ScientificSemesterOfferingController::class, 'index']);
     Route::get('vice-presidency/scientific/semester-offerings/{semesterOfferingRequest}', [ScientificSemesterOfferingController::class, 'show']);
     Route::post('vice-presidency/scientific/semester-offerings/{semesterOfferingRequest}/approve', [ScientificSemesterOfferingController::class, 'approve']);

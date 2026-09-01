@@ -4,6 +4,8 @@ import { FaPaperPlane, FaPlus, FaSpinner, FaTimes } from 'react-icons/fa'
 import { apiRequest } from '../../../services/apiClient'
 import { hasAssignedPermission, hasPermission, PERMISSIONS } from '../../auth/auth'
 import DeanConfirmDialog from '../components/DeanConfirmDialog'
+import DeanTimetableDialog from '../components/DeanTimetableDialog'
+import OfficialTimetable from '../../registration-requests/OfficialTimetable'
 import { firstApiErrorMessage, offeringStatusLabel, displayValue } from '../utils/teacherDisplay'
 import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 import {
@@ -130,6 +132,7 @@ function CourseCard({
   onToggleSelection,
   onManageOffering,
   onManageInstructors,
+  onManageTimetable,
   onRequestException,
   onResubmitException,
   onRequestClosure,
@@ -216,6 +219,12 @@ function CourseCard({
         </p>
       ) : null}
 
+      {offering ? (
+        <div className="mt-3">
+          <OfficialTimetable schedule={offering.official_timetable} />
+        </div>
+      ) : null}
+
       {(minimumRequired && (!offering || (governance && proposalEditable) || (!governance && locallySelected))) ? (
         <label className="mt-3 flex flex-col gap-1">
           <span className="text-[11px] font-bold text-text-dark">الحد الأدنى للتسجيل</span>
@@ -277,6 +286,15 @@ function CourseCard({
             >
               إدارة الطرح
             </button>
+            {canManage ? (
+              <button
+                type="button"
+                className="px-3 py-2 border border-primary/25 text-primary-dark rounded-[10px] text-[12.5px] font-bold hover:bg-primary/5"
+                onClick={() => onManageTimetable(offering)}
+              >
+                تحرير الجدول الأسبوعي الرسمي
+              </button>
+            ) : null}
             {canManage && offering.status === 'closed' && proposalEditable ? (
               <button
                 type="button"
@@ -519,6 +537,7 @@ export default function DeanRegistrationOfferings() {
   const [busyIds, setBusyIds] = useState({})
   const [confirm, setConfirm] = useState(null)
   const [addLevel, setAddLevel] = useState(null)
+  const [timetableEditor, setTimetableEditor] = useState(null)
   const savingRef = useRef(false)
 
   const goToLogin = useCallback(() => navigate('/login', { replace: true }), [navigate])
@@ -741,6 +760,7 @@ export default function DeanRegistrationOfferings() {
         onToggleSelection={(item, selected) => { void updateGovernanceSelection(item, selected) }}
         onManageOffering={id => navigate(`/dean/courses/${id}`)}
         onManageInstructors={id => navigate(`/dean/courses/${id}`)}
+        onManageTimetable={offering => setTimetableEditor(offering)}
         onRequestException={item => {
           setExceptionReason('')
           setConfirm({
@@ -919,6 +939,15 @@ export default function DeanRegistrationOfferings() {
       semester: data.semester ?? null,
     })
     setClosureByOffering(await fetchCurrentClosureRequests(data.levels ?? []))
+  }
+
+  function applySavedTimetable(offeringId, description) {
+    setLevels(current => current.map(level => ({
+      ...level,
+      courses: (level.courses ?? []).map(row => Number(row.offering?.course_offering_id) === Number(offeringId)
+        ? { ...row, offering: { ...row.offering, official_timetable: description } }
+        : row),
+    })))
   }
 
   async function savePreparation() {
@@ -1274,6 +1303,26 @@ export default function DeanRegistrationOfferings() {
           onClose={() => setAddLevel(null)}
         />
       )}
+
+      {timetableEditor ? (
+        <DeanTimetableDialog
+          offeringId={timetableEditor.course_offering_id}
+          schedule={timetableEditor.official_timetable}
+          onClose={() => setTimetableEditor(null)}
+          onSaved={async description => {
+            const offeringId = timetableEditor.course_offering_id
+            applySavedTimetable(offeringId, description)
+            setTimetableEditor(null)
+            try {
+              await reloadCatalog()
+              showNotice('تم حفظ الجدول الأسبوعي الرسمي وإعادة تحميل بيانات الطرح.')
+            } catch {
+              setCatalogRefreshRequired(true)
+              showNotice('تم حفظ الجدول الأسبوعي، لكن تعذرت إعادة تحميل بيانات الطرح. استخدم إعادة تحميل الحالة.', 'warning')
+            }
+          }}
+        />
+      ) : null}
 
       {confirm && (
         <DeanConfirmDialog

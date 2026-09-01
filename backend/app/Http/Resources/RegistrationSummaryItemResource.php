@@ -41,6 +41,7 @@ class RegistrationSummaryItemResource extends JsonResource
             'course_offering_id' => $this->course_offering_id,
             'requirement_classification' => CourseRequirementClassification::forStudent($programId, $courseId, $programCourse),
             'offering_status' => $this->whenLoaded('courseOffering', fn () => $this->courseOffering?->status),
+            'official_timetable' => $this->whenLoaded('courseOffering', fn () => $this->courseOffering?->official_timetable),
             'registration_status' => RegistrationStatusResource::make($this->whenLoaded('registrationStatus')),
             'registration_date' => $this->registration_date,
             'academic_year' => AcademicYearResource::make($this->whenLoaded(

@@ -182,13 +182,22 @@ class RegistrationRequestService
                 (int) $year->academic_year_id,
                 (int) $offering->semester_id,
             );
+            $requestOfferingIds = $this->requestOfferingIds($request);
+            $freshOffering = $offering->fresh(['course']) ?? $offering;
+            $timetable = $this->registration->timetableEvaluations(
+                $student,
+                collect([$freshOffering]),
+                $registeredIds,
+                $requestOfferingIds,
+            )[(int) $offering->course_offering_id] ?? null;
             $failure = $this->itemFailureReason(
                 $student,
-                $offering->fresh() ?? $offering,
+                $freshOffering,
                 $hours,
                 $registeredIds,
                 $this->requestHours($request, $registeredIds),
-                $this->requirements->buildRegistrationCommitmentContext($student)
+                $this->requirements->buildRegistrationCommitmentContext($student),
+                $timetable,
             );
             if ($failure !== null) {
                 $itemFailure = [
@@ -202,9 +211,13 @@ class RegistrationRequestService
                         $hours,
                     );
                 }
+                $this->appendTimetableFailureData($itemFailure, $timetable);
+                $status = $failure === RegistrationException::TIMETABLE_SCHEMA_NOT_READY
+                    ? 503
+                    : (in_array($failure, [RegistrationException::OFFERING_SCHEDULE_INCOMPLETE, RegistrationException::TIMETABLE_CONFLICT], true) ? 409 : 422);
                 throw new RegistrationRequestException('This course cannot be added to the registration request.', [
                     'course_offering_id' => [$failure],
-                ], 422, $failure, [$itemFailure]);
+                ], $status, $failure, [$itemFailure]);
             }
 
             $item = $request->items()->create([
@@ -1226,6 +1239,13 @@ class RegistrationRequestService
         );
         $registeredIds = $this->registration->currentOfferingIds($student);
         $requirementContext = $this->requirements->buildRegistrationCommitmentContext($student);
+        $requestOfferingIds = $this->requestOfferingIds($request);
+        $timetable = $this->registration->timetableEvaluations(
+            $student,
+            $request->items->pluck('courseOffering')->filter()->values(),
+            $registeredIds,
+            $requestOfferingIds,
+        );
         $runningRequestHours = 0;
         $failures = [];
         $failedOfferingIds = [];
@@ -1247,7 +1267,8 @@ class RegistrationRequestService
                 $hours,
                 $registeredIds,
                 $runningRequestHours,
-                $requirementContext
+                $requirementContext,
+                $timetable[(int) $offering->course_offering_id] ?? null,
             );
             if ($reason !== null) {
                 $failure = [
@@ -1261,6 +1282,10 @@ class RegistrationRequestService
                         $hours,
                     );
                 }
+                $this->appendTimetableFailureData(
+                    $failure,
+                    $timetable[(int) $offering->course_offering_id] ?? null,
+                );
                 $failures[] = $failure;
                 $failedOfferingIds[(int) $offering->course_offering_id] = true;
                 continue;
@@ -1290,7 +1315,8 @@ class RegistrationRequestService
         array $hours,
         array $registeredOfferingIds,
         int $runningRequestHours,
-        ?array $requirementContext = null
+        ?array $requirementContext = null,
+        ?array $timetable = null,
     ): ?string {
         try {
             $this->registration->assertSelfRegistrationAllowed($student, $offering);
@@ -1325,7 +1351,25 @@ class RegistrationRequestService
             return (string) $evaluation['reason'];
         }
 
+        if ($timetable !== null && is_string($timetable['reason'] ?? null)) {
+            return $timetable['reason'];
+        }
+
         return null;
+    }
+
+    private function appendTimetableFailureData(array &$failure, ?array $timetable): void
+    {
+        if ($timetable === null) {
+            return;
+        }
+        if (($timetable['reason'] ?? null) === RegistrationException::OFFERING_SCHEDULE_INCOMPLETE) {
+            $failure['components_defined'] = $timetable['schedule']['components_defined'] ?? false;
+            $failure['missing_schedule_components'] = $timetable['schedule']['missing_components'] ?? [];
+        }
+        if (($timetable['reason'] ?? null) === RegistrationException::TIMETABLE_CONFLICT) {
+            $failure['conflicts'] = $timetable['conflicts'] ?? [];
+        }
     }
 
     private function mapRegistrationException(RegistrationException $exception): string
@@ -1463,13 +1507,20 @@ class RegistrationRequestService
             $programId,
             $items->map(fn (StudentRegistrationRequestItem $item) => $item->courseOffering?->course_id)
         );
+        $timetable = $this->registration->timetableEvaluations(
+            $student,
+            $items->pluck('courseOffering')->filter()->values(),
+            $registeredIds,
+            $items->pluck('course_offering_id')->map(fn ($id): int => (int) $id)->all(),
+        );
 
         $items = $items
             ->map(function (StudentRegistrationRequestItem $item) use (
                 $includeEligibility,
                 $failureByOffering,
                 $programId,
-                $courseMap
+                $courseMap,
+                $timetable,
             ): array {
                 $offering = $item->courseOffering;
                 $courseId = $offering?->course_id === null ? null : (int) $offering->course_id;
@@ -1486,6 +1537,8 @@ class RegistrationRequestService
                         $courseId,
                         $courseMap
                     ),
+                    'official_timetable' => $timetable[(int) $item->course_offering_id]['schedule'] ?? null,
+                    'timetable_conflicts' => $timetable[(int) $item->course_offering_id]['conflicts'] ?? [],
                 ];
 
                 if ($includeEligibility) {

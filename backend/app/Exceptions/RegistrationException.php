@@ -44,11 +44,18 @@ class RegistrationException extends Exception
 
     public const COURSE_ALREADY_PASSED = 'course_already_passed';
 
+    public const TIMETABLE_SCHEMA_NOT_READY = 'timetable_schema_not_ready';
+
+    public const OFFERING_SCHEDULE_INCOMPLETE = 'offering_schedule_incomplete';
+
+    public const TIMETABLE_CONFLICT = 'timetable_conflict';
+
     public function __construct(
         string $message,
         public readonly array $errors = [],
         public readonly int $status = 422,
         public readonly ?string $errorCode = null,
+        public readonly array $data = [],
     ) {
         parent::__construct($message);
     }
@@ -188,6 +195,42 @@ class RegistrationException extends Exception
             ['course_offering_id' => [self::COURSE_ALREADY_PASSED]],
             422,
             self::COURSE_ALREADY_PASSED,
+        );
+    }
+
+    public static function timetableSchemaNotReady(): self
+    {
+        $message = 'Course registration cannot continue because the official timetable schema is not ready.';
+
+        return new self($message, ['timetable' => [self::TIMETABLE_SCHEMA_NOT_READY]], 503, self::TIMETABLE_SCHEMA_NOT_READY);
+    }
+
+    public static function offeringScheduleIncomplete(array $schedule): self
+    {
+        $message = 'The selected course official timetable is incomplete.';
+
+        return new self(
+            $message,
+            ['course_offering_id' => [self::OFFERING_SCHEDULE_INCOMPLETE]],
+            409,
+            self::OFFERING_SCHEDULE_INCOMPLETE,
+            [
+                'components_defined' => $schedule['components_defined'] ?? false,
+                'missing_schedule_components' => $schedule['missing_components'] ?? [],
+            ],
+        );
+    }
+
+    public static function timetableConflict(array $conflicts): self
+    {
+        $message = 'The selected course conflicts with the student official timetable.';
+
+        return new self(
+            $message,
+            ['course_offering_id' => [self::TIMETABLE_CONFLICT]],
+            409,
+            self::TIMETABLE_CONFLICT,
+            ['conflicts' => $conflicts],
         );
     }
 }

@@ -5,6 +5,7 @@ import { apiRequest } from '../../../services/apiClient'
 import DeanConfirmDialog from '../components/DeanConfirmDialog'
 import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 import { advisorActionsVisible, formatUniversityDateTime, registrationPhaseLabel } from '../../registration-requests/registrationDeadlinePresentation'
+import OfficialTimetable from '../../registration-requests/OfficialTimetable'
 
 const STATUS_LABELS = {
   draft: 'مسودة',
@@ -15,6 +16,9 @@ const STATUS_LABELS = {
 }
 
 const REASON_LABELS = {
+  timetable_schema_not_ready: 'مخطط الجدول الرسمي غير جاهز',
+  offering_schedule_incomplete: 'الجدول الأسبوعي غير مكتمل',
+  timetable_conflict: 'تعارض في الجدول',
   already_registered: 'مسجل مسبقاً',
   course_already_passed: 'تم اجتياز هذا المقرر سابقاً ولا يمكن تسجيله مجدداً ضمن التسجيل العادي.',
   missing_prerequisites: 'متطلب سابق غير محقق',
@@ -212,6 +216,9 @@ export default function DeanRegistrationRequestDetail() {
                 <p className="text-[12px] text-text-light mt-1">
                   {item.course_code} — {item.credit_hours} ساعات
                 </p>
+                <div className="mt-2">
+                  <OfficialTimetable schedule={item.official_timetable} conflicts={item.timetable_conflicts} compact />
+                </div>
                 {(item.missing_prerequisites ?? []).length > 0 ? (
                   <ul className="mt-2 space-y-1 text-[12px] text-amber-900">
                     {(item.missing_prerequisites ?? []).map(prerequisite => (

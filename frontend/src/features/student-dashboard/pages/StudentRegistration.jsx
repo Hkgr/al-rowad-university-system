@@ -7,8 +7,12 @@ import { apiRequest } from '../../../services/apiClient'
 import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 import StudentConfirmDialog from '../components/StudentConfirmDialog'
 import { formatUniversityDateTime, studentRegistrationNotice } from '../../registration-requests/registrationDeadlinePresentation'
+import OfficialTimetable from '../../registration-requests/OfficialTimetable'
 
 const REASON_LABELS = {
+  timetable_schema_not_ready: { ar: 'مخطط الجدول الرسمي غير جاهز حالياً.', tone: 'full' },
+  offering_schedule_incomplete: { ar: 'الجدول الأسبوعي غير مكتمل بعد.', tone: 'prerequisite' },
+  timetable_conflict: { ar: 'يوجد تعارض في الجدول.', tone: 'full' },
   already_registered: { ar: 'مسجل مسبقاً', tone: 'registered' },
   already_in_request: { ar: 'مضاف إلى الطلب', tone: 'request' },
   course_already_passed: { ar: 'تم اجتياز هذا المقرر سابقاً ولا يمكن تسجيله مجدداً ضمن التسجيل العادي.', tone: 'registered' },
@@ -299,6 +303,9 @@ function CourseRow({ course, onAdd, adding, canEdit, advisoryMode }) {
           <div className="flex items-center gap-2 mt-1 flex-wrap text-[11.5px] text-text-light">
             <span className="font-mono">{course.course_code}</span>
             <span className="text-primary font-bold">{course.credit_hours} ساعات</span>
+          </div>
+          <div className="mt-2">
+            <OfficialTimetable schedule={course.official_timetable} conflicts={course.timetable_conflicts} compact />
           </div>
           {reasons
             .filter(reason => reason !== 'already_registered' && reason !== 'already_in_request')
@@ -754,6 +761,9 @@ export default function StudentRegistration() {
                           </span>
                         </div>
                       </div>
+                      <div className="min-w-[220px] flex-1">
+                        <OfficialTimetable schedule={item.official_timetable} conflicts={item.timetable_conflicts} compact />
+                      </div>
                       {canRemoveItem ? (
                         <button
                           type="button"
@@ -819,6 +829,9 @@ export default function StudentRegistration() {
                   <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded-full">
                     مسجل ومعتمد سابقاً
                   </span>
+                </div>
+                <div className="mt-2">
+                  <OfficialTimetable schedule={registration.official_timetable} compact />
                 </div>
               </div>
             ))}
