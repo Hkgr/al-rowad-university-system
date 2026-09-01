@@ -52,6 +52,8 @@ class RegistrationException extends Exception
 
     public const TIMETABLE_REFERENCE_INCOMPLETE = 'timetable_reference_incomplete';
 
+    public const REGISTRATION_MODIFICATION_REQUIRED = 'registration_modification_required';
+
     public function __construct(
         string $message,
         public readonly array $errors = [],
@@ -74,6 +76,13 @@ class RegistrationException extends Exception
         $message = 'Self-drop is not allowed after the course offering has closed.';
 
         return new self($message, ['registration' => [$message]], 409, self::SELF_DROP_CLOSED);
+    }
+
+    public static function registrationModificationRequired(): self
+    {
+        $message = 'يتطلب إسقاط مقرر من تسجيل معتمد تقديم طلب تعديل التسجيل وموافقة المرشد الأكاديمي.';
+
+        return new self($message, ['registration' => [$message]], 409, self::REGISTRATION_MODIFICATION_REQUIRED);
     }
 
     public static function notCurrent(): self

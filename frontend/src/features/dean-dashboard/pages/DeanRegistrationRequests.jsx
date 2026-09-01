@@ -22,6 +22,7 @@ function formatDateTime(value) {
 export default function DeanRegistrationRequests() {
   const navigate = useNavigate()
   const [payload, setPayload] = useState(null)
+  const [kind, setKind] = useState('initial')
   const [status, setStatus] = useState('submitted')
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
@@ -34,7 +35,8 @@ export default function DeanRegistrationRequests() {
       setLoading(true)
       setError('')
       try {
-        const response = await apiRequest(`/v1/academic-advising/registration-requests?status=${status}`)
+        const resource = kind === 'modification' ? 'registration-modifications' : 'registration-requests'
+        const response = await apiRequest(`/v1/academic-advising/${resource}?status=${status}`)
         if (!active) return
         setPayload(response?.data ?? null)
       } catch (requestError) {
@@ -53,7 +55,7 @@ export default function DeanRegistrationRequests() {
 
     load()
     return () => { active = false }
-  }, [status, navigate])
+  }, [status, kind, navigate])
 
   const rows = useMemo(() => {
     const list = payload?.requests ?? []
@@ -79,6 +81,11 @@ export default function DeanRegistrationRequests() {
           مراجعة طلبات التسجيل ضمن نطاق الكلية. الاعتماد يثبّت التسجيل الأكاديمي نهائياً.
         </p>
       </header>
+
+      <div className="flex flex-wrap gap-2 rounded-[14px] border border-primary/12 bg-white p-2">
+        <button type="button" onClick={() => { setKind('initial'); setStatus('submitted') }} className={`rounded-[10px] px-4 py-2 text-[13px] font-bold ${kind === 'initial' ? 'bg-primary text-white' : 'text-primary'}`}>طلبات التسجيل</button>
+        <button type="button" onClick={() => { setKind('modification'); setStatus('submitted') }} className={`rounded-[10px] px-4 py-2 text-[13px] font-bold ${kind === 'modification' ? 'bg-primary text-white' : 'text-primary'}`}>طلبات تعديل التسجيل</button>
+      </div>
 
       <div className="grid grid-cols-4 max-[1000px]:grid-cols-2 max-[600px]:grid-cols-1 gap-3">
         {[
@@ -123,9 +130,9 @@ export default function DeanRegistrationRequests() {
             { key: 'year', header: 'السنة', render: row => row.academic_year?.year_name || '—' },
             { key: 'semester', header: 'الفصل', render: row => row.semester?.semester_name || '—' },
             { key: 'version', header: 'الإصدار', render: row => row.submission_version },
-            { key: 'request_hours', header: 'ساعات الطلب', render: row => row.hours?.approved_snapshot?.request_hours_at_approval ?? row.hours?.request_hours ?? 0 },
+            { key: 'request_hours', header: kind === 'modification' ? 'ساعات التغيير' : 'ساعات الطلب', render: row => kind === 'modification' ? (row.hours?.change_hours ?? 0) : (row.hours?.approved_snapshot?.request_hours_at_approval ?? row.hours?.request_hours ?? 0) },
             { key: 'projected', header: 'الإجمالي المتوقع', render: row => row.hours?.approved_snapshot?.projected_hours_at_approval ?? row.hours?.projected_hours ?? 0 },
-            { key: 'max', header: 'الحد الأقصى', render: row => row.hours?.approved_snapshot?.max_allowed_hours_at_approval ?? row.hours?.max_allowed_hours ?? 0 },
+            { key: 'max', header: 'الحد الأقصى', render: row => row.hours?.approved_snapshot?.max_allowed_hours_at_approval ?? row.hours?.max_allowed_hours ?? '—' },
             { key: 'submitted_at', header: 'تاريخ الإرسال', render: row => formatDateTime(row.last_submitted_at) },
             { key: 'phase', header: 'مرحلة التسجيل', render: row => registrationPhaseLabel(row.registration_calendar) },
             { key: 'advisor_deadline', header: 'مهلة المرشد', render: row => formatUniversityDateTime(row.registration_calendar?.advisor_approval_ends_at) },
@@ -137,7 +144,9 @@ export default function DeanRegistrationRequests() {
                 <button
                   type="button"
                   className="text-[12px] font-bold text-primary hover:underline"
-                  onClick={() => navigate(`/dean/registration-requests/${row.student_registration_request_id}`)}
+                  onClick={() => navigate(kind === 'modification'
+                    ? `/dean/registration-modifications/${row.student_registration_modification_request_id}`
+                    : `/dean/registration-requests/${row.student_registration_request_id}`)}
                 >
                   عرض
                 </button>
@@ -145,7 +154,7 @@ export default function DeanRegistrationRequests() {
             },
           ]}
           rows={rows}
-          rowKey={row => row.student_registration_request_id}
+          rowKey={row => kind === 'modification' ? row.student_registration_modification_request_id : row.student_registration_request_id}
           emptyTitle="لا توجد طلبات في هذه الحالة."
         />
       )}

@@ -85,10 +85,12 @@ use App\Http\Controllers\Api\StudentSelfGraduationEligibilityController;
 use App\Http\Controllers\Api\StudentSelfRequirementController;
 use App\Http\Controllers\Api\StudentSelfTranscriptController;
 use App\Http\Controllers\Api\AcademicAdvisingRegistrationRequestController;
+use App\Http\Controllers\Api\AcademicAdvisingRegistrationModificationController;
 use App\Http\Controllers\Api\AcademicAdvisingRegistrationWithdrawalController;
 use App\Http\Controllers\Api\AcademicProgressionController;
 use App\Http\Controllers\Api\AcademicRecordTermController;
 use App\Http\Controllers\Api\ApprovedRegistrationRequestController;
+use App\Http\Controllers\Api\StudentRegistrationModificationController;
 use App\Http\Controllers\Api\GraduationDecisionController;
 use App\Http\Controllers\Api\StudentAcademicTermController;
 use App\Http\Controllers\Api\StudentCourseRegistrationController;
@@ -278,14 +280,24 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
         Route::post('student/registration/{registration}/withdrawal', [StudentSelfRegistrationController::class, 'submitWithdrawal']);
         Route::post('student/registration/withdrawals/{withdrawalRequest}/resubmit', [StudentSelfRegistrationController::class, 'resubmitWithdrawal']);
         Route::get('student/registration/withdrawals', [StudentSelfRegistrationController::class, 'withdrawals']);
+        Route::post('student/registration/modification', [StudentRegistrationModificationController::class, 'store']);
+        Route::patch('student/registration/modification', [StudentRegistrationModificationController::class, 'update']);
+        Route::patch('student/registration/modification/items/{modificationItem}', [StudentRegistrationModificationController::class, 'updateItem']);
+        Route::post('student/registration/modification/items/{courseOffering}', [StudentRegistrationModificationController::class, 'addItem']);
+        Route::delete('student/registration/modification/items/{modificationItem}', [StudentRegistrationModificationController::class, 'removeItem']);
+        Route::post('student/registration/modification/submit', [StudentRegistrationModificationController::class, 'submit']);
     });
     Route::middleware(\App\Http\Middleware\RequirePermission::class.':registration_requests.view')->group(function (): void {
         Route::get('academic-advising/registration-requests', [AcademicAdvisingRegistrationRequestController::class, 'index']);
         Route::get('academic-advising/registration-requests/{registrationRequest}', [AcademicAdvisingRegistrationRequestController::class, 'show']);
+        Route::get('academic-advising/registration-modifications', [AcademicAdvisingRegistrationModificationController::class, 'index']);
+        Route::get('academic-advising/registration-modifications/{modification}', [AcademicAdvisingRegistrationModificationController::class, 'show']);
     });
     Route::middleware(\App\Http\Middleware\RequirePermission::class.':registration_requests.review')->group(function (): void {
         Route::post('academic-advising/registration-requests/{registrationRequest}/return', [AcademicAdvisingRegistrationRequestController::class, 'returnForModification']);
         Route::post('academic-advising/registration-requests/{registrationRequest}/approve', [AcademicAdvisingRegistrationRequestController::class, 'approve']);
+        Route::post('academic-advising/registration-modifications/{modification}/return', [AcademicAdvisingRegistrationModificationController::class, 'returnForModification']);
+        Route::post('academic-advising/registration-modifications/{modification}/approve', [AcademicAdvisingRegistrationModificationController::class, 'approve']);
     });
     Route::middleware(\App\Http\Middleware\RequirePermission::class.':registration_withdrawals.view')->group(function (): void {
         Route::get('academic-advising/registration-withdrawals', [AcademicAdvisingRegistrationWithdrawalController::class, 'index']);

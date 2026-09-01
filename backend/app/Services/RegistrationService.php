@@ -13,11 +13,15 @@ use App\Models\Student;
 use App\Models\StudentCourseRegistration;
 use App\Models\StudentRegistrationRequest;
 use App\Models\StudentRegistrationRequestItem;
+use App\Models\StudentRegistrationModificationItem;
+use App\Models\StudentRegistrationModificationRequest;
 use App\Support\AcademicCalendarPolicyResult;
 use App\Support\CourseRequirementClassification;
 use App\Support\CourseRegistrationDeadlineResult;
 use App\Support\CourseRegistrationPhase;
 use App\Support\RegistrationMaterializationContext;
+use App\Support\RegistrationProjectionContext;
+use App\Support\RegistrationModificationWorkflow;
 use App\Support\SupplementaryExamTargetGuard;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
@@ -186,14 +190,124 @@ class RegistrationService
         }
     }
 
-    public function hoursSnapshot(Student $student, int $academicYearId, int $semesterId): array
-    {
-        return $this->getHoursSnapshot($student, $academicYearId, $semesterId);
+    /** Trusted boundary bound to a current submitted Phase 5 add item. */
+    public function materializeAdvisorApprovedModificationItemWithinTransaction(
+        StudentRegistrationModificationRequest $request,
+        StudentRegistrationModificationItem $item,
+        int $advisorUserId,
+        ?CarbonInterface $at = null,
+    ): array {
+        if (DB::transactionLevel() < 1 || ! $request->exists || ! $item->exists) {
+            throw RegistrationException::liveWorkflowRequired();
+        }
+
+        $lockedRequest = StudentRegistrationModificationRequest::query()
+            ->whereKey($request->getKey())
+            ->lockForUpdate()
+            ->first();
+        $lockedStudent = $lockedRequest === null ? null : Student::query()
+            ->whereKey($lockedRequest->student_id)
+            ->lockForUpdate()
+            ->first();
+        $itemSnapshot = StudentRegistrationModificationItem::query()
+            ->whereKey($item->getKey())
+            ->first();
+        if ($lockedRequest === null
+            || $lockedStudent === null
+            || $itemSnapshot === null
+            || $lockedRequest->status !== RegistrationModificationWorkflow::STATUS_SUBMITTED
+            || ! $lockedRequest->isCurrent()
+            || $lockedRequest->expired_at !== null
+            || $lockedRequest->superseded_at !== null
+            || $lockedRequest->approved_at !== null
+            || $lockedRequest->materialized_at !== null
+            || $itemSnapshot->operation !== RegistrationModificationWorkflow::OPERATION_ADD
+            || (int) $itemSnapshot->student_registration_modification_request_id !== (int) $lockedRequest->getKey()
+            || $itemSnapshot->source_student_course_registration_id !== null
+            || $itemSnapshot->materialized_student_course_registration_id !== null
+        ) {
+            throw RegistrationException::liveWorkflowRequired();
+        }
+
+        $peerIds = StudentRegistrationModificationItem::query()
+            ->where('student_registration_modification_request_id', $lockedRequest->getKey())
+            ->where('operation', RegistrationModificationWorkflow::OPERATION_ADD)
+            ->where('student_registration_modification_item_id', '<>', $itemSnapshot->getKey())
+            ->orderBy('course_offering_id')
+            ->pluck('course_offering_id')
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        $offering = CourseOffering::query()
+            ->whereKey($itemSnapshot->course_offering_id)
+            ->lockForUpdate()
+            ->first();
+        if ($offering === null
+            || (int) $offering->academic_year_id !== (int) $lockedRequest->academic_year_id
+            || (int) $offering->semester_id !== (int) $lockedRequest->semester_id
+        ) {
+            throw RegistrationException::liveWorkflowRequired();
+        }
+
+        // The Offering owns the operational transition and is locked before
+        // the persisted delta item. The request lock prevents supported edits
+        // while these identifiers are being resolved.
+        $lockedItem = StudentRegistrationModificationItem::query()
+            ->whereKey($itemSnapshot->getKey())
+            ->lockForUpdate()
+            ->first();
+        if ($lockedItem === null
+            || $lockedItem->operation !== RegistrationModificationWorkflow::OPERATION_ADD
+            || (int) $lockedItem->student_registration_modification_request_id !== (int) $lockedRequest->getKey()
+            || (int) $lockedItem->course_offering_id !== (int) $offering->getKey()
+            || $lockedItem->source_student_course_registration_id !== null
+            || $lockedItem->materialized_student_course_registration_id !== null
+        ) {
+            throw RegistrationException::liveWorkflowRequired();
+        }
+
+        $evaluatedAt = $at === null ? CarbonImmutable::now('UTC') : CarbonImmutable::instance($at)->utc();
+        $deadline = $this->courseRegistrationDeadlines(
+            (int) $lockedRequest->academic_year_id,
+            (int) $lockedRequest->semester_id,
+            $evaluatedAt,
+        );
+        if ($deadline->phase === CourseRegistrationPhase::CONFIGURATION_ERROR) {
+            $this->throwDeadlineConfigurationException($deadline);
+        }
+        if (! $deadline->isAdvisorDecisionOpen()
+            || $lockedRequest->last_submitted_at === null
+            || $deadline->startsAt === null
+            || $deadline->studentRegistrationEndsAt === null
+            || CarbonImmutable::instance($lockedRequest->last_submitted_at)->utc()->lt($deadline->startsAt)
+            || CarbonImmutable::instance($lockedRequest->last_submitted_at)->utc()->gt($deadline->studentRegistrationEndsAt)
+        ) {
+            throw RegistrationException::courseRegistrationWindowClosed();
+        }
+
+        return $this->performRegisterStudent([
+            'student_id' => (int) $lockedRequest->student_id,
+            'course_offering_id' => (int) $lockedItem->course_offering_id,
+            'advisor_user_id' => $advisorUserId,
+            'registration_date' => $evaluatedAt->toDateString(),
+        ], $advisorUserId, RegistrationMaterializationContext::ADVISOR_APPROVAL, $peerIds);
     }
 
-    public function currentOfferingIds(Student $student): array
+    public function hoursSnapshot(
+        Student $student,
+        int $academicYearId,
+        int $semesterId,
+        ?RegistrationProjectionContext $projection = null,
+    ): array
     {
-        return $this->currentRegisteredOfferingIds($student);
+        return $this->getHoursSnapshot($student, $academicYearId, $semesterId, projection: $projection);
+    }
+
+    public function currentOfferingIds(Student $student, ?RegistrationProjectionContext $projection = null): array
+    {
+        return $this->currentRegisteredOfferingIds($student, $projection);
     }
 
     public function courseRegistrationWindow(int $academicYearId, int $semesterId): AcademicCalendarPolicyResult
@@ -513,6 +627,16 @@ class RegistrationService
                 throw RegistrationException::selfDropClosed();
             }
 
+            $workflowManagedTerm = StudentRegistrationRequest::query()
+                ->where('student_id', $locked->student_id)
+                ->where('academic_year_id', $offering->academic_year_id)
+                ->where('semester_id', $offering->semester_id)
+                ->where('status', StudentRegistrationRequest::STATUS_APPROVED)
+                ->exists();
+            if ($workflowManagedTerm) {
+                throw RegistrationException::registrationModificationRequired();
+            }
+
             $this->transitionRegisteredToDropped($locked, $offering);
 
             return $locked->fresh()->load([
@@ -814,7 +938,8 @@ class RegistrationService
         int $academicYearId,
         int $semesterId,
         int $pendingRequestHours = 0,
-        array $requestOfferingIds = []
+        array $requestOfferingIds = [],
+        ?RegistrationProjectionContext $projection = null,
     ): Collection
     {
         $query = CourseOffering::query()
@@ -836,15 +961,16 @@ class RegistrationService
             $student->academic_program_id === null ? null : (int) $student->academic_program_id,
             $offerings
         );
-        $registeredOfferingIds = $this->currentRegisteredOfferingIds($student);
+        $registeredOfferingIds = $this->currentRegisteredOfferingIds($student, $projection);
         $academicStanding = $this->officialRegistrationAcademicStanding($student);
-        $hours = $this->getHoursSnapshot($student, $academicYearId, $semesterId, $academicStanding);
-        $requirementContext = $this->requirements->buildRegistrationCommitmentContext($student);
+        $hours = $this->getHoursSnapshot($student, $academicYearId, $semesterId, $academicStanding, $projection);
+        $requirementContext = $this->requirements->buildRegistrationCommitmentContext($student, $projection);
         $timetable = $this->schedules->registrationEvaluations(
             $student,
             $offerings,
             $registeredOfferingIds,
             $requestOfferingIds,
+            $projection,
         );
 
         return $offerings->map(function (CourseOffering $offering) use (
@@ -1115,11 +1241,20 @@ class RegistrationService
             ->exists();
     }
 
-    private function currentRegisteredOfferingIds(Student $student): array
+    private function currentRegisteredOfferingIds(
+        Student $student,
+        ?RegistrationProjectionContext $projection = null,
+    ): array
     {
-        return StudentCourseRegistration::query()
+        $query = StudentCourseRegistration::query()
             ->where('student_id', $student->student_id)
-            ->current()
+            ->current();
+        if ($projection !== null) {
+            $query->whereNotIn('student_course_registration_id', $projection->excludedRegistrationIds())
+                ->whereNotIn('course_offering_id', $projection->excludedOfferingIds());
+        }
+
+        return $query
             ->pluck('course_offering_id')
             ->map(fn ($id): int => (int) $id)
             ->all();
@@ -1130,18 +1265,23 @@ class RegistrationService
         int $academicYearId,
         int $semesterId,
         ?array $academicStanding = null,
+        ?RegistrationProjectionContext $projection = null,
     ): array
     {
         $academicStanding ??= $this->officialRegistrationAcademicStanding($student);
-        $registeredHours = (int) StudentCourseRegistration::query()
+        $hoursQuery = StudentCourseRegistration::query()
             ->join('course_offerings', 'course_offerings.course_offering_id', '=', 'student_course_registrations.course_offering_id')
             ->join('courses', 'courses.course_id', '=', 'course_offerings.course_id')
             ->join('registration_statuses', 'registration_statuses.registration_status_id', '=', 'student_course_registrations.registration_status_id')
             ->where('student_course_registrations.student_id', $student->student_id)
             ->where('course_offerings.academic_year_id', $academicYearId)
             ->where('course_offerings.semester_id', $semesterId)
-            ->where('registration_statuses.status_code', StudentCourseRegistration::CURRENT_STATUS)
-            ->sum('courses.credit_hours');
+            ->where('registration_statuses.status_code', StudentCourseRegistration::CURRENT_STATUS);
+        if ($projection !== null) {
+            $hoursQuery->whereNotIn('student_course_registrations.student_course_registration_id', $projection->excludedRegistrationIds())
+                ->whereNotIn('student_course_registrations.course_offering_id', $projection->excludedOfferingIds());
+        }
+        $registeredHours = (int) $hoursQuery->sum('courses.credit_hours');
 
         $maxAllowedHours = (int) $academicStanding['max_allowed_hours'];
 
