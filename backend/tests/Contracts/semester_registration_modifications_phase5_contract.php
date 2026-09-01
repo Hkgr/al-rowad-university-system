@@ -24,7 +24,11 @@ $contract = static function (string $backendRoot): array {
         $expect(! preg_match('/^\s*(?:INSERT\s+INTO|UPDATE\s+|DELETE\s+FROM)\b/im', $sql), 'Phase 5 SQL must not backfill or seed production rows.');
     }
     $expect(str_contains($preflight, "SELECT 'OVERALL'") && str_contains($preflight, "'READY','BLOCKED'"), 'Preflight must visibly end READY/BLOCKED.');
+    $expect(str_contains($preflight, 'INCOMPLETE_RESUMABLE') && str_contains($preflight, '@srm5_request_compatible') && str_contains($preflight, '@srm5_item_compatible') && str_contains($preflight, '@srm5_event_compatible'), 'Preflight must classify each existing Phase 5 table and expose compatible partial installations as resumable.');
     $expect(substr_count(strtoupper($apply), 'CREATE TABLE') === 3, 'Apply must create exactly three Phase 5 tables.');
+    $expect(str_contains($apply, '@srm5_apply_request_exists=0') && str_contains($apply, '@srm5_apply_item_exists=0') && str_contains($apply, '@srm5_apply_event_exists=0'), 'Apply must independently create each missing Phase 5 table.');
+    $expect(str_contains($apply, "'RESUMED'") && str_contains($apply, "'ALREADY_APPLIED'"), 'Apply must distinguish resumed partial DDL from a complete rerun.');
+    $expect(! str_contains($apply, '@srm5_apply_ready AND @srm5_apply_targets=0'), 'Apply must not require all three Phase 5 tables to be absent before creating a missing table.');
     foreach (['student_registration_modification_requests', 'student_registration_modification_items', 'student_registration_modification_events'] as $table) {
         $expect(str_contains($apply, $table) && str_contains($verify, $table), 'Missing Phase 5 table contract '.$table.'.');
     }
@@ -33,6 +37,8 @@ $contract = static function (string $backendRoot): array {
     }
     $expect(! preg_match('/ON\s+DELETE\s+CASCADE/i', $apply), 'Phase 5 foreign keys must be restrictive.');
     $expect(str_contains($verify, "SELECT 'OVERALL'") && str_contains($verify, "'PASS','FAIL'"), 'Verify must visibly end PASS/FAIL.');
+    $expect(str_contains($verify, 'INCOMPLETE_RESUMABLE') && str_contains($verify, '@srm5v_existing_compatible'), 'Verify must report a compatible partial installation as incomplete and resumable.');
+    $expect(! preg_match('/FROM\s+`alrowad_uni_rust`\.`student_registration_modification_(?:requests|items|events)`/i', $verify), 'Verify must not query a potentially missing Phase 5 table directly while reporting partial DDL.');
     $expect(! preg_match('/^\s*(?:INSERT\s+INTO|UPDATE\s+|DELETE\s+FROM)\s+[^;]*(?:permissions|role_permissions)/im', $apply), 'Phase 5 must not write RBAC data.');
 
     $workflow = $read($backendRoot.'/app/Support/RegistrationModificationWorkflow.php');
@@ -56,9 +62,27 @@ $contract = static function (string $backendRoot): array {
     $expect(str_contains($service, 'registration_modification_stale') && str_contains($service, 'STATUS_SUPERSEDED'), 'Baseline drift must persist supersession and return a stable stale conflict.');
     $expect(str_contains($service, 'transitionRegisteredToDropped(') && ! str_contains($service, '->selfDrop('), 'Trusted approval must use the canonical low-level drop transition, never student selfDrop().');
     $expect(str_contains($service, 'materializeAdvisorApprovedModificationItemWithinTransaction('), 'Trusted add materialization boundary is missing.');
+    $expect(str_contains($registration, 'evaluateRegistrationCandidatesForProjection') && str_contains($registration, 'officialRegistrationAcademicStanding($student)') && str_contains($registration, 'getMissingPrerequisites($student, $courseId, $academicStanding)'), 'Phase 5 projected candidates must reuse canonical passed-course and prerequisite semantics through RegistrationService.');
+    $expect(substr_count($service, 'evaluateRegistrationCandidatesForProjection(') >= 2, 'Canonical projected candidate validation must run at add and submit/approval prevalidation.');
+    $expect(str_contains($service, 'COURSE_ALREADY_PASSED') || str_contains($registration, 'COURSE_ALREADY_PASSED'), 'Projected validation must retain the course_already_passed machine reason.');
+    $expect(str_contains($registration, "'missing_prerequisites'") && str_contains($registration, "'course_code'"), 'Projected prerequisite failures must retain structured course data.');
     $expect(str_contains($service, 'registration_modification_withdrawal_conflict'), 'Current withdrawal requests must block approval.');
     $expect(str_contains($service, "'below_recommended_minimum' =>"), 'Below 12 hours must remain an informational projection warning.');
     $expect(str_contains($service, '$lockedOfferings = CourseOffering::query()') && strpos($service, '$lockedOfferings = CourseOffering::query()') < strpos($service, '$official = $this->officialTermRegistrationsQuery'), 'Advisor approval must lock Offerings before official registrations.');
+    $expect(str_contains($service, '$materializedApproval') && str_contains($service, '$this->approvalSnapshot($request)'), 'Approved materialized presentation must use immutable approval-hour snapshots instead of live projection math.');
+
+    $behavior = $read($backendRoot.'/tests/Feature/SemesterRegistrationModificationsPhase5BehaviorTest.php');
+    foreach ([
+        'test_real_workflow_snapshots_exact_baseline_without_mutating_approved_initial_request',
+        'test_real_add_only_approval_materializes_and_links_the_official_registration',
+        'test_real_eighteen_hour_replace_succeeds_and_approved_presentation_uses_immutable_snapshot',
+        'test_real_timetable_conflict_against_keep_blocks_but_removing_that_peer_allows_replacement',
+        'test_real_passed_course_is_rejected_again_at_submit_with_stable_reason',
+        'test_real_missing_prerequisite_is_rejected_again_at_submit_with_structured_course_data',
+        'test_real_atomic_approval_rolls_back_prior_remove_and_add_when_later_add_fails',
+    ] as $behaviorMarker) {
+        $expect(str_contains($behavior, $behaviorMarker), 'Missing real Phase 5 behavior regression '.$behaviorMarker.'.');
+    }
 
     $expect(str_contains($registration, 'RegistrationProjectionContext') && str_contains($requirements, 'RegistrationProjectionContext') && str_contains($schedules, 'RegistrationProjectionContext'), 'Canonical hours, requirements, and timetable boundaries must accept the immutable projection context.');
     $expect(str_contains($registration, 'materializeAdvisorApprovedModificationItemWithinTransaction') && str_contains($registration, 'RegistrationModificationWorkflow::OPERATION_ADD'), 'The trusted add boundary must bind a persisted Phase 5 add item.');

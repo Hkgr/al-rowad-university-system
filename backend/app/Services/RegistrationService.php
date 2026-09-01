@@ -933,6 +933,45 @@ class RegistrationService
         return in_array($courseId, $academicStanding['official_passed_course_ids'], true);
     }
 
+    /**
+     * Evaluate the canonical completed-course and prerequisite rules for a
+     * projected registration set without materializing any registration.
+     *
+     * @param Collection<int, CourseOffering> $offerings
+     * @return list<array<string, mixed>>
+     */
+    public function evaluateRegistrationCandidatesForProjection(
+        Student $student,
+        Collection $offerings,
+    ): array {
+        $academicStanding = $this->officialRegistrationAcademicStanding($student);
+        $failures = [];
+
+        foreach ($offerings->filter(fn ($offering): bool => $offering instanceof CourseOffering)
+            ->unique('course_offering_id')
+            ->sortBy('course_offering_id') as $offering) {
+            $offeringId = (int) $offering->course_offering_id;
+            $courseId = (int) $offering->course_id;
+            if ($this->hasPassedCourse($student, $courseId, $academicStanding)) {
+                $failures[] = [
+                    'course_offering_id' => $offeringId,
+                    'reason' => RegistrationException::COURSE_ALREADY_PASSED,
+                ];
+            }
+
+            $missing = $this->getMissingPrerequisites($student, $courseId, $academicStanding);
+            if ($missing !== []) {
+                $failures[] = [
+                    'course_offering_id' => $offeringId,
+                    'reason' => 'missing_prerequisites',
+                    'missing_prerequisites' => $missing,
+                ];
+            }
+        }
+
+        return $failures;
+    }
+
     public function getSelfRegistrationOfferings(
         Student $student,
         int $academicYearId,

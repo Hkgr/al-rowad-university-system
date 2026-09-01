@@ -224,6 +224,19 @@ class RegistrationModificationService
                     'duplicate_final_offering',
                 );
             }
+            $canonicalFailures = $this->registration->evaluateRegistrationCandidatesForProjection(
+                $student,
+                collect([$lockedOffering]),
+            );
+            if ($canonicalFailures !== []) {
+                throw new RegistrationRequestException(
+                    'لا يمكن إضافة المقرر بسبب السجل الأكاديمي أو المتطلبات السابقة.',
+                    ['course_offering_id' => [$canonicalFailures[0]['reason']]],
+                    422,
+                    (string) $canonicalFailures[0]['reason'],
+                    $canonicalFailures,
+                );
+            }
             StudentRegistrationModificationItem::query()->create([
                 'student_registration_modification_request_id' => $request->getKey(),
                 'operation' => Workflow::OPERATION_ADD,
@@ -626,6 +639,13 @@ class RegistrationModificationService
                     $failures[] = ['course_offering_id' => (int) $item->course_offering_id, 'reason' => $exception->errorCode ?? 'not_eligible'];
                 }
             }
+            $failures = [
+                ...$failures,
+                ...$this->registration->evaluateRegistrationCandidatesForProjection(
+                    $student,
+                    $add->pluck('courseOffering')->filter(),
+                ),
+            ];
             $failures = [...$failures, ...$this->requirements->validateProjectedCandidates($student, $add->pluck('courseOffering')->filter(), $projection)];
             foreach ($schedule as $offeringId => $evaluation) {
                 if (is_string($evaluation['reason'] ?? null)) {
@@ -667,7 +687,11 @@ class RegistrationModificationService
             'items.courseOffering.course', 'items.sourceRegistration.registrationStatus',
             'items.materializedRegistration.registrationStatus', 'events.actor.employee',
         ]);
-        $projection = $includeProjection ? $this->projectedDescription($student, $request, false) : null;
+        $materializedApproval = $request->status === Workflow::STATUS_APPROVED
+            && $request->materialized_at !== null;
+        $projection = $includeProjection
+            ? $this->projectedDescription($student, $request, false)
+            : null;
         $deadline = $this->registration->courseRegistrationDeadlines((int) $request->academic_year_id, (int) $request->semester_id);
         $available = [];
         if ($includeProjection && ! $includeActor && $projection !== null) {
@@ -735,7 +759,9 @@ class RegistrationModificationService
                 ],
                 'official_timetable' => $projection['schedules'][(int) $item->course_offering_id]['schedule'] ?? null,
             ])->values()->all(),
-            'hours' => $projection['hours'] ?? $this->approvalSnapshot($request),
+            'hours' => $materializedApproval
+                ? $this->approvalSnapshot($request)
+                : ($projection['hours'] ?? $this->approvalSnapshot($request)),
             'failures' => $projection['failures'] ?? [],
             'available_courses' => $available,
             'events' => $request->events->sortBy('student_registration_modification_event_id')->map(fn ($event): array => [
