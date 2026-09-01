@@ -14,6 +14,7 @@ use App\Models\StudentCourseRegistration;
 use App\Models\StudentRegistrationRequest;
 use App\Models\StudentRegistrationRequestItem;
 use App\Support\CourseRequirementClassification;
+use App\Support\RegistrationProjectionContext;
 use Illuminate\Support\Collection;
 
 class AcademicRequirementService
@@ -333,7 +334,10 @@ class AcademicRequirementService
         ];
     }
 
-    public function buildRegistrationCommitmentContext(Student $student): array
+    public function buildRegistrationCommitmentContext(
+        Student $student,
+        ?RegistrationProjectionContext $projection = null,
+    ): array
     {
         $programId = $student->academic_program_id === null ? null : (int) $student->academic_program_id;
         if ($programId === null) {
@@ -345,7 +349,7 @@ class AcademicRequirementService
         $this->assertRequirementGroupsConfiguration($programId, $groups, $curriculumByGroup);
         $curriculumByCourseId = $this->indexCurriculumByCourseId($curriculumByGroup);
 
-        $registrations = $this->loadStudentRegistrations($student);
+        $registrations = $this->loadStudentRegistrations($student, $projection);
         $pendingItems = $this->loadOpenRequestItems($student);
 
         $earnedCourseIds = [];
@@ -403,6 +407,23 @@ class AcademicRequirementService
             }
 
             $pendingCourseIds[$courseId] = true;
+        }
+
+        if ($projection !== null) {
+            $proposed = CourseOffering::query()
+                ->with('course')
+                ->whereIn('course_offering_id', $projection->proposedAddOfferingIds())
+                ->get();
+            foreach ($proposed as $offering) {
+                $courseId = (int) $offering->course_id;
+                if (! isset($curriculumByCourseId[$courseId])
+                    || isset($earnedCourseIds[$courseId])
+                    || isset($registeredCourseIds[$courseId])
+                    || isset($pendingCourseIds[$courseId])) {
+                    continue;
+                }
+                $pendingCourseIds[$courseId] = true;
+            }
         }
 
         $groupStates = [];
@@ -529,6 +550,38 @@ class AcademicRequirementService
         )->values();
     }
 
+    /**
+     * Validate a deterministic projected add set while reusing the canonical
+     * requirement commitment calculations.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function validateProjectedCandidates(
+        Student $student,
+        Collection $candidates,
+        RegistrationProjectionContext $projection,
+    ): array {
+        $context = $this->buildRegistrationCommitmentContext($student, new RegistrationProjectionContext(
+            excludedRegistrationIds: $projection->excludedRegistrationIds(),
+            excludedOfferingIds: $projection->excludedOfferingIds(),
+        ));
+        $failures = [];
+        foreach ($candidates->sortBy('course_offering_id') as $offering) {
+            $evaluation = $this->evaluateRegistrationCandidate($student, $offering, $context);
+            if (! $evaluation['allowed']) {
+                $failures[] = [
+                    'course_offering_id' => (int) $offering->course_offering_id,
+                    'reason' => $evaluation['reason'],
+                    'requirement_group_id' => $evaluation['requirement_group_id'] ?? null,
+                ];
+                continue;
+            }
+            $context = $this->contextWithCandidate($context, $evaluation);
+        }
+
+        return $failures;
+    }
+
     public function validateRegistrationRequestCommitment(Student $student, StudentRegistrationRequest $request, ?array $context = null): array
     {
         $context ??= $this->buildRegistrationCommitmentContext($student);
@@ -646,9 +699,12 @@ class AcademicRequirementService
             ->get();
     }
 
-    private function loadStudentRegistrations(Student $student): Collection
+    private function loadStudentRegistrations(
+        Student $student,
+        ?RegistrationProjectionContext $projection = null,
+    ): Collection
     {
-        return StudentCourseRegistration::query()
+        $query = StudentCourseRegistration::query()
             ->where('student_id', $student->student_id)
             ->with([
                 'courseOffering.course',
@@ -656,8 +712,13 @@ class AcademicRequirementService
                 'studentCourseResult.resultStatus',
                 'resultStatus',
                 'registrationStatus',
-            ])
-            ->orderBy('student_course_registration_id')
+            ]);
+        if ($projection !== null) {
+            $query->whereNotIn('student_course_registration_id', $projection->excludedRegistrationIds())
+                ->whereNotIn('course_offering_id', $projection->excludedOfferingIds());
+        }
+
+        return $query->orderBy('student_course_registration_id')
             ->get();
     }
 

@@ -83,6 +83,7 @@ import DeanRegistrationOfferings from '../features/dean-dashboard/pages/DeanRegi
 import DeanSupplementaryExams from '../features/dean-dashboard/pages/DeanSupplementaryExams'
 import DeanRegistrationRequests from '../features/dean-dashboard/pages/DeanRegistrationRequests'
 import DeanRegistrationRequestDetail from '../features/dean-dashboard/pages/DeanRegistrationRequestDetail'
+import DeanRegistrationModificationDetail from '../features/dean-dashboard/pages/DeanRegistrationModificationDetail'
 import DeanReports         from '../features/dean-dashboard/pages/DeanReports'
 import DeanCalendar        from '../features/dean-dashboard/pages/DeanCalendar'
 import AcademicCalendarPage from '../features/academic-calendar/AcademicCalendarPage'
@@ -295,6 +296,7 @@ export default function App() {
           <Route path="/dean/registration-offerings" element={protect(<DeanRegistrationOfferings />, { allRoles: [ROLES.dean], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView] })} />
           <Route path="/dean/registration-requests" element={<DeanRegistrationRequests />} />
           <Route path="/dean/registration-requests/:id" element={<DeanRegistrationRequestDetail />} />
+          <Route path="/dean/registration-modifications/:id" element={<DeanRegistrationModificationDetail />} />
           <Route path="/dean/supplementary-exams" element={protect(<DeanSupplementaryExams />, { allRoles: ['dean'], assignedPermissions: ['supplementary_exams.offerings.view'] })} />
           <Route path="/dean/reports"       element={<DeanReports />} />
           <Route path="/dean/calendar"      element={<DeanCalendar />} />

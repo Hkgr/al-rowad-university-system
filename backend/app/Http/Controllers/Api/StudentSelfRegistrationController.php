@@ -15,6 +15,7 @@ use App\Models\StudentRegistrationRequestItem;
 use App\Models\StudentRegistrationWithdrawalRequest;
 use App\Services\RegistrationRequestService;
 use App\Services\RegistrationService;
+use App\Services\RegistrationModificationService;
 use App\Services\RegistrationWithdrawalService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,8 +23,10 @@ use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 class StudentSelfRegistrationController extends Controller
 {
-    public function __construct(private RegistrationRequestService $requests)
-    {
+    public function __construct(
+        private RegistrationRequestService $requests,
+        private RegistrationModificationService $modifications,
+    ) {
     }
 
     public function show(Request $request): JsonResponse
@@ -55,6 +58,11 @@ class StudentSelfRegistrationController extends Controller
                 : (new StudentRegistrationSummaryResource($workspace['summary']))->resolve($request),
             'hours' => $workspace['hours'],
             'request' => $workspace['request'],
+            'modification_workflow' => $this->modifications->studentWorkspace(
+                $student,
+                $workspace['academic_year']?->academic_year_id,
+                $workspace['semester']?->semester_id,
+            ),
         ]);
     }
 

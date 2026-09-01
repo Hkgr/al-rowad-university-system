@@ -193,6 +193,145 @@ function splitAdvisoryCourses(courses, workspaceSemesterId, studentAcademicLevel
   return { recommended, other }
 }
 
+function ApprovedRegistrationModificationPanel({ workflow, semesterId, reload, onError, showToast }) {
+  const [busy, setBusy] = useState('')
+  const [notes, setNotes] = useState(workflow?.current?.student_notes ?? '')
+  const current = workflow?.current ?? null
+  const editable = current?.editable === true
+  const items = current?.items ?? []
+  const available = current?.available_courses ?? []
+  const hours = current?.hours ?? null
+
+  useEffect(() => {
+    setNotes(current?.student_notes ?? '')
+  }, [current?.student_registration_modification_request_id, current?.student_notes])
+
+  async function mutate(path, options, key, message) {
+    setBusy(key)
+    onError('')
+    try {
+      await apiRequest(path, options)
+      showToast(message)
+      await reload()
+    } catch (error) {
+      onError(error?.message || 'تعذر تحديث طلب تعديل التسجيل.')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  if (workflow?.schema_ready !== true) {
+    return null
+  }
+
+  if (!current) {
+    if (workflow?.can_create !== true) return null
+    return (
+      <section className="rounded-[16px] border border-primary/20 bg-white p-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]" dir="rtl">
+        <h2 className="text-[16px] font-black text-text-dark">تعديل التسجيل المعتمد</h2>
+        <p className="mt-2 text-[13px] leading-7 text-text-light">يمكنك اقتراح إزالة أو إضافة مقررات. يبقى تسجيلك الرسمي الحالي نافذًا حتى اعتماد المرشد الأكاديمي.</p>
+        <button
+          type="button"
+          disabled={!semesterId || busy !== ''}
+          onClick={() => mutate('/v1/student/registration/modification', { method: 'POST', body: JSON.stringify({ semester_id: Number(semesterId) }) }, 'create', 'تم إنشاء مسودة تعديل التسجيل.')}
+          className="mt-4 rounded-[11px] bg-primary px-4 py-2.5 text-[13px] font-black text-white disabled:opacity-40"
+        >
+          {busy === 'create' ? 'جاري الإنشاء…' : 'تعديل التسجيل المعتمد'}
+        </button>
+      </section>
+    )
+  }
+
+  const statusLabel = {
+    draft: 'مسودة', submitted: 'قيد مراجعة المرشد الأكاديمي', returned: 'أعيد للتعديل',
+    approved: 'معتمد', expired: 'منتهي', superseded: 'استُبدل لتغير التسجيل الرسمي',
+  }[current.status] ?? current.status
+
+  return (
+    <section className="rounded-[16px] border border-primary/20 bg-white p-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]" dir="rtl">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-[16px] font-black text-text-dark">تعديل التسجيل المعتمد</h2>
+          <p className="mt-1 text-[12px] font-bold text-primary">{statusLabel}</p>
+        </div>
+        {hours ? <p className="text-[12px] font-bold text-text-dark">الساعات المتوقعة: {hours.projected_hours ?? 0} / {hours.max_allowed_hours ?? 0}</p> : null}
+      </div>
+      <p className="mt-3 rounded-[10px] border border-blue-200 bg-blue-50 px-3 py-2 text-[12.5px] font-semibold leading-6 text-blue-900">
+        يبقى تسجيلك الرسمي الحالي نافذًا حتى اعتماد المرشد للتعديل.
+      </p>
+      {hours?.below_recommended_minimum ? <p className="mt-2 text-[12px] font-semibold text-amber-800">العبء المتوقع أقل من 12 ساعة، وهذا تنبيه إرشادي لا يمنع الإرسال.</p> : null}
+      {current.advisor_notes ? <p className="mt-3 rounded-[10px] bg-orange-50 px-3 py-2 text-[12.5px] text-orange-900">ملاحظات المرشد: {current.advisor_notes}</p> : null}
+      {(current?.failures ?? []).length > 0 ? (
+        <div className="mt-3 rounded-[10px] border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-800">
+          {(current.failures ?? []).map((failure, index) => (
+            <p key={`${failure.course_offering_id ?? 'term'}-${failure.reason ?? index}`}>
+              {knownReasonLabel(failure.reason) ?? failure.reason}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="mt-4 space-y-2">
+        <h3 className="text-[13px] font-black text-text-dark">التسجيل الرسمي الحالي والتغييرات المطلوبة</h3>
+        {items.map(item => (
+          <div key={item.student_registration_modification_item_id} className="flex flex-wrap items-center justify-between gap-3 rounded-[11px] border border-primary/10 px-3 py-3">
+            <div>
+              <p className="text-[13px] font-bold text-text-dark">{item.course?.course_name}</p>
+              <p className="text-[11.5px] text-text-light">{item.course?.course_code} · {item.course?.credit_hours} ساعات</p>
+              <p className={`mt-1 text-[11px] font-bold ${item.operation === 'remove' ? 'text-red-700' : item.operation === 'add' ? 'text-primary' : 'text-blue-700'}`}>
+                {item.operation === 'remove' ? 'سيُحذف المقرر فقط بعد اعتماد المرشد الأكاديمي.' : item.operation === 'add' ? 'إضافة مقترحة' : 'مقرر مستمر'}
+              </p>
+            </div>
+            {editable && item.operation !== 'add' ? (
+              <button
+                type="button"
+                disabled={busy !== ''}
+                onClick={() => mutate(`/v1/student/registration/modification/items/${item.student_registration_modification_item_id}`, { method: 'PATCH', body: JSON.stringify({ operation: item.operation === 'remove' ? 'keep' : 'remove' }) }, `toggle-${item.student_registration_modification_item_id}`, item.operation === 'remove' ? 'تم التراجع عن الإزالة.' : 'تم تعليم المقرر للإزالة بعد الاعتماد.')}
+                className="rounded-[9px] border border-primary/25 px-3 py-1.5 text-[12px] font-bold text-primary"
+              >{item.operation === 'remove' ? 'تراجع عن الإزالة' : 'إزالة من التسجيل'}</button>
+            ) : null}
+            {editable && item.operation === 'add' ? (
+              <button
+                type="button"
+                disabled={busy !== ''}
+                onClick={() => mutate(`/v1/student/registration/modification/items/${item.student_registration_modification_item_id}`, { method: 'DELETE' }, `delete-${item.student_registration_modification_item_id}`, 'تمت إزالة المقرر المقترح.')}
+                className="rounded-[9px] border border-red-200 px-3 py-1.5 text-[12px] font-bold text-red-700"
+              >إزالة المقترح</button>
+            ) : null}
+          </div>
+        ))}
+      </div>
+
+      {editable ? (
+        <>
+          <div className="mt-5">
+            <h3 className="text-[13px] font-black text-text-dark">إضافة مقررات إلى المجموعة المتوقعة</h3>
+            <div className="mt-2 grid grid-cols-2 gap-2 max-[800px]:grid-cols-1">
+              {available.filter(course => !course.eligibility_reasons?.includes('already_in_request')).map(course => (
+                <button
+                  type="button"
+                  key={course.course_offering_id}
+                  disabled={busy !== '' || course.eligibility_status !== 'eligible'}
+                  onClick={() => mutate(`/v1/student/registration/modification/items/${course.course_offering_id}`, { method: 'POST', body: JSON.stringify({}) }, `add-${course.course_offering_id}`, 'تمت إضافة المقرر إلى التعديل.')}
+                  className="rounded-[10px] border border-primary/15 px-3 py-2 text-right text-[12px] font-bold text-text-dark disabled:opacity-45"
+                >{course.course_code} — {course.course_name}</button>
+              ))}
+            </div>
+          </div>
+          <label className="mt-4 block text-[12px] font-bold text-text-dark">
+            ملاحظات للمرشد
+            <textarea value={notes} onChange={event => setNotes(event.target.value)} maxLength={1000} className="mt-2 min-h-[80px] w-full rounded-[10px] border border-primary/20 p-3" />
+          </label>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" disabled={busy !== ''} onClick={() => mutate('/v1/student/registration/modification', { method: 'PATCH', body: JSON.stringify({ student_notes: notes, semester_id: Number(semesterId) }) }, 'notes', 'تم حفظ الملاحظات.')} className="rounded-[10px] border border-primary/25 px-4 py-2 text-[12px] font-bold text-primary">حفظ الملاحظات</button>
+            <button type="button" disabled={busy !== ''} onClick={() => mutate('/v1/student/registration/modification/submit', { method: 'POST', body: JSON.stringify({ semester_id: Number(semesterId) }) }, 'submit', 'تم إرسال تعديل التسجيل إلى المرشد.')} className="rounded-[10px] bg-primary px-4 py-2 text-[12px] font-black text-white">إرسال التعديل</button>
+          </div>
+        </>
+      ) : null}
+    </section>
+  )
+}
+
 function AvailableCourseSection({ title, helper, count, children, empty }) {
   return (
     <section className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
@@ -373,6 +512,7 @@ export default function StudentRegistration() {
   const registrationOpen = payload?.registration_open === true
   const requestItemRemovalOpen = payload?.request_item_removal_open === true
   const registrationCalendar = payload?.registration_calendar ?? null
+  const modificationWorkflow = payload?.modification_workflow ?? null
   const termReady = Boolean(academicYear?.academic_year_id && selectedSemesterId)
   const available = payload?.available_courses ?? []
   const workspaceSemesterId = payload?.semester?.semester_id ?? selectedSemesterId
@@ -608,6 +748,14 @@ export default function StudentRegistration() {
           {refreshing ? <span className="text-[12px] text-text-light pb-1">جاري التحديث…</span> : null}
         </div>
       </header>
+
+      <ApprovedRegistrationModificationPanel
+        workflow={modificationWorkflow}
+        semesterId={selectedSemesterId}
+        reload={reload}
+        onError={setError}
+        showToast={showToast}
+      />
 
       {toast ? (
         <div className="px-4 py-2.5 text-[12.5px] text-green-700 bg-green-50 border border-green-200 rounded-[10px] flex items-center gap-2">

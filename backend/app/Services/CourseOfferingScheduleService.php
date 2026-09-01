@@ -11,6 +11,7 @@ use App\Models\StudentRegistrationRequest;
 use App\Models\StudentRegistrationRequestItem;
 use App\Models\User;
 use App\Support\SemesterOfferingGovernance;
+use App\Support\RegistrationProjectionContext;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -190,18 +191,34 @@ class CourseOfferingScheduleService
         Collection $targets,
         array $officialOfferingIds,
         array $requestOfferingIds,
+        ?RegistrationProjectionContext $projection = null,
     ): array {
+        $excludedOfferingIds = $projection?->excludedOfferingIds() ?? [];
         if ($student->getKey() !== null) {
-            $officialOfferingIds = collect([
-                ...$officialOfferingIds,
-                ...StudentCourseRegistration::query()
+            $currentOfferingIds = $projection === null
+                ? StudentCourseRegistration::query()
                     ->where('student_id', $student->getKey())
                     ->current()
                     ->pluck('course_offering_id')
+                : StudentCourseRegistration::query()
+                    ->where('student_id', $student->getKey())
+                    ->current()
+                    ->whereNotIn('student_course_registration_id', $projection->excludedRegistrationIds())
+                    ->whereNotIn('course_offering_id', $excludedOfferingIds)
+                    ->pluck('course_offering_id');
+            $officialOfferingIds = collect([
+                ...$officialOfferingIds,
+                ...$currentOfferingIds
                     ->map(fn ($id): int => (int) $id)
                     ->all(),
-            ])->unique()->values()->all();
+            ])->reject(fn ($id): bool => in_array((int) $id, $excludedOfferingIds, true))
+                ->unique()->values()->all();
         }
+        $requestOfferingIds = collect([
+            ...$requestOfferingIds,
+            ...($projection?->proposedAddOfferingIds() ?? []),
+        ])->reject(fn ($id): bool => in_array((int) $id, $excludedOfferingIds, true))
+            ->unique()->values()->all();
         $targetIds = $targets->pluck('course_offering_id')->map(fn ($id): int => (int) $id)->all();
         $allIds = collect([...$targetIds, ...$officialOfferingIds, ...$requestOfferingIds])
             ->map(fn ($id): int => (int) $id)
