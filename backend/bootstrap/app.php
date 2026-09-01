@@ -5,6 +5,7 @@ use App\Exceptions\AcademicRecordException;
 use App\Exceptions\AcademicRequirementConfigurationException;
 use App\Exceptions\AttendanceException;
 use App\Exceptions\CourseOfferingContextException;
+use App\Exceptions\CourseOfferingScheduleException;
 use App\Exceptions\DisciplinaryCaseException;
 use App\Exceptions\GradeException;
 use App\Exceptions\CourseOfferingClosureException;
@@ -123,6 +124,20 @@ return Application::configure(basePath: dirname(__DIR__))
             ], $exception->status);
         });
 
+        $exceptions->render(function (CourseOfferingScheduleException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+                'data' => $exception->data,
+            ], $exception->status);
+        });
+
         $exceptions->render(function (DisciplinaryCaseException $exception, Request $request) {
             if (! $request->is('api/*')) {
                 return null;
@@ -145,6 +160,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 'message' => $exception->getMessage(),
                 'error_code' => $exception->errorCode,
                 'errors' => $exception->errors,
+                'data' => $exception->data,
             ], $exception->status);
         });
 

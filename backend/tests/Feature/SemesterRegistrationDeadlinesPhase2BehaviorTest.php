@@ -7,6 +7,8 @@ use App\Exceptions\RegistrationException;
 use App\Exceptions\RegistrationRequestException;
 use App\Models\AcademicYear;
 use App\Models\AcademicCalendarEventType;
+use App\Models\CourseOffering;
+use App\Models\Student;
 use App\Models\StudentRegistrationRequest;
 use App\Models\StudentRegistrationRequestItem;
 use App\Models\User;
@@ -14,10 +16,13 @@ use App\Services\AcademicCalendarService;
 use App\Services\AcademicCalendarPolicyService;
 use App\Services\AcademicRequirementService;
 use App\Services\AcademicTermResolver;
+use App\Services\CourseOfferingInstructorCoverageService;
+use App\Services\CourseOfferingScheduleService;
 use App\Services\DataScopeService;
 use App\Services\GradeService;
 use App\Services\RegistrationRequestService;
 use App\Services\RegistrationService;
+use App\Services\TeachingAssignmentService;
 use App\Support\CourseRegistrationDeadlineResult;
 use App\Support\CourseRegistrationPhase;
 use Carbon\CarbonImmutable;
@@ -681,6 +686,260 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
         self::assertSame(2, (int) DB::table('course_offerings')->where('course_offering_id', 1)->value('available_seats'));
     }
 
+    public function test_phase4_complete_timetable_allows_add_but_incomplete_target_fails(): void
+    {
+        $this->registrationWindow();
+        $this->seedRegistrationRequestContext('draft');
+        DB::table('student_registration_request_items')->delete();
+        $this->insertSchedule(1, '08:00:00', '09:00:00');
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-03T00:00:00Z'));
+        [$requests, $actor] = $this->realTimetableWorkflow();
+        $student = Student::query()->findOrFail(1);
+
+        $added = $requests->addItem($student, CourseOffering::query()->findOrFail(1), $actor);
+        self::assertSame([1], $added->items->pluck('course_offering_id')->map(fn ($id): int => (int) $id)->all());
+
+        DB::table('student_registration_request_items')->delete();
+        DB::table('course_offering_schedule_slots')->delete();
+        try {
+            $requests->addItem($student, CourseOffering::query()->findOrFail(1), $actor);
+            self::fail('An incomplete target timetable must block addItem.');
+        } catch (RegistrationRequestException $exception) {
+            self::assertSame(RegistrationException::OFFERING_SCHEDULE_INCOMPLETE, $exception->errorCode);
+            self::assertSame(0, DB::table('student_registration_request_items')->count());
+        }
+    }
+
+    public function test_phase4_add_item_distinguishes_conflict_reference_completeness_and_term_scope(): void
+    {
+        $this->registrationWindow();
+        $this->seedRegistrationRequestContext('draft');
+        DB::table('student_registration_request_items')->delete();
+        $this->addComparisonOffering(2);
+        $this->insertSchedule(1, '08:00:00', '09:00:00');
+        $this->insertSchedule(2, '08:30:00', '09:30:00');
+        DB::table('student_course_registrations')->insert([
+            'student_id' => 1,
+            'course_offering_id' => 2,
+            'registration_status_id' => 1,
+        ]);
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-03T00:00:00Z'));
+        [$requests, $actor] = $this->realTimetableWorkflow();
+        $student = Student::query()->findOrFail(1);
+
+        try {
+            $requests->addItem($student, CourseOffering::query()->findOrFail(1), $actor);
+            self::fail('An overlapping current registration must block addItem.');
+        } catch (RegistrationRequestException $exception) {
+            self::assertSame(RegistrationException::TIMETABLE_CONFLICT, $exception->errorCode);
+            self::assertSame(2, $exception->itemFailures[0]['conflicts'][0]['conflicting_with']['course_offering_id']);
+        }
+
+        DB::table('student_course_registrations')->update(['registration_status_id' => 2]);
+        $added = $requests->addItem($student, CourseOffering::query()->findOrFail(1), $actor);
+        self::assertSame(1, $added->items->count(), 'Dropped registrations must not conflict.');
+
+        DB::table('student_registration_request_items')->delete();
+        DB::table('student_course_registrations')->update(['registration_status_id' => 3]);
+        $added = $requests->addItem($student, CourseOffering::query()->findOrFail(1), $actor);
+        self::assertSame(1, $added->items->count(), 'Withdrawn registrations must not conflict.');
+
+        DB::table('student_registration_request_items')->delete();
+        DB::table('student_course_registrations')->update(['registration_status_id' => 1]);
+        DB::table('course_offerings')->where('course_offering_id', 2)->update(['semester_id' => 2]);
+        $added = $requests->addItem($student, CourseOffering::query()->findOrFail(1), $actor);
+        self::assertSame(1, $added->items->count(), 'Another actual term must not conflict.');
+
+        DB::table('student_registration_request_items')->delete();
+        DB::table('course_offerings')->where('course_offering_id', 2)->update(['semester_id' => 1]);
+        DB::table('course_offering_schedule_slots')->where('course_offering_id', 2)->delete();
+        try {
+            $requests->addItem($student, CourseOffering::query()->findOrFail(1), $actor);
+            self::fail('An incomplete same-term official source must fail closed.');
+        } catch (RegistrationRequestException $exception) {
+            self::assertSame(RegistrationException::TIMETABLE_REFERENCE_INCOMPLETE, $exception->errorCode);
+            self::assertSame(2, $exception->itemFailures[0]['incomplete_timetable_sources'][0]['course_offering_id']);
+        }
+    }
+
+    public function test_phase4_request_items_use_half_open_intervals_and_submit_rechecks_the_whole_request(): void
+    {
+        $this->registrationWindow();
+        $this->seedRegistrationRequestContext('draft');
+        $this->addComparisonOffering(2);
+        DB::table('student_registration_request_items')->insert([
+            'student_registration_request_item_id' => 2,
+            'student_registration_request_id' => 1,
+            'course_offering_id' => 2,
+        ]);
+        $this->insertSchedule(1, '08:00:00', '09:00:00');
+        $this->insertSchedule(2, '08:30:00', '09:30:00');
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-03T00:00:00Z'));
+        [$requests, $actor] = $this->realTimetableWorkflow();
+        $student = Student::query()->findOrFail(1);
+
+        DB::table('student_registration_request_items')->where('course_offering_id', 1)->delete();
+        try {
+            $requests->addItem($student, CourseOffering::query()->findOrFail(1), $actor);
+            self::fail('An overlapping current request item must block addItem.');
+        } catch (RegistrationRequestException $exception) {
+            self::assertSame(RegistrationException::TIMETABLE_CONFLICT, $exception->errorCode);
+        }
+
+        DB::table('course_offering_schedule_slots')->where('course_offering_id', 2)->update([
+            'start_time' => '09:00:00',
+            'end_time' => '10:00:00',
+        ]);
+        $requests->addItem($student, CourseOffering::query()->findOrFail(1), $actor);
+        $submitted = $requests->submit($student, $actor, 1);
+        self::assertSame('submitted', $submitted->status, 'Adjacent intervals must be allowed.');
+
+        DB::table('student_registration_requests')->where('student_registration_request_id', 1)->update([
+            'status' => 'draft',
+            'submission_version' => 0,
+            'first_submitted_at' => null,
+            'last_submitted_at' => null,
+        ]);
+        DB::table('course_offering_schedule_slots')->where('course_offering_id', 2)->update(['start_time' => '08:30:00']);
+        try {
+            $requests->submit($student, $actor, 1);
+            self::fail('A request containing mutually conflicting items must not submit.');
+        } catch (RegistrationRequestException $exception) {
+            self::assertSame('registration_request_invalid', $exception->errorCode);
+            self::assertSame('draft', DB::table('student_registration_requests')->where('student_registration_request_id', 1)->value('status'));
+        }
+    }
+
+    public function test_phase4_advisor_approval_revalidates_conflicts_atomically_then_materializes_valid_request_after_cutoff(): void
+    {
+        $this->registrationWindow();
+        $this->seedRegistrationRequestContext();
+        $this->addComparisonOffering(2);
+        DB::table('student_registration_request_items')->insert([
+            'student_registration_request_item_id' => 2,
+            'student_registration_request_id' => 1,
+            'course_offering_id' => 2,
+        ]);
+        $this->insertSchedule(1, '08:00:00', '09:00:00');
+        $this->insertSchedule(2, '08:30:00', '09:30:00');
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-06T00:00:00Z'));
+        [$requests, $actor] = $this->realTimetableWorkflow();
+
+        try {
+            $requests->approve($actor, StudentRegistrationRequest::query()->findOrFail(1));
+            self::fail('Advisor approval must revalidate the complete timetable.');
+        } catch (RegistrationRequestException $exception) {
+            self::assertSame('registration_request_approval_failed', $exception->errorCode);
+            self::assertSame(0, DB::table('student_course_registrations')->count());
+            self::assertSame('submitted', DB::table('student_registration_requests')->where('student_registration_request_id', 1)->value('status'));
+        }
+
+        DB::table('course_offering_schedule_slots')->where('course_offering_id', 2)->update([
+            'start_time' => '09:00:00',
+            'end_time' => '10:00:00',
+        ]);
+        $approved = $requests->approve($actor, StudentRegistrationRequest::query()->findOrFail(1));
+        self::assertSame('approved', $approved['status']);
+        self::assertSame(2, DB::table('student_course_registrations')->count());
+    }
+
+    public function test_phase4_final_materialization_service_cannot_bypass_an_official_timetable_conflict(): void
+    {
+        $this->registrationWindow();
+        $this->seedRegistrationRequestContext();
+        $this->addComparisonOffering(2);
+        $this->insertSchedule(1, '08:00:00', '09:00:00');
+        $this->insertSchedule(2, '08:30:00', '09:30:00');
+        DB::table('student_course_registrations')->insert([
+            'student_id' => 1,
+            'course_offering_id' => 2,
+            'registration_status_id' => 1,
+        ]);
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-06T00:00:00Z'));
+        $registration = $this->realRegistrationService([
+            'cumulative_gpa' => 2.75,
+            'official_completed_courses' => [],
+        ], $this->realScheduleService());
+
+        try {
+            DB::transaction(fn () => $registration->materializeAdvisorApprovedRequestItemWithinTransaction(
+                StudentRegistrationRequest::query()->findOrFail(1),
+                StudentRegistrationRequestItem::query()->findOrFail(1),
+                7,
+                CarbonImmutable::parse('2026-09-06T00:00:00Z'),
+            ));
+            self::fail('The final materialization boundary must re-evaluate official timetable conflicts.');
+        } catch (RegistrationException $exception) {
+            self::assertSame(RegistrationException::TIMETABLE_CONFLICT, $exception->errorCode);
+            self::assertFalse(DB::table('student_course_registrations')->where('course_offering_id', 1)->exists());
+            self::assertSame(1, DB::table('student_course_registrations')->count());
+        }
+    }
+
+    public function test_phase4_trusted_materialization_cannot_bypass_a_conflicting_request_peer(): void
+    {
+        $this->registrationWindow();
+        $this->seedRegistrationRequestContext();
+        $this->addComparisonOffering(2);
+        DB::table('student_registration_request_items')->insert([
+            'student_registration_request_item_id' => 2,
+            'student_registration_request_id' => 1,
+            'course_offering_id' => 2,
+        ]);
+        $this->insertSchedule(1, '08:00:00', '09:00:00');
+        $this->insertSchedule(2, '08:30:00', '09:30:00');
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-06T00:00:00Z'));
+        $registration = $this->realRegistrationService([
+            'cumulative_gpa' => 2.75,
+            'official_completed_courses' => [],
+        ], $this->realScheduleService());
+
+        try {
+            DB::transaction(fn () => $registration->materializeAdvisorApprovedRequestItemWithinTransaction(
+                StudentRegistrationRequest::query()->findOrFail(1),
+                StudentRegistrationRequestItem::query()->findOrFail(1),
+                7,
+                CarbonImmutable::parse('2026-09-06T00:00:00Z'),
+            ));
+            self::fail('The trusted boundary must include other current request items.');
+        } catch (RegistrationException $exception) {
+            self::assertSame(RegistrationException::TIMETABLE_CONFLICT, $exception->errorCode);
+            self::assertSame(0, DB::table('student_course_registrations')->count());
+        }
+    }
+
+    public function test_phase4_trusted_materialization_fails_closed_for_an_incomplete_request_peer(): void
+    {
+        $this->registrationWindow();
+        $this->seedRegistrationRequestContext();
+        $this->addComparisonOffering(2);
+        DB::table('student_registration_request_items')->insert([
+            'student_registration_request_item_id' => 2,
+            'student_registration_request_id' => 1,
+            'course_offering_id' => 2,
+        ]);
+        $this->insertSchedule(1, '08:00:00', '09:00:00');
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-06T00:00:00Z'));
+        $registration = $this->realRegistrationService([
+            'cumulative_gpa' => 2.75,
+            'official_completed_courses' => [],
+        ], $this->realScheduleService());
+
+        try {
+            DB::transaction(fn () => $registration->materializeAdvisorApprovedRequestItemWithinTransaction(
+                StudentRegistrationRequest::query()->findOrFail(1),
+                StudentRegistrationRequestItem::query()->findOrFail(1),
+                7,
+                CarbonImmutable::parse('2026-09-06T00:00:00Z'),
+            ));
+            self::fail('The trusted boundary must fail closed for incomplete request peers.');
+        } catch (RegistrationException $exception) {
+            self::assertSame(RegistrationException::TIMETABLE_REFERENCE_INCOMPLETE, $exception->errorCode);
+            self::assertSame(2, $exception->data['incomplete_timetable_sources'][0]['course_offering_id']);
+            self::assertSame(0, DB::table('student_course_registrations')->count());
+        }
+    }
+
     private function requestService(): RegistrationRequestService
     {
         return new RegistrationRequestService(
@@ -691,7 +950,10 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
         );
     }
 
-    private function realRegistrationService(?array $metrics = null): RegistrationService
+    private function realRegistrationService(
+        ?array $metrics = null,
+        ?CourseOfferingScheduleService $schedules = null,
+    ): RegistrationService
     {
         $requirements = Mockery::mock(AcademicRequirementService::class);
         $requirements->shouldReceive('assertRegistrationCandidateAllowed')->zeroOrMoreTimes();
@@ -708,11 +970,92 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
             $requirements,
             app(AcademicCalendarPolicyService::class),
             $grades,
+            $schedules ?? $this->permissiveScheduleService(),
         ])->makePartial();
         $service->shouldReceive('assertSelfRegistrationAllowed')->zeroOrMoreTimes();
         $service->shouldReceive('getMissingPrerequisites')->zeroOrMoreTimes()->andReturn([]);
 
         return $service;
+    }
+
+    private function permissiveScheduleService(): CourseOfferingScheduleService
+    {
+        $service = Mockery::mock(CourseOfferingScheduleService::class);
+        $service->shouldReceive('registrationEvaluations')->zeroOrMoreTimes()->andReturnUsing(
+            fn ($student, $targets): array => $targets->mapWithKeys(fn ($offering): array => [
+                (int) $offering->course_offering_id => [
+                    'reason' => null,
+                    'schedule' => ['schema_ready' => true, 'components_defined' => true, 'complete' => true, 'slots' => []],
+                    'conflicts' => [],
+                    'incomplete_timetable_sources' => [],
+                ],
+            ])->all(),
+        );
+        $service->shouldReceive('describeMany')->zeroOrMoreTimes()->andReturn([]);
+
+        return $service;
+    }
+
+    private function realScheduleService(): CourseOfferingScheduleService
+    {
+        $teaching = Mockery::mock(TeachingAssignmentService::class);
+        $coverage = new CourseOfferingInstructorCoverageService($teaching);
+
+        return new CourseOfferingScheduleService(
+            $coverage,
+            app(AcademicCalendarPolicyService::class),
+            Mockery::mock(DataScopeService::class),
+            $teaching,
+        );
+    }
+
+    /** @return array{RegistrationRequestService, User} */
+    private function realTimetableWorkflow(): array
+    {
+        $registration = $this->realRegistrationService([
+            'cumulative_gpa' => 2.75,
+            'official_completed_courses' => [],
+        ], $this->realScheduleService());
+        $registration->shouldReceive('selfRegistrationOpenSemesters')->zeroOrMoreTimes()->andReturn(
+            collect([\App\Models\Semester::query()->findOrFail(1)]),
+        );
+
+        return $this->advisorWorkflow($registration);
+    }
+
+    private function addComparisonOffering(int $id, int $semesterId = 1): void
+    {
+        DB::table('courses')->insert([
+            'course_id' => $id,
+            'course_code' => 'C'.$id,
+            'course_name' => 'Course '.$id,
+            'credit_hours' => 3,
+            'theoretical_hours' => 2,
+            'practical_hours' => 0,
+        ]);
+        DB::table('course_offerings')->insert([
+            'course_offering_id' => $id,
+            'course_id' => $id,
+            'academic_year_id' => 1,
+            'semester_id' => $semesterId,
+            'capacity' => 10,
+            'available_seats' => 10,
+            'status' => 'open',
+        ]);
+    }
+
+    private function insertSchedule(int $offeringId, string $start, string $end): void
+    {
+        DB::table('course_offering_schedule_slots')->insert([
+            'course_offering_id' => $offeringId,
+            'component_type' => 'theoretical',
+            'day_of_week' => 1,
+            'start_time' => $start,
+            'end_time' => $end,
+            'created_by_user_id' => 7,
+            'created_at' => '2026-09-01 00:00:00',
+            'updated_at' => '2026-09-01 00:00:00',
+        ]);
     }
 
     /** @return array{RegistrationRequestService, User} */
@@ -927,6 +1270,8 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
             $table->string('course_code');
             $table->string('course_name');
             $table->integer('credit_hours');
+            $table->integer('theoretical_hours')->default(2);
+            $table->integer('practical_hours')->default(0);
         });
         Schema::create('course_offerings', function (Blueprint $table): void {
             $table->increments('course_offering_id');
@@ -1007,6 +1352,17 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
             $table->text('notes')->nullable();
             $table->timestamps();
             $table->unique(['student_id', 'course_offering_id']);
+        });
+        Schema::create('course_offering_schedule_slots', function (Blueprint $table): void {
+            $table->increments('course_offering_schedule_slot_id');
+            $table->integer('course_offering_id');
+            $table->string('component_type', 16);
+            $table->tinyInteger('day_of_week');
+            $table->time('start_time');
+            $table->time('end_time');
+            $table->string('location_label', 150)->nullable();
+            $table->integer('created_by_user_id');
+            $table->timestamps();
         });
     }
 }

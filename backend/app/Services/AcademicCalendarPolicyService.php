@@ -27,6 +27,69 @@ class AcademicCalendarPolicyService
 {
     private const COURSE_REGISTRATION_EVENT_TYPE = 'course_registration';
 
+    /**
+     * Irreversible timetable-editing boundary. A replacement calendar version
+     * cannot make a registration window "not started" after an earlier
+     * published version was effective at its start instant. Null means the
+     * Phase 2 deadline schema is unavailable, so callers must fail closed.
+     */
+    public function courseRegistrationHasEverStarted(
+        int $academicYearId,
+        int $semesterId,
+        ?CarbonInterface $at = null,
+    ): ?bool {
+        if (! AcademicCalendar::registrationDeadlineSchemaReady()) {
+            return null;
+        }
+
+        $evaluatedAt = $at === null
+            ? CarbonImmutable::now('UTC')
+            : CarbonImmutable::instance($at)->utc();
+
+        $versions = AcademicCalendarEventVersion::query()
+            ->from('academic_calendar_event_versions as acev')
+            ->join('academic_calendar_events as ace', 'ace.academic_calendar_event_id', '=', 'acev.academic_calendar_event_id')
+            ->join('academic_calendar_event_types as acet', 'acet.academic_calendar_event_type_id', '=', 'ace.academic_calendar_event_type_id')
+            ->where('acet.event_type_code', self::COURSE_REGISTRATION_EVENT_TYPE)
+            ->where('ace.academic_year_id', $academicYearId)
+            ->where(function ($query) use ($semesterId): void {
+                $query->where('ace.semester_id', $semesterId)
+                    ->orWhereNull('ace.semester_id');
+            })
+            ->where('acev.is_enforcement', true)
+            ->whereNotNull('acev.published_at')
+            ->whereIn('acev.publication_status', ['published', 'superseded'])
+            ->get([
+                'acev.starts_at',
+                'acev.ends_at',
+                'acev.published_at',
+                'acev.superseded_at',
+                'ace.cancelled_at',
+            ]);
+
+        foreach ($versions as $version) {
+            $startsAt = CarbonImmutable::instance($version->starts_at)->utc();
+            $endsAt = CarbonImmutable::instance($version->ends_at)->utc();
+            $publishedAt = CarbonImmutable::instance($version->published_at)->utc();
+            $effectiveStart = $publishedAt->gt($startsAt) ? $publishedAt : $startsAt;
+            $supersededAt = $version->superseded_at === null
+                ? null
+                : CarbonImmutable::instance($version->superseded_at)->utc();
+            $cancelledAt = $version->cancelled_at === null
+                ? null
+                : CarbonImmutable::parse((string) $version->cancelled_at, 'UTC');
+
+            if ($effectiveStart->lte($evaluatedAt)
+                && $effectiveStart->lte($endsAt)
+                && ($supersededAt === null || $effectiveStart->lt($supersededAt))
+                && ($cancelledAt === null || $effectiveStart->lt($cancelledAt))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function evaluate(
         string $eventTypeCode,
         ?int $academicYearId = null,

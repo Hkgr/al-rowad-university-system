@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Dean\BulkPrepareDeanRegistrationOfferingRequest;
 use App\Http\Requests\Dean\OpenDeanRegistrationOfferingRequest;
+use App\Http\Requests\Dean\ReplaceCourseOfferingTimetableRequest;
 use App\Http\Requests\Dean\UpdateSemesterOfferingProposalRequest;
 use App\Models\CourseOffering;
 use App\Services\DeanRegistrationOfferingService;
+use App\Services\CourseOfferingScheduleService;
 use App\Services\SemesterOfferingGovernanceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,6 +20,7 @@ class DeanRegistrationOfferingController extends Controller
     public function __construct(
         private DeanRegistrationOfferingService $registrationOfferings,
         private SemesterOfferingGovernanceService $governance,
+        private CourseOfferingScheduleService $schedules,
     ) {
     }
 
@@ -104,6 +107,19 @@ class DeanRegistrationOfferingController extends Controller
         $updated = $this->governance->submit($request->user(), $courseOffering);
 
         return $this->successResponse($this->governance->payload($updated), 'تم إرسال الطرح إلى نائب الرئيس العلمي.');
+    }
+
+    public function replaceTimetable(
+        ReplaceCourseOfferingTimetableRequest $request,
+        CourseOffering $courseOffering,
+    ): JsonResponse {
+        $description = $this->schedules->replace(
+            $request->user(),
+            $courseOffering,
+            $request->validated('slots'),
+        );
+
+        return $this->successResponse($description, 'تم حفظ الجدول الأسبوعي الرسمي للمقرر.');
     }
 
     private function successMessage(?string $action): string

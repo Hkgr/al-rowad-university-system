@@ -38,6 +38,7 @@ class DeanRegistrationOfferingService
         private CourseOfferingInstructorCoverageService $coverage,
         private CourseOfferingExceptionWorkflowService $exceptionWorkflow,
         private SemesterOfferingGovernanceService $semesterGovernance,
+        private CourseOfferingScheduleService $schedules,
     ) {
     }
 
@@ -697,6 +698,7 @@ class DeanRegistrationOfferingService
 
         $courseIds = $rows->pluck('course_id')->unique()->values();
         $offerings = $this->matchingOfferings($user, $program, $yearId, $semesterId, $courseIds, $collegeIds);
+        $scheduleDescriptions = $this->schedules->describeMany($offerings->values(), true);
 
         $summary = [
             'total_courses' => $rows->count(),
@@ -713,11 +715,11 @@ class DeanRegistrationOfferingService
 
         $grouped = $rows
             ->groupBy(fn (ProgramCourse $row) => (string) ($row->academic_level_id ?? 'none'))
-            ->map(function ($levelRows) use ($offerings, &$summary): array {
+            ->map(function ($levelRows) use ($offerings, $scheduleDescriptions, &$summary): array {
                 $level = $levelRows->first()?->academicLevel;
                 $courses = $levelRows
                     ->sortBy(fn (ProgramCourse $row) => mb_strtolower((string) $row->course?->course_code))
-                    ->map(function (ProgramCourse $row) use ($offerings, &$summary): array {
+                    ->map(function (ProgramCourse $row) use ($offerings, $scheduleDescriptions, &$summary): array {
                         $offering = $offerings->get((int) $row->course_id);
                         if ($offering === null) {
                             $summary['missing_count']++;
@@ -764,7 +766,10 @@ class DeanRegistrationOfferingService
                                 'theoretical_hours' => $row->course->theoretical_hours,
                                 'practical_hours' => $row->course->practical_hours,
                             ],
-                            'offering' => $offering === null ? null : $this->offeringPayload($offering),
+                            'offering' => $offering === null ? null : $this->offeringPayload(
+                                $offering,
+                                $scheduleDescriptions[(int) $offering->course_offering_id] ?? null,
+                            ),
                         ];
                     })
                     ->values()
@@ -862,7 +867,7 @@ class DeanRegistrationOfferingService
         return $offering;
     }
 
-    private function offeringPayload(CourseOffering $offering): array
+    private function offeringPayload(CourseOffering $offering, ?array $schedule = null): array
     {
         return [
             'course_offering_id' => $offering->course_offering_id,
@@ -881,6 +886,7 @@ class DeanRegistrationOfferingService
                     ? $offering->semesterOfferingRequest
                     : null
             ),
+            'official_timetable' => $schedule ?? $this->schedules->describe($offering, true),
         ];
     }
 
