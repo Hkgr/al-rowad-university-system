@@ -43,6 +43,7 @@ $contract = static function (string $backendRoot): array {
     $dean = $read($backendRoot.'/app/Services/DeanRegistrationOfferingService.php');
     $routes = $read($backendRoot.'/routes/api.php');
     $workflowBehavior = $read($backendRoot.'/tests/Feature/SemesterRegistrationDeadlinesPhase2BehaviorTest.php');
+    $scheduleBehavior = $read($backendRoot.'/tests/Feature/SemesterRegistrationTimetablePhase4BehaviorTest.php');
 
     $expect(str_contains($service, '$this->coverage->requiredRoles('), 'Timetable components must come from the canonical instructor-coverage service.');
     $expect(str_contains($service, "'components_defined' => \$componentsDefined"), 'Canonical descriptions must expose components_defined.');
@@ -61,7 +62,9 @@ $contract = static function (string $backendRoot): array {
     $expect(str_contains($calendar, 'courseRegistrationHasEverStarted(') && str_contains($calendar, "orWhereNull('ace.semester_id')"), 'Historical registration-start detection must reuse calendar data and year-wide wildcard semantics.');
     $expect(str_contains($calendar, '): ?bool') && str_contains($calendar, "registrationDeadlineSchemaReady()) {\n            return null;"), 'Missing deadline schema must be represented as unknown rather than falsely proving registration never started.');
     $expect(str_contains($service, 'LOCK_CALENDAR_SCHEMA_NOT_READY') && str_contains($service, 'calendarSchemaNotReady()'), 'Timetable reads and writes must fail closed when registration calendar readiness is unknown.');
+    $expect(str_contains($service, "'initialization_only' => \$initializationOnly && \$reason === null") && str_contains($service, '$lockedSlots->isNotEmpty()'), 'Exactly one initial definition must be derived from persisted rows under the locked Offering.');
     $expect(str_contains($registration, '$this->schedules->registrationEvaluations(') && str_contains($registration, '$this->assertTimetableEvaluation($timetable)'), 'Final registration materialization must freshly defend timetable completeness/conflicts.');
+    $expect(str_contains($registration, '$requestPeerOfferingIds = StudentRegistrationRequestItem::query()') && str_contains($registration, '$requestOfferingIds,') && str_contains($registration, '$requestPeerOfferingIds,'), 'Trusted advisor materialization must pass locked request-peer Offering IDs into the canonical final timetable evaluation.');
     $finalTimetableCheck = strpos($registration, '$timetable = $this->schedules->registrationEvaluations(');
     $registrationWrite = strpos($registration, '$registrationDate = $data[\'registration_date\']');
     $expect($finalTimetableCheck !== false && $registrationWrite !== false && $finalTimetableCheck < $registrationWrite, 'The fresh timetable defense must occur immediately before create/reactivation preparation.');
@@ -77,6 +80,7 @@ $contract = static function (string $backendRoot): array {
     $attendance = $read($backendRoot.'/app/Services/AttendanceService.php');
     $expect(! str_contains($attendance, 'CourseOfferingScheduleService'), 'Attendance behavior must remain independent of the recurring timetable.');
     $expect(str_contains($preflight, "'ATTENDANCE_INFORMATIONAL_ONLY'") && str_contains($preflight, 'attendance_sessions_with_null_start_or_end'), 'Preflight must report attendance counts as explicitly informational data only.');
+    $expect(str_contains($preflight, '@srt4_attendance_table') && str_contains($preflight, '@srt4_attendance_time_columns') && str_contains($preflight, "'NOT_AVAILABLE; attendance is informational"), 'Attendance information must be dynamically guarded without becoming a Phase 4 prerequisite.');
     foreach ([$preflight, $apply, $verify] as $sql) {
         $expect(str_contains($sql, 'non_unique=1'), 'Preflight/apply/verify must require the named window index to remain non-unique.');
         $expect(str_contains($sql, "engine='InnoDB'") || str_contains($sql, 'ENGINE=InnoDB'), 'Every deployment stage must enforce the InnoDB ownership contract.');
@@ -90,8 +94,18 @@ $contract = static function (string $backendRoot): array {
         'test_phase4_request_items_use_half_open_intervals_and_submit_rechecks_the_whole_request',
         'test_phase4_advisor_approval_revalidates_conflicts_atomically_then_materializes_valid_request_after_cutoff',
         'test_phase4_final_materialization_service_cannot_bypass_an_official_timetable_conflict',
+        'test_phase4_trusted_materialization_cannot_bypass_a_conflicting_request_peer',
+        'test_phase4_trusted_materialization_fails_closed_for_an_incomplete_request_peer',
     ] as $behavior) {
         $expect(str_contains($workflowBehavior, $behavior), 'Missing real registration-workflow timetable regression '.$behavior.'.');
+    }
+    foreach ([
+        'test_started_term_allows_exactly_one_complete_initialization_for_a_late_offering',
+        'test_legacy_registration_allows_first_initialization_but_blocks_the_second_change',
+        'test_invalid_first_initialization_is_atomic_and_leaves_the_bootstrap_unused',
+        'test_timetable_initialized_before_registration_start_is_immutable_after_start',
+    ] as $behavior) {
+        $expect(str_contains($scheduleBehavior, $behavior), 'Missing one-time initialization regression '.$behavior.'.');
     }
     $expect((glob($backendRoot.'/database/migrations/*schedule*slot*') ?: []) === [], 'Phase 4 must not add a migration.');
     $expect((glob($backendRoot.'/database/seeders/*Timetable*') ?: []) === [], 'Phase 4 must not add a seeder.');

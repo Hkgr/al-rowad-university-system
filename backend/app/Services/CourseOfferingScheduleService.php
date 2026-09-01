@@ -101,8 +101,11 @@ class CourseOfferingScheduleService
             ->get()
             ->groupBy('course_offering_id');
 
+        $hasPersistedSlots = collect($offeringIds)->mapWithKeys(
+            fn (int $id): array => [$id => ($slotsByOffering->get($id)?->isNotEmpty() ?? false)],
+        )->all();
         $editability = $includeEditability
-            ? $this->editabilityMany($offerings, $at)
+            ? $this->editabilityMany($offerings, $at, $hasPersistedSlots)
             : [];
 
         return $offerings->mapWithKeys(function (CourseOffering $offering) use ($slotsByOffering, $editability): array {
@@ -141,19 +144,21 @@ class CourseOfferingScheduleService
             }
 
             $this->assertDeanCanManage($actor, $locked);
-            $editability = $this->editabilityMany(collect([$locked]))[(int) $locked->course_offering_id];
+            $lockedSlots = CourseOfferingScheduleSlot::query()
+                ->where('course_offering_id', $locked->course_offering_id)
+                ->orderBy('course_offering_schedule_slot_id')
+                ->lockForUpdate()
+                ->get();
+            $editability = $this->editabilityMany(
+                collect([$locked]),
+                hasPersistedSlots: [(int) $locked->course_offering_id => $lockedSlots->isNotEmpty()],
+            )[(int) $locked->course_offering_id];
             if (! $editability['editable']) {
                 if ($editability['locked_reason'] === self::LOCK_CALENDAR_SCHEMA_NOT_READY) {
                     throw CourseOfferingScheduleException::calendarSchemaNotReady();
                 }
                 throw CourseOfferingScheduleException::locked((string) $editability['locked_reason']);
             }
-
-            CourseOfferingScheduleSlot::query()
-                ->where('course_offering_id', $locked->course_offering_id)
-                ->orderBy('course_offering_schedule_slot_id')
-                ->lockForUpdate()
-                ->get();
 
             $normalized = $this->validateReplacement($locked, $slots);
             CourseOfferingScheduleSlot::query()
@@ -283,8 +288,15 @@ class CourseOfferingScheduleService
         return $evaluations;
     }
 
-    /** @return array<int, array{editable: bool, locked_reason: ?string}> */
-    private function editabilityMany(Collection $offerings, ?CarbonInterface $at = null): array
+    /**
+     * @param array<int, bool> $hasPersistedSlots
+     * @return array<int, array{editable: bool, locked_reason: ?string, initialization_only: bool}>
+     */
+    private function editabilityMany(
+        Collection $offerings,
+        ?CarbonInterface $at = null,
+        array $hasPersistedSlots = [],
+    ): array
     {
         $evaluatedAt = $at === null ? CarbonImmutable::now('UTC') : CarbonImmutable::instance($at)->utc();
         $ids = $offerings->pluck('course_offering_id')->map(fn ($id): int => (int) $id)->all();
@@ -315,27 +327,32 @@ class CourseOfferingScheduleService
         $result = [];
         foreach ($offerings as $offering) {
             $id = (int) $offering->course_offering_id;
+            $initializationOnly = ! ($hasPersistedSlots[$id] ?? false);
             $reason = null;
-            if ($registrationIds->has($id)) {
-                $reason = self::LOCK_OFFICIAL_REGISTRATION;
-            } elseif ($requestIds->has($id)) {
-                $reason = self::LOCK_REQUEST_RELIANCE;
-            } else {
-                $term = (int) $offering->academic_year_id.':'.(int) $offering->semester_id;
-                if (! array_key_exists($term, $startedByTerm)) {
-                    $startedByTerm[$term] = $this->calendar->courseRegistrationHasEverStarted(
-                        (int) $offering->academic_year_id,
-                        (int) $offering->semester_id,
-                        $evaluatedAt,
-                    );
-                }
-                if ($startedByTerm[$term] === null) {
-                    $reason = self::LOCK_CALENDAR_SCHEMA_NOT_READY;
+            $term = (int) $offering->academic_year_id.':'.(int) $offering->semester_id;
+            if (! array_key_exists($term, $startedByTerm)) {
+                $startedByTerm[$term] = $this->calendar->courseRegistrationHasEverStarted(
+                    (int) $offering->academic_year_id,
+                    (int) $offering->semester_id,
+                    $evaluatedAt,
+                );
+            }
+            if ($startedByTerm[$term] === null) {
+                $reason = self::LOCK_CALENDAR_SCHEMA_NOT_READY;
+            } elseif (! $initializationOnly) {
+                if ($registrationIds->has($id)) {
+                    $reason = self::LOCK_OFFICIAL_REGISTRATION;
+                } elseif ($requestIds->has($id)) {
+                    $reason = self::LOCK_REQUEST_RELIANCE;
                 } elseif ($startedByTerm[$term]) {
                     $reason = self::LOCK_REGISTRATION_STARTED;
                 }
             }
-            $result[$id] = ['editable' => $reason === null, 'locked_reason' => $reason];
+            $result[$id] = [
+                'editable' => $reason === null,
+                'locked_reason' => $reason,
+                'initialization_only' => $initializationOnly && $reason === null,
+            ];
         }
 
         return $result;

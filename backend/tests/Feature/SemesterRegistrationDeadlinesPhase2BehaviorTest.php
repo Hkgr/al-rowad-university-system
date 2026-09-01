@@ -876,6 +876,70 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
         }
     }
 
+    public function test_phase4_trusted_materialization_cannot_bypass_a_conflicting_request_peer(): void
+    {
+        $this->registrationWindow();
+        $this->seedRegistrationRequestContext();
+        $this->addComparisonOffering(2);
+        DB::table('student_registration_request_items')->insert([
+            'student_registration_request_item_id' => 2,
+            'student_registration_request_id' => 1,
+            'course_offering_id' => 2,
+        ]);
+        $this->insertSchedule(1, '08:00:00', '09:00:00');
+        $this->insertSchedule(2, '08:30:00', '09:30:00');
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-06T00:00:00Z'));
+        $registration = $this->realRegistrationService([
+            'cumulative_gpa' => 2.75,
+            'official_completed_courses' => [],
+        ], $this->realScheduleService());
+
+        try {
+            DB::transaction(fn () => $registration->materializeAdvisorApprovedRequestItemWithinTransaction(
+                StudentRegistrationRequest::query()->findOrFail(1),
+                StudentRegistrationRequestItem::query()->findOrFail(1),
+                7,
+                CarbonImmutable::parse('2026-09-06T00:00:00Z'),
+            ));
+            self::fail('The trusted boundary must include other current request items.');
+        } catch (RegistrationException $exception) {
+            self::assertSame(RegistrationException::TIMETABLE_CONFLICT, $exception->errorCode);
+            self::assertSame(0, DB::table('student_course_registrations')->count());
+        }
+    }
+
+    public function test_phase4_trusted_materialization_fails_closed_for_an_incomplete_request_peer(): void
+    {
+        $this->registrationWindow();
+        $this->seedRegistrationRequestContext();
+        $this->addComparisonOffering(2);
+        DB::table('student_registration_request_items')->insert([
+            'student_registration_request_item_id' => 2,
+            'student_registration_request_id' => 1,
+            'course_offering_id' => 2,
+        ]);
+        $this->insertSchedule(1, '08:00:00', '09:00:00');
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-06T00:00:00Z'));
+        $registration = $this->realRegistrationService([
+            'cumulative_gpa' => 2.75,
+            'official_completed_courses' => [],
+        ], $this->realScheduleService());
+
+        try {
+            DB::transaction(fn () => $registration->materializeAdvisorApprovedRequestItemWithinTransaction(
+                StudentRegistrationRequest::query()->findOrFail(1),
+                StudentRegistrationRequestItem::query()->findOrFail(1),
+                7,
+                CarbonImmutable::parse('2026-09-06T00:00:00Z'),
+            ));
+            self::fail('The trusted boundary must fail closed for incomplete request peers.');
+        } catch (RegistrationException $exception) {
+            self::assertSame(RegistrationException::TIMETABLE_REFERENCE_INCOMPLETE, $exception->errorCode);
+            self::assertSame(2, $exception->data['incomplete_timetable_sources'][0]['course_offering_id']);
+            self::assertSame(0, DB::table('student_course_registrations')->count());
+        }
+    }
+
     private function requestService(): RegistrationRequestService
     {
         return new RegistrationRequestService(

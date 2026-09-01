@@ -122,6 +122,17 @@ class RegistrationService
             throw RegistrationException::liveWorkflowRequired();
         }
 
+        $requestPeerOfferingIds = StudentRegistrationRequestItem::query()
+            ->where('student_registration_request_id', $lockedRequest->getKey())
+            ->where('student_registration_request_item_id', '<>', $lockedItem->getKey())
+            ->orderBy('student_registration_request_item_id')
+            ->lockForUpdate()
+            ->pluck('course_offering_id')
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
         $offering = CourseOffering::query()
             ->whereKey($lockedItem->course_offering_id)
             ->lockForUpdate()
@@ -164,6 +175,7 @@ class RegistrationService
                 ],
                 $advisorUserId,
                 RegistrationMaterializationContext::ADVISOR_APPROVAL,
+                $requestPeerOfferingIds,
             );
         } catch (QueryException $exception) {
             if ($this->isDuplicateRegistrationQueryException($exception)) {
@@ -241,6 +253,7 @@ class RegistrationService
         array $data,
         ?int $authenticatedUserId,
         RegistrationMaterializationContext $context,
+        array $requestOfferingIds = [],
     ): array
     {
         $student = Student::query()
@@ -355,7 +368,7 @@ class RegistrationService
             $student,
             collect([$courseOffering]),
             $this->currentRegisteredOfferingIds($student),
-            [],
+            $requestOfferingIds,
         )[(int) $courseOffering->course_offering_id];
         $this->assertTimetableEvaluation($timetable);
 

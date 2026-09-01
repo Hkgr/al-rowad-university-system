@@ -230,6 +230,97 @@ class SemesterRegistrationTimetablePhase4BehaviorTest extends TestCase
         self::assertSame(1, DB::table('course_offering_schedule_slots')->where('course_offering_id', 2)->value('day_of_week'));
     }
 
+    public function test_started_term_allows_exactly_one_complete_initialization_for_a_late_offering(): void
+    {
+        $service = $this->service(registrationStarted: true);
+        $offering = CourseOffering::findOrFail(2);
+
+        $before = $service->describe($offering, true);
+        self::assertTrue($before['editable']);
+        self::assertTrue($before['initialization_only']);
+
+        $after = $service->replace($this->dean(), $offering, [
+            $this->slot('theoretical', 1, '08:00', '09:00'),
+        ]);
+        self::assertTrue($after['complete']);
+        self::assertFalse($after['editable']);
+        self::assertFalse($after['initialization_only']);
+
+        $evaluation = $service->registrationEvaluations(
+            Student::query()->findOrFail(1),
+            collect([$offering->fresh(['course'])]),
+            [],
+            [],
+        )[2];
+        self::assertNull($evaluation['reason'], 'A complete late initialization must become registration-eligible.');
+
+        try {
+            $service->replace($this->dean(), $offering, [
+                $this->slot('theoretical', 2, '10:00', '11:00'),
+            ]);
+            self::fail('The first initialization must consume the bootstrap allowance.');
+        } catch (CourseOfferingScheduleException $exception) {
+            self::assertSame(CourseOfferingScheduleException::LOCKED, $exception->errorCode);
+            self::assertSame(CourseOfferingScheduleService::LOCK_REGISTRATION_STARTED, $exception->data['locked_reason']);
+        }
+    }
+
+    public function test_legacy_registration_allows_first_initialization_but_blocks_the_second_change(): void
+    {
+        DB::table('student_course_registrations')->insert([
+            'student_id' => 1,
+            'course_offering_id' => 2,
+            'registration_status_id' => 1,
+        ]);
+        $service = $this->service();
+        $offering = CourseOffering::findOrFail(2);
+
+        $service->replace($this->dean(), $offering, [$this->slot('theoretical')]);
+        self::assertSame(1, DB::table('course_offering_schedule_slots')->where('course_offering_id', 2)->count());
+
+        try {
+            $service->replace($this->dean(), $offering, [
+                $this->slot('theoretical', 2, '10:00', '11:00'),
+            ]);
+            self::fail('A legacy registration may permit initialization, never a later modification.');
+        } catch (CourseOfferingScheduleException $exception) {
+            self::assertSame(CourseOfferingScheduleService::LOCK_OFFICIAL_REGISTRATION, $exception->data['locked_reason']);
+        }
+    }
+
+    public function test_invalid_first_initialization_is_atomic_and_leaves_the_bootstrap_unused(): void
+    {
+        $service = $this->service(registrationStarted: true);
+        $offering = CourseOffering::findOrFail(4);
+
+        try {
+            $service->replace($this->dean(), $offering, [
+                $this->slot('theoretical'),
+            ]);
+            self::fail('An incomplete mixed-course initialization must fail.');
+        } catch (CourseOfferingScheduleException $exception) {
+            self::assertSame(CourseOfferingScheduleException::INCOMPLETE, $exception->errorCode);
+            self::assertSame(0, DB::table('course_offering_schedule_slots')->where('course_offering_id', 4)->count());
+        }
+
+        self::assertTrue($service->describe($offering, true)['initialization_only']);
+    }
+
+    public function test_timetable_initialized_before_registration_start_is_immutable_after_start(): void
+    {
+        $offering = CourseOffering::findOrFail(2);
+        $this->service()->replace($this->dean(), $offering, [$this->slot('theoretical')]);
+
+        try {
+            $this->service(registrationStarted: true)->replace($this->dean(), $offering, [
+                $this->slot('theoretical', 3, '11:00', '12:00'),
+            ]);
+            self::fail('A timetable visible before the term started must remain immutable.');
+        } catch (CourseOfferingScheduleException $exception) {
+            self::assertSame(CourseOfferingScheduleService::LOCK_REGISTRATION_STARTED, $exception->data['locked_reason']);
+        }
+    }
+
     public function test_missing_registration_deadline_schema_fails_closed_for_timetable_mutation(): void
     {
         Schema::table('academic_calendar_event_versions', function (Blueprint $table): void {

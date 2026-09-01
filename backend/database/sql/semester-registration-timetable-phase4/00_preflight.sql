@@ -77,8 +77,13 @@ SELECT 'INFORMATIONAL_COUNTS' report_section,
   (SELECT COUNT(*) FROM `alrowad_uni_rust`.`course_offerings` WHERE status='open') open_offerings,
   (SELECT COUNT(*) FROM `alrowad_uni_rust`.`student_course_registrations` r JOIN `alrowad_uni_rust`.`registration_statuses` s ON s.registration_status_id=r.registration_status_id WHERE s.status_code='registered') current_registrations,
   (SELECT COUNT(DISTINCT course_offering_id) FROM `alrowad_uni_rust`.`student_course_registrations`) offerings_with_registration_activity;
-SELECT 'ATTENDANCE_INFORMATIONAL_ONLY' report_section,
-  (SELECT COUNT(*) FROM `alrowad_uni_rust`.`attendance_sessions`) attendance_sessions,
-  (SELECT COUNT(*) FROM `alrowad_uni_rust`.`attendance_sessions` WHERE start_time IS NULL OR end_time IS NULL) attendance_sessions_with_null_start_or_end,
-  'Attendance sessions are actual-session records and are never timetable data.' detail;
+SET @srt4_attendance_table := (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='alrowad_uni_rust' AND table_name='attendance_sessions');
+SET @srt4_attendance_time_columns := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='alrowad_uni_rust' AND table_name='attendance_sessions' AND column_name IN ('start_time','end_time'));
+SET @srt4_attendance_sql := IF(@srt4_attendance_table=1 AND @srt4_attendance_time_columns=2,
+  'SELECT ''ATTENDANCE_INFORMATIONAL_ONLY'' report_section,COUNT(*) attendance_sessions,COALESCE(SUM(CASE WHEN start_time IS NULL OR end_time IS NULL THEN 1 ELSE 0 END),0) attendance_sessions_with_null_start_or_end,''AVAILABLE; attendance sessions are actual-session records and are never timetable data.'' detail FROM `alrowad_uni_rust`.`attendance_sessions`',
+  'SELECT ''ATTENDANCE_INFORMATIONAL_ONLY'' report_section,NULL attendance_sessions,NULL attendance_sessions_with_null_start_or_end,''NOT_AVAILABLE; attendance is informational and is not a Phase 4 prerequisite.'' detail'
+);
+PREPARE srt4_attendance_stmt FROM @srt4_attendance_sql;
+EXECUTE srt4_attendance_stmt;
+DEALLOCATE PREPARE srt4_attendance_stmt;
 SELECT 'OVERALL' report_section,IF(@srt4_ready,'READY','BLOCKED') result;

@@ -57,6 +57,11 @@ export default function DeanTimetableDialog({ offeringId, schedule, onClose, onS
             الجدول مقفل: {timetableLockedReason(schedule?.locked_reason) || 'لم يعد التعديل مسموحاً'}
           </p>
         ) : null}
+        {schedule?.initialization_only === true ? (
+          <p className="mt-4 rounded-[10px] border border-blue-200 bg-blue-50 px-3 py-2 text-[12.5px] text-blue-900">
+            هذا تعريف الجدول للمرة الأولى. يجب حفظ جدول مكتمل، وسيُقفل أي تعديل لاحق إذا بدأ التسجيل أو اعتمد الطلاب على الطرح.
+          </p>
+        ) : null}
         {required.length === 0 ? (
           <p className="mt-4 rounded-[10px] border border-red-200 bg-red-50 px-3 py-2 text-[12.5px] text-red-800">
             مكونات التدريس للمقرر غير محددة، ولا يمكن إنشاء جدول قابل للتسجيل.

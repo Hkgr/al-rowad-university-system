@@ -36,6 +36,7 @@ test('Dean editor submits the complete slot collection and does not compute over
   assert.match(source, /method: 'PUT'/)
   assert.match(source, /JSON\.stringify\(\{ slots \}\)/)
   assert.match(source, /schedule\?\.required_components/)
+  assert.match(source, /schedule\?\.initialization_only === true/)
   assert.doesNotMatch(source, /startA|endB|overlap/i)
 })
 
