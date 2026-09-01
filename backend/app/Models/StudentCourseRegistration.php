@@ -16,9 +16,11 @@ class StudentCourseRegistration extends Model
 
     public const WITHDRAWN_STATUS = 'withdrawn';
 
+    public const CANCELLED_STATUS = 'cancelled';
+
     public const HISTORICAL_ATTEMPT_STATUSES = ['registered', 'completed'];
 
-    public const EXCLUDED_STATUSES = ['dropped', 'withdrawn'];
+    public const EXCLUDED_STATUSES = ['dropped', 'withdrawn', 'cancelled'];
 
     public const REACTIVATABLE_STATUSES = ['dropped'];
 

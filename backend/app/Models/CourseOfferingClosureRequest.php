@@ -6,6 +6,7 @@ use App\Support\CourseOfferingClosureWorkflow;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class CourseOfferingClosureRequest extends Model
 {
@@ -144,6 +145,11 @@ class CourseOfferingClosureRequest extends Model
         )
             ->orderBy('created_at')
             ->orderBy('course_offering_closure_event_id');
+    }
+
+    public function minimumEnrollmentReview(): HasOne
+    {
+        return $this->hasOne(CourseOfferingMinimumEnrollmentReview::class, 'course_offering_closure_request_id', 'course_offering_closure_request_id');
     }
 
     public function currentVersionReviews()

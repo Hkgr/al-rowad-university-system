@@ -525,6 +525,9 @@ export default function DeanRegistrationOfferings() {
   const [summary, setSummary] = useState({})
   const [draftIds, setDraftIds] = useState([])
   const [minimumEnrollments, setMinimumEnrollments] = useState({})
+  const [minimumReviews, setMinimumReviews] = useState([])
+  const [minimumReviewNotes, setMinimumReviewNotes] = useState({})
+  const [minimumReviewBusy, setMinimumReviewBusy] = useState({})
   const [prepareErrors, setPrepareErrors] = useState({})
   const [closureByOffering, setClosureByOffering] = useState({})
   const [context, setContext] = useState({ academic_year: null, semester: null })
@@ -664,6 +667,27 @@ export default function DeanRegistrationOfferings() {
     loadCurriculum()
     return () => { active = false }
   }, [handleRequestError, programId, semesterId, yearId])
+
+  useEffect(() => {
+    let active = true
+    if (!yearId || !semesterId) { setMinimumReviews([]); return undefined }
+    apiRequest(`/v1/dean/registration-offerings/minimum-enrollment?academic_year_id=${yearId}&semester_id=${semesterId}&per_page=100`)
+      .then(response => { if (active) setMinimumReviews(response?.data?.data ?? []) })
+      .catch(() => { if (active) setMinimumReviews([]) })
+    return () => { active = false }
+  }, [semesterId, yearId])
+
+  async function recommendMinimum(review, recommendation) {
+    const id = review.course_offering_minimum_enrollment_review_id
+    setMinimumReviewBusy(current => ({ ...current, [id]: true }))
+    try {
+      await apiRequest(`/v1/dean/registration-offerings/minimum-enrollment/${id}/recommend`, { method: 'POST', body: JSON.stringify({ recommendation, notes: minimumReviewNotes[id] ?? '' }) })
+      const response = await apiRequest(`/v1/dean/registration-offerings/minimum-enrollment?academic_year_id=${yearId}&semester_id=${semesterId}&per_page=100`)
+      setMinimumReviews(response?.data?.data ?? [])
+      setNotice('تم حفظ توصية الحد الأدنى وإرسالها ضمن مسار القرار المعتمد.')
+    } catch (requestError) { setError(requestError?.message || 'تعذر حفظ توصية الحد الأدنى.') }
+    finally { setMinimumReviewBusy(current => ({ ...current, [id]: false })) }
+  }
 
   useEffect(() => {
     setDraftIds([])
@@ -1145,6 +1169,18 @@ export default function DeanRegistrationOfferings() {
           </button>
         </div>
       )}
+
+      {minimumReviews.length > 0 ? (
+        <section className="rounded-[18px] border border-amber-200 bg-white p-5" dir="rtl">
+          <h2 className="text-[16px] font-black text-text-dark">مراجعة الحد الأدنى للتسجيل</h2>
+          <p className="mt-1 text-[12px] text-text-light">العميد يرفع توصية فقط؛ القرار النهائي للنائب العلمي، والإغلاق الرسمي يبقى خاضعاً لاعتماد النائب الإداري.</p>
+          <div className="mt-3 space-y-3">{minimumReviews.map(review => {
+            const id = review.course_offering_minimum_enrollment_review_id
+            const actionable = ['under_minimum', 'dean_recommended'].includes(review.status)
+            return <div key={id} className="rounded-[12px] border border-primary/12 p-3"><p className="text-[13px] font-bold">{review.course?.course_code} — {review.course?.course_name}</p><p className="text-[12px] text-text-light">المسجلون: {review.enrolled_count_snapshot} / الحد الأدنى: {review.minimum_enrollment_snapshot} · الحالة: {review.status}</p>{actionable && canManageLocal ? <div className="mt-2 flex flex-wrap gap-2"><input value={minimumReviewNotes[id] ?? ''} onChange={event => setMinimumReviewNotes(current => ({ ...current, [id]: event.target.value }))} placeholder="سبب التوصية" className="min-w-[260px] rounded-[9px] border border-primary/20 px-3 py-2 text-[12px]"/><button disabled={minimumReviewBusy[id] || (minimumReviewNotes[id] ?? '').trim().length < 8} onClick={() => recommendMinimum(review, 'continue')} className="rounded-[9px] border border-primary/25 px-3 py-2 text-[12px] font-bold text-primary">التوصية بالاستمرار</button><button disabled={minimumReviewBusy[id] || (minimumReviewNotes[id] ?? '').trim().length < 8} onClick={() => recommendMinimum(review, 'cancel')} className="rounded-[9px] border border-red-200 px-3 py-2 text-[12px] font-bold text-red-700">التوصية بالإلغاء</button></div> : null}</div>
+          })}</div>
+        </section>
+      ) : null}
 
       {!yearId || !semesterId || !programId ? (
         <p className="text-[13.5px] text-text-light bg-white border border-primary/12 rounded-[14px] px-4 py-8 text-center">

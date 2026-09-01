@@ -3,8 +3,11 @@
 namespace App\Services;
 
 use App\Exceptions\RegistrationException;
+use App\Exceptions\SemesterRegistrationPhase6Exception;
 use App\Models\AcademicYear;
 use App\Models\CourseOffering;
+use App\Models\CourseOfferingClosureRequest;
+use App\Models\CourseOfferingMinimumEnrollmentReview;
 use App\Models\CoursePrerequisite;
 use App\Models\ProgramCourse;
 use App\Models\RegistrationStatus;
@@ -15,6 +18,8 @@ use App\Models\StudentRegistrationRequest;
 use App\Models\StudentRegistrationRequestItem;
 use App\Models\StudentRegistrationModificationItem;
 use App\Models\StudentRegistrationModificationRequest;
+use App\Models\StudentRegistrationReplacementItem;
+use App\Models\StudentRegistrationReplacementRequest;
 use App\Support\AcademicCalendarPolicyResult;
 use App\Support\CourseRequirementClassification;
 use App\Support\CourseRegistrationDeadlineResult;
@@ -295,6 +300,64 @@ class RegistrationService
         ], $advisorUserId, RegistrationMaterializationContext::ADVISOR_APPROVAL, $peerIds);
     }
 
+    public function materializeAdvisorApprovedReplacementItemWithinTransaction(
+        StudentRegistrationReplacementRequest $request,
+        StudentRegistrationReplacementItem $item,
+        int $advisorUserId,
+        ?CarbonInterface $at = null,
+    ): array {
+        if (DB::transactionLevel()<1 || !$request->exists || !$item->exists) throw RegistrationException::liveWorkflowRequired();
+        $evaluatedAt=$at===null?CarbonImmutable::now('UTC'):CarbonImmutable::instance($at)->utc();
+        $lockedRequest=StudentRegistrationReplacementRequest::query()->whereKey($request->getKey())->lockForUpdate()->first();
+        $lockedStudent=$lockedRequest===null?null:Student::query()->whereKey($lockedRequest->student_id)->lockForUpdate()->first();
+        if($lockedRequest===null||$lockedStudent===null||$lockedRequest->status!=='submitted'||(int)$lockedRequest->current_slot!==1||$lockedRequest->expired_at!==null||$lockedRequest->superseded_at!==null||$lockedRequest->approved_at!==null||$lockedRequest->materialized_at!==null)throw RegistrationException::liveWorkflowRequired();
+
+        $deadline=$this->academicCalendarPolicy->courseRegistrationReplacementDeadlines((int)$lockedRequest->academic_year_id,(int)$lockedRequest->semester_id,$evaluatedAt);
+        if((int)$deadline->academicCalendarEventId!==(int)$lockedRequest->academic_calendar_event_id)throw SemesterRegistrationPhase6Exception::stale();
+        if(!$deadline->isAdvisorDecisionOpen()||$lockedRequest->last_submitted_at===null||$deadline->startsAt===null||$deadline->studentRegistrationEndsAt===null||CarbonImmutable::instance($lockedRequest->last_submitted_at)->utc()->lt($deadline->startsAt)||CarbonImmutable::instance($lockedRequest->last_submitted_at)->utc()->gt($deadline->studentRegistrationEndsAt))throw RegistrationException::courseRegistrationWindowClosed();
+
+        $snapshot=StudentRegistrationReplacementItem::query()->where('student_registration_replacement_request_id',$lockedRequest->getKey())->orderBy('student_registration_replacement_item_id')->get();
+        if($snapshot->isEmpty()||!$snapshot->contains(fn($row)=>(int)$row->getKey()===(int)$item->getKey()))throw RegistrationException::liveWorkflowRequired();
+        $sourceIds=$snapshot->pluck('source_student_course_registration_id')->map(fn($id)=>(int)$id)->sort()->values();
+        $targetIds=$snapshot->pluck('replacement_course_offering_id')->map(fn($id)=>(int)$id)->sort()->values();
+        $sources=StudentCourseRegistration::query()->with('registrationStatus')->whereIn('student_course_registration_id',$sourceIds)->orderBy('student_course_registration_id')->lockForUpdate()->get()->keyBy('student_course_registration_id');
+        $targets=CourseOffering::query()->with('course')->whereIn('course_offering_id',$targetIds)->orderBy('course_offering_id')->lockForUpdate()->get()->keyBy('course_offering_id');
+        $items=StudentRegistrationReplacementItem::query()->where('student_registration_replacement_request_id',$lockedRequest->getKey())->orderBy('student_registration_replacement_item_id')->lockForUpdate()->get();
+        if($items->pluck('student_registration_replacement_item_id')->all()!==$snapshot->pluck('student_registration_replacement_item_id')->all()
+            ||$items->count()!==$sourceIds->unique()->count()||$items->count()!==$targetIds->unique()->count()
+            ||$sources->count()!==$sourceIds->unique()->count()||$targets->count()!==$targetIds->unique()->count())throw SemesterRegistrationPhase6Exception::stale();
+
+        $governance=app(SemesterOfferingGovernanceService::class);
+        foreach($items as $lockedItem){
+            if((int)$lockedItem->student_registration_replacement_request_id!==(int)$lockedRequest->getKey()||$lockedItem->materialized_student_course_registration_id!==null||$lockedItem->source_consumed_slot!==null)throw RegistrationException::liveWorkflowRequired();
+            $source=$sources->get((int)$lockedItem->source_student_course_registration_id);$target=$targets->get((int)$lockedItem->replacement_course_offering_id);
+            $review=CourseOfferingMinimumEnrollmentReview::query()->whereKey($lockedItem->source_minimum_enrollment_review_id)->lockForUpdate()->first();
+            $closure=$review?->course_offering_closure_request_id===null?null:CourseOfferingClosureRequest::query()->whereKey($review->course_offering_closure_request_id)->lockForUpdate()->first();
+            if($source===null||$target===null||(int)$source->student_id!==(int)$lockedStudent->getKey()||$source->registrationStatus?->status_code!==StudentCourseRegistration::CANCELLED_STATUS||$review===null||(int)$review->course_offering_id!==(int)$source->course_offering_id||$review->status!=='cancelled'||(int)$review->academic_year_id!==(int)$lockedRequest->academic_year_id||(int)$review->semester_id!==(int)$lockedRequest->semester_id||$closure===null||(int)$closure->course_offering_id!==(int)$source->course_offering_id||$closure->materialized_at===null||$closure->status!=='approved'||StudentRegistrationReplacementItem::query()->where('source_student_course_registration_id',$source->getKey())->where('source_consumed_slot',1)->where('student_registration_replacement_item_id','<>',$lockedItem->getKey())->exists())throw SemesterRegistrationPhase6Exception::stale();
+            if($target->status!=='open'||(int)$target->academic_year_id!==(int)$lockedRequest->academic_year_id||(int)$target->semester_id!==(int)$lockedRequest->semester_id||(int)$target->academic_program_id!==(int)$lockedStudent->academic_program_id)throw SemesterRegistrationPhase6Exception::fail('replacement_target_not_eligible','Replacement target is not eligible.');
+            $governance->assertFinallyApprovedForReplacement($target);
+        }
+
+        $targetCollection=$targets->values();$failures=$this->evaluateRegistrationCandidatesForProjection($lockedStudent,$targetCollection);
+        $currentIds=$this->currentOfferingIds($lockedStudent);foreach($targetIds->unique() as $targetId)if(in_array((int)$targetId,$currentIds,true))$failures[]=['course_offering_id'=>(int)$targetId,'reason'=>'registration_duplicate'];
+        $projection=new RegistrationProjectionContext(proposedAddOfferingIds:$targetIds->unique()->all());
+        $requirementFailures=$this->requirements->validateProjectedCandidates($lockedStudent,$targetCollection,$projection);
+        $timetables=$this->schedules->registrationEvaluations($lockedStudent,$targetCollection,$currentIds,$targetIds->unique()->all());foreach($timetables as $targetId=>$evaluation)if(($evaluation['reason']??null)!==null)$failures[]=['course_offering_id'=>(int)$targetId,'reason'=>$evaluation['reason'],'timetable'=>$evaluation];
+        $hours=$this->hoursSnapshot($lockedStudent,(int)$lockedRequest->academic_year_id,(int)$lockedRequest->semester_id);$replacementHours=(int)$targetCollection->sum(fn($offering)=>(int)$offering->course?->credit_hours);if($hours['registered_hours']+$replacementHours>$hours['max_allowed_hours'])$failures[]=['reason'=>'credit_hours_exceeded'];
+        if($failures!==[]||$requirementFailures!==[])throw SemesterRegistrationPhase6Exception::fail('registration_replacement_validation_failed','The complete replacement request is not eligible.',409,['items'=>array_merge($failures,$requirementFailures)]);
+
+        if($items->firstWhere('student_registration_replacement_item_id',$item->getKey())===null)throw RegistrationException::liveWorkflowRequired();
+        $materialized=[];
+        foreach($items->sortBy('replacement_course_offering_id') as $lockedItem){
+            $peerOfferingIds=$targetIds->reject(fn($id)=>(int)$id===(int)$lockedItem->replacement_course_offering_id)->unique()->values()->all();
+            $result=$this->performRegisterStudent(['student_id'=>(int)$lockedRequest->student_id,'course_offering_id'=>(int)$lockedItem->replacement_course_offering_id,'advisor_user_id'=>$advisorUserId,'registration_date'=>$evaluatedAt->toDateString()],$advisorUserId,RegistrationMaterializationContext::ADVISOR_APPROVAL,$peerOfferingIds);
+            try{$lockedItem->update(['materialized_student_course_registration_id'=>$result['registration']->getKey(),'source_consumed_slot'=>1]);}
+            catch(QueryException $exception){$message=strtolower($exception->getMessage());if(str_contains($message,'uq_srrpi_source_consumed')||str_contains($message,'source_student_course_registration_id, student_registration_replacement_items.source_consumed_slot'))throw SemesterRegistrationPhase6Exception::consumed();throw $exception;}
+            $materialized[(int)$lockedItem->getKey()]=$result['registration'];
+        }
+        return ['registrations'=>$materialized];
+    }
+
     public function hoursSnapshot(
         Student $student,
         int $academicYearId,
@@ -329,6 +392,14 @@ class RegistrationService
             $semesterId,
             $at,
         );
+    }
+
+    public function courseRegistrationReplacementDeadlines(
+        int $academicYearId,
+        int $semesterId,
+        ?CarbonInterface $at = null,
+    ): CourseRegistrationDeadlineResult {
+        return $this->academicCalendarPolicy->courseRegistrationReplacementDeadlines($academicYearId, $semesterId, $at);
     }
 
     public function assertCourseRegistrationWindowOpen(int $academicYearId, int $semesterId): void
@@ -678,6 +749,19 @@ class RegistrationService
         }
 
         $lockedRegistration->update(['registration_status_id' => $withdrawnStatusId]);
+    }
+
+    public function transitionRegisteredToCancelled(
+        StudentCourseRegistration $lockedRegistration,
+        CourseOffering $lockedOffering
+    ): void {
+        SupplementaryExamTargetGuard::assertAvailable((int) $lockedRegistration->getKey());
+        SupplementaryExamTargetGuard::assertFixedRosterAvailable((int) $lockedRegistration->getKey());
+        $this->assertLockedRegistrationIsRegistered($lockedRegistration);
+        if ($lockedOffering->status !== CourseOfferingOpeningService::STATUS_CLOSED) throw RegistrationException::notCurrent();
+        $statusId=$this->registrationStatusId(StudentCourseRegistration::CANCELLED_STATUS);
+        if ($statusId===null) throw new ModelNotFoundException('Registration status "cancelled" was not found.');
+        $lockedRegistration->update(['registration_status_id'=>$statusId]);
     }
 
     public function lockStudent(int $studentId): Student

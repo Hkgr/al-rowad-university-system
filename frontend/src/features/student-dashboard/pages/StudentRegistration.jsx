@@ -332,6 +332,64 @@ function ApprovedRegistrationModificationPanel({ workflow, semesterId, reload, o
   )
 }
 
+function CancelledCourseReplacementPanel({ workflow, academicYearId, semesterId, reload, onError, showToast }) {
+  const [busy, setBusy] = useState('')
+  const [sourceId, setSourceId] = useState('')
+  const [targetId, setTargetId] = useState('')
+  const [notes, setNotes] = useState('')
+  useEffect(() => { setNotes(workflow?.request?.student_notes ?? '') }, [workflow?.request?.student_notes])
+  if (workflow?.schema_ready !== true) return null
+
+  const request = workflow.request ?? null
+  const sources = workflow.cancelled_sources ?? []
+  const targets = workflow.replacement_targets ?? []
+  const history = workflow.history ?? []
+  const editable = workflow?.deadline?.student_registration_open === true
+    && (!request || request.status === 'draft' || request.status === 'returned')
+
+  async function mutate(path, options, key, message) {
+    setBusy(key); onError('')
+    try { await apiRequest(path, options); showToast(message); await reload() }
+    catch (error) { onError(error?.message || 'تعذر تحديث طلب استبدال المقررات الملغاة.') }
+    finally { setBusy('') }
+  }
+
+  if (!request && sources.length === 0) return null
+  return (
+    <section className="rounded-[16px] border border-amber-200 bg-white p-5 shadow-[0_2px_10px_rgba(26,46,16,0.05)]" dir="rtl">
+      <h2 className="text-[16px] font-black text-text-dark">استبدال المقررات الملغاة لعدم اكتمال الحد الأدنى</h2>
+      <p className="mt-2 text-[12.5px] leading-6 text-text-light">يبقى المقرر المصدر ملغى تاريخياً، ويصبح المقرر البديل تسجيلاً رسمياً مستقلاً فقط بعد اعتماد المرشد الأكاديمي.</p>
+      {!request ? (
+        <button type="button" disabled={!editable || busy !== ''} onClick={() => mutate('/v1/student/registration/replacement', { method: 'POST', body: JSON.stringify({ academic_year_id: Number(academicYearId), semester_id: Number(semesterId) }) }, 'create', 'تم إنشاء مسودة الاستبدال.')} className="mt-3 rounded-[10px] bg-primary px-4 py-2 text-[12px] font-black text-white disabled:opacity-40">إنشاء طلب استبدال</button>
+      ) : (
+        <>
+          <p className="mt-2 text-[12px] font-bold text-primary">الحالة: {request.status}</p>
+          {request.hours ? <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+            {[['الساعات الحالية', request.hours.registered_hours], ['ساعات الاستبدال', request.hours.replacement_hours], ['الساعات المتوقعة', request.hours.projected_hours], ['الحد الأعلى', request.hours.max_allowed_hours], ['المعدل الرسمي الحالي', request.hours.official_cgpa ?? '—']].map(([label, value]) => <div key={label} className="rounded-[10px] bg-primary/[0.05] p-2 text-[11px]"><span className="block text-text-light">{label}</span><b>{value ?? '—'}</b></div>)}
+            {request.hours.below_recommended_minimum ? <p className="sm:col-span-2 lg:col-span-5 text-[11px] font-bold text-amber-700">المجموعة المتوقعة أقل من الحد الإرشادي 12 ساعة، وهذا تنبيه لا يمنع الإرسال.</p> : null}
+          </div> : null}
+          {(request.failures ?? []).length > 0 ? <div className="mt-3 rounded-[10px] bg-red-50 p-3 text-[11px] text-red-700">{request.failures.map((failure, index) => <p key={`${failure.reason}-${index}`}>{failure.reason}</p>)}</div> : null}
+          <div className="mt-3 space-y-2">
+            {(request.items ?? []).map(item => <div key={item.student_registration_replacement_item_id} className="rounded-[10px] border border-primary/12 p-3 text-[12px]"><b>{item.source_course?.course_code} — {item.source_course?.course_name}</b><span className="mx-2">←</span>{editable ? <select value={item.replacement_course_offering_id} disabled={busy !== ''} onChange={event => mutate(`/v1/student/registration/replacement/items/${item.student_registration_replacement_item_id}`, { method: 'PATCH', body: JSON.stringify({ replacement_course_offering_id: Number(event.target.value) }) }, `update-${item.student_registration_replacement_item_id}`, 'تم تحديث المقرر البديل.')} className="rounded-[8px] border border-primary/20 p-1.5">{targets.map(target => <option key={target.course_offering_id} value={target.course_offering_id} disabled={(target.eligibility_failures ?? []).length > 0}>{target.course?.course_code} — {target.course?.course_name}</option>)}</select> : <span>{item.target_course?.course_code} — {item.target_course?.course_name}</span>}{editable ? <button type="button" disabled={busy !== ''} onClick={() => mutate(`/v1/student/registration/replacement/items/${item.student_registration_replacement_item_id}`, { method: 'DELETE' }, `remove-${item.student_registration_replacement_item_id}`, 'تم حذف البديل من المسودة.')} className="ms-3 rounded-[8px] border border-red-200 px-2 py-1 font-bold text-red-700">حذف</button> : null}<p className="mt-2 text-[11px] text-text-light">الجدول الرسمي: {(item.official_timetable?.slots ?? []).map(slot => `${slot.iso_weekday} ${slot.starts_at}-${slot.ends_at}`).join('، ') || 'غير مكتمل'}</p>{(item.eligibility_failures ?? []).map((failure, index) => <p key={`${failure.reason}-${index}`} className="text-[11px] text-red-700">{failure.reason}</p>)}</div>)}
+          </div>
+          {editable ? (
+            <div className="mt-4 space-y-3">
+              <div className="flex flex-wrap items-end gap-2">
+              <label className="text-[12px] font-bold">المقرر الملغى<select value={sourceId} onChange={event => setSourceId(event.target.value)} className="mt-1 block rounded-[9px] border border-primary/20 p-2"><option value="">اختر</option>{sources.map(source => <option key={source.student_course_registration_id} value={source.student_course_registration_id}>{source.course?.course_code} — {source.course?.course_name}</option>)}</select></label>
+              <label className="text-[12px] font-bold">المقرر البديل<select value={targetId} onChange={event => setTargetId(event.target.value)} className="mt-1 block rounded-[9px] border border-primary/20 p-2"><option value="">اختر</option>{targets.map(target => <option key={target.course_offering_id} value={target.course_offering_id} disabled={(target.eligibility_failures ?? []).length > 0}>{target.course?.course_code} — {target.course?.course_name}</option>)}</select></label>
+              <button type="button" disabled={!sourceId || !targetId || busy !== ''} onClick={() => mutate('/v1/student/registration/replacement/items', { method: 'POST', body: JSON.stringify({ academic_year_id: Number(academicYearId), semester_id: Number(semesterId), source_student_course_registration_id: Number(sourceId), replacement_course_offering_id: Number(targetId) }) }, 'item', 'تمت إضافة البديل.')} className="rounded-[9px] border border-primary/25 px-3 py-2 text-[12px] font-bold text-primary disabled:opacity-40">إضافة البديل</button>
+              </div>
+              <div className="flex flex-wrap items-end gap-2"><label className="min-w-[280px] flex-1 text-[12px] font-bold">ملاحظات الطالب<textarea value={notes} onChange={event => setNotes(event.target.value)} className="mt-1 min-h-[70px] w-full rounded-[9px] border border-primary/20 p-2" /></label><button type="button" disabled={busy !== ''} onClick={() => mutate('/v1/student/registration/replacement', { method: 'PATCH', body: JSON.stringify({ academic_year_id: Number(academicYearId), semester_id: Number(semesterId), student_notes: notes }) }, 'notes', 'تم حفظ الملاحظات.')} className="rounded-[9px] border border-primary/25 px-3 py-2 text-[12px] font-bold text-primary">حفظ الملاحظات</button></div>
+              <button type="button" disabled={(request.items ?? []).length === 0 || busy !== ''} onClick={() => mutate('/v1/student/registration/replacement/submit', { method: 'POST', body: JSON.stringify({ academic_year_id: Number(academicYearId), semester_id: Number(semesterId) }) }, 'submit', 'تم إرسال طلب الاستبدال إلى المرشد.')} className="rounded-[9px] bg-primary px-3 py-2 text-[12px] font-black text-white disabled:opacity-40">إرسال الطلب</button>
+            </div>
+          ) : null}
+        </>
+      )}
+      {history.length > 0 ? <div className="mt-5 border-t border-primary/10 pt-4"><h3 className="text-[13px] font-black">سجل طلبات الاستبدال</h3>{history.map(entry => <p key={entry.student_registration_replacement_request_id} className="mt-1 text-[11px] text-text-light">طلب #{entry.student_registration_replacement_request_id} — {entry.status} — النسخة {entry.submission_version}</p>)}</div> : null}
+    </section>
+  )
+}
+
 function AvailableCourseSection({ title, helper, count, children, empty }) {
   return (
     <section className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
@@ -513,6 +571,7 @@ export default function StudentRegistration() {
   const requestItemRemovalOpen = payload?.request_item_removal_open === true
   const registrationCalendar = payload?.registration_calendar ?? null
   const modificationWorkflow = payload?.modification_workflow ?? null
+  const replacementWorkflow = payload?.replacement_workflow ?? null
   const termReady = Boolean(academicYear?.academic_year_id && selectedSemesterId)
   const available = payload?.available_courses ?? []
   const workspaceSemesterId = payload?.semester?.semester_id ?? selectedSemesterId
@@ -751,6 +810,14 @@ export default function StudentRegistration() {
 
       <ApprovedRegistrationModificationPanel
         workflow={modificationWorkflow}
+        semesterId={selectedSemesterId}
+        reload={reload}
+        onError={setError}
+        showToast={showToast}
+      />
+      <CancelledCourseReplacementPanel
+        workflow={replacementWorkflow}
+        academicYearId={academicYear?.academic_year_id}
         semesterId={selectedSemesterId}
         reload={reload}
         onError={setError}

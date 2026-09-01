@@ -1,6 +1,7 @@
 export const EVENT_COLORS = Object.freeze({
   admission_registration: 'bg-sky-100 text-sky-800 border-sky-300',
   course_registration: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+  course_registration_replacement: 'bg-emerald-100 text-emerald-800 border-emerald-300',
   withdrawal: 'bg-orange-100 text-orange-800 border-orange-300',
   study_period: 'bg-lime-100 text-lime-800 border-lime-300',
   exam_preparation: 'bg-amber-100 text-amber-900 border-amber-300',
@@ -13,6 +14,18 @@ export const EVENT_COLORS = Object.freeze({
   holiday: 'bg-red-100 text-red-800 border-red-300',
   general_event: 'bg-slate-100 text-slate-800 border-slate-300',
 })
+
+const REGISTRATION_DEADLINE_EVENT_TYPES = new Set([
+  'course_registration',
+  'course_registration_replacement',
+])
+
+export function isRegistrationDeadlineType(eventTypeOrCode) {
+  const code = typeof eventTypeOrCode === 'string'
+    ? eventTypeOrCode
+    : eventTypeOrCode?.event_type_code
+  return REGISTRATION_DEADLINE_EVENT_TYPES.has(code)
+}
 
 export const UNIVERSITY_TIME_ZONE = import.meta.env?.VITE_UNIVERSITY_TIME_ZONE || 'Asia/Damascus'
 

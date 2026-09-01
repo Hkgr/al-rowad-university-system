@@ -87,6 +87,42 @@ class SemesterOfferingGovernanceService
         });
     }
 
+    public function assertFinallyApprovedForReplacement(CourseOffering $offering): SemesterOfferingRequest
+    {
+        $this->assertSchemaReady();
+        try {
+            $request=SemesterOfferingRequest::query()->where('course_offering_id',$offering->getKey())->where('status',SemesterOfferingGovernance::STATUS_APPROVED)->where('is_selected',true)->whereNotNull('materialized_at')->first();
+            if($request===null || $offering->status!==CourseOfferingOpeningService::STATUS_OPEN) throw SemesterOfferingGovernanceException::approvalRequired();
+            $programCourse=ProgramCourse::query()->whereKey($request->program_course_id)->firstOrFail();
+            $this->assertCurrentCurriculumIdentity($offering,$programCourse);
+            $this->validateProposal($offering,$programCourse,true,$request->minimum_enrollment);
+            $review=SemesterOfferingReview::query()->where('semester_offering_request_id',$request->getKey())->where('submission_version',$request->submission_version)->where('status',SemesterOfferingGovernance::REVIEW_APPROVED)->first();
+            if($review===null) throw SemesterOfferingGovernanceException::approvalRequired();
+            return $request;
+        } catch (\App\Exceptions\SemesterOfferingGovernanceException|\Illuminate\Database\Eloquent\ModelNotFoundException) {
+            throw \App\Exceptions\SemesterRegistrationPhase6Exception::fail('replacement_target_not_finally_approved','Replacement target lacks final Semester Offering approval.');
+        }
+    }
+
+    public function assertMinimumEnrollmentApplicability(CourseOffering $offering, SemesterOfferingRequest $request): void
+    {
+        $this->assertSchemaReady();
+        try {
+            if ((int)$request->course_offering_id!==(int)$offering->getKey()
+                || $request->status!==SemesterOfferingGovernance::STATUS_APPROVED
+                || !$request->is_selected
+                || $request->materialized_at===null
+                || $request->minimum_enrollment===null) {
+                throw SemesterOfferingGovernanceException::invalidState();
+            }
+            $programCourse=ProgramCourse::query()->whereKey($request->program_course_id)->lockForUpdate()->firstOrFail();
+            $this->assertCurrentCurriculumIdentity($offering,$programCourse,true);
+            $this->validateProposal($offering,$programCourse,true,(int)$request->minimum_enrollment);
+        } catch (\App\Exceptions\SemesterOfferingGovernanceException|\Illuminate\Database\Eloquent\ModelNotFoundException $exception) {
+            throw \App\Exceptions\SemesterRegistrationPhase6Exception::fail('minimum_enrollment_configuration_invalid','Approved minimum-enrollment configuration is contradictory.');
+        }
+    }
+
     public function updateProposal(User $actor, CourseOffering $offering, array $payload): SemesterOfferingRequest
     {
         $this->assertSchemaReady();

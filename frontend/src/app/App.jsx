@@ -84,6 +84,7 @@ import DeanSupplementaryExams from '../features/dean-dashboard/pages/DeanSupplem
 import DeanRegistrationRequests from '../features/dean-dashboard/pages/DeanRegistrationRequests'
 import DeanRegistrationRequestDetail from '../features/dean-dashboard/pages/DeanRegistrationRequestDetail'
 import DeanRegistrationModificationDetail from '../features/dean-dashboard/pages/DeanRegistrationModificationDetail'
+import DeanRegistrationReplacementDetail from '../features/dean-dashboard/pages/DeanRegistrationReplacementDetail'
 import DeanReports         from '../features/dean-dashboard/pages/DeanReports'
 import DeanCalendar        from '../features/dean-dashboard/pages/DeanCalendar'
 import AcademicCalendarPage from '../features/academic-calendar/AcademicCalendarPage'
@@ -97,6 +98,7 @@ import ExceptionalOpeningQueue from '../features/vice-presidency/pages/Exception
 import ExceptionalOpeningDetail from '../features/vice-presidency/pages/ExceptionalOpeningDetail'
 import SupplementaryExamPeriodsPage from '../features/vice-presidency/pages/SupplementaryExamPeriods'
 import SemesterOfferingQueue from '../features/vice-presidency/pages/SemesterOfferingQueue'
+import MinimumEnrollmentQueue from '../features/vice-presidency/pages/MinimumEnrollmentQueue'
 import SemesterOfferingDetail from '../features/vice-presidency/pages/SemesterOfferingDetail'
 
 function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], actualUniversityScope = false, studentIdentity = false, employeeIdentity = false, anyAccess = [] }) {
@@ -297,6 +299,7 @@ export default function App() {
           <Route path="/dean/registration-requests" element={<DeanRegistrationRequests />} />
           <Route path="/dean/registration-requests/:id" element={<DeanRegistrationRequestDetail />} />
           <Route path="/dean/registration-modifications/:id" element={<DeanRegistrationModificationDetail />} />
+          <Route path="/dean/registration-replacements/:id" element={<DeanRegistrationReplacementDetail />} />
           <Route path="/dean/supplementary-exams" element={protect(<DeanSupplementaryExams />, { allRoles: ['dean'], assignedPermissions: ['supplementary_exams.offerings.view'] })} />
           <Route path="/dean/reports"       element={<DeanReports />} />
           <Route path="/dean/calendar"      element={<DeanCalendar />} />
@@ -313,6 +316,7 @@ export default function App() {
           <Route path="/vp/scientific" element={<VicePresidentShell office="scientific" />} />
           <Route path="/vp/scientific/teaching-assignments" element={<TeachingAssignmentQueue office="scientific" />} />
           <Route path="/vp/scientific/semester-offerings" element={protect(<SemesterOfferingQueue />, { allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView], actualUniversityScope: true })} />
+          <Route path="/vp/scientific/semester-offerings/minimum-enrollment" element={protect(<MinimumEnrollmentQueue />, { allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView], actualUniversityScope: true })} />
           <Route path="/vp/scientific/semester-offerings/:id" element={protect(<SemesterOfferingDetail />, { allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView], actualUniversityScope: true })} />
           <Route path="/vp/scientific/teaching-assignments/:id" element={<TeachingAssignmentDetail office="scientific" />} />
           <Route path="/vp/scientific/exceptional-openings" element={<ExceptionalOpeningQueue office="scientific" />} />

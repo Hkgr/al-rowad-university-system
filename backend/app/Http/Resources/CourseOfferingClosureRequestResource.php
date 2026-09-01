@@ -72,6 +72,11 @@ class CourseOfferingClosureRequestResource extends JsonResource
                     'created_at' => $event->created_at,
                     'actor' => $this->safeUser($event->actor),
                 ])),
+            'minimum_enrollment_source' => $this->whenLoaded('minimumEnrollmentReview', fn () => $this->minimumEnrollmentReview === null ? null : [
+                'review_id'=>$this->minimumEnrollmentReview->getKey(),
+                'minimum'=>$this->minimumEnrollmentReview->minimum_enrollment_snapshot,
+                'enrolled'=>$this->minimumEnrollmentReview->enrolled_count_snapshot,
+            ]),
         ];
     }
 

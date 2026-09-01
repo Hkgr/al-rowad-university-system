@@ -16,6 +16,7 @@ use App\Models\StudentRegistrationWithdrawalRequest;
 use App\Services\RegistrationRequestService;
 use App\Services\RegistrationService;
 use App\Services\RegistrationModificationService;
+use App\Services\RegistrationReplacementService;
 use App\Services\RegistrationWithdrawalService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -26,6 +27,7 @@ class StudentSelfRegistrationController extends Controller
     public function __construct(
         private RegistrationRequestService $requests,
         private RegistrationModificationService $modifications,
+        private RegistrationReplacementService $replacements,
     ) {
     }
 
@@ -59,6 +61,11 @@ class StudentSelfRegistrationController extends Controller
             'hours' => $workspace['hours'],
             'request' => $workspace['request'],
             'modification_workflow' => $this->modifications->studentWorkspace(
+                $student,
+                $workspace['academic_year']?->academic_year_id,
+                $workspace['semester']?->semester_id,
+            ),
+            'replacement_workflow' => $this->replacements->workspace(
                 $student,
                 $workspace['academic_year']?->academic_year_id,
                 $workspace['semester']?->semester_id,

@@ -25,6 +25,15 @@ export const scientificVicePresidentNav = [
         actualUniversityScope: true,
       },
       {
+        to: '/vp/scientific/semester-offerings/minimum-enrollment',
+        Icon: FaClipboardCheck,
+        ar: 'قرارات الحد الأدنى للطروحات',
+        en: 'Minimum enrollment decisions',
+        assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView],
+        allRoles: [ROLES.vicePresidentScientific],
+        actualUniversityScope: true,
+      },
+      {
         to: '/vp/scientific/teaching-assignments',
         Icon: FaChalkboardTeacher,
         ar: 'تكليفات المدرسين',

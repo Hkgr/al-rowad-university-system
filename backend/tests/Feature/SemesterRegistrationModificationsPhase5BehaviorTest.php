@@ -17,6 +17,7 @@ use App\Services\CourseOfferingInstructorCoverageService;
 use App\Services\DataScopeService;
 use App\Services\GradeService;
 use App\Services\RegistrationModificationService;
+use App\Services\RegistrationReplacementService;
 use App\Services\RegistrationRequestService;
 use App\Services\RegistrationService;
 use App\Services\TeachingAssignmentService;
@@ -72,6 +73,7 @@ class SemesterRegistrationModificationsPhase5BehaviorTest extends TestCase
         $controller = new StudentSelfRegistrationController(
             $this->createMock(RegistrationRequestService::class),
             $this->createMock(RegistrationModificationService::class),
+            $this->createMock(RegistrationReplacementService::class),
         );
 
         $this->expectRegistrationCode(
