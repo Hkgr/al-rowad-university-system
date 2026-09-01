@@ -9,6 +9,7 @@ use App\Models\CourseOfferingClosureRequest;
 use App\Models\CourseOfferingClosureReview;
 use App\Models\User;
 use App\Support\CourseOfferingClosureWorkflow;
+use App\Support\SemesterRegistrationPhase6;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
@@ -17,7 +18,25 @@ class CourseOfferingClosureWorkflowService
     public function __construct(
         private TeachingAssignmentService $assignments,
         private DataScopeService $dataScope,
+        private MinimumEnrollmentCancellationMaterializer $minimumCancellation,
     ) {
+    }
+
+    public function createFromMinimumEnrollmentCancellationWithinTransaction(User $scientific, \App\Models\CourseOfferingMinimumEnrollmentReview $review): CourseOfferingClosureRequest
+    {
+        if (DB::transactionLevel() < 1 || $review->status !== 'dean_recommended' || $review->scientific_decision !== 'cancel' || $review->dean_user_id === null || $review->scientific_user_id !== $scientific->user_id) {
+            throw CourseOfferingClosureException::notCurrent();
+        }
+        $offering=CourseOffering::query()->whereKey($review->course_offering_id)->lockForUpdate()->firstOrFail();
+        if ($offering->status !== CourseOfferingOpeningService::STATUS_OPEN || $this->lockCurrentRequest((int)$offering->getKey()) !== null) {
+            throw \App\Exceptions\SemesterRegistrationPhase6Exception::fail('minimum_enrollment_closure_conflict','An incompatible closure request already exists.');
+        }
+        $dean=User::query()->findOrFail($review->dean_user_id);
+        $request=$this->createRequest($dean,$offering,'Minimum enrollment cancellation: '.$review->dean_notes);
+        $scientificReview=$this->lockCurrentReview($request,CourseOfferingClosureWorkflow::AUTHORITY_SCIENTIFIC);
+        $scientificReview->update(['status'=>CourseOfferingClosureWorkflow::REVIEW_APPROVED,'reviewed_by_user_id'=>$scientific->user_id,'reviewed_at'=>$review->scientific_decided_at,'reason'=>null]);
+        $this->recordEvent($request,CourseOfferingClosureWorkflow::EVENT_SCIENTIFIC_APPROVED,$scientific,$review->scientific_notes);
+        return $this->loadRequest((int)$request->getKey());
     }
 
     public function submit(User $user, CourseOffering $offering, string $reason): CourseOfferingClosureRequest
@@ -169,7 +188,7 @@ class CourseOfferingClosureWorkflowService
 
     public function requestListRelations(): array
     {
-        return [
+        $relations = [
             'courseOffering.course',
             'courseOffering.academicProgram.department.college',
             'courseOffering.department.college',
@@ -178,6 +197,8 @@ class CourseOfferingClosureWorkflowService
             'requester',
             'reviews.reviewer',
         ];
+        if (SemesterRegistrationPhase6::schemaReady()) $relations[] = 'minimumEnrollmentReview';
+        return $relations;
     }
 
     /**
@@ -380,6 +401,8 @@ class CourseOfferingClosureWorkflowService
 
         $locked->status = CourseOfferingOpeningService::STATUS_CLOSED;
         $locked->save();
+
+        $this->minimumCancellation->materializeIfLinked($locked, (int) $current->getKey(), $user);
 
         $current->materialized_at = now();
         $current->current_slot = null;

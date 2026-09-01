@@ -98,6 +98,31 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
         self::assertNull(DB::table('academic_calendar_event_versions')->where('academic_calendar_event_version_id', $versionId)->value('student_registration_ends_at'));
     }
 
+    public function test_phase6_replacement_window_rejects_legacy_and_partial_deadline_fallbacks(): void
+    {
+        $this->replacementWindow(null, null, '2026-09-08 00:00:00');
+        $missing = app(AcademicCalendarPolicyService::class)->courseRegistrationReplacementDeadlines(1, 1);
+        self::assertSame(CourseRegistrationPhase::CONFIGURATION_ERROR, $missing->phase);
+        self::assertSame('course_registration_replacement_deadlines_missing', $missing->reasonCode);
+        self::assertFalse($missing->legacyDeadlineFallback);
+
+        DB::table('academic_calendar_event_versions')->where('academic_calendar_event_id', 2)->update([
+            'student_registration_ends_at' => '2026-09-05 00:00:00',
+        ]);
+        $partial = app(AcademicCalendarPolicyService::class)->courseRegistrationReplacementDeadlines(1, 1);
+        self::assertSame(CourseRegistrationPhase::CONFIGURATION_ERROR, $partial->phase);
+        self::assertSame('course_registration_deadlines_incomplete', $partial->reasonCode);
+    }
+
+    public function test_phase6_replacement_window_uses_the_same_inclusive_student_and_advisor_boundaries(): void
+    {
+        $this->replacementWindow('2026-09-05 00:00:00', '2026-09-08 00:00:00');
+        $policy = app(AcademicCalendarPolicyService::class);
+        self::assertSame(CourseRegistrationPhase::STUDENT_OPEN, $policy->courseRegistrationReplacementDeadlines(1, 1, CarbonImmutable::parse('2026-09-05T00:00:00Z'))->phase);
+        self::assertSame(CourseRegistrationPhase::ADVISOR_REVIEW, $policy->courseRegistrationReplacementDeadlines(1, 1, CarbonImmutable::parse('2026-09-08T00:00:00Z'))->phase);
+        self::assertSame(CourseRegistrationPhase::CLOSED, $policy->courseRegistrationReplacementDeadlines(1, 1, CarbonImmutable::parse('2026-09-08T00:00:01Z'))->phase);
+    }
+
     public function test_missing_phase_two_deadline_columns_return_controlled_configuration_error(): void
     {
         Schema::table('academic_calendar_event_versions', function (Blueprint $table): void {
@@ -1178,6 +1203,14 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
         ]);
 
         return $this->version(1, 1, 'published', $studentEndsAt, $advisorEndsAt, $startsAt, $endsAt);
+    }
+
+    private function replacementWindow(?string $studentEndsAt, ?string $advisorEndsAt, ?string $endsAt = null): int
+    {
+        DB::table('academic_calendar_event_types')->insert(['academic_calendar_event_type_id' => 2, 'event_type_code' => 'course_registration_replacement', 'is_active' => 1]);
+        DB::table('academic_calendar_events')->insert(['academic_calendar_event_id' => 2, 'academic_year_id' => 1, 'semester_id' => 1, 'academic_calendar_event_type_id' => 2]);
+
+        return $this->version(2, 1, 'published', $studentEndsAt, $advisorEndsAt, '2026-09-01 00:00:00', $endsAt);
     }
 
     private function version(

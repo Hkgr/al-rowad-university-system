@@ -87,6 +87,14 @@ class SemesterOfferingGovernanceService
         });
     }
 
+    public function assertFinallyApprovedForReplacement(CourseOffering $offering): SemesterOfferingRequest
+    {
+        $this->assertSchemaReady();
+        $request=SemesterOfferingRequest::query()->where('course_offering_id',$offering->getKey())->where('status',SemesterOfferingGovernance::STATUS_APPROVED)->where('is_selected',true)->whereNotNull('materialized_at')->first();
+        if($request===null || $offering->status!==CourseOfferingOpeningService::STATUS_OPEN) throw \App\Exceptions\SemesterRegistrationPhase6Exception::fail('replacement_target_not_finally_approved','Replacement target lacks final Semester Offering approval.');
+        return $request;
+    }
+
     public function updateProposal(User $actor, CourseOffering $offering, array $payload): SemesterOfferingRequest
     {
         $this->assertSchemaReady();

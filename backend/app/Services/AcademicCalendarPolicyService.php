@@ -27,6 +27,8 @@ class AcademicCalendarPolicyService
 {
     private const COURSE_REGISTRATION_EVENT_TYPE = 'course_registration';
 
+    private const COURSE_REGISTRATION_REPLACEMENT_EVENT_TYPE = 'course_registration_replacement';
+
     /**
      * Irreversible timetable-editing boundary. A replacement calendar version
      * cannot make a registration window "not started" after an earlier
@@ -242,6 +244,24 @@ class AcademicCalendarPolicyService
         int $semesterId,
         ?CarbonInterface $at = null,
     ): CourseRegistrationDeadlineResult {
+        return $this->registrationDeadlinesFor(self::COURSE_REGISTRATION_EVENT_TYPE, true, $academicYearId, $semesterId, $at);
+    }
+
+    public function courseRegistrationReplacementDeadlines(
+        int $academicYearId,
+        int $semesterId,
+        ?CarbonInterface $at = null,
+    ): CourseRegistrationDeadlineResult {
+        return $this->registrationDeadlinesFor(self::COURSE_REGISTRATION_REPLACEMENT_EVENT_TYPE, false, $academicYearId, $semesterId, $at);
+    }
+
+    private function registrationDeadlinesFor(
+        string $eventTypeCode,
+        bool $allowLegacyFallback,
+        int $academicYearId,
+        int $semesterId,
+        ?CarbonInterface $at,
+    ): CourseRegistrationDeadlineResult {
         $evaluatedAt = $at === null
             ? CarbonImmutable::now('UTC')
             : CarbonImmutable::instance($at)->utc();
@@ -259,7 +279,7 @@ class AcademicCalendarPolicyService
         }
 
         $types = AcademicCalendarEventType::query()
-            ->where('event_type_code', self::COURSE_REGISTRATION_EVENT_TYPE)
+            ->where('event_type_code', $eventTypeCode)
             ->limit(2)
             ->get(['academic_calendar_event_type_id', 'is_active']);
         if ($types->count() !== 1) {
@@ -339,7 +359,11 @@ class AcademicCalendarPolicyService
         $genericEndsAt = CarbonImmutable::instance($version->ends_at)->utc();
         $studentValue = $version->student_registration_ends_at;
         $advisorValue = $version->advisor_approval_ends_at;
-        $legacyFallback = $studentValue === null && $advisorValue === null;
+        $bothSpecializedMissing = $studentValue === null && $advisorValue === null;
+        if ($bothSpecializedMissing && ! $allowLegacyFallback) {
+            return $configurationError('course_registration_replacement_deadlines_missing');
+        }
+        $legacyFallback = $allowLegacyFallback && $bothSpecializedMissing;
 
         if (($studentValue === null) !== ($advisorValue === null)) {
             return $configurationError('course_registration_deadlines_incomplete');

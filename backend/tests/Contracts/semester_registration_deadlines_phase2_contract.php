@@ -61,7 +61,9 @@ $contract = static function (string $backendRoot): array {
     foreach (['startsAt', 'studentRegistrationEndsAt', 'advisorApprovalEndsAt', 'evaluatedAt', 'academicCalendarEventId', 'academicCalendarEventVersionId', 'reasonCode'] as $field) {
         $expect(str_contains($deadlineResult, $field), 'Deadline result is missing '.$field);
     }
-    $deadlineEvaluation = $method($policy, 'courseRegistrationDeadlines');
+    $deadlineEntry = $method($policy, 'courseRegistrationDeadlines');
+    $deadlineEvaluation = $method($policy, 'registrationDeadlinesFor');
+    $expect(str_contains($deadlineEntry, 'registrationDeadlinesFor(self::COURSE_REGISTRATION_EVENT_TYPE, true'), 'Original registration deadlines must explicitly retain legacy fallback when delegating to the shared implementation.');
     $schemaGuard = strpos($deadlineEvaluation, 'AcademicCalendar::registrationDeadlineSchemaReady()');
     $deadlineColumnQuery = strpos($deadlineEvaluation, 'student_registration_ends_at');
     $expect($schemaGuard !== false && $deadlineColumnQuery !== false && $schemaGuard < $deadlineColumnQuery, 'Deadline schema readiness must precede every query that selects Phase 2 columns.');

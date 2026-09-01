@@ -102,6 +102,10 @@ use App\Http\Controllers\Api\StudentStatusController;
 use App\Http\Controllers\Api\ScientificVicePresidentSupplementaryExamPeriodController;
 use App\Http\Controllers\Api\ScientificVicePresidentAcademicCalendarController;
 use App\Http\Controllers\Api\ScientificSemesterOfferingController;
+use App\Http\Controllers\Api\DeanMinimumEnrollmentController;
+use App\Http\Controllers\Api\ScientificMinimumEnrollmentController;
+use App\Http\Controllers\Api\StudentRegistrationReplacementController;
+use App\Http\Controllers\Api\AcademicAdvisingRegistrationReplacementController;
 use App\Http\Controllers\Api\SupplementaryExamPeriodController;
 use App\Http\Controllers\Api\SystemModuleController;
 use App\Http\Controllers\Api\DeanTeachingAssignmentController;
@@ -286,6 +290,12 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
         Route::post('student/registration/modification/items/{courseOffering}', [StudentRegistrationModificationController::class, 'addItem']);
         Route::delete('student/registration/modification/items/{modificationItem}', [StudentRegistrationModificationController::class, 'removeItem']);
         Route::post('student/registration/modification/submit', [StudentRegistrationModificationController::class, 'submit']);
+        Route::post('student/registration/replacement', [StudentRegistrationReplacementController::class, 'store']);
+        Route::patch('student/registration/replacement', [StudentRegistrationReplacementController::class, 'update']);
+        Route::post('student/registration/replacement/items', [StudentRegistrationReplacementController::class, 'addItem']);
+        Route::patch('student/registration/replacement/items/{replacementItem}', [StudentRegistrationReplacementController::class, 'updateItem']);
+        Route::delete('student/registration/replacement/items/{replacementItem}', [StudentRegistrationReplacementController::class, 'removeItem']);
+        Route::post('student/registration/replacement/submit', [StudentRegistrationReplacementController::class, 'submit']);
     });
     Route::middleware(\App\Http\Middleware\RequirePermission::class.':registration_requests.view')->group(function (): void {
         Route::get('academic-advising/registration-requests', [AcademicAdvisingRegistrationRequestController::class, 'index']);
@@ -298,6 +308,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
         Route::post('academic-advising/registration-requests/{registrationRequest}/approve', [AcademicAdvisingRegistrationRequestController::class, 'approve']);
         Route::post('academic-advising/registration-modifications/{modification}/return', [AcademicAdvisingRegistrationModificationController::class, 'returnForModification']);
         Route::post('academic-advising/registration-modifications/{modification}/approve', [AcademicAdvisingRegistrationModificationController::class, 'approve']);
+        Route::get('academic-advising/registration-replacements', [AcademicAdvisingRegistrationReplacementController::class, 'index']);
+        Route::get('academic-advising/registration-replacements/{replacement}', [AcademicAdvisingRegistrationReplacementController::class, 'show']);
+        Route::post('academic-advising/registration-replacements/{replacement}/return', [AcademicAdvisingRegistrationReplacementController::class, 'returnForModification']);
+        Route::post('academic-advising/registration-replacements/{replacement}/approve', [AcademicAdvisingRegistrationReplacementController::class, 'approve']);
     });
     Route::middleware(\App\Http\Middleware\RequirePermission::class.':registration_withdrawals.view')->group(function (): void {
         Route::get('academic-advising/registration-withdrawals', [AcademicAdvisingRegistrationWithdrawalController::class, 'index']);
@@ -612,6 +626,11 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::put('dean/registration-offerings/{courseOffering}/proposal', [DeanRegistrationOfferingController::class, 'updateProposal']);
     Route::post('dean/registration-offerings/{courseOffering}/submit', [DeanRegistrationOfferingController::class, 'submit']);
     Route::put('dean/registration-offerings/{courseOffering}/timetable', [DeanRegistrationOfferingController::class, 'replaceTimetable']);
+    Route::get('dean/registration-offerings/minimum-enrollment', [DeanMinimumEnrollmentController::class, 'index']);
+    Route::post('dean/registration-offerings/minimum-enrollment/{review}/recommend', [DeanMinimumEnrollmentController::class, 'recommend']);
+    Route::get('vice-presidency/scientific/semester-offerings/minimum-enrollment', [ScientificMinimumEnrollmentController::class, 'index']);
+    Route::get('vice-presidency/scientific/semester-offerings/minimum-enrollment/{review}', [ScientificMinimumEnrollmentController::class, 'show']);
+    Route::post('vice-presidency/scientific/semester-offerings/minimum-enrollment/{review}/decide', [ScientificMinimumEnrollmentController::class, 'decide']);
     Route::get('vice-presidency/scientific/semester-offerings', [ScientificSemesterOfferingController::class, 'index']);
     Route::get('vice-presidency/scientific/semester-offerings/{semesterOfferingRequest}', [ScientificSemesterOfferingController::class, 'show']);
     Route::post('vice-presidency/scientific/semester-offerings/{semesterOfferingRequest}/approve', [ScientificSemesterOfferingController::class, 'approve']);

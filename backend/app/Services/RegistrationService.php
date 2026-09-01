@@ -15,6 +15,8 @@ use App\Models\StudentRegistrationRequest;
 use App\Models\StudentRegistrationRequestItem;
 use App\Models\StudentRegistrationModificationItem;
 use App\Models\StudentRegistrationModificationRequest;
+use App\Models\StudentRegistrationReplacementItem;
+use App\Models\StudentRegistrationReplacementRequest;
 use App\Support\AcademicCalendarPolicyResult;
 use App\Support\CourseRequirementClassification;
 use App\Support\CourseRegistrationDeadlineResult;
@@ -295,6 +297,26 @@ class RegistrationService
         ], $advisorUserId, RegistrationMaterializationContext::ADVISOR_APPROVAL, $peerIds);
     }
 
+    public function materializeAdvisorApprovedReplacementItemWithinTransaction(
+        StudentRegistrationReplacementRequest $request,
+        StudentRegistrationReplacementItem $item,
+        int $advisorUserId,
+        array $peerOfferingIds,
+        ?CarbonInterface $at = null,
+    ): array {
+        if (DB::transactionLevel()<1 || !$request->exists || !$item->exists) throw RegistrationException::liveWorkflowRequired();
+        $lockedRequest=StudentRegistrationReplacementRequest::query()->whereKey($request->getKey())->lockForUpdate()->first();
+        $itemSnapshot=StudentRegistrationReplacementItem::query()->whereKey($item->getKey())->first();
+        if ($lockedRequest===null || $itemSnapshot===null || $lockedRequest->status!=='submitted' || (int)$lockedRequest->current_slot!==1 || (int)$itemSnapshot->student_registration_replacement_request_id!==(int)$lockedRequest->getKey()) throw RegistrationException::liveWorkflowRequired();
+        $lockedOffering=CourseOffering::query()->whereKey($itemSnapshot->replacement_course_offering_id)->lockForUpdate()->first();
+        $lockedItem=StudentRegistrationReplacementItem::query()->whereKey($itemSnapshot->getKey())->lockForUpdate()->first();
+        if ($lockedOffering===null || $lockedItem===null || (int)$lockedItem->replacement_course_offering_id!==(int)$lockedOffering->getKey() || $lockedItem->materialized_student_course_registration_id!==null || $lockedItem->source_consumed_slot!==null) throw RegistrationException::liveWorkflowRequired();
+        $evaluatedAt=$at===null?CarbonImmutable::now('UTC'):CarbonImmutable::instance($at)->utc();
+        $deadline=$this->academicCalendarPolicy->courseRegistrationReplacementDeadlines((int)$lockedRequest->academic_year_id,(int)$lockedRequest->semester_id,$evaluatedAt);
+        if (!$deadline->isAdvisorDecisionOpen() || $lockedRequest->last_submitted_at===null || $deadline->startsAt===null || $deadline->studentRegistrationEndsAt===null || CarbonImmutable::instance($lockedRequest->last_submitted_at)->utc()->lt($deadline->startsAt) || CarbonImmutable::instance($lockedRequest->last_submitted_at)->utc()->gt($deadline->studentRegistrationEndsAt)) throw RegistrationException::courseRegistrationWindowClosed();
+        return $this->performRegisterStudent(['student_id'=>(int)$lockedRequest->student_id,'course_offering_id'=>(int)$lockedItem->replacement_course_offering_id,'advisor_user_id'=>$advisorUserId,'registration_date'=>$evaluatedAt->toDateString()],$advisorUserId,RegistrationMaterializationContext::ADVISOR_APPROVAL,$peerOfferingIds);
+    }
+
     public function hoursSnapshot(
         Student $student,
         int $academicYearId,
@@ -329,6 +351,14 @@ class RegistrationService
             $semesterId,
             $at,
         );
+    }
+
+    public function courseRegistrationReplacementDeadlines(
+        int $academicYearId,
+        int $semesterId,
+        ?CarbonInterface $at = null,
+    ): CourseRegistrationDeadlineResult {
+        return $this->academicCalendarPolicy->courseRegistrationReplacementDeadlines($academicYearId, $semesterId, $at);
     }
 
     public function assertCourseRegistrationWindowOpen(int $academicYearId, int $semesterId): void
@@ -678,6 +708,19 @@ class RegistrationService
         }
 
         $lockedRegistration->update(['registration_status_id' => $withdrawnStatusId]);
+    }
+
+    public function transitionRegisteredToCancelled(
+        StudentCourseRegistration $lockedRegistration,
+        CourseOffering $lockedOffering
+    ): void {
+        SupplementaryExamTargetGuard::assertAvailable((int) $lockedRegistration->getKey());
+        SupplementaryExamTargetGuard::assertFixedRosterAvailable((int) $lockedRegistration->getKey());
+        $this->assertLockedRegistrationIsRegistered($lockedRegistration);
+        if ($lockedOffering->status !== CourseOfferingOpeningService::STATUS_CLOSED) throw RegistrationException::notCurrent();
+        $statusId=$this->registrationStatusId(StudentCourseRegistration::CANCELLED_STATUS);
+        if ($statusId===null) throw new ModelNotFoundException('Registration status "cancelled" was not found.');
+        $lockedRegistration->update(['registration_status_id'=>$statusId]);
     }
 
     public function lockStudent(int $studentId): Student
