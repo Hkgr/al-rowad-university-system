@@ -64,14 +64,24 @@ class RegistrationReplacementService
     public function create(Student $student, User $actor, int $yearId, int $semesterId): array
     {
         $this->assertReady(); $deadline=$this->assertStudentOpen($yearId,$semesterId);
-        return DB::transaction(function()use($student,$actor,$yearId,$semesterId,$deadline){
+        $currentOutcome=DB::transaction(function()use($student,$actor,$yearId,$semesterId,$deadline){
             Student::query()->whereKey($student->getKey())->lockForUpdate()->firstOrFail();
             $event=$this->replacementEvent($yearId,$semesterId,true);
             if ((int)$deadline->academicCalendarEventId!==(int)$event->getKey()) throw SemesterRegistrationPhase6Exception::fail('registration_replacement_calendar_invalid','Replacement calendar configuration is inconsistent.');
             if ($current=$this->current($student,$yearId,$semesterId,true)) {
-                if (($reason=$this->staleReason($current,$student,$deadline,true))===null) return $this->payload($current,true);
+                if (($reason=$this->staleReason($current,$student,$deadline,true))===null) return ['outcome'=>'current','payload'=>$this->payload($current,true)];
                 $this->supersede($current,$actor,$reason);
+                return ['outcome'=>'superseded'];
             }
+            return ['outcome'=>'none'];
+        },3);
+        if($currentOutcome['outcome']==='current')return $currentOutcome['payload'];
+
+        return DB::transaction(function()use($student,$actor,$yearId,$semesterId,$deadline){
+            Student::query()->whereKey($student->getKey())->lockForUpdate()->firstOrFail();
+            $event=$this->replacementEvent($yearId,$semesterId,true);
+            if((int)$deadline->academicCalendarEventId!==(int)$event->getKey())throw SemesterRegistrationPhase6Exception::fail('registration_replacement_calendar_invalid','Replacement calendar configuration is inconsistent.');
+            if($current=$this->current($student,$yearId,$semesterId,true))return $this->payload($current,true);
             if (! $this->eligibleSources($student,$yearId,$semesterId)->exists()) throw SemesterRegistrationPhase6Exception::replacementSource();
             $request=StudentRegistrationReplacementRequest::query()->create(['academic_calendar_event_id'=>$event->getKey(),'student_id'=>$student->getKey(),
                 'academic_year_id'=>$yearId,'semester_id'=>$semesterId,'status'=>'draft','submission_version'=>0,'current_slot'=>1]);

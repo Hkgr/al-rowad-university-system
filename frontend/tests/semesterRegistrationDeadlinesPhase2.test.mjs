@@ -35,7 +35,8 @@ test('Scientific VP form exposes ordered course-registration deadlines without a
   assert.match(source, /نهاية اعتماد المرشد الأكاديمي/)
   assert.match(source, /min=\{form\.starts_at\}/)
   assert.match(source, /min=\{form\.student_registration_ends_at\}/)
-  assert.match(source, /ends_at: fromUniversityInput\(isCourseRegistration \? form\.advisor_approval_ends_at : form\.ends_at\)/)
+  assert.match(source, /const usesRegistrationDeadlines = isRegistrationDeadlineType\(selectedEventType\)/)
+  assert.match(source, /ends_at: fromUniversityInput\(usesRegistrationDeadlines \? form\.advisor_approval_ends_at : form\.ends_at\)/)
 })
 
 test('student mutation capabilities close together at the backend-provided student deadline', async () => {

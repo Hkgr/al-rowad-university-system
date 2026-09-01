@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { eventColor, eventsForDay, eventVersion, fromUniversityInput, monthBounds, monthCells, statusBadgeKind, toUniversityInput, UNIVERSITY_TIME_ZONE, withOptionalChangeReason } from '../src/features/academic-calendar/calendarUtils.js'
+import { eventColor, eventsForDay, eventVersion, fromUniversityInput, isRegistrationDeadlineType, monthBounds, monthCells, statusBadgeKind, toUniversityInput, UNIVERSITY_TIME_ZONE, withOptionalChangeReason } from '../src/features/academic-calendar/calendarUtils.js'
 
 test('month grid starts on Saturday and queries university-local month boundaries in UTC', () => {
   const cells = monthCells(new Date('2026-09-01T00:00:00Z'))
@@ -35,7 +35,22 @@ test('manager display prefers a replacement draft while public payload remains d
 
 test('stable event codes determine presentation only', () => {
   assert.match(eventColor('theoretical_exams'), /indigo/)
+  assert.match(eventColor('course_registration_replacement'), /emerald/)
   assert.match(eventColor('unknown', 'general'), /slate/)
+})
+
+test('original and replacement registration windows share specialized deadline form and payload semantics', () => {
+  assert.equal(isRegistrationDeadlineType('course_registration'), true)
+  assert.equal(isRegistrationDeadlineType({ event_type_code: 'course_registration_replacement' }), true)
+  assert.equal(isRegistrationDeadlineType('general_event'), false)
+
+  const page = readFileSync(new URL('../src/features/academic-calendar/AcademicCalendarPage.jsx', import.meta.url), 'utf8')
+  assert.match(page, /const usesRegistrationDeadlines = isRegistrationDeadlineType\(selectedEventType\)/)
+  assert.match(page, /required=\{usesRegistrationDeadlines\}/)
+  assert.match(page, /ends_at: fromUniversityInput\(usesRegistrationDeadlines \? form\.advisor_approval_ends_at : form\.ends_at\)/)
+  assert.match(page, /is_enforcement: usesRegistrationDeadlines \? true : form\.is_enforcement/)
+  assert.match(page, /if \(usesRegistrationDeadlines\)[\s\S]*payload\.student_registration_ends_at[\s\S]*payload\.advisor_approval_ends_at/)
+  assert.match(page, /\{usesRegistrationDeadlines \? <>[\s\S]*student_registration_ends_at[\s\S]*advisor_approval_ends_at/)
 })
 
 test('public events do not render empty publication badges', () => {
