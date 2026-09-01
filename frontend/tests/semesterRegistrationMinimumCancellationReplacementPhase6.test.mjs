@@ -12,6 +12,10 @@ test('student replacement UI uses backend deadline and workflow capabilities onl
   assert.match(source, /method: 'PATCH'/)
   assert.match(source, /method: 'DELETE'/)
   assert.match(source, /يبقى المقرر المصدر ملغى تاريخياً/)
+  assert.match(source, /workflow\.history/)
+  assert.match(source, /request\.hours\.projected_hours/)
+  assert.match(source, /item\.official_timetable/)
+  assert.match(source, /item\.eligibility_failures/)
   assert.doesNotMatch(source, /new Date\(|Date\.now|available_seats|capacity/)
 })
 
@@ -21,6 +25,10 @@ test('advisor replacement review is additive to the existing queue and has no br
   assert.match(detail, /academic-advising\/registration-replacements/)
   assert.match(detail, /\$\{id\}\/\$\{action\}/)
   assert.match(routes, /dean\/registration-replacements\/:id/)
+  assert.match(detail, /request\.hours\.max_allowed_hours/)
+  assert.match(detail, /item\.official_timetable/)
+  assert.match(detail, /request\.failures/)
+  assert.match(detail, /request\.events/)
   assert.doesNotMatch(detail, /overlap|prerequisite|credit_hours\s*[+*]/i)
 })
 

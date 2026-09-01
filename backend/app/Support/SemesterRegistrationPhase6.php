@@ -11,6 +11,8 @@ final class SemesterRegistrationPhase6
     public const REPLACEMENT_STATUSES = ['draft', 'submitted', 'returned', 'approved', 'expired', 'superseded'];
     public const TERMINAL_MINIMUM_STATUSES = ['satisfied', 'continued_exceptionally', 'cancelled', 'superseded'];
     public const TERMINAL_REPLACEMENT_STATUSES = ['approved', 'expired', 'superseded'];
+    public const EVENT_REPLACEMENT_SOURCE_CHANGED = 'superseded_source_changed';
+    public const EVENT_REPLACEMENT_CALENDAR_CHANGED = 'superseded_calendar_event_changed';
 
     public static function schemaReady(): bool
     {

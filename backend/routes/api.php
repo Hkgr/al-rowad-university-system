@@ -302,14 +302,14 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
         Route::get('academic-advising/registration-requests/{registrationRequest}', [AcademicAdvisingRegistrationRequestController::class, 'show']);
         Route::get('academic-advising/registration-modifications', [AcademicAdvisingRegistrationModificationController::class, 'index']);
         Route::get('academic-advising/registration-modifications/{modification}', [AcademicAdvisingRegistrationModificationController::class, 'show']);
+        Route::get('academic-advising/registration-replacements', [AcademicAdvisingRegistrationReplacementController::class, 'index']);
+        Route::get('academic-advising/registration-replacements/{replacement}', [AcademicAdvisingRegistrationReplacementController::class, 'show']);
     });
     Route::middleware(\App\Http\Middleware\RequirePermission::class.':registration_requests.review')->group(function (): void {
         Route::post('academic-advising/registration-requests/{registrationRequest}/return', [AcademicAdvisingRegistrationRequestController::class, 'returnForModification']);
         Route::post('academic-advising/registration-requests/{registrationRequest}/approve', [AcademicAdvisingRegistrationRequestController::class, 'approve']);
         Route::post('academic-advising/registration-modifications/{modification}/return', [AcademicAdvisingRegistrationModificationController::class, 'returnForModification']);
         Route::post('academic-advising/registration-modifications/{modification}/approve', [AcademicAdvisingRegistrationModificationController::class, 'approve']);
-        Route::get('academic-advising/registration-replacements', [AcademicAdvisingRegistrationReplacementController::class, 'index']);
-        Route::get('academic-advising/registration-replacements/{replacement}', [AcademicAdvisingRegistrationReplacementController::class, 'show']);
         Route::post('academic-advising/registration-replacements/{replacement}/return', [AcademicAdvisingRegistrationReplacementController::class, 'returnForModification']);
         Route::post('academic-advising/registration-replacements/{replacement}/approve', [AcademicAdvisingRegistrationReplacementController::class, 'approve']);
     });

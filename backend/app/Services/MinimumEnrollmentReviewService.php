@@ -20,6 +20,7 @@ class MinimumEnrollmentReviewService
         private AcademicCalendarPolicyService $calendar,
         private DataScopeService $scope,
         private CourseOfferingClosureWorkflowService $closures,
+        private SemesterOfferingGovernanceService $governance,
     ) {}
 
     public function assertDeanAccess(User $actor): void { $this->assertReady(); $this->assertDeanView($actor); }
@@ -49,9 +50,7 @@ class MinimumEnrollmentReviewService
                     if ($offering->status === 'closed' && in_array($existing->status, ['under_minimum','dean_recommended','closure_pending'], true)) $this->supersede($existing);
                     continue;
                 }
-                if ((int)$request->minimum_enrollment < 1 || (int)$request->program_course_id < 1) {
-                    throw SemesterRegistrationPhase6Exception::fail('minimum_enrollment_configuration_invalid', 'Approved minimum-enrollment configuration is contradictory.');
-                }
+                $this->governance->assertMinimumEnrollmentApplicability($offering,$request);
                 $count = $offering->studentCourseRegistrations()
                     ->current()
                     ->orderBy('student_course_registration_id')
