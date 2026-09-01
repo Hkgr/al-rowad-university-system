@@ -1016,6 +1016,7 @@ class RegistrationService
         $offering->setAttribute('missing_prerequisites', $missing);
         $offering->setAttribute('official_timetable', $timetable['schedule'] ?? null);
         $offering->setAttribute('timetable_conflicts', $timetable['conflicts'] ?? []);
+        $offering->setAttribute('incomplete_timetable_sources', $timetable['incomplete_timetable_sources'] ?? []);
 
         return $offering;
     }
@@ -1048,6 +1049,9 @@ class RegistrationService
         }
         if ($reason === RegistrationException::TIMETABLE_CONFLICT) {
             throw RegistrationException::timetableConflict($evaluation['conflicts'] ?? []);
+        }
+        if ($reason === RegistrationException::TIMETABLE_REFERENCE_INCOMPLETE) {
+            throw RegistrationException::timetableReferenceIncomplete($evaluation['incomplete_timetable_sources'] ?? []);
         }
     }
 

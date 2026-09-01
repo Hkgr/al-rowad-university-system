@@ -2,10 +2,35 @@
 USE `alrowad_uni_rust`;
 
 SET @srt4_apply_tables := (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='alrowad_uni_rust' AND table_name IN ('course_offerings','courses','users','student_course_registrations','registration_statuses','student_registration_requests','student_registration_request_items','semester_offering_requests','semester_offering_reviews','semester_offering_events','academic_calendar_event_types','academic_calendar_events','academic_calendar_event_versions','permissions','roles','role_permissions','user_roles','user_access_scopes'));
+SET @srt4_apply_columns := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='alrowad_uni_rust' AND (
+  (table_name='course_offerings' AND column_name IN ('course_offering_id','course_id','academic_year_id','semester_id','academic_program_id','status')) OR
+  (table_name='courses' AND column_name IN ('course_id','theoretical_hours','practical_hours')) OR
+  (table_name='users' AND column_name='user_id') OR
+  (table_name='student_course_registrations' AND column_name IN ('student_course_registration_id','student_id','course_offering_id','registration_status_id')) OR
+  (table_name='registration_statuses' AND column_name IN ('registration_status_id','status_code')) OR
+  (table_name='student_registration_requests' AND column_name IN ('student_registration_request_id','student_id','academic_year_id','semester_id','status','first_submitted_at','expired_at')) OR
+  (table_name='student_registration_request_items' AND column_name IN ('student_registration_request_item_id','student_registration_request_id','course_offering_id')) OR
+  (table_name='semester_offering_requests' AND column_name IN ('semester_offering_request_id','course_offering_id','status','materialized_at')) OR
+  (table_name='semester_offering_reviews' AND column_name IN ('semester_offering_review_id','semester_offering_request_id','status')) OR
+  (table_name='semester_offering_events' AND column_name IN ('semester_offering_event_id','semester_offering_request_id','event_type')) OR
+  (table_name='academic_calendar_event_types' AND column_name IN ('academic_calendar_event_type_id','event_type_code','is_active')) OR
+  (table_name='academic_calendar_events' AND column_name IN ('academic_calendar_event_id','academic_year_id','semester_id','academic_calendar_event_type_id','cancelled_at')) OR
+  (table_name='academic_calendar_event_versions' AND column_name IN ('academic_calendar_event_version_id','academic_calendar_event_id','starts_at','ends_at','student_registration_ends_at','advisor_approval_ends_at','is_enforcement','publication_status','published_at','superseded_at')) OR
+  (table_name='permissions' AND column_name IN ('permission_id','permission_code','is_active')) OR
+  (table_name='roles' AND column_name IN ('role_id','role_code','is_active')) OR
+  (table_name='role_permissions' AND column_name IN ('role_id','permission_id')) OR
+  (table_name='user_roles' AND column_name IN ('user_id','role_id','is_active')) OR
+  (table_name='user_access_scopes' AND column_name IN ('user_id','scope_type','scope_id','is_active'))
+));
 SET @srt4_apply_deadlines := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='alrowad_uni_rust' AND ((table_name='academic_calendar_event_versions' AND column_name IN ('student_registration_ends_at','advisor_approval_ends_at')) OR (table_name='student_registration_requests' AND column_name='expired_at')));
-SET @srt4_apply_signed := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='alrowad_uni_rust' AND data_type='int' AND column_type NOT LIKE '%unsigned%' AND ((table_name='course_offerings' AND column_name='course_offering_id') OR (table_name='users' AND column_name='user_id')));
+SET @srt4_apply_materialized := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='alrowad_uni_rust' AND table_name='semester_offering_requests' AND column_name='materialized_at');
+SET @srt4_apply_signed := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='alrowad_uni_rust' AND data_type='int' AND column_type NOT LIKE '%unsigned%' AND ((table_name='course_offerings' AND column_name='course_offering_id') OR (table_name='users' AND column_name='user_id') OR (table_name='student_course_registrations' AND column_name='student_course_registration_id') OR (table_name='student_registration_requests' AND column_name='student_registration_request_id')));
 SET @srt4_apply_permission := (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code='course_offerings.semester_governance.manage' AND is_active=1);
+SET @srt4_apply_dean_role := (SELECT COUNT(*) FROM `alrowad_uni_rust`.`roles` WHERE role_code='dean' AND is_active=1);
+SET @srt4_apply_dean_mapping := (SELECT COUNT(*) FROM `alrowad_uni_rust`.`roles` r JOIN `alrowad_uni_rust`.`role_permissions` rp ON rp.role_id=r.role_id JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id=rp.permission_id WHERE r.role_code='dean' AND r.is_active=1 AND p.permission_code='course_offerings.semester_governance.manage' AND p.is_active=1);
+SET @srt4_apply_registered_status := (SELECT COUNT(*) FROM `alrowad_uni_rust`.`registration_statuses` WHERE status_code='registered');
 SET @srt4_apply_existing := (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='alrowad_uni_rust' AND table_name='course_offering_schedule_slots');
+SET @srt4_apply_existing_engine := (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='alrowad_uni_rust' AND table_name='course_offering_schedule_slots' AND engine='InnoDB');
 SET @srt4_apply_existing_total_columns := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='alrowad_uni_rust' AND table_name='course_offering_schedule_slots');
 SET @srt4_apply_existing_columns := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='alrowad_uni_rust' AND table_name='course_offering_schedule_slots' AND column_name IN ('course_offering_schedule_slot_id','course_offering_id','component_type','day_of_week','start_time','end_time','location_label','created_by_user_id','created_at','updated_at'));
 SET @srt4_apply_existing_shape := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='alrowad_uni_rust' AND table_name='course_offering_schedule_slots' AND (
@@ -20,16 +45,18 @@ SET @srt4_apply_existing_shape := (SELECT COUNT(*) FROM information_schema.colum
   (column_name='updated_at' AND data_type='timestamp' AND is_nullable='NO' AND LOWER(COALESCE(column_default,'')) LIKE 'current_timestamp%' AND extra LIKE '%on update%')
 ));
 SET @srt4_apply_existing_pk := (SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema='alrowad_uni_rust' AND table_name='course_offering_schedule_slots' AND index_name='PRIMARY' AND column_name='course_offering_schedule_slot_id' AND seq_in_index=1);
-SET @srt4_apply_existing_indexes := (SELECT COUNT(*) FROM (SELECT index_name,GROUP_CONCAT(column_name ORDER BY seq_in_index) cols,MIN(non_unique) non_unique FROM information_schema.statistics WHERE table_schema='alrowad_uni_rust' AND table_name='course_offering_schedule_slots' AND index_name IN ('uq_coss_exact_slot','idx_coss_offering_window') GROUP BY index_name) x WHERE (index_name='uq_coss_exact_slot' AND cols='course_offering_id,component_type,day_of_week,start_time,end_time' AND non_unique=0) OR (index_name='idx_coss_offering_window' AND cols='course_offering_id,day_of_week,start_time,end_time'));
+SET @srt4_apply_existing_indexes := (SELECT COUNT(*) FROM (SELECT index_name,GROUP_CONCAT(column_name ORDER BY seq_in_index) cols,MIN(non_unique) non_unique FROM information_schema.statistics WHERE table_schema='alrowad_uni_rust' AND table_name='course_offering_schedule_slots' AND index_name IN ('uq_coss_exact_slot','idx_coss_offering_window') GROUP BY index_name) x WHERE (index_name='uq_coss_exact_slot' AND cols='course_offering_id,component_type,day_of_week,start_time,end_time' AND non_unique=0) OR (index_name='idx_coss_offering_window' AND cols='course_offering_id,day_of_week,start_time,end_time' AND non_unique=1));
 SET @srt4_apply_existing_fks := (SELECT COUNT(*) FROM information_schema.key_column_usage k JOIN information_schema.referential_constraints r ON r.constraint_schema=k.table_schema AND r.table_name=k.table_name AND r.constraint_name=k.constraint_name WHERE k.table_schema='alrowad_uni_rust' AND k.table_name='course_offering_schedule_slots' AND r.update_rule='RESTRICT' AND r.delete_rule='RESTRICT' AND ((k.constraint_name='fk_coss_offering' AND k.column_name='course_offering_id' AND k.referenced_table_name='course_offerings' AND k.referenced_column_name='course_offering_id') OR (k.constraint_name='fk_coss_created_by' AND k.column_name='created_by_user_id' AND k.referenced_table_name='users' AND k.referenced_column_name='user_id')));
+SET @srt4_apply_existing_fk_total := (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema='alrowad_uni_rust' AND table_name='course_offering_schedule_slots' AND constraint_type='FOREIGN KEY');
 SET @srt4_apply_existing_checks := (SELECT COUNT(*) FROM information_schema.table_constraints tc JOIN information_schema.check_constraints cc ON cc.constraint_schema=tc.constraint_schema AND cc.constraint_name=tc.constraint_name WHERE tc.constraint_schema='alrowad_uni_rust' AND tc.table_name='course_offering_schedule_slots' AND tc.constraint_type='CHECK' AND (
   (tc.constraint_name='chk_coss_component' AND LOWER(cc.check_clause) LIKE '%component_type%' AND LOWER(cc.check_clause) LIKE '%theoretical%' AND LOWER(cc.check_clause) LIKE '%practical%') OR
   (tc.constraint_name='chk_coss_day' AND LOWER(cc.check_clause) LIKE '%day_of_week%' AND LOWER(cc.check_clause) LIKE '%between%') OR
   (tc.constraint_name='chk_coss_interval' AND LOWER(cc.check_clause) LIKE '%start_time%' AND LOWER(cc.check_clause) LIKE '%end_time%' AND LOCATE('<',cc.check_clause)>0)
 ));
+SET @srt4_apply_existing_check_total := (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema='alrowad_uni_rust' AND table_name='course_offering_schedule_slots' AND constraint_type='CHECK');
 SET @srt4_apply_existing_comment := (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='alrowad_uni_rust' AND table_name='course_offering_schedule_slots' AND table_comment LIKE 'Owned by semester-registration-timetable-phase4%');
-SET @srt4_apply_existing_compatible := (@srt4_apply_existing=1 AND @srt4_apply_existing_total_columns=10 AND @srt4_apply_existing_columns=10 AND @srt4_apply_existing_shape=10 AND @srt4_apply_existing_pk=1 AND @srt4_apply_existing_indexes=2 AND @srt4_apply_existing_fks=2 AND @srt4_apply_existing_checks=3 AND @srt4_apply_existing_comment=1);
-SET @srt4_apply_ready := (@srt4_apply_tables=18 AND @srt4_apply_deadlines=3 AND @srt4_apply_signed=2 AND @srt4_apply_permission=1 AND (@srt4_apply_existing=0 OR @srt4_apply_existing_compatible));
+SET @srt4_apply_existing_compatible := (@srt4_apply_existing=1 AND @srt4_apply_existing_engine=1 AND @srt4_apply_existing_total_columns=10 AND @srt4_apply_existing_columns=10 AND @srt4_apply_existing_shape=10 AND @srt4_apply_existing_pk=1 AND @srt4_apply_existing_indexes=2 AND @srt4_apply_existing_fks=2 AND @srt4_apply_existing_fk_total=2 AND @srt4_apply_existing_checks=3 AND @srt4_apply_existing_check_total=3 AND @srt4_apply_existing_comment=1);
+SET @srt4_apply_ready := (@srt4_apply_tables=18 AND @srt4_apply_columns=69 AND @srt4_apply_deadlines=3 AND @srt4_apply_materialized=1 AND @srt4_apply_signed=4 AND @srt4_apply_permission=1 AND @srt4_apply_dean_role=1 AND @srt4_apply_dean_mapping=1 AND @srt4_apply_registered_status=1 AND (@srt4_apply_existing=0 OR @srt4_apply_existing_compatible));
 
 SET @srt4_sql := IF(@srt4_apply_ready AND @srt4_apply_existing=0,
 'CREATE TABLE `alrowad_uni_rust`.`course_offering_schedule_slots` (
@@ -57,5 +84,5 @@ PREPARE srt4_apply_stmt FROM @srt4_sql;
 EXECUTE srt4_apply_stmt;
 DEALLOCATE PREPARE srt4_apply_stmt;
 
-SELECT 'APPLY_GUARD' report_section,IF(@srt4_apply_ready,'PASS','FAIL') result,CONCAT('prerequisite_tables=',@srt4_apply_tables,'/18; phase2_columns=',@srt4_apply_deadlines,'/3; target_existed=',@srt4_apply_existing,'; existing_compatible=',@srt4_apply_existing_compatible) detail;
-SELECT 'OVERALL' report_section,IF(@srt4_apply_ready,'APPLIED','BLOCKED') result;
+SELECT 'APPLY_GUARD' report_section,IF(@srt4_apply_ready,'PASS','FAIL') result,CONCAT('prerequisite_tables=',@srt4_apply_tables,'/18; critical_columns=',@srt4_apply_columns,'/69; phase2_columns=',@srt4_apply_deadlines,'/3; materialized_at=',@srt4_apply_materialized,'; signed_keys=',@srt4_apply_signed,'/4; permission=',@srt4_apply_permission,'; dean_role=',@srt4_apply_dean_role,'; dean_mapping=',@srt4_apply_dean_mapping,'; registered_status=',@srt4_apply_registered_status,'; target_existed=',@srt4_apply_existing,'; existing_compatible=',@srt4_apply_existing_compatible) detail;
+SELECT 'OVERALL' report_section,IF(@srt4_apply_ready,IF(@srt4_apply_existing=1,'ALREADY_APPLIED','APPLIED'),'BLOCKED') result;

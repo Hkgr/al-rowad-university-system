@@ -30,15 +30,16 @@ class AcademicCalendarPolicyService
     /**
      * Irreversible timetable-editing boundary. A replacement calendar version
      * cannot make a registration window "not started" after an earlier
-     * published version was effective at its start instant.
+     * published version was effective at its start instant. Null means the
+     * Phase 2 deadline schema is unavailable, so callers must fail closed.
      */
     public function courseRegistrationHasEverStarted(
         int $academicYearId,
         int $semesterId,
         ?CarbonInterface $at = null,
-    ): bool {
+    ): ?bool {
         if (! AcademicCalendar::registrationDeadlineSchemaReady()) {
-            return false;
+            return null;
         }
 
         $evaluatedAt = $at === null

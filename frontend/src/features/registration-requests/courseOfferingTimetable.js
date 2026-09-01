@@ -33,6 +33,7 @@ export function timetableStatusLabel(schedule) {
 export function timetableLockedReason(reason) {
   return ({
     timetable_schema_not_ready: 'مخطط الجدول الرسمي غير جاهز',
+    registration_calendar_schema_not_ready: 'مخطط تقويم التسجيل غير جاهز',
     course_registration_started: 'بدأت نافذة تسجيل الطلاب',
     student_registration_exists: 'يوجد تسجيل طلاب مرتبط بهذا الطرح',
     submitted_registration_request_exists: 'اعتمد الطلاب على الجدول ضمن طلب تسجيل مُرسل',

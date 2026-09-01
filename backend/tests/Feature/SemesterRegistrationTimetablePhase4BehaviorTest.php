@@ -137,6 +137,67 @@ class SemesterRegistrationTimetablePhase4BehaviorTest extends TestCase
         self::assertSame(5, $overlap['conflicts'][0]['conflicting_with']['course_offering_id']);
     }
 
+    public function test_incomplete_same_term_official_timetable_fails_closed_without_claiming_a_conflict(): void
+    {
+        DB::table('course_offering_schedule_slots')->insert(
+            $this->storedSlot(2, 'theoretical', 1, '08:00:00', '09:00:00'),
+        );
+        DB::table('student_course_registrations')->insert([
+            'student_id' => 1,
+            'course_offering_id' => 4,
+            'registration_status_id' => 1,
+        ]);
+
+        $evaluation = $this->service()->registrationEvaluations(
+            Student::query()->findOrFail(1),
+            collect([CourseOffering::query()->with('course')->findOrFail(2)]),
+            [],
+            [],
+        )[2];
+
+        self::assertSame(CourseOfferingScheduleException::REFERENCE_INCOMPLETE, $evaluation['reason']);
+        self::assertSame([], $evaluation['conflicts']);
+        self::assertSame(4, $evaluation['incomplete_timetable_sources'][0]['course_offering_id']);
+        self::assertSame(['theoretical', 'practical'], $evaluation['incomplete_timetable_sources'][0]['missing_components']);
+    }
+
+    public function test_incomplete_timetable_in_another_term_does_not_block_the_target(): void
+    {
+        DB::table('course_offering_schedule_slots')->insert(
+            $this->storedSlot(2, 'theoretical', 1, '08:00:00', '09:00:00'),
+        );
+        DB::table('course_offerings')->where('course_offering_id', 4)->update(['semester_id' => 2]);
+
+        $evaluation = $this->service()->registrationEvaluations(
+            Student::query()->findOrFail(1),
+            collect([CourseOffering::query()->with('course')->findOrFail(2)]),
+            [4],
+            [],
+        )[2];
+
+        self::assertNull($evaluation['reason']);
+        self::assertSame([], $evaluation['incomplete_timetable_sources']);
+    }
+
+    /** @dataProvider invalidWeekdayProvider */
+    public function test_canonical_service_rejects_weekdays_outside_iso_range(int $day): void
+    {
+        try {
+            $this->service()->replace($this->dean(), CourseOffering::findOrFail(2), [
+                $this->slot('theoretical', $day),
+            ]);
+            self::fail('The canonical service must reject an out-of-range weekday.');
+        } catch (CourseOfferingScheduleException $exception) {
+            self::assertSame('offering_schedule_invalid_day', $exception->errorCode);
+            self::assertSame(422, $exception->status);
+        }
+    }
+
+    public static function invalidWeekdayProvider(): array
+    {
+        return [[0], [8]];
+    }
+
     public function test_missing_schema_is_controlled_for_reads_and_registration(): void
     {
         Schema::drop('course_offering_schedule_slots');
@@ -167,6 +228,29 @@ class SemesterRegistrationTimetablePhase4BehaviorTest extends TestCase
         }
 
         self::assertSame(1, DB::table('course_offering_schedule_slots')->where('course_offering_id', 2)->value('day_of_week'));
+    }
+
+    public function test_missing_registration_deadline_schema_fails_closed_for_timetable_mutation(): void
+    {
+        Schema::table('academic_calendar_event_versions', function (Blueprint $table): void {
+            $table->dropColumn('student_registration_ends_at');
+        });
+
+        $service = $this->service(useRealCalendar: true);
+        $description = $service->describe(CourseOffering::findOrFail(2), true);
+        self::assertFalse($description['editable']);
+        self::assertSame(
+            CourseOfferingScheduleService::LOCK_CALENDAR_SCHEMA_NOT_READY,
+            $description['locked_reason'],
+        );
+
+        try {
+            $service->replace($this->dean(), CourseOffering::findOrFail(2), [$this->slot('theoretical')]);
+            self::fail('Missing registration deadline schema must fail closed.');
+        } catch (CourseOfferingScheduleException $exception) {
+            self::assertSame(CourseOfferingScheduleException::CALENDAR_SCHEMA_NOT_READY, $exception->errorCode);
+            self::assertSame(503, $exception->status);
+        }
     }
 
     public function test_historical_year_wide_published_registration_window_permanently_marks_each_semester_started(): void
@@ -237,14 +321,20 @@ class SemesterRegistrationTimetablePhase4BehaviorTest extends TestCase
         }
     }
 
-    private function service(bool $registrationStarted = false, bool $scopeAccess = true): CourseOfferingScheduleService
+    private function service(
+        bool $registrationStarted = false,
+        bool $scopeAccess = true,
+        bool $useRealCalendar = false,
+    ): CourseOfferingScheduleService
     {
         $teaching = Mockery::mock(TeachingAssignmentService::class);
         $teaching->shouldReceive('accessibleCollegeIdList')->andReturn([1])->byDefault();
         $coverage = new CourseOfferingInstructorCoverageService($teaching);
 
-        $calendar = Mockery::mock(AcademicCalendarPolicyService::class);
-        $calendar->shouldReceive('courseRegistrationHasEverStarted')->andReturn($registrationStarted)->byDefault();
+        $calendar = $useRealCalendar ? new AcademicCalendarPolicyService() : Mockery::mock(AcademicCalendarPolicyService::class);
+        if ($calendar instanceof \Mockery\MockInterface) {
+            $calendar->shouldReceive('courseRegistrationHasEverStarted')->andReturn($registrationStarted)->byDefault();
+        }
         $scope = Mockery::mock(DataScopeService::class);
         $scope->shouldReceive('canMutateProgram')->andReturn($scopeAccess)->byDefault();
         $scope->shouldReceive('canAccessOffering')->andReturnTrue()->byDefault();
@@ -295,6 +385,12 @@ class SemesterRegistrationTimetablePhase4BehaviorTest extends TestCase
         DB::table('departments')->insert(['department_id' => 1, 'college_id' => 1, 'department_name' => 'General']);
         DB::table('academic_programs')->insert(['academic_program_id' => 1, 'department_id' => 1, 'program_name' => 'Medicine']);
         DB::table('users')->insert(['user_id' => 1, 'username' => 'dean']);
+        DB::table('students')->insert(['student_id' => 1, 'student_number' => 'S1']);
+        DB::table('registration_statuses')->insert([
+            ['registration_status_id' => 1, 'status_code' => 'registered'],
+            ['registration_status_id' => 2, 'status_code' => 'dropped'],
+            ['registration_status_id' => 3, 'status_code' => 'withdrawn'],
+        ]);
 
         DB::table('courses')->insert([
             ['course_id' => 1, 'course_code' => 'ZERO', 'course_name' => 'Undefined', 'credit_hours' => 0, 'theoretical_hours' => 0, 'practical_hours' => 0],
@@ -373,6 +469,18 @@ class SemesterRegistrationTimetablePhase4BehaviorTest extends TestCase
             $table->integer('student_id');
             $table->integer('course_offering_id');
             $table->integer('registration_status_id')->nullable();
+        });
+        Schema::create('registration_statuses', function (Blueprint $table): void {
+            $table->increments('registration_status_id');
+            $table->string('status_code')->unique();
+        });
+        Schema::create('students', function (Blueprint $table): void {
+            $table->increments('student_id');
+            $table->string('student_number')->nullable();
+            $table->integer('academic_program_id')->nullable();
+            $table->integer('current_academic_level_id')->nullable();
+            $table->softDeletes();
+            $table->timestamps();
         });
         Schema::create('student_registration_requests', function (Blueprint $table): void {
             $table->increments('student_registration_request_id');

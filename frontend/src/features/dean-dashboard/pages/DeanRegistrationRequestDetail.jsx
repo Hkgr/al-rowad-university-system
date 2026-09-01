@@ -19,6 +19,7 @@ const REASON_LABELS = {
   timetable_schema_not_ready: 'مخطط الجدول الرسمي غير جاهز',
   offering_schedule_incomplete: 'الجدول الأسبوعي غير مكتمل',
   timetable_conflict: 'تعارض في الجدول',
+  timetable_reference_incomplete: 'تعذر التحقق من التعارض لأن جدول أحد المقررات غير مكتمل',
   already_registered: 'مسجل مسبقاً',
   course_already_passed: 'تم اجتياز هذا المقرر سابقاً ولا يمكن تسجيله مجدداً ضمن التسجيل العادي.',
   missing_prerequisites: 'متطلب سابق غير محقق',
@@ -217,7 +218,7 @@ export default function DeanRegistrationRequestDetail() {
                   {item.course_code} — {item.credit_hours} ساعات
                 </p>
                 <div className="mt-2">
-                  <OfficialTimetable schedule={item.official_timetable} conflicts={item.timetable_conflicts} compact />
+                  <OfficialTimetable schedule={item.official_timetable} conflicts={item.timetable_conflicts} incompleteSources={item.incomplete_timetable_sources} compact />
                 </div>
                 {(item.missing_prerequisites ?? []).length > 0 ? (
                   <ul className="mt-2 space-y-1 text-[12px] text-amber-900">

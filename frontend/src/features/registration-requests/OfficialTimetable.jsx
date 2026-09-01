@@ -1,6 +1,6 @@
 import { TIMETABLE_COMPONENT_LABELS, timetableConflictLabel, timetableSlotLabel, timetableStatusLabel } from './courseOfferingTimetable'
 
-export default function OfficialTimetable({ schedule, conflicts = [], compact = false }) {
+export default function OfficialTimetable({ schedule, conflicts = [], incompleteSources = [], compact = false }) {
   return (
     <div className={`rounded-[10px] border px-3 py-2 ${schedule?.complete ? 'border-green-200 bg-green-50/60' : 'border-amber-200 bg-amber-50/60'}`} dir="rtl">
       <p className="text-[11.5px] font-bold text-text-dark">الجدول الأسبوعي: {timetableStatusLabel(schedule)}</p>
@@ -23,6 +23,11 @@ export default function OfficialTimetable({ schedule, conflicts = [], compact = 
           {timetableConflictLabel(conflict)}
         </p>
       ))}
+      {(incompleteSources ?? []).length > 0 ? (
+        <p className="mt-1 text-[11.5px] font-bold text-amber-900">
+          تعذر التحقق من التعارض لأن جدول أحد المقررات المسجلة أو المطلوبة غير مكتمل.
+        </p>
+      ) : null}
     </div>
   )
 }

@@ -214,7 +214,11 @@ class RegistrationRequestService
                 $this->appendTimetableFailureData($itemFailure, $timetable);
                 $status = $failure === RegistrationException::TIMETABLE_SCHEMA_NOT_READY
                     ? 503
-                    : (in_array($failure, [RegistrationException::OFFERING_SCHEDULE_INCOMPLETE, RegistrationException::TIMETABLE_CONFLICT], true) ? 409 : 422);
+                    : (in_array($failure, [
+                        RegistrationException::OFFERING_SCHEDULE_INCOMPLETE,
+                        RegistrationException::TIMETABLE_CONFLICT,
+                        RegistrationException::TIMETABLE_REFERENCE_INCOMPLETE,
+                    ], true) ? 409 : 422);
                 throw new RegistrationRequestException('This course cannot be added to the registration request.', [
                     'course_offering_id' => [$failure],
                 ], $status, $failure, [$itemFailure]);
@@ -1370,6 +1374,9 @@ class RegistrationRequestService
         if (($timetable['reason'] ?? null) === RegistrationException::TIMETABLE_CONFLICT) {
             $failure['conflicts'] = $timetable['conflicts'] ?? [];
         }
+        if (($timetable['reason'] ?? null) === RegistrationException::TIMETABLE_REFERENCE_INCOMPLETE) {
+            $failure['incomplete_timetable_sources'] = $timetable['incomplete_timetable_sources'] ?? [];
+        }
     }
 
     private function mapRegistrationException(RegistrationException $exception): string
@@ -1539,6 +1546,7 @@ class RegistrationRequestService
                     ),
                     'official_timetable' => $timetable[(int) $item->course_offering_id]['schedule'] ?? null,
                     'timetable_conflicts' => $timetable[(int) $item->course_offering_id]['conflicts'] ?? [],
+                    'incomplete_timetable_sources' => $timetable[(int) $item->course_offering_id]['incomplete_timetable_sources'] ?? [],
                 ];
 
                 if ($includeEligibility) {

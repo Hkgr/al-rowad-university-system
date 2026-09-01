@@ -47,6 +47,7 @@ class AvailableCourseOfferingResource extends JsonResource
             'missing_prerequisites' => $this->missing_prerequisites ?? [],
             'official_timetable' => $this->official_timetable,
             'timetable_conflicts' => $this->timetable_conflicts ?? [],
+            'incomplete_timetable_sources' => $this->incomplete_timetable_sources ?? [],
         ];
     }
 

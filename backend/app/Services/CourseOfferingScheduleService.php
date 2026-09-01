@@ -28,6 +28,8 @@ class CourseOfferingScheduleService
 
     public const LOCK_REGISTRATION_STARTED = 'course_registration_started';
 
+    public const LOCK_CALENDAR_SCHEMA_NOT_READY = 'registration_calendar_schema_not_ready';
+
     public const LOCK_OFFICIAL_REGISTRATION = 'student_registration_exists';
 
     public const LOCK_REQUEST_RELIANCE = 'submitted_registration_request_exists';
@@ -141,6 +143,9 @@ class CourseOfferingScheduleService
             $this->assertDeanCanManage($actor, $locked);
             $editability = $this->editabilityMany(collect([$locked]))[(int) $locked->course_offering_id];
             if (! $editability['editable']) {
+                if ($editability['locked_reason'] === self::LOCK_CALENDAR_SCHEMA_NOT_READY) {
+                    throw CourseOfferingScheduleException::calendarSchemaNotReady();
+                }
                 throw CourseOfferingScheduleException::locked((string) $editability['locked_reason']);
             }
 
@@ -245,6 +250,7 @@ class CourseOfferingScheduleService
             }
 
             $conflicts = [];
+            $incompleteSources = [];
             foreach ($comparisonIds as $comparisonId) {
                 if ($comparisonId === $targetId) {
                     continue;
@@ -257,13 +263,20 @@ class CourseOfferingScheduleService
                     || (int) $other->semester_id !== (int) $target->semester_id) {
                     continue;
                 }
+                if ($otherSchedule['complete'] !== true) {
+                    $incompleteSources[] = $this->incompleteSourcePayload($other, $otherSchedule);
+                    continue;
+                }
                 $conflicts = [...$conflicts, ...$this->conflictsBetween($target, $schedule, $other, $otherSchedule)];
             }
 
             $evaluations[$targetId] = [
-                'reason' => $conflicts === [] ? null : CourseOfferingScheduleException::CONFLICT,
+                'reason' => $incompleteSources !== []
+                    ? CourseOfferingScheduleException::REFERENCE_INCOMPLETE
+                    : ($conflicts === [] ? null : CourseOfferingScheduleException::CONFLICT),
                 'schedule' => $schedule,
                 'conflicts' => $conflicts,
+                'incomplete_timetable_sources' => $incompleteSources,
             ];
         }
 
@@ -316,7 +329,9 @@ class CourseOfferingScheduleService
                         $evaluatedAt,
                     );
                 }
-                if ($startedByTerm[$term]) {
+                if ($startedByTerm[$term] === null) {
+                    $reason = self::LOCK_CALENDAR_SCHEMA_NOT_READY;
+                } elseif ($startedByTerm[$term]) {
                     $reason = self::LOCK_REGISTRATION_STARTED;
                 }
             }
@@ -397,6 +412,15 @@ class CourseOfferingScheduleService
             if (! in_array($component, $required, true)) {
                 throw CourseOfferingScheduleException::invalidComponent($component);
             }
+            $day = (int) $slot['day_of_week'];
+            if ($day < 1 || $day > 7) {
+                throw new CourseOfferingScheduleException(
+                    'The timetable weekday must be between 1 and 7.',
+                    'offering_schedule_invalid_day',
+                    ['slots' => ['day_of_week_must_be_between_1_and_7']],
+                    status: 422,
+                );
+            }
             $start = strlen((string) $slot['start_time']) === 5 ? $slot['start_time'].':00' : (string) $slot['start_time'];
             $end = strlen((string) $slot['end_time']) === 5 ? $slot['end_time'].':00' : (string) $slot['end_time'];
             if ($start >= $end) {
@@ -410,7 +434,7 @@ class CourseOfferingScheduleService
             $location = isset($slot['location_label']) ? trim((string) $slot['location_label']) : '';
             $normalized[] = [
                 'component_type' => $component,
-                'day_of_week' => (int) $slot['day_of_week'],
+                'day_of_week' => $day,
                 'start_time' => $start,
                 'end_time' => $end,
                 'location_label' => $location === '' ? null : $location,
@@ -493,6 +517,19 @@ class CourseOfferingScheduleService
         }
 
         return $conflicts;
+    }
+
+    private function incompleteSourcePayload(CourseOffering $offering, array $schedule): array
+    {
+        return [
+            'course_offering_id' => (int) $offering->course_offering_id,
+            'course_id' => (int) $offering->course_id,
+            'course_code' => $offering->course?->course_code,
+            'course_name' => $offering->course?->course_name,
+            'components_defined' => $schedule['components_defined'] ?? false,
+            'missing_components' => $schedule['missing_components'] ?? [],
+            'invalid_components' => $schedule['invalid_components'] ?? [],
+        ];
     }
 
     private function overlaps(array $a, array $b): bool

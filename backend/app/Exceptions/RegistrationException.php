@@ -50,6 +50,8 @@ class RegistrationException extends Exception
 
     public const TIMETABLE_CONFLICT = 'timetable_conflict';
 
+    public const TIMETABLE_REFERENCE_INCOMPLETE = 'timetable_reference_incomplete';
+
     public function __construct(
         string $message,
         public readonly array $errors = [],
@@ -231,6 +233,19 @@ class RegistrationException extends Exception
             409,
             self::TIMETABLE_CONFLICT,
             ['conflicts' => $conflicts],
+        );
+    }
+
+    public static function timetableReferenceIncomplete(array $sources): self
+    {
+        $message = 'Timetable conflicts cannot be verified because a same-term registration timetable is incomplete.';
+
+        return new self(
+            $message,
+            ['course_offering_id' => [self::TIMETABLE_REFERENCE_INCOMPLETE]],
+            409,
+            self::TIMETABLE_REFERENCE_INCOMPLETE,
+            ['incomplete_timetable_sources' => $sources],
         );
     }
 }

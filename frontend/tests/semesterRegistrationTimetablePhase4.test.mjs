@@ -52,5 +52,18 @@ test('Dean, student, and advisor surfaces consume backend official timetable dat
   assert.match(advisor, /official_timetable/)
   assert.match(advisor, /timetable_conflicts/)
   assert.match(student, /offering_schedule_incomplete/)
+  assert.match(student, /timetable_reference_incomplete/)
   assert.match(advisor, /timetable_conflict/)
+  assert.match(advisor, /timetable_reference_incomplete/)
+})
+
+test('calendar-schema uncertainty and incomplete comparison sources have explicit Arabic presentation', async () => {
+  const [presentation, student, advisor] = await Promise.all([
+    readFile(new URL('../src/features/registration-requests/courseOfferingTimetable.js', import.meta.url), 'utf8'),
+    readFile(studentPage, 'utf8'),
+    readFile(advisorPage, 'utf8'),
+  ])
+  assert.match(presentation, /registration_calendar_schema_not_ready/)
+  assert.match(student, /timetable_reference_incomplete/)
+  assert.match(advisor, /timetable_reference_incomplete/)
 })

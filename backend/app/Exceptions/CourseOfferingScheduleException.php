@@ -8,11 +8,15 @@ class CourseOfferingScheduleException extends Exception
 {
     public const SCHEMA_NOT_READY = 'timetable_schema_not_ready';
 
+    public const CALENDAR_SCHEMA_NOT_READY = 'registration_calendar_schema_not_ready';
+
     public const LOCKED = 'offering_schedule_locked';
 
     public const INCOMPLETE = 'offering_schedule_incomplete';
 
     public const CONFLICT = 'timetable_conflict';
+
+    public const REFERENCE_INCOMPLETE = 'timetable_reference_incomplete';
 
     public const INVALID_COMPONENT = 'offering_schedule_component_not_required';
 
@@ -32,6 +36,16 @@ class CourseOfferingScheduleException extends Exception
             'The official course timetable schema is not ready.',
             self::SCHEMA_NOT_READY,
             ['timetable' => [self::SCHEMA_NOT_READY]],
+            status: 503,
+        );
+    }
+
+    public static function calendarSchemaNotReady(): self
+    {
+        return new self(
+            'The registration calendar schema is not ready, so timetable mutability cannot be proven.',
+            self::CALENDAR_SCHEMA_NOT_READY,
+            ['timetable' => [self::CALENDAR_SCHEMA_NOT_READY]],
             status: 503,
         );
     }

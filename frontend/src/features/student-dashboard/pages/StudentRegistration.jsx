@@ -13,6 +13,7 @@ const REASON_LABELS = {
   timetable_schema_not_ready: { ar: 'مخطط الجدول الرسمي غير جاهز حالياً.', tone: 'full' },
   offering_schedule_incomplete: { ar: 'الجدول الأسبوعي غير مكتمل بعد.', tone: 'prerequisite' },
   timetable_conflict: { ar: 'يوجد تعارض في الجدول.', tone: 'full' },
+  timetable_reference_incomplete: { ar: 'تعذر التحقق من التعارض لأن جدول أحد المقررات المسجلة أو المطلوبة غير مكتمل.', tone: 'full' },
   already_registered: { ar: 'مسجل مسبقاً', tone: 'registered' },
   already_in_request: { ar: 'مضاف إلى الطلب', tone: 'request' },
   course_already_passed: { ar: 'تم اجتياز هذا المقرر سابقاً ولا يمكن تسجيله مجدداً ضمن التسجيل العادي.', tone: 'registered' },
@@ -305,7 +306,7 @@ function CourseRow({ course, onAdd, adding, canEdit, advisoryMode }) {
             <span className="text-primary font-bold">{course.credit_hours} ساعات</span>
           </div>
           <div className="mt-2">
-            <OfficialTimetable schedule={course.official_timetable} conflicts={course.timetable_conflicts} compact />
+            <OfficialTimetable schedule={course.official_timetable} conflicts={course.timetable_conflicts} incompleteSources={course.incomplete_timetable_sources} compact />
           </div>
           {reasons
             .filter(reason => reason !== 'already_registered' && reason !== 'already_in_request')
@@ -762,7 +763,7 @@ export default function StudentRegistration() {
                         </div>
                       </div>
                       <div className="min-w-[220px] flex-1">
-                        <OfficialTimetable schedule={item.official_timetable} conflicts={item.timetable_conflicts} compact />
+                        <OfficialTimetable schedule={item.official_timetable} conflicts={item.timetable_conflicts} incompleteSources={item.incomplete_timetable_sources} compact />
                       </div>
                       {canRemoveItem ? (
                         <button
