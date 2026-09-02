@@ -106,6 +106,8 @@ export function canAccess({ permissions = [], allPermissions = [], roles = [], a
   return hasEveryRequiredPermission && hasEveryRequiredRole && hasEveryAssignedPermission && hasAnyAlternative
 }
 export function landingRoute(user) {
+  if (!user) return '/login'
+
   // Portal roles take precedence over permission-based staff landing pages.
   if (hasRole(ROLES.dean, user)) return '/dean'
   if (hasRole(ROLES.vicePresidentScientific, user)) return '/vp/scientific'
