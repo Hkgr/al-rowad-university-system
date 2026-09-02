@@ -1,19 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   FaArrowRight,
-  FaFilePdf,
   FaGraduationCap,
   FaRedo,
-  FaSpinner,
   FaUserGraduate,
 } from 'react-icons/fa'
+import TranscriptPdfExportAction from '../../academic-record/components/TranscriptPdfExportAction'
 import AcademicRequirementProgress, {
   AcademicRequirementProgressSkeleton,
 } from '../../../components/academic/AcademicRequirementProgress'
 import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 import { apiRequest } from '../../../services/apiClient'
-import { exportTranscriptPdf } from '../lib/transcriptPdf'
 
 function value(item) {
   return item === null || item === undefined || item === '' ? '—' : item
@@ -156,16 +154,12 @@ export default function ExamStudentAcademicRecordPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
-  const [pdfLoading, setPdfLoading] = useState(false)
-  const [pdfError, setPdfError] = useState('')
-  const pdfExporting = useRef(false)
   const endpoint = `/v1/students/${studentId}/academic-record`
 
   useEffect(() => {
     let active = true
     setLoading(true)
     setError('')
-    setPdfError('')
     apiRequest(endpoint)
       .then(response => { if (active) setRecord(response?.data ?? null) })
       .catch(requestError => {
@@ -183,32 +177,12 @@ export default function ExamStudentAcademicRecordPage() {
     return () => { active = false }
   }, [endpoint, reloadKey])
 
-  const exportPdf = useCallback(async () => {
-    if (pdfExporting.current) return
-    pdfExporting.current = true
-    setPdfLoading(true)
-    setPdfError('')
-    try {
-      const fresh = await apiRequest(endpoint)
-      if (!fresh?.data) throw new Error('academic_record_missing')
-      setRecord(fresh.data)
-      await exportTranscriptPdf({ academicRecord: fresh.data })
-    } catch {
-      setPdfError('تعذّر إنشاء كشف العلامات الإلكتروني. يرجى المحاولة مجدداً.')
-    } finally {
-      pdfExporting.current = false
-      setPdfLoading(false)
-    }
-  }, [endpoint])
-
   return (
     <div className="space-y-6" dir="rtl">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <button type="button" onClick={() => navigate('/exam-board/grade-sheet')} className="inline-flex items-center gap-2 rounded-[10px] border border-primary/20 px-3.5 py-2 text-[12.5px] font-bold text-primary-dark hover:bg-primary/6"><FaArrowRight aria-hidden="true" />العودة إلى كشوف الدرجات</button>
-        {record ? <button type="button" onClick={exportPdf} disabled={pdfLoading} className="inline-flex items-center gap-2 rounded-[10px] bg-primary px-4 py-2.5 text-[12.5px] font-black text-white hover:bg-primary-dark disabled:opacity-55">{pdfLoading ? <FaSpinner className="animate-spin" /> : <FaFilePdf />}{pdfLoading ? 'جاري إنشاء الملف...' : 'استخراج كشف العلامات الإلكتروني'}</button> : null}
+        {record ? <TranscriptPdfExportAction endpoint={endpoint} onFreshRecord={setRecord} /> : null}
       </div>
-
-      {pdfError ? <p className="rounded-[12px] border border-red-200 bg-red-50 px-4 py-3 text-[12.5px] text-red-700" role="alert">⚠ {pdfError}</p> : null}
       {loading ? <><div className="h-48 animate-pulse rounded-[20px] bg-primary/10" /><AcademicRequirementProgressSkeleton /></> : null}
       {!loading && error ? <section className="rounded-[18px] border border-red-200 bg-white px-6 py-12 text-center" role="alert"><p className="mb-4 text-[14px] font-bold text-red-700">{error}</p><button type="button" onClick={() => setReloadKey(key => key + 1)} className="inline-flex items-center gap-2 rounded-[10px] border border-red-200 px-4 py-2 text-[12.5px] font-bold text-red-700"><FaRedo />إعادة المحاولة</button></section> : null}
 

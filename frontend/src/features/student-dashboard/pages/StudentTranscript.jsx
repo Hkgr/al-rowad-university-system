@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FaPrint, FaGraduationCap } from 'react-icons/fa'
+import { FaGraduationCap } from 'react-icons/fa'
+import TranscriptPdfExportAction from '../../academic-record/components/TranscriptPdfExportAction'
 import { apiRequest } from '../../../services/apiClient'
 import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 
@@ -250,14 +251,7 @@ export default function StudentTranscript() {
             <h1 className="text-[22px] font-black text-text-dark">كشف الدرجات</h1>
             <p className="mt-1 text-[13.5px] text-text-light">السجل الأكاديمي الرسمي للنتائج المعتمدة</p>
           </div>
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="print-hidden flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-[10px] text-[13px] font-bold hover:bg-primary-dark"
-          >
-            <FaPrint aria-hidden="true" />
-            طباعة الكشف
-          </button>
+          <TranscriptPdfExportAction endpoint="/v1/student/academic-record" className="print-hidden" />
         </div>
         <div className="mt-4 grid grid-cols-4 max-[800px]:grid-cols-2 gap-3">
           {identityBits.map(item => (

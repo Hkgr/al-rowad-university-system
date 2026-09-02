@@ -84,6 +84,7 @@ use App\Http\Controllers\Api\StudentSelfGpaController;
 use App\Http\Controllers\Api\StudentSelfGraduationEligibilityController;
 use App\Http\Controllers\Api\StudentSelfRequirementController;
 use App\Http\Controllers\Api\StudentSelfTranscriptController;
+use App\Http\Controllers\Api\StudentSelfAcademicRecordController;
 use App\Http\Controllers\Api\AcademicAdvisingRegistrationRequestController;
 use App\Http\Controllers\Api\AcademicAdvisingRegistrationModificationController;
 use App\Http\Controllers\Api\AcademicAdvisingRegistrationWithdrawalController;
@@ -325,6 +326,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
         Route::get('registration-requests/approved', [ApprovedRegistrationRequestController::class, 'index']);
     });
     Route::middleware(\App\Http\Middleware\RequirePermission::class.':grades.view')->group(function (): void {
+        Route::get('student/academic-record', [StudentSelfAcademicRecordController::class, 'show']);
         Route::get('student/transcript', [StudentSelfTranscriptController::class, 'show']);
         Route::get('student/gpa-overview', [StudentSelfGpaController::class, 'show']);
         Route::get('student/requirements', [StudentSelfRequirementController::class, 'show']);
