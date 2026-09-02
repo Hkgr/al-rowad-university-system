@@ -6,15 +6,15 @@ import {
   groupRequirementsByScope,
   requirementGroupPresentation,
 } from '../src/components/academic/requirementProgress.js'
-import { transcriptGenerationMetadata } from '../src/features/exam-board/lib/academicRecordPresentation.js'
+import { transcriptGenerationMetadata } from '../src/features/academic-record/lib/academicRecordPresentation.js'
 
 const app = readFileSync(new URL('../src/app/App.jsx', import.meta.url), 'utf8')
 const searchPage = readFileSync(new URL('../src/features/exam-board/pages/GradeSheetPage.jsx', import.meta.url), 'utf8')
 const recordPage = readFileSync(new URL('../src/features/exam-board/pages/ExamStudentAcademicRecordPage.jsx', import.meta.url), 'utf8')
 const studentRequirements = readFileSync(new URL('../src/features/student-dashboard/pages/StudentRequirements.jsx', import.meta.url), 'utf8')
 const sharedProgress = readFileSync(new URL('../src/components/academic/AcademicRequirementProgress.jsx', import.meta.url), 'utf8')
-const transcriptPdf = readFileSync(new URL('../src/features/exam-board/lib/transcriptPdf.js', import.meta.url), 'utf8')
-const recordPresentation = readFileSync(new URL('../src/features/exam-board/lib/academicRecordPresentation.js', import.meta.url), 'utf8')
+const transcriptPdf = readFileSync(new URL('../src/features/academic-record/lib/transcriptPdf.js', import.meta.url), 'utf8')
+const recordPresentation = readFileSync(new URL('../src/features/academic-record/lib/academicRecordPresentation.js', import.meta.url), 'utf8')
 
 test('known requirement scopes retain order and additional backend scopes remain visible', () => {
   const grouped = groupRequirementsByScope([
@@ -120,7 +120,7 @@ test('generation identity and time are backend supplied with safe PDF fallbacks'
   assert.equal(employee.generatedBy, 'سارة خالد')
   assert.equal(employee.organizationalUnit, 'قسم الامتحانات')
   assert.deepEqual(usernameFallback, { generatedAt: '—', generatedBy: 'exam.fallback', organizationalUnit: '' })
-  assert.match(recordPage, /const fresh = await apiRequest\(endpoint\)/)
+  assert.match(recordPage, /TranscriptPdfExportAction endpoint=\{endpoint\}/)
   assert.match(transcriptPdf, /transcriptGenerationMetadata\(academicRecord\?\.generation\)/)
   assert.match(recordPresentation, /generation\.generated_at/)
   assert.match(recordPresentation, /generatedBy\.display_name \|\| generatedBy\.username \|\| '—'/)

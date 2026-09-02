@@ -6,6 +6,7 @@ $contract = static function (string $backendRoot): array {
     $paths = [
         'routes' => $backendRoot.'/routes/api.php',
         'controller' => $backendRoot.'/app/Http/Controllers/Api/ExamStudentAcademicRecordController.php',
+        'self_controller' => $backendRoot.'/app/Http/Controllers/Api/StudentSelfAcademicRecordController.php',
         'aggregate' => $backendRoot.'/app/Services/ExamStudentAcademicRecordService.php',
         'graduation' => $backendRoot.'/app/Services/GraduationEligibilityService.php',
         'identity' => $backendRoot.'/app/Services/UserIdentityService.php',
@@ -18,8 +19,12 @@ $contract = static function (string $backendRoot): array {
         'student_requirements' => $frontendRoot.'/features/student-dashboard/pages/StudentRequirements.jsx',
         'shared_requirements' => $frontendRoot.'/components/academic/AcademicRequirementProgress.jsx',
         'requirements_helper' => $frontendRoot.'/components/academic/requirementProgress.js',
-        'pdf' => $frontendRoot.'/features/exam-board/lib/transcriptPdf.js',
-        'record_presentation' => $frontendRoot.'/features/exam-board/lib/academicRecordPresentation.js',
+        'pdf' => $frontendRoot.'/features/academic-record/lib/transcriptPdf.js',
+        'record_presentation' => $frontendRoot.'/features/academic-record/lib/academicRecordPresentation.js',
+        'export_action' => $frontendRoot.'/features/academic-record/components/TranscriptPdfExportAction.jsx',
+        'student_transcript' => $frontendRoot.'/features/student-dashboard/pages/StudentTranscript.jsx',
+        'student_affairs_profile' => $frontendRoot.'/features/student-affairs/pages/StudentProfilePage.jsx',
+        'dean_profile' => $frontendRoot.'/features/dean-dashboard/pages/DeanStudentProfile.jsx',
     ];
 
     foreach ($paths as $name => $path) {
@@ -39,6 +44,7 @@ $contract = static function (string $backendRoot): array {
     };
 
     $expect(str_contains($sources['routes'], "Route::get('students/{student}/academic-record'"), 'Missing aggregate academic-record GET route.');
+    $expect(str_contains($sources['routes'], "Route::get('student/academic-record', [StudentSelfAcademicRecordController::class, 'show'])"), 'Missing self-only academic-record GET route.');
     foreach ([
         "Route::get('student/transcript'",
         "Route::get('student/requirements'",
@@ -57,6 +63,13 @@ $contract = static function (string $backendRoot): array {
         $expect(! str_contains($sources['controller'], $forbidden), 'Controller contains query/formula logic: '.$forbidden);
     }
     $expect(str_contains($sources['student_policy'], "hasPermission('students.view')") && str_contains($sources['student_policy'], 'canAccessStudent($user, $student)'), 'Student policy must compose students.view with actual DataScope access.');
+
+    $expect(str_contains($sources['self_controller'], "hasPermission('grades.view')"), 'Self academic-record controller must require grades.view.');
+    $expect(str_contains($sources['self_controller'], '$student = $actor->student;'), 'Self academic-record controller must resolve only the authenticated user student relation.');
+    $expect(str_contains($sources['self_controller'], '->snapshot($student, $actor)'), 'Self academic-record controller must reuse the official aggregate service.');
+    foreach (['$request->input(', '$request->query(', '$request->route(', 'student_id =', "request('student_id'"] as $forbidden) {
+        $expect(! str_contains($sources['self_controller'], $forbidden), 'Self academic-record controller accepts an untrusted student identifier: '.$forbidden);
+    }
 
     $expect(substr_count($sources['aggregate'], 'getTranscript($student)') === 1, 'Aggregate must obtain the canonical transcript exactly once.');
     $expect(substr_count($sources['aggregate'], 'getStudentRequirementProgress($student)') === 1, 'Aggregate must obtain canonical requirement progress exactly once.');
@@ -79,7 +92,9 @@ $contract = static function (string $backendRoot): array {
     $expect(str_contains($sources['student_picker'], 'requestSequenceRef') && str_contains($sources['student_picker'], 'isLatestStudentPickerRequest'), 'Student picker must reject stale search responses.');
     $expect(str_contains($sources['student_picker_search'], "params.set('q', normalized)") && str_contains($sources['student_picker_search'], 'STUDENT_PICKER_PER_PAGE = 25'), 'Student picker search must use bounded existing q pagination.');
     $expect(! str_contains($sources['student_picker'], 'per_page=100') && ! str_contains($sources['student_picker'], '.filter('), 'Student picker must not search only a browser-filtered first-100 snapshot.');
-    $expect(str_contains($sources['record'], 'apiRequest(endpoint)') && str_contains($sources['record'], 'const fresh = await apiRequest(endpoint)'), 'Page and export must use the same aggregate endpoint, with one fresh export snapshot.');
+    $expect(str_contains($sources['record'], '<TranscriptPdfExportAction endpoint={endpoint}'), 'Exam Board page must use the shared transcript export action.');
+    $expect(str_contains($sources['export_action'], 'const response = await apiRequest(endpoint)') && str_contains($sources['export_action'], 'exportTranscriptPdf({ academicRecord: response.data })'), 'Shared action must fetch one fresh aggregate snapshot for every export.');
+    $expect(str_contains($sources['export_action'], 'if (exporting.current) return'), 'Shared action must prevent duplicate concurrent exports.');
     $expect(! str_contains($sources['record'], '/cgpa'), 'Academic-record workflow must not issue a separate CGPA request.');
     $expect(str_contains($sources['student_requirements'], 'AcademicRequirementProgress') && str_contains($sources['record'], 'AcademicRequirementProgress'), 'Student and Exam Board pages must share requirement presentation.');
     $expect(str_contains($sources['requirements_helper'], 'REQUIREMENT_SCOPE_ORDER') && str_contains($sources['requirements_helper'], 'groupRequirementsByScope'), 'Missing dynamic requirement-scope presentation helper.');
@@ -92,6 +107,17 @@ $contract = static function (string $backendRoot): array {
     $expect(! preg_match('/generationTimestamp\s*\([^)]*new Date/', $sources['pdf'].$sources['record_presentation']), 'PDF must not default generation metadata to the browser clock.');
     $expect(str_contains($sources['pdf'], 'requirements-unavailable') && str_contains($sources['pdf'], 'empty-terms'), 'PDF must remain valid for unavailable requirements and an empty transcript.');
     $expect(str_contains($sources['pdf'], 'paginateMeasuredSections') && str_contains($sources['pdf'], 'PDF_PAGE_CONFIGS.portrait'), 'PDF must retain the page-safe portrait paginator.');
+
+    foreach (['record', 'student_transcript', 'student_affairs_profile', 'dean_profile'] as $surface) {
+        $expect(str_contains($sources[$surface], 'academic-record/components/TranscriptPdfExportAction'), 'Individual transcript surface does not import the shared export action: '.$surface);
+    }
+    $expect(str_contains($sources['student_transcript'], 'endpoint="/v1/student/academic-record"'), 'Student export must use the self-only aggregate endpoint.');
+    $expect(! str_contains($sources['student_transcript'], 'window.print'), 'Student transcript must not use browser printing as its issuance mechanism.');
+    foreach (['html2canvas', 'new jsPDF', 'pdfContentRef', 'heightLeft', 'position -= pageHeight'] as $legacy) {
+        $expect(! str_contains($sources['student_affairs_profile'], $legacy), 'Legacy Student Affairs transcript generator remains: '.$legacy);
+    }
+    $expect(! is_file($frontendRoot.'/features/exam-board/lib/transcriptPdf.js'), 'The Exam Board-local transcript generator must be removed after sharing.');
+    $expect(! is_file($frontendRoot.'/features/exam-board/lib/academicRecordPresentation.js'), 'The Exam Board-local generation formatter must be removed after sharing.');
 
     $expect((glob($backendRoot.'/database/migrations/*academic*record*transcript*') ?: []) === [], 'Academic-record feature must not add migrations.');
     $expect(! is_dir($backendRoot.'/database/sql/exam-board-academic-record'), 'Academic-record feature must not add SQL.');

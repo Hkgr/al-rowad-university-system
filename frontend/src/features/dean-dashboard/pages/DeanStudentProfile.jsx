@@ -5,6 +5,7 @@ import {
   FaArrowRight, FaCalendarCheck, FaChartBar, FaFolderOpen, FaGraduationCap, FaListAlt, FaSpinner, FaUser,
 } from 'react-icons/fa'
 import { apiRequest } from '../../../services/apiClient'
+import TranscriptPdfExportAction from '../../academic-record/components/TranscriptPdfExportAction'
 import StudentStatusBadge from '../components/StudentStatusBadge'
 import {
   AttendanceTab,
@@ -458,11 +459,18 @@ export default function DeanStudentProfile() {
           )}
 
           {activeTab === 'transcript' && (
-            <TranscriptTab
-              loading={tabs.transcript.loading}
-              error={tabs.transcript.error}
-              transcript={tabs.transcript.data}
-            />
+            <div className="space-y-4">
+              {tabs.transcript.loaded && !tabs.transcript.error && tabs.transcript.data ? (
+                <div className="flex justify-end">
+                  <TranscriptPdfExportAction endpoint={`/v1/students/${id}/academic-record`} />
+                </div>
+              ) : null}
+              <TranscriptTab
+                loading={tabs.transcript.loading}
+                error={tabs.transcript.error}
+                transcript={tabs.transcript.data}
+              />
+            </div>
           )}
 
           {activeTab === 'gpa' && (
