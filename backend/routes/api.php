@@ -45,6 +45,7 @@ use App\Http\Controllers\Api\EmployeePositionController;
 use App\Http\Controllers\Api\EmployeeStatusController;
 use App\Http\Controllers\Api\EmployeeTypeController;
 use App\Http\Controllers\Api\EmployeeUnitAssignmentController;
+use App\Http\Controllers\Api\ExecutiveReportController;
 use App\Http\Controllers\Api\ExamStudentAcademicRecordController;
 use App\Http\Controllers\Api\FacultyMemberController;
 use App\Http\Controllers\Api\GradeAppealController;
@@ -184,6 +185,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
 */
 
 Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::class])->prefix('v1')->group(function (): void {
+    Route::get('vice-presidency/reports/definitions', [ExecutiveReportController::class, 'definitions']);
+    Route::get('vice-presidency/reports/filters', [ExecutiveReportController::class, 'filters']);
+    Route::post('vice-presidency/reports/query', [ExecutiveReportController::class, 'query']);
+    Route::get('vice-presidency/analytics/overview', [ExecutiveReportController::class, 'overview']);
     Route::get('student/supplementary-exams/eligibility', [StudentSupplementaryExamController::class, 'eligibility']);
     Route::get('student/supplementary-exams/deferrals', [StudentSupplementaryExamController::class, 'deferrals']);
     Route::post('student/supplementary-exams/deferrals', [StudentSupplementaryExamController::class, 'declare']);

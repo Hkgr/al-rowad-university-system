@@ -19,6 +19,7 @@ use App\Models\StudentCourseRegistration;
 use App\Models\StudentCourseResult;
 use App\Models\StudentGradeComponent;
 use App\Support\CourseRequirementClassification;
+use App\Support\OfficialGradeScale;
 use App\Support\SupplementaryExamTargetGuard;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -27,8 +28,6 @@ use Illuminate\Support\Facades\DB;
 
 class GradeService
 {
-    private const EXCLUDED_RESULT_STATUSES = ['incomplete', 'deprived', 'withdrawn'];
-
     private ?GradingPolicy $defaultPolicy = null;
 
     /** Canonical limits used by isolated supplementary previews and validation. */
@@ -1086,7 +1085,7 @@ class GradeService
 
         $statusCode = $this->resolveEffectiveResultStatusCode($registration);
 
-        if (in_array($statusCode, self::EXCLUDED_RESULT_STATUSES, true)) {
+        if (in_array($statusCode, OfficialGradeScale::EXCLUDED_STATUSES, true)) {
             return [
                 'included' => false,
                 'course' => array_merge($base, ['exclusion_reason' => $statusCode]),
@@ -1831,42 +1830,12 @@ class GradeService
 
     private function letterGradeFromFinalMark(float $finalMark): string
     {
-        return match (true) {
-            $finalMark >= 98 => 'A+',
-            $finalMark >= 95 => 'A',
-            $finalMark >= 90 => 'A-',
-            $finalMark >= 85 => 'B+',
-            $finalMark >= 80 => 'B',
-            $finalMark >= 75 => 'B-',
-            $finalMark >= 70 => 'C+',
-            $finalMark >= 65 => 'C',
-            $finalMark >= 60 => 'C-',
-            $finalMark >= 55 => 'D+',
-            $finalMark >= 50 => 'D',
-            default => 'F',
-        };
+        return OfficialGradeScale::letter($finalMark);
     }
 
     private function resolveGradePoints(string $letterGrade, string $resultStatusCode): float
     {
-        if (in_array($letterGrade, ['Z', 'W', 'I'], true) || in_array($resultStatusCode, self::EXCLUDED_RESULT_STATUSES, true)) {
-            return 0.00;
-        }
-
-        return match ($letterGrade) {
-            'A+' => 4.00,
-            'A' => 3.75,
-            'A-' => 3.50,
-            'B+' => 3.25,
-            'B' => 3.00,
-            'B-' => 2.75,
-            'C+' => 2.50,
-            'C' => 2.25,
-            'C-' => 2.00,
-            'D+' => 1.75,
-            'D' => 1.50,
-            default => 0.00,
-        };
+        return OfficialGradeScale::points($letterGrade, $resultStatusCode);
     }
 
     private function resultStatusId(string $statusCode): int
