@@ -1,22 +1,43 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { Link, useBlocker } from 'react-router-dom'
+import { FaCheckDouble, FaChevronLeft, FaChevronRight, FaClipboardList, FaExclamationTriangle, FaPaperPlane, FaRedo, FaSave, FaSearch, FaSpinner, FaUserGraduate } from 'react-icons/fa'
 import { apiRequest } from '../../../services/apiClient'
 import { ACCESS, canAccess, getIdentity } from '../../auth/auth'
 import ManualGradeDialog from '../components/ManualGradeDialog'
 import { createGradeDraft, gradeDraftReducer, hasGradeDraft, navigationDecision } from '../lib/manualGradeDraft'
 import { MANUAL_GRADE_NOTICE, MANUAL_GRADE_ACKNOWLEDGEMENT, blockedLabel, registrationLabel, changedComponents, manualError, manualPath, markText, partLabel, requestSequence, savePayload, searchPath, stateLabel } from '../lib/manualGradeEntry'
 
-const button = 'rounded-lg border border-primary/25 px-3 py-2 text-primary font-bold disabled:opacity-40'
-const field = 'rounded-lg border border-primary/25 px-3 py-2 w-full'
+// Presentation tokens follow StudentPicker and ApprovalsPage; no workflow decisions live here.
+const action = 'inline-flex max-w-full items-center justify-center gap-2 rounded-[10px] px-3.5 py-2.5 text-[12px] font-bold leading-5 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-40'
+const button = `${action} border border-primary/15 bg-white text-primary-dark hover:bg-primary/[0.05]`
+const primaryButton = `${action} border border-primary bg-primary text-white hover:bg-primary-dark`
+const warningButton = `${action} border border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-200`
+const discardButton = `${action} border border-red-200 bg-white text-red-700 hover:bg-red-50`
+const field = 'w-full min-w-0 rounded-[10px] border border-primary/20 bg-white px-3 py-2.5 text-[13px] font-normal text-text-dark outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 disabled:bg-primary/[0.03] disabled:text-text-light'
+const card = 'min-w-0 rounded-[16px] border border-primary/12 bg-white shadow-[0_2px_12px_rgba(26,46,16,0.05)]'
+const label = 'flex min-w-0 flex-col gap-1.5 text-[12px] font-bold text-text-dark'
 const identityStamp = () => JSON.stringify(getIdentity())
 const markInput = value => value == null ? '' : String(value)
 
+function StatusChip({ status, children }) {
+  const colors = { draft: 'bg-primary/[0.05] text-text-gray', submitted: 'bg-amber-50 text-amber-700',
+    returned: 'bg-red-50 text-red-700', approved: 'bg-primary/10 text-primary-dark', registered: 'bg-primary/10 text-primary-dark' }
+  return <span className={`inline-flex max-w-full items-center rounded-full px-2.5 py-1 text-[11px] font-bold leading-5 ${colors[status] ?? 'bg-primary/[0.04] text-text-gray'}`}>{children}</span>
+}
+
+function MetaItem({ label, children }) {
+  return <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5"><dt className="text-text-light">{label}</dt><dd className="min-w-0 break-words font-semibold text-text-gray">{children}</dd></div>
+}
+
 function Pager({ meta, onPage, disabled }) {
   if (!meta) return null
-  return <div className="flex items-center gap-3 my-3">
-    <button type="button" className={button} disabled={disabled || meta.current_page <= 1} onClick={() => onPage(meta.current_page - 1)}>السابق</button>
-    <span>صفحة {meta.current_page} من {meta.last_page} — {meta.total} سجل</span>
-    <button type="button" className={button} disabled={disabled || meta.current_page >= meta.last_page} onClick={() => onPage(meta.current_page + 1)}>التالي</button>
+  return <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-primary/10 pt-3 text-[12px] text-text-light">
+    <span>{meta.total} سجل</span>
+    <div className="flex flex-wrap items-center gap-2">
+      <button type="button" className="inline-flex items-center gap-1 rounded-[9px] p-2 text-text-gray hover:bg-primary/[0.05] focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-30" disabled={disabled || meta.current_page <= 1} onClick={() => onPage(meta.current_page - 1)}><FaChevronRight aria-hidden="true" className="text-[10px]" />السابق</button>
+      <span>صفحة {meta.current_page} من {meta.last_page}</span>
+      <button type="button" className="inline-flex items-center gap-1 rounded-[9px] p-2 text-text-gray hover:bg-primary/[0.05] focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-30" disabled={disabled || meta.current_page >= meta.last_page} onClick={() => onPage(meta.current_page + 1)}>التالي<FaChevronLeft aria-hidden="true" className="text-[10px]" /></button>
+    </div>
   </div>
 }
 
@@ -98,46 +119,65 @@ function RegistrationEditor({ row, student, onDirty, onBusy, reload, onForbidden
     dispatch({ type }); setAcknowledged(false); setReason(''); setDialog(null); setMessage('')
   }
   const removedComponents = Object.keys(edits).some(id => !row.components.some(c => String(c.grade_component_id) === id))
-  return <article className="rounded-2xl border border-primary/20 bg-white p-5 space-y-4" aria-busy={busy}>
-    <header><h2 className="font-bold text-lg text-primary">{row.course_code} — {row.course_name}</h2>
-      <p>{row.academic_year} / {row.semester} — الشعبة {row.section} — التسجيل/المحاولة {row.registration_id}</p>
-      <p>{row.college} — {row.program} — حالة التسجيل: {registrationLabel(row.registration_status)}</p></header>
-    {!row.components.length && <p>لا توجد مكونات علامات مطلوبة؛ هذا السجل للعرض فقط.</p>}
-    {conflict && <section role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 space-y-3">
-      <p>تغيّرت الحالة الرسمية أو تعذر تأكيد الكتابة. احتُفظ بمسودتك ونسخة بدء التحرير؛ اختر صراحةً قبل المتابعة. لن يعاد إرسالها تلقائيًا.</p>
-      <ul>{baseline.components.filter(c => Object.hasOwn(edits, c.grade_component_id)).map(c => <li key={c.grade_component_id}>
-        {c.name}: عند بدء التحرير {markText(c.mark)} — المقترح {edits[c.grade_component_id] || '—'} — الخادم {markText(row.components.find(s => s.grade_component_id === c.grade_component_id)?.mark)}
+  return <article className={`${card} space-y-4 p-5 max-[560px]:p-4`} aria-busy={busy}>
+    <header className="space-y-3 border-b border-primary/10 pb-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 space-y-1"><h2 className="break-words text-[15px] font-extrabold text-text-dark">{row.course_name}</h2>
+          <bdi className="inline-block rounded-[6px] bg-primary/[0.05] px-2 py-0.5 font-mono text-[11.5px] text-primary-dark">{row.course_code}</bdi></div>
+        <StatusChip status={row.registration_status}>حالة التسجيل: {registrationLabel(row.registration_status)}</StatusChip>
+      </div>
+      <dl className="flex flex-wrap gap-x-5 gap-y-1.5 text-[11.5px]">
+        <MetaItem label="السنة الأكاديمية">{row.academic_year}</MetaItem><MetaItem label="الفصل">{row.semester}</MetaItem>
+        <MetaItem label="الشعبة">{row.section}</MetaItem><MetaItem label="التسجيل/المحاولة">{row.registration_id}</MetaItem>
+        <MetaItem label="الكلية">{row.college}</MetaItem><MetaItem label="البرنامج">{row.program}</MetaItem>
+      </dl>
+    </header>
+    {!row.components.length && <p className="rounded-[10px] bg-primary/[0.03] px-3 py-3 text-[12.5px] text-text-light">لا توجد مكونات علامات مطلوبة؛ هذا السجل للعرض فقط.</p>}
+    {conflict && <section role="alert" className="space-y-3 rounded-[12px] border border-amber-200 bg-amber-50/70 p-4 text-[12.5px] leading-7 text-amber-900">
+      <div className="flex items-start gap-2"><FaExclamationTriangle aria-hidden="true" className="mt-1.5 shrink-0 text-amber-600" /><p>تغيّرت الحالة الرسمية أو تعذر تأكيد الكتابة. احتُفظ بمسودتك ونسخة بدء التحرير؛ اختر صراحةً قبل المتابعة. لن يعاد إرسالها تلقائيًا.</p></div>
+      <ul className="space-y-2">{baseline.components.filter(c => Object.hasOwn(edits, c.grade_component_id)).map(c => <li key={c.grade_component_id} className="rounded-[10px] border border-amber-200/70 bg-white/80 px-3 py-2.5">
+        <p className="mb-2 font-bold text-text-dark">{c.name}</p>
+        <dl className="grid grid-cols-3 gap-3 max-[560px]:grid-cols-1">
+          <div><dt className="text-[11px] text-text-light">عند بدء التحرير</dt><dd className="font-bold text-text-gray">{markText(c.mark)}</dd></div>
+          <div><dt className="text-[11px] text-amber-700">المقترح</dt><dd className="font-bold text-amber-900">{edits[c.grade_component_id] || '—'}</dd></div>
+          <div><dt className="text-[11px] text-text-light">الخادم</dt><dd className="font-bold text-text-dark">{markText(row.components.find(s => s.grade_component_id === c.grade_component_id)?.mark)}</dd></div>
+        </dl>
       </li>)}</ul>
       {removedComponents && <p>تغيّر تعريف المكونات؛ لا يمكن نقل هذه المسودة إلى النسخة الجديدة. راجع القيم قبل تجاهلها.</p>}
-      <button type="button" className={button} disabled={busy || uncertain || readOnly} onClick={() => resolve('discard')}>تجاهل المسودة واستخدام نسخة الخادم</button>
-      <button type="button" className={button} disabled={busy || uncertain || readOnly || removedComponents} onClick={() => resolve('rebase')}>إبقاء المقترحات ومراجعتها على نسخة الخادم الجديدة</button>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className={discardButton} disabled={busy || uncertain || readOnly} onClick={() => resolve('discard')}>تجاهل المسودة واستخدام نسخة الخادم</button>
+        <button type="button" className={warningButton} disabled={busy || uncertain || readOnly || removedComponents} onClick={() => resolve('rebase')}>إبقاء المقترحات ومراجعتها على نسخة الخادم الجديدة</button>
+      </div>
     </section>}
-    {Object.entries(row.parts).map(([part, state]) => <fieldset key={part} className="rounded-xl border p-4" disabled={busy || uncertain || conflict || readOnly || !state.can_edit}>
-      <legend className="px-2 font-bold">{partLabel(part)} — {stateLabel(state.status)}</legend>
-      {state.blocked_reason && <p className="text-amber-800 mb-2">{state.status === 'submitted' ? 'مرسل للاعتماد؛ استخدم مسار الإعادة للتصحيح في واجهة الاعتمادات.' : state.status === 'approved' || state.blocked_reason === 'official_result_locked' ? 'النتيجة معتمدة ومقفلة. تصحيح النتائج المنشورة خارج هذه الواجهة.' : blockedLabel(state.blocked_reason)}</p>}
-      <div className="grid gap-3 sm:grid-cols-2">{row.components.filter(c => c.component_type === part).map(c => <label key={c.grade_component_id}>
-        <span>{c.name} — الحد الأعلى {c.max_mark}</span>
+    {Object.entries(row.parts).map(([part, state]) => <fieldset key={part} className="min-w-0 rounded-[12px] border border-primary/10 bg-primary/[0.02] p-4" disabled={busy || uncertain || conflict || readOnly || !state.can_edit}>
+      <legend className="max-w-full px-2"><span className="inline-flex flex-wrap items-center gap-2"><span className="text-[13px] font-extrabold text-text-dark">الجزء {partLabel(part)}</span><StatusChip status={state.status}>{stateLabel(state.status)}</StatusChip></span></legend>
+      {state.blocked_reason && <p className="mb-3 rounded-[9px] border border-amber-100 bg-amber-50 px-3 py-2 text-[12px] leading-6 text-amber-800">{state.status === 'submitted' ? 'مرسل للاعتماد؛ استخدم مسار الإعادة للتصحيح في واجهة الاعتمادات.' : state.status === 'approved' || state.blocked_reason === 'official_result_locked' ? 'النتيجة معتمدة ومقفلة. تصحيح النتائج المنشورة خارج هذه الواجهة.' : blockedLabel(state.blocked_reason)}</p>}
+      <div className="grid grid-cols-2 gap-3 max-[560px]:grid-cols-1">{row.components.filter(c => c.component_type === part).map(c => <label key={c.grade_component_id} className={label}>
+        <span className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5"><span className="break-words">{c.name}</span><span className="text-[11px] font-normal text-text-light">الحد الأعلى {c.max_mark}</span></span>
         <input className={field} inputMode="decimal" type="text" aria-label={`${c.name} — ${partLabel(part)}`}
           value={edits[c.grade_component_id] ?? markInput(baseline.components.find(b => b.grade_component_id === c.grade_component_id)?.mark)} onChange={event => edit(c.grade_component_id, event.target.value)} />
       </label>)}</div>
     </fieldset>)}
-    {Object.values(row.parts).some(p => p.can_edit) && <>
-      <label className="flex gap-2"><input type="checkbox" checked={acknowledged} disabled={busy || uncertain || conflict || readOnly} onChange={event => setAcknowledged(event.target.checked)} />{MANUAL_GRADE_ACKNOWLEDGEMENT}</label>
-      <button type="button" className={button} disabled={busy || uncertain || conflict || readOnly || !dirty || !acknowledged} onClick={prepareSave}>حفظ العلامات كمسودة</button>
-    </>}
-    <div className="flex flex-wrap gap-2">{Object.entries(row.parts).filter(([, p]) => p.can_check_submission).map(([part]) => <button key={part} type="button" className={button} disabled={busy || uncertain || conflict || readOnly || dirty} onClick={() => readiness(part)}>إرسال الجزء {partLabel(part)} للاعتماد</button>)}</div>
-    {message && <p role="status" className="text-amber-900">{message}</p>}
-    {uncertain && <button className={button} type="button" disabled={busy} onClick={async () => { if (await reload()) setUncertain(false) }}>إعادة تحميل الحالة قبل المتابعة</button>}
+    {Object.values(row.parts).some(p => p.can_edit) && <div className="space-y-3 rounded-[12px] border border-primary/10 bg-primary/[0.03] p-4">
+      <label className="flex items-start gap-2.5 text-[12.5px] leading-7 text-text-gray"><input className="mt-1.5 h-4 w-4 shrink-0 accent-primary focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40" type="checkbox" checked={acknowledged} disabled={busy || uncertain || conflict || readOnly} onChange={event => setAcknowledged(event.target.checked)} /><span>{MANUAL_GRADE_ACKNOWLEDGEMENT}</span></label>
+      <button type="button" className={primaryButton} disabled={busy || uncertain || conflict || readOnly || !dirty || !acknowledged} onClick={prepareSave}><FaSave aria-hidden="true" />حفظ العلامات كمسودة</button>
+    </div>}
+    <div className="flex flex-wrap gap-2">{Object.entries(row.parts).filter(([, p]) => p.can_check_submission).map(([part]) => <button key={part} type="button" className={button} disabled={busy || uncertain || conflict || readOnly || dirty} onClick={() => readiness(part)}><FaPaperPlane aria-hidden="true" className="text-[11px]" />إرسال الجزء {partLabel(part)} للاعتماد</button>)}</div>
+    {message && <p role="status" className="rounded-[10px] border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12.5px] leading-7 text-amber-900">{message}</p>}
+    {uncertain && <button className={button} type="button" disabled={busy} onClick={async () => { if (await reload()) setUncertain(false) }}><FaRedo aria-hidden="true" />إعادة تحميل الحالة قبل المتابعة</button>}
     {dialog && <ManualGradeDialog title={dialog.type === 'correction' ? 'تأكيد تصحيح العلامات' : 'تأكيد إرسال جزء الطرح بالكامل'} busy={busy}
       disabled={readOnly || uncertain || conflict || (dialog.type === 'correction' ? !reason.trim() : !dialog.ready.can_submit)} onCancel={() => setDialog(null)}
       onConfirm={() => dialog.type === 'correction' ? save(true) : perform(() => apiRequest(`${manualPath(student.student_id, row.registration_id)}/parts/${dialog.part}/submit`, { method: 'POST', body: JSON.stringify({ confirmed: true, revision: dialog.ready.revision }) }))}>
-      <p>{student.name} — {student.student_number}</p><p>{row.course_name} — {row.academic_year} / {row.semester} — الشعبة {row.section}</p>
+      <div className="space-y-1 rounded-[10px] border border-primary/10 bg-primary/[0.03] px-3 py-2.5"><p className="font-bold text-text-dark">{student.name} — <bdi className="font-mono text-[12px] text-text-light">{student.student_number}</bdi></p><p className="text-[12px] text-text-gray">{row.course_name} — {row.academic_year} / {row.semester} — الشعبة {row.section}</p></div>
       {dialog.type === 'correction' ? <>
-        <ul>{dialog.changes.map(c => <li key={c.grade_component_id}>{c.name}: {markText(c.mark)} ← {markText(c.proposed)}</li>)}</ul>
-        <label>سبب التصحيح<textarea className={field} value={reason} maxLength={1000} onChange={event => setReason(event.target.value)} /></label>
+        <ul className="divide-y divide-primary/10 rounded-[10px] border border-primary/10 px-3">{dialog.changes.map(c => <li key={c.grade_component_id} className="flex flex-wrap items-baseline justify-between gap-2 py-2"><span className="font-bold text-text-dark">{c.name}</span><span>{markText(c.mark)} ← <strong className="text-primary-dark">{markText(c.proposed)}</strong></span></li>)}</ul>
+        <label className={label}>سبب التصحيح<textarea className={`${field} min-h-[96px] resize-y`} value={reason} maxLength={1000} onChange={event => setReason(event.target.value)} /></label>
       </> : <><p>هذا الإرسال يشمل الجزء {partLabel(dialog.part)} لجميع طلاب الطرح، وليس الطالب المختار فقط.</p>
-        <p>المؤهلون: {dialog.ready.counts.eligible} — المكتملون: {dialog.ready.counts.completed} — الناقصون: {dialog.ready.counts.incomplete} — المستثنون وفق النظام: {dialog.ready.counts.exempt}</p>
-        {!dialog.ready.can_submit && <p role="alert">{blockedLabel(dialog.ready.blocked_reason)}</p>}</>}
+        <dl className="grid grid-cols-2 gap-2 max-[400px]:grid-cols-1 text-[12px]">
+          <MetaItem label="المؤهلون">{dialog.ready.counts.eligible}</MetaItem><MetaItem label="المكتملون">{dialog.ready.counts.completed}</MetaItem>
+          <MetaItem label="الناقصون">{dialog.ready.counts.incomplete}</MetaItem><MetaItem label="المستثنون وفق النظام">{dialog.ready.counts.exempt}</MetaItem>
+        </dl>
+        {!dialog.ready.can_submit && <p role="alert" className="rounded-[10px] border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">{blockedLabel(dialog.ready.blocked_reason)}</p>}</>}
     </ManualGradeDialog>}
   </article>
 }
@@ -233,31 +273,48 @@ export default function ManualGradeEntryPage() {
     })
     setPage(1)
   })
-  if (!allowed) return <p role="alert" dir="rtl">الوصول غير متاح. أعد تسجيل الدخول للتحقق من الصلاحيات.</p>
-  return <main dir="rtl" className="space-y-5">
-    <h1 className="text-2xl font-black text-primary">إدخال العلامات اليدوي</h1>
-    <p className="rounded-xl border border-amber-200 bg-amber-50 p-4">{MANUAL_GRADE_NOTICE}</p>
-    <Link to="/exam-board/approvals" className="text-primary underline">واجهة الاعتمادات الحالية</Link>
-    {notice && <p role="status" className="text-amber-900">{notice}</p>}
-    {lookupError && <p role="alert" className="text-red-800">تعذر البحث: {lookupError}</p>}
-    <label className="block">البحث باسم الطالب أو رقمه<input className={field} value={q} onChange={e => setQ(e.target.value)} /></label>
-    {students && <section aria-label="نتائج البحث" className="rounded-xl border bg-white p-4">
-      {!students.students.length && <p>لا توجد نتائج ضمن نطاقك.</p>}
-      {students.students.map(s => <button type="button" key={s.student_id} className={`${button} block w-full text-right my-2`} onClick={() => change(() => { setStudent(s); setTerm({}); setPage(1) })}>{s.name} — {s.student_number} — {s.college} / {s.program}</button>)}
-      <Pager meta={students.meta} onPage={setSearchPage} />
+  if (!allowed) return <p role="alert" dir="rtl" className="rounded-[16px] border border-red-200 bg-red-50 px-5 py-4 text-[13px] leading-7 text-red-700">الوصول غير متاح. أعد تسجيل الدخول للتحقق من الصلاحيات.</p>
+  return <main dir="rtl" className="min-w-0 space-y-5 text-[13px] text-text-gray">
+    <div><h1 className="mb-[3px] text-[20px] font-black text-text-dark">إدخال العلامات اليدوي</h1><p className="text-[12.5px] text-text-light" lang="en">Manual grade entry</p></div>
+    <section className="rounded-[16px] border border-amber-200 bg-amber-50/70 px-5 py-4 max-[560px]:px-4">
+      <div className="flex items-start gap-3"><FaExclamationTriangle aria-hidden="true" className="mt-1 shrink-0 text-[15px] text-amber-600" /><p className="min-w-0 text-[12.5px] leading-7 text-amber-900">{MANUAL_GRADE_NOTICE}</p></div>
+      <div className="mt-3 flex flex-wrap justify-end"><Link to="/exam-board/approvals" className={button}><FaCheckDouble aria-hidden="true" className="text-[12px]" />واجهة الاعتمادات الحالية</Link></div>
+    </section>
+    {notice && <p role="status" className="rounded-[10px] border border-primary/12 bg-primary/[0.04] px-4 py-3 text-[12.5px] leading-7 text-primary-dark">{notice}</p>}
+    <section className={`${card} p-5 max-[560px]:p-4`} aria-label="اختيار الطالب">
+      <div className="mb-3 flex items-center gap-2"><FaUserGraduate aria-hidden="true" className="shrink-0 text-[16px] text-primary" /><h2 className="text-[14.5px] font-extrabold text-text-dark">اختر الطالب</h2><span className="text-[11px] text-text-light" lang="en">Select a student</span></div>
+      <label className={label}><span>البحث باسم الطالب أو رقمه</span><span className="relative block"><FaSearch aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-text-light" /><input className={`${field} pr-9`} value={q} onChange={e => setQ(e.target.value)} /></span></label>
+      {lookupError && <p role="alert" className="mt-3 rounded-[10px] border border-red-200 bg-red-50 px-3 py-2.5 text-[12.5px] leading-6 text-red-700">تعذر البحث: {lookupError}</p>}
+      {students && <section aria-label="نتائج البحث" className="mt-3">
+        <div className="divide-y divide-primary/10 overflow-hidden rounded-[10px] border border-primary/10">
+          {!students.students.length && <p className="py-6 text-center text-[12.5px] text-text-light">لا توجد نتائج ضمن نطاقك.</p>}
+          {students.students.map(s => <button type="button" key={s.student_id} aria-pressed={student?.student_id === s.student_id}
+            className={`flex w-full min-w-0 items-start gap-3 border-r-2 px-3 py-2.5 text-right transition-colors hover:bg-primary/[0.04] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary ${student?.student_id === s.student_id ? 'border-r-primary bg-primary/[0.06]' : 'border-r-transparent bg-white'}`}
+            onClick={() => change(() => { setStudent(s); setTerm({}); setPage(1) })}>
+            <FaUserGraduate aria-hidden="true" className="mt-1 shrink-0 text-[13px] text-primary/70" />
+            <span className="min-w-0 flex-1"><span className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5"><span className="break-words text-[13px] font-bold text-text-dark">{s.name}</span><bdi className="break-all font-mono text-[11.5px] text-text-light">{s.student_number}</bdi></span>
+              <span className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11.5px] leading-6 text-text-light"><span className="break-words">الكلية: {s.college}</span><span className="break-words">البرنامج: {s.program}</span></span>
+            </span>
+          </button>)}
+        </div>
+        <Pager meta={students.meta} onPage={setSearchPage} />
+      </section>}
+    </section>
+    {student && <section className={`${card} space-y-4 p-5 max-[560px]:p-4`}>
+      <header className="space-y-2 border-b border-primary/10 pb-3"><div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h2 className="break-words text-[15px] font-extrabold text-text-dark">{data?.student?.name ?? student.name}</h2><bdi className="rounded-full bg-primary/[0.06] px-2.5 py-1 font-mono text-[12px] text-primary-dark">{data?.student?.student_number ?? student.student_number}</bdi></div>
+        <dl className="flex flex-wrap gap-x-5 gap-y-1 text-[12px]"><MetaItem label="الكلية">{data?.student?.college ?? student.college}</MetaItem><MetaItem label="البرنامج">{data?.student?.program ?? student.program}</MetaItem></dl>
+      </header>
+      <div className="grid grid-cols-2 gap-4 max-[560px]:grid-cols-1"><label className={label}>السنة الأكاديمية<select className={field} value={term.academic_year_id ?? ''} onChange={e => changeTerm('academic_year_id', e.target.value)}><option value="">كل السنوات</option>{[...new Map((data?.terms ?? []).map(t => [t.academic_year_id, t])).values()].map(t => <option key={t.academic_year_id} value={t.academic_year_id}>{t.year_name}</option>)}</select></label>
+      <label className={label}>الفصل<select className={field} value={term.semester_id ?? ''} onChange={e => changeTerm('semester_id', e.target.value)}><option value="">كل الفصول</option>{[...new Map((data?.terms ?? []).filter(t => !term.academic_year_id || String(t.academic_year_id) === term.academic_year_id).map(t => [t.semester_id, t])).values()].map(t => <option key={t.semester_id} value={t.semester_id}>{t.semester_name}</option>)}</select></label></div>
     </section>}
-    {student && <section className="rounded-xl bg-white border p-4 space-y-3"><h2 className="font-bold">{data?.student?.name ?? student.name} — {data?.student?.student_number ?? student.student_number}</h2>
-      <div className="grid gap-3 sm:grid-cols-2"><label>السنة الأكاديمية<select className={field} value={term.academic_year_id ?? ''} onChange={e => changeTerm('academic_year_id', e.target.value)}><option value="">كل السنوات</option>{[...new Map((data?.terms ?? []).map(t => [t.academic_year_id, t])).values()].map(t => <option key={t.academic_year_id} value={t.academic_year_id}>{t.year_name}</option>)}</select></label>
-      <label>الفصل<select className={field} value={term.semester_id ?? ''} onChange={e => changeTerm('semester_id', e.target.value)}><option value="">كل الفصول</option>{[...new Map((data?.terms ?? []).filter(t => !term.academic_year_id || String(t.academic_year_id) === term.academic_year_id).map(t => [t.semester_id, t])).values()].map(t => <option key={t.semester_id} value={t.semester_id}>{t.semester_name}</option>)}</select></label></div>
-    </section>}
-    {loading && <p role="status">جاري تحميل الحالة الرسمية…</p>}
-    {dataError && <div role="alert" className="text-red-800">{dataError} {student && <button type="button" className={button} disabled={pendingCount > 0} onClick={reload}>إعادة التحميل مع الاحتفاظ بالمسودات</button>}</div>}
+    {loading && <p role="status" className="flex items-center justify-center gap-2 py-4 text-[12.5px] text-primary"><FaSpinner aria-hidden="true" className="animate-spin text-[18px] motion-reduce:animate-none" />جاري تحميل الحالة الرسمية…</p>}
+    {dataError && <div role="alert" className="space-y-3 rounded-[12px] border border-red-200 bg-red-50 px-4 py-3 text-[12.5px] leading-7 text-red-700"><p>{dataError}</p>{student && <button type="button" className={button} disabled={pendingCount > 0} onClick={reload}><FaRedo aria-hidden="true" />إعادة التحميل مع الاحتفاظ بالمسودات</button>}</div>}
     {data && <><div className="space-y-4">{data.registrations.map(row => <RegistrationEditor key={row.registration_id} row={row} student={data.student} identity={identity} readOnly={loading || !!dataError} onDirty={onDirty} onBusy={onBusy} reload={reload} onForbidden={clear} />)}</div>
-      {!data.registrations.length && <p>لا توجد تسجيلات فعلية مطابقة ضمن نطاقك.</p>}<Pager meta={data.meta} disabled={loading} onPage={p => change(() => setPage(p))} /></>}
-    {discard && <ManualGradeDialog title="تغييرات غير محفوظة" onCancel={() => setDiscard(null)} onConfirm={discard} confirmLabel="تجاهل التغييرات والمتابعة"><p>لن تُحفظ العلامات المعدلة عند تغيير الطالب أو الفترة أو الصفحة.</p></ManualGradeDialog>}
+      {!data.registrations.length && <div className={`${card} flex flex-col items-center gap-2 px-4 py-8 text-center`}><FaClipboardList aria-hidden="true" className="text-[28px] text-primary/25" /><p className="text-[12.5px] text-text-light">لا توجد تسجيلات فعلية مطابقة ضمن نطاقك.</p></div>}<Pager meta={data.meta} disabled={loading} onPage={p => change(() => setPage(p))} /></>}
+    {discard && <ManualGradeDialog title="تغييرات غير محفوظة" confirmTone="discard" onCancel={() => setDiscard(null)} onConfirm={discard} confirmLabel="تجاهل التغييرات والمتابعة"><p>لن تُحفظ العلامات المعدلة عند تغيير الطالب أو الفترة أو الصفحة.</p></ManualGradeDialog>}
     {blocker.state === 'blocked' && <ManualGradeDialog title="مغادرة إدخال العلامات" disabled={pendingCount > 0}
       onCancel={() => { blocker.reset(); setNotice('أُلغي الانتقال. مسوداتك محفوظة محليًا ويمكنك متابعة التحرير والحفظ.') }}
-      onConfirm={() => { if (!busy.current.size) blocker.proceed() }} confirmLabel="تجاهل المسودات والانتقال">
+      onConfirm={() => { if (!busy.current.size) blocker.proceed() }} confirmTone="discard" confirmLabel="تجاهل المسودات والانتقال">
       <p>{pendingCount > 0 ? 'توجد عملية قيد التنفيذ. انتظر نتيجتها قبل المغادرة؛ الإلغاء يبقيك في الصفحة.' : 'توجد مسودات غير محفوظة. هل تريد تجاهلها والانتقال إلى الوجهة المطلوبة؟'}</p>
     </ManualGradeDialog>}
   </main>
