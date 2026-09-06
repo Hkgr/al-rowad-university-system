@@ -185,6 +185,13 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
 */
 
 Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::class])->prefix('v1')->group(function (): void {
+    Route::prefix('exams/manual-grade-entry')->controller(\App\Http\Controllers\Api\ExamManualGradeEntryController::class)->group(function (): void {
+        Route::get('students', 'students');
+        Route::get('students/{student}/registrations', 'registrations');
+        Route::put('students/{student}/registrations/{registration}/marks', 'save');
+        Route::get('students/{student}/registrations/{registration}/parts/{part}/submission-readiness', 'readiness');
+        Route::post('students/{student}/registrations/{registration}/parts/{part}/submit', 'submit');
+    });
     Route::get('vice-presidency/reports/definitions', [ExecutiveReportController::class, 'definitions']);
     Route::get('vice-presidency/reports/filters', [ExecutiveReportController::class, 'filters']);
     Route::post('vice-presidency/reports/query', [ExecutiveReportController::class, 'query']);

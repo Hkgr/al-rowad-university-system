@@ -51,6 +51,7 @@ import ProgramsPage          from '../features/academic-structure/pages/Programs
 import examBoardNav      from '../features/exam-board/nav'
 import ExamBoardHome     from '../features/exam-board/pages/ExamBoardHome'
 import GradeSheetPage    from '../features/exam-board/pages/GradeSheetPage'
+import ManualGradeEntryPage from '../features/exam-board/pages/ManualGradeEntryPage'
 import ExamStudentAcademicRecordPage from '../features/exam-board/pages/ExamStudentAcademicRecordPage'
 import ApprovalsPage     from '../features/exam-board/pages/ApprovalsPage'
 import DeprivationPage        from '../features/exam-board/pages/DeprivationPage'
@@ -142,6 +143,9 @@ export default function App() {
         <Route path="/forbidden" element={<ForbiddenPage />} />
 
         {/* ── شؤون الطلاب dashboard ── */}
+        <Route element={<ProtectedRoute {...ACCESS.manualGradeEntry}><DashboardLayout nav={examBoardNav} appTitle="هيئة الامتحانات" /></ProtectedRoute>}>
+          <Route path="/exam-board/manual-grade-entry" element={<ManualGradeEntryPage />} />
+        </Route>
         <Route
           element={
             <ProtectedRoute permissions={['students.view']}>

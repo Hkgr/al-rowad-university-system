@@ -6,6 +6,7 @@ import {
 import { ACCESS, PERMISSIONS } from '../auth/auth'
 
 const examBoardNav = [
+  { label: 'إدخال العلامات', items: [{ to: '/exam-board/manual-grade-entry', Icon: FaClipboardList, ar: 'إدخال العلامات اليدوي', en: 'Manual grade entry', ...ACCESS.manualGradeEntry }] },
   {
     label: 'هيئة الامتحانات',
     items: [
