@@ -15,6 +15,30 @@ use App\Models\OrganizationalUnit;
 
 class DataScopeService
 {
+    /** Explicit scopes only: neither virtual super-admin nor teaching membership grants manual entry. */
+    public function scopeManualGradeStudents(Builder $query, User $user): Builder
+    {
+        $scopes = $this->grouped($user);
+        if ($scopes['university'] !== []) return $query;
+        return $query->where(fn (Builder $student) => $student
+            ->whereIn('academic_program_id', $scopes['program'])
+            ->orWhereHas('academicProgram', fn (Builder $program) => $program
+                ->whereIn('department_id', $scopes['department'])
+                ->orWhereHas('department', fn (Builder $department) => $department->whereIn('college_id', $scopes['college'])))
+            ->orWhereHas('studentCourseRegistrations', fn (Builder $registration) => $registration->whereIn('course_offering_id', $scopes['section'])));
+    }
+
+    public function scopeManualGradeOfferings(Builder $query, User $user): Builder
+    {
+        $scopes = $this->grouped($user);
+        if ($scopes['university'] !== []) return $query;
+        return $query->where(fn (Builder $offering) => $offering
+            ->whereIn('course_offering_id', $scopes['section'])
+            ->orWhereIn('academic_program_id', $scopes['program'])
+            ->orWhereIn('department_id', $scopes['department'])
+            ->orWhereIn('course_offering_id', CourseOffering::idsResolvedToColleges($scopes['college'])));
+    }
+
     public function scopes(User $user): array
     {
         return $user->accessScopes()->where('is_active', true)->get(['scope_type', 'scope_id'])

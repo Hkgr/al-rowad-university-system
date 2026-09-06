@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { createBrowserRouter, createRoutesFromElements, RouterProvider, Route, Navigate } from 'react-router-dom'
 
 import DashboardLayout from '../components/layout/DashboardLayout'
 
@@ -51,6 +51,7 @@ import ProgramsPage          from '../features/academic-structure/pages/Programs
 import examBoardNav      from '../features/exam-board/nav'
 import ExamBoardHome     from '../features/exam-board/pages/ExamBoardHome'
 import GradeSheetPage    from '../features/exam-board/pages/GradeSheetPage'
+import ManualGradeEntryPage from '../features/exam-board/pages/ManualGradeEntryPage'
 import ExamStudentAcademicRecordPage from '../features/exam-board/pages/ExamStudentAcademicRecordPage'
 import ApprovalsPage     from '../features/exam-board/pages/ApprovalsPage'
 import DeprivationPage        from '../features/exam-board/pages/DeprivationPage'
@@ -132,16 +133,19 @@ function ProtectedRoute({ children, permissions = [], allPermissions = [], roles
 
 const protect = (element, access) => <ProtectedRoute {...access}>{element}</ProtectedRoute>
 
-export default function App() {
-  return (
-    <BrowserRouter>
-      <Routes>
+// A data router enables useBlocker for SPA PUSH/REPLACE/POP navigation.
+// The existing route tree and every ProtectedRoute policy stay unchanged.
+const router = createBrowserRouter(createRoutesFromElements(
+      <>
 
         {/* Public */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/forbidden" element={<ForbiddenPage />} />
 
         {/* ── شؤون الطلاب dashboard ── */}
+        <Route element={<ProtectedRoute {...ACCESS.manualGradeEntry}><DashboardLayout nav={examBoardNav} appTitle="هيئة الامتحانات" /></ProtectedRoute>}>
+          <Route path="/exam-board/manual-grade-entry" element={<ManualGradeEntryPage />} />
+        </Route>
         <Route
           element={
             <ProtectedRoute permissions={['students.view']}>
@@ -349,7 +353,9 @@ export default function App() {
         <Route path="/"  element={<Navigate to={landingRoute(getIdentity())} replace />} />
         <Route path="*"  element={<Navigate to={landingRoute(getIdentity())} replace />} />
 
-      </Routes>
-    </BrowserRouter>
-  )
+      </>
+))
+
+export default function App() {
+  return <RouterProvider router={router} />
 }

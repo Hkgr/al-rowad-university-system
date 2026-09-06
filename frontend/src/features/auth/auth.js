@@ -53,6 +53,7 @@ export const PERMISSIONS = Object.freeze({
 })
 
 export const ACCESS = Object.freeze({
+  manualGradeEntry: { allRoles: ['exam_officer'], assignedPermissions: ['exams.manage', 'grades.manage'], permissions: ['students.view'] },
   courseRegistration: { allPermissions: [PERMISSIONS.registrationView, PERMISSIONS.studentsView, PERMISSIONS.academicStructureView, PERMISSIONS.coursesView, PERMISSIONS.systemSettingsView] },
   courseManagement: { allPermissions: [PERMISSIONS.coursesView, PERMISSIONS.academicStructureView, PERMISSIONS.systemSettingsView] },
   studentAffairs: { allPermissions: [PERMISSIONS.studentsView] },

@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\DB;
 
 class GradePartWorkflowService
 {
+    use \App\Services\Concerns\ExamManualGradeOperations;
     public function __construct(
         private readonly DataScopeService $dataScope,
         private readonly GradeService $grades,
@@ -169,9 +170,21 @@ class GradePartWorkflowService
         $this->assertPart($part);
         $this->assignments->assertCanManageGradePart($user, (int) $registration->course_offering_id, $part);
         return DB::transaction(function () use ($registration, $part, $data, $user): array {
+            CourseOfferingLock::lock((int) $registration->course_offering_id);
+            $this->assignments->assertCanManageGradePart($user, (int) $registration->course_offering_id, $part);
+            $this->lockApproval((int) $registration->course_offering_id, $part);
             $locked = StudentCourseRegistration::query()->whereKey($registration->student_course_registration_id)
                 ->with(['registrationStatus', 'resultStatus', 'studentCourseResult.resultStatus'])
                 ->lockForUpdate()->firstOrFail();
+            if ((int) $locked->course_offering_id !== (int) $registration->course_offering_id) $this->fail('Registration context changed.', 'manual_grade_entry_stale');
+            $this->persistPartInTransaction($locked, $part, $data, $user, 'grade_part_saved:'.$part);
+            return $this->workflow((int) $locked->course_offering_id, $user);
+        });
+    }
+
+    /** Caller owns the offering/approval/registration locks and has independently authorized its actor. */
+    private function persistPartInTransaction(StudentCourseRegistration $locked, string $part, array $data, User $user, string $auditReason): void
+    {
             $this->grades->assertNotSupplementaryMaterialized((int) $locked->getKey());
             if (! $locked->allowsGradeEntry()) {
                 $this->fail('Grade entry is not allowed for this registration.', 'grade_entry_not_allowed', 409);
@@ -179,7 +192,7 @@ class GradePartWorkflowService
             if ($this->registrationIsDeprived($locked)) {
                 $this->fail('Grades cannot be entered or changed for a deprived student.', 'deprived_student_grade_locked', 409);
             }
-            CourseOfferingLock::lock((int) $locked->course_offering_id);
+            if ($this->grades->isOfficiallyApprovedOffering($locked->courseOffering)) $this->fail('Official results are locked.', 'grade_part_locked');
             $this->assertRequired((int) $locked->course_offering_id, $part);
             $approval = $this->lockApproval((int) $locked->course_offering_id, $part);
             if ($approval && ! in_array($approval->status, ['draft', 'returned'], true)) $this->fail('This grade part is locked.', 'grade_part_locked');
@@ -195,17 +208,18 @@ class GradePartWorkflowService
             }
             foreach ($input as $item) {
                 $component = $components->get($item['grade_component_id']);
-                if (! $component || ($item['mark'] !== null && (float) $item['mark'] > (float) $component->max_mark)) $this->fail('A mark is outside the grade component limits.', 'invalid_grade_part');
+                if (! $component || ($item['mark'] !== null && (! is_numeric($item['mark']) || ! is_finite((float) $item['mark']) || (float) $item['mark'] < 0 || (float) $item['mark'] > (float) $component->max_mark))) $this->fail('A mark is outside the grade component limits.', 'invalid_grade_part');
                 $grade = StudentGradeComponent::query()->where('student_course_registration_id', $locked->student_course_registration_id)->where('grade_component_id', $component->grade_component_id)->lockForUpdate()->first();
                 $old = $grade?->mark;
+                $sameMark = ($old === null && $item['mark'] === null) || ($old !== null && $item['mark'] !== null && (float) $old === (float) $item['mark']);
+                $notes = array_key_exists('notes', $data) ? $data['notes'] : $grade?->notes;
+                if ($sameMark && $notes === $grade?->notes) continue;
                 $grade = StudentGradeComponent::query()->updateOrCreate(
                     ['student_course_registration_id' => $locked->student_course_registration_id, 'grade_component_id' => $component->grade_component_id],
-                    ['mark' => $item['mark'], 'grade_status' => $approval?->status === 'returned' ? 'returned' : 'draft', 'entered_by_user_id' => $user->user_id, 'entered_at' => now(), 'notes' => $data['notes'] ?? null]
+                    ['mark' => $item['mark'], 'grade_status' => $approval?->status === 'returned' ? 'returned' : 'draft', 'entered_by_user_id' => $user->user_id, 'entered_at' => now(), 'notes' => $notes]
                 );
-                GradeAuditLog::query()->create(['student_grade_component_id' => $grade->student_grade_component_id, 'old_mark' => $old, 'new_mark' => $item['mark'], 'changed_by_user_id' => $user->user_id, 'change_reason' => 'grade_part_saved:'.$part, 'changed_at' => now()]);
+                if (! $sameMark) GradeAuditLog::query()->create(['student_grade_component_id' => $grade->student_grade_component_id, 'old_mark' => $old, 'new_mark' => $item['mark'], 'changed_by_user_id' => $user->user_id, 'change_reason' => $auditReason, 'changed_at' => now()]);
             }
-            return $this->workflow((int) $locked->course_offering_id, $user);
-        });
     }
 
     public function submit(int $offeringId, string $part, User $user): GradePartApproval
@@ -524,9 +538,18 @@ class GradePartWorkflowService
             if ($registration->studentCourseResult?->is_deprived || $registration->studentCourseResult?->resultStatus?->status_code === 'deprived' || $registration->resultStatus?->status_code === 'deprived') continue;
             if ($part === 'theoretical' && $this->supplementaryEligibility->activeValidDeferral($registration)) continue;
             $grades = StudentGradeComponent::query()->where('student_course_registration_id', $registration->student_course_registration_id)->whereIn('grade_component_id', $partComponents->pluck('grade_component_id'))->get()->keyBy('grade_component_id');
-            foreach ($partComponents as $component) { $grade = $grades->get($component->grade_component_id); if (! $grade || $grade->mark === null || (float) $grade->mark < 0 || (float) $grade->mark > (float) $component->max_mark) return false; }
+            if (! $this->requiredMarksComplete($grades, $partComponents)) return false;
         }
         return true;
+    }
+    private function requiredMarksComplete(Collection $marks, Collection $components): bool
+    {
+        $marks = $marks->keyBy('grade_component_id');
+        foreach ($components as $component) {
+            $grade = $marks->get($component->grade_component_id);
+            if (! $grade || $grade->mark === null || (float) $grade->mark < 0 || (float) $grade->mark > (float) $component->max_mark) return false;
+        }
+        return $components->isNotEmpty();
     }
     private function registrationIsDeprived(StudentCourseRegistration $registration): bool
     {
