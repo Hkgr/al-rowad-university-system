@@ -26,8 +26,8 @@ class ExecutiveReportQueryRequest extends FormRequest
         $rules = [
             'subject' => ['required', Rule::in(ExecutiveReportRegistry::subjects())],
             'mode' => ['required', Rule::in(ExecutiveReportRegistry::MODES)],
-            'metrics' => ['required','array','min:1','max:'.ExecutiveReportRegistry::LIMITS['metrics']], 'metrics.*' => ['string'],
-            'dimensions' => ['sometimes','array','max:'.ExecutiveReportRegistry::LIMITS['dimensions']], 'dimensions.*' => ['string'],
+            'metrics' => ['required','array','min:1','max:'.ExecutiveReportRegistry::LIMITS['metrics']], 'metrics.*' => ['string','distinct'],
+            'dimensions' => ['sometimes','array','max:'.ExecutiveReportRegistry::LIMITS['dimensions']], 'dimensions.*' => ['string','distinct'],
             'filters' => ['sometimes','array'],
             'filters.college_ids' => $idList, 'filters.college_ids.*' => $ids,
             'filters.department_ids' => $idList, 'filters.department_ids.*' => $ids,
@@ -91,13 +91,36 @@ class ExecutiveReportQueryRequest extends FormRequest
         $validator->after(function (Validator $v): void {
             $definition = ExecutiveReportRegistry::subject((string) $this->input('subject'));
             if (!$definition) return;
+            $subject=(string)$this->input('subject');
             foreach ((array) $this->input('metrics', []) as $metric) if (!in_array($metric, $definition['metrics'], true)) $v->errors()->add('metrics', "Unsupported metric: {$metric}");
             foreach ((array) $this->input('dimensions', []) as $dimension) if (!in_array($dimension, $definition['dimensions'], true)) $v->errors()->add('dimensions', "Unsupported dimension: {$dimension}");
+            if(!in_array((string)$this->input('mode'),ExecutiveReportRegistry::modes($subject),true))$v->errors()->add('mode','The selected subject does not support this report mode.');
+            $periodType=$this->input('period.type','none');
+            if(!in_array($periodType,ExecutiveReportRegistry::periods($subject),true))$v->errors()->add('period.type','The selected subject does not support this period type.');
             foreach (array_keys((array) $this->input('filters', [])) as $filter) if (!in_array($filter, $definition['filters'], true)) $v->errors()->add('filters', "Unsupported filter: {$filter}");
             foreach (array_keys((array) $this->input('comparison.baseline.filters', [])) as $filter) if (!in_array($filter, $definition['filters'], true)) $v->errors()->add('comparison.baseline.filters', "Unsupported filter: {$filter}");
-            $total = collect((array) $this->input('filters', []))->filter('is_array')->sum(fn ($values) => count($values))
-                + collect((array) $this->input('comparison.baseline.filters', []))->filter('is_array')->sum(fn ($values) => count($values));
+            $total=collect([(array)$this->input('filters',[]),(array)$this->input('period',[]),(array)$this->input('comparison.baseline.filters',[]),(array)$this->input('comparison.baseline.period',[])])->sum(fn($scope)=>collect($scope)->filter('is_array')->sum(fn($values)=>count($values)));
             if ($total > ExecutiveReportRegistry::LIMITS['selected_ids']) $v->errors()->add('filters', 'Too many selected identifiers.');
+            foreach(['academic_year_ids','semester_ids']as$key){$filter=array_values(array_unique((array)$this->input("filters.{$key}",[])));$period=array_values(array_unique((array)$this->input("period.{$key}",[])));sort($filter);sort($period);if($filter!==[]&&$period!==[]&&$filter!==$period)$v->errors()->add($key,'Filter and period selections conflict.');}
+            $effectiveYears=array_unique(array_merge((array)$this->input('filters.academic_year_ids',[]),(array)$this->input('period.academic_year_ids',[])));
+            $effectiveSemesters=array_unique(array_merge((array)$this->input('filters.semester_ids',[]),(array)$this->input('period.semester_ids',[])));
+            if($effectiveSemesters!==[]&&$effectiveYears===[])$v->errors()->add('semester_ids','Semester selection requires an academic year context.');
+            $comparisonType=$this->input('comparison.type');$baseline=$this->input('comparison.baseline');
+            if($comparisonType==='custom'&&!is_array($baseline))$v->errors()->add('comparison.baseline','Custom comparison requires a complete baseline.');
+            if($comparisonType!==null&&$comparisonType!=='custom'&&$baseline!==null)$v->errors()->add('comparison.baseline','Baseline is accepted only for custom comparison.');
+            if(in_array($comparisonType,['previous_semester','previous_academic_year'],true)&&$periodType!=='academic')$v->errors()->add('comparison.type','The selected comparison requires an academic period.');
+            if($comparisonType==='previous_period'&&$periodType!=='date_range')$v->errors()->add('comparison.type','Previous-period comparison requires a date range.');
+            if(is_array($baseline)){
+                if(!isset($baseline['filters'])&&!isset($baseline['period']))$v->errors()->add('comparison.baseline','Custom baseline must provide an explicit scope or period.');
+                $baselineType=data_get($baseline,'period.type','none');if(!in_array($baselineType,ExecutiveReportRegistry::periods($subject),true))$v->errors()->add('comparison.baseline.period.type','The baseline period is unsupported for this subject.');
+                $baselineYears=array_unique(array_merge((array)data_get($baseline,'filters.academic_year_ids',[]),(array)data_get($baseline,'period.academic_year_ids',[])));
+                $baselineSemesters=array_unique(array_merge((array)data_get($baseline,'filters.semester_ids',[]),(array)data_get($baseline,'period.semester_ids',[])));
+                if($baselineSemesters!==[]&&$baselineYears===[])$v->errors()->add('comparison.baseline.period.semester_ids','Baseline semester selection requires an academic year context.');
+                foreach(['academic_year_ids','semester_ids']as$key){$a=array_values(array_unique((array)data_get($baseline,"filters.{$key}",[])));$b=array_values(array_unique((array)data_get($baseline,"period.{$key}",[])));sort($a);sort($b);if($a!==[]&&$b!==[]&&$a!==$b)$v->errors()->add("comparison.baseline.{$key}",'Baseline filter and period selections conflict.');}
+                if($baselineType==='academic'&&empty(data_get($baseline,'period.academic_year_ids')))$v->errors()->add('comparison.baseline.period.academic_year_ids','Baseline academic period requires an academic year.');
+                if($baselineType==='date_range'&&(!data_get($baseline,'period.date_from')||!data_get($baseline,'period.date_to')))$v->errors()->add('comparison.baseline.period','Baseline date range requires both boundaries.');
+            }
+            $sort=$this->input('sort.field');$sortable=$this->input('mode')==='details'?ExecutiveReportRegistry::detailSortable($subject):ExecutiveReportRegistry::sortable($subject);if($sort!==null&&!in_array($sort,$sortable,true))$v->errors()->add('sort.field','Unsupported sort field.');
         });
     }
 }

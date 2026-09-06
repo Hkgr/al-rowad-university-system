@@ -19,6 +19,7 @@ class ExecutiveReportsPhase1ContractTest extends TestCase
     {
         self::assertSame(4.0, OfficialGradeScale::points(OfficialGradeScale::letter(98), 'passed'));
         self::assertSame(0.0, OfficialGradeScale::points('A+', 'incomplete'));
+        self::assertSame(0.0, OfficialGradeScale::points('B', 'failed'));
         self::assertContains('academic_performance', ExecutiveReportRegistry::subjects());
         self::assertSame(100, ExecutiveReportRegistry::LIMITS['per_page']);
     }
