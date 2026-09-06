@@ -121,6 +121,7 @@ class ExecutiveReportQueryRequest extends FormRequest
                 if($baselineType==='date_range'&&(!data_get($baseline,'period.date_from')||!data_get($baseline,'period.date_to')))$v->errors()->add('comparison.baseline.period','Baseline date range requires both boundaries.');
             }
             $sort=$this->input('sort.field');$sortable=$this->input('mode')==='details'?ExecutiveReportRegistry::detailSortable($subject):ExecutiveReportRegistry::sortable($subject);if($sort!==null&&!in_array($sort,$sortable,true))$v->errors()->add('sort.field','Unsupported sort field.');
+            if($sort!==null&&!in_array($sort,array_merge((array)$this->input('metrics',[]),(array)$this->input('dimensions',[])),true))$v->errors()->add('sort.field','Sort field must be one of the selected metrics or dimensions.');
         });
     }
 }

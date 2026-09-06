@@ -93,6 +93,54 @@ class ExecutiveReportsPhase1BehaviorTest extends TestCase
         $this->postJson('/api/v1/vice-presidency/reports/query',array_replace($base,['filters'=>['college_ids'=>[1],'program_ids'=>[2]]]))->assertUnprocessable();
     }
 
+    public function test_http_student_details_succeed_with_optional_official_aggregates_gpa_and_students_without_results(): void
+    {
+        DB::table('students')->insert(['student_id'=>3,'student_number'=>'S3','academic_program_id'=>1,'current_academic_level_id'=>1,'student_status_id'=>1]);
+        DB::table('student_course_registrations')->insert(['student_course_registration_id'=>4,'student_id'=>3,'course_offering_id'=>1,'registration_status_id'=>1]);
+        Sanctum::actingAs($this->actor(30,'vice_president_scientific','vice_presidency.scientific.access',true));
+        $base=['subject'=>'students','mode'=>'details','dimensions'=>[],'period'=>['type'=>'academic','academic_year_ids'=>[1]],'page'=>1,'per_page'=>25];
+
+        $without=$this->postJson('/api/v1/vice-presidency/reports/query',$base+['metrics'=>['student_count']])->assertOk();
+        self::assertCount(3,$without->json('data.rows'));
+        self::assertArrayNotHasKey('official_result_count',$without->json('data.rows.0'));
+
+        $with=$this->postJson('/api/v1/vice-presidency/reports/query',$base+['metrics'=>['student_count','official_result_count','official_average','official_gpa','attempted_credit_hours','earned_credit_hours']])->assertOk();
+        $rows=collect($with->json('data.rows'))->keyBy('student_number');
+        self::assertSame(0,$rows['S3']['official_result_count']);
+        self::assertNull($rows['S3']['official_average']);
+        self::assertSame(['value'=>null,'contributing_students'=>0],$rows['S3']['official_gpa']);
+        self::assertSame(0,$rows['S3']['attempted_credit_hours']);
+        self::assertEquals(3.0,$rows['S1']['official_gpa']['value']);
+    }
+
+    public function test_http_grade_workflow_uses_snapshot_dimensions_and_preserves_each_missing_required_part(): void
+    {
+        DB::table('grade_components')->insert([['grade_component_id'=>1,'course_offering_id'=>1,'component_type'=>'theoretical','is_required'=>1],['grade_component_id'=>2,'course_offering_id'=>1,'component_type'=>'practical','is_required'=>1]]);
+        Sanctum::actingAs($this->actor(31,'vice_president_administrative','vice_presidency.administrative.access',true));
+        $summary=$this->postJson('/api/v1/vice-presidency/reports/query',['subject'=>'grade_workflow','mode'=>'summary','metrics'=>['required_parts_count','draft_parts_count'],'dimensions'=>['grade_workflow_status'],'filters'=>['offering_ids'=>[1]],'page'=>1,'per_page'=>25])->assertOk();
+        self::assertSame(2,$summary->json('data.summary.required_parts_count'));
+        self::assertSame(2,$summary->json('data.summary.draft_parts_count'));
+        self::assertSame('draft',$summary->json('data.series.0.grade_workflow_status'));
+
+        $page1=$this->postJson('/api/v1/vice-presidency/reports/query',['subject'=>'grade_workflow','mode'=>'details','metrics'=>['required_parts_count'],'dimensions'=>[],'filters'=>['offering_ids'=>[1]],'page'=>1,'per_page'=>1])->assertOk();
+        $page2=$this->postJson('/api/v1/vice-presidency/reports/query',['subject'=>'grade_workflow','mode'=>'details','metrics'=>['required_parts_count'],'dimensions'=>[],'filters'=>['offering_ids'=>[1]],'page'=>2,'per_page'=>1])->assertOk();
+        self::assertSame(2,$page1->json('data.pagination.total'));
+        self::assertEqualsCanonicalizing(['practical','theoretical'],[$page1->json('data.rows.0.component_type'),$page2->json('data.rows.0.component_type')]);
+        self::assertSame(1,$page1->json('data.rows.0.course_offering_id'));
+        self::assertSame(1,$page2->json('data.rows.0.course_offering_id'));
+    }
+
+    public function test_http_grade_workflow_historical_dimension_uses_event_action(): void
+    {
+        DB::table('grade_components')->insert(['grade_component_id'=>1,'course_offering_id'=>1,'component_type'=>'theoretical','is_required'=>1]);
+        DB::table('grade_part_approvals')->insert(['grade_part_approval_id'=>1,'course_offering_id'=>1,'component_type'=>'theoretical','status'=>'approved','submission_version'=>1,'created_at'=>'2025-01-01 00:00:00','updated_at'=>'2026-01-01 00:00:00']);
+        DB::table('grade_part_approval_events')->insert(['grade_part_approval_event_id'=>1,'grade_part_approval_id'=>1,'submission_version'=>1,'action'=>'submitted','performed_at'=>'2026-06-01 00:00:00']);
+        Sanctum::actingAs($this->actor(32,'vice_president_scientific','vice_presidency.scientific.access',true));
+        $response=$this->postJson('/api/v1/vice-presidency/reports/query',['subject'=>'grade_workflow','mode'=>'summary','metrics'=>['submitted_parts_count'],'dimensions'=>['grade_workflow_status'],'period'=>['type'=>'date_range','date_from'=>'2026-01-01','date_to'=>'2026-12-31'],'page'=>1,'per_page'=>25])->assertOk();
+        self::assertSame('submitted',$response->json('data.series.0.grade_workflow_status'));
+        self::assertSame(1,$response->json('data.series.0.submitted_parts_count'));
+    }
+
     public function test_official_metrics_use_latest_approval_and_canonical_repeated_attempt_gpa(): void
     {
         $data=app(ExecutiveReportQueryService::class)->run(['subject'=>'academic_performance','mode'=>'summary','metrics'=>['official_result_count','official_average','official_gpa','pass_rate'],'dimensions'=>[],'period'=>['type'=>'academic','academic_year_ids'=>[1]],'page'=>1,'per_page'=>25]);
@@ -250,6 +298,59 @@ class ExecutiveReportsPhase1BehaviorTest extends TestCase
         self::assertSame($oneGroup,$twoGroups);
     }
 
+    public function test_http_rate_sort_uses_ratio_then_all_group_keys_for_deterministic_ties(): void
+    {
+        $this->seedPerformanceCohort(10,10,100,50);
+        $this->seedPerformanceCohort(11,11,10,9);
+        $this->seedPerformanceCohort(12,12,20,18);
+        Sanctum::actingAs($this->actor(40,'vice_president_scientific','vice_presidency.scientific.access',true));
+        $payload=['subject'=>'academic_performance','mode'=>'summary','metrics'=>['pass_rate'],'dimensions'=>['academic_year','course'],'filters'=>['course_ids'=>[10,11,12]],'sort'=>['field'=>'pass_rate','direction'=>'desc'],'page'=>1,'per_page'=>25];
+        $response=$this->postJson('/api/v1/vice-presidency/reports/query',$payload)->assertOk();
+        $series=$response->json('data.series');
+        self::assertSame([11,12,10],array_column($series,'course'));
+        self::assertSame(9,$series[0]['pass_rate']['numerator']);
+        self::assertSame(10,$series[0]['pass_rate']['denominator']);
+        self::assertEquals(90.0,$series[0]['pass_rate']['value']);
+        self::assertSame(18,$series[1]['pass_rate']['numerator']);
+        self::assertSame(20,$series[1]['pass_rate']['denominator']);
+        self::assertEquals(90.0,$series[1]['pass_rate']['value']);
+        self::assertSame(50,$series[2]['pass_rate']['numerator']);
+        self::assertSame(100,$series[2]['pass_rate']['denominator']);
+        self::assertEquals(50.0,$series[2]['pass_rate']['value']);
+
+        $again=$this->postJson('/api/v1/vice-presidency/reports/query',array_replace($payload,['page'=>2,'per_page'=>1]))->assertOk();
+        self::assertSame(12,$again->json('data.rows.0.course'));
+    }
+
+    public function test_http_ratio_sort_keeps_zero_denominator_null_and_faculty_detail_pages_stable(): void
+    {
+        DB::table('organizational_units')->insert(['organizational_unit_id'=>10,'unit_code'=>'C1','is_active'=>1]);
+        DB::table('colleges')->where('college_id',1)->update(['organizational_unit_id'=>10]);
+        DB::table('employees')->insert([['employee_id'=>1,'employee_number'=>'E1','organizational_unit_id'=>10],['employee_id'=>2,'employee_number'=>'E2','organizational_unit_id'=>null]]);
+        DB::table('faculty_members')->insert([['faculty_member_id'=>1,'employee_id'=>1,'is_active'=>1],['faculty_member_id'=>2,'employee_id'=>2,'is_active'=>1]]);
+        DB::table('course_offering_instructors')->insert(['course_offering_id'=>1,'faculty_member_id'=>1,'is_active'=>1]);
+        Sanctum::actingAs($this->actor(41,'vice_president_administrative','vice_presidency.administrative.access',true));
+        $ratio=$this->postJson('/api/v1/vice-presidency/reports/query',['subject'=>'faculty','mode'=>'summary','metrics'=>['students_per_assigned_faculty'],'dimensions'=>['faculty_member'],'sort'=>['field'=>'students_per_assigned_faculty','direction'=>'desc'],'page'=>1,'per_page'=>25])->assertOk();
+        self::assertSame([1,2],array_column($ratio->json('data.series'),'faculty_member'));
+        $series=collect($ratio->json('data.series'))->keyBy('faculty_member');
+        self::assertSame('zero_denominator',$series[2]['students_per_assigned_faculty']['reason']);
+        self::assertNull($series[2]['students_per_assigned_faculty']['value']);
+
+        DB::table('organizational_units')->insert(['organizational_unit_id'=>20,'unit_code'=>'C2','is_active'=>1]);
+        DB::table('colleges')->insert(['college_id'=>2,'college_name'=>'College 2','organizational_unit_id'=>20]);
+        DB::table('employee_unit_assignments')->insert(['employee_id'=>1,'organizational_unit_id'=>20,'is_active'=>1]);
+        DB::table('student_course_registrations')->insert(['student_course_registration_id'=>5,'student_id'=>2,'course_offering_id'=>1,'registration_status_id'=>1]);
+        $details=['subject'=>'faculty','mode'=>'details','metrics'=>['faculty_count'],'dimensions'=>[],'sort'=>['field'=>'faculty_count','direction'=>'asc'],'page'=>1,'per_page'=>1];
+        $first=$this->postJson('/api/v1/vice-presidency/reports/query',$details)->assertOk();
+        $second=$this->postJson('/api/v1/vice-presidency/reports/query',array_replace($details,['page'=>2]))->assertOk();
+        $third=$this->postJson('/api/v1/vice-presidency/reports/query',array_replace($details,['page'=>3]))->assertOk();
+        $repeated=$this->postJson('/api/v1/vice-presidency/reports/query',$details)->assertOk();
+        self::assertSame(3,$first->json('data.pagination.total'));
+        $identities=collect([$first,$second,$third])->map(fn($response)=>[$response->json('data.rows.0.faculty_member_id'),$response->json('data.rows.0.college_id')])->all();
+        self::assertSame([[1,1],[1,2],[2,null]],$identities);
+        self::assertSame($identities[0],[$repeated->json('data.rows.0.faculty_member_id'),$repeated->json('data.rows.0.college_id')]);
+    }
+
     private function seedFacts(): void
     {
         DB::table('colleges')->insert(['college_id'=>1]);DB::table('departments')->insert(['department_id'=>1,'college_id'=>1]);DB::table('academic_programs')->insert(['academic_program_id'=>1,'department_id'=>1]);DB::table('academic_levels')->insert(['academic_level_id'=>1]);
@@ -260,6 +361,21 @@ class ExecutiveReportsPhase1BehaviorTest extends TestCase
         DB::table('student_course_registrations')->insert([['student_course_registration_id'=>1,'student_id'=>1,'course_offering_id'=>1,'registration_status_id'=>1],['student_course_registration_id'=>2,'student_id'=>1,'course_offering_id'=>2,'registration_status_id'=>1],['student_course_registration_id'=>3,'student_id'=>2,'course_offering_id'=>3,'registration_status_id'=>1]]);
         DB::table('student_course_results')->insert([['student_course_result_id'=>1,'student_course_registration_id'=>1,'theoretical_total'=>50,'final_mark'=>50,'result_status_id'=>2],['student_course_result_id'=>2,'student_course_registration_id'=>2,'theoretical_total'=>80,'final_mark'=>80,'result_status_id'=>1],['student_course_result_id'=>3,'student_course_registration_id'=>3,'theoretical_total'=>100,'final_mark'=>100,'result_status_id'=>1]]);
         DB::table('grade_approvals')->insert([['grade_approval_id'=>1,'course_offering_id'=>1,'approval_status_id'=>1],['grade_approval_id'=>2,'course_offering_id'=>2,'approval_status_id'=>2],['grade_approval_id'=>3,'course_offering_id'=>2,'approval_status_id'=>1],['grade_approval_id'=>4,'course_offering_id'=>3,'approval_status_id'=>1]]);
+    }
+
+    private function seedPerformanceCohort(int $courseId,int $offeringId,int $total,int $passed): void
+    {
+        DB::table('courses')->insert(['course_id'=>$courseId,'course_code'=>'C'.$courseId,'course_name'=>'Course '.$courseId,'credit_hours'=>3,'theoretical_hours'=>2,'practical_hours'=>0]);
+        DB::table('course_offerings')->insert(['course_offering_id'=>$offeringId,'course_id'=>$courseId,'academic_year_id'=>1,'semester_id'=>1,'academic_program_id'=>1]);
+        DB::table('grade_approvals')->insert(['grade_approval_id'=>100+$offeringId,'course_offering_id'=>$offeringId,'approval_status_id'=>1]);
+        $students=[];$registrations=[];$results=[];
+        for($i=1;$i<=$total;$i++){
+            $id=$courseId*1000+$i;$registrationId=$courseId*1000+$i;$isPassed=$i<=$passed;
+            $students[]=['student_id'=>$id,'student_number'=>'S'.$id,'academic_program_id'=>1,'current_academic_level_id'=>1,'student_status_id'=>1];
+            $registrations[]=['student_course_registration_id'=>$registrationId,'student_id'=>$id,'course_offering_id'=>$offeringId,'registration_status_id'=>1];
+            $results[]=['student_course_result_id'=>$registrationId,'student_course_registration_id'=>$registrationId,'theoretical_total'=>$isPassed?80:40,'final_mark'=>$isPassed?80:40,'result_status_id'=>$isPassed?1:2];
+        }
+        DB::table('students')->insert($students);DB::table('student_course_registrations')->insert($registrations);DB::table('student_course_results')->insert($results);
     }
 
     private function actor(int $id,string $role,string $permission,bool $withScope): User

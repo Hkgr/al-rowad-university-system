@@ -78,7 +78,7 @@ final class ExecutiveReportQueryService
         }
 
         [$facts]=$this->facts($subject,$input);
-        $dimensionMap=$this->dimensionMap($subject);
+        $dimensionMap=$this->dimensionMap($subject,$input);
         $selected=[];
         foreach($dimensions as $dimension){$column=$dimensionMap[$dimension]??null;if(!$column)continue;$facts->addSelect(DB::raw("{$column} as {$dimension}"));$facts->groupBy(DB::raw($column));$selected[]=$dimension;}
         foreach($sqlMetrics as $metric)$facts->addSelect(DB::raw($this->metricSql($subject,$metric,$input)." as {$metric}"));
@@ -87,7 +87,7 @@ final class ExecutiveReportQueryService
         if($selected===[])$facts->addSelect(DB::raw('1 as aggregate_key'));
         $sort=$input['sort']??null;$allowed=array_merge($selected,$metrics);
         if($sort&&(!in_array($sort['field'],$allowed,true)||$sort['field']==='official_gpa'))throw ValidationException::withMessages(['sort'=>'Sort field is not an allowlisted SQL-sortable selected output.']);
-        $facts->orderBy($sort['field']??($selected[0]??($sqlMetrics[0]??'aggregate_key')),$sort['direction']??'asc');
+        $this->applyAggregateSort($facts,$subject,$input,$selected,$sqlMetrics);
         $dependencies=$this->rateDependencies($metrics);
         $normalize=function($row)use($metrics,$dimensions,$gpa,$dependencies){$item=(array)$row;foreach($metrics as $metric)$item[$metric]=$metric==='official_gpa'?($dimensions===[]?$gpa['summary']:($gpa['groups'][$this->groupKey($item,$dimensions)]??['value'=>null,'contributing_students'=>0])):$this->normalizeMetric($metric,$item[$metric]??null,$item);foreach($dependencies as $dependency)if(!in_array($dependency,$metrics,true))unset($item[$dependency]);unset($item['aggregate_key'],$item['__gpa_rows']);return$item;};
         $series=[];
@@ -214,12 +214,34 @@ final class ExecutiveReportQueryService
         return $map[$metric]??'0';
     }
 
-    private function dimensionMap(string $subject): array { $date=match($subject){'course_offerings'=>'co.created_at','grade_workflow'=>'gpe.performed_at','faculty'=>'tae.created_at',default=>'s.enrollment_date'};$sqlite=DB::connection()->getDriverName()==='sqlite';$map=['college'=>'c.college_id','department'=>'d.department_id','program'=>'ap.academic_program_id','academic_level'=>'al.academic_level_id','student_status'=>'ss.status_code','academic_year'=>'ay.academic_year_id','semester'=>'sem.semester_id','course'=>'crs.course_id','offering_status'=>'co.status','result_status'=>'rst.status_code','faculty_member'=>'fm.faculty_member_id','grade_workflow_status'=>"COALESCE(gpa.status,'draft')",'day'=>"DATE({$date})",'week'=>$sqlite?"strftime('%Y-W%W', {$date})":"DATE_FORMAT({$date}, '%x-W%v')",'month'=>$sqlite?"strftime('%Y-%m', {$date})":"DATE_FORMAT({$date}, '%Y-%m')"];if($subject==='students'){$map['academic_year']='sm.academic_year_id';$map['semester']='sm.semester_id';}if($subject==='grade_workflow'&&str_contains($date,'gpe.'))$map['grade_workflow_status']='gpe.action';return$map; }
+    private function dimensionMap(string $subject,array $input): array
+    {
+        $historical=($input['period']['type']??null)==='date_range';
+        $date=match($subject){'course_offerings'=>'co.created_at','grade_workflow'=>$historical?'gpe.performed_at':'gpa.created_at','faculty'=>$historical?'tae.created_at':'co.created_at',default=>'s.enrollment_date'};
+        $sqlite=DB::connection()->getDriverName()==='sqlite';
+        $map=['college'=>'c.college_id','department'=>'d.department_id','program'=>'ap.academic_program_id','academic_level'=>'al.academic_level_id','student_status'=>'ss.status_code','academic_year'=>'ay.academic_year_id','semester'=>'sem.semester_id','course'=>'crs.course_id','offering_status'=>'co.status','result_status'=>'rst.status_code','faculty_member'=>'fm.faculty_member_id','grade_workflow_status'=>$historical?'gpe.action':"COALESCE(gpa.status,'draft')",'day'=>"DATE({$date})",'week'=>$sqlite?"strftime('%Y-W%W', {$date})":"DATE_FORMAT({$date}, '%x-W%v')",'month'=>$sqlite?"strftime('%Y-%m', {$date})":"DATE_FORMAT({$date}, '%Y-%m')"];
+        if($subject==='students'){$map['academic_year']='sm.academic_year_id';$map['semester']='sm.semester_id';}
+        return$map;
+    }
     private function studentFilters($q,array $f): void { foreach(['college_ids'=>'c.college_id','department_ids'=>'d.department_id','program_ids'=>'s.academic_program_id','academic_level_ids'=>'s.current_academic_level_id','student_status_codes'=>'ss.status_code'] as $k=>$c)if(!empty($f[$k]))$q->whereIn($c,$f[$k]); }
     private function offeringFilters($q,array $input): void { $this->simpleOfferingFilters($q,$input,'co');$f=$input['filters']??[];foreach(['college_ids'=>'c.college_id','department_ids'=>'d.department_id','program_ids'=>'co.academic_program_id','course_ids'=>'co.course_id','offering_ids'=>'co.course_offering_id','offering_statuses'=>'co.status'] as $k=>$c)if(!empty($f[$k]))$q->whereIn($c,$f[$k]); }
     private function simpleOfferingFilters($q,array $input,string $a): void { $f=$input['filters']??[];$p=$input['period']??[];foreach(['academic_year_ids'=>'academic_year_id','semester_ids'=>'semester_id'] as $k=>$c){if(!empty($f[$k]))$q->whereIn("{$a}.{$c}",$f[$k]);if(($p['type']??null)==='academic'&&!empty($p[$k]))$q->whereIn("{$a}.{$c}",$p[$k]);}if(!empty($f['course_ids']))$q->whereIn("{$a}.course_id",$f['course_ids']);if(!empty($f['offering_ids']))$q->whereIn("{$a}.course_offering_id",$f['offering_ids']); }
     private function normalizeMetric(string $metric,$value,array $row): array|int|float|null { if(in_array($metric,['pass_rate','failure_rate','completion_rate','students_per_assigned_faculty'],true)){ $denominator=match($metric){'pass_rate','failure_rate'=>(int)($row['official_result_count']??0),'completion_rate'=>(int)($row['required_parts_count']??0),default=>(int)($row['active_assigned_faculty_count']??0)};$numerator=(int)$value;$factor=$metric==='students_per_assigned_faculty'?1:100;return['numerator'=>$numerator,'denominator'=>$denominator,'value'=>$denominator?round($numerator/$denominator*$factor,2):null]+($denominator?[]:['reason'=>'zero_denominator']); } return is_numeric($value)?(float)$value:$value; }
     private function rateDependencies(array $metrics): array { $dependencies=[];foreach($metrics as $metric){$dependency=match($metric){'pass_rate','failure_rate'=>'official_result_count','completion_rate'=>'required_parts_count','students_per_assigned_faculty'=>'active_assigned_faculty_count',default=>null};if($dependency&&!in_array($dependency,$metrics,true))$dependencies[]=$dependency;}return array_values(array_unique($dependencies)); }
+    private function applyAggregateSort(Builder $query,string $subject,array $input,array $dimensions,array $sqlMetrics): void
+    {
+        $sort=$input['sort']??null;
+        $field=$sort['field']??($dimensions[0]??($sqlMetrics[0]??'aggregate_key'));
+        $direction=$sort['direction']??'asc';
+        if(in_array($field,['pass_rate','failure_rate','completion_rate','students_per_assigned_faculty'],true))$query->orderBy(DB::raw($this->rateSortSql($subject,$field,$input)),$direction);
+        else$query->orderBy($field,$direction);
+        foreach($dimensions as$dimension)if($dimension!==$field)$query->orderBy($dimension,'asc');
+    }
+    private function rateSortSql(string $subject,string $metric,array $input): string
+    {
+        $denominator=match($metric){'pass_rate','failure_rate'=>'official_result_count','completion_rate'=>'required_parts_count','students_per_assigned_faculty'=>'active_assigned_faculty_count'};
+        return '(1.0 * ('.$this->metricSql($subject,$metric,$input).') / NULLIF(('.$this->metricSql($subject,$denominator,$input).'), 0))';
+    }
     private function safeScope(array $filters): array { return collect($filters)->map(fn($v)=>is_array($v)?array_values($v):$v)->all(); }
     private function history(string $subject,array $input): array
     {
@@ -240,6 +262,7 @@ final class ExecutiveReportQueryService
         $sort=$input['sort']['field']??null;
         $sortable=($input['mode']??null)==='details'?ExecutiveReportRegistry::detailSortable((string)$input['subject']):ExecutiveReportRegistry::sortable((string)$input['subject']);
         if($sort!==null&&!in_array($sort,$sortable,true))throw ValidationException::withMessages(['sort.field'=>'Unsupported sort field.']);
+        if($sort!==null&&!in_array($sort,array_merge($input['metrics']??[],$input['dimensions']??[]),true))throw ValidationException::withMessages(['sort.field'=>'Sort field must be one of the selected metrics or dimensions.']);
     }
     private function comparison(array $input,array $metrics,array $dimensions): ?array
     {
@@ -331,7 +354,10 @@ final class ExecutiveReportQueryService
         if($input['subject']==='students'){
             $official=$this->studentOfficialAggregates($input);
             $q->leftJoinSub($official,'detail_official','detail_official.student_id','=','s.student_id');
-            foreach(array_intersect($input['metrics']??[],['official_result_count','official_average','attempted_credit_hours','earned_credit_hours'])as$metric)$q->addSelect("detail_official.{$metric}");
+            foreach(array_intersect($input['metrics']??[],['official_result_count','official_average','attempted_credit_hours','earned_credit_hours'])as$metric){
+                if(in_array($metric,['official_result_count','attempted_credit_hours','earned_credit_hours'],true))$q->addSelect(DB::raw("COALESCE(detail_official.{$metric}, 0) AS {$metric}"));
+                else$q->addSelect("detail_official.{$metric}");
+            }
         }
         $sortMap=['student_count'=>'s.student_id','active_student_count'=>'s.student_id','inactive_student_count'=>'s.student_id','new_student_count'=>'s.enrollment_date','enrollment_count'=>'s.enrollment_date','official_result_count'=>'detail_official.official_result_count','official_average'=>'detail_official.official_average','attempted_credit_hours'=>'detail_official.attempted_credit_hours','earned_credit_hours'=>'detail_official.earned_credit_hours','college'=>'c.college_id','department'=>'d.department_id','program'=>'s.academic_program_id','academic_level'=>'s.current_academic_level_id','student_status'=>'ss.status_code','academic_year'=>'s.enrollment_date'];
         return$this->applyDetailSort($q,$input,$sortMap,'s.student_id','s.student_number');
@@ -349,22 +375,28 @@ final class ExecutiveReportQueryService
         [$q]=$this->workflowFacts($input);
         if(($input['period']['type']??null)==='date_range'){
             $map=['submitted_parts_count'=>'gpe.action','returned_parts_count'=>'gpe.action','approved_parts_count'=>'gpe.action','college'=>'c.college_id','department'=>'d.department_id','program'=>'co.academic_program_id','academic_year'=>'co.academic_year_id','semester'=>'co.semester_id','course'=>'crs.course_id','grade_workflow_status'=>'gpe.action','day'=>'gpe.performed_at','week'=>'gpe.performed_at','month'=>'gpe.performed_at'];
-            return$this->applyDetailSort($q->select('gpe.grade_part_approval_event_id','co.course_offering_id','crs.course_code','crs.course_name','gpa.component_type','gpe.action as grade_workflow_status','gpe.performed_at'),$input,$map,'gpe.grade_part_approval_event_id','gpe.performed_at');
+            return$this->applyDetailSort($q->select('gpe.grade_part_approval_event_id','co.course_offering_id','crs.course_code','crs.course_name','gpa.component_type','gpe.action as grade_workflow_status','gpe.performed_at'),$input,$map,['gpe.performed_at','gpe.grade_part_approval_event_id'],'gpe.performed_at');
         }
-        $map=['required_parts_count'=>'gpa.grade_part_approval_id','draft_parts_count'=>'gpa.status','submitted_parts_count'=>'gpa.status','returned_parts_count'=>'gpa.status','approved_parts_count'=>'gpa.status','college'=>'c.college_id','department'=>'d.department_id','program'=>'co.academic_program_id','academic_year'=>'co.academic_year_id','semester'=>'co.semester_id','grade_workflow_status'=>'gpa.status','course'=>'crs.course_id'];
-        return$this->applyDetailSort($q->select('co.course_offering_id','crs.course_code','crs.course_name','gpa.component_type',DB::raw("COALESCE(gpa.status,'draft') as grade_workflow_status"),'gas.status_code as final_approval_status')->distinct(),$input,$map,'co.course_offering_id','crs.course_code');
+        $currentStatus=DB::raw("COALESCE(gpa.status,'draft')");
+        $map=['required_parts_count'=>'gc.component_type','draft_parts_count'=>$currentStatus,'submitted_parts_count'=>'gpa.status','returned_parts_count'=>'gpa.status','approved_parts_count'=>'gpa.status','college'=>'c.college_id','department'=>'d.department_id','program'=>'co.academic_program_id','academic_year'=>'co.academic_year_id','semester'=>'co.semester_id','grade_workflow_status'=>$currentStatus,'course'=>'crs.course_id'];
+        $projection=$q->select('co.course_offering_id','crs.course_code','crs.course_name','gc.component_type',DB::raw("COALESCE(gpa.status,'draft') as grade_workflow_status"),'gas.status_code as final_approval_status')
+            ->groupBy('co.course_offering_id','crs.course_code','crs.course_name','gc.component_type','gpa.status','gas.status_code');
+        return$this->applyDetailSort($projection,$input,$map,['co.course_offering_id','gc.component_type'],'crs.course_code');
     }
     private function facultyDetailQuery(array $input): Builder
     {
-        [$q]=$this->facultyFacts($input);$map=['faculty_count'=>'fm.faculty_member_id','active_faculty_count'=>'fm.is_active','faculty_member'=>'fm.faculty_member_id','college'=>'c.college_id','academic_year'=>'co.academic_year_id','semester'=>'co.semester_id','course'=>'co.course_id'];if(($input['period']['type']??null)==='date_range')return$this->applyDetailSort($q->select('tae.teaching_assignment_event_id','fm.faculty_member_id','e.employee_number',DB::raw($this->fullNameSql('e').' AS full_name'),'tae.event_type','tae.created_at','co.course_offering_id','crs.course_code'),$input,$map,'tae.teaching_assignment_event_id','tae.created_at');return$this->applyDetailSort($q->select('fm.faculty_member_id','e.employee_number',DB::raw($this->fullNameSql('e').' AS full_name'),'fm.academic_rank','fm.is_active','c.college_name')->distinct(),$input,$map,'fm.faculty_member_id','e.employee_number');
+        [$q]=$this->facultyFacts($input);$map=['faculty_count'=>'fm.faculty_member_id','active_faculty_count'=>'fm.is_active','faculty_member'=>'fm.faculty_member_id','college'=>'c.college_id','academic_year'=>'co.academic_year_id','semester'=>'co.semester_id','course'=>'co.course_id'];if(($input['period']['type']??null)==='date_range')return$this->applyDetailSort($q->select('tae.teaching_assignment_event_id','fm.faculty_member_id','e.employee_number',DB::raw($this->fullNameSql('e').' AS full_name'),'tae.event_type','tae.created_at','co.course_offering_id','crs.course_code'),$input,$map,['tae.created_at','tae.teaching_assignment_event_id'],'tae.created_at');
+        $projection=$q->select('fm.faculty_member_id','e.employee_number',DB::raw($this->fullNameSql('e').' AS full_name'),'fm.academic_rank','fm.is_active','c.college_id','c.college_name')
+            ->groupBy('fm.faculty_member_id','e.employee_number','e.first_name','e.last_name','fm.academic_rank','fm.is_active','c.college_id','c.college_name');
+        return$this->applyDetailSort($projection,$input,$map,['fm.faculty_member_id','c.college_id'],'e.employee_number');
     }
 
-    private function applyDetailSort(Builder $query,array $input,array $map,string $tieBreaker,string $default): Builder
+    private function applyDetailSort(Builder $query,array $input,array $map,array|string $tieBreakers,string $default): Builder
     {
         $sort=$input['sort']??null;$column=$sort?$map[$sort['field']]??null:null;
         if($sort&&$column===null)throw ValidationException::withMessages(['sort.field'=>'The selected sort is not available for this detail projection.']);
         $query->orderBy($column??$default,$sort['direction']??'asc');
-        if(($column??$default)!==$tieBreaker)$query->orderBy($tieBreaker,'asc');
+        foreach((array)$tieBreakers as$tieBreaker)if(($column??$default)!==$tieBreaker)$query->orderBy($tieBreaker,'asc');
         return$query;
     }
 
@@ -376,7 +408,7 @@ final class ExecutiveReportQueryService
             ->join('result_statuses as darst','darst.result_status_id','=','student_course_results.result_status_id')
             ->join('course_offerings as daco','daco.course_offering_id','=','dascr.course_offering_id')->join('courses as dacrs','dacrs.course_id','=','daco.course_id');
         $f=$input['filters']??[];$p=$input['period']??[];foreach(['academic_year_ids'=>'daco.academic_year_id','semester_ids'=>'daco.semester_id']as$key=>$column){if(!empty($f[$key]))$q->whereIn($column,$f[$key]);if(($p['type']??null)==='academic'&&!empty($p[$key]))$q->whereIn($column,$p[$key]);}
-        return$q->select('dascr.student_id')->selectRaw("COUNT(DISTINCT student_course_results.student_course_result_id) AS official_result_count, AVG(student_course_results.final_mark) AS official_average, SUM(dacrs.credit_hours) AS attempted_credit_hours, SUM(CASE WHEN darst.status_code='passed' THEN dacrs.credit_hours ELSE 0 END) AS earned_credit_hours")->groupBy('dascr.student_id');
+        return$q->select('dascr.student_id')->selectRaw("COUNT(DISTINCT student_course_results.student_course_result_id) AS official_result_count, AVG(student_course_results.final_mark) AS official_average, SUM(dacrs.credit_hours) AS attempted_credit_hours, SUM(CASE WHEN darst.status_code='passed' THEN dacrs.credit_hours ELSE 0 END) AS earned_credit_hours")->groupBy('dascr.student_id')->toBase();
     }
     private function fullNameSql(string $alias): string { return DB::connection()->getDriverName()==='sqlite'?"TRIM(COALESCE({$alias}.first_name,'') || ' ' || COALESCE({$alias}.last_name,''))":"TRIM(CONCAT(COALESCE({$alias}.first_name,''), ' ', COALESCE({$alias}.last_name,'')))"; }
 
