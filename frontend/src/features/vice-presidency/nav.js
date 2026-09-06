@@ -1,4 +1,4 @@
-import { FaCalendarAlt, FaChalkboardTeacher, FaClipboardCheck, FaClipboardList, FaHome, FaUnlock } from 'react-icons/fa'
+import { FaCalendarAlt, FaChalkboardTeacher, FaChartBar, FaClipboardCheck, FaClipboardList, FaHome, FaUnlock } from 'react-icons/fa'
 
 import { PERMISSIONS, ROLES } from '../auth/auth'
 
@@ -14,6 +14,15 @@ export const scientificVicePresidentNav = [
         en: 'Home',
         end: true,
         permissions: [PERMISSIONS.vicePresidencyScientificAccess],
+      },
+      {
+        to: '/vp/scientific/reports',
+        Icon: FaChartBar,
+        ar: 'التقارير والإحصاءات',
+        en: 'Reports & analytics',
+        allRoles: [ROLES.vicePresidentScientific],
+        assignedPermissions: [PERMISSIONS.vicePresidencyScientificAccess],
+        actualUniversityScope: true,
       },
       {
         to: '/vp/scientific/semester-offerings',
@@ -71,6 +80,15 @@ export const administrativeVicePresidentNav = [
         en: 'Home',
         end: true,
         permissions: [PERMISSIONS.vicePresidencyAdministrativeAccess],
+      },
+      {
+        to: '/vp/administrative/reports',
+        Icon: FaChartBar,
+        ar: 'التقارير والإحصاءات',
+        en: 'Reports & analytics',
+        allRoles: [ROLES.vicePresidentAdministrative],
+        assignedPermissions: [PERMISSIONS.vicePresidencyAdministrativeAccess],
+        actualUniversityScope: true,
       },
       {
         to: '/vp/administrative/teaching-assignments',

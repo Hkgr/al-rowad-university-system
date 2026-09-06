@@ -100,6 +100,8 @@ import SupplementaryExamPeriodsPage from '../features/vice-presidency/pages/Supp
 import SemesterOfferingQueue from '../features/vice-presidency/pages/SemesterOfferingQueue'
 import MinimumEnrollmentQueue from '../features/vice-presidency/pages/MinimumEnrollmentQueue'
 import SemesterOfferingDetail from '../features/vice-presidency/pages/SemesterOfferingDetail'
+import ExecutiveReportsPage from '../features/executive-reports/pages/ExecutiveReportsPage'
+import { reportAccessForOffice } from '../features/executive-reports/access'
 
 function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], actualUniversityScope = false, studentIdentity = false, employeeIdentity = false, anyAccess = [] }) {
   const token = localStorage.getItem('token')
@@ -314,6 +316,7 @@ export default function App() {
           }
         >
           <Route path="/vp/scientific" element={<VicePresidentShell office="scientific" />} />
+          <Route path="/vp/scientific/reports" element={protect(<ExecutiveReportsPage office="scientific" />, reportAccessForOffice('scientific'))} />
           <Route path="/vp/scientific/teaching-assignments" element={<TeachingAssignmentQueue office="scientific" />} />
           <Route path="/vp/scientific/semester-offerings" element={protect(<SemesterOfferingQueue />, { allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView], actualUniversityScope: true })} />
           <Route path="/vp/scientific/semester-offerings/minimum-enrollment" element={protect(<MinimumEnrollmentQueue />, { allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView], actualUniversityScope: true })} />
@@ -334,6 +337,7 @@ export default function App() {
           }
         >
           <Route path="/vp/administrative" element={<VicePresidentShell office="administrative" />} />
+          <Route path="/vp/administrative/reports" element={protect(<ExecutiveReportsPage office="administrative" />, reportAccessForOffice('administrative'))} />
           <Route path="/vp/administrative/teaching-assignments" element={<TeachingAssignmentQueue office="administrative" />} />
           <Route path="/vp/administrative/teaching-assignments/:id" element={<TeachingAssignmentDetail office="administrative" />} />
           <Route path="/vp/administrative/exceptional-openings" element={<ExceptionalOpeningQueue office="administrative" />} />
