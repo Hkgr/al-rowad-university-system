@@ -29,6 +29,17 @@ export function stableGroupKey(row, dimensions = []) {
   return dimensions.map(dimension => `${dimension}:${row?.[dimension] ?? ''}`).join('|')
 }
 
+export function reportPeriodText(period, labels = {}) {
+  if (!period) return 'الوضع الحالي'
+  if (period.type === 'date_range') return `${period.date_from ?? '؟'} إلى ${period.date_to ?? '؟'}`
+  if (period.type === 'academic') {
+    const years = (period.academic_year_ids ?? []).map(id => labels.academic_year?.[String(id)] ?? `السنة ${id}`)
+    const semesters = (period.semester_ids ?? []).map(id => labels.semester?.[String(id)] ?? `الفصل ${id}`)
+    return `${years.join('، ') || 'سنة غير محددة'}${semesters.length ? ` — ${semesters.join('، ')}` : ''}`
+  }
+  return 'الوضع الحالي'
+}
+
 export function alignComparison(primary = [], baseline = [], dimensions = []) {
   const left = new Map(primary.map(row => [stableGroupKey(row, dimensions), row]))
   const right = new Map(baseline.map(row => [stableGroupKey(row, dimensions), row]))
@@ -36,11 +47,27 @@ export function alignComparison(primary = [], baseline = [], dimensions = []) {
 }
 
 export function reportRowKey(subject, row, index = 0) {
+  if (subject === 'students') return String(row.student_id ?? `student:${row.student_number ?? index}`)
+  if (subject === 'enrollments') return String(row.enrollment_id ?? `${row.student_id ?? row.student_number ?? 'enrollment'}:${row.enrollment_date ?? index}`)
+  if (subject === 'academic_performance') {
+    if (row.student_course_result_id !== null && row.student_course_result_id !== undefined) return String(row.student_course_result_id)
+    if (row.student_id !== undefined && (row.course_offering_id !== undefined || row.course_code !== undefined)) return `${row.student_id}:${row.course_offering_id ?? row.course_code}`
+    return `academic-performance:${index}`
+  }
   if (subject === 'faculty') return `${row.faculty_member_id ?? 'faculty'}:${row.college_id ?? 'unassigned'}:${row.teaching_assignment_event_id ?? 'current'}`
+  if (subject === 'course_offerings') return String(row.course_offering_id ?? `offering:${index}`)
   if (subject === 'grade_workflow') return row.grade_part_approval_event_id
     ? `${row.course_offering_id ?? 'offering'}:event:${row.grade_part_approval_event_id}`
     : `${row.course_offering_id ?? 'offering'}:${row.component_type ?? index}`
-  return String(row.student_id ?? row.student_course_result_id ?? row.course_offering_id ?? row.enrollment_id ?? index)
+  return String(row.id ?? index)
+}
+
+export function sortableFieldsForApplied(applied) {
+  if (!applied?.config || !applied?.definition) return []
+  const allowlist = applied.config.mode === 'details' ? applied.definition.detail_sortable : applied.definition.sortable
+  if (!Array.isArray(allowlist)) return []
+  const selected = new Set([...(applied.config.metrics ?? []), ...(applied.config.dimensions ?? [])])
+  return allowlist.filter(field => selected.has(field))
 }
 
 const DETAIL_COLUMNS = Object.freeze({
@@ -63,11 +90,74 @@ export function classifyReportError(error) {
   if (error?.status === 403) return { kind: 'authorization', message: 'لا تملك صلاحية الوصول إلى هذه التقارير.' }
   if (error?.status === 422) {
     const flattened = JSON.stringify(error.details ?? {})
-    const points = /500|point|grouped report|dimensions/i.test(`${error.message ?? ''} ${flattened}`)
-    return { kind: points ? 'point_limit' : 'validation', message: points ? 'حجم التجميع أكبر من الحد المتاح. ضيّق النطاق أو قلّل أبعاد التجميع ثم أعد المحاولة.' : 'راجع إعدادات التقرير والحقول الموضحة أدناه.', details: error.details ?? {} }
+    const points = /500|point safety|grouped report exceeds/i.test(`${error.message ?? ''} ${flattened}`)
+    return { kind: points ? 'point_limit' : 'validation', message: points ? 'حجم التجميع أكبر من الحد المتاح. ضيّق النطاق أو قلّل أبعاد التجميع ثم أعد المحاولة.' : 'راجع إعدادات التقرير والحقول الموضحة أدناه.', details: normalizeValidationErrors(error.details ?? {}) }
   }
   if (error?.errorCode?.includes('contract') || `${error?.message}`.includes('contract')) return { kind: 'contract', message: 'تعذر قراءة عقد خدمة التقارير المتوافق.' }
   return { kind: 'network', message: 'تعذر تحميل التقرير من الخادم. تحقق من الاتصال ثم أعد المحاولة.' }
+}
+
+function safeValidationMessage(value) {
+  if (typeof value !== 'string' && typeof value !== 'number') return ''
+  const clean = String(value).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 300)
+  return clean ? `تحقق من هذا الحقل: ${clean}` : ''
+}
+
+function normalizedValidationPath(path) {
+  return String(path).split('.').filter(segment => segment !== '*' && !/^\d+$/.test(segment)).join('.')
+}
+
+const VALIDATION_ROOTS = new Set(['metrics', 'dimensions', 'filters', 'period', 'semester_ids', 'sort', 'comparison'])
+const VALIDATION_FILTERS = new Set(['college_ids', 'department_ids', 'program_ids', 'academic_level_ids', 'course_ids', 'offering_ids', 'student_status_codes', 'result_status_codes', 'offering_statuses', 'grade_workflow_statuses'])
+const VALIDATION_PERIOD_FIELDS = new Set(['type', 'academic_year_ids', 'semester_ids', 'date_from', 'date_to'])
+
+function acceptedValidationPath(path) {
+  if (VALIDATION_ROOTS.has(path)) return true
+  const parts = path.split('.')
+  if (parts[0] === 'filters' && parts.length === 2) return VALIDATION_FILTERS.has(parts[1])
+  if (parts[0] === 'period' && parts.length === 2) return VALIDATION_PERIOD_FIELDS.has(parts[1])
+  if (parts[0] === 'sort' && parts.length === 2) return parts[1] === 'field'
+  if (parts[0] !== 'comparison') return false
+  if (parts.length === 2) return parts[1] === 'type' || parts[1] === 'baseline'
+  if (parts[1] !== 'baseline') return false
+  if (parts[2] === 'filters') return parts.length === 3 || (parts.length === 4 && VALIDATION_FILTERS.has(parts[3]))
+  if (parts[2] === 'period') return parts.length === 3 || (parts.length === 4 && VALIDATION_PERIOD_FIELDS.has(parts[3]))
+  return false
+}
+
+export function normalizeValidationErrors(details) {
+  const normalized = {}
+  const collect = (value, path = '') => {
+    if (Array.isArray(value)) {
+      const messages = value.map(safeValidationMessage).filter(Boolean)
+      const normalizedPath = normalizedValidationPath(path)
+      if (messages.length && acceptedValidationPath(normalizedPath)) normalized[normalizedPath] = [...new Set(messages)].join(' ')
+      else value.forEach((item, index) => collect(item, path ? `${path}.${index}` : String(index)))
+      return
+    }
+    if (value && typeof value === 'object') {
+      Object.entries(value).forEach(([key, item]) => collect(item, path ? `${path}.${key}` : key))
+      return
+    }
+    const message = safeValidationMessage(value)
+    const normalizedPath = normalizedValidationPath(path)
+    if (message && path && acceptedValidationPath(normalizedPath)) normalized[normalizedPath] = message
+  }
+  collect(details)
+  return normalized
+}
+
+export function validationMessage(errors, ...paths) {
+  for (const path of paths) {
+    if (errors?.[path]) return errors[path]
+    const nested = Object.entries(errors ?? {}).find(([key]) => key.startsWith(`${path}.`))
+    if (nested) return nested[1]
+  }
+  return ''
+}
+
+export function clearValidationErrors(errors, ...paths) {
+  return Object.fromEntries(Object.entries(errors ?? {}).filter(([key]) => !paths.some(path => key === path || key.startsWith(`${path}.`))))
 }
 
 export function isLatestResponse(sequence, currentSequence) {

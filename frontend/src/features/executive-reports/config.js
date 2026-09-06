@@ -56,22 +56,30 @@ function codes(items) {
 }
 
 export function normalizeDefinition(subject, definition) {
-  if (!definition || typeof definition !== 'object') return null
-  const metrics = Array.isArray(definition.metrics) ? definition.metrics.filter(item => item && typeof item.code === 'string') : []
-  const dimensions = Array.isArray(definition.dimensions) ? definition.dimensions.filter(item => item && typeof item.code === 'string') : []
+  const invalid = () => { throw new Error(`executive_report_contract_definition_invalid:${subject}`) }
+  if (!SUBJECT_LABELS[subject] || !definition || typeof definition !== 'object' || Array.isArray(definition) || typeof definition.label !== 'string' || definition.label === '') invalid()
+  const requiredArrays = ['metrics', 'dimensions', 'modes', 'filters', 'sortable', 'detail_sortable']
+  if (requiredArrays.some(key => !Array.isArray(definition[key]))) invalid()
+  if (!definition.period_capabilities || typeof definition.period_capabilities !== 'object' || Array.isArray(definition.period_capabilities) || !Array.isArray(definition.period_capabilities.supported) || !Array.isArray(definition.period_capabilities.date_range_metrics)) invalid()
+  if (definition.metrics.length === 0 || definition.modes.length === 0 || definition.period_capabilities.supported.length === 0) invalid()
+  if (!definition.metrics.every(item => item && typeof item === 'object' && !Array.isArray(item) && typeof item.code === 'string' && item.code !== '' && typeof item.label === 'string' && typeof item.unit === 'string')) invalid()
+  if (!definition.dimensions.every(item => item && typeof item === 'object' && !Array.isArray(item) && typeof item.code === 'string' && item.code !== '' && typeof item.label === 'string')) invalid()
+  if (![definition.modes, definition.filters, definition.sortable, definition.detail_sortable, definition.period_capabilities.supported, definition.period_capabilities.date_range_metrics].every(items => items.every(item => typeof item === 'string' && item !== ''))) invalid()
+  const metrics = definition.metrics
+  const dimensions = definition.dimensions
   const modes = codes(definition.modes)
-  const supportedPeriods = codes(definition.period_capabilities?.supported)
-  if (!SUBJECT_LABELS[subject] || metrics.length === 0 || modes.length === 0) return null
+  const supportedPeriods = codes(definition.period_capabilities.supported)
   return { ...definition, subject, metrics, dimensions, modes, supportedPeriods }
 }
 
 export function normalizeDefinitions(contract) {
+  const requiredLimits = ['ids_per_filter', 'selected_ids', 'metrics', 'dimensions', 'per_page', 'points']
+  if (!contract?.subjects || typeof contract.subjects !== 'object' || Array.isArray(contract.subjects) || !Array.isArray(contract.comparisons) || !contract.comparisons.every(value => typeof value === 'string') || !contract.limits || typeof contract.limits !== 'object' || requiredLimits.some(key => !Number.isInteger(contract.limits[key]) || contract.limits[key] <= 0)) throw new Error('executive_report_contract_definitions_invalid')
   const normalized = {}
   Object.entries(contract?.subjects ?? {}).forEach(([subject, definition]) => {
-    const value = normalizeDefinition(subject, definition)
-    if (value) normalized[subject] = value
+    normalized[subject] = normalizeDefinition(subject, definition)
   })
-  if (Object.keys(normalized).length === 0) throw new Error('executive_report_definitions_empty')
+  if (Object.keys(normalized).length === 0) throw new Error('executive_report_contract_definitions_empty')
   return normalized
 }
 
@@ -138,6 +146,35 @@ function selectionCount(config) {
   return lists.reduce((total, section) => total + Object.values(section ?? {}).reduce((count, value) => count + (Array.isArray(value) ? value.length : 0), 0), 0)
 }
 
+function dateRangeError(period, dimensions = []) {
+  if (!period?.date_from) return { field: 'date_from', message: 'حدد تاريخ بداية الفترة.' }
+  if (!period?.date_to) return { field: 'date_to', message: 'حدد تاريخ نهاية الفترة.' }
+  const start = Date.parse(`${period.date_from}T00:00:00Z`)
+  const end = Date.parse(`${period.date_to}T00:00:00Z`)
+  const days = Math.floor((end - start) / 86400000) + 1
+  if (!Number.isFinite(days) || days <= 0) return { field: 'date_to', message: 'يجب ألا يسبق تاريخ النهاية تاريخ البداية.' }
+  const timeDimension = dimensions.find(value => ['day', 'week', 'month'].includes(value))
+  const maximumDays = timeDimension === 'day' ? 366 : timeDimension === 'week' ? 366 * 5 : 366 * 10
+  if (days > maximumDays) return { field: 'range', message: `النطاق أطول من الحد المسموح لبعد ${timeDimension === 'day' ? 'اليوم' : timeDimension === 'week' ? 'الأسبوع' : 'الشهر'}.` }
+  return null
+}
+
+export function removeIncompatibleHistoricalDraft(config) {
+  if (config?.subject !== 'grade_workflow') return { config, removed: [] }
+  let next = config
+  const removed = []
+  const removeAt = (filters, path) => {
+    const statuses = filters?.grade_workflow_statuses ?? []
+    if (!statuses.includes('draft')) return filters
+    removed.push(path)
+    return { ...filters, grade_workflow_statuses: statuses.filter(status => status !== 'draft') }
+  }
+  if (config.period?.type === 'date_range') next = { ...next, filters: removeAt(next.filters, 'filters.grade_workflow_statuses') }
+  const baseline = next.comparison?.baseline
+  if (baseline?.period?.type === 'date_range') next = { ...next, comparison: { ...next.comparison, baseline: { ...baseline, filters: removeAt(baseline.filters, 'comparison.baseline.filters.grade_workflow_statuses') } } }
+  return { config: next, removed }
+}
+
 export function validateReportConfig(config, definition, limits) {
   const errors = {}
   const metricCodes = new Set(definition.metrics.map(item => item.code))
@@ -146,17 +183,14 @@ export function validateReportConfig(config, definition, limits) {
   if (!config.metrics.length) errors.metrics = 'اختر مؤشرًا واحدًا على الأقل.'
   if (config.metrics.some(code => !metricCodes.has(code)) || config.metrics.length > limits.metrics) errors.metrics = `يمكن اختيار ${limits.metrics} مؤشرًا كحد أقصى.`
   if (config.dimensions.some(code => !dimensionCodes.has(code)) || config.dimensions.length > limits.dimensions) errors.dimensions = `يمكن اختيار ${limits.dimensions} أبعاد كحد أقصى.`
-  for (const [key, values] of Object.entries(config.filters)) if (Array.isArray(values) && values.length > limits.ids_per_filter) errors[key] = `الحد الأقصى ${limits.ids_per_filter} قيمة.`
-  for (const [key, values] of Object.entries(config.comparison?.baseline?.filters ?? {})) if (Array.isArray(values) && values.length > limits.ids_per_filter) errors[`comparison.baseline.${key}`] = `الحد الأقصى ${limits.ids_per_filter} قيمة في خط الأساس.`
+  for (const [key, values] of Object.entries(config.filters)) if (Array.isArray(values) && values.length > limits.ids_per_filter) errors[`filters.${key}`] = `الحد الأقصى ${limits.ids_per_filter} قيمة.`
+  for (const [key, values] of Object.entries(config.comparison?.baseline?.filters ?? {})) if (Array.isArray(values) && values.length > limits.ids_per_filter) errors[`comparison.baseline.filters.${key}`] = `الحد الأقصى ${limits.ids_per_filter} قيمة في خط الأساس.`
   if (selectionCount(config) > limits.selected_ids) errors.filters = `تجاوز مجموع الاختيارات الحد المسموح (${limits.selected_ids}).`
-  if (config.period.type === 'academic' && !config.period.academic_year_ids?.length) errors.period = 'اختر سنة أكاديمية.'
-  if (config.period.semester_ids?.length && !config.period.academic_year_ids?.length) errors.semester_ids = 'اختيار الفصل يتطلب سنة أكاديمية.'
-  if (config.period.type === 'date_range' && (!config.period.date_from || !config.period.date_to)) errors.period = 'حدد تاريخ البداية والنهاية.'
-  if (config.period.type === 'date_range' && config.period.date_from && config.period.date_to) {
-    const days = Math.floor((Date.parse(`${config.period.date_to}T00:00:00Z`) - Date.parse(`${config.period.date_from}T00:00:00Z`)) / 86400000) + 1
-    const timeDimension = config.dimensions.find(value => ['day', 'week', 'month'].includes(value))
-    const maximumDays = timeDimension === 'day' ? 366 : timeDimension === 'week' ? 366 * 5 : timeDimension === 'month' ? 366 * 10 : 366 * 10
-    if (!Number.isFinite(days) || days <= 0 || days > maximumDays) errors.period = `النطاق أطول من الحد المسموح لبعد ${timeDimension === 'day' ? 'اليوم' : timeDimension === 'week' ? 'الأسبوع' : 'الشهر'}.`
+  if (config.period.type === 'academic' && !config.period.academic_year_ids?.length) errors['period.academic_year_ids'] = 'اختر سنة أكاديمية.'
+  if (config.period.semester_ids?.length && !config.period.academic_year_ids?.length) errors['period.semester_ids'] = 'اختيار الفصل يتطلب سنة أكاديمية.'
+  if (config.period.type === 'date_range') {
+    const error = dateRangeError(config.period, config.dimensions)
+    if (error) errors[error.field === 'range' ? 'period' : `period.${error.field}`] = error.message
   }
   const timeDimensions = config.dimensions.filter(value => ['day', 'week', 'month'].includes(value))
   if (timeDimensions.length > 0 && (config.period.type !== 'date_range' || timeDimensions.length !== 1)) errors.dimensions = 'بعد اليوم أو الأسبوع أو الشهر يتطلب نطاقًا زمنيًا وبُعدًا زمنيًا واحدًا.'
@@ -172,10 +206,15 @@ export function validateReportConfig(config, definition, limits) {
     const hasScope = Object.values(baseline?.filters ?? {}).some(values => Array.isArray(values) && values.length > 0)
     const hasPeriod = baseline?.period?.type && baseline.period.type !== 'none'
     if (!baseline || (!hasScope && !hasPeriod)) errors.comparison = 'حدد نطاقًا أو فترة لخط الأساس.'
-    if (baseline?.period?.type === 'academic' && !baseline.period.academic_year_ids?.length) errors.comparison = 'فترة خط الأساس الأكاديمية تتطلب سنة.'
-    if (baseline?.period?.semester_ids?.length && !baseline.period.academic_year_ids?.length) errors.comparison = 'فصل خط الأساس يتطلب سنة أكاديمية.'
-    if (baseline?.period?.type === 'date_range' && (!baseline.period.date_from || !baseline.period.date_to)) errors.comparison = 'حدد تاريخي خط الأساس.'
+    if (baseline?.period?.type === 'academic' && !baseline.period.academic_year_ids?.length) errors['comparison.baseline.period.academic_year_ids'] = 'فترة خط الأساس الأكاديمية تتطلب سنة.'
+    if (baseline?.period?.semester_ids?.length && !baseline.period.academic_year_ids?.length) errors['comparison.baseline.period.semester_ids'] = 'فصل خط الأساس يتطلب سنة أكاديمية.'
+    if (baseline?.period?.type === 'date_range') {
+      const error = dateRangeError(baseline.period, config.dimensions)
+      if (error) errors[error.field === 'range' ? 'comparison.baseline.period' : `comparison.baseline.period.${error.field}`] = error.message
+    }
   }
+  if (config.subject === 'grade_workflow' && config.period.type === 'date_range' && config.filters.grade_workflow_statuses?.includes('draft')) errors['filters.grade_workflow_statuses'] = 'حالة المسودة لقطة حالية ولا تتوفر ضمن سجل أحداث الفترة التاريخية.'
+  if (config.subject === 'grade_workflow' && config.comparison?.baseline?.period?.type === 'date_range' && config.comparison.baseline.filters?.grade_workflow_statuses?.includes('draft')) errors['comparison.baseline.filters.grade_workflow_statuses'] = 'حالة المسودة غير متاحة في خط أساس تاريخي.'
   if (config.sort && (!config.metrics.includes(config.sort.field) && !config.dimensions.includes(config.sort.field))) errors.sort = 'يجب أن يكون حقل الترتيب ضمن المؤشرات أو الأبعاد المحددة.'
   return errors
 }
