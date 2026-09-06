@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { createBrowserRouter, createRoutesFromElements, RouterProvider, Route, Navigate } from 'react-router-dom'
 
 import DashboardLayout from '../components/layout/DashboardLayout'
 
@@ -133,10 +133,10 @@ function ProtectedRoute({ children, permissions = [], allPermissions = [], roles
 
 const protect = (element, access) => <ProtectedRoute {...access}>{element}</ProtectedRoute>
 
-export default function App() {
-  return (
-    <BrowserRouter>
-      <Routes>
+// A data router enables useBlocker for SPA PUSH/REPLACE/POP navigation.
+// The existing route tree and every ProtectedRoute policy stay unchanged.
+const router = createBrowserRouter(createRoutesFromElements(
+      <>
 
         {/* Public */}
         <Route path="/login" element={<LoginPage />} />
@@ -353,7 +353,9 @@ export default function App() {
         <Route path="/"  element={<Navigate to={landingRoute(getIdentity())} replace />} />
         <Route path="*"  element={<Navigate to={landingRoute(getIdentity())} replace />} />
 
-      </Routes>
-    </BrowserRouter>
-  )
+      </>
+))
+
+export default function App() {
+  return <RouterProvider router={router} />
 }

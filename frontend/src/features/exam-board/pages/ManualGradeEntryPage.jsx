@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
+import { Link, useBlocker } from 'react-router-dom'
 import { apiRequest } from '../../../services/apiClient'
 import { ACCESS, canAccess, getIdentity } from '../../auth/auth'
 import ManualGradeDialog from '../components/ManualGradeDialog'
+import { createGradeDraft, gradeDraftReducer, hasGradeDraft, navigationDecision } from '../lib/manualGradeDraft'
 import { MANUAL_GRADE_NOTICE, MANUAL_GRADE_ACKNOWLEDGEMENT, blockedLabel, registrationLabel, changedComponents, manualError, manualPath, markText, partLabel, requestSequence, savePayload, searchPath, stateLabel } from '../lib/manualGradeEntry'
 
 const button = 'rounded-lg border border-primary/25 px-3 py-2 text-primary font-bold disabled:opacity-40'
 const field = 'rounded-lg border border-primary/25 px-3 py-2 w-full'
 const identityStamp = () => JSON.stringify(getIdentity())
+const markInput = value => value == null ? '' : String(value)
 
 function Pager({ meta, onPage, disabled }) {
   if (!meta) return null
@@ -19,11 +21,14 @@ function Pager({ meta, onPage, disabled }) {
 }
 
 function RegistrationEditor({ row, student, onDirty, onBusy, reload, onForbidden, identity, readOnly }) {
-  const [edits, setEdits] = useState({})
+  const [draft, dispatch] = useReducer(gradeDraftReducer, row, createGradeDraft)
+  const { baseline, edits } = draft
+  const dirty = hasGradeDraft(draft)
   const [acknowledged, setAcknowledged] = useState(false)
   const [reason, setReason] = useState('')
   const [dialog, setDialog] = useState(null)
   const [busy, setBusy] = useState(false)
+  const conflict = draft.conflict || (dirty && row.revision !== baseline.revision)
   const [uncertain, setUncertain] = useState(false)
   const [message, setMessage] = useState('')
   const mounted = useRef(true)
@@ -31,20 +36,22 @@ function RegistrationEditor({ row, student, onDirty, onBusy, reload, onForbidden
   const readController = useRef(null)
   const valid = () => mounted.current && identityStamp() === identity
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; readController.current?.abort() } }, [])
-  useEffect(() => { setEdits({}); setAcknowledged(false); setReason(''); setDialog(null); setUncertain(false); onDirty(row.registration_id, false) }, [row.revision, row.registration_id, onDirty])
+  useEffect(() => { dispatch({ type: 'receive', row }) }, [row])
+  useEffect(() => { onDirty(row.registration_id, dirty || conflict) }, [row.registration_id, dirty, conflict, onDirty])
   const edit = (id, value) => {
-    const next = { ...edits, [id]: value }
-    setEdits(next); setAcknowledged(false)
-    try { onDirty(row.registration_id, changedComponents(row.components, next).length > 0) }
-    catch { onDirty(row.registration_id, true) }
+    dispatch({ type: 'edit', id, value }); setAcknowledged(false)
+    // Update the navigation guard synchronously, before React commits the next render.
+    onDirty(row.registration_id, conflict || hasGradeDraft({ ...draft, edits: { ...edits, [id]: value } }))
   }
-  const perform = async action => {
-    if (pending.current || !valid() || readOnly) return
+  const perform = async (action, savedDraft = null) => {
+    if (pending.current || !valid() || readOnly || conflict || uncertain) return
     pending.current = true; setBusy(true); onBusy(row.registration_id, true); setMessage('')
     try {
-      await action()
+      const response = await action()
       if (!valid()) return
-      setDialog(null); setEdits({}); setAcknowledged(false); onDirty(row.registration_id, false)
+      setDialog(null); setAcknowledged(false); setReason('')
+      if (savedDraft) dispatch({ type: 'saved', ...savedDraft, row: response.data })
+      else dispatch({ type: 'receive', row: response.data })
       const refreshed = await reload()
       if (valid()) { setUncertain(!refreshed); setMessage(refreshed ? 'تمت العملية وأعيد تحميل الحالة الرسمية.' : 'تمت العملية، لكن تعذر تحديث العرض. أعد التحميل قبل المتابعة.') }
     } catch (error) {
@@ -54,8 +61,9 @@ function RegistrationEditor({ row, student, onDirty, onBusy, reload, onForbidden
       // An interrupted write is indeterminate, not proof of rollback. Never automatically retry it.
       if (!error.status || error.status >= 500 || error.status === 409) {
         setUncertain(true)
+        dispatch({ type: 'conflict' })
         const refreshed = await reload()
-        if (valid() && refreshed) { setUncertain(false); setEdits({}); setAcknowledged(false); onDirty(row.registration_id, false) }
+        if (valid() && refreshed) { setUncertain(false); setAcknowledged(false) }
       }
     } finally {
       pending.current = false
@@ -64,20 +72,20 @@ function RegistrationEditor({ row, student, onDirty, onBusy, reload, onForbidden
   }
   const save = confirmed => {
     try {
-      const payload = savePayload(row, edits, acknowledged, confirmed, reason)
-      perform(() => apiRequest(`${manualPath(student.student_id, row.registration_id)}/marks`, { method: 'PUT', body: JSON.stringify(payload) }))
+      const payload = savePayload(baseline, edits, acknowledged, confirmed, reason)
+      perform(() => apiRequest(`${manualPath(student.student_id, row.registration_id)}/marks`, { method: 'PUT', body: JSON.stringify(payload) }), { version: draft.version, revision: baseline.revision })
     } catch (error) { setMessage(error.message) }
   }
   const prepareSave = () => {
     try {
       if (!acknowledged) throw new Error('يجب الإقرار بصحة العلامات.')
-      const changes = changedComponents(row.components, edits)
+      const changes = changedComponents(baseline.components, edits)
       if (changes.some(c => c.mark !== null)) { setReason(''); setDialog({ type: 'correction', changes }) }
       else save(false)
     } catch (error) { setMessage(error.message) }
   }
   const readiness = async part => {
-    if (pending.current || !valid() || readOnly) return
+    if (pending.current || !valid() || readOnly || dirty || conflict || uncertain) return
     pending.current = true; setBusy(true); onBusy(row.registration_id, true)
     try {
       readController.current?.abort(); readController.current = new AbortController()
@@ -86,31 +94,42 @@ function RegistrationEditor({ row, student, onDirty, onBusy, reload, onForbidden
     } catch (error) { if (valid()) { setMessage(manualError(error)); if ([401, 403].includes(error.status)) onForbidden() } }
     finally { pending.current = false; if (valid()) { setBusy(false); onBusy(row.registration_id, false) } }
   }
-  let dirty = false
-  try { dirty = changedComponents(row.components, edits).length > 0 } catch { dirty = true }
+  const resolve = type => {
+    dispatch({ type }); setAcknowledged(false); setReason(''); setDialog(null); setMessage('')
+  }
+  const removedComponents = Object.keys(edits).some(id => !row.components.some(c => String(c.grade_component_id) === id))
   return <article className="rounded-2xl border border-primary/20 bg-white p-5 space-y-4" aria-busy={busy}>
     <header><h2 className="font-bold text-lg text-primary">{row.course_code} — {row.course_name}</h2>
       <p>{row.academic_year} / {row.semester} — الشعبة {row.section} — التسجيل/المحاولة {row.registration_id}</p>
       <p>{row.college} — {row.program} — حالة التسجيل: {registrationLabel(row.registration_status)}</p></header>
     {!row.components.length && <p>لا توجد مكونات علامات مطلوبة؛ هذا السجل للعرض فقط.</p>}
-    {Object.entries(row.parts).map(([part, state]) => <fieldset key={part} className="rounded-xl border p-4" disabled={busy || uncertain || readOnly || !state.can_edit}>
+    {conflict && <section role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 space-y-3">
+      <p>تغيّرت الحالة الرسمية أو تعذر تأكيد الكتابة. احتُفظ بمسودتك ونسخة بدء التحرير؛ اختر صراحةً قبل المتابعة. لن يعاد إرسالها تلقائيًا.</p>
+      <ul>{baseline.components.filter(c => Object.hasOwn(edits, c.grade_component_id)).map(c => <li key={c.grade_component_id}>
+        {c.name}: عند بدء التحرير {markText(c.mark)} — المقترح {edits[c.grade_component_id] || '—'} — الخادم {markText(row.components.find(s => s.grade_component_id === c.grade_component_id)?.mark)}
+      </li>)}</ul>
+      {removedComponents && <p>تغيّر تعريف المكونات؛ لا يمكن نقل هذه المسودة إلى النسخة الجديدة. راجع القيم قبل تجاهلها.</p>}
+      <button type="button" className={button} disabled={busy || uncertain || readOnly} onClick={() => resolve('discard')}>تجاهل المسودة واستخدام نسخة الخادم</button>
+      <button type="button" className={button} disabled={busy || uncertain || readOnly || removedComponents} onClick={() => resolve('rebase')}>إبقاء المقترحات ومراجعتها على نسخة الخادم الجديدة</button>
+    </section>}
+    {Object.entries(row.parts).map(([part, state]) => <fieldset key={part} className="rounded-xl border p-4" disabled={busy || uncertain || conflict || readOnly || !state.can_edit}>
       <legend className="px-2 font-bold">{partLabel(part)} — {stateLabel(state.status)}</legend>
       {state.blocked_reason && <p className="text-amber-800 mb-2">{state.status === 'submitted' ? 'مرسل للاعتماد؛ استخدم مسار الإعادة للتصحيح في واجهة الاعتمادات.' : state.status === 'approved' || state.blocked_reason === 'official_result_locked' ? 'النتيجة معتمدة ومقفلة. تصحيح النتائج المنشورة خارج هذه الواجهة.' : blockedLabel(state.blocked_reason)}</p>}
       <div className="grid gap-3 sm:grid-cols-2">{row.components.filter(c => c.component_type === part).map(c => <label key={c.grade_component_id}>
         <span>{c.name} — الحد الأعلى {c.max_mark}</span>
         <input className={field} inputMode="decimal" type="text" aria-label={`${c.name} — ${partLabel(part)}`}
-          value={edits[c.grade_component_id] ?? (c.mark === null ? '' : String(c.mark))} onChange={event => edit(c.grade_component_id, event.target.value)} />
+          value={edits[c.grade_component_id] ?? markInput(baseline.components.find(b => b.grade_component_id === c.grade_component_id)?.mark)} onChange={event => edit(c.grade_component_id, event.target.value)} />
       </label>)}</div>
     </fieldset>)}
     {Object.values(row.parts).some(p => p.can_edit) && <>
-      <label className="flex gap-2"><input type="checkbox" checked={acknowledged} disabled={busy || uncertain} onChange={event => setAcknowledged(event.target.checked)} />{MANUAL_GRADE_ACKNOWLEDGEMENT}</label>
-      <button type="button" className={button} disabled={busy || uncertain || readOnly || !dirty || !acknowledged} onClick={prepareSave}>حفظ العلامات كمسودة</button>
+      <label className="flex gap-2"><input type="checkbox" checked={acknowledged} disabled={busy || uncertain || conflict || readOnly} onChange={event => setAcknowledged(event.target.checked)} />{MANUAL_GRADE_ACKNOWLEDGEMENT}</label>
+      <button type="button" className={button} disabled={busy || uncertain || conflict || readOnly || !dirty || !acknowledged} onClick={prepareSave}>حفظ العلامات كمسودة</button>
     </>}
-    <div className="flex flex-wrap gap-2">{Object.entries(row.parts).filter(([, p]) => p.can_check_submission).map(([part]) => <button key={part} type="button" className={button} disabled={busy || uncertain || readOnly || dirty} onClick={() => readiness(part)}>إرسال الجزء {partLabel(part)} للاعتماد</button>)}</div>
+    <div className="flex flex-wrap gap-2">{Object.entries(row.parts).filter(([, p]) => p.can_check_submission).map(([part]) => <button key={part} type="button" className={button} disabled={busy || uncertain || conflict || readOnly || dirty} onClick={() => readiness(part)}>إرسال الجزء {partLabel(part)} للاعتماد</button>)}</div>
     {message && <p role="status" className="text-amber-900">{message}</p>}
-    {uncertain && <button className={button} type="button" disabled={busy} onClick={async () => { if (await reload()) { setUncertain(false); setEdits({}); onDirty(row.registration_id, false) } }}>إعادة تحميل الحالة قبل المتابعة</button>}
+    {uncertain && <button className={button} type="button" disabled={busy} onClick={async () => { if (await reload()) setUncertain(false) }}>إعادة تحميل الحالة قبل المتابعة</button>}
     {dialog && <ManualGradeDialog title={dialog.type === 'correction' ? 'تأكيد تصحيح العلامات' : 'تأكيد إرسال جزء الطرح بالكامل'} busy={busy}
-      disabled={dialog.type === 'correction' ? !reason.trim() : !dialog.ready.can_submit} onCancel={() => setDialog(null)}
+      disabled={readOnly || uncertain || conflict || (dialog.type === 'correction' ? !reason.trim() : !dialog.ready.can_submit)} onCancel={() => setDialog(null)}
       onConfirm={() => dialog.type === 'correction' ? save(true) : perform(() => apiRequest(`${manualPath(student.student_id, row.registration_id)}/parts/${dialog.part}/submit`, { method: 'POST', body: JSON.stringify({ confirmed: true, revision: dialog.ready.revision }) }))}>
       <p>{student.name} — {student.student_number}</p><p>{row.course_name} — {row.academic_year} / {row.semester} — الشعبة {row.section}</p>
       {dialog.type === 'correction' ? <>
@@ -135,7 +154,10 @@ export default function ManualGradeEntryPage() {
   const [page, setPage] = useState(1)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [dataError, setDataError] = useState('')
+  const [lookupError, setLookupError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [pendingCount, setPendingCount] = useState(0)
   const [discard, setDiscard] = useState(null)
   const dirty = useRef(new Set())
   const busy = useRef(new Set())
@@ -143,11 +165,22 @@ export default function ManualGradeEntryPage() {
   const controller = useRef(null)
   const mounted = useRef(true)
   const onDirty = useCallback((id, value) => { value ? dirty.current.add(id) : dirty.current.delete(id) }, [])
-  const onBusy = useCallback((id, value) => { value ? busy.current.add(id) : busy.current.delete(id) }, [])
+  const onBusy = useCallback((id, value) => {
+    value ? busy.current.add(id) : busy.current.delete(id)
+    setPendingCount(busy.current.size)
+  }, [])
   const clear = useCallback(() => {
     sequence.current.invalidate(); controller.current?.abort(); dirty.current.clear(); busy.current.clear()
     setData(null); setStudent(null); setStudents(null); setDiscard(null); setQ(''); setSearch(''); setAllowed(false)
+    setDataError(''); setLookupError(''); setNotice(''); setPendingCount(0)
   }, [])
+  const blocker = useBlocker(useCallback(() => navigationDecision({
+    authorized: allowed && identityStamp() === identity && canAccess(ACCESS.manualGradeEntry, getIdentity()),
+    dirty: dirty.current.size > 0, pending: busy.current.size > 0,
+  }) !== 'allow', [allowed, identity]))
+  useEffect(() => {
+    if (!allowed && blocker.state === 'blocked') blocker.proceed()
+  }, [allowed, blocker])
   useEffect(() => {
     mounted.current = true
     const check = () => { if (identityStamp() !== identity || !canAccess(ACCESS.manualGradeEntry, getIdentity())) { clear(); setIdentity(identityStamp()) } }
@@ -156,36 +189,37 @@ export default function ManualGradeEntryPage() {
     return () => { mounted.current = false; clearInterval(timer); window.removeEventListener('storage', check); window.removeEventListener('focus', check); sequence.current.invalidate(); controller.current?.abort() }
   }, [identity, clear])
   useEffect(() => {
-    const warn = event => { if (dirty.current.size || busy.current.size) { event.preventDefault(); event.returnValue = '' } }
+    const warn = event => { if (canAccess(ACCESS.manualGradeEntry, getIdentity()) && (dirty.current.size || busy.current.size)) { event.preventDefault(); event.returnValue = '' } }
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
   }, [])
   useEffect(() => { const timer = setTimeout(() => { setSearch(q.trim()); setSearchPage(1) }, 350); return () => clearTimeout(timer) }, [q])
   useEffect(() => {
     if (!allowed || !search) { setStudents(null); return }
+    setLookupError('')
     const abort = new AbortController()
     let active = true
     apiRequest(searchPath(search, searchPage), { signal: abort.signal }).then(json => { if (active && identityStamp() === identity) setStudents(json.data) })
-      .catch(e => { if (active && e.name !== 'AbortError') { setError(manualError(e)); if ([401, 403].includes(e.status)) clear() } })
+      .catch(e => { if (active && e.name !== 'AbortError') { setLookupError(manualError(e)); if ([401, 403].includes(e.status)) clear() } })
     return () => { active = false; abort.abort() }
   }, [search, searchPage, identity, allowed, clear])
   const reload = useCallback(async () => {
     if (!student || !allowed) return false
     controller.current?.abort(); controller.current = new AbortController()
     const generation = sequence.current.next()
-    setLoading(true); setError('')
+    setLoading(true); setDataError('')
     try {
       const json = await apiRequest(`${manualPath(student.student_id)}?${new URLSearchParams({ ...term, page, per_page: 15 })}`, { signal: controller.current.signal })
       if (!mounted.current || !sequence.current.valid(generation) || identityStamp() !== identity) return false
       setData(json.data); return true
     } catch (e) {
-      if (mounted.current && sequence.current.valid(generation) && e.name !== 'AbortError') { setError(manualError(e)); if ([401, 403].includes(e.status)) clear() }
+      if (mounted.current && sequence.current.valid(generation) && e.name !== 'AbortError') { setDataError(manualError(e)); if ([401, 403].includes(e.status)) clear() }
       return false
     } finally { if (mounted.current && sequence.current.valid(generation)) setLoading(false) }
   }, [student, term, page, identity, allowed, clear])
   useEffect(() => { reload() }, [reload])
   const change = action => {
-    if (busy.current.size) { setError('انتظر اكتمال العملية الحالية قبل تغيير السياق.'); return }
+    if (busy.current.size) { setNotice('انتظر اكتمال العملية الحالية قبل تغيير السياق.'); return }
     const apply = () => { sequence.current.invalidate(); controller.current?.abort(); dirty.current.clear(); setData(null); action(); setDiscard(null) }
     if (dirty.current.size) setDiscard(() => apply)
     else apply()
@@ -203,7 +237,9 @@ export default function ManualGradeEntryPage() {
   return <main dir="rtl" className="space-y-5">
     <h1 className="text-2xl font-black text-primary">إدخال العلامات اليدوي</h1>
     <p className="rounded-xl border border-amber-200 bg-amber-50 p-4">{MANUAL_GRADE_NOTICE}</p>
-    <Link to="/exam-board/approvals" onClick={event => { if (dirty.current.size || busy.current.size) { event.preventDefault(); setError('احفظ أو تخلّ عن التغييرات قبل الانتقال إلى الاعتمادات.') } }} className="text-primary underline">واجهة الاعتمادات الحالية</Link>
+    <Link to="/exam-board/approvals" className="text-primary underline">واجهة الاعتمادات الحالية</Link>
+    {notice && <p role="status" className="text-amber-900">{notice}</p>}
+    {lookupError && <p role="alert" className="text-red-800">تعذر البحث: {lookupError}</p>}
     <label className="block">البحث باسم الطالب أو رقمه<input className={field} value={q} onChange={e => setQ(e.target.value)} /></label>
     {students && <section aria-label="نتائج البحث" className="rounded-xl border bg-white p-4">
       {!students.students.length && <p>لا توجد نتائج ضمن نطاقك.</p>}
@@ -215,9 +251,14 @@ export default function ManualGradeEntryPage() {
       <label>الفصل<select className={field} value={term.semester_id ?? ''} onChange={e => changeTerm('semester_id', e.target.value)}><option value="">كل الفصول</option>{[...new Map((data?.terms ?? []).filter(t => !term.academic_year_id || String(t.academic_year_id) === term.academic_year_id).map(t => [t.semester_id, t])).values()].map(t => <option key={t.semester_id} value={t.semester_id}>{t.semester_name}</option>)}</select></label></div>
     </section>}
     {loading && <p role="status">جاري تحميل الحالة الرسمية…</p>}
-    {error && <div role="alert" className="text-red-800">{error} {student && <button type="button" className={button} onClick={() => change(() => reload())}>إعادة التحميل</button>}</div>}
-    {data && <><div className="space-y-4">{data.registrations.map(row => <RegistrationEditor key={row.registration_id} row={row} student={data.student} identity={identity} readOnly={loading || !!error} onDirty={onDirty} onBusy={onBusy} reload={reload} onForbidden={clear} />)}</div>
+    {dataError && <div role="alert" className="text-red-800">{dataError} {student && <button type="button" className={button} disabled={pendingCount > 0} onClick={reload}>إعادة التحميل مع الاحتفاظ بالمسودات</button>}</div>}
+    {data && <><div className="space-y-4">{data.registrations.map(row => <RegistrationEditor key={row.registration_id} row={row} student={data.student} identity={identity} readOnly={loading || !!dataError} onDirty={onDirty} onBusy={onBusy} reload={reload} onForbidden={clear} />)}</div>
       {!data.registrations.length && <p>لا توجد تسجيلات فعلية مطابقة ضمن نطاقك.</p>}<Pager meta={data.meta} disabled={loading} onPage={p => change(() => setPage(p))} /></>}
     {discard && <ManualGradeDialog title="تغييرات غير محفوظة" onCancel={() => setDiscard(null)} onConfirm={discard} confirmLabel="تجاهل التغييرات والمتابعة"><p>لن تُحفظ العلامات المعدلة عند تغيير الطالب أو الفترة أو الصفحة.</p></ManualGradeDialog>}
+    {blocker.state === 'blocked' && <ManualGradeDialog title="مغادرة إدخال العلامات" disabled={pendingCount > 0}
+      onCancel={() => { blocker.reset(); setNotice('أُلغي الانتقال. مسوداتك محفوظة محليًا ويمكنك متابعة التحرير والحفظ.') }}
+      onConfirm={() => { if (!busy.current.size) blocker.proceed() }} confirmLabel="تجاهل المسودات والانتقال">
+      <p>{pendingCount > 0 ? 'توجد عملية قيد التنفيذ. انتظر نتيجتها قبل المغادرة؛ الإلغاء يبقيك في الصفحة.' : 'توجد مسودات غير محفوظة. هل تريد تجاهلها والانتقال إلى الوجهة المطلوبة؟'}</p>
+    </ManualGradeDialog>}
   </main>
 }

@@ -177,6 +177,8 @@ trait ExamManualGradeOperations
         if (! in_array($approval?->status ?? 'draft', ['draft', 'returned'], true)) $block = 'grade_part_locked';
         $selected = $snapshots->get($registration->getKey()) ?? $this->manualRegistration($registration->fresh());
         if ($selected['registration_status'] !== StudentCourseRegistration::CURRENT_STATUS) $block = 'grade_entry_not_allowed';
+        // Offering-level finality is independent of roster exemptions and part-row existence.
+        if ($this->grades->isOfficiallyApprovedOffering(CourseOffering::findOrFail($registration->course_offering_id))) $block = 'official_result_locked';
         return ['course_offering_id' => (int) $registration->course_offering_id, 'part' => $part,
             'course_name' => $selected['course_name'], 'section' => $selected['section'],
             'academic_year' => $selected['academic_year'], 'semester' => $selected['semester'],
@@ -195,6 +197,8 @@ trait ExamManualGradeOperations
             GradePartApproval::query()->where('course_offering_id', $registration->course_offering_id)->orderBy('component_type')->lockForUpdate()->get();
             StudentCourseRegistration::query()->where('course_offering_id', $registration->course_offering_id)->orderBy('student_course_registration_id')->lockForUpdate()->get();
             $locked = $this->lockManualContext($student, $registration, $actor);
+            // Recheck authoritative final approval after owning the offering lock, even if all students are exempt.
+            if ($this->grades->isOfficiallyApprovedOffering($locked->courseOffering)) $this->fail('Official results are locked.', 'official_result_locked');
             $ready = $this->manualSubmissionReadiness($locked, $part);
             $this->assertManualRevision($data['revision'], $ready['revision']);
             if (($data['confirmed'] ?? false) !== true) throw ValidationException::withMessages(['confirmed' => 'يجب تأكيد إرسال الجزء للطرح كاملًا.']);

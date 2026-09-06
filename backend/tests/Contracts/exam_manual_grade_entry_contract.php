@@ -24,5 +24,12 @@ $saveStart = strpos($workflow, 'public function savePart(');
 $saveEnd = strpos($workflow, 'private function persistPartInTransaction', $saveStart);
 $save = substr($workflow, $saveStart, $saveEnd - $saveStart);
 $check(strpos($save, 'CourseOfferingLock::lock') < strpos($save, 'StudentCourseRegistration::query()'), 'Save must lock offering before registration.');
+$readinessStart = strpos($manual, 'public function manualSubmissionReadiness(');
+$submitStart = strpos($manual, 'public function submitManualPart(');
+$readiness = substr($manual, $readinessStart, $submitStart - $readinessStart);
+$submit = substr($manual, $submitStart);
+$check(str_contains($readiness, 'isOfficiallyApprovedOffering') && str_contains($readiness, "'official_result_locked'"), 'Readiness must enforce offering finality independently of exemptions.');
+$check(strpos($submit, 'lockManualContext(') < strpos($submit, 'isOfficiallyApprovedOffering')
+    && strpos($submit, 'isOfficiallyApprovedOffering') < strpos($submit, 'submitPartInTransaction('), 'Final approval must be rechecked under the offering lock before submission.');
 if ($errors) { fwrite(STDERR, implode(PHP_EOL, $errors).PHP_EOL); exit(1); }
 echo "Exam manual grade entry contract: PASS (static only)\n";

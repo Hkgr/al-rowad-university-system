@@ -167,6 +167,42 @@ class ExamManualGradeEntryBehaviorTest extends TestCase
         self::assertSame(0, DB::table('grade_part_approvals')->count());
     }
 
+    public function test_official_offering_cannot_be_submitted_when_every_student_is_exempt(): void
+    {
+        DB::table('student_course_registrations')->update(['result_status_id' => 3]);
+        DB::table('grade_approvals')->insert(['course_offering_id' => 1, 'approval_status_id' => 1, 'approved_by_user_id' => 1]);
+        foreach ([null, 'draft', 'returned'] as $partStatus) {
+            DB::table('grade_part_approvals')->delete();
+            if ($partStatus !== null) DB::table('grade_part_approvals')->insert([
+                'course_offering_id' => 1, 'component_type' => 'theoretical', 'status' => $partStatus, 'submission_version' => 1,
+            ]);
+            $tables = ['grade_part_approvals', 'grade_part_approval_events', 'grade_approvals',
+                'student_grade_components', 'grade_audit_logs', 'student_course_results', 'student_course_registrations'];
+            $before = collect($tables)->mapWithKeys(fn ($table) => [$table => DB::table($table)->get()->toJson()]);
+            $ready = $this->readiness('theoretical');
+            self::assertSame(2, $ready['counts']['exempt']);
+            self::assertFalse($ready['can_submit']);
+            self::assertSame('official_result_locked', $ready['blocked_reason']);
+            $this->postJson($this->partPath('theoretical').'/submit', ['revision' => $ready['revision'], 'confirmed' => true])
+                ->assertConflict()->assertJsonPath('error_code', 'official_result_locked');
+            foreach ($tables as $table) self::assertSame($before[$table], DB::table($table)->get()->toJson(), $table);
+        }
+    }
+
+    public function test_official_approval_after_readiness_is_rechecked_inside_locked_submit(): void
+    {
+        DB::table('student_course_registrations')->update(['result_status_id' => 3]);
+        $ready = $this->readiness('theoretical');
+        self::assertTrue($ready['can_submit']);
+        DB::table('grade_approvals')->insert(['course_offering_id' => 1, 'approval_status_id' => 1, 'approved_by_user_id' => 1]);
+        $this->postJson($this->partPath('theoretical').'/submit', ['revision' => $ready['revision'], 'confirmed' => true])
+            ->assertConflict()->assertJsonPath('error_code', 'official_result_locked');
+        foreach (['grade_part_approvals', 'grade_part_approval_events', 'student_grade_components', 'grade_audit_logs', 'student_course_results'] as $table) {
+            self::assertSame(0, DB::table($table)->count(), $table);
+        }
+        self::assertSame(1, DB::table('grade_approvals')->count());
+    }
+
     public function test_complete_offering_submission_return_correction_and_official_finalization(): void
     {
         $ready = $this->readiness('theoretical');
