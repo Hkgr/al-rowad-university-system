@@ -222,6 +222,49 @@ class ExecutiveReportsPhase1BehaviorTest extends TestCase
         self::assertSame(0.0,$groups[2]['official_gpa']['value']);
     }
 
+    public function test_http_gpa_uses_fractional_division_for_summary_group_and_student_detail(): void
+    {
+        DB::table('academic_programs')->insert(['academic_program_id'=>2,'department_id'=>1,'program_name'=>'Program 2']);
+        DB::table('students')->insert(['student_id'=>20,'student_number'=>'S20','academic_program_id'=>2,'current_academic_level_id'=>1,'student_status_id'=>1]);
+        DB::table('courses')->insert([
+            ['course_id'=>20,'course_code'=>'GPA-A','course_name'=>'GPA Course A','credit_hours'=>3,'theoretical_hours'=>2,'practical_hours'=>0],
+            ['course_id'=>21,'course_code'=>'GPA-B','course_name'=>'GPA Course B','credit_hours'=>3,'theoretical_hours'=>2,'practical_hours'=>0],
+        ]);
+        DB::table('course_offerings')->insert([
+            ['course_offering_id'=>20,'course_id'=>20,'academic_year_id'=>1,'semester_id'=>1,'academic_program_id'=>2],
+            ['course_offering_id'=>21,'course_id'=>21,'academic_year_id'=>1,'semester_id'=>1,'academic_program_id'=>2],
+        ]);
+        DB::table('student_course_registrations')->insert([
+            ['student_course_registration_id'=>20,'student_id'=>20,'course_offering_id'=>20,'registration_status_id'=>1],
+            ['student_course_registration_id'=>21,'student_id'=>20,'course_offering_id'=>21,'registration_status_id'=>1],
+        ]);
+        DB::table('student_course_results')->insert([
+            ['student_course_result_id'=>20,'student_course_registration_id'=>20,'theoretical_total'=>80,'final_mark'=>80,'result_status_id'=>1],
+            ['student_course_result_id'=>21,'student_course_registration_id'=>21,'theoretical_total'=>100,'final_mark'=>100,'result_status_id'=>1],
+        ]);
+        DB::table('grade_approvals')->insert([
+            ['grade_approval_id'=>20,'course_offering_id'=>20,'approval_status_id'=>1],
+            ['grade_approval_id'=>21,'course_offering_id'=>21,'approval_status_id'=>1],
+        ]);
+        Sanctum::actingAs($this->actor(33,'vice_president_scientific','vice_presidency.scientific.access',true));
+
+        $performance=$this->postJson('/api/v1/vice-presidency/reports/query',[
+            'subject'=>'academic_performance','mode'=>'summary','metrics'=>['official_gpa'],'dimensions'=>['academic_year'],
+            'filters'=>['program_ids'=>[2]],'period'=>['type'=>'academic','academic_year_ids'=>[1]],'page'=>1,'per_page'=>25,
+        ])->assertOk();
+        $details=$this->postJson('/api/v1/vice-presidency/reports/query',[
+            'subject'=>'students','mode'=>'details','metrics'=>['official_gpa'],'dimensions'=>[],
+            'filters'=>['program_ids'=>[2]],'period'=>['type'=>'academic','academic_year_ids'=>[1]],'page'=>1,'per_page'=>25,
+        ])->assertOk();
+        $canonical=app(GradeService::class)->calculateCgpa(Student::query()->findOrFail(20))['cgpa'];
+
+        self::assertEquals(3.5,$canonical);
+        self::assertEquals($canonical,$performance->json('data.summary.official_gpa.value'));
+        self::assertEquals($canonical,$performance->json('data.series.0.official_gpa.value'));
+        self::assertEquals($canonical,$details->json('data.rows.0.official_gpa.value'));
+        self::assertSame(1,$performance->json('data.summary.official_gpa.contributing_students'));
+    }
+
     public function test_previous_academic_year_replaces_current_period_filters_and_returns_resolved_group_output(): void
     {
         DB::table('academic_years')->insert(['academic_year_id'=>2,'start_date'=>'2027-01-01','end_date'=>'2027-12-31','is_current'=>0,'is_active'=>1,'calendar_lifecycle_status'=>'active']);

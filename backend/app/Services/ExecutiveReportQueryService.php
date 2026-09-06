@@ -434,11 +434,12 @@ final class ExecutiveReportQueryService
         $dimensionSql=['student'=>'gscr.student_id','college'=>$subject==='students'?'gsc.college_id':'gc.college_id','department'=>$subject==='students'?'gsd.department_id':'gd.department_id','program'=>$subject==='students'?'gs.academic_program_id':'gco.academic_program_id','academic_level'=>'gs.current_academic_level_id','student_status'=>'gss.status_code','academic_year'=>'gco.academic_year_id','semester'=>'gco.semester_id','course'=>'gco.course_id','result_status'=>'grst.status_code'];
         $gpaDimensions=array_values(array_filter($dimensions,fn($d)=>isset($dimensionSql[$d])));
         $summaryRanked=(clone$base)->selectRaw("gscr.student_id, gco.course_id, gscr.student_course_registration_id, gcrs.credit_hours, {$points} AS grade_points, ROW_NUMBER() OVER (PARTITION BY gscr.student_id, gco.course_id ORDER BY {$points} DESC, student_course_results.final_mark DESC, gscr.student_course_registration_id DESC) AS attempt_rank");
-        $perStudentAll=DB::query()->fromSub($summaryRanked,'ranked_all')->where('attempt_rank',1)->select('student_id')->selectRaw('SUM(grade_points * credit_hours) / NULLIF(SUM(credit_hours), 0) AS student_gpa')->groupBy('student_id');
+        $studentGpaSql='1.0 * SUM(grade_points * credit_hours) / NULLIF(SUM(credit_hours), 0) AS student_gpa';
+        $perStudentAll=DB::query()->fromSub($summaryRanked,'ranked_all')->where('attempt_rank',1)->select('student_id')->selectRaw($studentGpaSql)->groupBy('student_id');
         $partition=['gscr.student_id','gco.course_id'];foreach($gpaDimensions as$d)$partition[]=$dimensionSql[$d];
         $groupRanked=(clone$base)->selectRaw("gscr.student_id, gco.course_id, gscr.student_course_registration_id, gcrs.credit_hours, {$points} AS grade_points, ROW_NUMBER() OVER (PARTITION BY ".implode(', ',$partition)." ORDER BY {$points} DESC, student_course_results.final_mark DESC, gscr.student_course_registration_id DESC) AS attempt_rank");
         foreach($gpaDimensions as$d)$groupRanked->addSelect(DB::raw($dimensionSql[$d]." AS {$d}"));
-        $perStudent=DB::query()->fromSub($groupRanked,'ranked')->where('attempt_rank',1)->select('student_id')->selectRaw('SUM(grade_points * credit_hours) / NULLIF(SUM(credit_hours), 0) AS student_gpa')->groupBy('student_id');
+        $perStudent=DB::query()->fromSub($groupRanked,'ranked')->where('attempt_rank',1)->select('student_id')->selectRaw($studentGpaSql)->groupBy('student_id');
         foreach($gpaDimensions as$d){$perStudent->addSelect($d);$perStudent->groupBy($d);}
         $grouped=DB::query()->fromSub($perStudent,'student_gpas')->selectRaw('AVG(student_gpa) AS value, COUNT(student_gpa) AS contributing_students');
         foreach($gpaDimensions as$d){$grouped->addSelect($d);$grouped->groupBy($d);}
