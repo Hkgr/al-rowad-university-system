@@ -1,5 +1,7 @@
 import { Link } from 'react-router-dom'
 import { PERMISSIONS, ROLES, getIdentity, hasActualUniversityScope, hasAssignedPermission, hasRole } from '../../auth/auth'
+import { canAccessExecutiveReports } from '../../executive-reports/access'
+import ExecutiveOverview from '../../executive-reports/components/ExecutiveOverview'
 
 const OFFICES = {
   scientific: {
@@ -38,6 +40,8 @@ export default function VicePresidentShell({ office }) {
     : '—'
   const unitName = identity?.organizational_unit?.name || identity?.organizational_unit || '—'
 
+  const reportsAllowed = canAccessExecutiveReports(office, identity)
+
   return (
     <div className="flex flex-col gap-5 py-8 px-2" dir="rtl">
       <div>
@@ -45,8 +49,10 @@ export default function VicePresidentShell({ office }) {
         <p className="text-[13px] text-text-light mt-1">{copy.scopeNote}</p>
       </div>
 
-      <div className="bg-white border border-black/5 rounded-[16px] p-5 shadow-sm">
-        <p className="text-[12px] font-bold text-text-light mb-3">الهوية الحالية</p>
+      {reportsAllowed && <ExecutiveOverview office={office} />}
+
+      <details className="bg-white border border-black/5 rounded-[16px] p-5 shadow-sm">
+        <summary className="cursor-pointer text-[12px] font-bold text-text-light">تفاصيل الهوية والنطاق</summary>
         <dl className="grid gap-2 text-[13px] text-text-dark">
           <div className="flex justify-between gap-4">
             <dt className="text-text-light">المستخدم</dt>
@@ -65,7 +71,7 @@ export default function VicePresidentShell({ office }) {
             <dd>{scopes}</dd>
           </div>
         </dl>
-      </div>
+      </details>
 
       <Link
         to={copy.assignmentsPath}
