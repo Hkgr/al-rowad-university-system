@@ -13,6 +13,13 @@ final class ExamManualGradeEntryAccess
 {
     public function __construct(private readonly DataScopeService $scope) {}
 
+    public function authorizeOffering(User $actor, Student $student, CourseOffering $offering): void
+    {
+        $this->authorize($actor, $student);
+        abort_unless($this->scope->scopeManualGradeOfferings(CourseOffering::query(), $actor)
+            ->whereKey($offering->getKey())->exists(), 403);
+    }
+
     public function authorize(User $actor, ?Student $student = null, ?StudentCourseRegistration $registration = null): void
     {
         $actor = $actor->fresh();

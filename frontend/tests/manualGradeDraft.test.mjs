@@ -72,7 +72,11 @@ test('navigation cancellation is nonmutating and permits a subsequent save; pend
 
 test('static integration: real router blocker, separate errors, explicit draft decisions', () => {
   const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
-  const page = read('../src/features/exam-board/pages/ManualGradeEntryPage.jsx')
+  const page = [
+  '../src/features/exam-board/pages/ManualGradeEntryPage.jsx',
+  '../src/features/exam-board/pages/StudentManualGradePage.jsx',
+  '../src/features/exam-board/components/RegistrationGridRow.jsx',
+].map(read).join('\n')
   const app = read('../src/app/App.jsx')
   assert.match(app, /createBrowserRouter\(createRoutesFromElements\(/)
   assert.match(app, /RouterProvider router=\{router\}/)

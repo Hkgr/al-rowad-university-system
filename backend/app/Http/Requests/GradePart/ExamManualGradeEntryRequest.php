@@ -18,6 +18,10 @@ class ExamManualGradeEntryRequest extends FormRequest
     {
         return match ($this->route()->getActionMethod()) {
             'students' => ['q' => ['required', 'string', 'min:1', 'max:150']] + $this->pagination(),
+            'catalog' => ['q' => ['sometimes', 'nullable', 'string', 'max:150'], 'academic_year_id' => ['sometimes', 'integer', 'min:1'], 'semester_id' => ['sometimes', 'integer', 'min:1']] + $this->pagination(),
+            'prepareComponents' => ['revision' => ['required', 'string', 'regex:/^[a-f0-9]{64}$/D'], 'confirmed' => ['required', 'boolean', 'accepted']],
+            'prepareRegistration' => ['confirmed' => ['required', 'boolean', 'accepted'], 'reason' => ['required', 'string', 'max:1000', 'regex:/\\S/u'],
+                'course_id' => ['required', 'integer', 'min:1'], 'academic_year_id' => ['required', 'integer', 'min:1'], 'semester_id' => ['required', 'integer', 'min:1']],
             'registrations' => ['academic_year_id' => ['sometimes', 'integer', 'min:1'], 'semester_id' => ['sometimes', 'integer', 'min:1']] + $this->pagination(),
             'save' => [
                 'revision' => ['required', 'string', 'regex:/^[a-f0-9]{64}$/D'],

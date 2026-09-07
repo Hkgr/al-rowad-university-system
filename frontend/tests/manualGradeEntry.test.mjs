@@ -56,7 +56,11 @@ test('route/nav/card share access without inheriting the exam parent gate', () =
   for (const source of [app, nav, home]) { assert.ok(source.includes('/exam-board/manual-grade-entry')); assert.ok(source.includes('ACCESS.manualGradeEntry')) }
 })
 test('source contract: canonical components, explicit confirmations, uncertain write recovery and no legacy formula', () => {
-  const page = read('../src/features/exam-board/pages/ManualGradeEntryPage.jsx')
+  const page = [
+  '../src/features/exam-board/pages/ManualGradeEntryPage.jsx',
+  '../src/features/exam-board/pages/StudentManualGradePage.jsx',
+  '../src/features/exam-board/components/RegistrationGridRow.jsx',
+].map(read).join('\n')
   for (const text of ['apiRequest', 'row.components', 'correction', 'submission-readiness', 'ready.revision', 'AbortController', 'identityStamp()', 'sequence.current.valid', 'beforeunload', 'dirty.current.size', 'await reload()', 'setUncertain(true)', 'جميع طلاب الطرح']) assert.ok(page.includes(text), text)
   for (const forbidden of ['window.confirm(', 'window.prompt(', 'calcLetter', 'https://rust.', 'localStorage.getItem(\'token\')', '/grades`']) assert.ok(!page.includes(forbidden), forbidden)
   assert.match(page, /onCancel=\{\(\) => setDialog\(null\)\}/)

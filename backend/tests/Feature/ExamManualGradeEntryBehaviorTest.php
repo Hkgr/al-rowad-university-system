@@ -345,9 +345,23 @@ class ExamManualGradeEntryBehaviorTest extends TestCase
         DB::enableQueryLog();
         $this->row();
         $first = count(DB::getQueryLog());
-        for ($i = 3; $i <= 8; $i++) DB::table('student_course_registrations')->insert(['student_course_registration_id' => $i, 'student_id' => 1, 'course_offering_id' => 1, 'registration_status_id' => 1]);
+        // Distinct contexts respect the production student/offering unique pair,
+        // including when this regression runs in the grid fixture subclass.
+        $course = (array) DB::table('courses')->where('course_id', 1)->first();
+        $offering = (array) DB::table('course_offerings')->where('course_offering_id', 1)->first();
+        $components = DB::table('grade_components')->where('course_offering_id', 1)->get();
+        for ($i = 3; $i <= 8; $i++) {
+            DB::table('courses')->insert(array_replace($course, ['course_id' => $i, 'course_code' => 'QUERY-'.$i]));
+            DB::table('course_offerings')->insert(array_replace($offering, ['course_offering_id' => $i, 'course_id' => $i]));
+            foreach ($components as $component) {
+                $copy = (array) $component;
+                unset($copy['grade_component_id']);
+                DB::table('grade_components')->insert(array_replace($copy, ['course_offering_id' => $i]));
+            }
+            DB::table('student_course_registrations')->insert(['student_course_registration_id' => $i, 'student_id' => 1, 'course_offering_id' => $i, 'registration_status_id' => 1]);
+        }
         DB::flushQueryLog();
-        $this->row();
+        $this->getJson(self::BASE.'/students/1/registrations')->assertOk()->assertJsonCount(7, 'data.registrations');
         self::assertLessThanOrEqual($first + 2, count(DB::getQueryLog()));
         DB::disableQueryLog();
     }

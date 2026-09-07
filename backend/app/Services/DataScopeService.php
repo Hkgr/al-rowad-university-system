@@ -39,6 +39,18 @@ class DataScopeService
             ->orWhereIn('course_offering_id', CourseOffering::idsResolvedToColleges($scopes['college'])));
     }
 
+    /** Catalog reads use actual scope only, including courses without offerings. */
+    public function scopeManualGradeCourses(Builder $query, User $user): Builder
+    {
+        $scopes = $this->grouped($user);
+        if ($scopes['university'] !== []) return $query;
+        return $query->where(fn (Builder $course) => $course
+            ->whereHas('departments', fn (Builder $d) => $d->whereIn('departments.department_id', $scopes['department'])->orWhereIn('college_id', $scopes['college']))
+            ->orWhereHas('academicPrograms', fn (Builder $p) => $p->whereIn('academic_programs.academic_program_id', $scopes['program'])
+                ->orWhereIn('department_id', $scopes['department'])->orWhereHas('department', fn (Builder $d) => $d->whereIn('college_id', $scopes['college'])))
+            ->orWhereHas('courseOfferings', fn (Builder $o) => $this->scopeManualGradeOfferings($o, $user)));
+    }
+
     public function scopes(User $user): array
     {
         return $user->accessScopes()->where('is_active', true)->get(['scope_type', 'scope_id'])
