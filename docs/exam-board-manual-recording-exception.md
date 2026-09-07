@@ -68,3 +68,28 @@ Save is draft-only. Existing submission, return, approval and finalization produ
 ## Remaining verification limits / boundaries
 
 No real multi-connection MariaDB concurrency execution, live browser-to-Laravel end-to-end run, production data test, deployment or merge. SQLite/replayed requests do not prove MariaDB lock scheduling. Canonical services and normal-registration negative tests passed locally, but the unrelated suite/lint failures above remain visible for follow-up. Keep the corrective PR OPEN and unmerged.
+
+## PR #130 follow-up: catalog/editor lifecycle (reviewed e5685f4)
+
+Fetched the existing branch: remote head was still `e5685f4b523afc87f3acfae49409e5fd9960622c`, with no concurrent changes and a clean worktree. This follow-up changes frontend loading/state, browser/Node tests and this document only. No backend, schema, dependencies, styling or exception/authorization rules changed.
+
+### Reproduction and correction
+
+Two real React/browser regressions were added and **executed against the unchanged production code before the fix**:
+
+- `?autorun&scenario=period`: failed with **A history mark missing after B preparation editor**. Old catalog data initialized the new scope's sticky row mode/selection before its response arrived.
+- `?autorun&scenario=active`: failed with **active mode cancelled the in-flight catalog**. The existing guard invalidated/aborted the read despite unchanged reload dependencies.
+
+Catalog responses now carry a deterministic identity comprising student, authentication identity, mode, year, semester, applied search and page. Only a matching response can mount editors. Confirmed context transitions invalidate obsolete reads immediately, clear the old snapshot and await matching data; late responses are rejected even when fetch ignores abort. The semantic request/course key resets row-local offering/attempt selections across contexts, not across responses/revisions. Same-context refresh leaves editors mounted: the existing baseline/proposal/server and explicit uncertain-write/rebase behavior remain intact. Local row selection no longer unnecessarily cancels an unrelated catalog refresh.
+
+Both mode buttons call a guarded handler: selecting the active mode exits **before** draft confirmation, cancellation, epoch changes or pagination reset. Real mode changes still honor dirty/pending-write protection. A rejected transition leaves drafts untouched; a failed load terminates loading and permits an explicit read retry.
+
+### Executed follow-up verification
+
+- Both new browser regressions passed after the fix in local headless Chrome. The fixture has distinct A/B records and parameter-dependent catalogs: course 1 exists with mark 41 in A and has no offering/registration in B; course 2 has distinct registrations/marks in both. It exercises both directions, delayed/out-of-order responses ignoring abort, period selectors, read-only history (zero writes), B-only save, preservation of another B draft, both active-mode handlers, pagination retention, discard confirmation, load failure and retry.
+- The original local browser fixture passed again, including sidebar/back/forward protection, 409 explicit rebase, unrelated drafts, lost committed response/no automatic retry and authorization cleanup. Added an explicit mode-change attempt during a pending write. Browser runs render actual React/router/components using synthetic intercepted fetch; **not live Laravel integration**. A desktop screenshot of B's saved row and the retained unrelated draft was inspected.
+- All **174 Node tests passed** (includes pure logic and source contracts). The new key tests cover all query identity fields and stability across refreshed revisions; these are not substitutes for the executed browser regressions.
+- `npm run build` passed (807 modules; pre-existing large-chunk warning). Changed-file ESLint was executed: `StudentManualGradePage.jsx` retains the same **2 errors + 2 warnings** as the reviewed head (`set-state-in-effect` / `exhaustive-deps`); the other four changed JS/JSX/test files are clean. No rules were suppressed. `git diff --check` passed.
+- No dependencies installed/updated. Laravel/PHPUnit was not rerun for this frontend-only follow-up; the prior section records the earlier backend execution. No deployment, production verification or live browser/backend end-to-end acceptance is claimed.
+
+Changed files: `StudentManualGradePage.jsx`, `manualGradeGrid.js`, `manualGradeGrid.test.mjs`, `tests/browser/manual-grade-review.jsx`, new `tests/browser/manual-grade-periods.jsx`, and this document. To reproduce, run the existing Vite development server and open `/tests/browser/manual-grade-review.html?autorun`, then the same URL with `&scenario=period` and `&scenario=active` (localhost only, all fetches synthetic).

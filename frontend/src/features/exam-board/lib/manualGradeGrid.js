@@ -17,6 +17,12 @@ export const preparationError = error => ({
   supplementary_fixed_roster_target_locked: 'الطرح مرتبط بقائمة تكميلية ثابتة؛ لا يمكن تغيير سياقه.',
 }[error.errorCode] ?? null)
 
+// Semantic query identity, deliberately independent of refresh count and row revisions.
+export function catalogRequestKey({ studentId, identity, historyMode, term, search, page }) {
+  return JSON.stringify([String(studentId), identity, historyMode ? 'history' : 'recording',
+    String(term.academic_year_id ?? ''), String(term.semester_id ?? ''), search, Number(page)])
+}
+
 // Never silently pick one of several sections or academic attempts.
 export function selectedContext(course, offeringId, registrationId) {
   // The API already excludes other-program contexts without a student's own attempt.

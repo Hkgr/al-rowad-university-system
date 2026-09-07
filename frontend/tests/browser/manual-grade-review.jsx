@@ -6,6 +6,7 @@ import ManualGradeEntryPage from '../../src/features/exam-board/pages/ManualGrad
 import StudentManualGradePage from '../../src/features/exam-board/pages/StudentManualGradePage'
 import { storeIdentity } from '../../src/features/auth/auth'
 import '../../src/styles/global.css'
+import { runPeriodRegressions } from './manual-grade-periods'
 
 const rootPath = '/tests/browser/manual-grade-review.html'
 const gridPath = '/exam-board/manual-grade-entry/students/1'
@@ -33,6 +34,8 @@ const makeRow = id => ({ registration_id: id, course_code: `FIXTURE-${id}`, cour
 
 document.querySelector('#run').onclick = async () => {
   if (!['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)) throw new Error('Local fixtures only')
+  const scenario = new URLSearchParams(location.search).get('scenario')
+  if (scenario) return runPeriodRegressions(scenario)
   const run = document.querySelector('#run'); run.disabled = true
   const results = document.querySelector('#results'); results.textContent = 'Running component/router fixtures…\n'
   const log = name => { results.textContent += `PASS ${name}\n` }
@@ -221,6 +224,8 @@ document.querySelector('#run').onclick = async () => {
     holdNext = true
     await save(1)
     await until(() => releaseWrite, 'write was not held')
+    button('استعراض السجل — قراءة فقط').click(); await tick()
+    assert(button('إدخال العلامات').getAttribute('aria-pressed') === 'true' && field(1).value === '25', 'mode changed during pending write')
     document.querySelector('aside a').click()
     await until(modal, 'pending write navigation was not blocked')
     assert(button('تجاهل المسودات', modal()).disabled, 'pending write allowed discard')
