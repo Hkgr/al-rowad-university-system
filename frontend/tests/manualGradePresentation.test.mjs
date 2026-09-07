@@ -29,7 +29,7 @@ test('source contract: safety callbacks and disabled conditions survive presenta
     'disabled={busy || uncertain || conflict || readOnly || !dirty || !acknowledged}',
     'disabled={busy || uncertain || conflict || readOnly || dirty}',
     'disabled={busy || uncertain || readOnly || removedComponents}',
-    'readOnly={loading || !!dataError}', 'disabled={pendingCount > 0}',
+    'readOnly={historyMode || loading || !!dataError}', 'disabled={pendingCount > 0}',
     'onChange={event => edit(c.grade_component_id, event.target.value)}',
     'checked={acknowledged}', 'onChange={event => setAcknowledged(event.target.checked)}',
     "onClick={() => resolve('discard')}", "onClick={() => resolve('rebase')}",

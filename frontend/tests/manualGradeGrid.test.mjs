@@ -1,8 +1,27 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { catalogPath, periodsPath, studentGridPath, selectedContext, preparationPath, preparationError } from '../src/features/exam-board/lib/manualGradeGrid.js'
+import { catalogPath, periodsPath, studentGridPath, selectedContext, preparationPath, preparationError, catalogRequestKey } from '../src/features/exam-board/lib/manualGradeGrid.js'
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
+
+test('catalog identity covers student, authority, mode, actual period, applied search and page, not response revisions', () => {
+  const context = { studentId: 1, identity: 'officer', historyMode: false, term: { academic_year_id: 1, semester_id: 2 }, search: 'course', page: 1 }
+  const key = catalogRequestKey(context)
+  for (const change of [{ studentId: 2 }, { identity: 'other' }, { historyMode: true }, { term: { academic_year_id: 2, semester_id: 2 } },
+    { term: { academic_year_id: 1, semester_id: 1 } }, { search: 'other' }, { page: 2 }]) assert.notEqual(catalogRequestKey({ ...context, ...change }), key)
+  assert.equal(catalogRequestKey({ ...context, term: { semester_id: '2', academic_year_id: '1' }, revision: 'new', generation: 7 }), key)
+})
+
+test('source contract: only matched snapshots mount editors; active mode exits before transition side effects', () => {
+  const page = read('../src/features/exam-board/pages/StudentManualGradePage.jsx')
+  assert.match(page, /snapshot\?\.key === catalogKey \? snapshot.data : null/)
+  assert.match(page, /setSnapshot\(\{ key: catalogKey, data: json.data \}\)/)
+  assert.match(page, /key=\{`\$\{catalogKey\}:\$\{course.course_id\}`\}/)
+  assert.match(page, /if \(next === historyMode\) return[^\n]*\n\s*changeCatalog/)
+  assert.match(page, /onClick=\{\(\) => changeMode\(false\)\}/)
+  assert.match(page, /onClick=\{\(\) => changeMode\(true\)\}/)
+  assert.doesNotMatch(page, /key=\{.*(?:Math.random|Date.now|revision|generation)/)
+})
 test('grid routes identify a student; actual term belongs to the catalog query, not curriculum advice', () => {
   assert.equal(studentGridPath(7), '/exam-board/manual-grade-entry/students/7')
   assert.equal(periodsPath(7), '/v1/exams/manual-grade-entry/students/7/periods')
@@ -28,7 +47,7 @@ test('zero contexts remains visible and multiple offerings/attempts never select
   const course = { offerings: [] }
   assert.equal(selectedContext(course).offering, null)
   course.offerings = [{ course_offering_id: 1, registrations: [{ registration_id: 3 }, { registration_id: 4 }] }, { course_offering_id: 2, registrations: [] }]
-  assert.equal(selectedContext(course).offering, null)
+  assert.equal(selectedContext(course).offering.course_offering_id, 1)
   assert.equal(selectedContext(course, '1').registration, null)
   assert.equal(selectedContext(course, '1', '4').registration.registration_id, 4)
   assert.equal(selectedContext(course, '2', '4').registration, undefined)
@@ -37,6 +56,16 @@ test('zero contexts remains visible and multiple offerings/attempts never select
 test('actionable configuration errors distinguish undefined, incompatible and official locks', () => {
   for (const errorCode of ['manual_components_undefined', 'manual_components_incompatible', 'grading_policy_incompatible', 'official_result_locked']) assert.ok(preparationError({ errorCode }))
   assert.equal(preparationError({ errorCode: 'unknown' }), null)
+})
+
+test('existing owned attempts take priority; genuinely competing owned attempts remain explicit', () => {
+  const owned = { course_offering_id: 4, registrations: [{ registration_id: 8 }] }
+  const course = { offerings: [{ course_offering_id: 3, registrations: [] }, owned] }
+  assert.equal(selectedContext(course).registration.registration_id, 8)
+  course.offerings.push({ course_offering_id: 5, registrations: [{ registration_id: 9 }] })
+  assert.equal(selectedContext(course).offering, null)
+  assert.equal(selectedContext(course, '5', '9').registration.registration_id, 9)
+  assert.ok(preparationError({ errorCode: 'manual_recording_relationship_missing' }))
 })
 test('source integration: dedicated authorized route, catalog table and explicit preparation', () => {
   const app = read('../src/app/App.jsx')

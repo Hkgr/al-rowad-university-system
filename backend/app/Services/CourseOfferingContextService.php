@@ -139,8 +139,43 @@ class CourseOfferingContextService
      */
     public function createOffering(CourseOfferingContext $context, array $attributes = []): CourseOffering
     {
+        return $this->persistClosedOffering(array_merge($context->offeringAttributes(), $attributes));
+    }
+
+    /** Recording evidence, not enrollment eligibility or an invented historical curriculum. */
+    public function resolveManualRecordingIdentity(\App\Models\Student $student, Course $course, int $yearId, int $semesterId, User $actor): array
+    {
+        app(\App\Support\ExamManualGradeEntryAccess::class)->authorize($actor, $student);
+        abort_unless($this->dataScope->scopeManualGradeCourses(Course::query(), $actor)->whereKey($course->getKey())->exists(), 403);
+        $program = AcademicProgram::with('department.college')->find($student->academic_program_id);
+        abort_unless($program && $this->dataScope->canMutateProgram($actor, $program), 403);
+        if (!$program->department?->college) throw CourseOfferingContextException::programContextIncomplete();
+        AcademicYear::findOrFail($yearId);
+        Semester::findOrFail($semesterId);
+        // Inactive membership is persisted evidence too. No classifications or dates are inferred.
+        $membershipIds = ProgramCourse::where('academic_program_id', $program->getKey())->where('course_id', $course->getKey())
+            ->orderBy('program_course_id')->pluck('program_course_id')->all();
+        $attemptIds = StudentCourseRegistration::where('student_id', $student->getKey())
+            ->whereHas('courseOffering', fn ($q) => $q->where('course_id', $course->getKey())->where('academic_program_id', $program->getKey()))
+            ->orderBy('student_course_registration_id')->pluck('student_course_registration_id')->all();
+        if ($membershipIds === [] && $attemptIds === []) {
+            throw new \App\Exceptions\GradeException('لا توجد علاقة برنامج محفوظة أو محاولة سابقة تربط هذا المقرر ببرنامج الطالب.', status: 409, errorCode: 'manual_recording_relationship_missing');
+        }
+        return ['attributes' => ['course_id' => (int) $course->getKey(), 'academic_program_id' => (int) $program->getKey(),
+            'department_id' => (int) $program->department_id, 'academic_year_id' => $yearId, 'semester_id' => $semesterId],
+            'evidence' => ['program_course_ids' => $membershipIds, 'registration_ids' => $attemptIds]];
+    }
+
+    public function createManualRecordingOffering(\App\Models\Student $student, Course $course, int $yearId, int $semesterId, User $actor): CourseOffering
+    {
+        $identity = $this->resolveManualRecordingIdentity($student, $course, $yearId, $semesterId, $actor);
+        return $this->persistClosedOffering($identity['attributes']);
+    }
+
+    private function persistClosedOffering(array $attributes): CourseOffering
+    {
         try {
-            $payload = array_merge($context->offeringAttributes(), $attributes);
+            $payload = $attributes;
             // User-facing / dean opening paths must not assign an instructor.
             // Legacy faculty_member_id is synchronized only after dual VP approval.
             $payload['faculty_member_id'] = null;

@@ -12,7 +12,9 @@ use Illuminate\Support\Facades\Gate;
 final class ExamManualGradeEntryAccess
 {
     public const RECORDING_EXEMPTIONS = ['student_request_advisor_approval', 'current_academic_year',
-        'student_registration_window', 'open_enrollment_offering', 'weekly_timetable_completeness_and_conflicts'];
+        'student_registration_window', 'open_enrollment_offering', 'weekly_timetable_completeness_and_conflicts',
+        'prerequisite_completion_at_recording', 'new_registration_credit_limit', 'passed_course_in_other_term',
+        'new_registration_curriculum_selection_and_requirement_quotas'];
 
     public function __construct(private readonly DataScopeService $scope) {}
 

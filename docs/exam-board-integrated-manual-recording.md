@@ -1,5 +1,7 @@
 # Exam Board — integrated student-centered academic recording
 
+Historical PR #129 report: the subsequently authorized recording-only eligibility exemptions and current verification are documented in [exam-board-manual-recording-exception.md](exam-board-manual-recording-exception.md).
+
 ## Base and scope
 
 PR #128 was verified merged at `7572d366b6a4c0c215e724b950cd59b9231ddfce`. This corrective branch, `codex/exam-board-integrated-manual-grade-context`, starts at freshly fetched `origin/develop` `74a49e981e0ba53c3e60c0cf572113b91830258e` (the merge of #128). No other developer changes were overwritten. This is a functional correction, not a design-only refactor or a deployment.

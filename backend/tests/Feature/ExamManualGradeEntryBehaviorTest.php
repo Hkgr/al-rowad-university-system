@@ -23,7 +23,7 @@ class ExamManualGradeEntryBehaviorTest extends TestCase
         self::assertSame('sqlite', DB::connection()->getDriverName());
         Schema::dropAllTables();
         $this->schema();
-        $this->seed();
+        $this->seedManualGradeFixture();
         Sanctum::actingAs(User::findOrFail(1));
     }
 
@@ -439,7 +439,7 @@ class ExamManualGradeEntryBehaviorTest extends TestCase
         Schema::table('student_grade_components', fn (Blueprint $t) => $t->unique(['student_course_registration_id', 'grade_component_id']));
     }
 
-    private function seed(): void
+    private function seedManualGradeFixture(): void
     {
         DB::table('account_statuses')->insert(['account_status_id' => 1, 'status_code' => 'active']);
         DB::table('users')->insert(['user_id' => 1, 'username' => 'officer', 'account_status_id' => 1]);

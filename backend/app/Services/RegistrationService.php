@@ -86,7 +86,7 @@ class RegistrationService
     /**
      * Explicit Exam Board exception: request/advisor, current-year, student-window, OPEN enrollment and timetable gates are waived.
      * No caller-supplied academic identity, status, advisor, date or approval is persisted.
-     * New registrations retain curriculum, prerequisite, credit-hour and integrity gates. Legacy/historical registrations may be reused, never reclassified.
+     * Recording also waives new-enrollment eligibility, but requires persisted academic relationship evidence and attempt integrity.
      */
     public function prepareManualGradeRegistration(Student $student, CourseOffering $offering,
         \App\Models\User $actor, array $confirmation): StudentCourseRegistration
@@ -125,8 +125,8 @@ class RegistrationService
                     throw new RegistrationException('Existing attempt is not eligible for manual grading.', status: 409, errorCode: 'manual_registration_ineligible');
                 }
             } else {
-                // Preserve all additional student registration gates; never revive registerStudent().
-                $this->assertManualGradeAcademicIdentity($student, $offering);
+                // Preserve recording identity/attempt integrity; never revive the ordinary legacy endpoint.
+                $this->assertManualGradeAcademicIdentity($student, $offering, $actor);
                 if (StudentCourseRegistration::query()->where('student_id', $student->getKey())->academicAttempts(false)
                     ->whereHas('courseOffering', fn ($q) => $q->where('course_id', $offering->course_id)
                         ->where('academic_year_id', $offering->academic_year_id)->where('semester_id', $offering->semester_id))->exists()) {
@@ -141,14 +141,14 @@ class RegistrationService
                 'action_code' => 'manual_grade_entry.registration',
                 'description' => json_encode(['student_id' => $student->getKey(),
                     'course_offering_id' => $offering->getKey(), 'registration_id' => $registration->getKey(),
-                    'reused' => $existing->isNotEmpty(), 'waived' => \App\Support\ExamManualGradeEntryAccess::RECORDING_EXEMPTIONS,
+                    'reused' => $existing->isNotEmpty(), 'waived' => $existing->isEmpty() ? \App\Support\ExamManualGradeEntryAccess::RECORDING_EXEMPTIONS : [],
                     'reason' => trim($confirmation['reason'])], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
             ]);
             return $registration;
         }, 3);
     }
 
-    /** Read-only shared academic gates, also used by exceptional preview. */
+    /** Canonical ordinary-registration eligibility; recording never invokes these enrollment gates. */
     public function assertAcademicRegistrationCandidate(Student $student, CourseOffering $courseOffering): array
     {
         $academicStanding = $this->officialRegistrationAcademicStanding($student);
@@ -191,16 +191,17 @@ class RegistrationService
         return [$academicStanding, $hours];
     }
 
-    public function assertManualGradeAcademicIdentity(Student $student, CourseOffering $offering): void
+    public function assertManualGradeAcademicIdentity(Student $student, CourseOffering $offering, \App\Models\User $actor): void
     {
         if ($student->academic_program_id === null
             || (int) $student->academic_program_id !== (int) $offering->academic_program_id
             || !in_array($offering->status, ['open', 'closed'], true)
             || !AcademicYear::query()->whereKey($offering->academic_year_id)->exists()
-            || !Semester::query()->whereKey($offering->semester_id)->exists()
-            || !$this->courseIsOnActiveProgramCurriculum($student, (int) $offering->course_id)) {
-            throw new RegistrationException('السياق أو انتماء المقرر إلى المنهج الحالي غير صالح.', status: 409, errorCode: 'manual_academic_context_invalid');
+            || !Semester::query()->whereKey($offering->semester_id)->exists()) {
+            throw new RegistrationException('هوية المقرر أو البرنامج أو فترة العلامات غير متوافقة.', status: 409, errorCode: 'manual_academic_context_invalid');
         }
+        app(CourseOfferingContextService::class)->resolveManualRecordingIdentity($student, $offering->course,
+            (int) $offering->academic_year_id, (int) $offering->semester_id, $actor);
     }
 
     public function registerStudentWithinTransaction(array $data, ?int $authenticatedUserId = null): array
@@ -609,7 +610,9 @@ class RegistrationService
             throw RegistrationException::withdrawnNotReactivatable();
         }
 
-        [$academicStanding, $hours] = $this->assertAcademicRegistrationCandidate($student, $courseOffering);
+        if ($context !== RegistrationMaterializationContext::EXAM_MANUAL_RECORDING) {
+            [$academicStanding] = $this->assertAcademicRegistrationCandidate($student, $courseOffering);
+        }
         $registeredByUserId = $authenticatedUserId;
         if ($registeredByUserId === null) {
             throw new RegistrationException('registered_by_user_id is required when no authenticated user is available.', [
@@ -680,6 +683,10 @@ class RegistrationService
             'courseOffering.semester',
             'registrationStatus',
         ]);
+
+        if ($context === RegistrationMaterializationContext::EXAM_MANUAL_RECORDING) {
+            return ['registration' => $registration];
+        }
 
         $updatedHours = $this->getHoursSnapshot(
             $student,

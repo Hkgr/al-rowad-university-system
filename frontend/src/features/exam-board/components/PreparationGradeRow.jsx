@@ -27,7 +27,7 @@ export default function PreparationGradeRow(props) {
   const [retry, setRetry] = useState(0)
   const mounted = useRef(true), pending = useRef(false), abort = useRef(null)
   const valid = () => mounted.current && JSON.stringify(getIdentity()) === identity
-  const ready = selection.academic_year_id && selection.semester_id && !props.ambiguous
+  const ready = selection.academic_year_id && selection.semester_id && !props.ambiguous && !props.historyMode
   useEffect(() => {
     mounted.current = true
     if (!ready) return () => { mounted.current = false }
@@ -97,7 +97,7 @@ export default function PreparationGradeRow(props) {
     </td>)}
     <td className="p-3 text-[12px]">{preview?.create_offering ? 'سيُجهّز السياق عند الحفظ دون فتح تسجيل الطلاب' : preview?.create_registration ? 'سيُستكمل التسجيل عند الحفظ' : 'السياق الحالي'}</td>
     <td className="min-w-[240px] space-y-3 p-3">
-      {!ready && <p>اختر السنة والفصل الفعليين، وحدد الطرح والمحاولة عند تعددهما.</p>}
+      {!ready && <p>{props.historyMode ? 'لا توجد علامة محفوظة في هذا السجل؛ استخدم وضع إدخال العلامات للتوثيق.' : 'حدد سنة العلامات وفصلها، واختر المحاولة المقصودة عند وجود سجلات متعددة.'}</p>}
       {loading && <p role="status">جاري التحقق من السياق وحدود العلامات…</p>}
       {message && <p role="status" className="text-amber-900">{message}</p>}
       {preview && <button className={button} disabled={busy || loading || blocked || readOnly || !Object.keys(values).length} onClick={prepareReview}>مراجعة وحفظ العلامات</button>}
@@ -106,10 +106,10 @@ export default function PreparationGradeRow(props) {
         <ul>{server.components.map(c => <li key={c.key}>{c.name}: {markText(c.mark)}</li>)}</ul>
         <button className={button} disabled={busy || loading || readOnly} onClick={rebase}>إبقاء المقترحات وإعادة المراجعة</button>
         <button className={button} disabled={busy || loading || readOnly} onClick={() => { valuesRef.current = {}; setValues({}); setPreview(server); setBlocked(false); setAck(false); onDirty(key, false) }}>تجاهل المسودة واستخدام نسخة الخادم</button></>}
-      {review && <ManualGradeDialog title="مراجعة العلامات والسياق الأكاديمي" busy={busy} disabled={!ack || !reason.trim() || readOnly || blocked} onCancel={() => setReview(null)} onConfirm={confirm}>
+      {review && <ManualGradeDialog title="مراجعة العلامات وفترة السجل" busy={busy} disabled={!ack || !reason.trim() || readOnly || blocked} onCancel={() => setReview(null)} onConfirm={confirm}>
         <p>{student.name} — {course.course_name} — {preview.academic_year} / {preview.semester} — {preview.program}</p>
         <p>{preview.create_offering ? 'سيُنشأ طرح عادي مغلق للتسجيل.' : 'سيُستخدم الطرح الحالي دون إعادة فتحه.'} {preview.create_registration ? 'سيُنشأ التسجيل الأكاديمي.' : 'ستُستخدم المحاولة الحالية.'} {preview.create_components ? 'ستُجهّز المكونات من السياسة الرسمية.' : 'ستُحفظ المكونات الحالية دون تغيير تعريفها.'}</p>
-        <p>إعفاء موثق من طلب الطالب واعتماد المرشد والسنة الحالية ونافذة التسجيل وفتح الطرح والجدول الأسبوعي. لا يتجاوز المنهج والمتطلبات وحد الساعات وأقفال العلامات والتكميلي. الحفظ مسودة فقط؛ الإرسال والاعتماد إجراءان منفصلان.</p>
+        <p>توثيق سجل أكاديمي، وليس طلب تسجيل جديد: لا يشترط طلب الطالب أو المرشد أو السنة الحالية أو نافذة التسجيل أو فتح الطرح أو الجدول أو استيفاء المتطلبات السابقة أو حد الساعات أو حصص اختيار المقررات، ولا يمنعه نجاح في فترة أخرى. يلزم ارتباط أكاديمي محفوظ؛ أقفال العلامات والتكميلي باقية. الحفظ مسودة فقط؛ الإرسال والاعتماد منفصلان.</p>
         <ul>{review.map(m => { const c = preview.components.find(c => c.key === m.key); return <li key={m.key}>{c.name}: {markText(c.mark)} ← {markText(m.mark)}</li> })}</ul>
         <label>سبب الإدخال أو التصحيح<textarea className={field} value={reason} maxLength={1000} onChange={e => setReason(e.target.value)} /></label>
         <label className="flex gap-2"><input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} />{MANUAL_GRADE_ACKNOWLEDGEMENT}</label>

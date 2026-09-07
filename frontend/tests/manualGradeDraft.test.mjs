@@ -81,7 +81,7 @@ test('static integration: real router blocker, separate errors, explicit draft d
   assert.match(app, /createBrowserRouter\(createRoutesFromElements\(/)
   assert.match(app, /RouterProvider router=\{router\}/)
   for (const text of ['useBlocker(', 'blocker.reset()', 'blocker.proceed()', 'pendingCount > 0', 'beforeunload', 'setNotice(', 'setLookupError(', 'setDataError(', "resolve('rebase')", "resolve('discard')", 'savePayload(baseline, edits', "dispatch({ type: 'conflict' })"]) assert.ok(page.includes(text), text)
-  assert.match(page, /readOnly=\{loading \|\| !!dataError\}/)
+  assert.match(page, /readOnly=\{historyMode \|\| loading \|\| !!dataError\}/)
   assert.ok(!page.includes('setEdits({})'))
   assert.ok(!page.includes('setError('))
   assert.ok(!page.includes('change(() => reload())'))
