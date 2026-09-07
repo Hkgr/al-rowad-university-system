@@ -1,5 +1,7 @@
 # Exam Board student course grid
 
+> Historical PR #128 implementation report. The subsequent explicitly authorized integrated recording correction supersedes the original preparation-button and current-year/calendar/timetable restrictions below. See [integrated manual recording](exam-board-integrated-manual-recording.md) for the current exception matrix and operator journey.
+
 Base: `3f9a3d1151b1a7157551b5ba2909d497ad824d31` (`origin/develop`, including merged #126 and #127).
 Branch: `codex/exam-board-student-grade-grid`.
 

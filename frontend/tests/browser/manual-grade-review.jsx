@@ -42,6 +42,8 @@ document.querySelector('#run').onclick = async () => {
   let router, root, releaseWrite
   let conflictNext = false, holdNext = false, writes = 0
   let searchHold = null, catalogOverflow = true
+  const unprepared = new Set([3, 4])
+  let loseContextReply = true
   const searches = []
   const terms = [{ academic_year_id: 1, year_name: '2026', semester_id: 1, semester_name: 'First' }]
   const rows = [makeRow(1), makeRow(2)]
@@ -60,14 +62,33 @@ document.querySelector('#run').onclick = async () => {
         if (searchHold) { const hold = searchHold; searchHold = null; await new Promise(resolve => { hold.release = resolve }) }
         return response({ students: [student], meta })
       }
-      if (path.endsWith('/periods')) return response({ terms })
+      if (path.endsWith('/periods')) return response({ terms, academic_years: terms, semesters: terms })
       if (path.endsWith('/catalog')) {
         if (catalogOverflow && !parsed.searchParams.get('academic_year_id')) return response({}, 422)
         catalogOverflow = false
         return response({ student, terms, courses: clone(rows).map(r => ({
         course_id: r.registration_id, course_code: r.course_code, course_name: r.course_name, credit_hours: 3, own_program: true,
         offerings: [{ course_offering_id: r.registration_id, academic_year_id: 1, semester_id: 1, academic_year: '2026', semester: 'First', required_parts: ['theoretical'], registrations: [r] }],
-      })), meta })
+      })).concat([...unprepared].map(id => ({ course_id: id, course_code: `FIXTURE-${id}`, course_name: `Course ${id}`, credit_hours: 3, own_program: true, offerings: [] }))), meta })
+      }
+      const context = path.match(/courses\/(3|4)\/context-(preview|save)$/)
+      if (context) {
+        const id = Number(context[1]), missing = unprepared.has(id)
+        const current = rows.find(r => r.registration_id === id)
+        const preview = { academic_year: '2026', semester: 'First', program: 'Fixture', revision: missing ? 'a'.repeat(64) : current.revision,
+          create_offering: missing, create_registration: missing, create_components: missing,
+          components: [{ key: missing ? 'new:theoretical' : String(id), component_type: 'theoretical', name: `Mark ${id}`, max_mark: 60, mark: missing ? null : current.components[0].mark }] }
+        if (context[2] === 'preview') return response(preview)
+        assert(options.method === 'POST', 'context save method')
+        const payload = JSON.parse(options.body)
+        assert(payload.confirmed && payload.acknowledged && payload.reason.trim(), 'unconfirmed context write')
+        assert(payload.revision === preview.revision, 'stale preparation was silently retried')
+        const row = current ?? makeRow(id)
+        row.components[0].mark = payload.components[0].mark; row.revision = 'd'.repeat(64)
+        if (missing) rows.push(row)
+        unprepared.delete(id)
+        if (id === 4 && loseContextReply) { loseContextReply = false; throw new TypeError('Fixture lost reply after commit') }
+        return response(clone(row))
       }
       if (path.endsWith('/marks') && options.method === 'PUT') {
         writes++
@@ -154,6 +175,37 @@ document.querySelector('#run').onclick = async () => {
     assert(searches.at(-1) === 'New intent', 'applied query not associated with new results')
     log('intent invalidates old read immediately, before the next debounce completes')
     await loadStudent()
+    const actualSemester = document.querySelectorAll('main select')[1]
+    assert(actualSemester.value === '', 'new context semester must not be inferred')
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(actualSemester, '1')
+    actualSemester.dispatchEvent(new Event('change', { bubbles: true }))
+    await until(() => editable(3) && editable(4), 'unregistered draft cells did not resolve official limits')
+    input(field(1), '24'); input(field(3), '28')
+    const confirmContext = async id => {
+      button('مراجعة وحفظ العلامات', editor(id)).click()
+      await until(modal, 'integrated confirmation missing')
+      const reason = modal().querySelector('textarea')
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(reason, 'Fixture exceptional recording')
+      reason.dispatchEvent(new Event('input', { bubbles: true }))
+      modal().querySelector('input[type="checkbox"]').click()
+      await until(() => !button('تأكيد', modal()).disabled, 'context acknowledgment not accepted')
+      button('تأكيد', modal()).click()
+    }
+    await confirmContext(3)
+    await until(() => !unprepared.has(3) && button('حفظ العلامات', editor(3)) && editable(1), 'integrated save did not create the normal draft row')
+    assert(field(1).value === '24' && location.pathname === gridPath, 'context save lost another draft or navigated away')
+    log('no offering/registration: draft cells -> one confirmation -> normal grade row; unrelated draft retained')
+    input(field(4), '29'); await confirmContext(4)
+    await until(() => button('إبقاء المقترحات وإعادة المراجعة', editor(4)), 'uncertain context save did not reconcile')
+    assert(field(4).value === '29' && !editable(4), 'uncertain save lost draft or silently unlocked it')
+    assert(rows.filter(r => r.registration_id === 4).length === 1, 'lost reply duplicated context')
+    button('إبقاء المقترحات وإعادة المراجعة', editor(4)).click()
+    await until(() => editable(4), 'explicit context rebase failed')
+    assert(field(4).value === '29', 'explicit rebase lost proposed mark')
+    // Clear this fixture draft explicitly so subsequent router tests remain focused on row 1.
+    input(field(4), '30'); await confirmContext(4)
+    await until(() => button('حفظ العلامات', editor(4)), 'explicit retry did not finish')
+    log('uncertain context response preserves proposals, reads committed state and requires explicit review; no duplicate')
     input(field(1), '25')
     document.querySelector('aside a').click()
     await cancelNavigation()

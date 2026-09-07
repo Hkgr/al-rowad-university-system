@@ -26,6 +26,7 @@ function StudentGrid({ studentId }) {
   const [page, setPage] = useState(1)
   const [data, setData] = useState(null)
   const [terms, setTerms] = useState([])
+  const [semesters, setSemesters] = useState([])
   const [periodError, setPeriodError] = useState('')
   const [periodLoading, setPeriodLoading] = useState(false)
   const [periodRetry, setPeriodRetry] = useState(0)
@@ -48,7 +49,7 @@ function StudentGrid({ studentId }) {
   }, [])
   const clear = useCallback(() => {
     sequence.current.invalidate(); controller.current?.abort(); periodController.current?.abort(); dirty.current.clear(); busy.current.clear()
-    setData(null); setTerms([]); setPeriodError(''); setPeriodLoading(false); setDiscard(null); setQ(''); setSearch(''); setAllowed(false)
+    setData(null); setTerms([]); setSemesters([]); setPeriodError(''); setPeriodLoading(false); setDiscard(null); setQ(''); setSearch(''); setAllowed(false)
     setDataError(''); setNotice(''); setPendingCount(0)
   }, [])
   const blocker = useBlocker(useCallback(() => navigationDecision({
@@ -100,7 +101,7 @@ function StudentGrid({ studentId }) {
     const current = () => active && !abort.signal.aborted && identityStamp() === identity && canAccess(ACCESS.manualGradeEntry, getIdentity())
     setPeriodLoading(true); setPeriodError('')
     apiRequest(periodsPath(studentId), { signal: abort.signal }).then(json => {
-      if (current()) setTerms(json.data.terms)
+      if (current()) { setTerms(json.data.academic_years); setSemesters(json.data.semesters) }
     }).catch(e => {
       if (current() && e.name !== 'AbortError') { setPeriodError(manualError(e)); if ([401, 403].includes(e.status)) clear() }
     }).finally(() => { if (current()) setPeriodLoading(false) })
@@ -138,7 +139,7 @@ function StudentGrid({ studentId }) {
         <label>السنة الأكاديمية الفعلية<select className={field} value={term.academic_year_id ?? ''} onChange={e => changeTerm('academic_year_id', e.target.value)}><option value="">كل السنوات</option>
           {[...new Map(terms.map(t => [t.academic_year_id, t])).values()].map(t => <option key={t.academic_year_id} value={t.academic_year_id}>{t.year_name}</option>)}</select></label>
         <label>الفصل الفعلي<select className={field} value={term.semester_id ?? ''} onChange={e => changeTerm('semester_id', e.target.value)}><option value="">كل الفصول</option>
-          {[...new Map(terms.filter(t => !term.academic_year_id || String(t.academic_year_id) === term.academic_year_id).map(t => [t.semester_id, t])).values()].map(t => <option key={t.semester_id} value={t.semester_id}>{t.semester_name}</option>)}</select></label>
+          {semesters.map(t => <option key={t.semester_id} value={t.semester_id}>{t.semester_name}</option>)}</select></label>
         <label>بحث في المقررات<input className={field} value={q} onChange={e => { const value = e.target.value; change(() => { setLoading(true); setQ(value) }) }} /></label>
       </div>
     </section>
@@ -147,7 +148,7 @@ function StudentGrid({ studentId }) {
     {data && <><div className={`${card} overflow-x-auto`}><table className="w-full border-collapse text-right text-[12.5px]">
       <caption className="p-3 text-right text-text-light">المقررات دون تسجيل تبقى ظاهرة. الحفظ مسودة؛ الإرسال يشمل جزء الطرح بالكامل.</caption>
       <thead className="bg-primary/[0.05] text-text-dark"><tr>{['الرمز', 'المقرر / التصنيف', 'الساعات', 'السياق الفعلي', 'النظري', 'العملي', 'حالة التسجيل', 'الإجراءات'].map(text => <th scope="col" key={text} className="whitespace-nowrap p-3">{text}</th>)}</tr></thead>
-      <tbody>{data.courses.map(course => <CatalogGradeRow key={course.course_id} course={course} change={change} draftEpoch={draftEpoch} student={data.student} identity={identity} readOnly={loading || !!dataError} onDirty={onDirty} onBusy={onBusy} reload={reload} onForbidden={clear} />)}</tbody>
+      <tbody>{data.courses.map(course => <CatalogGradeRow key={course.course_id} course={course} term={term} change={change} draftEpoch={draftEpoch} student={data.student} identity={identity} readOnly={loading || !!dataError} onDirty={onDirty} onBusy={onBusy} reload={reload} onForbidden={clear} />)}</tbody>
     </table>{!data.courses.length && <p className="p-6 text-center">لا توجد مقررات مطابقة ضمن النطاق.</p>}</div><Pager meta={data.meta} disabled={loading || pendingCount > 0} onPage={p => change(() => { setLoading(true); setPage(p) })} /></>}
     {discard && <ManualGradeDialog title="تغييرات غير محفوظة" confirmTone="discard" onCancel={() => setDiscard(null)} onConfirm={discard} confirmLabel="تجاهل التغييرات والمتابعة"><p>هل تريد تجاهل المسودات قبل تغيير السياق؟</p></ManualGradeDialog>}
     {blocker.state === 'blocked' && <ManualGradeDialog title="مغادرة إدخال العلامات" disabled={pendingCount > 0}

@@ -84,10 +84,9 @@ class RegistrationService
     }
 
     /**
-     * Explicit Exam Board exception: only the student-request/advisor proof is waived.
+     * Explicit Exam Board exception: request/advisor, current-year, student-window, OPEN enrollment and timetable gates are waived.
      * No caller-supplied academic identity, status, advisor, date or approval is persisted.
-     * New registrations retain the STUDENT_WINDOW, curriculum, prerequisite, hours and
-     * timetable gates. Legacy/historical registrations may be reused, never reclassified.
+     * New registrations retain curriculum, prerequisite, credit-hour and integrity gates. Legacy/historical registrations may be reused, never reclassified.
      */
     public function prepareManualGradeRegistration(Student $student, CourseOffering $offering,
         \App\Models\User $actor, array $confirmation): StudentCourseRegistration
@@ -127,26 +126,81 @@ class RegistrationService
                 }
             } else {
                 // Preserve all additional student registration gates; never revive registerStudent().
-                $this->assertSelfRegistrationAllowed($student, $offering);
+                $this->assertManualGradeAcademicIdentity($student, $offering);
                 if (StudentCourseRegistration::query()->where('student_id', $student->getKey())->academicAttempts(false)
                     ->whereHas('courseOffering', fn ($q) => $q->where('course_id', $offering->course_id)
                         ->where('academic_year_id', $offering->academic_year_id)->where('semester_id', $offering->semester_id))->exists()) {
                     $this->throwDuplicateRegistrationException();
                 }
-                $registration = $this->registerStudentWithinTransaction([
+                $registration = $this->performRegisterStudent([
                     'student_id' => $student->getKey(), 'course_offering_id' => $offering->getKey(),
-                ], (int) $actor->getKey())['registration'];
+                ], (int) $actor->getKey(), RegistrationMaterializationContext::EXAM_MANUAL_RECORDING)['registration'];
             }
             \App\Models\UserActivityLog::query()->create([
                 'user_id' => $actor->getKey(), 'module_code' => 'grades',
                 'action_code' => 'manual_grade_entry.registration',
                 'description' => json_encode(['student_id' => $student->getKey(),
                     'course_offering_id' => $offering->getKey(), 'registration_id' => $registration->getKey(),
-                    'reused' => $existing->isNotEmpty(), 'waived' => 'student_request_advisor_approval',
+                    'reused' => $existing->isNotEmpty(), 'waived' => \App\Support\ExamManualGradeEntryAccess::RECORDING_EXEMPTIONS,
                     'reason' => trim($confirmation['reason'])], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
             ]);
             return $registration;
         }, 3);
+    }
+
+    /** Read-only shared academic gates, also used by exceptional preview. */
+    public function assertAcademicRegistrationCandidate(Student $student, CourseOffering $courseOffering): array
+    {
+        $academicStanding = $this->officialRegistrationAcademicStanding($student);
+        if ($this->hasPassedCourse($student, (int) $courseOffering->course_id, $academicStanding)) {
+            throw RegistrationException::courseAlreadyPassed();
+        }
+
+        $missingPrerequisites = $this->getMissingPrerequisites(
+            $student,
+            (int) $courseOffering->course_id,
+            $academicStanding,
+        );
+        if ($missingPrerequisites !== []) {
+            $labels = collect($missingPrerequisites)
+                ->map(fn (array $course): string => $course['course_code'].' - '.$course['course_name'])
+                ->implode(', ');
+
+            throw new RegistrationException(
+                'Student has missing prerequisites: '.$labels.'.',
+                ['course_offering_id' => ['Missing prerequisites: '.$labels.'.']]
+            );
+        }
+
+        $courseCreditHours = (int) ($courseOffering->course?->credit_hours ?? 0);
+        $hours = $this->getHoursSnapshot(
+            $student,
+            (int) $courseOffering->academic_year_id,
+            (int) $courseOffering->semester_id,
+            $academicStanding,
+        );
+
+        if (($hours['registered_hours'] + $courseCreditHours) > $hours['max_allowed_hours']) {
+            throw new RegistrationException('Credit hour limit exceeded for this academic term.', [
+                'course_offering_id' => ['Credit hour limit exceeded for this academic term.'],
+            ]);
+        }
+
+        $this->requirements->assertRegistrationCandidateAllowed($student, $courseOffering);
+
+        return [$academicStanding, $hours];
+    }
+
+    public function assertManualGradeAcademicIdentity(Student $student, CourseOffering $offering): void
+    {
+        if ($student->academic_program_id === null
+            || (int) $student->academic_program_id !== (int) $offering->academic_program_id
+            || !in_array($offering->status, ['open', 'closed'], true)
+            || !AcademicYear::query()->whereKey($offering->academic_year_id)->exists()
+            || !Semester::query()->whereKey($offering->semester_id)->exists()
+            || !$this->courseIsOnActiveProgramCurriculum($student, (int) $offering->course_id)) {
+            throw new RegistrationException('السياق أو انتماء المقرر إلى المنهج الحالي غير صالح.', status: 409, errorCode: 'manual_academic_context_invalid');
+        }
     }
 
     public function registerStudentWithinTransaction(array $data, ?int $authenticatedUserId = null): array
@@ -529,7 +583,7 @@ class RegistrationService
             ]);
         }
 
-        if ($courseOffering->status !== 'open') {
+        if ($courseOffering->status !== 'open' && $context !== RegistrationMaterializationContext::EXAM_MANUAL_RECORDING) {
             throw new RegistrationException('The selected course offering is not open for registration.', [
                 'course_offering_id' => ['The selected course offering is not open for registration.'],
             ]);
@@ -555,43 +609,7 @@ class RegistrationService
             throw RegistrationException::withdrawnNotReactivatable();
         }
 
-        $academicStanding = $this->officialRegistrationAcademicStanding($student);
-        if ($this->hasPassedCourse($student, (int) $courseOffering->course_id, $academicStanding)) {
-            throw RegistrationException::courseAlreadyPassed();
-        }
-
-        $missingPrerequisites = $this->getMissingPrerequisites(
-            $student,
-            (int) $courseOffering->course_id,
-            $academicStanding,
-        );
-        if ($missingPrerequisites !== []) {
-            $labels = collect($missingPrerequisites)
-                ->map(fn (array $course): string => $course['course_code'].' - '.$course['course_name'])
-                ->implode(', ');
-
-            throw new RegistrationException(
-                'Student has missing prerequisites: '.$labels.'.',
-                ['course_offering_id' => ['Missing prerequisites: '.$labels.'.']]
-            );
-        }
-
-        $courseCreditHours = (int) ($courseOffering->course?->credit_hours ?? 0);
-        $hours = $this->getHoursSnapshot(
-            $student,
-            (int) $courseOffering->academic_year_id,
-            (int) $courseOffering->semester_id,
-            $academicStanding,
-        );
-
-        if (($hours['registered_hours'] + $courseCreditHours) > $hours['max_allowed_hours']) {
-            throw new RegistrationException('Credit hour limit exceeded for this academic term.', [
-                'course_offering_id' => ['Credit hour limit exceeded for this academic term.'],
-            ]);
-        }
-
-        $this->requirements->assertRegistrationCandidateAllowed($student, $courseOffering);
-
+        [$academicStanding, $hours] = $this->assertAcademicRegistrationCandidate($student, $courseOffering);
         $registeredByUserId = $authenticatedUserId;
         if ($registeredByUserId === null) {
             throw new RegistrationException('registered_by_user_id is required when no authenticated user is available.', [
@@ -615,13 +633,16 @@ class RegistrationService
             );
         }
 
-        $timetable = $this->schedules->registrationEvaluations(
-            $student,
-            collect([$courseOffering]),
-            $this->currentRegisteredOfferingIds($student),
-            $requestOfferingIds,
-        )[(int) $courseOffering->course_offering_id];
-        $this->assertTimetableEvaluation($timetable);
+        // Selected only by the authorized domain boundary; never by request input.
+        if ($context !== RegistrationMaterializationContext::EXAM_MANUAL_RECORDING) {
+            $timetable = $this->schedules->registrationEvaluations(
+                $student,
+                collect([$courseOffering]),
+                $this->currentRegisteredOfferingIds($student),
+                $requestOfferingIds,
+            )[(int) $courseOffering->course_offering_id];
+            $this->assertTimetableEvaluation($timetable);
+        }
 
         $registrationDate = $data['registration_date'] ?? now()->toDateString();
         $reactivatable = $this->findReactivatableRegistration(

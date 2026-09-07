@@ -17,6 +17,17 @@ class ExamManualGradeEntryRequest extends FormRequest
     public function rules(): array
     {
         return match ($this->route()->getActionMethod()) {
+            'contextPreview' => $this->contextRules(),
+            'contextSave' => $this->contextRules() + [
+                'revision' => ['required', 'string', 'regex:/^[a-f0-9]{64}$/D'],
+                'confirmed' => ['required', 'boolean', 'accepted'], 'acknowledged' => ['required', 'boolean', 'accepted'],
+                'reason' => ['required', 'string', 'max:1000', 'regex:/\\S/u'],
+                'correction_confirmed' => ['sometimes', 'boolean'],
+                'components' => ['required', 'array', 'min:1', 'max:100'],
+                'components.*' => ['required', 'array:key,mark'],
+                'components.*.key' => ['required', 'string', 'max:80', 'distinct'],
+                'components.*.mark' => ['present', 'nullable', 'numeric', 'min:0', 'regex:/^\d+(?:\.\d{1,2})?$/D'],
+            ],
             'students' => ['q' => ['required', 'string', 'min:1', 'max:150']] + $this->pagination(),
             'catalog' => ['q' => ['sometimes', 'nullable', 'string', 'max:150'], 'academic_year_id' => ['sometimes', 'integer', 'min:1'], 'semester_id' => ['sometimes', 'integer', 'min:1']] + $this->pagination(),
             'prepareComponents' => ['revision' => ['required', 'string', 'regex:/^[a-f0-9]{64}$/D'], 'confirmed' => ['required', 'boolean', 'accepted']],
@@ -49,5 +60,11 @@ class ExamManualGradeEntryRequest extends FormRequest
     private function pagination(): array
     {
         return ['page' => ['sometimes', 'integer', 'min:1'], 'per_page' => ['sometimes', 'integer', 'min:1', 'max:100']];
+    }
+
+    private function contextRules(): array
+    {
+        return ['academic_year_id' => ['required', 'integer', 'min:1'], 'semester_id' => ['required', 'integer', 'min:1'],
+            'course_offering_id' => ['sometimes', 'integer', 'min:1'], 'registration_id' => ['sometimes', 'integer', 'min:1']];
     }
 }

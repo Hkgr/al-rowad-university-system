@@ -9,9 +9,9 @@ $registration = $read('backend/app/Services/RegistrationService.php');
 $exception = substr($registration, strpos($registration, 'public function prepareManualGradeRegistration('));
 $exception = substr($exception, 0, strpos($exception, 'public function registerStudentWithinTransaction('));
 foreach (['authorizeOffering', 'lockStudent', 'lockOffering', 'isOfficiallyApprovedOffering', 'assertCourseOfferingConfigurationsMutable',
-    'assertSelfRegistrationAllowed', 'registerStudentWithinTransaction', 'UserActivityLog', 'student_request_advisor_approval', 'academicAttempts(false)'] as $token) $check(str_contains($exception, $token), 'Missing exception guard '.$token);
+    'assertManualGradeAcademicIdentity', 'performRegisterStudent', 'UserActivityLog', 'RECORDING_EXEMPTIONS', 'academicAttempts(false)'] as $token) $check(str_contains($exception, $token), 'Missing exception guard '.$token);
 $check(!str_contains($exception, 'StudentRegistrationRequest::'), 'Exception cannot require or fabricate a student/advisor request.');
-$check(!str_contains($exception, 'ADVISOR_APPROVAL'), 'Exception must retain the student calendar gate.');
+$check(!str_contains($exception, 'ADVISOR_APPROVAL') && str_contains($exception, 'EXAM_MANUAL_RECORDING'), 'Recording must use its explicit domain context, not fabricate advisor approval.');
 $check(strpos($exception, 'lockStudent') < strpos($exception, 'lockOffering'), 'Registration lock ordering must remain canonical.');
 foreach (['scopeManualGradeCourses', "Course::query()", "whereHas('departments'", "orWhereHas('academicPrograms.department'", 'indexActiveForProgram', 'manualSnapshots', 'limit(501)', 'limit(1001)'] as $token) $check(str_contains($catalog, $token), 'Missing catalog contract '.$token);
 $reads = substr($catalog, 0, strpos($catalog, 'public function prepare('));

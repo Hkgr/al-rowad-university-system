@@ -79,7 +79,10 @@ final class ExamManualGradeContextService
             ->join('semesters as s', 's.semester_id', '=', 'course_offerings.semester_id')
             ->select('course_offerings.academic_year_id', 'year_name', 'course_offerings.semester_id', 'semester_name')
             ->distinct()->orderByDesc('course_offerings.academic_year_id')->orderBy('course_offerings.semester_id')->get()->toArray();
-        return ['terms' => $terms];
+        return ['terms' => $terms,
+            // Reference choices do not depend on a pre-existing offering (including historical terms).
+            'academic_years' => \App\Models\AcademicYear::query()->orderByDesc('academic_year_id')->get(['academic_year_id', 'year_name'])->toArray(),
+            'semesters' => \App\Models\Semester::query()->orderBy('semester_order')->orderBy('semester_id')->get(['semester_id', 'semester_name'])->toArray()];
     }
 
     public function preview(User $actor, Student $student, CourseOffering $offering): array
@@ -147,5 +150,34 @@ final class ExamManualGradeContextService
     private function incompatible(): never
     {
         throw new GradeException('Existing configuration is partial or incompatible; no components were changed.', status: 409, errorCode: 'manual_components_incompatible');
+    }
+
+    /** Read-only plan. Existing multi-component definitions are reused, never rewritten. */
+    public function recordingComponentPlan(CourseOffering $offering): array
+    {
+        $offering->loadMissing('course');
+        $roles = $this->coverage->requiredRoles($offering->course);
+        if ($roles === []) throw new GradeException('مكونات تدريس المقرر غير محددة.', status: 409, errorCode: 'manual_components_undefined');
+        $limits = $this->grades->gradingPolicyLimits();
+        $existing = $offering->exists ? $offering->gradeComponents()->orderBy('grade_component_id')->get() : collect();
+        $components = $existing->isEmpty() ? collect($roles)->map(fn ($part) => [
+            'key' => 'new:'.$part, 'component_type' => $part,
+            'component_name' => $part === 'theoretical' ? 'الامتحان النظري' : 'الامتحان العملي',
+            'max_mark' => $limits[$part.'_max_mark'], 'is_required' => true, 'status' => 'active',
+        ]) : $existing->map(function ($component) use ($roles) {
+            if (!$component->is_required || $component->status !== 'active'
+                || !in_array($component->component_type, $roles, true)) $this->incompatible();
+            return ['key' => (string) $component->getKey()] + $component->getAttributes();
+        });
+        foreach ($roles as $part) {
+            if ($components->where('component_type', $part)->isEmpty()) $this->incompatible();
+        }
+        foreach ($components as $component) {
+            if (!is_numeric($component['max_mark']) || !is_finite((float) $component['max_mark']) || $component['max_mark'] <= 0) $this->incompatible();
+        }
+        $this->grades->assertRequiredPartsPolicyCompatible(in_array('theoretical', $roles, true), in_array('practical', $roles, true),
+            (float) $components->where('component_type', 'theoretical')->sum('max_mark'),
+            (float) $components->where('component_type', 'practical')->sum('max_mark'));
+        return ['create' => $existing->isEmpty(), 'components' => $components->values()->all(), 'policy' => $limits];
     }
 }

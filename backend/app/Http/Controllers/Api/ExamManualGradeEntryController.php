@@ -12,6 +12,16 @@ use App\Support\ExamManualGradeEntryAccess;
 
 class ExamManualGradeEntryController extends Controller
 {
+    public function contextPreview(Student $student, \App\Models\Course $course, ExamManualGradeEntryRequest $request, \App\Services\ExamManualGradePreparationService $service)
+    {
+        return $this->success($service->preview($request->user(), $student, $course, $request->validated()));
+    }
+
+    public function contextSave(Student $student, \App\Models\Course $course, ExamManualGradeEntryRequest $request, \App\Services\ExamManualGradePreparationService $service)
+    {
+        return $this->success($service->save($request->user(), $student, $course, $request->validated()));
+    }
+
     public function periods(Student $student, ExamManualGradeEntryRequest $request, \App\Services\ExamManualGradeContextService $service)
     {
         return $this->success($service->periods($request->user(), $student));

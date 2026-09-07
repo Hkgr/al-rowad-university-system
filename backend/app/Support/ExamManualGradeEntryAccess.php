@@ -11,6 +11,9 @@ use Illuminate\Support\Facades\Gate;
 
 final class ExamManualGradeEntryAccess
 {
+    public const RECORDING_EXEMPTIONS = ['student_request_advisor_approval', 'current_academic_year',
+        'student_registration_window', 'open_enrollment_offering', 'weekly_timetable_completeness_and_conflicts'];
+
     public function __construct(private readonly DataScopeService $scope) {}
 
     public function authorizeOffering(User $actor, Student $student, CourseOffering $offering): void
