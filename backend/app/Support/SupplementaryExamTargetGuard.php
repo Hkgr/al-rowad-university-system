@@ -142,6 +142,21 @@ final class SupplementaryExamTargetGuard
             return;
         }
 
+        self::assertConfigurationTargetsAvailable($targetIds);
+    }
+
+    /** Same fixed/provenance decision for read-only preparation previews, without row locks. */
+    public static function assertCourseOfferingConfigurationsReadable(iterable $courseOfferingIds): void
+    {
+        self::provenanceQueryable();
+        self::assertFixedRosterQueryable();
+        $targetIds = StudentCourseRegistration::query()->whereIn('course_offering_id', collect($courseOfferingIds)->all())
+            ->pluck('student_course_registration_id');
+        self::assertConfigurationTargetsAvailable($targetIds);
+    }
+
+    private static function assertConfigurationTargetsAvailable(Collection $targetIds): void
+    {
         $hasMaterialization = SupplementaryExamMaterialization::query()
             ->whereIn('student_course_registration_id', $targetIds)
             ->exists();

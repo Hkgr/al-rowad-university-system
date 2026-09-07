@@ -165,7 +165,7 @@ class ExamManualGradeGridBehaviorTest extends ExamManualGradeEntryBehaviorTest
         $this->test_complete_offering_submission_return_correction_and_official_finalization();
     }
 
-    public function test_exception_preserves_calendar_scope_identity_and_official_locks(): void
+    public function test_exception_waives_student_window_but_preserves_scope_identity_and_official_locks(): void
     {
         $path = self::GRID.'/offerings/1/registration';
         $this->postJson($path, $this->confirmation() + ['advisor_user_id' => 1])->assertUnprocessable();
@@ -176,8 +176,9 @@ class ExamManualGradeGridBehaviorTest extends ExamManualGradeEntryBehaviorTest
         DB::table('grade_approvals')->delete();
         DB::table('student_course_registrations')->where('student_id', 1)->delete();
         DB::table('academic_calendar_event_versions')->update(['starts_at' => now()->subDays(5), 'student_registration_ends_at' => now()->subDays(3), 'advisor_approval_ends_at' => now()->subDays(2), 'ends_at' => now()->subDays(2)]);
-        $this->postJson($path, $this->confirmation())->assertConflict();
-        self::assertSame(0, DB::table('user_activity_logs')->count());
+        // The dedicated recording exception now explicitly supports closed student windows.
+        $this->postJson($path, $this->confirmation())->assertOk();
+        self::assertSame(1, DB::table('user_activity_logs')->count());
         foreach (['super_admin', 'doctor_instructor', 'student'] as $role) {
             DB::table('roles')->where('role_id', 1)->update(['role_code' => $role]);
             Sanctum::actingAs(User::findOrFail(1));

@@ -5,14 +5,8 @@ export const preparationPath = (student, offering, action) => `/v1/exams/manual-
 export const catalogLabel = course => ({ college_catalog: 'كتالوج الكلية', program_requirement: 'متطلب البرنامج / مشترك', existing_registration: 'تسجيل قائم خارج كتالوج الكلية' }[course.catalog_source] ?? 'مصدر غير متاح') + (course.own_program ? ' — ضمن برنامج الطالب' : ' — خارج برنامج الطالب الحالي')
 
 export const preparationError = error => ({
-  course_registration_window_closed: 'نافذة تسجيل الطالب مغلقة. الاستثناء يرفع شرط طلب الطالب والمرشد فقط ولا يتجاوز التقويم.',
-  academic_calendar_configuration_invalid: 'إعداد نافذة التسجيل غير صالح. راجع المسؤول عن التقويم قبل تجهيز التسجيل.',
-  academic_calendar_year_context_invalid: 'السنة الفعلية لا تسمح بإنشاء تسجيل جديد. لا تتيح هذه الواجهة استثناءً تاريخيًا.',
-  academic_calendar_semester_context_invalid: 'الفصل الفعلي غير صالح للتسجيل.',
-  offering_schedule_incomplete: 'جدول الطرح غير مكتمل؛ يلزم استكماله عبر العميد قبل التسجيل.',
-  timetable_conflict: 'يوجد تعارض مع الجدول الرسمي للطالب. لم يُنشأ التسجيل.',
-  timetable_reference_incomplete: 'جدول أحد التسجيلات الحالية غير مكتمل. يلزم تصحيح الجدول أولًا.',
-  timetable_schema_not_ready: 'خدمة الجدول غير جاهزة؛ راجع مسؤول النظام.',
+  manual_academic_context_invalid: 'تعذر إثبات السياق الفعلي أو انتماء المقرر إلى المنهج الحالي للطالب. لا يُنشأ تسجيل خارج هذا السياق.',
+  course_not_in_program: 'المقرر ليس ضمن المنهج النشط الحالي لبرنامج الطالب. الاستثناء لا يتجاوز هذا الشرط ولا يفترض خطة تاريخية.',
   course_already_passed: 'سبق للطالب النجاح رسميًا بهذا المقرر؛ لا يرفع الاستثناء هذا الحاجز.',
   supplementary_grade_configuration_locked: 'الطرح مرتبط بقائمة أو ترحيل تكميلي؛ تهيئة سياقه مقفلة.',
   manual_components_undefined: 'ساعات المقرر لا تعرّف أجزاء التدريس. راجع المسؤول المخول بتكوين المقرر؛ لم تُنشأ مكونات.',

@@ -79,7 +79,7 @@ trait ExamManualGradeOperations
             'college' => $program?->department?->college?->college_name,
             // There is no separate section label in the persisted offering schema.
             'section' => (string) $offering->getKey(), 'parts' => $parts,
-            'blocked_reason' => $components->isEmpty() ? 'grade_part_not_required' : $blocked,
+            'blocked_reason' => $blocked ?? ($components->isEmpty() ? 'grade_part_not_required' : null),
             'components' => $components->map(fn ($c) => ['grade_component_id' => (int) $c->getKey(),
                 'component_type' => $c->component_type, 'name' => $c->component_name,
                 'max_mark' => (float) $c->max_mark, 'mark' => $marks->get($c->getKey())?->mark === null
