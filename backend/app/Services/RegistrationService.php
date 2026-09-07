@@ -83,6 +83,72 @@ class RegistrationService
         throw RegistrationException::liveWorkflowRequired();
     }
 
+    /**
+     * Explicit Exam Board exception: only the student-request/advisor proof is waived.
+     * No caller-supplied academic identity, status, advisor, date or approval is persisted.
+     * New registrations retain the STUDENT_WINDOW, curriculum, prerequisite, hours and
+     * timetable gates. Legacy/historical registrations may be reused, never reclassified.
+     */
+    public function prepareManualGradeRegistration(Student $student, CourseOffering $offering,
+        \App\Models\User $actor, array $confirmation): StudentCourseRegistration
+    {
+        $access = app(\App\Support\ExamManualGradeEntryAccess::class);
+        $access->authorizeOffering($actor, $student, $offering);
+        if (($confirmation['confirmed'] ?? false) !== true || trim($confirmation['reason'] ?? '') === '') {
+            throw \Illuminate\Validation\ValidationException::withMessages(['reason' => 'Explicit confirmation and reason are required.']);
+        }
+        return DB::transaction(function () use ($student, $offering, $actor, $confirmation, $access) {
+            $student = $this->lockStudent((int) $student->getKey());
+            $offering = $this->lockOffering((int) $offering->getKey());
+            $access->authorizeOffering($actor, $student, $offering);
+            foreach (['course_id', 'academic_year_id', 'semester_id'] as $field) {
+                if ((int) $offering->$field !== (int) ($confirmation[$field] ?? 0)) {
+                    throw new RegistrationException('The selected offering context changed.', status: 409, errorCode: 'manual_grade_entry_stale');
+                }
+            }
+            $approvals = \App\Models\GradePartApproval::query()->where('course_offering_id', $offering->getKey())
+                ->orderBy('component_type')->lockForUpdate()->get();
+            if ($this->grades->isOfficiallyApprovedOffering($offering)
+                || $approvals->contains(fn ($p) => !in_array($p->status, ['draft', 'returned'], true))) {
+                throw new RegistrationException('Grading for this offering is locked.', status: 409, errorCode: 'official_result_locked');
+            }
+            SupplementaryExamTargetGuard::assertCourseOfferingConfigurationsMutable([$offering->getKey()]);
+            $existing = StudentCourseRegistration::query()->where('student_id', $student->getKey())
+                ->where('course_offering_id', $offering->getKey())->with('registrationStatus')
+                ->orderBy('student_course_registration_id')->lockForUpdate()->get();
+            if ($existing->count() > 1) {
+                throw new RegistrationException('Select an existing attempt explicitly; ambiguous context.', status: 409, errorCode: 'manual_registration_ambiguous');
+            }
+            $registration = $existing->first();
+            if ($registration) {
+                SupplementaryExamTargetGuard::assertOrdinaryMutationAvailable((int) $registration->getKey());
+                if (! $registration->allowsGradeEntry()) {
+                    throw new RegistrationException('Existing attempt is not eligible for manual grading.', status: 409, errorCode: 'manual_registration_ineligible');
+                }
+            } else {
+                // Preserve all additional student registration gates; never revive registerStudent().
+                $this->assertSelfRegistrationAllowed($student, $offering);
+                if (StudentCourseRegistration::query()->where('student_id', $student->getKey())->academicAttempts(false)
+                    ->whereHas('courseOffering', fn ($q) => $q->where('course_id', $offering->course_id)
+                        ->where('academic_year_id', $offering->academic_year_id)->where('semester_id', $offering->semester_id))->exists()) {
+                    $this->throwDuplicateRegistrationException();
+                }
+                $registration = $this->registerStudentWithinTransaction([
+                    'student_id' => $student->getKey(), 'course_offering_id' => $offering->getKey(),
+                ], (int) $actor->getKey())['registration'];
+            }
+            \App\Models\UserActivityLog::query()->create([
+                'user_id' => $actor->getKey(), 'module_code' => 'grades',
+                'action_code' => 'manual_grade_entry.registration',
+                'description' => json_encode(['student_id' => $student->getKey(),
+                    'course_offering_id' => $offering->getKey(), 'registration_id' => $registration->getKey(),
+                    'reused' => $existing->isNotEmpty(), 'waived' => 'student_request_advisor_approval',
+                    'reason' => trim($confirmation['reason'])], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+            ]);
+            return $registration;
+        }, 3);
+    }
+
     public function registerStudentWithinTransaction(array $data, ?int $authenticatedUserId = null): array
     {
         try {

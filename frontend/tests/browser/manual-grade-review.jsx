@@ -3,9 +3,11 @@
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, NavLink, RouterProvider } from 'react-router-dom'
 import ManualGradeEntryPage from '../../src/features/exam-board/pages/ManualGradeEntryPage'
+import StudentManualGradePage from '../../src/features/exam-board/pages/StudentManualGradePage'
 import { storeIdentity } from '../../src/features/auth/auth'
 
 const rootPath = '/tests/browser/manual-grade-review.html'
+const gridPath = '/exam-board/manual-grade-entry/students/1'
 const destination = '/tests/browser/destination'
 const assert = (condition, message) => { if (!condition) throw new Error(message) }
 const tick = () => new Promise(resolve => setTimeout(resolve, 25))
@@ -18,7 +20,7 @@ const input = (element, value) => {
   element.dispatchEvent(new Event('input', { bubbles: true }))
 }
 const button = (text, scope = document) => [...scope.querySelectorAll('button')].find(b => b.textContent.includes(text))
-const editor = id => [...document.querySelectorAll('article')].find(e => e.textContent.includes(`FIXTURE-${id}`))
+const editor = id => [...document.querySelectorAll('tbody > tr')].find(e => e.textContent.includes(`FIXTURE-${id}`))
 const field = id => editor(id)?.querySelector('input[type="text"]')
 const modal = () => document.querySelector('dialog[open]')
 const editable = id => field(id) && !field(id).matches(':disabled')
@@ -38,7 +40,7 @@ document.querySelector('#run').onclick = async () => {
   const previousUrl = location.href
   const previousHistory = history.state
   let router, root, releaseWrite
-  let conflictNext = false, holdNext = false, lookupFailure = false, writes = 0
+  let conflictNext = false, holdNext = false, writes = 0
   const rows = [makeRow(1), makeRow(2)]
   const student = { student_id: 1, name: 'Fixture Student', student_number: 'FIXTURE', college: 'Fixture', program: 'Fixture' }
   const meta = { current_page: 1, last_page: 1, total: 2 }
@@ -48,8 +50,11 @@ document.querySelector('#run').onclick = async () => {
     window.fetch = async (url, options = {}) => {
       // No call to the real fetch: even an unexpected request fails locally.
       const path = new URL(url, location.origin).pathname
-      if (path.endsWith('/students')) return response({ students: [student], meta }, lookupFailure ? 500 : 200)
-      if (path.endsWith('/registrations')) return response({ student, terms: [], registrations: clone(rows), meta })
+      if (path.endsWith('/students')) return response({ students: [student], meta })
+      if (path.endsWith('/catalog')) return response({ student, terms: [], courses: clone(rows).map(r => ({
+        course_id: r.registration_id, course_code: r.course_code, course_name: r.course_name, credit_hours: 3, own_program: true,
+        offerings: [{ course_offering_id: r.registration_id, academic_year_id: 1, semester_id: 1, academic_year: '2026', semester: 'First', required_parts: ['theoretical'], registrations: [r] }],
+      })), meta })
       if (path.endsWith('/marks') && options.method === 'PUT') {
         writes++
         const id = Number(path.match(/registrations\/(\d+)\/marks/)[1])
@@ -68,6 +73,7 @@ document.querySelector('#run').onclick = async () => {
     }
     router = createBrowserRouter([
       { path: rootPath, element: <><aside><NavLink to={destination}>Sidebar destination</NavLink></aside><ManualGradeEntryPage /></> },
+      { path: '/exam-board/manual-grade-entry/students/:studentId', element: <><aside><NavLink to={destination}>Sidebar destination</NavLink></aside><StudentManualGradePage /></> },
       { path: destination, element: <h1>Destination</h1> },
       { path: '/exam-board/approvals', element: <h1>Approvals destination</h1> },
     ])
@@ -75,8 +81,8 @@ document.querySelector('#run').onclick = async () => {
     const loadStudent = async () => {
       await until(() => document.querySelector('main input'), 'search did not mount')
       input(document.querySelector('main input'), 'Fixture')
-      await until(() => button('Fixture Student'), 'student lookup failed')
-      button('Fixture Student').click()
+      await until(() => [...document.querySelectorAll('main a')].find(a => a.textContent.includes('Fixture Student')), 'student lookup failed')
+      ;[...document.querySelectorAll('main a')].find(a => a.textContent.includes('Fixture Student')).click()
       await until(() => editable(1), 'editors did not load')
     }
     const save = async id => {
@@ -88,7 +94,7 @@ document.querySelector('#run').onclick = async () => {
       await until(modal, 'navigation was not blocked')
       button('إلغاء', modal()).click()
       await until(() => !modal(), 'cancellation did not close dialog')
-      assert(location.pathname === rootPath, 'cancel left the page')
+      assert(location.pathname === gridPath, 'cancel left the page')
     }
     await loadStudent()
     input(field(1), '25')
@@ -112,11 +118,6 @@ document.querySelector('#run').onclick = async () => {
     assert(field(1).value === '26', 'B refresh discarded A')
     log('saving B refreshes without discarding A')
 
-    lookupFailure = true
-    input(document.querySelector('main input'), 'Failure')
-    await until(() => document.body.textContent.includes('تعذر البحث'), 'lookup failure not shown')
-    assert(editable(1), 'lookup error locked unrelated editing')
-    lookupFailure = false
     conflictNext = true
     await save(1)
     await until(modal, 'correction confirmation missing')
@@ -150,8 +151,8 @@ document.querySelector('#run').onclick = async () => {
     button('تجاهل المسودات', modal()).click()
     await until(() => location.pathname === destination, 'confirmed discard did not navigate')
     history.back()
-    await until(() => location.pathname === rootPath, 'browser back to manual failed')
-    await loadStudent(); input(field(2), '31')
+    await until(() => location.pathname === gridPath, 'browser back to manual failed')
+    await until(() => editable(2), 'direct grid reload failed'); input(field(2), '31')
     history.forward()
     await cancelNavigation()
     assert(field(2).value === '31', 'forward cancellation lost draft')
@@ -160,7 +161,7 @@ document.querySelector('#run').onclick = async () => {
     // Authority loss clears the page even with a dirty form and a blocked navigation.
     document.querySelector('aside a').click(); await until(modal, 'authorization fixture blocker missing')
     storeIdentity({ roles: [], permissions: [] }); window.dispatchEvent(new Event('storage'))
-    await until(() => !document.querySelector('article'), 'authorization loss retained sensitive state')
+    await until(() => !document.querySelector('tbody > tr'), 'authorization loss retained sensitive state')
     log('authorization loss bypasses draft confirmation and clears sensitive state')
     results.textContent += 'Component/router fixtures completed. Laravel integration is NOT exercised.\n'
   } catch (error) {

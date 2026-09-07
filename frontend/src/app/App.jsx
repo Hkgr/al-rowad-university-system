@@ -52,6 +52,7 @@ import examBoardNav      from '../features/exam-board/nav'
 import ExamBoardHome     from '../features/exam-board/pages/ExamBoardHome'
 import GradeSheetPage    from '../features/exam-board/pages/GradeSheetPage'
 import ManualGradeEntryPage from '../features/exam-board/pages/ManualGradeEntryPage'
+import StudentManualGradePage from '../features/exam-board/pages/StudentManualGradePage'
 import ExamStudentAcademicRecordPage from '../features/exam-board/pages/ExamStudentAcademicRecordPage'
 import ApprovalsPage     from '../features/exam-board/pages/ApprovalsPage'
 import DeprivationPage        from '../features/exam-board/pages/DeprivationPage'
@@ -145,6 +146,7 @@ const router = createBrowserRouter(createRoutesFromElements(
         {/* ── شؤون الطلاب dashboard ── */}
         <Route element={<ProtectedRoute {...ACCESS.manualGradeEntry}><DashboardLayout nav={examBoardNav} appTitle="هيئة الامتحانات" /></ProtectedRoute>}>
           <Route path="/exam-board/manual-grade-entry" element={<ManualGradeEntryPage />} />
+          <Route path="/exam-board/manual-grade-entry/students/:studentId" element={<StudentManualGradePage />} />
         </Route>
         <Route
           element={

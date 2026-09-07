@@ -12,6 +12,27 @@ use App\Support\ExamManualGradeEntryAccess;
 
 class ExamManualGradeEntryController extends Controller
 {
+    public function catalog(Student $student, ExamManualGradeEntryRequest $request, \App\Services\ExamManualGradeContextService $service)
+    {
+        return $this->success($service->catalog($request->user(), $student, $request->validated()));
+    }
+
+    public function componentPreview(Student $student, \App\Models\CourseOffering $offering, ExamManualGradeEntryRequest $request, \App\Services\ExamManualGradeContextService $service)
+    {
+        return $this->success($service->preview($request->user(), $student, $offering));
+    }
+
+    public function prepareComponents(Student $student, \App\Models\CourseOffering $offering, ExamManualGradeEntryRequest $request, \App\Services\ExamManualGradeContextService $service)
+    {
+        return $this->success($service->prepare($request->user(), $student, $offering, $request->validated()));
+    }
+
+    public function prepareRegistration(Student $student, \App\Models\CourseOffering $offering, ExamManualGradeEntryRequest $request, \App\Services\RegistrationService $service)
+    {
+        $registration = $service->prepareManualGradeRegistration($student, $offering, $request->user(), $request->validated());
+        return $this->success(['registration_id' => (int) $registration->getKey()]);
+    }
+
     public function students(ExamManualGradeEntryRequest $request, ExamManualGradeEntryService $service)
     {
         return $this->success($service->students($request->user(), $request->validated()));
