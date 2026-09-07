@@ -84,6 +84,43 @@ class ExamManualGradeGridBehaviorTest extends ExamManualGradeEntryBehaviorTest
         self::assertSame(2, DB::table('student_course_registrations')->count());
     }
 
+    public function test_initial_catalog_overflow_can_recover_using_independent_authorized_periods(): void
+    {
+        DB::table('academic_years')->insert(['academic_year_id' => 2, 'year_name' => 'Narrow year', 'is_current' => false]);
+        $offering = (array) DB::table('course_offerings')->where('course_offering_id', 1)->first();
+        for ($id = 2; $id <= 501; $id++) {
+            DB::table('course_offerings')->insert(array_replace($offering, [
+                'course_offering_id' => $id, 'academic_year_id' => $id === 501 ? 2 : 1,
+            ]));
+        }
+        $this->getJson(self::GRID.'/catalog')->assertUnprocessable()->assertJsonValidationErrors('academic_year_id');
+        $terms = $this->getJson(self::GRID.'/periods')->assertOk()->assertJsonCount(2, 'data.terms')->json('data.terms');
+        self::assertSame([2, 1], array_column($terms, 'academic_year_id'));
+        $this->getJson(self::GRID.'/catalog?academic_year_id=2&semester_id=1')->assertOk()
+            ->assertJsonPath('data.terms', $terms)->assertJsonCount(1, 'data.courses.0.offerings')
+            ->assertJsonPath('data.courses.0.offerings.0.course_offering_id', 501);
+        self::assertSame(2, DB::table('student_course_registrations')->count());
+        self::assertSame(0, DB::table('user_activity_logs')->count());
+    }
+
+    public function test_period_lookup_enforces_student_access_and_independent_offering_scope(): void
+    {
+        DB::table('academic_years')->insert(['academic_year_id' => 2, 'year_name' => 'Outside scope', 'is_current' => false]);
+        DB::table('colleges')->insert(['college_id' => 2, 'college_name' => 'Other']);
+        DB::table('departments')->insert(['department_id' => 2, 'college_id' => 2]);
+        DB::table('academic_programs')->insert(['academic_program_id' => 2, 'department_id' => 2]);
+        DB::table('course_offerings')->insert(['course_offering_id' => 2, 'course_id' => 1, 'academic_program_id' => 2,
+            'department_id' => 2, 'academic_year_id' => 2, 'semester_id' => 1, 'status' => 'open']);
+        DB::table('user_access_scopes')->update(['scope_type' => 'college', 'scope_id' => 1]);
+        $this->getJson(self::GRID.'/periods')->assertOk()->assertJsonCount(1, 'data.terms')->assertJsonPath('data.terms.0.academic_year_id', 1);
+        $this->getJson(self::GRID.'/periods?student_id=2')->assertUnprocessable();
+        DB::table('students')->where('student_id', 1)->update(['academic_program_id' => 2]);
+        $this->getJson(self::GRID.'/periods')->assertForbidden();
+        DB::table('roles')->where('role_id', 1)->update(['role_code' => 'super_admin']);
+        Sanctum::actingAs(User::findOrFail(1));
+        $this->getJson(self::GRID.'/periods')->assertForbidden();
+    }
+
     public function test_partial_optional_and_inactive_configuration_is_not_replaced(): void
     {
         foreach ([['is_required' => 0], ['status' => 'inactive'], ['max_mark' => 59], ['weight_percentage' => 100]] as $mutation) {

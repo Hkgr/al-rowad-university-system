@@ -1,4 +1,5 @@
 export const studentGridPath = id => `/exam-board/manual-grade-entry/students/${encodeURIComponent(id)}`
+export const periodsPath = id => `/v1/exams/manual-grade-entry/students/${encodeURIComponent(id)}/periods`
 export const catalogPath = (id, filters = {}) => `/v1/exams/manual-grade-entry/students/${encodeURIComponent(id)}/catalog?${new URLSearchParams(filters)}`
 export const preparationPath = (student, offering, action) => `/v1/exams/manual-grade-entry/students/${encodeURIComponent(student)}/offerings/${encodeURIComponent(offering)}/${action}`
 export const catalogLabel = course => ({ college_catalog: 'كتالوج الكلية', program_requirement: 'متطلب البرنامج / مشترك', existing_registration: 'تسجيل قائم خارج كتالوج الكلية' }[course.catalog_source] ?? 'مصدر غير متاح') + (course.own_program ? ' — ضمن برنامج الطالب' : ' — خارج برنامج الطالب الحالي')

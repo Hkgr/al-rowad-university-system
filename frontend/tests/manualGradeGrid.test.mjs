@@ -1,14 +1,28 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { catalogPath, studentGridPath, selectedContext, preparationPath, preparationError } from '../src/features/exam-board/lib/manualGradeGrid.js'
+import { catalogPath, periodsPath, studentGridPath, selectedContext, preparationPath, preparationError } from '../src/features/exam-board/lib/manualGradeGrid.js'
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
 test('grid routes identify a student; actual term belongs to the catalog query, not curriculum advice', () => {
   assert.equal(studentGridPath(7), '/exam-board/manual-grade-entry/students/7')
+  assert.equal(periodsPath(7), '/v1/exams/manual-grade-entry/students/7/periods')
   const url = new URL(catalogPath(7, { academic_year_id: 2, semester_id: 3, page: 2 }), 'https://fixture.invalid')
   assert.equal(url.searchParams.get('academic_year_id'), '2')
   assert.equal(url.searchParams.get('semester_id'), '3')
   assert.equal(preparationPath(7, 9, 'registration'), '/v1/exams/manual-grade-entry/students/7/offerings/9/registration')
+})
+test('period lookup and selectors are independent of catalog success; search intent invalidates before debounce', () => {
+  const page = read('../src/features/exam-board/pages/StudentManualGradePage.jsx')
+  const search = read('../src/features/exam-board/pages/ManualGradeEntryPage.jsx')
+  assert.match(page, /apiRequest\(periodsPath\(studentId\)/)
+  assert.match(page, /const \[terms, setTerms\] = useState\(\[\]\)/)
+  assert.doesNotMatch(page, /\bdata\.terms\.(?:map|filter)/)
+  assert.match(page, /setTerms\(\[\]\)/)
+  assert.match(page, /setPeriodRetry/)
+  assert.match(search, /lifecycle.current.change\(value\)/)
+  assert.match(search, /setStudents\(null\); setLookupError\(''\); setLoading\(false\)/)
+  assert.match(search, /searchPath\(applied.query, applied.page\)/)
+  assert.match(search, /lifecycle.current.valid\(applied\)/)
 })
 test('zero contexts remains visible and multiple offerings/attempts never select first', () => {
   const course = { offerings: [] }

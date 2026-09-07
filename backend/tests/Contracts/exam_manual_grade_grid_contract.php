@@ -19,6 +19,13 @@ foreach (['::create(', '->update(', '->delete(', 'lockForUpdate', 'DB::transacti
 foreach (['requiredRoles', 'gradingPolicyLimits', 'assertRequiredPartsPolicyCompatible', 'assertCourseOfferingConfigurationsMutable', 'lockDefaultGradingPolicy', 'hash_equals', 'manual_components_incompatible'] as $token) $check(str_contains($catalog, $token), 'Missing preparation invariant '.$token);
 foreach (['StudentCourseResult::', 'GradeApproval::', 'Schema::create', 'available_seats', 'faculty_member_id'] as $token) $check(!str_contains($catalog, $token), 'Preparation must not own academic results or offering governance: '.$token);
 $routes = $read('backend/routes/api.php');
+$check(str_contains($routes, "Route::get('students/{student}/periods', 'periods')"), 'Independent authorized period lookup is required.');
+$periods = substr($catalog, strpos($catalog, 'public function periods('));
+$periods = substr($periods, 0, strpos($periods, 'public function preview('));
+foreach (['$this->access->authorize($actor, $student)', 'scopeManualGradeOfferings', '->distinct()'] as $token) $check(str_contains($periods, $token), 'Period lookup must retain authorization and scoped distinct context: '.$token);
+$check(!str_contains($periods, 'limit(501)') && !str_contains($periods, '->catalog('), 'Period choices cannot depend on catalog limits.');
+$fixture = $read('backend/tests/Feature/ExamManualGradeEntryBehaviorTest.php');
+$check(str_contains($fixture, "'course_offering_id' => \$i, 'registration_status_id' => 1") && str_contains($fixture, 'assertLessThanOrEqual($first + 2'), 'Bounded registration fixture must increase distinct offering contexts.');
 foreach (["Route::get('students/{student}/catalog'", "Route::get('students/{student}/offerings/{offering}/component-preview'", "Route::post('students/{student}/offerings/{offering}/registration'", "Route::post('students/{student}/offerings/{offering}/components'"] as $route) $check(str_contains($routes, $route), 'Missing explicit route '.$route);
 $check(str_contains($registration, "public function registerStudent(array \$data, ?int \$authenticatedUserId = null): array\n    {\n        throw RegistrationException::liveWorkflowRequired();")
     || str_contains(str_replace("\r\n", "\n", $registration), "public function registerStudent(array \$data, ?int \$authenticatedUserId = null): array\n    {\n        throw RegistrationException::liveWorkflowRequired();"), 'Disabled legacy endpoint must stay disabled.');

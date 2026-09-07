@@ -7,7 +7,7 @@ import CatalogGradeRow from '../components/CatalogGradeRow'
 import { Pager, button, card, field } from '../components/RegistrationGridRow'
 import { navigationDecision } from '../lib/manualGradeDraft'
 import { MANUAL_GRADE_NOTICE, manualError, requestSequence } from '../lib/manualGradeEntry'
-import { catalogPath } from '../lib/manualGradeGrid'
+import { catalogPath, periodsPath } from '../lib/manualGradeGrid'
 const identityStamp = () => JSON.stringify(getIdentity())
 
 export default function StudentManualGradePage() {
@@ -25,6 +25,10 @@ function StudentGrid({ studentId }) {
   const [term, setTerm] = useState({})
   const [page, setPage] = useState(1)
   const [data, setData] = useState(null)
+  const [terms, setTerms] = useState([])
+  const [periodError, setPeriodError] = useState('')
+  const [periodLoading, setPeriodLoading] = useState(false)
+  const [periodRetry, setPeriodRetry] = useState(0)
   const [loading, setLoading] = useState(false)
   const [dataError, setDataError] = useState('')
   const [notice, setNotice] = useState('')
@@ -34,6 +38,7 @@ function StudentGrid({ studentId }) {
   const busy = useRef(new Set())
   const sequence = useRef(requestSequence())
   const controller = useRef(null)
+  const periodController = useRef(null)
   const queryInput = useRef('')
   const mounted = useRef(true)
   const onDirty = useCallback((id, value) => { value ? dirty.current.add(id) : dirty.current.delete(id) }, [])
@@ -42,8 +47,8 @@ function StudentGrid({ studentId }) {
     setPendingCount(busy.current.size)
   }, [])
   const clear = useCallback(() => {
-    sequence.current.invalidate(); controller.current?.abort(); dirty.current.clear(); busy.current.clear()
-    setData(null); setDiscard(null); setQ(''); setSearch(''); setAllowed(false)
+    sequence.current.invalidate(); controller.current?.abort(); periodController.current?.abort(); dirty.current.clear(); busy.current.clear()
+    setData(null); setTerms([]); setPeriodError(''); setPeriodLoading(false); setDiscard(null); setQ(''); setSearch(''); setAllowed(false)
     setDataError(''); setNotice(''); setPendingCount(0)
   }, [])
   const blocker = useBlocker(useCallback(() => navigationDecision({
@@ -87,6 +92,20 @@ function StudentGrid({ studentId }) {
     } finally { if (mounted.current && sequence.current.valid(generation)) setLoading(false) }
   }, [studentId, term, search, queryVersion, page, identity, allowed, clear])
   useEffect(() => { reload() }, [reload])
+  useEffect(() => {
+    if (!allowed) return
+    const abort = new AbortController()
+    periodController.current = abort
+    let active = true
+    const current = () => active && !abort.signal.aborted && identityStamp() === identity && canAccess(ACCESS.manualGradeEntry, getIdentity())
+    setPeriodLoading(true); setPeriodError('')
+    apiRequest(periodsPath(studentId), { signal: abort.signal }).then(json => {
+      if (current()) setTerms(json.data.terms)
+    }).catch(e => {
+      if (current() && e.name !== 'AbortError') { setPeriodError(manualError(e)); if ([401, 403].includes(e.status)) clear() }
+    }).finally(() => { if (current()) setPeriodLoading(false) })
+    return () => { active = false; abort.abort() }
+  }, [studentId, identity, allowed, periodRetry, clear])
   const change = action => {
     if (busy.current.size) { setNotice('انتظر اكتمال العملية الحالية قبل تغيير السياق.'); return }
     const apply = () => { sequence.current.invalidate(); controller.current?.abort(); dirty.current.clear(); setDraftEpoch(value => value + 1); action(); setDiscard(null) }
@@ -110,17 +129,19 @@ function StudentGrid({ studentId }) {
     <section className={`${card} space-y-3 p-4`}><p className="text-[12.5px] leading-7 text-amber-900">{MANUAL_GRADE_NOTICE}</p>
       <Link className={button} to="/exam-board/approvals">واجهة الاعتمادات الحالية</Link></section>
     {notice && <p role="status" className="text-primary-dark">{notice}</p>}
-    {data && <section className={`${card} space-y-3 p-4`}>
-      <h2 className="text-[15px] font-bold text-text-dark">{data.student.name} — <bdi>{data.student.student_number}</bdi></h2>
-      <p>{data.student.college} — {data.student.program}</p>
+    <section className={`${card} space-y-3 p-4`}>
+      {data && <><h2 className="text-[15px] font-bold text-text-dark">{data.student.name} — <bdi>{data.student.student_number}</bdi></h2>
+      <p>{data.student.college} — {data.student.program}</p></>}
+      {periodLoading && <p role="status">جاري تحميل الفترات المتاحة…</p>}
+      {periodError && <div role="alert"><p>{periodError}</p><button className={button} onClick={() => setPeriodRetry(value => value + 1)}>إعادة تحميل الفترات</button></div>}
       <div className="grid grid-cols-3 gap-3 max-[680px]:grid-cols-1">
         <label>السنة الأكاديمية الفعلية<select className={field} value={term.academic_year_id ?? ''} onChange={e => changeTerm('academic_year_id', e.target.value)}><option value="">كل السنوات</option>
-          {[...new Map(data.terms.map(t => [t.academic_year_id, t])).values()].map(t => <option key={t.academic_year_id} value={t.academic_year_id}>{t.year_name}</option>)}</select></label>
+          {[...new Map(terms.map(t => [t.academic_year_id, t])).values()].map(t => <option key={t.academic_year_id} value={t.academic_year_id}>{t.year_name}</option>)}</select></label>
         <label>الفصل الفعلي<select className={field} value={term.semester_id ?? ''} onChange={e => changeTerm('semester_id', e.target.value)}><option value="">كل الفصول</option>
-          {[...new Map(data.terms.filter(t => !term.academic_year_id || String(t.academic_year_id) === term.academic_year_id).map(t => [t.semester_id, t])).values()].map(t => <option key={t.semester_id} value={t.semester_id}>{t.semester_name}</option>)}</select></label>
+          {[...new Map(terms.filter(t => !term.academic_year_id || String(t.academic_year_id) === term.academic_year_id).map(t => [t.semester_id, t])).values()].map(t => <option key={t.semester_id} value={t.semester_id}>{t.semester_name}</option>)}</select></label>
         <label>بحث في المقررات<input className={field} value={q} onChange={e => { const value = e.target.value; change(() => { setLoading(true); setQ(value) }) }} /></label>
       </div>
-    </section>}
+    </section>
     {loading && <p role="status">جاري تحميل الحالة الرسمية…</p>}
     {dataError && <div role="alert" className="space-y-3 rounded-[12px] border border-red-200 bg-red-50 p-4 text-red-700"><p>{dataError}</p><button className={button} disabled={pendingCount > 0} onClick={reload}>إعادة التحميل مع الاحتفاظ بالمسودات</button></div>}
     {data && <><div className={`${card} overflow-x-auto`}><table className="w-full border-collapse text-right text-[12.5px]">

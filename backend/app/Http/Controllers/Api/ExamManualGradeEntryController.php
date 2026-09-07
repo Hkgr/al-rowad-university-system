@@ -12,6 +12,11 @@ use App\Support\ExamManualGradeEntryAccess;
 
 class ExamManualGradeEntryController extends Controller
 {
+    public function periods(Student $student, ExamManualGradeEntryRequest $request, \App\Services\ExamManualGradeContextService $service)
+    {
+        return $this->success($service->periods($request->user(), $student));
+    }
+
     public function catalog(Student $student, ExamManualGradeEntryRequest $request, \App\Services\ExamManualGradeContextService $service)
     {
         return $this->success($service->catalog($request->user(), $student, $request->validated()));

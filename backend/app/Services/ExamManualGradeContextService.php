@@ -38,10 +38,7 @@ final class ExamManualGradeContextService
         ])->orderBy('course_code')->orderBy('course_id')->paginate($filters['per_page'] ?? 15);
         $ids = $page->getCollection()->modelKeys();
         $offeringsQuery = $this->scope->scopeManualGradeOfferings(CourseOffering::query(), $actor);
-        $terms = (clone $offeringsQuery)->join('academic_years as y', 'y.academic_year_id', '=', 'course_offerings.academic_year_id')
-            ->join('semesters as s', 's.semester_id', '=', 'course_offerings.semester_id')
-            ->select('course_offerings.academic_year_id', 'year_name', 'course_offerings.semester_id', 'semester_name')
-            ->distinct()->orderByDesc('course_offerings.academic_year_id')->orderBy('course_offerings.semester_id')->get()->toArray();
+        $terms = $this->periods($actor, $student)['terms'];
         foreach (['academic_year_id', 'semester_id'] as $key) if (isset($filters[$key])) $offeringsQuery->where($key, $filters[$key]);
         $offerings = $offeringsQuery->whereIn('course_id', $ids)->with(['course', 'academicYear', 'semester', 'academicProgram', 'gradeComponents'])
             ->orderBy('course_offering_id')->limit(501)->get();
@@ -71,6 +68,18 @@ final class ExamManualGradeContextService
                     'registrations' => $snapshots->get($o->getKey(), collect())->values()->all(),
                 ])->values()->all()])->all(),
             'meta' => ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'per_page' => $page->perPage(), 'total' => $page->total()]];
+    }
+
+    /** Independent authorized lookup, including when catalog contexts exceed the limit. */
+    public function periods(User $actor, Student $student): array
+    {
+        $this->access->authorize($actor, $student);
+        $terms = $this->scope->scopeManualGradeOfferings(CourseOffering::query(), $actor)
+            ->join('academic_years as y', 'y.academic_year_id', '=', 'course_offerings.academic_year_id')
+            ->join('semesters as s', 's.semester_id', '=', 'course_offerings.semester_id')
+            ->select('course_offerings.academic_year_id', 'year_name', 'course_offerings.semester_id', 'semester_name')
+            ->distinct()->orderByDesc('course_offerings.academic_year_id')->orderBy('course_offerings.semester_id')->get()->toArray();
+        return ['terms' => $terms];
     }
 
     public function preview(User $actor, Student $student, CourseOffering $offering): array

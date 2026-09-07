@@ -187,6 +187,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
 Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::class])->prefix('v1')->group(function (): void {
     Route::prefix('exams/manual-grade-entry')->controller(\App\Http\Controllers\Api\ExamManualGradeEntryController::class)->group(function (): void {
         Route::get('students/{student}/catalog', 'catalog');
+        Route::get('students/{student}/periods', 'periods');
         Route::get('students/{student}/offerings/{offering}/component-preview', 'componentPreview');
         Route::post('students/{student}/offerings/{offering}/components', 'prepareComponents');
         Route::post('students/{student}/offerings/{offering}/registration', 'prepareRegistration');

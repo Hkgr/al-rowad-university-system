@@ -18,6 +18,7 @@ All paths are below `/api/v1/exams/manual-grade-entry`:
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/students/{student}/catalog` | Catalog, terms, student identity and batched grade contexts |
+| GET | `/students/{student}/periods` | Independent scoped actual-period choices, including after catalog overflow |
 | GET | `/students/{student}/offerings/{offering}/component-preview` | Read-only policy-derived proposal |
 | POST | `/students/{student}/offerings/{offering}/components` | Confirm the preview revision and prepare missing components |
 | POST | `/students/{student}/offerings/{offering}/registration` | Explicit exceptional registration confirmation and reason |
@@ -62,10 +63,24 @@ Marks still save only draft `StudentGradeComponent` values with canonical `Grade
 
 ## Verification evidence and limits
 
-- Executed: 164 dependency-free Node tests (pure logic/source contracts); changed PHP syntax checks; `composer validate --no-check-publish`; `composer check-platform-reqs --lock`; `git diff --check`.
+- Executed: 168 dependency-free Node tests (pure logic/source contracts); changed PHP syntax checks; `composer validate --no-check-publish`; `composer check-platform-reqs --lock`; `git diff --check`.
 - Executed: 26/27 dependency-free PHP contracts pass. The pre-existing `academic_calendar_schema_compatibility_repair_contract.php` fails because it requires `AcademicCalendarPolicyService.php` to be absent; both the assertion and that service already exist unchanged in the base.
 - Added real Laravel coverage in `ExamManualGradeGridBehaviorTest`: zero-registration catalog/period independence, deduplication, independent scope/sections, preparation/idempotency/incompatible configurations, single/undefined parts, audit rollback, official-lock revalidation, exception without student/advisor request and the inherited complete canonical grade cycle, calendar/identity/role denials, bounded query counts.
 - **Not executed:** PHPUnit (`backend/vendor` absent), frontend lint/build/component/browser/visual checks (`frontend/node_modules` absent). The updated local browser fixture contains populated editable rows and sidebar/back/forward/conflict scenarios; it was not rendered. No screenshots or production verification are claimed.
 - **Not verified:** true multi-connection MariaDB lock scheduling/concurrent preparation. SQLite coverage is not a substitute for it. Visual acceptance and runtime integration remain pending; static tests do not establish merge-readiness.
 
 No production SQL/dump executed; no migrations, schema objects, permissions, dependencies, grade/appeal/supplementary workflow changes, or global design changes.
+
+## PR #128 review corrections
+
+Reviewed/fetched starting head: `b9ffa9016b41f637cbd69d56f2672109263c7a50`. The changes update this PR only.
+
+| Finding and reproduction | Focused fix | Verification and limitations |
+| --- | --- | --- |
+| Search `Fixture`, then add/remove surrounding spaces: the old input handler cleared results while the normalized effect dependencies stayed unchanged. Changing intent also allowed the old request to finish during debounce; clearing could retain loading/errors. | A synchronous intent generation invalidates/aborts old reads before debounce. Equivalent trimmed input preserves the current request/results/page. Applied query and page travel together; stale success/error/finally callbacks cannot update state. Clearing resets results, errors and loading immediately. | Three executed Node lifecycle regressions cover normalization/pagination, clearing in-flight reads and delayed responses during debounce (including returning to an earlier query). The actual React/router fixture additionally exercises these interactions, but was **not executed** because frontend dependencies are absent. |
+| Initial catalog request with 501 offering contexts returns 422 before the UI obtains `terms`, leaving no way to narrow the request. | New GET-only `periods` lookup uses the same student authorization and actual offering scope. Its loading/error/retry state is independent of the catalog. Period selectors always render, remain explicitly unselected initially, and remain usable after overflow. Existing catalog `terms`, limits and response shape remain compatible; no truncation or automatic period selection. | Added real HTTP/SQLite regression: 501 contexts -> 422 -> independent two-period lookup -> explicit year/semester -> one offering, with no registration/audit writes. Added scope/student denial and unknown-input coverage. Executed Node source/path contract; added actual browser overflow/recovery scenario. Laravel and browser coverage is **unexecuted**, not reported as passed. |
+| The grid subclass installs the production student/offering unique pair, but the inherited bounded-query test inserted six duplicate pairs. | The parent regression now creates six distinct courses/offerings with required components and one student registration per offering. Both classes retain the inherited test. It asserts seven returned registrations and preserves the original query-count ceiling (`first + 2`). The subclass unique constraint is unchanged. | PHP syntax and source contract executed. Reviewed both fixture schemas and copied columns/keys for compatibility. Both `ExamManualGradeEntryBehaviorTest` and `ExamManualGradeGridBehaviorTest` remain **unexecuted** because `backend/vendor` is absent. |
+
+Relevant changed files: the context service/controller/routes; the two Laravel behavior classes and grid contract; student search page/lifecycle helper; grid page/path helper; focused Node tests and the existing browser fixture; this report. No registration-exception, audit, mark-save, submission/review/finalization, authorization-policy, schema, permission-grant or design implementation was changed by these corrections.
+
+Runtime commands still required in an environment with existing dependencies: `php artisan test --filter='ExamManualGrade(Entry|Grid)BehaviorTest'`, `npm run lint`, `npm run build`, and the local `/tests/browser/manual-grade-review.html` fixture under Vite. The fixture intercepts API responses: even when executed it verifies components/router, not live Laravel integration or production visual acceptance. No dependencies were installed and no CI execution is assumed. PR remains intended OPEN and unmerged.

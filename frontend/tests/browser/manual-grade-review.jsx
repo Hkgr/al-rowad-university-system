@@ -41,6 +41,9 @@ document.querySelector('#run').onclick = async () => {
   const previousHistory = history.state
   let router, root, releaseWrite
   let conflictNext = false, holdNext = false, writes = 0
+  let searchHold = null, catalogOverflow = true
+  const searches = []
+  const terms = [{ academic_year_id: 1, year_name: '2026', semester_id: 1, semester_name: 'First' }]
   const rows = [makeRow(1), makeRow(2)]
   const student = { student_id: 1, name: 'Fixture Student', student_number: 'FIXTURE', college: 'Fixture', program: 'Fixture' }
   const meta = { current_page: 1, last_page: 1, total: 2 }
@@ -49,12 +52,23 @@ document.querySelector('#run').onclick = async () => {
     storeIdentity({ roles: ['exam_officer'], permissions: ['exams.manage', 'grades.manage', 'students.view'] })
     window.fetch = async (url, options = {}) => {
       // No call to the real fetch: even an unexpected request fails locally.
-      const path = new URL(url, location.origin).pathname
-      if (path.endsWith('/students')) return response({ students: [student], meta })
-      if (path.endsWith('/catalog')) return response({ student, terms: [], courses: clone(rows).map(r => ({
+      const parsed = new URL(url, location.origin)
+      const path = parsed.pathname
+      if (path.endsWith('/students')) {
+        searches.push(parsed.searchParams.get('q'))
+        // Deliberately ignore abort to prove generation guards also reject late responses.
+        if (searchHold) { const hold = searchHold; searchHold = null; await new Promise(resolve => { hold.release = resolve }) }
+        return response({ students: [student], meta })
+      }
+      if (path.endsWith('/periods')) return response({ terms })
+      if (path.endsWith('/catalog')) {
+        if (catalogOverflow && !parsed.searchParams.get('academic_year_id')) return response({}, 422)
+        catalogOverflow = false
+        return response({ student, terms, courses: clone(rows).map(r => ({
         course_id: r.registration_id, course_code: r.course_code, course_name: r.course_name, credit_hours: 3, own_program: true,
         offerings: [{ course_offering_id: r.registration_id, academic_year_id: 1, semester_id: 1, academic_year: '2026', semester: 'First', required_parts: ['theoretical'], registrations: [r] }],
       })), meta })
+      }
       if (path.endsWith('/marks') && options.method === 'PUT') {
         writes++
         const id = Number(path.match(/registrations\/(\d+)\/marks/)[1])
@@ -81,8 +95,20 @@ document.querySelector('#run').onclick = async () => {
     const loadStudent = async () => {
       await until(() => document.querySelector('main input'), 'search did not mount')
       input(document.querySelector('main input'), 'Fixture')
+      await tick()
       await until(() => [...document.querySelectorAll('main a')].find(a => a.textContent.includes('Fixture Student')), 'student lookup failed')
       ;[...document.querySelectorAll('main a')].find(a => a.textContent.includes('Fixture Student')).click()
+      if (catalogOverflow) {
+        await until(() => document.querySelector('main [role="alert"]') && document.querySelector('main select')?.options.length === 2, 'overflow hid independent period choices')
+        assert(!document.querySelector('tbody'), 'overflow silently supplied partial contexts')
+        const year = document.querySelector('main select')
+        assert(year.value === '', 'period was implicitly selected')
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(year, '1')
+        year.dispatchEvent(new Event('change', { bubbles: true }))
+        await until(() => editable(1), 'narrowing the period did not recover catalog')
+        assert(year.value === '1', 'selected context is not visible')
+        log('initial catalog overflow retains independent period choices; explicit narrowing recovers without reload')
+      }
       await until(() => editable(1), 'editors did not load')
     }
     const save = async id => {
@@ -96,6 +122,37 @@ document.querySelector('#run').onclick = async () => {
       await until(() => !modal(), 'cancellation did not close dialog')
       assert(location.pathname === gridPath, 'cancel left the page')
     }
+    await until(() => document.querySelector('main input'), 'search did not mount')
+    const searchInput = document.querySelector('main input')
+    const resultLink = () => [...document.querySelectorAll('main a')].find(a => a.textContent.includes('Fixture Student'))
+    input(searchInput, 'Fixture')
+    await until(resultLink, 'initial search failed')
+    const requestCount = searches.length
+    input(searchInput, '  Fixture  '); await tick()
+    assert(resultLink(), 'whitespace cleared existing results')
+    input(searchInput, 'Fixture'); await tick()
+    assert(resultLink() && searches.length === requestCount, 'normalized edit refetched or cleared results')
+    log('whitespace-only edits retain applied results')
+
+    const clearing = {}; searchHold = clearing
+    input(searchInput, 'Held clear')
+    await until(() => clearing.release, 'clear fixture request not in flight')
+    input(searchInput, '')
+    await tick()
+    assert(!resultLink() && !document.querySelector('main [role="status"]') && !document.querySelector('main [role="alert"]'), 'clear retained results/error/loading')
+    clearing.release(); await tick()
+    assert(!resultLink(), 'cleared search was repopulated by delayed response')
+    log('clearing in-flight search resets state and rejects late responses')
+
+    const delayed = {}; searchHold = delayed
+    input(searchInput, 'Old intent')
+    await until(() => delayed.release, 'debounce fixture request not in flight')
+    input(searchInput, 'New intent')
+    delayed.release(); await tick()
+    assert(!resultLink(), 'obsolete response populated results during debounce')
+    await until(resultLink, 'new intent did not complete')
+    assert(searches.at(-1) === 'New intent', 'applied query not associated with new results')
+    log('intent invalidates old read immediately, before the next debounce completes')
     await loadStudent()
     input(field(1), '25')
     document.querySelector('aside a').click()
