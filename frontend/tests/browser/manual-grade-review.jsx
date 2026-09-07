@@ -5,6 +5,7 @@ import { createBrowserRouter, NavLink, RouterProvider } from 'react-router-dom'
 import ManualGradeEntryPage from '../../src/features/exam-board/pages/ManualGradeEntryPage'
 import StudentManualGradePage from '../../src/features/exam-board/pages/StudentManualGradePage'
 import { storeIdentity } from '../../src/features/auth/auth'
+import '../../src/styles/global.css'
 
 const rootPath = '/tests/browser/manual-grade-review.html'
 const gridPath = '/exam-board/manual-grade-entry/students/1'
@@ -114,23 +115,27 @@ document.querySelector('#run').onclick = async () => {
     ])
     root = createRoot(document.querySelector('#fixture')); root.render(<RouterProvider router={router} />)
     const loadStudent = async () => {
-      await until(() => document.querySelector('main input'), 'search did not mount')
+      await until(() => document.querySelector('main h1')?.textContent === 'إدخال العلامات اليدوي' && document.querySelector('main input'), 'search did not mount')
       input(document.querySelector('main input'), 'Fixture')
       await tick()
       await until(() => [...document.querySelectorAll('main a')].find(a => a.textContent.includes('Fixture Student')), 'student lookup failed')
       ;[...document.querySelectorAll('main a')].find(a => a.textContent.includes('Fixture Student')).click()
-      if (catalogOverflow) {
-        await until(() => document.querySelector('main [role="alert"]') && document.querySelector('main select')?.options.length === 2, 'overflow hid independent period choices')
-        assert(!document.querySelector('tbody'), 'overflow silently supplied partial contexts')
-        const year = document.querySelector('main select')
-        assert(year.value === '', 'period was implicitly selected')
-        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(year, '1')
-        year.dispatchEvent(new Event('change', { bubbles: true }))
-        await until(() => editable(1), 'narrowing the period did not recover catalog')
-        assert(year.value === '1', 'selected context is not visible')
-        log('initial catalog overflow retains independent period choices; explicit narrowing recovers without reload')
-      }
-      await until(() => editable(1), 'editors did not load')
+      await choosePeriod()
+    }
+    const choosePeriod = async () => {
+      await until(() => document.querySelector('main select')?.options.length === 2, 'independent period choices missing')
+      assert(!document.querySelector('tbody'), 'recording grid must wait for an explicit marks period')
+      const year = document.querySelector('main select')
+      assert(year.value === '', 'marks year was implicitly selected')
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(year, '1')
+      year.dispatchEvent(new Event('change', { bubbles: true }))
+      await tick()
+      const semester = document.querySelectorAll('main select')[1]
+      assert(semester.value === '', 'marks semester was implicitly selected')
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(semester, '1')
+      semester.dispatchEvent(new Event('change', { bubbles: true }))
+      await until(() => editable(1), 'explicit marks period did not recover catalog')
+      log('marks period selected explicitly; independent choices recover catalog overflow')
     }
     const save = async id => {
       editor(id).querySelector('input[type="checkbox"]').click()
@@ -175,11 +180,13 @@ document.querySelector('#run').onclick = async () => {
     assert(searches.at(-1) === 'New intent', 'applied query not associated with new results')
     log('intent invalidates old read immediately, before the next debounce completes')
     await loadStudent()
-    const actualSemester = document.querySelectorAll('main select')[1]
-    assert(actualSemester.value === '', 'new context semester must not be inferred')
-    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(actualSemester, '1')
-    actualSemester.dispatchEvent(new Event('change', { bubbles: true }))
     await until(() => editable(3) && editable(4), 'unregistered draft cells did not resolve official limits')
+    button('استعراض السجل — قراءة فقط').click()
+    await until(() => document.querySelector('main select')?.value === '' && field(1)?.matches(':disabled'), 'history filters did not remain separate/read-only')
+    button('إدخال العلامات').click()
+    await until(() => editable(3) && editable(4), 'recording period was lost on history browse')
+    assert(document.querySelector('main select').value === '1' && document.querySelectorAll('main select')[1].value === '1', 'history mutated the marks period')
+    log('all-year history is read-only and does not replace the explicitly selected marks period')
     input(field(1), '24'); input(field(3), '28')
     const confirmContext = async id => {
       button('مراجعة وحفظ العلامات', editor(id)).click()
@@ -188,11 +195,12 @@ document.querySelector('#run').onclick = async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(reason, 'Fixture exceptional recording')
       reason.dispatchEvent(new Event('input', { bubbles: true }))
       modal().querySelector('input[type="checkbox"]').click()
-      await until(() => !button('تأكيد', modal()).disabled, 'context acknowledgment not accepted')
+      await until(() => button('تأكيد', modal()) && !button('تأكيد', modal()).disabled, 'context acknowledgment not accepted')
+      if (id === 3 && new URLSearchParams(previousUrl.split('?')[1]).has('snapshot')) await new Promise(() => {})
       button('تأكيد', modal()).click()
     }
     await confirmContext(3)
-    await until(() => !unprepared.has(3) && button('حفظ العلامات', editor(3)) && editable(1), 'integrated save did not create the normal draft row')
+    await until(() => !modal() && !unprepared.has(3) && editor(3)?.querySelector('input[type="checkbox"]') && editable(1), 'integrated save did not create the normal draft row')
     assert(field(1).value === '24' && location.pathname === gridPath, 'context save lost another draft or navigated away')
     log('no offering/registration: draft cells -> one confirmation -> normal grade row; unrelated draft retained')
     input(field(4), '29'); await confirmContext(4)
@@ -204,7 +212,7 @@ document.querySelector('#run').onclick = async () => {
     assert(field(4).value === '29', 'explicit rebase lost proposed mark')
     // Clear this fixture draft explicitly so subsequent router tests remain focused on row 1.
     input(field(4), '30'); await confirmContext(4)
-    await until(() => button('حفظ العلامات', editor(4)), 'explicit retry did not finish')
+    await until(() => !modal() && editor(4)?.querySelector('input[type="checkbox"]'), 'explicit retry did not finish')
     log('uncertain context response preserves proposals, reads committed state and requires explicit review; no duplicate')
     input(field(1), '25')
     document.querySelector('aside a').click()
@@ -248,7 +256,7 @@ document.querySelector('#run').onclick = async () => {
     document.querySelector('aside a').click()
     await until(modal, 'discard dialog missing')
     button('تجاهل المسودات', modal()).click()
-    await until(() => location.pathname === destination, 'confirmed destination was lost')
+    await until(() => location.pathname === destination && document.querySelector('#fixture h1')?.textContent === 'Destination' && !modal(), 'confirmed destination was lost')
     await router.navigate(rootPath)
     await loadStudent(); input(field(1), '27')
     history.back()
@@ -258,9 +266,10 @@ document.querySelector('#run').onclick = async () => {
     document.querySelector('aside a').click()
     await until(modal, 'confirm before forward fixture missing')
     button('تجاهل المسودات', modal()).click()
-    await until(() => location.pathname === destination, 'confirmed discard did not navigate')
+    await until(() => location.pathname === destination && document.querySelector('#fixture h1')?.textContent === 'Destination' && !modal(), 'confirmed discard did not navigate')
     history.back()
     await until(() => location.pathname === gridPath, 'browser back to manual failed')
+    await choosePeriod()
     await until(() => editable(2), 'direct grid reload failed'); input(field(2), '31')
     history.forward()
     await cancelNavigation()
@@ -274,7 +283,7 @@ document.querySelector('#run').onclick = async () => {
     log('authorization loss bypasses draft confirmation and clears sensitive state')
     results.textContent += 'Component/router fixtures completed. Laravel integration is NOT exercised.\n'
   } catch (error) {
-    results.textContent += `FAIL ${error.message}\n`
+    results.textContent += `FAIL ${error.stack ?? error.message}\n`
   } finally {
     releaseWrite?.(); root?.unmount(); router?.dispose(); window.fetch = previousFetch
     if (previousIdentity === null) localStorage.removeItem('user'); else localStorage.setItem('user', previousIdentity)
@@ -282,3 +291,6 @@ document.querySelector('#run').onclick = async () => {
     run.disabled = false
   }
 }
+
+// Headless local verification only; never contacts a real API.
+if (new URLSearchParams(location.search).has('autorun')) document.querySelector('#run').click()

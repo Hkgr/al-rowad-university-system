@@ -28,7 +28,7 @@ test('zero contexts remains visible and multiple offerings/attempts never select
   const course = { offerings: [] }
   assert.equal(selectedContext(course).offering, null)
   course.offerings = [{ course_offering_id: 1, registrations: [{ registration_id: 3 }, { registration_id: 4 }] }, { course_offering_id: 2, registrations: [] }]
-  assert.equal(selectedContext(course).offering, null)
+  assert.equal(selectedContext(course).offering.course_offering_id, 1)
   assert.equal(selectedContext(course, '1').registration, null)
   assert.equal(selectedContext(course, '1', '4').registration.registration_id, 4)
   assert.equal(selectedContext(course, '2', '4').registration, undefined)
@@ -37,6 +37,16 @@ test('zero contexts remains visible and multiple offerings/attempts never select
 test('actionable configuration errors distinguish undefined, incompatible and official locks', () => {
   for (const errorCode of ['manual_components_undefined', 'manual_components_incompatible', 'grading_policy_incompatible', 'official_result_locked']) assert.ok(preparationError({ errorCode }))
   assert.equal(preparationError({ errorCode: 'unknown' }), null)
+})
+
+test('existing owned attempts take priority; genuinely competing owned attempts remain explicit', () => {
+  const owned = { course_offering_id: 4, registrations: [{ registration_id: 8 }] }
+  const course = { offerings: [{ course_offering_id: 3, registrations: [] }, owned] }
+  assert.equal(selectedContext(course).registration.registration_id, 8)
+  course.offerings.push({ course_offering_id: 5, registrations: [{ registration_id: 9 }] })
+  assert.equal(selectedContext(course).offering, null)
+  assert.equal(selectedContext(course, '5', '9').registration.registration_id, 9)
+  assert.ok(preparationError({ errorCode: 'manual_recording_relationship_missing' }))
 })
 test('source integration: dedicated authorized route, catalog table and explicit preparation', () => {
   const app = read('../src/app/App.jsx')

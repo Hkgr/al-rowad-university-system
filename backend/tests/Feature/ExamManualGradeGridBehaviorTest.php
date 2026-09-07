@@ -197,7 +197,9 @@ class ExamManualGradeGridBehaviorTest extends ExamManualGradeEntryBehaviorTest
         DB::table('departments')->insert(['department_id' => 2, 'college_id' => 2]);
         DB::table('academic_programs')->insert(['academic_program_id' => 2, 'department_id' => 2]);
         DB::table('course_offerings')->insert(['course_offering_id' => 2, 'course_id' => 1, 'academic_program_id' => 2, 'department_id' => 2, 'academic_year_id' => 1, 'semester_id' => 1, 'status' => 'open']);
-        $this->getJson(self::GRID.'/catalog')->assertOk()->assertJsonPath('data.meta.total', 1)->assertJsonCount(2, 'data.courses.0.offerings');
+        $this->getJson(self::GRID.'/catalog')->assertOk()->assertJsonPath('data.meta.total', 1)->assertJsonCount(1, 'data.courses.0.offerings');
+        DB::table('student_course_registrations')->insert(['student_id' => 1, 'course_offering_id' => 2, 'registration_status_id' => 1]);
+        $this->getJson(self::GRID.'/catalog')->assertOk()->assertJsonCount(2, 'data.courses.0.offerings');
         DB::table('user_access_scopes')->update(['scope_type' => 'college', 'scope_id' => 1]);
         $this->getJson(self::GRID.'/catalog')->assertOk()->assertJsonCount(1, 'data.courses.0.offerings');
         $this->postJson(self::GRID.'/offerings/2/registration', $this->confirmation())->assertForbidden();
@@ -230,6 +232,7 @@ class ExamManualGradeGridBehaviorTest extends ExamManualGradeEntryBehaviorTest
             $this->getJson(self::GRID.'/catalog?per_page=100')->assertOk();
             $count = count(DB::getQueryLog()); DB::disableQueryLog(); return $count;
         };
+        $count(); // Warm request-independent framework/auth metadata before comparing row growth.
         $one = $count();
         for ($i = 2; $i <= 25; $i++) {
             DB::table('courses')->insert(['course_id' => $i, 'course_code' => 'C'.$i, 'course_name' => 'Catalog '.$i, 'credit_hours' => 3]);

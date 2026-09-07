@@ -26,7 +26,7 @@ final class ExamManualGradeContextService
                 $q->whereHas('departments', fn ($d) => $d->where('college_id', $collegeId ?? -1))
                     ->orWhereHas('academicPrograms.department', fn ($d) => $d->where('college_id', $collegeId ?? -1))
                     // Includes the student's applicable university/shared requirement rows.
-                    ->orWhereHas('programCourses', fn ($p) => $p->where('academic_program_id', $programId ?? -1)->where('is_active', true))
+                    ->orWhereHas('programCourses', fn ($p) => $p->where('academic_program_id', $programId ?? -1))
                     ->orWhereHas('courseOfferings', fn ($o) => $this->scope->scopeManualGradeOfferings($o, $actor)
                         ->whereHas('studentCourseRegistrations', fn ($r) => $r->where('student_id', $student->getKey())));
             });
@@ -38,6 +38,8 @@ final class ExamManualGradeContextService
         ])->orderBy('course_code')->orderBy('course_id')->paginate($filters['per_page'] ?? 15);
         $ids = $page->getCollection()->modelKeys();
         $offeringsQuery = $this->scope->scopeManualGradeOfferings(CourseOffering::query(), $actor);
+        $offeringsQuery->where(fn ($q) => $q->where('academic_program_id', $programId ?? -1)
+            ->orWhereHas('studentCourseRegistrations', fn ($r) => $r->where('student_id', $student->getKey())));
         $terms = $this->periods($actor, $student)['terms'];
         foreach (['academic_year_id', 'semester_id'] as $key) if (isset($filters[$key])) $offeringsQuery->where($key, $filters[$key]);
         $offerings = $offeringsQuery->whereIn('course_id', $ids)->with(['course', 'academicYear', 'semester', 'academicProgram', 'gradeComponents'])

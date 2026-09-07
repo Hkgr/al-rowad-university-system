@@ -149,6 +149,7 @@ class ExamManualGradePreparationBehaviorTest extends ExamManualGradeGridBehavior
         DB::table('courses')->insert(['course_id' => 2, 'course_code' => 'Conflict', 'credit_hours' => 3, 'theoretical_hours' => 2]);
         DB::table('program_courses')->insert(['program_course_id' => 2, 'academic_program_id' => 1, 'course_id' => 2, 'is_active' => 1]);
         DB::table('program_course_requirement_groups')->insert(['program_course_id' => 2, 'requirement_group_id' => 1]);
+        DB::table('academic_requirement_groups')->where('requirement_group_id', 1)->update(['required_credit_hours' => 6]);
         DB::table('course_offerings')->insert(['course_offering_id' => 2, 'course_id' => 2, 'academic_program_id' => 1, 'department_id' => 1, 'academic_year_id' => 1, 'semester_id' => 1, 'status' => 'open']);
         DB::table('student_course_registrations')->insert(['student_id' => 1, 'course_offering_id' => 2, 'registration_status_id' => 1]);
         DB::table('course_offering_schedule_slots')->insert(['course_offering_id' => 2, 'component_type' => 'theoretical', 'day_of_week' => 1, 'start_time' => '08:30:00', 'end_time' => '09:30:00']);
@@ -163,6 +164,7 @@ class ExamManualGradePreparationBehaviorTest extends ExamManualGradeGridBehavior
             DB::transaction(fn () => app(RegistrationService::class)->registerStudentWithinTransaction(['student_id' => 1, 'course_offering_id' => 1], 1));
             self::fail('Ordinary timetable guard was bypassed.');
         } catch (\App\Exceptions\RegistrationException $e) { self::assertSame($code, $e->errorCode); }
+        catch (\App\Exceptions\AcademicRequirementConfigurationException $e) { self::fail(json_encode($e->context)); }
         self::assertSame(0, DB::table('student_course_registrations')->where('student_id', 1)->where('course_offering_id', 1)->count());
     }
 
@@ -177,19 +179,19 @@ class ExamManualGradePreparationBehaviorTest extends ExamManualGradeGridBehavior
         self::assertSame($before, DB::table('grade_components')->get()->toJson());
     }
 
-    public function test_curriculum_prerequisites_and_credit_limits_are_not_exempt(): void
+    public function test_historical_recording_accepts_inactive_membership_missing_prerequisite_and_overload(): void
     {
         $this->emptyContext(true);
         DB::table('program_courses')->update(['is_active' => false]);
-        $this->getJson(self::PATH.'preview?academic_year_id=1&semester_id=1')->assertUnprocessable()->assertJsonPath('error_code', 'course_not_in_program');
-        DB::table('program_courses')->update(['is_active' => true]);
         DB::table('courses')->insert(['course_id' => 2, 'course_code' => 'PRE', 'course_name' => 'Prerequisite', 'credit_hours' => 3]);
         DB::table('course_prerequisites')->insert(['course_id' => 1, 'prerequisite_course_id' => 2]);
-        $this->getJson(self::PATH.'preview?academic_year_id=1&semester_id=1')->assertUnprocessable()->assertJsonValidationErrors('course_offering_id');
-        DB::table('course_prerequisites')->delete();
         DB::table('courses')->where('course_id', 1)->update(['credit_hours' => 22]);
-        $this->getJson(self::PATH.'preview?academic_year_id=1&semester_id=1')->assertUnprocessable()->assertJsonValidationErrors('course_offering_id');
-        self::assertSame(0, DB::table('course_offerings')->count());
+        $preview = $this->previewContext();
+        self::assertSame([1], $preview['relationship_evidence']['program_course_ids']);
+        $this->postJson(self::PATH.'save', $this->contextPayload($preview))->assertOk();
+        self::assertSame(1, DB::table('student_course_registrations')->count());
+        self::assertSame(0, DB::table('student_course_results')->count());
+        self::assertSame(0, (int) DB::table('program_courses')->value('is_active'));
     }
 
     public function test_single_part_missing_definition_uses_policy_not_ratios(): void
@@ -208,6 +210,8 @@ class ExamManualGradePreparationBehaviorTest extends ExamManualGradeGridBehavior
     {
         $offering = (array) DB::table('course_offerings')->where('course_offering_id', 1)->first();
         DB::table('course_offerings')->insert(array_replace($offering, ['course_offering_id' => 2]));
+        $this->getJson(self::PATH.'preview?academic_year_id=1&semester_id=1')->assertOk()->assertJsonPath('data.registration_id', 1);
+        DB::table('student_course_registrations')->insert(['student_id' => 1, 'course_offering_id' => 2, 'registration_status_id' => 1]);
         $this->getJson(self::PATH.'preview?academic_year_id=1&semester_id=1')->assertConflict();
         $preview = $this->previewContext(['course_offering_id' => 1, 'registration_id' => 1]);
         $this->postJson(self::PATH.'save', $this->contextPayload($preview) + ['course_offering_id' => 1, 'registration_id' => 2])->assertNotFound();
@@ -228,5 +232,94 @@ class ExamManualGradePreparationBehaviorTest extends ExamManualGradeGridBehavior
         $this->getJson(self::PATH.'preview?academic_year_id=1&semester_id=1')->assertConflict();
         $this->postJson(self::PATH.'save', $this->contextPayload($preview))->assertConflict();
         self::assertSame(0, DB::table('student_grade_components')->count());
+    }
+
+    public function test_passed_other_term_does_not_block_historical_recording_but_still_blocks_ordinary_registration(): void
+    {
+        $this->test_complete_offering_submission_return_correction_and_official_finalization();
+        $grades = app(GradeService::class);
+        $before = $grades->getTranscript(Student::findOrFail(1));
+        DB::table('academic_years')->insert(['academic_year_id' => 2, 'year_name' => '2020', 'is_current' => false]);
+        $preview = $this->previewContext(['academic_year_id' => 2]);
+        $payload = array_replace($this->contextPayload($preview), ['academic_year_id' => 2]);
+        $saved = $this->postJson(self::PATH.'save', $payload)->assertOk()->json('data');
+        self::assertSame($before, $grades->getTranscript(Student::findOrFail(1)));
+        self::assertSame(2, DB::table('student_course_results')->count());
+        $this->postJson(self::PATH.'save', $payload)->assertConflict();
+        self::assertSame(2, DB::table('student_course_registrations')->where('student_id', 1)->count());
+        // Another student with the same official pass cannot use ordinary enrollment for this target.
+        DB::table('course_offerings')->where('course_offering_id', $saved['course_offering_id'])->update(['status' => 'open']);
+        try {
+            DB::transaction(fn () => app(RegistrationService::class)->registerStudentWithinTransaction([
+                'student_id' => 2, 'course_offering_id' => $saved['course_offering_id']], 1));
+            self::fail('Ordinary passed-course guard was bypassed.');
+        } catch (\App\Exceptions\RegistrationException $e) { self::assertSame('course_already_passed', $e->errorCode); }
+    }
+
+    public function test_prior_owned_attempt_supplies_evidence_without_any_current_program_course(): void
+    {
+        DB::table('program_courses')->delete();
+        DB::table('academic_years')->insert(['academic_year_id' => 2, 'year_name' => '2019', 'is_current' => false]);
+        $preview = $this->previewContext(['academic_year_id' => 2]);
+        self::assertSame([], $preview['relationship_evidence']['program_course_ids']);
+        self::assertSame([1], $preview['relationship_evidence']['registration_ids']);
+        $this->postJson(self::PATH.'save', array_replace($this->contextPayload($preview), ['academic_year_id' => 2]))->assertOk();
+        self::assertSame(0, DB::table('program_courses')->count());
+    }
+
+    public function test_missing_relationship_fails_closed_without_creating_an_arbitrary_record(): void
+    {
+        $this->emptyContext();
+        DB::table('program_courses')->delete();
+        $this->getJson(self::PATH.'preview?academic_year_id=1&semester_id=1')->assertConflict()
+            ->assertJsonPath('error_code', 'manual_recording_relationship_missing');
+        $this->postJson(self::PATH.'save', ['academic_year_id' => 1, 'semester_id' => 1, 'revision' => str_repeat('a', 64),
+            'confirmed' => true, 'acknowledged' => true, 'reason' => 'Not evidence', 'components' => [['key' => 'new:theoretical', 'mark' => 1]]])
+            ->assertConflict()->assertJsonPath('error_code', 'manual_recording_relationship_missing');
+        self::assertSame(0, DB::table('course_offerings')->count());
+        self::assertSame(0, DB::table('user_activity_logs')->count());
+    }
+
+    public function test_other_program_offerings_are_neither_selected_nor_treated_as_ambiguity(): void
+    {
+        $this->emptyContext();
+        DB::table('academic_programs')->insert(['academic_program_id' => 2, 'department_id' => 1]);
+        DB::table('course_offerings')->insert(['course_offering_id' => 7, 'course_id' => 1, 'academic_program_id' => 2,
+            'department_id' => 1, 'academic_year_id' => 1, 'semester_id' => 1, 'status' => 'open']);
+        $preview = $this->previewContext();
+        self::assertTrue($preview['create_offering']);
+        $this->getJson('/api/v1/exams/manual-grade-entry/students/1/catalog?academic_year_id=1&semester_id=1')
+            ->assertOk()->assertJsonPath('data.courses.0.offerings', []);
+        $this->getJson(self::PATH.'preview?academic_year_id=1&semester_id=1&course_offering_id=7')->assertForbidden();
+        $saved = $this->postJson(self::PATH.'save', $this->contextPayload($preview))->assertOk()->json('data');
+        self::assertNotSame(7, $saved['course_offering_id']);
+        self::assertSame(1, (int) DB::table('course_offerings')->where('course_offering_id', $saved['course_offering_id'])->value('academic_program_id'));
+    }
+
+    public function test_ordinary_prerequisite_and_credit_limits_remain_in_force(): void
+    {
+        DB::table('student_course_registrations')->where('student_id', 1)->delete();
+        DB::table('courses')->insert(['course_id' => 2, 'course_code' => 'PRE', 'course_name' => 'Prerequisite']);
+        DB::table('course_prerequisites')->insert(['course_id' => 1, 'prerequisite_course_id' => 2]);
+        foreach (['prerequisites', 'Credit hour limit'] as $reason) {
+            try {
+                DB::transaction(fn () => app(RegistrationService::class)->registerStudentWithinTransaction(['student_id' => 1, 'course_offering_id' => 1], 1));
+                self::fail('Ordinary enrollment eligibility was bypassed.');
+            } catch (\App\Exceptions\RegistrationException $e) { self::assertStringContainsString($reason, $e->getMessage()); }
+            DB::table('course_prerequisites')->delete();
+            DB::table('courses')->where('course_id', 1)->update(['credit_hours' => 22]);
+        }
+        self::assertSame(0, DB::table('student_course_registrations')->where('student_id', 1)->count());
+    }
+
+    public function test_recording_requires_program_scope_even_when_actor_can_read_an_existing_section(): void
+    {
+        DB::table('user_access_scopes')->update(['scope_type' => 'section', 'scope_id' => 1]);
+        DB::table('academic_years')->insert(['academic_year_id' => 2, 'year_name' => 'Old']);
+        $this->getJson(self::PATH.'preview?academic_year_id=2&semester_id=1')->assertForbidden();
+        $this->postJson(self::PATH.'save', ['academic_year_id' => 2, 'semester_id' => 1, 'revision' => str_repeat('a', 64),
+            'confirmed' => true, 'acknowledged' => true, 'reason' => 'Scope test', 'components' => [['key' => 'new:theoretical', 'mark' => 1]]])->assertForbidden();
+        self::assertSame(1, DB::table('course_offerings')->count());
+        self::assertSame(0, DB::table('user_activity_logs')->count());
     }
 }

@@ -27,23 +27,42 @@ final class ExamManualGradePreparationService
         abort_unless($this->scope->scopeManualGradeCourses(Course::query(), $actor)->whereKey($course->getKey())->exists(), 403);
         $year = AcademicYear::findOrFail($input['academic_year_id']);
         $semester = \App\Models\Semester::findOrFail($input['semester_id']);
+        $attempts = StudentCourseRegistration::query()->where('student_id', $student->getKey())
+            ->whereHas('courseOffering', fn ($q) => $q->where('course_id', $course->getKey())
+                ->where('academic_year_id', $year->getKey())->where('semester_id', $semester->getKey()))
+            ->with('registrationStatus')->orderBy('student_course_registration_id')->get();
+        $registration = null;
+        if (isset($input['registration_id'])) {
+            $registration = $attempts->firstWhere('student_course_registration_id', $input['registration_id']);
+            abort_unless($registration, 404);
+        } elseif ($attempts->count() > 1) {
+            $this->fail('توجد أكثر من محاولة في فترة العلامات؛ حدد المحاولة المقصودة.', 'manual_registration_ambiguous');
+        } elseif ($attempts->count() === 1) {
+            $registration = $attempts->first();
+        }
         $query = CourseOffering::query()->where('course_id', $course->getKey())
-            ->where('academic_year_id', $year->getKey())->where('semester_id', $semester->getKey());
-        $choices = $this->scope->scopeManualGradeOfferings(clone $query, $actor)->orderBy('course_offering_id')->get();
-        if (isset($input['course_offering_id'])) {
+            ->where('academic_year_id', $year->getKey())->where('semester_id', $semester->getKey())
+            ->where(fn ($q) => $q->where('academic_program_id', $student->academic_program_id ?? -1)
+                ->orWhereHas('studentCourseRegistrations', fn ($r) => $r->where('student_id', $student->getKey())));
+        $choices = $this->scope->scopeManualGradeOfferings($query, $actor)->orderBy('course_offering_id')->get();
+        $offering = null;
+        if ($registration) {
+            if (isset($input['course_offering_id']) && (int) $input['course_offering_id'] !== (int) $registration->course_offering_id) {
+                $this->fail('للطالب محاولة موجودة؛ لا تنشأ محاولة أخرى بدلًا منها.', 'manual_registration_ambiguous');
+            }
+            $offering = $choices->firstWhere('course_offering_id', $registration->course_offering_id);
+            abort_unless($offering, 403);
+        } elseif (isset($input['course_offering_id'])) {
             $offering = $choices->firstWhere('course_offering_id', $input['course_offering_id']);
             abort_unless($offering, 403);
         } else {
-            if ($choices->count() > 1) $this->fail('اختر الطرح الفعلي صراحةً؛ يوجد أكثر من سياق.', 'manual_registration_ambiguous');
+            if ($choices->count() > 1) $this->fail('توجد أكثر من شعبة صحيحة في برنامج الطالب؛ حدد المقصودة.', 'manual_registration_ambiguous');
             $offering = $choices->count() === 1 ? $choices->first() : null;
         }
         $context = null;
         if ($offering === null) {
-            abort_unless($this->scope->canMutateProgram($actor, (int) $student->academic_program_id), 403);
-            // Shared identity/curriculum resolver; no academic-plan or opening approval is fabricated.
-            $context = $this->contexts->resolveContext((int) $course->getKey(), (int) $student->academic_program_id,
-                (int) $year->getKey(), (int) $semester->getKey());
-            $offering = new CourseOffering($context->offeringAttributes() + ['status' => 'closed']);
+            $context = $this->contexts->resolveManualRecordingIdentity($student, $course, (int) $year->getKey(), (int) $semester->getKey(), $actor);
+            $offering = new CourseOffering($context['attributes'] + ['status' => 'closed']);
             $offering->setRelation('course', $course);
         } else {
             $this->access->authorizeOffering($actor, $student, $offering);
@@ -54,27 +73,14 @@ final class ExamManualGradePreparationService
             }
             SupplementaryExamTargetGuard::assertCourseOfferingConfigurationsReadable([$offering->getKey()]);
         }
-        $attempts = StudentCourseRegistration::query()->where('student_id', $student->getKey())
-            ->whereHas('courseOffering', fn ($q) => $q->where('course_id', $course->getKey())
-                ->where('academic_year_id', $year->getKey())->where('semester_id', $semester->getKey()))
-            ->with('registrationStatus')->orderBy('student_course_registration_id')->get();
-        if (isset($input['registration_id'])) {
-            $registration = $attempts->firstWhere('student_course_registration_id', $input['registration_id']);
-            abort_unless($registration && (int) $registration->course_offering_id === (int) $offering->getKey(), 404);
-        } else {
-            if ($attempts->count() > 1) $this->fail('اختر المحاولة الموجودة صراحةً؛ لا تُنشأ محاولة بديلة.', 'manual_registration_ambiguous');
-            $registration = $attempts->count() === 1 ? $attempts->first() : null;
-            if ($registration && (int) $registration->course_offering_id !== (int) $offering->getKey()) {
-                $this->fail('للطالب محاولة في طرح آخر من الفصل نفسه؛ اخترها صراحةً.', 'manual_registration_ambiguous');
-            }
-        }
         if ($registration) {
             $this->access->authorize($actor, $student, $registration);
             SupplementaryExamTargetGuard::assertOrdinaryMutationAvailable((int) $registration->getKey());
             if (!$registration->allowsGradeEntry()) $this->fail('حالة المحاولة لا تسمح بإدخال العلامات.', 'manual_registration_ineligible');
         } else {
-            $this->registrations->assertManualGradeAcademicIdentity($student, $offering);
-            $this->registrations->assertAcademicRegistrationCandidate($student, $offering);
+            $this->registrations->assertManualGradeAcademicIdentity($student, $offering, $actor);
+            $context ??= $this->contexts->resolveManualRecordingIdentity($student, $course,
+                (int) $year->getKey(), (int) $semester->getKey(), $actor);
         }
         $plan = $this->components->recordingComponentPlan($offering);
         $snapshot = $registration ? $this->workflow->manualRegistration($registration) : null;
@@ -98,7 +104,8 @@ final class ExamManualGradePreparationService
             'course_offering_id' => $r['offering']->getKey(), 'registration_id' => $r['registration']?->getKey(),
             'create_offering' => !$r['offering']->exists, 'create_registration' => $r['registration'] === null,
             'create_components' => $r['plan']['create'], 'offering_status' => $r['offering']->status,
-            'exemptions' => ExamManualGradeEntryAccess::RECORDING_EXEMPTIONS,
+            'exemptions' => $r['registration'] === null ? ExamManualGradeEntryAccess::RECORDING_EXEMPTIONS : [],
+            'relationship_evidence' => $r['context']['evidence'] ?? ['registration_id' => $r['registration']?->getKey()],
             'components' => collect($r['plan']['components'])->map(fn ($c) => [
                 'key' => $c['key'], 'component_type' => $c['component_type'], 'name' => $c['component_name'],
                 'max_mark' => (float) $c['max_mark'], 'mark' => $marks->get($c['key'])['mark'] ?? null,
@@ -133,7 +140,8 @@ final class ExamManualGradePreparationService
             $preview = $this->describe($r);
             if (!hash_equals($preview['revision'], $input['revision'])) $this->fail('تغير السياق؛ أعد معاينته قبل تأكيد المسودة.', 'manual_grade_entry_stale');
             $offering = $r['offering'];
-            if (!$offering->exists) $offering = $this->contexts->createOffering($r['context']);
+            if (!$offering->exists) $offering = $this->contexts->createManualRecordingOffering($student, $course,
+                (int) $input['academic_year_id'], (int) $input['semester_id'], $actor);
             $registration = $r['registration'] ?? $this->registrations->prepareManualGradeRegistration($student, $offering, $actor,
                 ['confirmed' => true, 'reason' => $input['reason'], 'course_id' => $course->getKey(),
                     'academic_year_id' => $input['academic_year_id'], 'semester_id' => $input['semester_id']]);
@@ -158,7 +166,8 @@ final class ExamManualGradePreparationService
                     'course_offering_id' => $offering->getKey(), 'registration_id' => $registration->getKey(),
                     'academic_year_id' => $offering->academic_year_id, 'semester_id' => $offering->semester_id,
                     'created' => [$preview['create_offering'], $preview['create_registration'], $preview['create_components']],
-                    'waived' => ExamManualGradeEntryAccess::RECORDING_EXEMPTIONS, 'reason' => trim($input['reason'])], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE)]);
+                    'waived' => $preview['exemptions'], 'relationship_evidence' => $preview['relationship_evidence'],
+                    'reason' => trim($input['reason'])], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE)]);
             return $saved;
         }); // No automatic retry of a grade write. Any error rolls back the entire preparation and save.
     }
