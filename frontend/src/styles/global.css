@@ -1,10 +1,12 @@
 @import "tailwindcss";
+@import "./cairo.css";
 
 /* ─── Project colour tokens ─────────────────────────────────────────────────
    Define once here → use as Tailwind classes everywhere:
    bg-primary, text-primary-dark, border-primary-light, etc.
 ──────────────────────────────────────────────────────────────────────────── */
 @theme {
+  --font-sans: 'Cairo', 'Segoe UI', sans-serif;
   --color-primary:       #569933;
   --color-primary-dark:  #417327;
   --color-primary-light: #7ab356;
@@ -19,7 +21,7 @@
    Keep only what preflight doesn't cover.
 ──────────────────────────────────────────────────────────────────────────── */
 body {
-  font-family: 'Cairo', 'Segoe UI', sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -493,7 +495,7 @@ body {
   border-radius: 9px;
   background: white;
   color: #b42318;
-  font: 700 12px Cairo, sans-serif;
+  font: 700 12px var(--font-sans);
   cursor: pointer;
 }
 
