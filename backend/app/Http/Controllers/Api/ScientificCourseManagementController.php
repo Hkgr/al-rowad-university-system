@@ -11,6 +11,7 @@ final class ScientificCourseManagementController extends \App\Http\Controllers\C
     public function __construct(private ScientificCourseManagementService $catalog) {}
     public function index(Request $r) { return $this->successResponse($this->catalog->listing($r->user(), $r->query())); }
     public function options(Request $r) { return $this->successResponse($this->catalog->options($r->user(), $r->query())); }
+    public function distribution(Request $r) { return $this->successResponse(app(\App\Services\ScientificCourseDistribution::class)->preview($r->user(), $r->query())); }
     public function show(Request $r, int $course) { return $this->successResponse($this->catalog->course($r->user(), $course)); }
     public function createCourse(Request $r) { return $this->successResponse($this->catalog->saveCourse($r->user(), null, $r->all())); }
     public function updateCourse(Request $r, int $course) { return $this->successResponse($this->catalog->saveCourse($r->user(), $course, $r->all())); }

@@ -12,6 +12,10 @@ final class CatalogFixture
         foreach ($matches as $m) $tables[$m[1]][$m[2]]=true;
         $extra = ['users'=>['username','student_id','employee_id'], 'user_roles'=>['user_role_id'], 'user_access_scopes'=>['user_access_scope_id'], 'course_offerings'=>['course_id','academic_year_id','semester_id','department_id','faculty_member_id','status','section','capacity','available_seats'], 'academic_years'=>['academic_year_id','year_name','starts_at','ends_at'], 'supplementary_exam_offerings'=>['course_id'], 'students'=>['deleted_at']];
         $primary = ['user_roles'=>'user_role_id','user_access_scopes'=>'user_access_scope_id'];
+        $extra['course_instructors'] = ['course_instructor_id', 'faculty_member_id', 'is_primary'];
+        $extra['faculty_members'] = ['faculty_member_id', 'employee_id'];
+        $extra['employees'] = ['employee_id', 'first_name', 'last_name'];
+        $primary += ['faculty_members' => 'faculty_member_id', 'employees' => 'employee_id'];
         foreach ($extra as $table=>$fields) foreach ($fields as $field) $tables[$table][$field]=true;
         foreach ($tables as $table=>$fields) {
             $key = $primary[$table] ?? array_key_first($fields); $columns=[];
