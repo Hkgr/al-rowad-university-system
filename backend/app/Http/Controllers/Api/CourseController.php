@@ -16,7 +16,7 @@ use App\Services\DataScopeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-class CourseController extends ApiController
+class CourseController extends CatalogCrudController
 {
     protected function modelClass(): string
     {

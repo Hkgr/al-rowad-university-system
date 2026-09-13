@@ -698,6 +698,17 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('vice-presidency/scientific/supplementary-exam-periods', [ScientificVicePresidentSupplementaryExamPeriodController::class, 'index']);
     Route::get('vice-presidency/scientific/supplementary-exam-periods/{period}', [ScientificVicePresidentSupplementaryExamPeriodController::class, 'show']);
     Route::post('vice-presidency/scientific/supplementary-exam-periods', [ScientificVicePresidentSupplementaryExamPeriodController::class, 'store']);
+    Route::prefix('vice-presidency/scientific/course-management')->controller(\App\Http\Controllers\Api\ScientificCourseManagementController::class)->group(function () {
+        Route::get('options', 'options');
+        Route::get('courses', 'index');
+        Route::post('courses', 'createCourse');
+        Route::get('courses/{course}', 'show')->whereNumber('course');
+        Route::put('courses/{course}', 'updateCourse')->whereNumber('course');
+        Route::delete('courses/{course}', 'deleteCourse')->whereNumber('course');
+        Route::get('programs/{program}', 'program')->whereNumber('program');
+        Route::put('programs/{program}/requirement-groups', 'groups')->whereNumber('program');
+        Route::match(['put', 'delete'], 'programs/{program}/courses/{course}', 'membership')->whereNumber(['program', 'course']);
+    });
     Route::get('teaching-staff', [TeachingStaffController::class, 'index']);
     Route::get('teaching-staff/assignment-instructors', [TeachingStaffAssignmentOfferingController::class, 'instructors']);
     Route::get('teaching-staff/assignment-offerings', [TeachingStaffAssignmentOfferingController::class, 'index']);

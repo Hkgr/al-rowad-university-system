@@ -100,12 +100,14 @@ import ExceptionalOpeningQueue from '../features/vice-presidency/pages/Exception
 import ExceptionalOpeningDetail from '../features/vice-presidency/pages/ExceptionalOpeningDetail'
 import SupplementaryExamPeriodsPage from '../features/vice-presidency/pages/SupplementaryExamPeriods'
 import SemesterOfferingQueue from '../features/vice-presidency/pages/SemesterOfferingQueue'
+import ScientificCoursesPage from '../features/scientific-courses/ScientificCoursesPage'
+import { CATALOG_ACCESS } from '../features/scientific-courses/catalog'
 import MinimumEnrollmentQueue from '../features/vice-presidency/pages/MinimumEnrollmentQueue'
 import SemesterOfferingDetail from '../features/vice-presidency/pages/SemesterOfferingDetail'
 import ExecutiveReportsPage from '../features/executive-reports/pages/ExecutiveReportsPage'
 import { reportAccessForOffice } from '../features/executive-reports/access'
 
-function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], actualUniversityScope = false, studentIdentity = false, employeeIdentity = false, anyAccess = [] }) {
+function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], actualUniversityScope = false, actualAcademicScope = false, studentIdentity = false, employeeIdentity = false, anyAccess = [] }) {
   const token = localStorage.getItem('token')
   const [identity, setIdentity] = useState(getIdentity())
   const [checking, setChecking] = useState(Boolean(token))
@@ -128,7 +130,7 @@ function ProtectedRoute({ children, permissions = [], allPermissions = [], roles
   if (!token) return <Navigate to="/login" replace />
   if (checking) return null
   if (!identity) return <Navigate to="/login" replace />
-  const allowed = canAccess({ permissions, allPermissions, roles, allRoles, assignedPermissions, actualUniversityScope, studentIdentity, employeeIdentity, anyAccess }, identity)
+  const allowed = canAccess({ permissions, allPermissions, roles, allRoles, assignedPermissions, actualUniversityScope, actualAcademicScope, studentIdentity, employeeIdentity, anyAccess }, identity)
   return allowed ? children : <Navigate to="/forbidden" replace />
 }
 
@@ -322,6 +324,7 @@ const router = createBrowserRouter(createRoutesFromElements(
           }
         >
           <Route path="/vp/scientific" element={<VicePresidentShell office="scientific" />} />
+          <Route path="/vp/scientific/courses" element={protect(<ScientificCoursesPage />, CATALOG_ACCESS)} />
           <Route path="/vp/scientific/reports" element={protect(<ExecutiveReportsPage office="scientific" />, reportAccessForOffice('scientific'))} />
           <Route path="/vp/scientific/teaching-assignments" element={<TeachingAssignmentQueue office="scientific" />} />
           <Route path="/vp/scientific/semester-offerings" element={protect(<SemesterOfferingQueue />, { allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView], actualUniversityScope: true })} />

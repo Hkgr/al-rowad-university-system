@@ -357,6 +357,8 @@ class CourseOfferingController extends ApiController
             (int) $offering->course_offering_id,
         );
 
+        $this->offeringContext->retainCatalogProofWithinTransaction($context);
+
         return array_merge($data, $context->offeringAttributes());
     }
 

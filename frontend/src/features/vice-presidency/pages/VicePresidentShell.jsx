@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { PERMISSIONS, ROLES, getIdentity, hasActualUniversityScope, hasAssignedPermission, hasRole } from '../../auth/auth'
 import { canAccessExecutiveReports } from '../../executive-reports/access'
 import ExecutiveOverview from '../../executive-reports/components/ExecutiveOverview'
+import { canViewCatalog } from '../../scientific-courses/catalog'
 
 const OFFICES = {
   scientific: {
@@ -50,6 +51,7 @@ export default function VicePresidentShell({ office }) {
       </div>
 
       {reportsAllowed && <ExecutiveOverview office={office} />}
+      {office === 'scientific' && canViewCatalog(identity) && <Link to="/vp/scientific/courses" className="rounded-[16px] border border-primary/15 bg-white p-5 shadow-sm hover:border-primary/40"><p className="text-[15px] font-black text-text-dark">إدارة المواد</p><p className="mt-1 text-[13px] text-text-light">الدليل الجامعي وتصنيف مواد البرامج وميزانيات المتطلبات ضمن نطاقك.</p></Link>}
 
       <details className="bg-white border border-black/5 rounded-[16px] p-5 shadow-sm">
         <summary className="cursor-pointer text-[12px] font-bold text-text-light">تفاصيل الهوية والنطاق</summary>
