@@ -311,6 +311,27 @@ final class ScientificCourseManagementTest extends TestCase
         }
     }
 
+    public function test_laravel_deadlock_wrapper_is_a_controlled_conflict_without_retry(): void
+    {
+        // Exception-mapping regression only; real two-connection InnoDB coverage
+        // lives in tests/mariadb/verify-catalog.php, not in this SQLite fixture.
+        $calls = 0;
+        try {
+            app(AcademicCatalogTransaction::class)->run(function () use (&$calls) {
+                $calls++;
+                DB::table('courses')->where('course_id', 1)->update(['course_name' => 'must roll back']);
+                throw new \Illuminate\Database\DeadlockException('Deadlock found: sensitive SQL must not reach the response');
+            });
+            self::fail('Deadlock should reject the write');
+        } catch (\App\Exceptions\AcademicCatalogException $e) {
+            self::assertSame('academic_catalog_stale', $e->errorCode);
+            self::assertSame(409, $e->status);
+            self::assertStringNotContainsString('SQL', $e->getMessage());
+        }
+        self::assertSame(1, $calls);
+        self::assertSame('مادة 1', DB::table('courses')->where('course_id', 1)->value('course_name'));
+    }
+
     private function revision(): string { return app(AcademicCatalogTransaction::class)->revision(); }
     private function newCourse(array $extra = []): array { return array_replace(['revision' => $this->revision(), 'course_code' => 'NEW', 'course_name' => 'مادة جديدة', 'credit_hours' => 3, 'theoretical_hours' => 2, 'practical_hours' => 2, 'is_active' => true, 'departments' => [['department_id' => 1, 'is_primary' => true]]], $extra); }
     private function membership(array $extra = []): array { return array_replace(['revision' => $this->revision(), 'academic_level_id' => 1, 'recommended_semester_id' => 1, 'course_type' => 'mandatory', 'requirement_scope' => 'university', 'requirement_group_id' => 1, 'is_active' => true], $extra); }

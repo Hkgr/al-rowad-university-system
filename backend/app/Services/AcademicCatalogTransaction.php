@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Exceptions\AcademicCatalogException;
+use Illuminate\Database\DeadlockException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -32,13 +33,15 @@ final class AcademicCatalogTransaction
                 }
                 return $work();
             }); // Never replay a caller's mutation automatically.
-        } catch (QueryException $e) {
+        } catch (QueryException|DeadlockException $e) {
             $message = $e->getMessage();
             if (str_contains($message, 'academic_catalog_history_locked')) {
                 throw new AcademicCatalogException('هذه البيانات مرتبطة بتاريخ أكاديمي؛ يسمح بالتصحيح النصي فقط.', 'academic_catalog_history_locked');
             }
             if (str_contains($message, 'academic_catalog_schema_not_ready')) $this->unavailable();
-            if (in_array((int) ($e->errorInfo[1] ?? 0), [1205, 1213], true)) {
+            // Laravel wraps nested transaction deadlocks separately from QueryException.
+            // Preserve the same controlled conflict; never retry a mutation here.
+            if ($e instanceof DeadlockException || in_array((int) ($e->errorInfo[1] ?? 0), [1205, 1213], true)) {
                 throw new AcademicCatalogException('تزامنت العملية مع تعديل آخر؛ أعد تحميل البيانات وراجعها قبل المحاولة.', 'academic_catalog_stale');
             }
             if (str_contains($message, 'courses.course_code') || ((int) ($e->errorInfo[1] ?? 0) === 1062 && str_contains($message, 'course_code'))) {

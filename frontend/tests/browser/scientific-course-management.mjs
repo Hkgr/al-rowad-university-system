@@ -1,4 +1,4 @@
-// Built React + synthetic API, or explicitly selected loopback Laravel/SQLite fixture.
+// Built React + synthetic API, or explicitly selected isolated loopback Laravel fixture.
 // Existing Node >=22 and Chrome only; no test dependencies. See docs for launch commands.
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -104,7 +104,7 @@ async function wait(expression) { for (let n = 0; n < 100; n++) { if (await eval
 async function click(text, root = 'main') { await wait(`[...document.querySelectorAll(${JSON.stringify(root + ' button')})].filter(e=>e.textContent.trim()===${JSON.stringify(text)}).length===1`); await evaluate(`(()=>{const list=[...document.querySelectorAll(${JSON.stringify(root + ' button')})].filter(e=>e.textContent.trim()===${JSON.stringify(text)});list[0].click()})()`); await sleep(80) }
 async function action(label) { await wait(`document.querySelector('[aria-label="${label}"]')`); await evaluate(`document.querySelector('[aria-label="${label}"]').click()`); await sleep(80) }
 async function fill(selector, value) { await evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(!e)throw Error('Missing field');Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}))})()`); await sleep(50) }
-async function select(label, value) { await wait(`document.querySelector('select[aria-label="${label}"]')?.options.length>1`); await evaluate(`(()=>{const e=document.querySelector('select[aria-label="${label}"]');e.value=${JSON.stringify(String(value))};e.dispatchEvent(new Event('change',{bubbles:true}))})()`); await sleep(80) }
+async function select(label, value) { await wait(`[...document.querySelector('select[aria-label="${label}"]')?.options || []].some(o=>o.value===${JSON.stringify(String(value))})`); await evaluate(`(()=>{const e=document.querySelector('select[aria-label="${label}"]');e.value=${JSON.stringify(String(value))};e.dispatchEvent(new Event('change',{bubbles:true}))})()`); await sleep(80) }
 async function shot(name) {
   await sleep(300)
   const metrics = await send('Page.getLayoutMetrics')
@@ -133,7 +133,13 @@ async function runLive() {
   await click('حفظ التعديلات'); await wait(`!document.querySelector('${field}')`)
   assert.equal((await state()).courses.find(c => c.course_id === 2).course_name, correctedName)
   evidence.push('Laravel: used-program text correction persists; credit hours locked')
-  await select('القسم', 1); await select('البرنامج', 1)
+  await select('القسم', 1)
+  // Repeated concurrency runs can move the fixture program beyond lookup page 1.
+  // Use the actual searchable UI instead of assigning a non-existent option.
+  const programResponse = await fetch(live + '/api/v1/vice-presidency/scientific/course-management/programs/1').then(r => r.json())
+  await evaluate(`document.querySelector('[aria-label="بحث البرنامج"]').closest('details').querySelector('summary').click()`)
+  await fill('[aria-label="بحث البرنامج"]', programResponse.data.data.program_name)
+  await select('البرنامج', 1)
   await click('متطلبات التخرج'); await wait('document.querySelector("input[name=total_credit_hours]")')
   await sizes('live-requirements'); await action('إغلاق النافذة')
   await click('إضافة مادة للبرنامج'); await click('إنشاء مادة جديدة'); await wait(`document.querySelector('${field}')`)
@@ -159,7 +165,10 @@ async function runLive() {
   assert.ok(unlinked.courses.some(c => c.course_id === course.course_id))
   assert.equal(unlinked.memberships.some(p => p.course_id === course.course_id), false)
   assert.deepEqual(unlinked.groups, initial.groups)
-  await click('إضافة مادة للبرنامج'); await select('اختيار مادة موجودة', course.course_id); await click('متابعة بالمادة المختارة')
+  await click('إضافة مادة للبرنامج')
+  await evaluate(`document.querySelector('[aria-label="بحث اختيار مادة موجودة"]').closest('details').querySelector('summary').click()`)
+  await fill('[aria-label="بحث اختيار مادة موجودة"]', newCode)
+  await select('اختيار مادة موجودة', course.course_id); await click('متابعة بالمادة المختارة')
   await select('المستوى الإرشادي', 1); await select('الفصل الإرشادي', 1)
   await click('إضافة للبرنامج'); await click('تأكيد', 'dialog'); await wait("!document.querySelector('dialog[open]')")
   assert.equal((await state()).courses.filter(c => c.course_code === newCode).length, 1)
@@ -302,7 +311,7 @@ try {
   }
   assert.deepEqual(failures, [])
   await writeFile(join(output, 'evidence.json'), JSON.stringify({ evidence, writes, reads, renderedFonts, realReact: true, syntheticApi: !live, liveLaravel: !!live, testAuthentication: true }, null, 2))
-  console.log(`PASS ${evidence.length} recorded scenarios; ${live ? 'Laravel/SQLite' : 'synthetic API'}; artifacts ${output}`)
+  console.log(`PASS ${evidence.length} recorded scenarios; ${live ? 'Laravel (isolated fixture; verify server engine separately)' : 'synthetic API'}; artifacts ${output}`)
 } catch (e) { await shot('failure'); throw e } finally {
   // Close only this fresh fixture tab before detaching interception: it must never
   // resume requests to the configured API after this synthetic test ends.

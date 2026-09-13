@@ -117,8 +117,10 @@ Executed tests retain legacy CRUD ABA, first-offering-use stale proofs, generic
 offering paths and history locks. A MySQL-query-grammar test on SQLite proves GETs
 do not request `FOR UPDATE`; a deterministic ABA fence simulation proves rejection
 without replay. **Neither proves InnoDB locking/trigger/concurrent throughput.**
-No isolated MariaDB/MySQL engine was available; multi-connection races and SQL
-package execution remain unexecuted. No production database was contacted.
+At that earlier checkpoint, MariaDB/MySQL races and SQL package execution had not
+been performed. The subsequent [isolated MariaDB verification](scientific-course-management-mariadb.md)
+supersedes that limitation and records the actual engine tests and focused deadlock
+repair. No production database was contacted in either checkpoint.
 
 ## Executed verification
 
