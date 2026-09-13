@@ -56,12 +56,15 @@ export function catalogError(error) {
   if (error?.status === 503) return 'الخدمة غير جاهزة حاليًا؛ راجع مسؤول النظام.'
   return error?.message || 'تعذر الاتصال بالخادم.'
 }
+export function courseLabel(course, fallback = 'المادة') {
+  return course ? `${course.course_name || fallback}${course.course_code ? ` (${course.course_code})` : ''}` : fallback
+}
 export function editableCourse(snapshot) {
   const c = snapshot?.data || {}
   return { course_code: c.course_code || '', course_name: c.course_name || '', description: c.description || '',
     credit_hours: c.credit_hours ?? 1, theoretical_hours: c.theoretical_hours ?? '', practical_hours: c.practical_hours ?? '', is_active: c.is_active ?? true,
     departments: (c.course_departments || []).map(d => ({ department_id: d.department_id, is_primary: !!d.is_primary, label: d.department?.department_name || 'القسم الحالي' })),
-    prerequisites: (c.course_prerequisites || []).map(p => ({ prerequisite_course_id: p.prerequisite_course_id, minimum_result_status_id: p.minimum_result_status_id ?? '', label: p.prerequisite_course?.course_name || 'المتطلب الحالي' })) }
+    prerequisites: (c.course_prerequisites || []).map(p => ({ prerequisite_course_id: p.prerequisite_course_id, minimum_result_status_id: p.minimum_result_status_id ?? '', label: courseLabel(p.prerequisite_course, 'المتطلب الحالي') })) }
 }
 export function coursePayload(draft, baseline) {
   const body = { revision: baseline.revision }

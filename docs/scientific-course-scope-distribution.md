@@ -26,6 +26,10 @@ That merge has exactly the same tree as the previously reviewed `a78b0c5`.
   college or department additionally requires mandatory/elective, common advisory
   level/semester and an explicit confirmation. College selection constrains the
   department lookup; changing scope/college clears dependent selections.
+- All course lookup options display `name (code)`, including existing-course and
+  prerequisite selectors. Saved prerequisites retain their code when reopening
+  the editor. Equal names remain distinguishable and searches still accept codes;
+  presentation labels never enter relationship writes.
 - `GET .../course-management/distribution-preview` returns all authorized target
   programs, reasons preventing application and the existing catalog revision.
   `POST .../course-management/courses` accepts the optional `distribution` and
@@ -61,12 +65,12 @@ without a separate Superdesign draft was explicitly approved by the user.
 
 ## Executed verification (local, 2026-09-14)
 
-- 30 targeted PHPUnit HTTP/SQLite tests, 241 assertions: existing course tests plus
-  9 new tests for complete scope sets, preview zero writes, all-or-none locks/group
+- 31 targeted PHPUnit HTTP/SQLite tests, 247 assertions: existing course tests plus
+  10 new tests for complete scope sets, preview zero writes, all-or-none locks/group
   readiness, stale targets, permissions/hierarchy/confirmation, audit rollback,
   fixed preview query count, safe instructor fields, scoped associations and
-  inactive/unknown input rejection.
-- 24 dependency-free Node tests passed (catalog, distribution, Exam Board catalog).
+  inactive/unknown input rejection and course codes beside identical names.
+- 25 dependency-free Node tests passed (catalog, distribution, Exam Board catalog).
   These are pure/static checks, not React or Laravel integration evidence.
 - Existing source/SQL catalog contract and all seven changed PHP syntax checks
   passed. Scoped ESLint passed. Vite production build passed (819 modules), with
@@ -86,7 +90,10 @@ without a separate Superdesign draft was explicitly approved by the user.
   Desktop 1440x1000 and mobile 390x844 dialog/page geometry were checked.
 - All 11 existing Chrome scenarios passed with a synthetic API, including dirty
   sidebar/back navigation, pending saves, stale filters, lost responses and 409
-  draft preservation. This is distinct from the live local Laravel tests above.
+  draft preservation; course-code lookup presentation also has a browser assertion.
+  This is distinct from the live local Laravel tests above. The final course-label
+  addition was verified by HTTP/SQLite, Node and the synthetic browser, not by
+  rerunning the earlier MariaDB/browser distribution suite.
 
 ## Limitations and reproduction
 

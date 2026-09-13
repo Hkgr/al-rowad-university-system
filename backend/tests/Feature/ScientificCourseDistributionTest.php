@@ -125,4 +125,12 @@ final class ScientificCourseDistributionTest extends TestCase
         $this->postJson(self::URL.'/courses', $this->body($scope + ['program_ids' => [1]]))->assertUnprocessable();
         self::assertSame($before, $this->state());
     }
+    public function test_every_course_lookup_option_has_its_code_including_identical_names(): void
+    {
+        DB::table('courses')->where('course_id', 2)->update(['course_name' => 'مادة 1']);
+        $this->getJson(self::URL.'/options?resource=courses')->assertOk()
+            ->assertJsonPath('data.data.0.label', 'مادة 1 (C1)')->assertJsonPath('data.data.1.label', 'مادة 1 (C2)');
+        $this->getJson(self::URL.'/options?resource=courses&q=C2')->assertOk()->assertJsonCount(1, 'data.data')
+            ->assertJsonPath('data.data.0.label', 'مادة 1 (C2)');
+    }
 }

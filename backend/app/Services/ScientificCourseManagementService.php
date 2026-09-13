@@ -96,8 +96,9 @@ final class ScientificCourseManagementService
             'result_statuses' => [ResultStatus::query(), 'result_status_id', 'status_name'],
         };
         if (!empty($v['q'])) $q->where(fn ($q) => $q->where($name, 'like', '%'.trim($v['q']).'%')->when($v['resource'] === 'courses', fn ($q) => $q->orWhere('course_code', 'like', '%'.trim($v['q']).'%')));
-        $page = $q->orderBy($name)->orderBy($id)->paginate($v['per_page'] ?? 25, [$id, $name], 'page', $v['page'] ?? 1);
-        return ['data' => collect($page->items())->map(fn ($r) => ['id' => $r->$id, 'label' => $r->$name]), 'meta' => $this->meta($page), 'revision' => $this->transaction->revision()];
+        $isCourse = $v['resource'] === 'courses';
+        $page = $q->orderBy($name)->orderBy($id)->paginate($v['per_page'] ?? 25, [$id, $name, ...($isCourse ? ['course_code'] : [])], 'page', $v['page'] ?? 1);
+        return ['data' => collect($page->items())->map(fn ($r) => ['id' => $r->$id, 'label' => $isCourse ? $r->$name.' ('.$r->course_code.')' : $r->$name]), 'meta' => $this->meta($page), 'revision' => $this->transaction->revision()];
     }
 
     public function course(User $actor, int $id): array

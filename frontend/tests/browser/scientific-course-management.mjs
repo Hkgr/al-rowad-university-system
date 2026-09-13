@@ -68,7 +68,7 @@ async function fixture(url, request) {
   reads.push(path + url.search)
   if (denyReads) return { code: 403, error: { message: 'تم سحب صلاحية قراءة الدليل' } }
   if (path === '/options') {
-    const all = { colleges: [{ id: 1, label: 'كلية الهندسة' }], departments: [{ id: 1, label: 'قسم الحاسوب' }], programs: [{ id: 1, label: 'برنامج جديد' }, { id: 2, label: 'برنامج مستخدم' }], courses: courses.map(c => ({ id: c.course_id, label: c.course_name })), levels: [{ id: 1, label: 'المستوى الأول' }], semesters: [{ id: 1, label: 'الفصل الأول' }], result_statuses: [{ id: 1, label: 'ناجح' }] }[url.searchParams.get('resource')] || []
+    const all = { colleges: [{ id: 1, label: 'كلية الهندسة' }], departments: [{ id: 1, label: 'قسم الحاسوب' }], programs: [{ id: 1, label: 'برنامج جديد' }, { id: 2, label: 'برنامج مستخدم' }], courses: courses.map(c => ({ id: c.course_id, label: `${c.course_name} (${c.course_code})` })), levels: [{ id: 1, label: 'المستوى الأول' }], semesters: [{ id: 1, label: 'الفصل الأول' }], result_statuses: [{ id: 1, label: 'ناجح' }] }[url.searchParams.get('resource')] || []
     return { data: { data: all, meta: meta(all), revision: String(revision) } }
   }
   if (/^\/courses\/\d+$/.test(path)) return { data: snapshot(Number(path.split('/')[2])) }
@@ -282,6 +282,8 @@ try {
   await evaluate("document.querySelector('a[href=\"/vp/scientific/courses\"]').click()")
   await wait("Boolean(document.querySelector('[aria-label=\\\"استعراض C1\\\"]'))")
   await action('تعديل C1'); await wait(`document.querySelector('${field}')`); await fill(field, 'مسودة الرجوع')
+  await wait("document.querySelector('select[aria-label=\"إضافة متطلب سابق\"] option[value=\"2\"]')")
+  assert.match(await evaluate("document.querySelector('select[aria-label=\"إضافة متطلب سابق\"] option[value=\"2\"]').textContent"), /\(C2\)/)
   await evaluate('history.back()'); await wait('document.querySelector("dialog[open]")'); await click('البقاء في المحرر', 'dialog')
   assert.equal(await evaluate(`document.querySelector('${field}').value`), 'مسودة الرجوع')
   await evaluate('history.back()'); await wait('document.querySelector("dialog[open]")'); await click('تجاهل التعديلات والمتابعة', 'dialog'); await wait("location.pathname==='/vp/scientific'")
