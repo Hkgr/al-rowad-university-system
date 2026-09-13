@@ -1,5 +1,10 @@
 # Scientific VP course management
 
+The in-place PR #132 repair is documented in
+[the repair report and direct visual comparisons](scientific-course-management-repair.md).
+Its verification supersedes the original-head verification and screenshots below.
+The original SQL package and deployment instructions remain unchanged.
+
 ## Scope and audited baseline
 
 Branch: `codex/scientific-vp-course-management`. Started from a clean, fetched
@@ -88,8 +93,8 @@ displayed separately. The difference is informational; only the existing
 `AcademicRequirementService::assertProgramGraduationConfiguration()` supplies
 configuration warnings. Incomplete unused curricula may be prepared without
 silently repairing their budget. Cross-program catalog counts are not labelled
-graduation totals. Group summaries cover the full filtered selection; table
-regrouping only rearranges the current server page.
+graduation totals. Group summaries cover the full filtered selection. The repaired
+UI uses one course-identity table; linked programs are shown in details, not duplicate rows.
 
 ## Cross-writer concurrency and ABA protection
 

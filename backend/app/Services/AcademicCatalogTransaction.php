@@ -54,6 +54,23 @@ final class AcademicCatalogTransaction
         }
     }
 
+    /** Non-locking read with an epoch fence outside the transaction snapshot.
+     * Safe under both REPEATABLE READ and READ COMMITTED: a concurrent commit
+     * invalidates the entire response rather than returning mixed data/revision.
+     * No automatic retry, and no SELECT FOR UPDATE on ordinary read endpoints.
+     */
+    public function snapshot(callable $read): mixed
+    {
+        // Mutation response projections already run under the writer's control lock.
+        if (DB::transactionLevel() > 0) return $this->run($read);
+        $before = $this->revision();
+        $result = DB::transaction($read);
+        if (!hash_equals($before, $this->revision())) {
+            throw new AcademicCatalogException('تغيرت البيانات أثناء تحميلها؛ أعد التحميل.', 'academic_catalog_stale');
+        }
+        return $result;
+    }
+
     public function assertAcyclic(): void
     {
         $edges = [];

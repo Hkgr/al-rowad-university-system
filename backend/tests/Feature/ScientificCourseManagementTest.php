@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Services\AcademicCatalogTransaction;
-use App\Support\ScientificCourseAccess;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -19,30 +18,7 @@ final class ScientificCourseManagementTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        self::assertSame('sqlite', DB::connection()->getDriverName());
-        Schema::dropAllTables();
-        $this->schema();
-        DB::table('academic_catalog_control')->insert(['control_id' => 1, 'revision' => 1, 'schema_version' => 1, 'is_ready' => 1]);
-        DB::table('account_statuses')->insert(['account_status_id' => 1, 'status_code' => 'active']);
-        DB::table('users')->insert(['user_id' => 1, 'username' => 'scientific', 'account_status_id' => 1]);
-        DB::table('roles')->insert(['role_id' => 1, 'role_code' => 'vice_president_scientific']);
-        DB::table('user_roles')->insert(['user_id' => 1, 'role_id' => 1]);
-        foreach (['vice_presidency.scientific.access', ScientificCourseAccess::VIEW, ScientificCourseAccess::MANAGE, 'courses.manage', 'academic_structure.manage'] as $i => $code) {
-            DB::table('permissions')->insert(['permission_id' => $i + 1, 'permission_code' => $code]);
-            DB::table('role_permissions')->insert(['role_id' => 1, 'permission_id' => $i + 1]);
-        }
-        DB::table('organizational_units')->insert(['organizational_unit_id' => 1, 'unit_code' => 'PRES']);
-        DB::table('user_access_scopes')->insert(['user_id' => 1, 'scope_type' => 'university', 'scope_id' => 1]);
-        foreach ([1, 2] as $id) {
-            DB::table('colleges')->insert(['college_id' => $id, 'college_name' => 'كلية '.$id]);
-            DB::table('departments')->insert(['department_id' => $id, 'college_id' => $id, 'department_name' => 'قسم '.$id]);
-            DB::table('academic_programs')->insert(['academic_program_id' => $id, 'department_id' => $id, 'program_name' => 'برنامج '.$id, 'total_credit_hours' => 3]);
-            DB::table('courses')->insert(['course_id' => $id, 'course_code' => 'C'.$id, 'course_name' => 'مادة '.$id, 'credit_hours' => 3, 'theoretical_hours' => 2, 'practical_hours' => 0]);
-            DB::table('course_departments')->insert(['course_id' => $id, 'department_id' => $id]);
-        }
-        DB::table('academic_levels')->insert(['academic_level_id' => 1, 'level_name' => 'الأول']);
-        DB::table('semesters')->insert(['semester_id' => 1, 'semester_name' => 'الأول']);
-        DB::table('result_statuses')->insert(['result_status_id' => 1, 'status_code' => 'passed', 'status_name' => 'ناجح']);
+        \Tests\Support\ScientificCatalogFixture::initialize();
         Sanctum::actingAs(User::findOrFail(1));
     }
 
@@ -248,57 +224,96 @@ final class ScientificCourseManagementTest extends TestCase
         self::assertTrue(DB::table('courses')->where('course_id', 1)->exists());
     }
 
+    public function test_membership_resolves_group_on_server_without_a_third_selection(): void
+    {
+        DB::table('academic_requirement_groups')->insert(['requirement_group_id' => 5, 'academic_program_id' => 1, 'group_code' => 'AUTO', 'group_name' => 'جامعي', 'requirement_scope' => 'university', 'requirement_type' => 'mandatory', 'required_credit_hours' => 3]);
+        $body = $this->membership(); unset($body['requirement_group_id']);
+        $this->putJson(self::URL.'/programs/1/courses/1', $body)->assertOk();
+        self::assertSame(5, DB::table('program_course_requirement_groups')->value('requirement_group_id'));
+        self::assertSame(3, DB::table('academic_programs')->where('academic_program_id', 1)->value('total_credit_hours'));
+        $this->putJson(self::URL.'/programs/1/courses/2', $this->membership(['requirement_group_id' => 99]))->assertUnprocessable()->assertJsonValidationErrors('requirement_group_id');
+        self::assertSame(1, DB::table('program_courses')->count());
+    }
+
+    public function test_missing_inactive_or_ambiguous_group_never_mutates_membership(): void
+    {
+        $payload = fn () => array_diff_key($this->membership(), ['requirement_group_id' => true]);
+        $this->putJson(self::URL.'/programs/1/courses/1', $payload())->assertUnprocessable()->assertJsonValidationErrors('requirement_scope');
+        DB::table('academic_requirement_groups')->insert(['requirement_group_id' => 1, 'academic_program_id' => 1, 'group_code' => 'INACTIVE', 'requirement_scope' => 'university', 'requirement_type' => 'mandatory', 'required_credit_hours' => 3, 'is_active' => 0]);
+        $this->putJson(self::URL.'/programs/1/courses/1', $payload())->assertUnprocessable();
+        // Corrupted test-only fixture: production uniqueness remains unchanged.
+        Schema::table('academic_requirement_groups', fn (Blueprint $t) => $t->dropUnique(['academic_program_id', 'requirement_scope', 'requirement_type']));
+        DB::table('academic_requirement_groups')->where('requirement_group_id', 1)->update(['is_active' => 1]);
+        DB::table('academic_requirement_groups')->insert(['requirement_group_id' => 2, 'academic_program_id' => 1, 'group_code' => 'DUPPAIR', 'requirement_scope' => 'university', 'requirement_type' => 'mandatory', 'required_credit_hours' => 3]);
+        $this->putJson(self::URL.'/programs/1/courses/1', $payload())->assertUnprocessable();
+        self::assertSame(0, DB::table('program_courses')->count());
+        self::assertSame(0, DB::table('user_activity_logs')->count());
+    }
+
+    public function test_explicit_requirement_settings_hide_internal_codes_but_never_default_hours(): void
+    {
+        $body = ['revision' => $this->revision(), 'confirmed' => true, 'total_credit_hours' => 3,
+            'groups' => [['requirement_scope' => 'university', 'requirement_type' => 'mandatory', 'is_active' => true]]];
+        $this->putJson(self::URL.'/programs/1/requirement-groups', $body)->assertUnprocessable();
+        self::assertSame(0, DB::table('academic_requirement_groups')->count());
+        $body['groups'][0]['required_credit_hours'] = 3;
+        $this->putJson(self::URL.'/programs/1/requirement-groups', $body)->assertOk();
+        self::assertSame(3, DB::table('academic_requirement_groups')->value('required_credit_hours'));
+        self::assertSame('SC-1-university-mandatory', DB::table('academic_requirement_groups')->value('group_code'));
+    }
+
+    public function test_admission_only_program_lock_matrix_preserves_text_and_independent_creation(): void
+    {
+        $this->link(1, 1);
+        DB::table('admission_applications')->insert(['academic_program_id' => 1]);
+        $this->getJson(self::URL.'/programs/1')->assertOk()->assertJsonPath('data.capabilities.edit_curriculum', false);
+        $this->putJson(self::URL.'/courses/1', ['revision' => $this->revision(), 'course_name' => 'تصحيح'])->assertOk();
+        $this->postJson(self::URL.'/courses', $this->newCourse())->assertOk();
+        $this->putJson(self::URL.'/courses/1', ['revision' => $this->revision(), 'credit_hours' => 4])->assertConflict();
+        $this->putJson(self::URL.'/programs/1/courses/2', $this->membership())->assertConflict();
+        $this->putJson(self::URL.'/programs/1/courses/1', $this->membership(['course_type' => 'elective']))->assertConflict();
+        $this->deleteJson(self::URL.'/programs/1/courses/1', ['revision' => $this->revision(), 'confirmed' => true])->assertConflict();
+        $this->putJson(self::URL.'/programs/1/requirement-groups', ['revision' => $this->revision(), 'confirmed' => true, 'total_credit_hours' => 4,
+            'groups' => [['requirement_scope' => 'university', 'requirement_type' => 'mandatory', 'required_credit_hours' => 4, 'is_active' => true]]])->assertConflict();
+        self::assertSame(3, DB::table('academic_programs')->where('academic_program_id', 1)->value('total_credit_hours'));
+        self::assertSame(1, DB::table('program_courses')->count());
+    }
+
+    public function test_read_endpoints_emit_no_for_update_with_mysql_query_grammar(): void
+    {
+        $connection = DB::connection(); $original = $connection->getQueryGrammar();
+        // SQLite rejects FOR UPDATE: unlike its native grammar, MySQL grammar
+        // retains lock clauses, proving these GET paths do not request write locks.
+        $connection->setQueryGrammar(new \Illuminate\Database\Query\Grammars\MySqlGrammar($connection));
+        $revision = $this->revision();
+        try {
+            foreach (['/courses', '/courses/1', '/programs/1', '/options?resource=courses'] as $path) $this->getJson(self::URL.$path)->assertOk();
+            self::assertSame($revision, $this->revision());
+            self::assertSame(0, DB::table('user_activity_logs')->count());
+        } finally { $connection->setQueryGrammar($original); }
+    }
+
+    public function test_read_epoch_fence_rejects_a_committed_aba_without_replaying_read(): void
+    {
+        $calls = 0;
+        try {
+            app(AcademicCatalogTransaction::class)->snapshot(function () use (&$calls) {
+                $calls++;
+                // Deterministic fence simulation only, NOT multi-connection lock evidence.
+                DB::table('courses')->where('course_id', 1)->update(['course_name' => 'changed']);
+                DB::table('courses')->where('course_id', 1)->update(['course_name' => 'مادة 1']);
+                return ['mixed' => true];
+            });
+            self::fail('A changed epoch must reject the complete read response');
+        } catch (\App\Exceptions\AcademicCatalogException $e) {
+            self::assertSame('academic_catalog_stale', $e->errorCode);
+            self::assertSame(1, $calls);
+        }
+    }
+
     private function revision(): string { return app(AcademicCatalogTransaction::class)->revision(); }
     private function newCourse(array $extra = []): array { return array_replace(['revision' => $this->revision(), 'course_code' => 'NEW', 'course_name' => 'مادة جديدة', 'credit_hours' => 3, 'theoretical_hours' => 2, 'practical_hours' => 2, 'is_active' => true, 'departments' => [['department_id' => 1, 'is_primary' => true]]], $extra); }
     private function membership(array $extra = []): array { return array_replace(['revision' => $this->revision(), 'academic_level_id' => 1, 'recommended_semester_id' => 1, 'course_type' => 'mandatory', 'requirement_scope' => 'university', 'requirement_group_id' => 1, 'is_active' => true], $extra); }
     private function link(int $program, int $course): void { DB::table('program_courses')->insert(['academic_program_id' => $program, 'course_id' => $course, 'academic_level_id' => 1, 'recommended_semester_id' => 1, 'course_type' => 'mandatory']); }
 
-    private function schema(): void
-    {
-        $tables = [
-            'account_statuses' => ['account_status_id', ['status_code']], 'users' => ['user_id', ['username'], ['account_status_id', 'student_id', 'employee_id']],
-            'roles' => ['role_id', ['role_code']], 'permissions' => ['permission_id', ['permission_code']],
-            'role_permissions' => ['role_permission_id', [], ['role_id', 'permission_id']], 'user_roles' => ['user_role_id', [], ['user_id', 'role_id']],
-            'organizational_units' => ['organizational_unit_id', ['unit_code']], 'user_access_scopes' => ['user_access_scope_id', ['scope_type'], ['user_id', 'scope_id']],
-            'academic_catalog_control' => ['control_id', [], ['schema_version', 'revision', 'is_ready']],
-            'colleges' => ['college_id', ['college_name']], 'departments' => ['department_id', ['department_name'], ['college_id']],
-            'academic_programs' => ['academic_program_id', ['program_name', 'program_code', 'degree_level', 'description'], ['department_id', 'total_credit_hours', 'duration_years']],
-            'academic_levels' => ['academic_level_id', ['level_name']], 'semesters' => ['semester_id', ['semester_name']],
-            'courses' => ['course_id', ['course_code', 'course_name', 'description'], ['credit_hours', 'theoretical_hours', 'practical_hours']],
-            'course_departments' => ['course_department_id', [], ['course_id', 'department_id', 'is_primary']],
-            'course_instructors' => ['course_instructor_id', [], ['course_id']], 'course_prerequisites' => ['course_prerequisite_id', [], ['course_id', 'prerequisite_course_id', 'minimum_result_status_id']],
-            'result_statuses' => ['result_status_id', ['status_name', 'status_code']],
-            'program_courses' => ['program_course_id', ['course_type'], ['academic_program_id', 'course_id', 'academic_level_id', 'recommended_semester_id']],
-            'academic_requirement_groups' => ['requirement_group_id', ['group_code', 'group_name', 'requirement_scope', 'requirement_type'], ['academic_program_id', 'required_credit_hours']],
-            'program_course_requirement_groups' => ['program_course_requirement_group_id', [], ['program_course_id', 'requirement_group_id']],
-            'user_activity_logs' => ['activity_log_id', ['module_code', 'action_code', 'description', 'ip_address'], ['user_id']],
-        ];
-        foreach (\App\Services\AcademicCatalogHistory::PROGRAM_REFERENCES as $table => [$key, $foreign]) $tables[$table] = [$key, [], [$foreign, ...in_array($table, ['course_offerings', 'supplementary_exam_offerings']) ? ['course_id'] : []]];
-        foreach ($tables as $table => $definition) Schema::create($table, function (Blueprint $t) use ($table, $definition) {
-            $t->increments($definition[0]);
-            foreach ($definition[1] as $field) $t->string($field)->nullable()->collation('nocase');
-            foreach ($definition[2] ?? [] as $field) $t->integer($field)->nullable();
-            $t->boolean('is_active')->default(true); $t->timestamps();
-            if ($table === 'students') $t->softDeletes();
-            if ($table === 'courses') $t->unique('course_code');
-            if ($table === 'program_courses') $t->unique(['academic_program_id', 'course_id']);
-            if ($table === 'academic_requirement_groups') { $t->unique('group_code'); $t->unique(['academic_program_id', 'requirement_scope', 'requirement_type']); }
-            if ($table === 'program_course_requirement_groups') $t->unique('program_course_id');
-            $foreign = match ($table) {
-                'course_departments' => ['course_id' => ['courses', 'course_id'], 'department_id' => ['departments', 'department_id']],
-                'course_prerequisites' => ['course_id' => ['courses', 'course_id'], 'prerequisite_course_id' => ['courses', 'course_id'], 'minimum_result_status_id' => ['result_statuses', 'result_status_id']],
-                'program_courses' => ['course_id' => ['courses', 'course_id'], 'academic_program_id' => ['academic_programs', 'academic_program_id'], 'academic_level_id' => ['academic_levels', 'academic_level_id'], 'recommended_semester_id' => ['semesters', 'semester_id']],
-                'academic_requirement_groups' => ['academic_program_id' => ['academic_programs', 'academic_program_id']],
-                'program_course_requirement_groups' => ['program_course_id' => ['program_courses', 'program_course_id'], 'requirement_group_id' => ['academic_requirement_groups', 'requirement_group_id']],
-                'course_offerings' => ['course_id' => ['courses', 'course_id'], 'academic_program_id' => ['academic_programs', 'academic_program_id']],
-                'students' => ['academic_program_id' => ['academic_programs', 'academic_program_id']],
-                default => [],
-            };
-            foreach ($foreign as $column => [$target, $key]) $t->foreign($column)->references($key)->on($target)->restrictOnDelete()->restrictOnUpdate();
-        });
-        foreach (['courses', 'academic_programs', 'program_courses', 'academic_requirement_groups', 'program_course_requirement_groups', 'course_departments', 'course_prerequisites', ...array_keys(\App\Services\AcademicCatalogHistory::PROGRAM_REFERENCES)] as $table) {
-            foreach (['INSERT', 'UPDATE', 'DELETE'] as $event) DB::unprepared("CREATE TRIGGER epoch_{$table}_{$event} AFTER {$event} ON {$table} BEGIN UPDATE academic_catalog_control SET revision=revision+1 WHERE control_id=1; END");
-        }
-        DB::unprepared("CREATE TRIGGER used_course BEFORE UPDATE ON courses WHEN (NEW.credit_hours IS NOT OLD.credit_hours OR NEW.is_active IS NOT OLD.is_active) AND (EXISTS(SELECT 1 FROM course_offerings WHERE course_id=OLD.course_id) OR EXISTS(SELECT 1 FROM program_courses pc JOIN students s ON s.academic_program_id=pc.academic_program_id WHERE pc.course_id=OLD.course_id)) BEGIN SELECT RAISE(ABORT,'academic_catalog_history_locked'); END");
-    }
 }

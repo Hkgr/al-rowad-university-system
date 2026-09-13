@@ -18,7 +18,7 @@ final class ScientificCourseManagementService
     public function listing(User $actor, array $input): array
     {
         $this->access->authorize($actor);
-        return $this->transaction->run(fn () => $this->listSnapshot($actor, $input));
+        return $this->transaction->snapshot(fn () => $this->listSnapshot($actor, $input));
     }
 
     private function listSnapshot(User $actor, array $input): array
@@ -75,6 +75,11 @@ final class ScientificCourseManagementService
     public function options(User $actor, array $input): array
     {
         $this->access->authorize($actor);
+        return $this->transaction->snapshot(fn () => $this->optionsSnapshot($actor, $input));
+    }
+
+    private function optionsSnapshot(User $actor, array $input): array
+    {
         $v = $this->validate($input, ['resource' => 'required|in:colleges,departments,programs,courses,levels,semesters,result_statuses',
             'q' => 'sometimes|nullable|string|max:200', 'college_id' => 'sometimes|integer|min:1', 'department_id' => 'sometimes|integer|min:1',
             'page' => 'sometimes|integer|min:1', 'per_page' => 'sometimes|integer|min:1|max:100']);
@@ -96,10 +101,10 @@ final class ScientificCourseManagementService
     public function course(User $actor, int $id): array
     {
         $this->access->authorize($actor);
-        return $this->transaction->run(function () use ($actor, $id) {
+        return $this->transaction->snapshot(function () use ($actor, $id) {
             $course = $this->access->courses($actor)->findOrFail($id);
             $origin = $this->access->canEditOrigin($actor, $course);
-            $used = $this->history->courseUsed($id);
+            $used = $this->history->courseUsed($id, false);
             $manage = $actor->effectivePermissions()->contains(ScientificCourseAccess::MANAGE);
             // Do not disclose the names/IDs of programs or prerequisites outside the actor's scope.
             $course->load(['courseDepartments' => fn ($q) => $q->whereIn('department_id', $this->access->departments($actor)->select('department_id')),
@@ -113,7 +118,7 @@ final class ScientificCourseManagementService
                 'edit_relationships' => $manage && $origin && !$used && !$outsideRelationships,
                 'delete' => $manage && $origin && !$reasons,
                 'origin_lock_reason' => $origin ? null : 'هذه مادة مشتركة أو لا تقع ملكية أصلها كاملة ضمن نطاقك.',
-                'academic_lock_reason' => $used ? 'البرنامج أو المادة مستخدمان أكاديميًا؛ الرمز والساعات والحالة والعلاقات مقفلة. يظل تصحيح الاسم والوصف مسموحًا.' : null,
+                'academic_lock_reason' => $used ? 'لا يمكن تغيير الرمز والساعات لمادة مستخدمة؛ يمكنك تصحيح الاسم والوصف.' : null,
                 'relationship_lock_reason' => $outsideRelationships ? 'توجد علاقات خارج نطاقك؛ لا يسمح باستبدالها من هذا الحساب.' : null,
                 'delete_reasons' => $reasons,
             ], 'impact' => ['shared' => $course->programCourses()->count() > 1, 'linked_program_count' => $course->programCourses()->count()]];
@@ -191,9 +196,9 @@ final class ScientificCourseManagementService
     public function program(User $actor, int $id): array
     {
         $this->access->authorize($actor);
-        return $this->transaction->run(function () use ($actor, $id) {
+        return $this->transaction->snapshot(function () use ($actor, $id) {
             $p = $this->access->programs($actor)->findOrFail($id);
-            $locked = $this->history->programUsed($id);
+            $locked = $this->history->programUsed($id, false);
             $groups = AcademicRequirementGroup::where('academic_program_id', $id)->orderBy('requirement_scope')->orderBy('requirement_type')->get();
             $pools = DB::table('program_courses as pc')->join('courses as c', 'c.course_id', '=', 'pc.course_id')
                 ->join('program_course_requirement_groups as m', 'm.program_course_id', '=', 'pc.program_course_id')
@@ -211,7 +216,7 @@ final class ScientificCourseManagementService
                 'course_count' => (int) ($pools[$g->getKey()]->course_count ?? 0)]),
                 'configuration' => $configuration, 'revision' => $this->transaction->revision(),
                 'capabilities' => ['edit_curriculum' => !$locked && $actor->effectivePermissions()->contains(ScientificCourseAccess::MANAGE),
-                    'lock_reason' => $locked ? 'البرنامج مستخدم أكاديميًا؛ ارتباطات المواد والتصنيف والمجموعات وميزانية الساعات مقفلة لحماية تقدم الطلاب السابق.' : null]];
+                    'lock_reason' => $locked ? 'لا يمكن تغيير مواد هذا البرنامج أو متطلبات تخرجه لارتباطه بسجلات أكاديمية قائمة.' : null]];
         });
     }
 
@@ -221,7 +226,7 @@ final class ScientificCourseManagementService
         $v = $this->validate($input, $delete ? ['revision' => 'required|string|regex:/^[0-9]+$/', 'confirmed' => 'required|accepted'] : [
             'revision' => 'required|string|regex:/^[0-9]+$/', 'academic_level_id' => 'required|integer|exists:academic_levels,academic_level_id',
             'recommended_semester_id' => 'required|integer|exists:semesters,semester_id', 'course_type' => 'required|in:mandatory,elective',
-            'requirement_scope' => 'required|in:university,college,department', 'requirement_group_id' => 'required|integer|min:1', 'is_active' => 'required|boolean',
+            'requirement_scope' => 'required|in:university,college,department', 'requirement_group_id' => 'sometimes|integer|min:1', 'is_active' => 'required|boolean',
         ]);
         return $this->transaction->run(function () use ($actor, $programId, $courseId, $v, $delete) {
             $this->access->authorize($actor, true);
@@ -233,8 +238,12 @@ final class ScientificCourseManagementService
                 abort_unless($pc, 404);
                 $pc->requirementMapping()->delete(); $pc->delete();
             } else {
-                $g = AcademicRequirementGroup::where('academic_program_id', $programId)->where('is_active', true)->find($v['requirement_group_id']);
-                if (!$g || $g->requirement_scope !== $v['requirement_scope'] || $g->requirement_type !== $v['course_type']) $this->invalid('requirement_group_id', 'اختر مجموعة نشطة من البرنامج تطابق مستوى المتطلب ونوعه.');
+                $matches = AcademicRequirementGroup::where('academic_program_id', $programId)->where('is_active', true)
+                    ->where('requirement_scope', $v['requirement_scope'])->where('requirement_type', $v['course_type'])->lockForUpdate()->get();
+                if ($matches->count() !== 1) $this->invalid('requirement_scope', 'إعداد هذا التصنيف غير مكتمل أو متعارض. راجع متطلبات التخرج للبرنامج.');
+                $g = $matches->sole();
+                // Compatibility for older clients is validation, never authority to choose a group.
+                if (isset($v['requirement_group_id']) && (int) $v['requirement_group_id'] !== (int) $g->getKey()) $this->invalid('requirement_group_id', 'التصنيف لا يطابق متطلبات البرنامج.');
                 $pc ??= new ProgramCourse(['academic_program_id' => $programId, 'course_id' => $courseId]);
                 $pc->fill(collect($v)->only(['academic_level_id', 'recommended_semester_id', 'course_type', 'is_active'])->all())->save();
                 ProgramCourseRequirementGroup::updateOrCreate(['program_course_id' => $pc->getKey()], ['requirement_group_id' => $g->getKey()]);
@@ -250,8 +259,8 @@ final class ScientificCourseManagementService
         $v = $this->validate($input, ['revision' => 'required|string|regex:/^[0-9]+$/', 'confirmed' => 'required|accepted',
             'total_credit_hours' => 'required|integer|min:1|max:2147483647', 'groups' => 'required|array|min:1|max:6',
             'groups.*' => 'array:requirement_group_id,group_code,group_name,requirement_scope,requirement_type,required_credit_hours,is_active',
-            'groups.*.requirement_group_id' => 'nullable|integer|min:1|distinct', 'groups.*.group_code' => 'required|string|max:100|distinct',
-            'groups.*.group_name' => 'required|string|max:200', 'groups.*.requirement_scope' => 'required|in:university,college,department',
+            'groups.*.requirement_group_id' => 'nullable|integer|min:1|distinct', 'groups.*.group_code' => 'sometimes|string|max:100|distinct',
+            'groups.*.group_name' => 'sometimes|string|max:200', 'groups.*.requirement_scope' => 'required|in:university,college,department',
             'groups.*.requirement_type' => 'required|in:mandatory,elective', 'groups.*.required_credit_hours' => 'required|integer|min:0|max:2147483647',
             'groups.*.is_active' => 'required|boolean']);
         return $this->transaction->run(function () use ($actor, $id, $v) {
@@ -265,6 +274,9 @@ final class ScientificCourseManagementService
                 $seen[$key] = true;
                 $g = !empty($row['requirement_group_id']) ? AcademicRequirementGroup::where('academic_program_id', $id)->findOrFail($row['requirement_group_id']) : new AcademicRequirementGroup(['academic_program_id' => $id]);
                 if ($g->exists && ($g->requirement_scope !== $row['requirement_scope'] || $g->requirement_type !== $row['requirement_type']) && $g->programCourseMappings()->exists()) $this->invalid("groups.$i", 'افصل المواد أولًا قبل تغيير هوية مجموعة مرتبطة.');
+                // Internal labels only; hours always come from explicit operator input.
+                $row['group_code'] ??= $g->group_code ?: 'SC-'.$id.'-'.$row['requirement_scope'].'-'.$row['requirement_type'];
+                $row['group_name'] ??= $g->group_name ?: ['university' => 'متطلبات الجامعة', 'college' => 'متطلبات الكلية', 'department' => 'متطلبات القسم'][$row['requirement_scope']].' '.($row['requirement_type'] === 'mandatory' ? 'الإجبارية' : 'الاختيارية');
                 $codeQuery = AcademicRequirementGroup::where('group_code', trim($row['group_code']));
                 if ($g->exists) $codeQuery->whereKeyNot($g->getKey());
                 if ($codeQuery->exists()) $this->invalid("groups.$i.group_code", 'رمز المجموعة مستخدم بالفعل.');

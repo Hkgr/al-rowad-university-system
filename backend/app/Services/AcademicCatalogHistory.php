@@ -17,21 +17,21 @@ final class AcademicCatalogHistory
         'student_progression_decisions' => ['student_progression_decision_id', 'academic_program_id'],
     ];
 
-    public function programUsed(int $id): bool
+    public function programUsed(int $id, bool $lock = true): bool
     {
         // No active/status/soft-deletion filter: historical use remains use.
         foreach (self::PROGRAM_REFERENCES as $table => [$key, $foreign]) {
-            if (DB::table($table)->where($foreign, $id)->orderBy($key)->lockForUpdate()->first([$key])) return true;
+            if (DB::table($table)->where($foreign, $id)->orderBy($key)->when($lock, fn ($q) => $q->lockForUpdate())->first([$key])) return true;
         }
         return false;
     }
 
-    public function courseUsed(int $id): bool
+    public function courseUsed(int $id, bool $lock = true): bool
     {
-        if (DB::table('course_offerings')->where('course_id', $id)->orderBy('course_offering_id')->lockForUpdate()->first(['course_offering_id'])
-            || DB::table('supplementary_exam_offerings')->where('course_id', $id)->orderBy('supplementary_exam_offering_id')->lockForUpdate()->first(['supplementary_exam_offering_id'])) return true;
-        foreach (DB::table('program_courses')->where('course_id', $id)->orderBy('academic_program_id')->lockForUpdate()->pluck('academic_program_id') as $program) {
-            if ($this->programUsed((int) $program)) return true;
+        if (DB::table('course_offerings')->where('course_id', $id)->orderBy('course_offering_id')->when($lock, fn ($q) => $q->lockForUpdate())->first(['course_offering_id'])
+            || DB::table('supplementary_exam_offerings')->where('course_id', $id)->orderBy('supplementary_exam_offering_id')->when($lock, fn ($q) => $q->lockForUpdate())->first(['supplementary_exam_offering_id'])) return true;
+        foreach (DB::table('program_courses')->where('course_id', $id)->orderBy('academic_program_id')->when($lock, fn ($q) => $q->lockForUpdate())->pluck('academic_program_id') as $program) {
+            if ($this->programUsed((int) $program, $lock)) return true;
         }
         return false;
     }

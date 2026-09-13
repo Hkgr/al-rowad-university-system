@@ -51,9 +51,9 @@ export function groupedCourses(courses = [], order = 'scope') {
 }
 export function catalogError(error) {
   if (error?.status === 403) return 'لا تملك الصلاحية أو النطاق اللازم لهذا الإجراء.'
-  if (error?.status === 409) return 'تغيرت البيانات أو أصبحت مقفلة. احتُفظ بقيمك؛ راجع النسخة الحالية قبل أي محاولة جديدة.'
+  if (error?.status === 409) return 'عدّل مستخدم آخر هذه البيانات أو تغيرت صلاحية تعديلها. راجع النسخة الحالية قبل الحفظ.'
   if (error?.status === 422) return 'راجع الحقول المشار إليها. لم يُعتمد هذا التعديل.'
-  if (error?.status === 503) return 'مخطط حماية الدليل غير جاهز؛ راجع مسؤول النظام.'
+  if (error?.status === 503) return 'الخدمة غير جاهزة حاليًا؛ راجع مسؤول النظام.'
   return error?.message || 'تعذر الاتصال بالخادم.'
 }
 export function editableCourse(snapshot) {
