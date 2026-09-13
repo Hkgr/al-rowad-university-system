@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-class AcademicProgramController extends ApiController
+class AcademicProgramController extends CatalogCrudController
 {
     protected function modelClass(): string
     {

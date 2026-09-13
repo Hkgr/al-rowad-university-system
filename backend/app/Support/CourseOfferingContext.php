@@ -20,6 +20,7 @@ final class CourseOfferingContext
         public readonly College $college,
         public readonly AcademicYear $academicYear,
         public readonly Semester $semester,
+        public readonly ?string $catalogRevision = null,
     ) {
     }
 

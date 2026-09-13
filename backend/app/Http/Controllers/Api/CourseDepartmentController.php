@@ -7,7 +7,7 @@ use App\Http\Requests\CourseDepartment\UpdateCourseDepartmentRequest;
 use App\Http\Resources\CourseDepartmentResource;
 use App\Models\CourseDepartment;
 
-class CourseDepartmentController extends ApiController
+class CourseDepartmentController extends CatalogCrudController
 {
     protected function modelClass(): string
     {

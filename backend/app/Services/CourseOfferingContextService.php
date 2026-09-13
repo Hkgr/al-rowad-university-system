@@ -35,6 +35,10 @@ class CourseOfferingContextService
         bool $assertUnique = true,
         ?int $ignoreOfferingId = null,
     ): CourseOfferingContext {
+        // An optimistic proof spans context reads and the eventual first use.
+        // Once the package is installed, a stale context cannot create an offering.
+        $catalogRevision = Schema::hasTable('academic_catalog_control')
+            ? app(AcademicCatalogTransaction::class)->revision() : null;
         $program = AcademicProgram::query()
             ->with(['department.college'])
             ->find($academicProgramId);
@@ -83,6 +87,7 @@ class CourseOfferingContextService
             $college,
             $year,
             $semester,
+            $catalogRevision,
         );
 
         if ($assertUnique) {
@@ -139,7 +144,29 @@ class CourseOfferingContextService
      */
     public function createOffering(CourseOfferingContext $context, array $attributes = []): CourseOffering
     {
+        if (Schema::hasTable('academic_catalog_control')) {
+            if ($context->catalogRevision === null) {
+                throw new \App\Exceptions\AcademicCatalogException('أعد تحميل سياق البرنامج قبل إنشاء الطرح.', 'academic_catalog_stale');
+            }
+            return app(AcademicCatalogTransaction::class)->run(
+                fn () => $this->persistClosedOffering(array_merge($context->offeringAttributes(), $attributes)),
+                $context->catalogRevision,
+            );
+        }
         return $this->persistClosedOffering(array_merge($context->offeringAttributes(), $attributes));
+    }
+
+    /** An identity UPDATE can be the first use of its destination curriculum too.
+     * The caller already owns its canonical offering transaction/lock. A nested
+     * catalog lock is retained until that outer transaction commits, never just
+     * until the optimistic comparison returns.
+     */
+    public function retainCatalogProofWithinTransaction(CourseOfferingContext $context): void
+    {
+        if (!Schema::hasTable('academic_catalog_control') && $context->catalogRevision === null) return;
+        if (\Illuminate\Support\Facades\DB::transactionLevel() < 1) throw new \LogicException('Offering context proof requires its existing write transaction.');
+        if ($context->catalogRevision === null) throw new \App\Exceptions\AcademicCatalogException('أعد تحميل سياق البرنامج قبل تعديل هوية الطرح.', 'academic_catalog_stale');
+        app(AcademicCatalogTransaction::class)->run(static fn () => null, $context->catalogRevision);
     }
 
     /** Recording evidence, not enrollment eligibility or an invented historical curriculum. */

@@ -7,7 +7,7 @@ use App\Http\Requests\CoursePrerequisite\UpdateCoursePrerequisiteRequest;
 use App\Http\Resources\CoursePrerequisiteResource;
 use App\Models\CoursePrerequisite;
 
-class CoursePrerequisiteController extends ApiController
+class CoursePrerequisiteController extends CatalogCrudController
 {
     protected function modelClass(): string
     {

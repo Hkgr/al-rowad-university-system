@@ -436,6 +436,24 @@ return Application::configure(basePath: dirname(__DIR__))
             ], $status);
         });
 
+        $exceptions->render(function (\Illuminate\Database\QueryException $exception, Request $request) {
+            if (!$request->is('api/*')) return null;
+            $message = $exception->getMessage();
+            $code = str_contains($message, 'academic_catalog_schema_not_ready') ? 'academic_catalog_schema_not_ready'
+                : (str_contains($message, 'academic_catalog_history_locked') ? 'academic_catalog_history_locked' : null);
+            // Other canonical writers retain their lock ordering. InnoDB may select
+            // either transaction as a deadlock victim; never replay or expose raw SQL.
+            if ($code === null && in_array((int) ($exception->errorInfo[1] ?? 0), [1205, 1213], true)
+                && preg_match('/\b(courses|program_courses|academic_programs|academic_requirement_groups|program_course_requirement_groups|course_departments|course_prerequisites|departments|colleges|academic_levels|semesters|result_statuses|course_instructors|course_offerings|students|supplementary_exam_offerings|admission_applications|ministry_placement_records|student_graduation_decisions|student_progression_decisions)\b/i', $exception->getSql())) {
+                $code = 'academic_catalog_concurrent_write';
+            }
+            if ($code === null) return null;
+            return response()->json(['success' => false, 'error_code' => $code,
+                'message' => $code === 'academic_catalog_schema_not_ready' ? 'حماية الدليل الأكاديمي غير جاهزة؛ راجع مسؤول النظام.'
+                    : ($code === 'academic_catalog_history_locked' ? 'البيانات مستخدمة أكاديميًا ولا يسمح بإعادة تفسير التاريخ.' : 'تزامنت العملية مع تعديل أكاديمي آخر؛ حدّث البيانات وراجعها قبل المحاولة.')],
+                $code === 'academic_catalog_schema_not_ready' ? 503 : 409);
+        });
+
         $exceptions->render(function (Throwable $exception, Request $request) {
             if (! $request->is('api/*')) {
                 return null;

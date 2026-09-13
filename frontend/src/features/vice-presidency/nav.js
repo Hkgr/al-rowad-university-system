@@ -1,11 +1,13 @@
 import { FaCalendarAlt, FaChalkboardTeacher, FaChartBar, FaClipboardCheck, FaClipboardList, FaHome, FaUnlock } from 'react-icons/fa'
 
 import { PERMISSIONS, ROLES } from '../auth/auth'
+import { CATALOG_ACCESS } from '../scientific-courses/catalog'
 
 export const scientificVicePresidentNav = [
   {
     label: 'نيابة الشؤون العلمية',
     items: [
+      { to: '/vp/scientific/courses', Icon: FaClipboardList, ar: 'إدارة المواد', en: 'Course catalog', ...CATALOG_ACCESS },
       { to: '/vp/scientific/calendar', Icon: FaCalendarAlt, ar: 'التقويم الأكاديمي', en: 'Academic calendar' },
       {
         to: '/vp/scientific',
