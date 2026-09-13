@@ -68,7 +68,7 @@ async function fixture(url, request) {
   reads.push(path + url.search)
   if (denyReads) return { code: 403, error: { message: 'تم سحب صلاحية قراءة الدليل' } }
   if (path === '/options') {
-    const all = { colleges: [{ id: 1, label: 'كلية الهندسة' }], departments: [{ id: 1, label: 'قسم الحاسوب' }], programs: [{ id: 1, label: 'برنامج جديد' }, { id: 2, label: 'برنامج مستخدم' }], courses: courses.map(c => ({ id: c.course_id, label: c.course_name })), levels: [{ id: 1, label: 'المستوى الأول' }], semesters: [{ id: 1, label: 'الفصل الأول' }], result_statuses: [{ id: 1, label: 'ناجح' }] }[url.searchParams.get('resource')] || []
+    const all = { colleges: [{ id: 1, label: 'كلية الهندسة' }], departments: [{ id: 1, label: 'قسم الحاسوب' }], programs: [{ id: 1, label: 'برنامج جديد' }, { id: 2, label: 'برنامج مستخدم' }], courses: courses.map(c => ({ id: c.course_id, label: `${c.course_name} (${c.course_code})` })), levels: [{ id: 1, label: 'المستوى الأول' }], semesters: [{ id: 1, label: 'الفصل الأول' }], result_statuses: [{ id: 1, label: 'ناجح' }] }[url.searchParams.get('resource')] || []
     return { data: { data: all, meta: meta(all), revision: String(revision) } }
   }
   if (/^\/courses\/\d+$/.test(path)) return { data: snapshot(Number(path.split('/')[2])) }
@@ -203,6 +203,49 @@ async function runReferences() {
   await sizes('reference-wide-dialog')
   evidence.push('Unchanged VP queue, Exam Board table/form, native confirmation and Dean wide editor captured at desktop/mobile')
 }
+async function runDistribution() {
+  assert.ok(live, 'Distribution browser suite requires the guarded real Laravel fixture')
+  const state = async () => (await fetch(live + '/__fixture/state')).json()
+  const before = await state()
+  assert.equal(await evaluate("document.querySelector('[aria-label=\"الكليات المرتبطة بالمادة C1\"]').textContent"), '1')
+  assert.equal(await evaluate("document.querySelector('[aria-label=\"الأقسام المرتبطة بالمادة C1\"]').textContent"), '1')
+  await action('الكليات المرتبطة بالمادة C1'); await wait("document.querySelector('[aria-label=\"تفاصيل الارتباطات\"]')")
+  assert.match(await evaluate("document.querySelector('[aria-label=\"تفاصيل الارتباطات\"]').textContent"), /متطلبات الجامعة.*إجباري/)
+  await sizes('association-details'); await action('إغلاق النافذة')
+  await action('المدرّسون المرتبطة بالمادة C1'); await wait("document.body.innerText.includes('لا يوجد مدرسون')"); await action('إغلاق النافذة')
+  evidence.push('Distinct association counts open scoped detail dialogs with per-program classification; no inline college/department names')
+  await click('إضافة مادة'); await wait(`document.querySelector('${field}')`)
+  await select('إضافة المادة على مستوى', 'university')
+  await wait("document.body.innerText.includes('لا يمكن إتمام الربط كاملًا')")
+  assert.equal(await evaluate("[...document.querySelectorAll('button')].find(b=>b.textContent==='حفظ المادة').disabled"), true)
+  assert.equal(writes.length, 0)
+  await sizes('distribution-blocked')
+  evidence.push('University preview exposes historically locked target before entry/save; zero writes')
+  await select('إضافة المادة على مستوى', 'college'); await select('كلية الربط', 1)
+  await wait("document.body.innerText.includes('جميع البرامج قابلة للربط')")
+  await select('إضافة المادة على مستوى', 'department')
+  assert.equal(await evaluate("document.querySelector('select[aria-label=\"كلية الربط\"]').value"), '')
+  assert.equal(await evaluate("document.querySelector('select[aria-label=\"قسم الربط\"]').disabled"), true)
+  await select('كلية الربط', 1); await select('قسم الربط', 1)
+  await select('تصنيف المادة في البرامج المستهدفة', 'elective')
+  await select('المستوى الإرشادي للربط', 1); await select('الفصل الإرشادي للربط', 1)
+  await wait("document.body.innerText.includes('جميع البرامج قابلة للربط')")
+  const code = `BULK${Date.now()}`
+  await fill(field, 'مادة مرتبطة بجميع برامج القسم'); await fill('input[name=course_code]', code)
+  await sizes('distribution-form'); await click('حفظ المادة'); await wait("document.body.innerText.includes('تأكيد إضافة المادة لجميع البرامج المحددة')")
+  await click('إلغاء', 'dialog'); assert.equal(writes.length, 0)
+  await click('حفظ المادة'); await click('تأكيد', 'dialog'); await wait("!document.querySelector('dialog[open]')")
+  const after = await state(), created = after.courses.find(c => c.course_code === code)
+  assert.ok(created)
+  const linked = after.memberships.filter(p => p.course_id === created.course_id)
+  assert.equal(linked.length, 1); assert.equal(linked[0].academic_program_id, 1); assert.equal(linked[0].course_type, 'elective')
+  assert.deepEqual(after.groups, before.groups)
+  assert.deepEqual(writes[0].body.distribution, { scope: 'department', course_type: 'elective', college_id: 1, department_id: 1 })
+  assert.equal(writes[0].body.distribution_confirmed, true)
+  await wait(`document.querySelector('[aria-label="استعراض ${code}"]')`)
+  await sizes('distribution-result')
+  evidence.push('College/department dependent selectors reset safely; explicit confirmation creates Course + complete selected program links through Laravel/MariaDB without budget changes')
+}
 try {
   for (const method of ['Page.enable', 'Runtime.enable', 'Network.enable', 'DOM.enable', 'CSS.enable']) await send(method)
   await send('Network.setCacheDisabled', { cacheDisabled: true }); await send('CSS.setLocalFontsEnabled', { enabled: false })
@@ -217,7 +260,8 @@ try {
   const renderedFonts = (await send('CSS.getPlatformFontsForNode', { nodeId })).fonts
   assert.ok(renderedFonts.some(f => f.familyName.includes('Cairo') && f.isCustomFont && f.glyphCount > 0), 'Actual Arabic heading glyphs use self-hosted Cairo')
   await shot('catalog-desktop')
-  if (references) await runReferences()
+  if (process.env.CATALOG_DISTRIBUTION_ONLY === '1') await runDistribution()
+  else if (references) await runReferences()
   else if (live) await runLive()
   else {
   await action('تعديل C2'); await wait(`document.querySelector('${field}')`)
@@ -238,6 +282,8 @@ try {
   await evaluate("document.querySelector('a[href=\"/vp/scientific/courses\"]').click()")
   await wait("Boolean(document.querySelector('[aria-label=\\\"استعراض C1\\\"]'))")
   await action('تعديل C1'); await wait(`document.querySelector('${field}')`); await fill(field, 'مسودة الرجوع')
+  await wait("document.querySelector('select[aria-label=\"إضافة متطلب سابق\"] option[value=\"2\"]')")
+  assert.match(await evaluate("document.querySelector('select[aria-label=\"إضافة متطلب سابق\"] option[value=\"2\"]').textContent"), /\(C2\)/)
   await evaluate('history.back()'); await wait('document.querySelector("dialog[open]")'); await click('البقاء في المحرر', 'dialog')
   assert.equal(await evaluate(`document.querySelector('${field}').value`), 'مسودة الرجوع')
   await evaluate('history.back()'); await wait('document.querySelector("dialog[open]")'); await click('تجاهل التعديلات والمتابعة', 'dialog'); await wait("location.pathname==='/vp/scientific'")

@@ -10,6 +10,8 @@ import { Button, CatalogDialog, CatalogLookup, Field, Notice, Select } from './C
 import CourseEditor from './CourseEditor'
 import CourseDetails from './CourseDetails'
 import { MembershipEditor, RequirementGroupEditor } from './ProgramEditors'
+import CourseAssociations from './CourseAssociations'
+import { courseAssociations } from './associations'
 
 function EditorLoader({ context, onEdit, onMembership, ...props }) {
   const isCourse = ['course', 'view', 'delete'].includes(context.kind)
@@ -35,7 +37,7 @@ function ProgramCourseChoice({ program, onExisting, onNew, canCreate }) {
   </div>
 }
 
-const titles = { course: 'بيانات المادة', view: 'استعراض المادة', delete: 'حذف المادة', groups: 'متطلبات التخرج', membership: 'تصنيف المادة في البرنامج', choose: 'إضافة مادة للبرنامج', created: 'تم حفظ المادة' }
+const titles = { course: 'بيانات المادة', view: 'استعراض المادة', delete: 'حذف المادة', groups: 'متطلبات التخرج', membership: 'تصنيف المادة في البرنامج', choose: 'إضافة مادة للبرنامج', created: 'تم حفظ المادة', associations: 'تفاصيل ارتباطات المادة' }
 export default function ScientificCoursesPage() {
   const [identity, setIdentity] = useState(() => JSON.stringify(getIdentity())), [denied, setDenied] = useState(false)
   const authorized = !denied && canViewCatalog(JSON.parse(identity))
@@ -72,7 +74,7 @@ export default function ScientificCoursesPage() {
     edit({ kind: 'course', forProgram, baseline: { revision: read.data.revision, data: { course_departments: filters.department ? [{ department_id: filters.department.id, is_primary: true, department: { department_name: filters.department.label } }] : [] } } })
   }
   function saved(result) {
-    const next = editor?.forProgram && result?.data?.course_id ? { kind: 'created', course: result.data, program: editor.forProgram } : null
+    const next = editor?.forProgram && result?.data?.course_id && !result.data.program_courses?.length ? { kind: 'created', course: result.data, program: editor.forProgram } : null
     reset(); setRefresh(n => n + 1); setNotice(next ? 'تم حفظ المادة. لم تُضف للبرنامج بعد.' : 'تم الحفظ بنجاح.')
     if (next) { setEditor(next); setEditorEpoch(n => n + 1) }
   }
@@ -81,7 +83,10 @@ export default function ScientificCoursesPage() {
   const columns = [
     { key: 'code', header: 'الرمز', dir: 'ltr', render: c => <span className="text-[12px] font-mono">{c.course_code}</span> },
     { key: 'name', header: 'اسم المادة', render: c => <span className="text-[13px] font-semibold">{c.course_name}</span> },
-    { key: 'ownership', header: 'الكلية / القسم', render: c => <div className="text-[12px]">{c.course_departments?.map(d => <p key={d.department_id}>{[d.department?.college?.college_name, d.department?.department_name].filter(Boolean).join(' / ')}</p>)}</div> },
+    { key: 'colleges', header: 'الكليات', align: 'center', render: c => <button type="button" className={`${rowAction} border-primary/25 text-primary`} aria-label={`الكليات المرتبطة بالمادة ${c.course_code}`} onClick={() => edit({ kind: 'associations', course: c, associationKind: 'colleges' })}>{courseAssociations(c).colleges.length}</button> },
+    { key: 'departments', header: 'الأقسام', align: 'center', render: c => <button type="button" className={`${rowAction} border-primary/25 text-primary`} aria-label={`الأقسام المرتبطة بالمادة ${c.course_code}`} onClick={() => edit({ kind: 'associations', course: c, associationKind: 'departments' })}>{courseAssociations(c).departments.length}</button> },
+    { key: 'instructors', header: 'المدرّسون', align: 'center', render: c => <button type="button" className={`${rowAction} border-primary/25 text-primary`} aria-label={`المدرّسون المرتبطة بالمادة ${c.course_code}`} onClick={() => edit({ kind: 'associations', course: c, associationKind: 'instructors' })}>{courseAssociations(c).instructors.length}</button> },
+    ...(!filters.program ? [{ key: 'classifications', header: 'تصنيفات البرامج', render: c => <div className="text-[12px]">{courseAssociations(c).classifications.map(label => <p key={label}>{label}</p>)}{!c.program_courses?.length && 'غير مرتبط ببرنامج'}</div> }] : []),
     { key: 'hours', header: 'الساعات المعتمدة', align: 'center', render: c => <b className="text-[13px]">{c.credit_hours}</b> },
     ...(filters.program ? [{ key: 'classification', header: 'التصنيف في البرنامج', render: c => { const pc = c.program_courses?.find(p => String(p.academic_program_id) === String(filters.program.id)); return <div className="text-[12px]"><p>{SCOPES[pc?.requirement_classification?.requirement_scope] || 'غير مصنف'} / {TYPES[pc?.course_type] || 'غير محدد'}</p><p className="text-[11px] text-text-light">{pc?.academic_level?.level_name || 'المستوى غير محدد'} · {pc?.recommended_semester?.semester_name || 'الفصل غير محدد'} (إرشادي)</p></div> } }] : []),
     { key: 'active', header: 'الحالة', align: 'center', render: c => <span className={`inline-block rounded-full px-2 py-0.5 text-[10.5px] font-bold ${c.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-text-light'}`}>{c.is_active ? 'فعّالة' : 'غير فعّالة'}</span> },
@@ -113,7 +118,7 @@ export default function ScientificCoursesPage() {
     <Notice error>{read.error && catalogError(read.error)}</Notice>
     <DataTable columns={columns} rows={read.data?.data || []} rowKey={c => c.course_id} loading={read.loading} emptyIcon={FaBookOpen} emptyTitle="لا توجد مواد مطابقة" page={read.data?.meta.current_page || filters.page} totalPages={read.data?.meta.last_page || 1} onPageChange={page => go(() => { setEditor(null); setFilters(f => ({ ...f, page })) })} />
     {editor && <CatalogDialog wide closeButton title={titles[editor.kind]} onClose={close}>
-      {editor.kind === 'choose' ? <ProgramCourseChoice program={editor.program} canCreate={read.data?.can_create} onExisting={course => edit({ kind: 'membership', course: { course_id: course.id }, program: editor.program })} onNew={() => create(editor.program)} />
+      {editor.kind === 'associations' ? <CourseAssociations course={editor.course} kind={editor.associationKind} /> : editor.kind === 'choose' ? <ProgramCourseChoice program={editor.program} canCreate={read.data?.can_create} onExisting={course => edit({ kind: 'membership', course: { course_id: course.id }, program: editor.program })} onNew={() => create(editor.program)} />
         : editor.kind === 'created' ? <><Notice>تم حفظ {editor.course.course_name} في الدليل. لم تُضف للبرنامج بعد.</Notice><Button primary onClick={() => edit({ kind: 'membership', course: editor.course, program: editor.program })}>متابعة إضافة المادة للبرنامج</Button><Button onClick={close}>إنهاء دون إضافة للبرنامج</Button></>
           : <EditorLoader key={editorEpoch} context={editor} busy={busy} onDirty={markDirty} onBusy={markBusy} onBlocked={markBlocked} onSaved={saved} onRestart={restart} onUnauthorized={unauthorized}
             onEdit={() => edit({ kind: 'course', id: editor.id })}

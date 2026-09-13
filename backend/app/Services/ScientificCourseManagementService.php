@@ -64,9 +64,11 @@ final class ScientificCourseManagementService
         if (isset($v['requirement_scope'])) $groups->where('g.requirement_scope', $v['requirement_scope']);
         $summary = $groups->selectRaw('g.requirement_scope, g.requirement_type AS course_type, COUNT(*) AS membership_count, SUM(c.credit_hours) AS available_credit_hours')
             ->groupBy('g.requirement_scope', 'g.requirement_type')->orderBy('g.requirement_scope')->orderBy('g.requirement_type')->get();
-        $rows = $q->with(['courseDepartments' => fn ($d) => $d->whereIn('department_id', $this->access->departments($actor)->select('department_id')), 'courseDepartments.department.college', 'programCourses' => $membership, 'programCourses.academicProgram.department.college', 'programCourses.academicLevel', 'programCourses.recommendedSemester', 'programCourses.requirementMapping.requirementGroup'])
+        // Filters choose courses; association counts still cover every visible link of each course.
+        $rows = $q->with(['courseDepartments' => fn ($d) => $d->whereIn('department_id', $this->access->departments($actor)->select('department_id')), 'courseDepartments.department.college', 'programCourses' => fn ($p) => $p->whereIn('academic_program_id', $this->access->programs($actor)->select('academic_program_id')), 'programCourses.academicProgram.department.college', 'programCourses.academicLevel', 'programCourses.recommendedSemester', 'programCourses.requirementMapping.requirementGroup'])
             ->orderBy($v['sort'] ?? 'course_code', $v['direction'] ?? 'asc')->orderBy('course_id')->paginate($v['per_page'] ?? 20, ['*'], 'page', $v['page'] ?? 1);
-        return ['revision' => $this->transaction->revision(), 'data' => collect($rows->items())->map(fn ($c) => $this->courseProjection($c)), 'meta' => $this->meta($rows),
+        $instructors = $this->instructors(collect($rows->items())->pluck('course_id')->all());
+        return ['revision' => $this->transaction->revision(), 'data' => collect($rows->items())->map(fn ($c) => $this->courseProjection($c) + ['instructors' => $instructors->get($c->getKey(), collect())->values()]), 'meta' => $this->meta($rows),
             'summary' => ['catalog_count' => $total, 'groups' => $summary, 'hours_context' => isset($v['academic_program_id']) ? 'program_available_pool' : 'not_a_graduation_total'],
             'can_manage' => $actor->effectivePermissions()->contains(ScientificCourseAccess::MANAGE),
             'can_create' => $actor->effectivePermissions()->contains(ScientificCourseAccess::MANAGE) && $this->access->canCreateOrigin($actor)];
@@ -94,8 +96,9 @@ final class ScientificCourseManagementService
             'result_statuses' => [ResultStatus::query(), 'result_status_id', 'status_name'],
         };
         if (!empty($v['q'])) $q->where(fn ($q) => $q->where($name, 'like', '%'.trim($v['q']).'%')->when($v['resource'] === 'courses', fn ($q) => $q->orWhere('course_code', 'like', '%'.trim($v['q']).'%')));
-        $page = $q->orderBy($name)->orderBy($id)->paginate($v['per_page'] ?? 25, [$id, $name], 'page', $v['page'] ?? 1);
-        return ['data' => collect($page->items())->map(fn ($r) => ['id' => $r->$id, 'label' => $r->$name]), 'meta' => $this->meta($page), 'revision' => $this->transaction->revision()];
+        $isCourse = $v['resource'] === 'courses';
+        $page = $q->orderBy($name)->orderBy($id)->paginate($v['per_page'] ?? 25, [$id, $name, ...($isCourse ? ['course_code'] : [])], 'page', $v['page'] ?? 1);
+        return ['data' => collect($page->items())->map(fn ($r) => ['id' => $r->$id, 'label' => $isCourse ? $r->$name.' ('.$r->course_code.')' : $r->$name]), 'meta' => $this->meta($page), 'revision' => $this->transaction->revision()];
     }
 
     public function course(User $actor, int $id): array
@@ -110,7 +113,7 @@ final class ScientificCourseManagementService
             $course->load(['courseDepartments' => fn ($q) => $q->whereIn('department_id', $this->access->departments($actor)->select('department_id')),
                 'courseDepartments.department.college', 'coursePrerequisites' => fn ($q) => $q->whereIn('prerequisite_course_id', $this->access->courses($actor)->select('course_id')),
                 'coursePrerequisites.prerequisiteCourse', 'programCourses' => fn ($q) => $q->whereIn('academic_program_id', $this->access->programs($actor)->select('academic_program_id')),
-                'programCourses.academicProgram', 'programCourses.academicLevel', 'programCourses.recommendedSemester', 'programCourses.requirementMapping.requirementGroup']);
+                'programCourses.academicProgram.department.college', 'programCourses.academicLevel', 'programCourses.recommendedSemester', 'programCourses.requirementMapping.requirementGroup']);
             $outsideRelationships = $course->coursePrerequisites()->whereNotIn('prerequisite_course_id', $this->access->courses($actor)->select('course_id'))->exists();
             $reasons = $this->history->deleteReasons($id);
             return ['data' => $this->courseProjection($course), 'revision' => $this->transaction->revision(), 'capabilities' => [
@@ -138,14 +141,20 @@ final class ScientificCourseManagementService
             'departments.*.department_id' => 'required|integer|min:1|distinct', 'departments.*.is_primary' => 'required|boolean',
             'prerequisites' => 'sometimes|array|max:100', 'prerequisites.*' => 'array:prerequisite_course_id,minimum_result_status_id',
             'prerequisites.*.prerequisite_course_id' => 'required|integer|min:1|distinct', 'prerequisites.*.minimum_result_status_id' => 'nullable|integer|exists:result_statuses,result_status_id',
+            ...($id ? [] : ['distribution' => 'sometimes|array:scope,college_id,department_id,course_type',
+                'distribution_confirmed' => 'exclude_without:distribution|required|accepted',
+                'academic_level_id' => 'required_with:distribution|integer|exists:academic_levels,academic_level_id',
+                'recommended_semester_id' => 'required_with:distribution|integer|exists:semesters,semester_id']),
         ]);
         return $this->transaction->run(function () use ($actor, $id, $v) {
             $this->access->authorize($actor, true);
             if (!$id) abort_unless($this->access->canCreateOrigin($actor), 403);
+            $plan = isset($v['distribution']) ? app(ScientificCourseDistribution::class)->plan($actor, $v['distribution'], true) : null;
+            if ($plan && !$plan['can_apply']) $this->invalid('distribution', 'تعذر ربط جميع البرامج؛ راجع معاينة النطاق. لم يُحفظ أي تغيير.');
             $course = $id ? $this->access->courses($actor)->lockForUpdate()->findOrFail($id) : new Course;
             if ($id) abort_unless($this->access->canEditOrigin($actor, $course), 403);
             if ($id && $course->programCourses()->count() > 1 && !($v['impact_confirmed'] ?? false)) $this->invalid('impact_confirmed', 'أكد أثر التصحيح على أصل المادة المشترك قبل الحفظ.');
-            $attributes = array_diff_key($v, array_flip(['revision', 'impact_confirmed', 'departments', 'prerequisites']));
+            $attributes = array_diff_key($v, array_flip(['revision', 'impact_confirmed', 'departments', 'prerequisites', 'distribution', 'distribution_confirmed', 'academic_level_id', 'recommended_semester_id']));
             foreach (['course_code', 'course_name'] as $field) if (isset($attributes[$field])) $attributes[$field] = trim($attributes[$field]);
             if (isset($attributes['course_code']) && $attributes['course_code'] === '') $this->invalid('course_code', 'رمز المادة مطلوب.');
             if (isset($attributes['course_name']) && $attributes['course_name'] === '') $this->invalid('course_name', 'اسم المادة مطلوب.');
@@ -173,6 +182,7 @@ final class ScientificCourseManagementService
             }
             abort_unless($this->access->canEditOrigin($actor, $course), 403);
             if ($changed) $this->audit($actor, $id ? 'course.update' : 'course.create', ['course_id' => $course->getKey(), 'fields' => array_keys($attributes)]);
+            if ($plan) app(ScientificCourseDistribution::class)->apply($actor, $course, $plan, collect($v)->only(['academic_level_id', 'recommended_semester_id'])->all());
             return $this->course($actor, (int) $course->getKey());
         }, $v['revision']);
     }
@@ -327,7 +337,9 @@ final class ScientificCourseManagementService
             $classification = \App\Support\CourseRequirementClassification::fromProgramCourse($pc);
             if (!$sameProgram) $classification['requirement_group_id'] = null;
             return [...$pc->only(['program_course_id', 'academic_program_id', 'course_id', 'academic_level_id', 'recommended_semester_id', 'course_type', 'is_active']),
-                'academic_program' => $pc->academicProgram?->only(['academic_program_id', 'program_name']),
+                'academic_program' => $pc->academicProgram ? $pc->academicProgram->only(['academic_program_id', 'program_name']) + [
+                    'department' => $pc->academicProgram->department ? $pc->academicProgram->department->only(['department_id', 'department_name', 'college_id']) + [
+                        'college' => $pc->academicProgram->department->college?->only(['college_id', 'college_name'])] : null] : null,
                 'academic_level' => $pc->academicLevel?->only(['academic_level_id', 'level_name']),
                 'recommended_semester' => $pc->recommendedSemester?->only(['semester_id', 'semester_name']),
                 'requirement_classification' => $classification,
@@ -336,6 +348,14 @@ final class ScientificCourseManagementService
         if ($course->relationLoaded('coursePrerequisites')) $data['course_prerequisites'] = $course->coursePrerequisites->map(fn ($p) => [...$p->only(['course_prerequisite_id', 'prerequisite_course_id', 'minimum_result_status_id']),
             'prerequisite_course' => $p->prerequisiteCourse?->only(['course_id', 'course_code', 'course_name'])]);
         return $data;
+    }
+    /** Catalog instructor links, not effective term assignments. Safe name/role fields only. */
+    private function instructors(array $courseIds)
+    {
+        return DB::table('course_instructors as ci')->leftJoin('faculty_members as f', 'f.faculty_member_id', '=', 'ci.faculty_member_id')
+            ->leftJoin('employees as e', 'e.employee_id', '=', 'f.employee_id')->whereIn('ci.course_id', $courseIds)
+            ->orderBy('ci.course_id')->orderBy('ci.faculty_member_id')->orderBy('ci.course_instructor_id')
+            ->get(['ci.course_id', 'ci.faculty_member_id', 'ci.is_primary', 'ci.is_active', 'e.first_name', 'e.last_name'])->groupBy('course_id');
     }
     private function invalid(string $field, string $message): never { throw ValidationException::withMessages([$field => $message]); }
     private function locked(): never { throw new AcademicCatalogException('البيانات مرتبطة بتاريخ أكاديمي أو علاقة مانعة؛ يسمح بالتصحيح النصي فقط.', 'academic_catalog_history_locked'); }

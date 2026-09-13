@@ -700,6 +700,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::post('vice-presidency/scientific/supplementary-exam-periods', [ScientificVicePresidentSupplementaryExamPeriodController::class, 'store']);
     Route::prefix('vice-presidency/scientific/course-management')->controller(\App\Http\Controllers\Api\ScientificCourseManagementController::class)->group(function () {
         Route::get('options', 'options');
+        Route::get('distribution-preview', 'distribution');
         Route::get('courses', 'index');
         Route::post('courses', 'createCourse');
         Route::get('courses/{course}', 'show')->whereNumber('course');
