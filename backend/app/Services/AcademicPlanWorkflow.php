@@ -43,9 +43,13 @@ final class AcademicPlanWorkflow
             // All membership/student writers advance the epoch. This is a current read after its lock.
             $preview = $this->transitionProjection($program);
             if (!$preview['can_fix']) $this->fail('academic_plan_transition_invalid', 'توجد علاقات لا يمكن تثبيتها بأمان؛ راجع المعاينة.');
+            if ($program->plan_state === 'legacy') {
+                $program->forceFill(['plan_state' => 'preparing'])->save();
+                $this->event($actor, $program, null, 'initialization_started', []);
+            }
             $students = Student::withTrashed()->where('academic_program_id', $program->getKey())->orderBy('student_id')->lockForUpdate()->get();
             $version = AcademicPlanVersion::create(['academic_program_id' => $program->getKey(), 'version_number' => 1,
-                'label' => 'مرجع انتقالي مثبت', 'status' => 'transitional', 'calculation_policy' => 'legacy',
+                'label' => 'الإصدار الأول — الخطة الحالية', 'status' => 'transitional', 'calculation_policy' => 'legacy',
                 'total_credit_hours' => $program->total_credit_hours, 'created_by_user_id' => $actor->getKey(), 'fixed_at' => now()]);
             // Existing IDs and classifications are preserved, including inactive rows and configuration gaps.
             foreach (['academic_requirement_groups', 'program_courses'] as $table) {
@@ -55,7 +59,7 @@ final class AcademicPlanWorkflow
             foreach ($students as $student) $this->assign($actor, $student, $version, 'transition_fixed');
             AcademicPlanRecords::pinTransition((int) $program->getKey(), (int) $version->getKey());
             $this->event($actor, $program, $version, 'transition_fixed', ['student_count' => $students->count(), 'reference_kind' => 'current_state_not_historical_approval']);
-            return $this->state($program);
+            return $this->state($program) + ['current_version_id' => $version->getKey()];
         });
     }
 
@@ -265,37 +269,63 @@ final class AcademicPlanWorkflow
         });
     }
 
+    /** Called by detail inside its existing read snapshot, with its scoped program and no versions.
+     * Do not nest snapshot(): its transaction branch is intended for locked mutation responses.
+     * This projection must remain a non-locking read, not a persisted version or approval.
+     */
+    public function currentPlanProjection(User $actor, AcademicProgram $program): array
+    {
+        $this->access->authorize($actor); AcademicPlanContext::assertReady();
+        return $this->planProjection($actor, $program, null);
+    }
+
     public function version(User $actor, int $programId, int $versionId): array
     {
         $this->access->authorize($actor); AcademicPlanContext::assertReady();
         return $this->transaction->snapshot(function () use ($actor, $programId, $versionId) {
-            $this->access->programs($actor)->findOrFail($programId);
+            $program = $this->access->programs($actor)->findOrFail($programId);
             $version = AcademicPlanVersion::where('academic_program_id', $programId)->findOrFail($versionId);
-            $courses = ProgramCourse::where('academic_plan_version_id', $versionId)->with(['course', 'requirementMapping.requirementGroup', 'academicLevel', 'recommendedSemester'])
-                ->orderBy('course_id')->get();
-            $groups = AcademicRequirementGroup::where('academic_plan_version_id', $versionId)->orderBy('requirement_scope')->orderBy('requirement_type')->get();
-            try {
-                $pools = ['available' => true, 'groups' => app(AcademicRequirementService::class)->forPlanContext(AcademicPlanContext::forVersion($version))->getProgramRequirements($programId)];
-            } catch (AcademicRequirementConfigurationException $e) {
-                $pools = ['available' => false, 'groups' => [], 'reason' => 'requirement_configuration_invalid'];
-            }
-            return ['version' => $version, 'groups' => $groups, 'courses' => $courses, 'configuration' => $this->configuration($version),
-                'requirement_pools' => $pools,
-                'revision' => $this->transaction->revision(), 'capabilities' => $this->access->capabilities($actor)];
+            return $this->planProjection($actor, $program, $version);
         });
+    }
+
+    private function planProjection(User $actor, AcademicProgram $program, ?AcademicPlanVersion $version): array
+    {
+        $programId = (int) $program->getKey();
+        $context = $version === null ? new AcademicPlanContext($programId, null) : AcademicPlanContext::forVersion($version);
+        $courses = $context->courses()->with(['course', 'requirementMapping.requirementGroup', 'academicLevel', 'recommendedSemester'])
+            ->orderBy('course_id')->orderBy('program_course_id')->get();
+        $groups = $context->constrain(AcademicRequirementGroup::query())->orderBy('requirement_scope')->orderBy('requirement_type')->orderBy('requirement_group_id')->get();
+        try {
+            $pools = ['available' => true, 'groups' => app(AcademicRequirementService::class)->forPlanContext($context)->getProgramRequirements($programId)];
+        } catch (AcademicRequirementConfigurationException $e) {
+            $pools = ['available' => false, 'groups' => [], 'reason' => 'requirement_configuration_invalid'];
+        }
+        $configuration = $this->configurationForContext($context, $version ? $version->total_credit_hours : $program->total_credit_hours);
+        return ['version' => $version ?? ['academic_plan_version_id' => null, 'version_number' => 1,
+                'label' => 'الإصدار الأول — الخطة الحالية', 'status' => 'current', 'total_credit_hours' => $program->total_credit_hours,
+                'approved_at' => null, 'approved_by_user_id' => null],
+            'persisted' => $version !== null, 'groups' => $groups, 'courses' => $courses, 'configuration' => $configuration,
+            'requirement_pools' => $pools,
+            'revision' => $this->transaction->revision(), 'capabilities' => $this->access->capabilities($actor)];
     }
 
     public function configuration(AcademicPlanVersion $version): array
     {
-        $groups = AcademicRequirementGroup::where('academic_plan_version_id', $version->getKey())->where('is_active', true)->get();
+        return $this->configurationForContext(AcademicPlanContext::forVersion($version), $version->total_credit_hours);
+    }
+
+    private function configurationForContext(AcademicPlanContext $context, $totalCreditHours): array
+    {
+        $groups = $context->constrain(AcademicRequirementGroup::query())->where('is_active', true)->get();
         $issues = [];
         if ($groups->count() !== 6 || $groups->map(fn ($g) => $g->requirement_scope.':'.$g->requirement_type)->unique()->count() !== 6) $issues[] = 'يلزم تعريف التصنيفات الستة دون تكرار.';
-        if ($version->total_credit_hours === null) $issues[] = 'حدد إجمالي ساعات التخرج.';
+        if ($totalCreditHours === null) $issues[] = 'حدد إجمالي ساعات التخرج.';
         if ($groups->contains(fn ($g) => $g->required_credit_hours === null)) $issues[] = 'توجد ساعات مطلوبة لم تُحدد بعد.';
-        if (ProgramCourse::where('academic_plan_version_id', $version->getKey())->where('is_active', true)
+        if ($context->courses()->where('is_active', true)
             ->whereDoesntHave('course', fn ($q) => $q->where('is_active', true))->exists()) $issues[] = 'توجد مواد مفقودة أو غير نشطة ضمن الخطة.';
         try {
-            app(AcademicRequirementService::class)->forPlanContext(AcademicPlanContext::forVersion($version))->assertProgramGraduationConfiguration((int) $version->academic_program_id);
+            app(AcademicRequirementService::class)->forPlanContext($context)->assertProgramGraduationConfiguration($context->programId);
         } catch (AcademicRequirementConfigurationException $e) {
             $issues[] = 'توزيع المتطلبات أو المواد لا يطابق قواعد التخرج الرسمية.';
         }
@@ -325,14 +355,15 @@ final class AcademicPlanWorkflow
             'student_count' => Student::withTrashed()->where('academic_program_id', $id)->count(),
             'course_count' => ProgramCourse::where('academic_program_id', $id)->count(),
             'group_count' => $groups->count(), 'total_credit_hours' => $program->total_credit_hours, 'groups' => $groups,
+            'courses' => ProgramCourse::where('academic_program_id', $id)->with(['course', 'requirementMapping.requirementGroup'])->orderBy('program_course_id')->get(),
             'operation_reference_counts' => $references,
             'can_fix' => $blockers === [], 'blockers' => $blockers];
     }
 
     private function assertCanFix(AcademicProgram $program): void
     {
-        if ($program->plan_state !== 'preparing' || AcademicPlanVersion::where('academic_program_id', $program->getKey())->exists()) {
-            $this->fail('academic_plan_transition_invalid', 'ابدأ التهيئة أولًا؛ ولا يمكن إعادة تثبيت مرجع سبق إنشاؤه.');
+        if (!in_array($program->plan_state, ['legacy', 'preparing'], true) || AcademicPlanVersion::where('academic_program_id', $program->getKey())->exists()) {
+            $this->fail('academic_plan_transition_invalid', 'توجد خطة محفوظة بالفعل أو حالة برنامج غير مناسبة؛ حدّث العرض.');
         }
     }
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useBlocker, useNavigate, useParams } from 'react-router-dom'
+import { Link, useBlocker, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { FaClipboardList, FaPlus } from 'react-icons/fa'
 import DataTable from '../../components/table/DataTable'
 import FilterBar from '../../components/table/FilterBar'
@@ -16,6 +16,7 @@ import { canViewPrograms, programRead, SETUP_LABELS, SCOPES, TYPES, VERSION_LABE
 export default function ScientificProgramsPage() {
   const [identity, setIdentity] = useState(() => JSON.stringify(getIdentity())), [denied, setDenied] = useState(false)
   const { programId = '' } = useParams()
+  const { search } = useLocation()
   useEffect(() => {
     const check = () => { const next = JSON.stringify(getIdentity()); if (next !== identity) { setIdentity(next); setDenied(false) } }
     const reject = () => setDenied(true)
@@ -24,13 +25,14 @@ export default function ScientificProgramsPage() {
     return () => { clearInterval(timer); window.removeEventListener('storage', check); window.removeEventListener('focus', check); window.removeEventListener('scientific-program-denied', reject) }
   }, [identity])
   if (denied || !canViewPrograms(JSON.parse(identity))) return <Notice error>لم تعد الصلاحية أو هوية الحساب متاحة؛ مُسحت بيانات البرامج.</Notice>
-  return <ProgramWorkspace key={`${identity}:${programId}`} programId={programId} onUnauthorized={() => setDenied(true)} />
+  return <ProgramWorkspace key={`${identity}:${programId}:${search}`} search={search} programId={programId} onUnauthorized={() => setDenied(true)} />
 }
 
-function ProgramWorkspace({ programId, onUnauthorized }) {
+function ProgramWorkspace({ programId, search, onUnauthorized }) {
   const navigate = useNavigate()
   const [filters, setFilters] = useState({ q: '', college: null, department: null, status: '', sort: 'program_code', direction: 'asc', page: 1 })
-  const [versionId, setVersionId] = useState(''), [tab, setTab] = useState('program'), [refresh, setRefresh] = useState(0)
+  const requested = new URLSearchParams(search)
+  const [selectedVersionId, setVersionId] = useState(requested.get('version') || ''), [tab, setTab] = useState(['requirements', 'membership', 'versions'].includes(requested.get('tab')) ? requested.get('tab') : 'program'), [refresh, setRefresh] = useState(0)
   const [editor, setEditor] = useState(null), [epoch, setEpoch] = useState(0), [notice, setNotice] = useState(''), [error, setError] = useState(null)
   const [busy, setBusy] = useState(false), [dirty, setDirty] = useState(false), [blocked, setBlocked] = useState(false), [transition, setTransition] = useState(null)
   const [retained, setRetained] = useState(null)
@@ -47,7 +49,9 @@ function ProgramWorkspace({ programId, onUnauthorized }) {
   }, [])
   const query = queryString({ q: filters.q.trim(), college_id: filters.college?.id, department_id: filters.department?.id, status: filters.status, sort: filters.sort, direction: filters.direction, page: filters.page })
   const read = useCatalogRead(programId ? `/${programId}` : `/?${query}`, { loader: programRead, delay: programId ? 0 : 350, refresh })
-  const plan = useCatalogRead(programId && versionId ? `/${programId}/versions/${versionId}` : null, { loader: programRead, refresh })
+  const versionId = selectedVersionId || String(read.data?.program?.default_academic_plan_version_id || read.data?.versions?.find(v => v.status === 'transitional')?.academic_plan_version_id || '')
+  const savedPlan = useCatalogRead(programId && versionId ? `/${programId}/versions/${versionId}` : null, { loader: programRead, refresh })
+  const plan = versionId ? savedPlan : { data: read.data?.current_plan, loading: read.loading, error: null }
   const p = read.data?.program, caps = read.data?.capabilities || {}
   function go(action) {
     if (controls.current.busy) { setNotice('انتظر نتيجة العملية قبل الانتقال.'); return }
@@ -63,6 +67,7 @@ function ProgramWorkspace({ programId, onUnauthorized }) {
     if (result.deleted) { resetControls(); setEditor(null); navigate('/vp/scientific/programs'); return }
     const newId = !programId && result.program?.academic_program_id
     resetControls(); setEditor(null); setRefresh(n => n + 1); setNotice('تم الحفظ بنجاح.'); setError(null)
+    if (result.current_version_id) setVersionId(String(result.current_version_id))
     if (retained && editor?.kind === 'requirements') setRetained(s => ({ ...s, current: result }))
     if (newId) navigate(`/vp/scientific/programs/${newId}`)
   }
@@ -79,7 +84,7 @@ function ProgramWorkspace({ programId, onUnauthorized }) {
     open({ kind, message, actionPath, method, baseline, programId, versionId })
   }
   const planEditable = plan.data?.version.status === 'draft' && plan.data?.capabilities.plans
-  const titles = { program: 'بيانات البرنامج', requirements: 'متطلبات التخرج', membership: 'مواد الخطة', copy: 'إنشاء نسخة للتعديل', approve: 'اعتماد الخطة', default: 'تعيين للطلاب الجدد', transfer: 'نقل الطلاب بين الخطط', begin: 'بدء تهيئة الخطط', fix: 'تثبيت المرجع الحالي', archive: 'أرشفة البرنامج', restore: 'استعادة البرنامج', delete: 'حذف برنامج غير مستخدم' }
+  const titles = { program: 'بيانات البرنامج', requirements: 'متطلبات التخرج', membership: 'مواد الخطة', copy: 'إنشاء نسخة للتعديل', approve: 'اعتماد الخطة', default: 'تعيين للطلاب الجدد', transfer: 'نقل الطلاب بين الخطط', begin: 'بدء تهيئة الخطط', fix: 'تثبيت الخطة الحالية', archive: 'أرشفة البرنامج', restore: 'استعادة البرنامج', delete: 'حذف برنامج غير مستخدم' }
   return <main dir="rtl" className="min-w-0 space-y-5 px-2 py-6 text-text-dark">
     <header className="flex flex-wrap items-start justify-between gap-3 rounded-[18px] border border-primary/12 bg-white px-6 py-5"><div><h1 className="text-[22px] font-black">{p?.program_name || 'البرامج الأكاديمية'}</h1><p className="mt-2 text-[13.5px] leading-7 text-text-light">{programId ? 'بيانات البرنامج وخططه ومتطلبات التخرج — كل إجراء ضمن صلاحيتك.' : 'البرامج والخطط المعتمدة وإسنادات الطلاب، مع حفظ التاريخ الأكاديمي.'}</p></div><div className="flex flex-wrap gap-2">{programId ? <Link className="text-[12px] font-bold text-primary" to="/vp/scientific/programs">العودة إلى البرامج</Link> : caps.edit && <Button primary disabled={!read.data} onClick={() => open({ kind: 'program', baseline: read.data })}><FaPlus /> إضافة برنامج</Button>}<Link className="text-[12px] font-bold text-primary" to="/vp/scientific/courses">إدارة المواد</Link></div></header>
     <Notice>{notice}</Notice><Notice error>{error}</Notice><Notice error>{read.error && catalogError(read.error)}</Notice>
@@ -100,11 +105,11 @@ function ProgramWorkspace({ programId, onUnauthorized }) {
       <Notice>{SETUP_LABELS[p.plan_setup] || 'حالة غير معروفة'}{p.archived_at && ' — البرنامج مؤرشف؛ العمليات الأكاديمية للطلاب الحاليين مستمرة.'}</Notice>
       <nav aria-label="أقسام البرنامج" className="flex flex-wrap gap-2">{['program', 'requirements', 'membership', 'versions'].map(name => <Button key={name} primary={tab === name} onClick={() => { if (tab !== name) go(() => setTab(name)) }}>{name === 'versions' ? 'الإصدارات' : titles[name]}</Button>)}</nav>
       {tab === 'program' ? <section className="space-y-4 rounded-[16px] border border-primary/12 bg-white p-5"><dl className="grid gap-3 text-[13px] sm:grid-cols-2">{[['program_code', 'الرمز'], ['degree_level', 'الدرجة العلمية'], ['duration_years', 'المدة'], ['total_credit_hours', 'إجمالي ساعات البرنامج']].map(([key, title]) => <div key={key}><dt className="font-bold">{title}</dt><dd>{p[key] ?? 'لم يحدد'}</dd></div>)}</dl><p>{p.department?.college?.college_name} / {p.department?.department_name}</p><p>{p.description}</p><Notice>{caps.academic_lock_reason}</Notice><div className="flex flex-wrap gap-2">{caps.edit && <Button onClick={() => open({ kind: 'program', programId, baseline: read.data })}>تعديل البيانات</Button>}{caps.archive && <Button onClick={() => decision(p.archived_at ? 'restore' : 'archive', 'الأرشفة تمنع القبول الجديد فقط، ولا تنهي عمليات الطلاب الحاليين.', `/${programId}/${p.archived_at ? 'restore' : 'archive'}`, read.data)}>{p.archived_at ? 'استعادة البرنامج' : 'أرشفة البرنامج'}</Button>}{caps.delete && <Button danger onClick={() => go(() => loadPreview(`/${programId}/deletion-preview`, { kind: 'delete', programId, actionPath: `/${programId}`, method: 'DELETE', message: 'الحذف الحقيقي متاح فقط دون ارتباطات مانعة.' }))}>معاينة الحذف</Button>}</div></section> : <>
-        <Field label="الخطة التي تعمل عليها"><Select value={versionId} onChange={e => version(e.target.value)}><option value="">اختر إصدار الخطة صراحةً</option>{read.data.versions.map(v => <option key={v.academic_plan_version_id} value={v.academic_plan_version_id}>{v.label} — {VERSION_LABELS[v.status] || 'غير معروف'}{Number(p.default_academic_plan_version_id) === Number(v.academic_plan_version_id) ? ' — للطلاب الجدد' : ''}</option>)}</Select></Field>
-        {caps.plans && p.plan_state === 'legacy' && <Button primary onClick={() => decision('begin', 'بدء التهيئة يوقف القبول وإنشاء الطلاب الجدد حتى اعتماد خطة وتعيينها صراحةً. تبقى عمليات الطلاب الحاليين متاحة.', `/${programId}/initialization`, read.data)}>بدء تهيئة الخطط</Button>}
-        {caps.plans && p.plan_state === 'preparing' && !read.data.versions.length && <Button primary onClick={() => go(() => loadPreview(`/${programId}/transition-preview`, { kind: 'fix', programId, actionPath: `/${programId}/transition`, message: 'يحفظ المرجع الحالة الفعلية ولا يُصلح النواقص ولا يمنح اعتمادًا تاريخيًا. سيُسند إليه الطلاب الحاليون مع حفظ سياق عملياتهم.' }))}>معاينة المرجع الحالي وتثبيته</Button>}
+        <Field label="الخطة التي تعمل عليها"><Select value={versionId} onChange={e => version(e.target.value)}><option value="">{read.data.current_plan ? read.data.current_plan.version.label : 'اختر إصدار الخطة صراحةً'}</option>{read.data.versions.map(v => <option key={v.academic_plan_version_id} value={v.academic_plan_version_id}>{v.label} — {VERSION_LABELS[v.status] || 'غير معروف'}{Number(p.default_academic_plan_version_id) === Number(v.academic_plan_version_id) ? ' — للطلاب الجدد' : ''}</option>)}</Select></Field>
+        {caps.plans && read.data.current_plan && <Button primary onClick={() => go(() => loadPreview(`/${programId}/transition-preview`, { kind: 'fix', programId, actionPath: `/${programId}/transition`, message: 'تثبيت الخطة الحالية يحفظ المواد والمتطلبات والطلاب بمعرّفاتهم، ويوقف القبول الجديد حتى اعتماد نسخة وتعيينها للطلاب الجدد. الاستعراض وحده لا يغيّر حالة البرنامج.' }))}>تثبيت الخطة الحالية</Button>}
         <Notice error>{plan.error && catalogError(plan.error)}</Notice>{plan.loading && <Notice>جاري تحميل الخطة المختارة…</Notice>}
-        {plan.data && <section className="space-y-4 rounded-[16px] border border-primary/12 bg-white p-5"><h2 className="text-[16px] font-black">{plan.data.version.label}</h2><Notice>{VERSION_LABELS[plan.data.version.status]}{!planEditable && ' — المواد والمتطلبات ثابتة؛ أنشئ نسخة للتعديل.'}</Notice>
+        {plan.data && <section className="space-y-4 rounded-[16px] border border-primary/12 bg-white p-5"><h2 className="text-[16px] font-black">{plan.data.version.label}</h2><Notice>{plan.data.persisted === false ? 'هذه بيانات الخطة الحالية المسجلة في النظام السابق، وليست اعتمادًا تاريخيًا. عرضها لا يوقف القبول ولا ينشئ إصدارًا محفوظًا. تبقى قواعد التحرير الحالية نافذة من إدارة المواد.' : `${VERSION_LABELS[plan.data.version.status]}${!planEditable ? ' — المواد والمتطلبات ثابتة؛ أنشئ نسخة للتعديل.' : ''}`}</Notice>
+          {tab === 'versions' && <><p>رقم الإصدار: {plan.data.version.version_number} — {plan.data.persisted === false ? 'معروض من البيانات الحالية، غير مثبت بعد' : 'محفوظ'}</p><PlanRequirements data={plan.data} /><p>مواد الخطة: {plan.data.courses.map(c => `${c.course?.course_name || 'مادة غير متاحة'} (${c.course?.course_code || 'غير محدد'})`).join('، ') || 'لا توجد مواد مسجلة'}</p></>}
           {tab === 'versions' && <><div className="flex flex-wrap gap-2">{caps.plans && ['approved', 'transitional'].includes(plan.data.version.status) && <Button onClick={() => decision('copy', 'ستُنشأ مسودة مستقلة؛ لا تتغير إسنادات الطلاب.', `/${programId}/versions/${versionId}/copy`)}>إنشاء نسخة للتعديل</Button>}{caps.approve && plan.data.version.status === 'draft' && <Button primary onClick={() => decision('approve', 'الاعتماد يثبت مواد الخطة ومتطلباتها. لا يعيّنها تلقائيًا للطلاب الجدد.', `/${programId}/versions/${versionId}/approve`)}>اعتماد الخطة</Button>}{caps.assign && plan.data.version.status === 'approved' && <><Button onClick={() => decision('default', 'يستخدم إنشاء الطلاب اللاحق هذه الخطة صراحةً؛ لا يُنقل أي طالب سابق.', `/${programId}/versions/${versionId}/default`)}>تعيين للطلاب الجدد</Button><Button onClick={() => decision('transfer', 'راجع أثر النقل قبل التأكيد.', `/${programId}/versions/${versionId}/transfer`)}>نقل الطلاب — إجراء مستقل</Button></>}</div>{plan.data.configuration.issues.map(issue => <Notice key={issue} error>{issue}</Notice>)}</>}
           {tab === 'requirements' && <><PlanRequirements data={plan.data} />{planEditable && <Button primary onClick={() => open({ kind: 'requirements', programId, versionId, baseline: plan.data })}>تعديل متطلبات التخرج</Button>}</>}
           {tab === 'membership' && <>{planEditable && <Button primary onClick={() => open({ kind: 'membership', programId, versionId, baseline: plan.data })}>إضافة مادة موجودة للخطة</Button>}{planEditable && <Button onClick={() => open({ kind: 'create-course', programId, versionId })}>إنشاء مادة في الدليل ثم ربطها</Button>}<DataTable rows={plan.data.courses} rowKey={c => c.program_course_id} columns={[{ key: 'course', header: 'المادة — الاسم والرمز', render: c => <Button onClick={() => open({ kind: 'course-information', course: c.course })}>{c.course?.course_name} ({c.course?.course_code})</Button> }, { key: 'type', header: 'التصنيف', render: c => `${SCOPES[c.requirement_mapping?.requirement_group?.requirement_scope] || 'غير مصنف'} — ${TYPES[c.course_type] || 'غير محدد'}` }, { key: 'advisory', header: 'معلومات إرشادية', render: c => `${c.academic_level?.level_name || 'مستوى غير محدد'} — ${c.recommended_semester?.semester_name || 'فصل غير محدد'}` }, { key: 'action', header: 'الإجراء', render: c => planEditable ? <div className="flex flex-wrap gap-2"><Button onClick={() => open({ kind: 'membership', programId, versionId, baseline: plan.data, membership: c })}>تعديل التصنيف</Button><Button danger onClick={() => decision('remove-course', 'إزالة المادة من هذه المسودة فقط؛ لا يتغير الدليل أو أي خطة ثابتة.', `/${programId}/versions/${versionId}/courses/${c.course_id}`, plan.data, 'DELETE')}>إزالة من المسودة</Button></div> : 'قراءة فقط' }]} emptyIcon={FaClipboardList} emptyTitle="لا توجد مواد في هذه الخطة" /></>}

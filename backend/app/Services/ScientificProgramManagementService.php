@@ -43,7 +43,9 @@ final class ScientificProgramManagementService
             $p = $this->access->programs($actor)->with('department.college')->findOrFail($id);
             $versions = AcademicPlanVersion::where('academic_program_id', $id)->orderBy('version_number')->get();
             $used = $this->history->programUsed($id, false) || $versions->whereIn('status', ['approved', 'transitional'])->isNotEmpty();
-            return ['program' => $this->projection($p, $versions), 'versions' => $versions, 'capabilities' => $this->access->capabilities($actor) + [
+            return ['program' => $this->projection($p, $versions), 'versions' => $versions,
+                'current_plan' => $versions->isEmpty() ? app(AcademicPlanWorkflow::class)->currentPlanProjection($actor, $p) : null,
+                'capabilities' => $this->access->capabilities($actor) + [
                 'edit_academic' => !$used, 'academic_lock_reason' => $used ? 'هوية البرنامج مرتبطة بتاريخ؛ يمكن تصحيح الاسم والوصف، وتعديل الخطة عبر نسخة جديدة.' : null],
                 'revision' => $this->transaction->revision()];
         });

@@ -6,6 +6,18 @@ export const canViewPrograms = identity => canAccess(PROGRAM_ACCESS, identity)
 export const PROGRAM_API = '/v1/vice-presidency/scientific/program-management'
 export const SETUP_LABELS = { legacy: 'النظام السابق', preparing: 'تهيئة الخطط — القبول الجديد موقوف', ready: 'جاهز للطلاب الجدد' }
 export const VERSION_LABELS = { draft: 'مسودة للتعديل', approved: 'خطة معتمدة', transitional: 'مرجع انتقالي — ليس اعتمادًا تاريخيًا' }
+export function programPlanLink(membership) {
+  const query = new URLSearchParams({ tab: 'membership' })
+  if (membership.academic_plan_version_id != null) query.set('version', String(membership.academic_plan_version_id))
+  return `/vp/scientific/programs/${membership.academic_program_id}?${query}`
+}
+/** Display actual definitions, never invent saved groups. */
+export function requirementDisplayGroups(data) {
+  return Object.keys(SCOPES).flatMap(scope => Object.keys(TYPES).map(type => {
+    const groups = data.groups.filter(g => g.requirement_scope === scope && g.requirement_type === type)
+    return { scope, type, groups: groups.map(g => ({ ...g, courses: data.courses.filter(c => Number(c.requirement_mapping?.requirement_group_id) === Number(g.requirement_group_id)) })) }
+  }))
+}
 export const SCOPES = { university: 'متطلبات الجامعة', college: 'متطلبات الكلية', department: 'متطلبات القسم' }
 export const TYPES = { mandatory: 'إجباري', elective: 'اختياري' }
 
