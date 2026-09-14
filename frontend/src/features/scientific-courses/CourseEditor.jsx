@@ -7,7 +7,7 @@ import useCatalogRead from './useCatalogRead'
 import { distributionScope, distributionPath, emptyDistribution } from './associations'
 import CourseDistributionFields from './CourseDistributionFields'
 
-export default function CourseEditor({ baseline, onDirty, onBusy, onBlocked, onSaved, onRestart, onUnauthorized, busy }) {
+export default function CourseEditor({ baseline, onDirty, onBusy, onBlocked, onSaved, onRestart, onUnauthorized, busy, allowDistribution = true }) {
   const [draft, setDraft] = useState(() => editableCourse(baseline)), [confirm, setConfirm] = useState(null)
   const id = baseline.data?.course_id, caps = baseline.capabilities || { edit_text: true, edit_academic: true, edit_relationships: true, delete: false }
   const mutation = useCatalogMutation({ currentPath: id ? `/courses/${id}` : '/courses', onSaved, onBusy, onBlocked, onUnauthorized })
@@ -27,7 +27,7 @@ export default function CourseEditor({ baseline, onDirty, onBusy, onBlocked, onS
   return <section className="space-y-4" aria-label="بيانات المادة">
     {baseline.impact?.shared && <Notice>تعديل بيانات هذه المادة يؤثر على البرامج المرتبطة بها ({baseline.impact.linked_program_count}).</Notice>}
     <form onSubmit={e => { e.preventDefault(); if (!disabled) save() }} className="space-y-4">
-      {!id && <CourseDistributionFields value={distribution} onChange={value => { setDistribution(value); onDirty(true) }} read={preview} disabled={disabled} retry={() => setPreviewEpoch(n => n + 1)} />}
+      {!id && allowDistribution && <CourseDistributionFields value={distribution} onChange={value => { setDistribution(value); onDirty(true) }} read={preview} disabled={disabled} retry={() => setPreviewEpoch(n => n + 1)} />}
       <fieldset disabled={disabled || !caps.edit_text} className="grid gap-3 sm:grid-cols-2"><Field label="اسم المادة" error={mutation.fields.course_name}><Input name="course_name" required maxLength={200} value={draft.course_name} onChange={e => change('course_name', e.target.value)} /></Field><Field label="الوصف" error={mutation.fields.description}><textarea name="description" className="rounded-[10px] border border-primary/20 px-3 py-2.5 text-[13.5px] leading-normal outline-none focus:border-primary" value={draft.description} onChange={e => change('description', e.target.value)} /></Field></fieldset>
       {lock && <Notice>{lock}</Notice>}
       <fieldset disabled={disabled || !caps.edit_academic} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Field label="رمز المادة" error={mutation.fields.course_code}><Input name="course_code" dir="ltr" required maxLength={50} value={draft.course_code} onChange={e => change('course_code', e.target.value)} /></Field>{[['credit_hours', 'الساعات المعتمدة'], ['theoretical_hours', 'الساعات النظرية'], ['practical_hours', 'الساعات العملية']].map(([field, label]) => <Field key={field} label={label} error={mutation.fields[field]}><Input name={field} dir="ltr" type="number" min={field === 'credit_hours' ? 1 : 0} step="1" required={field === 'credit_hours'} value={draft[field]} onChange={e => change(field, e.target.value)} /></Field>)}<label className="flex items-center gap-2"><input type="checkbox" checked={!!draft.is_active} onChange={e => change('is_active', e.target.checked)} />مادة نشطة</label></fieldset>

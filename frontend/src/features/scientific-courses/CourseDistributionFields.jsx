@@ -3,6 +3,7 @@ import { Button, CatalogLookup, Field, Notice, Select } from './CatalogControls'
 
 export default function CourseDistributionFields({ value, onChange, read, disabled, retry }) {
   const update = (key, next) => onChange({ ...value, [key]: next,
+    ...(['scope', 'college', 'department'].includes(key) ? { draftSelections: {} } : {}),
     ...(key === 'scope' ? { college: null, department: null } : key === 'college' ? { department: null } : {}) })
   return <fieldset disabled={disabled} className="space-y-3 rounded-[12px] border border-primary/15 p-3">
     <legend className="font-bold text-[12.5px]">نطاق إضافة المادة وتصنيفها</legend>
@@ -16,7 +17,9 @@ export default function CourseDistributionFields({ value, onChange, read, disabl
     </div><p className="text-[12px] text-text-light">يشمل الربط البرامج الموجودة الآن فقط. لن تُنشأ ميزانيات متطلبات أو تتغير ساعات التخرج تلقائيًا. المستوى والفصل إرشاديان للمواد الجديدة في البرامج المستهدفة.</p>
       <Notice>{read.loading && 'جارٍ التحقق من جميع البرامج المستهدفة…'}</Notice><Notice error>{read.error && catalogError(read.error)}</Notice>
       {read.error && <Button onClick={retry}>إعادة فحص البرامج</Button>}
-      {read.data && <div aria-label="معاينة البرامج المستهدفة"><b>{read.data.program_count} برنامجًا</b><Notice error={!read.data.can_apply}>{read.data.can_apply ? 'جميع البرامج قابلة للربط؛ يلزم تأكيدك قبل الحفظ.' : 'لا يمكن إتمام الربط كاملًا. لن تُحفظ المادة أو أي ارتباط جزئي.'}</Notice><div className="max-h-48 overflow-auto">{read.data.targets.map(p => <p key={p.academic_program_id} className="border-b border-primary/10 py-2 text-[12px]">{p.college_name} / {p.department_name} / {p.program_name}<span className={p.block_reason ? 'block text-red-700' : 'block text-text-light'}>{p.block_reason || 'جاهز للربط'}</span></p>)}</div></div>}
+      {read.data && <div aria-label="معاينة البرامج المستهدفة"><b>{read.data.program_count} برنامجًا</b><Notice error={!read.data.can_apply}>{read.data.can_apply ? 'جميع البرامج قابلة للربط؛ يلزم تأكيدك قبل الحفظ.' : 'لا يمكن إتمام الربط كاملًا. لن تُحفظ المادة أو أي ارتباط جزئي.'}</Notice><div className="max-h-64 overflow-auto">{read.data.targets.map(p => <div key={p.academic_program_id} className="border-b border-primary/10 py-2 text-[12px]">{p.college_name} / {p.department_name} / {p.program_name}
+        {p.requires_explicit_plan && <Field label={`مسودة الربط — ${p.program_name}`}><Select aria-label={`مسودة الربط — ${p.program_name}`} value={value.draftSelections?.[p.academic_program_id] || ''} onChange={e => update('draftSelections', { ...value.draftSelections, [p.academic_program_id]: e.target.value })}><option value="">اختر مسودة صراحةً</option>{p.draft_options.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}</Select></Field>}
+        <span className={p.block_reason ? 'block text-red-700' : 'block text-text-light'}>{p.block_reason || 'جاهز للربط'}</span></div>)}</div></div>}
     </>}
   </fieldset>
 }

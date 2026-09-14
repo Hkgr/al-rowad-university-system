@@ -10,13 +10,13 @@ use Illuminate\Support\Facades\Schema;
 /** Shared test-only SQLite fixture; never a production schema installer. */
 final class ScientificCatalogFixture
 {
-    public static function initialize(): void
+    public static function initialize(bool $planVersions = false): void
     {
         if (!app()->environment('testing') || DB::connection()->getDriverName() !== 'sqlite') {
             throw new \RuntimeException('Catalog fixture requires an isolated testing SQLite connection.');
         }
         Schema::dropAllTables();
-        self::schema();
+        self::schema($planVersions);
         DB::table('academic_catalog_control')->insert(['control_id' => 1, 'revision' => 1, 'schema_version' => 1, 'is_ready' => 1]);
         DB::table('account_statuses')->insert(['account_status_id' => 1, 'status_code' => 'active']);
         DB::table('users')->insert(['user_id' => 1, 'username' => 'scientific', 'account_status_id' => 1]);
@@ -40,7 +40,7 @@ final class ScientificCatalogFixture
         DB::table('result_statuses')->insert(['result_status_id' => 1, 'status_code' => 'passed', 'status_name' => 'ناجح']);
     }
 
-    private static function schema(): void
+    private static function schema(bool $planVersions): void
     {
         $tables = [
             'account_statuses' => ['account_status_id', ['status_code']], 'users' => ['user_id', ['username'], ['account_status_id', 'student_id', 'employee_id']],
@@ -63,15 +63,20 @@ final class ScientificCatalogFixture
             'user_activity_logs' => ['activity_log_id', ['module_code', 'action_code', 'description', 'ip_address'], ['user_id']],
         ];
         foreach (\App\Services\AcademicCatalogHistory::PROGRAM_REFERENCES as $table => [$key, $foreign]) $tables[$table] = [$key, [], [$foreign, ...in_array($table, ['course_offerings', 'supplementary_exam_offerings']) ? ['course_id'] : []]];
-        foreach ($tables as $table => $definition) Schema::create($table, function (Blueprint $t) use ($table, $definition) {
-            $t->increments($definition[0]);
+        foreach ($tables as $table => $definition) Schema::create($table, function (Blueprint $t) use ($table, $definition, $planVersions) {
+            if ($table === 'user_activity_logs') $t->bigIncrements($definition[0]);
+            else $t->increments($definition[0]);
             foreach ($definition[1] as $field) $t->string($field)->nullable()->collation('nocase');
             foreach ($definition[2] ?? [] as $field) $t->integer($field)->nullable();
             $t->boolean('is_active')->default(true); $t->timestamps();
             if ($table === 'students') $t->softDeletes();
             if ($table === 'courses') $t->unique('course_code');
-            if ($table === 'program_courses') $t->unique(['academic_program_id', 'course_id']);
-            if ($table === 'academic_requirement_groups') { $t->unique('group_code'); $t->unique(['academic_program_id', 'requirement_scope', 'requirement_type']); }
+            if ($planVersions && in_array($table, ['program_courses', 'academic_requirement_groups'])) {
+                $t->integer('academic_plan_version_id')->nullable();
+                $t->integer('plan_scope_key')->storedAs('coalesce(academic_plan_version_id, 0)');
+            }
+            if ($table === 'program_courses') $t->unique(['academic_program_id', ...($planVersions ? ['plan_scope_key'] : []), 'course_id']);
+            if ($table === 'academic_requirement_groups') { $t->unique('group_code'); $t->unique(['academic_program_id', ...($planVersions ? ['plan_scope_key'] : []), 'requirement_scope', 'requirement_type']); }
             if ($table === 'program_course_requirement_groups') $t->unique('program_course_id');
             $foreign = match ($table) {
                 'course_departments' => ['course_id' => ['courses', 'course_id'], 'department_id' => ['departments', 'department_id']],

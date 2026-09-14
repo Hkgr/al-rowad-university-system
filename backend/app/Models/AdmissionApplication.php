@@ -8,6 +8,17 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class AdmissionApplication extends Model
 {
+    protected static function booted(): void
+    {
+        static::saving(function (self $application) {
+            if ((!$application->exists || $application->isDirty('academic_program_id')) && \App\Services\AcademicPlanContext::installed()) {
+                \App\Services\AcademicPlanContext::assertReady();
+                if (\Illuminate\Support\Facades\DB::transactionLevel() < 1) throw \App\Exceptions\AcademicPlanException::conflict('academic_plan_transaction_required', 'طلب القبول يتطلب معاملة ذرية للتحقق من تهيئة البرنامج.');
+                app(\App\Services\AcademicCatalogTransaction::class)->revision(true);
+                \App\Services\AcademicPlanAdmission::assertAccepting((int) $application->academic_program_id);
+            }
+        });
+    }
     protected $table = 'admission_applications';
 
     protected $primaryKey = 'admission_application_id';

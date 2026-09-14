@@ -81,7 +81,7 @@ $contract = static function (string $backendRoot): array {
     }
 
     // Server-derived applicability: request absence never determines applicability.
-    $expect(str_contains($source['gate'], "->where('academic_program_id', \$lockedOffering->academic_program_id)") && str_contains($source['gate'], "->where('course_id', \$lockedOffering->course_id)") && str_contains($source['gate'], "->where('is_active', true)"), 'Normal-opening applicability must derive from current ProgramCourse identity.');
+    $expect(str_contains($source['gate'], 'AcademicPlanContext::forOfferingSource((int) $lockedOffering->academic_program_id, $source)->courses()') && str_contains($source['gate'], "->where('course_id', \$lockedOffering->course_id)") && str_contains($source['gate'], "->where('is_active', true)"), 'Normal-opening applicability must derive from the exact fixed plan/current legacy ProgramCourse identity.');
     $expect(str_contains($source['gate'], 'if ($programCourses->count() !== 1)') && str_contains($source['gate'], 'curriculumUnavailable()'), 'Missing or ambiguous current curriculum membership must fail closed.');
     $expect(strpos($source['gate'], 'schemaReady()') < strpos($source['gate'], 'if ($proof === null)'), 'Schema readiness must fail before a missing proof can be treated as normal workflow state.');
     $expect(str_contains($source['gate'], 'semester_offering_schema_not_ready') || str_contains($source['gate'], 'schemaNotReady()'), 'Missing expected governance schema must surface the controlled readiness failure.');

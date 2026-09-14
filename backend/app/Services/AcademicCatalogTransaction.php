@@ -35,6 +35,15 @@ final class AcademicCatalogTransaction
             }); // Never replay a caller's mutation automatically.
         } catch (QueryException|DeadlockException $e) {
             $message = $e->getMessage();
+            foreach (['academic_plan_schema_not_ready', 'academic_plan_locked', 'academic_plan_context_invalid',
+                'academic_plan_initialization_incomplete', 'academic_program_archived', 'academic_plan_program_transfer_required',
+                'academic_plan_record_immutable', 'academic_plan_assignment_immutable', 'academic_plan_group_mismatch',
+                'academic_plan_initialization_required', 'academic_plan_program_identity_locked', 'academic_plan_transition_invalid',
+                'academic_plan_approval_required', 'academic_plan_event_immutable'] as $code) {
+                if (str_contains($message, $code)) throw new \App\Exceptions\AcademicPlanException(
+                    'تعذر إتمام العملية بسبب حالة الخطة أو ارتباطاتها؛ أعد تحميل المعاينة وراجع سبب المنع.', $code,
+                    $code === 'academic_plan_schema_not_ready' ? 503 : 409);
+            }
             if (str_contains($message, 'academic_catalog_history_locked')) {
                 throw new AcademicCatalogException('هذه البيانات مرتبطة بتاريخ أكاديمي؛ يسمح بالتصحيح النصي فقط.', 'academic_catalog_history_locked');
             }

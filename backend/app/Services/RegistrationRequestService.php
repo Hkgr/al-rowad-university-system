@@ -148,7 +148,7 @@ class RegistrationRequestService
             ]);
         }
 
-        return DB::transaction(function () use ($student, $offering, $actor, $year): StudentRegistrationRequest {
+        return AcademicPlanContext::transaction(function () use ($student, $offering, $actor, $year): StudentRegistrationRequest {
             $this->registration->assertCourseRegistrationStudentWindowOpen(
                 (int) $offering->academic_year_id,
                 (int) $offering->semester_id,
@@ -253,7 +253,7 @@ class RegistrationRequestService
     {
         $this->requireUniqueCurrentYear();
 
-        return DB::transaction(function () use ($student, $item, $actor): StudentRegistrationRequest {
+        return AcademicPlanContext::transaction(function () use ($student, $item, $actor): StudentRegistrationRequest {
             $item = StudentRegistrationRequestItem::query()
                 ->with('request')
                 ->lockForUpdate()
@@ -293,7 +293,7 @@ class RegistrationRequestService
         $semesterId = $this->resolveOpenSemesterId($student, (int) $year->academic_year_id, $semesterId);
         $normalized = $this->normalizeStudentNotes($notes);
 
-        return DB::transaction(function () use ($student, $normalized, $actor, $year, $semesterId): StudentRegistrationRequest {
+        return AcademicPlanContext::transaction(function () use ($student, $normalized, $actor, $year, $semesterId): StudentRegistrationRequest {
             $this->registration->assertCourseRegistrationStudentWindowOpen(
                 (int) $year->academic_year_id,
                 $semesterId,
@@ -320,7 +320,7 @@ class RegistrationRequestService
         }
         $semesterId = $this->resolveOpenSemesterId($student, (int) $year->academic_year_id, $semesterId);
 
-        return DB::transaction(function () use ($student, $actor, $year, $semesterId): StudentRegistrationRequest {
+        return AcademicPlanContext::transaction(function () use ($student, $actor, $year, $semesterId): StudentRegistrationRequest {
             $this->registration->assertCourseRegistrationStudentWindowOpen(
                 (int) $year->academic_year_id,
                 $semesterId,
@@ -450,7 +450,7 @@ class RegistrationRequestService
             ]);
         }
 
-        $outcome = DB::transaction(function () use ($user, $request, $normalized): array {
+        $outcome = AcademicPlanContext::transaction(function () use ($user, $request, $normalized): array {
             $locked = StudentRegistrationRequest::query()
                 ->lockForUpdate()
                 ->findOrFail($request->student_registration_request_id);
@@ -510,7 +510,7 @@ class RegistrationRequestService
 
         $currentOfferingId = 0;
         try {
-            $outcome = DB::transaction(function () use ($user, $request, &$currentOfferingId): array {
+            $outcome = AcademicPlanContext::transaction(function () use ($user, $request, &$currentOfferingId): array {
                 $locked = StudentRegistrationRequest::query()
                     ->lockForUpdate()
                     ->findOrFail($request->student_registration_request_id);
@@ -867,7 +867,7 @@ class RegistrationRequestService
             return $this->freshRequest($request);
         }
 
-        return DB::transaction(function () use ($request): StudentRegistrationRequest {
+        return AcademicPlanContext::transaction(function () use ($request): StudentRegistrationRequest {
             $locked = StudentRegistrationRequest::query()
                 ->lockForUpdate()
                 ->findOrFail($request->student_registration_request_id);

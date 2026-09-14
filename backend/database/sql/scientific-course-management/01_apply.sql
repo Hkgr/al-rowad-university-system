@@ -156,7 +156,7 @@ UNION ALL SELECT 'departments' table_name,'department_name' column_name
     ) required LEFT JOIN information_schema.columns c
       ON c.table_schema='alrowad_uni_rust' AND c.table_name=required.table_name AND c.column_name=required.column_name
     WHERE c.column_name IS NULL OR NOT EXISTS(SELECT 1 FROM information_schema.tables t WHERE t.table_schema='alrowad_uni_rust' AND t.table_name=required.table_name AND t.engine='InnoDB')
-      OR ((RIGHT(required.column_name,3)='_id' OR required.column_name IN ('credit_hours','theoretical_hours','practical_hours','total_credit_hours','required_credit_hours')) AND (c.data_type<>'int' OR c.column_type LIKE '%unsigned%'))
+      OR ((RIGHT(required.column_name,3)='_id' OR required.column_name IN ('credit_hours','theoretical_hours','practical_hours','total_credit_hours','required_credit_hours')) AND (c.data_type<>CASE WHEN required.table_name='user_activity_logs' AND required.column_name='activity_log_id' THEN 'bigint' ELSE 'int' END OR c.column_type LIKE '%unsigned%'))
   ) THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='academic_catalog_column_contract_invalid'; END IF;
   IF (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='alrowad_uni_rust'
       AND table_name IN ('courses','academic_programs','program_courses','academic_requirement_groups','program_course_requirement_groups','course_departments','course_prerequisites','students','course_offerings','supplementary_exam_offerings','admission_applications','ministry_placement_records','student_graduation_decisions','student_progression_decisions','permissions','roles','role_permissions','system_modules','user_activity_logs')) <> 19

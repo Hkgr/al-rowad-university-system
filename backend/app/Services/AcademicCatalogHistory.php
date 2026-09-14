@@ -28,6 +28,11 @@ final class AcademicCatalogHistory
 
     public function courseUsed(int $id, bool $lock = true): bool
     {
+        if (AcademicPlanContext::installed()) {
+            AcademicPlanContext::assertReady();
+            if (DB::table('program_courses as pc')->join('academic_plan_versions as v', 'v.academic_plan_version_id', '=', 'pc.academic_plan_version_id')
+                ->where('pc.course_id', $id)->whereIn('v.status', ['approved', 'transitional'])->exists()) return true;
+        }
         if (DB::table('course_offerings')->where('course_id', $id)->orderBy('course_offering_id')->when($lock, fn ($q) => $q->lockForUpdate())->first(['course_offering_id'])
             || DB::table('supplementary_exam_offerings')->where('course_id', $id)->orderBy('supplementary_exam_offering_id')->when($lock, fn ($q) => $q->lockForUpdate())->first(['supplementary_exam_offering_id'])) return true;
         foreach (DB::table('program_courses')->where('course_id', $id)->orderBy('academic_program_id')->when($lock, fn ($q) => $q->lockForUpdate())->pluck('academic_program_id') as $program) {

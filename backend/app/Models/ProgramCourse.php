@@ -27,6 +27,7 @@ class ProgramCourse extends Model
     protected function casts(): array
     {
         return [
+            'academic_plan_version_id' => 'integer',
             'is_active' => 'boolean',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',

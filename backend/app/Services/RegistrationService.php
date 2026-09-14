@@ -96,7 +96,7 @@ class RegistrationService
         if (($confirmation['confirmed'] ?? false) !== true || trim($confirmation['reason'] ?? '') === '') {
             throw \Illuminate\Validation\ValidationException::withMessages(['reason' => 'Explicit confirmation and reason are required.']);
         }
-        return DB::transaction(function () use ($student, $offering, $actor, $confirmation, $access) {
+        return AcademicPlanContext::transaction(function () use ($student, $offering, $actor, $confirmation, $access) {
             $student = $this->lockStudent((int) $student->getKey());
             $offering = $this->lockOffering((int) $offering->getKey());
             $access->authorizeOffering($actor, $student, $offering);
@@ -252,6 +252,7 @@ class RegistrationService
             throw RegistrationException::liveWorkflowRequired();
         }
 
+        AcademicPlanRecords::assertCurrentRequest($lockedRequest);
         $requestPeerOfferingIds = StudentRegistrationRequestItem::query()
             ->where('student_registration_request_id', $lockedRequest->getKey())
             ->where('student_registration_request_item_id', '<>', $lockedItem->getKey())
@@ -355,6 +356,7 @@ class RegistrationService
             throw RegistrationException::liveWorkflowRequired();
         }
 
+        AcademicPlanRecords::assertCurrentRequest($lockedRequest);
         $peerIds = StudentRegistrationModificationItem::query()
             ->where('student_registration_modification_request_id', $lockedRequest->getKey())
             ->where('operation', RegistrationModificationWorkflow::OPERATION_ADD)
@@ -432,6 +434,7 @@ class RegistrationService
         $lockedRequest=StudentRegistrationReplacementRequest::query()->whereKey($request->getKey())->lockForUpdate()->first();
         $lockedStudent=$lockedRequest===null?null:Student::query()->whereKey($lockedRequest->student_id)->lockForUpdate()->first();
         if($lockedRequest===null||$lockedStudent===null||$lockedRequest->status!=='submitted'||(int)$lockedRequest->current_slot!==1||$lockedRequest->expired_at!==null||$lockedRequest->superseded_at!==null||$lockedRequest->approved_at!==null||$lockedRequest->materialized_at!==null)throw RegistrationException::liveWorkflowRequired();
+        AcademicPlanRecords::assertCurrentRequest($lockedRequest);
 
         $deadline=$this->academicCalendarPolicy->courseRegistrationReplacementDeadlines((int)$lockedRequest->academic_year_id,(int)$lockedRequest->semester_id,$evaluatedAt);
         if((int)$deadline->academicCalendarEventId!==(int)$lockedRequest->academic_calendar_event_id)throw SemesterRegistrationPhase6Exception::stale();
@@ -676,6 +679,8 @@ class RegistrationService
             ]);
         }
 
+        AcademicPlanRecords::pinRegistration($registration, $student, (int) $courseOffering->course_id);
+
         $registration->load([
             'student',
             'courseOffering.course',
@@ -766,7 +771,7 @@ class RegistrationService
 
     public function selfDrop(Student $student, StudentCourseRegistration $registration): StudentCourseRegistration
     {
-        return DB::transaction(function () use ($student, $registration): StudentCourseRegistration {
+        return AcademicPlanContext::transaction(function () use ($student, $registration): StudentCourseRegistration {
             $this->lockStudent((int) $student->student_id);
             $offering = $this->lockOffering((int) $registration->course_offering_id);
             $locked = $this->lockRegistration((int) $registration->student_course_registration_id);
@@ -1019,7 +1024,8 @@ class RegistrationService
         $offerings = $query->orderBy('course_offering_id')->get();
         CourseRequirementClassification::classifyStudentOfferings(
             $student->academic_program_id === null ? null : (int) $student->academic_program_id,
-            $offerings
+            $offerings,
+            $student,
         );
 
         $registeredOfferingIds = $this->currentRegisteredOfferingIds($student);
@@ -1176,7 +1182,8 @@ class RegistrationService
         $offerings = $query->orderBy('course_offering_id')->get();
         CourseRequirementClassification::classifyStudentOfferings(
             $student->academic_program_id === null ? null : (int) $student->academic_program_id,
-            $offerings
+            $offerings,
+            $student,
         );
         $registeredOfferingIds = $this->currentRegisteredOfferingIds($student, $projection);
         $academicStanding = $this->officialRegistrationAcademicStanding($student);
@@ -1423,8 +1430,7 @@ class RegistrationService
             ->whereNotNull('course_offerings.academic_program_id')
             ->where('course_offerings.academic_program_id', $programId);
 
-        $curriculumCourseIds = ProgramCourse::query()
-            ->where('academic_program_id', $programId)
+        $curriculumCourseIds = AcademicPlanContext::forStudent($student)->courses()
             ->where('is_active', true)
             ->pluck('course_id');
 
@@ -1442,8 +1448,8 @@ class RegistrationService
         }
 
         $programId = (int) $student->academic_program_id;
-        $hasCurriculum = ProgramCourse::query()
-            ->where('academic_program_id', $programId)
+        $context = AcademicPlanContext::forStudent($student);
+        $hasCurriculum = $context->courses()
             ->where('is_active', true)
             ->exists();
 
@@ -1451,8 +1457,7 @@ class RegistrationService
             return true;
         }
 
-        return ProgramCourse::query()
-            ->where('academic_program_id', $programId)
+        return $context->courses()
             ->where('course_id', $courseId)
             ->where('is_active', true)
             ->exists();

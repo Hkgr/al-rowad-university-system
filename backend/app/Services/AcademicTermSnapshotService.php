@@ -48,7 +48,7 @@ class AcademicTermSnapshotService
         $this->assertSchemaReady();
         $this->assertTermIdentity($academicYearId, $semesterId);
 
-        return DB::transaction(function () use ($user, $student, $academicYearId, $semesterId): array {
+        return AcademicPlanContext::transaction(function () use ($user, $student, $academicYearId, $semesterId): array {
             [$locked] = $this->locks->lockStudentAcademicGraph((int) $student->student_id);
             $term = $this->upsertComputedTerm($locked, $academicYearId, $semesterId, $user, finalize: false);
 
@@ -63,7 +63,7 @@ class AcademicTermSnapshotService
         $this->assertSchemaReady();
         $this->assertTermIdentity($academicYearId, $semesterId);
 
-        return DB::transaction(function () use ($user, $student, $academicYearId, $semesterId): array {
+        return AcademicPlanContext::transaction(function () use ($user, $student, $academicYearId, $semesterId): array {
             [$locked] = $this->locks->lockStudentAcademicGraph((int) $student->student_id);
             $existing = StudentAcademicTerm::query()
                 ->where('student_id', $locked->student_id)

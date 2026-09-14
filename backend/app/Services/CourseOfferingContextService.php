@@ -34,6 +34,7 @@ class CourseOfferingContextService
         ?User $actor = null,
         bool $assertUnique = true,
         ?int $ignoreOfferingId = null,
+        ?ProgramCourse $sourceMembership = null,
     ): CourseOfferingContext {
         // An optimistic proof spans context reads and the eventual first use.
         // Once the package is installed, a stale context cannot create an offering.
@@ -69,11 +70,11 @@ class CourseOfferingContextService
             throw CourseOfferingContextException::programContextIncomplete();
         }
 
-        $programCourse = ProgramCourse::query()
-            ->where('academic_program_id', (int) $program->academic_program_id)
+        $programCourses = AcademicPlanContext::forOfferingSource((int) $program->academic_program_id, $sourceMembership)->courses()
             ->where('course_id', (int) $course->course_id)
             ->where('is_active', true)
-            ->first();
+            ->get();
+        $programCourse = $programCourses->count() === 1 ? $programCourses->sole() : null;
 
         if ($programCourse === null) {
             throw CourseOfferingContextException::courseNotInProgram();
@@ -118,6 +119,7 @@ class CourseOfferingContextService
             $actor,
             $assertUnique,
             $ignoreOfferingId,
+            $programCourse,
         );
     }
 
@@ -180,7 +182,7 @@ class CourseOfferingContextService
         AcademicYear::findOrFail($yearId);
         Semester::findOrFail($semesterId);
         // Inactive membership is persisted evidence too. No classifications or dates are inferred.
-        $membershipIds = ProgramCourse::where('academic_program_id', $program->getKey())->where('course_id', $course->getKey())
+        $membershipIds = AcademicPlanContext::forStudent($student)->courses()->where('course_id', $course->getKey())
             ->orderBy('program_course_id')->pluck('program_course_id')->all();
         $attemptIds = StudentCourseRegistration::where('student_id', $student->getKey())
             ->whereHas('courseOffering', fn ($q) => $q->where('course_id', $course->getKey())->where('academic_program_id', $program->getKey()))

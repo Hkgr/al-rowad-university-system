@@ -70,6 +70,7 @@ class DeanRegistrationOfferingService
         $college = $selectedProgram?->department?->college
             ?? ($colleges->count() === 1 ? $colleges->first() : null);
 
+        $planContext = $selectedProgram === null ? null : $this->offeringPlanContext((int) $selectedProgram->getKey(), $filters['academic_plan_version_id'] ?? null);
         $levels = [];
         $summary = [
             'total_courses' => 0,
@@ -91,7 +92,8 @@ class DeanRegistrationOfferingService
                 $yearId,
                 $semesterId,
                 $collegeIds,
-                $filters['search'] ?? null
+                $filters['search'] ?? null,
+                $planContext,
             );
         }
 
@@ -99,6 +101,10 @@ class DeanRegistrationOfferingService
         $semester = $semesterId === null ? null : Semester::query()->find($semesterId);
 
         return [
+            'academic_plan_version_id' => $planContext?->versionId,
+            'plan_options' => $selectedProgram !== null && AcademicPlanContext::installed()
+                ? \App\Models\AcademicPlanVersion::where('academic_program_id', $selectedProgram->getKey())->whereIn('status', ['approved', 'transitional'])
+                    ->orderBy('version_number')->get(['academic_plan_version_id', 'version_number', 'label', 'status'])->all() : [],
             'academic_year' => $year === null ? null : [
                 'academic_year_id' => $year->academic_year_id,
                 'year_name' => $year->year_name,
@@ -255,6 +261,7 @@ class DeanRegistrationOfferingService
             $semesterId,
             isset($payload['academic_level_id']) ? (int) $payload['academic_level_id'] : null,
             $payload['program_course_ids'] ?? [],
+            $this->offeringPlanContext($programId, $payload['academic_plan_version_id'] ?? null),
         );
 
         $items = [];
@@ -469,6 +476,7 @@ class DeanRegistrationOfferingService
         int $semesterId,
         ?int $academicLevelId,
         array $programCourseIds,
+        AcademicPlanContext $planContext,
     ) {
         $programId = (int) $program->academic_program_id;
         $semester = Semester::query()->findOrFail($semesterId);
@@ -482,8 +490,11 @@ class DeanRegistrationOfferingService
 
         if ($mode === 'selected') {
             $selected = $this->selectedProgramCoursesForBulkPrepare($programId, $programCourseIds);
+            if (AcademicPlanContext::installed() && $selected->contains(fn ($row) => ($row->academic_plan_version_id === null ? null : (int) $row->academic_plan_version_id) !== $planContext->versionId)) {
+                throw ValidationException::withMessages(['program_course_ids' => ['اختر مواد من الخطة المعروضة نفسها.']]);
+            }
             if ($regularSemester) {
-                return ProgramCourse::query()
+                return $planContext->courses()
                     ->with('course')
                     ->where('academic_program_id', $programId)
                     ->where('is_active', true)
@@ -499,7 +510,7 @@ class DeanRegistrationOfferingService
         }
 
         if ($regularSemester) {
-            return ProgramCourse::query()
+            return $planContext->courses()
                 ->with('course')
                 ->where('academic_program_id', $programId)
                 ->where('is_active', true)
@@ -508,7 +519,7 @@ class DeanRegistrationOfferingService
                 ->get();
         }
 
-        $query = ProgramCourse::query()
+        $query = $planContext->courses()
             ->with('course')
             ->where('academic_program_id', $programId)
             ->where('is_active', true)
@@ -523,7 +534,7 @@ class DeanRegistrationOfferingService
                 ]);
             }
 
-            $levelInProgram = ProgramCourse::query()
+            $levelInProgram = $planContext->courses()
                 ->where('academic_program_id', $programId)
                 ->where('academic_level_id', $academicLevelId)
                 ->exists();
@@ -670,15 +681,23 @@ class DeanRegistrationOfferingService
         }
     }
 
+    private function offeringPlanContext(int $programId, mixed $versionId): AcademicPlanContext
+    {
+        if ($versionId === null) return AcademicPlanContext::forProgram($programId);
+        AcademicPlanContext::assertReady();
+        return AcademicPlanContext::fixed($programId, (int) $versionId);
+    }
+
     private function curriculumLevels(
         User $user,
         AcademicProgram $program,
         int $yearId,
         int $semesterId,
         array $collegeIds,
-        ?string $search
+        ?string $search,
+        AcademicPlanContext $planContext,
     ): array {
-        $rows = ProgramCourse::query()
+        $rows = $planContext->courses()
             ->where('academic_program_id', $program->academic_program_id)
             ->where('is_active', true)
             ->with(['course', 'academicLevel', 'recommendedSemester', 'requirementMapping.requirementGroup'])

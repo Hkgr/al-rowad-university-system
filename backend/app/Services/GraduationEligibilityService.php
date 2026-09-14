@@ -29,7 +29,7 @@ class GraduationEligibilityService
             return $this->ineligibleWithoutProgram($student, $progress['outside_current_curriculum'] ?? []);
         }
 
-        $this->requirements->assertProgramGraduationConfiguration((int) $student->academic_program_id);
+        $this->requirements->forStudent($student)->assertProgramGraduationConfiguration((int) $student->academic_program_id);
         $progress = $this->requirements->getStudentRequirementProgress($student);
 
         return $this->eligibilityFromProgress($student, $progress);
@@ -53,8 +53,18 @@ class GraduationEligibilityService
             );
         }
 
-        $this->requirements->assertProgramGraduationConfiguration((int) $student->academic_program_id);
+        $this->requirements->forStudent($student)->assertProgramGraduationConfiguration((int) $student->academic_program_id);
 
+        return $this->eligibilityFromProgress($student, $progress);
+    }
+
+    /** Authorized plan-transfer preview only; the target is explicit, never installed on the Student model. */
+    public function evaluatePlanProgress(Student $student, AcademicPlanContext $context, array $progress): array
+    {
+        if ((int) $student->academic_program_id !== $context->programId) {
+            throw \App\Exceptions\AcademicPlanException::conflict('academic_plan_context_invalid', 'الخطة لا تتبع برنامج الطالب.');
+        }
+        $this->requirements->forPlanContext($context)->assertProgramGraduationConfiguration($context->programId);
         return $this->eligibilityFromProgress($student, $progress);
     }
 

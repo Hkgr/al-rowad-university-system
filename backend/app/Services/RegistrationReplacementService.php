@@ -64,7 +64,7 @@ class RegistrationReplacementService
     public function create(Student $student, User $actor, int $yearId, int $semesterId): array
     {
         $this->assertReady(); $deadline=$this->assertStudentOpen($yearId,$semesterId);
-        $currentOutcome=DB::transaction(function()use($student,$actor,$yearId,$semesterId,$deadline){
+        $currentOutcome=AcademicPlanContext::transaction(function()use($student,$actor,$yearId,$semesterId,$deadline){
             Student::query()->whereKey($student->getKey())->lockForUpdate()->firstOrFail();
             $event=$this->replacementEvent($yearId,$semesterId,true);
             if ((int)$deadline->academicCalendarEventId!==(int)$event->getKey()) throw SemesterRegistrationPhase6Exception::fail('registration_replacement_calendar_invalid','Replacement calendar configuration is inconsistent.');
@@ -77,7 +77,7 @@ class RegistrationReplacementService
         },3);
         if($currentOutcome['outcome']==='current')return $currentOutcome['payload'];
 
-        return DB::transaction(function()use($student,$actor,$yearId,$semesterId,$deadline){
+        return AcademicPlanContext::transaction(function()use($student,$actor,$yearId,$semesterId,$deadline){
             Student::query()->whereKey($student->getKey())->lockForUpdate()->firstOrFail();
             $event=$this->replacementEvent($yearId,$semesterId,true);
             if((int)$deadline->academicCalendarEventId!==(int)$event->getKey())throw SemesterRegistrationPhase6Exception::fail('registration_replacement_calendar_invalid','Replacement calendar configuration is inconsistent.');
@@ -134,7 +134,7 @@ class RegistrationReplacementService
     public function submit(Student $student, User $actor, int $yearId, int $semesterId): array
     {
         $this->assertReady(); $deadline=$this->registration->courseRegistrationReplacementDeadlines($yearId,$semesterId);
-        $outcome=DB::transaction(function()use($student,$actor,$yearId,$semesterId,$deadline){
+        $outcome=AcademicPlanContext::transaction(function()use($student,$actor,$yearId,$semesterId,$deadline){
             $request=$this->current($student,$yearId,$semesterId,true);
             if (! $request || ! in_array($request->status,['draft','returned'],true)) throw SemesterRegistrationPhase6Exception::fail('registration_replacement_not_editable','Replacement request is not editable.');
             if (($reason=$this->staleReason($request,$student,$deadline,true))!==null) {$this->supersede($request,$actor,$reason); return ['outcome'=>'stale'];}
@@ -170,7 +170,7 @@ class RegistrationReplacementService
     {
         $this->assertCanReview($actor); $this->assertAccess($actor,$route);
         if (trim($notes)==='') throw SemesterRegistrationPhase6Exception::fail('registration_replacement_return_reason_required','Return reason required.',422);
-        $outcome=DB::transaction(function()use($actor,$route,$notes){
+        $outcome=AcademicPlanContext::transaction(function()use($actor,$route,$notes){
             $request=StudentRegistrationReplacementRequest::query()->whereKey($route->getKey())->lockForUpdate()->firstOrFail();
             $student=Student::query()->whereKey($request->student_id)->lockForUpdate()->firstOrFail();
             $deadline=$this->registration->courseRegistrationReplacementDeadlines((int)$request->academic_year_id,(int)$request->semester_id);
@@ -186,7 +186,7 @@ class RegistrationReplacementService
     {
         $this->assertCanReview($actor); $this->assertAccess($actor,$route);
         try {
-            $outcome=DB::transaction(function()use($actor,$route){
+            $outcome=AcademicPlanContext::transaction(function()use($actor,$route){
                 $request=StudentRegistrationReplacementRequest::query()->whereKey($route->getKey())->lockForUpdate()->firstOrFail();
                 if ($request->status!=='submitted'||(int)$request->current_slot!==1) throw SemesterRegistrationPhase6Exception::fail('registration_replacement_not_submitted','Request is not submitted.');
                 $student=Student::query()->whereKey($request->student_id)->lockForUpdate()->firstOrFail();
@@ -320,7 +320,7 @@ class RegistrationReplacementService
     private function mutate(Student $student, User $actor, int $yearId, int $semesterId, callable $mutation, string $event='item_updated'): array
     {
         $this->assertReady(); $deadline=$this->registration->courseRegistrationReplacementDeadlines($yearId,$semesterId);
-        try{$outcome=DB::transaction(function()use($student,$actor,$yearId,$semesterId,$mutation,$event,$deadline){
+        try{$outcome=AcademicPlanContext::transaction(function()use($student,$actor,$yearId,$semesterId,$mutation,$event,$deadline){
             $request=$this->current($student,$yearId,$semesterId,true);
             if(!$request||!in_array($request->status,['draft','returned'],true))throw SemesterRegistrationPhase6Exception::fail('registration_replacement_not_editable','Request is not editable.');
             if(($reason=$this->staleReason($request,$student,$deadline,true))!==null){$this->supersede($request,$actor,$reason);return ['outcome'=>'stale'];}
@@ -396,7 +396,7 @@ class RegistrationReplacementService
 
     private function persistSuperseded(int $requestId, ?User $actor, string $eventType): void
     {
-        DB::transaction(function()use($requestId,$actor,$eventType){$request=StudentRegistrationReplacementRequest::query()->whereKey($requestId)->lockForUpdate()->first();
+        AcademicPlanContext::transaction(function()use($requestId,$actor,$eventType){$request=StudentRegistrationReplacementRequest::query()->whereKey($requestId)->lockForUpdate()->first();
             if($request&&(int)$request->current_slot===1&&in_array($request->status,['draft','submitted','returned'],true))$this->supersede($request,$actor,$eventType);},3);
     }
 
@@ -424,7 +424,7 @@ class RegistrationReplacementService
     private function expireCurrentIfClosed(int $studentId, int $yearId, int $semesterId, CourseRegistrationDeadlineResult $deadline): void
     {
         if($deadline->phase!==CourseRegistrationPhase::CLOSED)return;
-        DB::transaction(function()use($studentId,$yearId,$semesterId,$deadline){$request=StudentRegistrationReplacementRequest::query()->where('student_id',$studentId)
+        AcademicPlanContext::transaction(function()use($studentId,$yearId,$semesterId,$deadline){$request=StudentRegistrationReplacementRequest::query()->where('student_id',$studentId)
             ->where('academic_year_id',$yearId)->where('semester_id',$semesterId)->where('current_slot',1)->lockForUpdate()->first();
             if(!$request||!in_array($request->status,['draft','submitted','returned'],true))return;$from=$request->status;
             $request->update(['status'=>'expired','current_slot'=>null,'expired_at'=>$deadline->evaluatedAt]);$this->event($request,'expired',null,$from,'expired');},3);
@@ -436,7 +436,7 @@ class RegistrationReplacementService
             ->select(['academic_year_id','semester_id'])->distinct()->get();
         foreach($terms as $term){$deadline=$this->registration->courseRegistrationReplacementDeadlines((int)$term->academic_year_id,(int)$term->semester_id);
             if($deadline->phase!==CourseRegistrationPhase::CLOSED)continue;
-            DB::transaction(function()use($actor,$term,$deadline){$requests=StudentRegistrationReplacementRequest::query()->where('academic_year_id',$term->academic_year_id)
+            AcademicPlanContext::transaction(function()use($actor,$term,$deadline){$requests=StudentRegistrationReplacementRequest::query()->where('academic_year_id',$term->academic_year_id)
                 ->where('semester_id',$term->semester_id)->where('current_slot',1)->whereHas('student',fn(Builder $q)=>$this->scope->scopeStaffStudents($q,$actor))
                 ->orderBy('student_registration_replacement_request_id')->lockForUpdate()->get();
                 foreach($requests as $request){if(!in_array($request->status,['draft','submitted','returned'],true))continue;$from=$request->status;

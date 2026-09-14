@@ -106,7 +106,7 @@ $contract = static function (string $backendRoot): array {
         $expect(str_contains($source, 'assertCourseRegistrationStudentWindowOpen('), $name.' must reject mutations outside the student deadline.');
     }
     $expect(str_contains($remove, 'assertCourseRegistrationStudentWindowOpen('), 'removeItem must close at the same canonical student deadline as every other edit.');
-    $expect(str_contains($approve, 'DB::transaction(') && str_contains($approve, 'materializeAdvisorApprovedRequestItemWithinTransaction('), 'Approval must preserve canonical materialization through the explicit advisor context.');
+    $expect(str_contains($approve, 'AcademicPlanContext::transaction(') && str_contains($approve, 'materializeAdvisorApprovedRequestItemWithinTransaction('), 'Approval must preserve canonical materialization through the explicit advisor context and outer plan lock.');
     $expect(str_contains($requests, 'approvalErrorCode(') && str_contains($requests, 'COURSE_REGISTRATION_WINDOW_CLOSED'), 'Approval must preserve calendar machine codes.');
 
     $expect(str_contains($frontend, 'const requestItemRemovalOpen = payload?.request_item_removal_open === true'), 'Frontend must consume the removal capability.');

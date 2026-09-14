@@ -86,7 +86,7 @@ class RegistrationModificationService
         $this->registration->assertCourseRegistrationStudentWindowOpen($yearId, $semesterId);
 
         try {
-            $request = DB::transaction(function () use ($student, $actor, $yearId, $semesterId) {
+            $request = AcademicPlanContext::transaction(function () use ($student, $actor, $yearId, $semesterId) {
                 $lockedStudent = $this->registration->lockStudent((int) $student->student_id);
                 $existing = StudentRegistrationModificationRequest::query()
                     ->where('student_id', $lockedStudent->student_id)
@@ -264,7 +264,7 @@ class RegistrationModificationService
     public function submit(Student $student, User $actor, int $semesterId): array
     {
         $this->assertSchemaReady();
-        $outcome = DB::transaction(function () use ($student, $actor, $semesterId): array {
+        $outcome = AcademicPlanContext::transaction(function () use ($student, $actor, $semesterId): array {
             $request = $this->lockCurrentForStudent($student, semesterId: $semesterId);
             $this->registration->assertCourseRegistrationStudentWindowOpen(
                 (int) $request->academic_year_id,
@@ -379,7 +379,7 @@ class RegistrationModificationService
         if (mb_strlen($notes) < self::ADVISOR_NOTES_MIN || mb_strlen($notes) > self::ADVISOR_NOTES_MAX) {
             throw new RegistrationRequestException('سبب الإعادة مطلوب.', ['advisor_notes' => ['min:8,max:2000']]);
         }
-        $outcome = DB::transaction(function () use ($actor, $request, $notes): array {
+        $outcome = AcademicPlanContext::transaction(function () use ($actor, $request, $notes): array {
             $locked = StudentRegistrationModificationRequest::query()->whereKey($request->getKey())->lockForUpdate()->firstOrFail();
             $this->assertCanAccess($actor, $locked);
             $student = Student::query()->whereKey($locked->student_id)->lockForUpdate()->firstOrFail();
@@ -415,7 +415,7 @@ class RegistrationModificationService
         $this->assertSchemaReady();
         $this->assertCanReview($actor);
         $this->assertCanAccess($actor, $request);
-        $outcome = DB::transaction(function () use ($actor, $request): array {
+        $outcome = AcademicPlanContext::transaction(function () use ($actor, $request): array {
             $locked = StudentRegistrationModificationRequest::query()->whereKey($request->getKey())->lockForUpdate()->firstOrFail();
             $this->assertCanAccess($actor, $locked);
             if ($locked->status === Workflow::STATUS_APPROVED && $locked->materialized_at !== null) {
@@ -568,7 +568,7 @@ class RegistrationModificationService
     ): array
     {
         $this->assertSchemaReady();
-        $outcome = DB::transaction(function () use ($student, $actor, $mutation, $requestId, $semesterId): array {
+        $outcome = AcademicPlanContext::transaction(function () use ($student, $actor, $mutation, $requestId, $semesterId): array {
             $request = $this->lockCurrentForStudent($student, $requestId, $semesterId);
             $this->registration->assertCourseRegistrationStudentWindowOpen((int) $request->academic_year_id, (int) $request->semester_id);
             $this->assertEditable($request);
@@ -976,7 +976,7 @@ class RegistrationModificationService
         if ($deadline->phase !== CourseRegistrationPhase::CLOSED) {
             return $request;
         }
-        DB::transaction(function () use ($request): void {
+        AcademicPlanContext::transaction(function () use ($request): void {
             $locked = StudentRegistrationModificationRequest::query()->whereKey($request->getKey())->lockForUpdate()->firstOrFail();
             if ($locked->isCurrent()) {
                 $this->expire($locked);

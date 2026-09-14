@@ -50,7 +50,7 @@ $contract = static function (string $backendRoot): array {
     $expect(str_contains($sources['batch_request'], "is_string(\$item['student_number'])"), 'Bulk student-number normalization must run only for string item values.');
     $expect(str_contains($sources['batch_request'], 'if (! is_array($items))') && str_contains($sources['batch_request'], 'foreach ($items as $index => $item)'), 'Malformed bulk items must not be passed to foreach.');
 
-    foreach (['DB::transaction', 'lockForUpdate', 'MinistryPlacementNormalizer::duplicateKey', "where('status_code', 'active')", "where('is_active', true)", "'decision_status' => self::ACCEPTED", "'decided_by_user_id' => (int) \$actor->user_id", "'processing_status' => 'enrolled'", 'Student::query()->create'] as $required) {
+    foreach (['AcademicPlanContext::transaction', 'lockForUpdate', 'MinistryPlacementNormalizer::duplicateKey', "where('status_code', 'active')", "where('is_active', true)", "'decision_status' => self::ACCEPTED", "'decided_by_user_id' => (int) \$actor->user_id", "'processing_status' => 'enrolled'", 'Student::query()->create'] as $required) {
         $expect(str_contains($sources['service'], $required), 'Phase 4 transaction/mapping is incomplete: '.$required);
     }
     $individualStart = strpos($sources['service'], 'public function enroll(');
@@ -59,7 +59,7 @@ $contract = static function (string $backendRoot): array {
     $bulkEnd = strpos($sources['service'], 'private function recordsQuery', $bulkStart === false ? 0 : $bulkStart);
     $bulk = $bulkStart === false || $bulkEnd === false ? '' : substr($sources['service'], $bulkStart, $bulkEnd - $bulkStart);
     $locatorPosition = strpos($individual, "value('batch_id')");
-    $transactionPosition = strpos($individual, 'DB::transaction');
+    $transactionPosition = strpos($individual, 'AcademicPlanContext::transaction');
     $individualBatchLock = strpos($individual, 'MinistryPlacementBatch::query()');
     $individualRecordLock = strpos($individual, 'MinistryPlacementRecord::query()->whereKey($recordId)->lockForUpdate()');
     $expect($locatorPosition !== false && $transactionPosition !== false && $locatorPosition < $transactionPosition, 'Individual enrollment must locate batch_id before its mutation transaction.');

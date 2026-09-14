@@ -14,6 +14,13 @@ class Student extends Model
 
     protected $primaryKey = 'student_id';
 
+    protected static function booted(): void
+    {
+        static::creating(fn (self $student) => \App\Services\AcademicPlanAdmission::beforeStudentCreate($student));
+        static::created(fn (self $student) => \App\Services\AcademicPlanAdmission::afterStudentCreate($student));
+        static::updating(fn (self $student) => \App\Services\AcademicPlanAdmission::beforeStudentUpdate($student));
+    }
+
     protected $fillable = [
         'student_number',
         'admission_application_id',

@@ -130,7 +130,7 @@ final class ExamManualGradeContextService
     {
         $this->access->authorizeOffering($actor, $student, $offering);
         if (($data['confirmed'] ?? false) !== true) throw ValidationException::withMessages(['confirmed' => 'Confirmation required.']);
-        return DB::transaction(function () use ($actor, $student, $offering, $data) {
+        return AcademicPlanContext::transaction(function () use ($actor, $student, $offering, $data) {
             $offering = CourseOffering::query()->whereKey($offering->getKey())->lockForUpdate()->firstOrFail();
             GradePartApproval::query()->where('course_offering_id', $offering->getKey())->orderBy('component_type')->lockForUpdate()->get();
             SupplementaryExamTargetGuard::assertCourseOfferingConfigurationsMutable([$offering->getKey()]);
