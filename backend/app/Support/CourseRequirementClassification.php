@@ -167,7 +167,7 @@ class CourseRequirementClassification
 
         $indexed = ($programIds === [] || $courseIds === [])
             ? collect()
-            : ProgramCourse::query()
+            : \App\Services\AcademicPlanContext::constrainProgramProjection(ProgramCourse::query(), $programIds)
                 ->where('is_active', true)
                 ->whereIn('academic_program_id', $programIds)
                 ->whereIn('course_id', $courseIds)
@@ -220,7 +220,7 @@ class CourseRequirementClassification
             return collect();
         }
 
-        return ProgramCourse::query()
+        return \App\Services\AcademicPlanContext::constrainProgramProjection(ProgramCourse::query(), $programIds)
             ->where('is_active', true)
             ->whereIn('academic_program_id', $programIds)
             ->whereIn('course_id', $ids)
@@ -363,6 +363,22 @@ class CourseRequirementClassification
     public static function attachStudentProgramCourses(iterable $registrations): void
     {
         $models = collect($registrations)->filter();
+        if (\App\Services\AcademicPlanContext::installed()) {
+            \App\Services\AcademicPlanContext::assertReady();
+            $pinned = $models->filter(fn ($r) => $r->academic_plan_version_id !== null);
+            $memberships = ProgramCourse::whereIn('program_course_id', $pinned->pluck('plan_program_course_id')->filter()->unique())
+                ->with(['requirementMapping.requirementGroup', 'academicProgram'])->get()->keyBy('program_course_id');
+            foreach ($pinned as $registration) {
+                $pc = $memberships->get($registration->plan_program_course_id);
+                if ($registration->plan_program_course_id !== null && (!$pc
+                    || (int) $pc->academic_plan_version_id !== (int) $registration->academic_plan_version_id
+                    || (int) $pc->course_id !== (int) $registration->courseOffering?->course_id)) {
+                    throw \App\Exceptions\AcademicPlanException::conflict('academic_plan_registration_context_invalid', 'تعذر تحديد تصنيف التسجيل المثبت بأمان.');
+                }
+                $registration->setRelation('studentProgramCourse', $pc);
+            }
+            $models = $models->filter(fn ($r) => $r->academic_plan_version_id === null);
+        }
         $grouped = $models->groupBy(function ($registration): string {
             $programId = $registration->student?->academic_program_id ?? null;
 
@@ -425,10 +441,13 @@ class CourseRequirementClassification
      * Attach the student's program-course mapping onto offerings so student-facing
      * lists resolve classification against student.academic_program_id.
      */
-    public static function classifyStudentOfferings(?int $studentProgramId, iterable $offerings): void
+    public static function classifyStudentOfferings(?int $studentProgramId, iterable $offerings, ?\App\Models\Student $student = null): void
     {
         $collection = collect($offerings)->filter(fn ($offering): bool => $offering instanceof CourseOffering);
-        $map = self::indexActiveForProgram(
+        $map = $student !== null && $student->academic_program_id !== null
+            ? \App\Services\AcademicPlanContext::forStudent($student)->courses()->where('is_active', true)
+                ->whereIn('course_id', $collection->pluck('course_id')->filter()->unique())->with(['requirementMapping.requirementGroup', 'academicProgram'])->get()->keyBy('course_id')
+            : self::indexActiveForProgram(
             $studentProgramId,
             $collection->map(fn (CourseOffering $offering): ?int => $offering->course_id === null ? null : (int) $offering->course_id)
         );

@@ -698,6 +698,29 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('vice-presidency/scientific/supplementary-exam-periods', [ScientificVicePresidentSupplementaryExamPeriodController::class, 'index']);
     Route::get('vice-presidency/scientific/supplementary-exam-periods/{period}', [ScientificVicePresidentSupplementaryExamPeriodController::class, 'show']);
     Route::post('vice-presidency/scientific/supplementary-exam-periods', [ScientificVicePresidentSupplementaryExamPeriodController::class, 'store']);
+    Route::prefix('vice-presidency/scientific/program-management')->controller(\App\Http\Controllers\Api\ScientificProgramManagementController::class)->group(function () {
+        Route::get('/', 'index');
+        Route::post('/', 'createProgram');
+        Route::get('options', 'options');
+        Route::get('{program}', 'show')->whereNumber('program');
+        Route::patch('{program}', 'updateProgram')->whereNumber('program');
+        Route::get('{program}/deletion-preview', 'impact');
+        Route::delete('{program}', 'deleteProgram')->whereNumber('program');
+        Route::post('{program}/archive', 'archive');
+        Route::post('{program}/restore', 'restore');
+        Route::post('{program}/initialization', 'begin');
+        Route::get('{program}/transition-preview', 'previewTransition');
+        Route::post('{program}/transition', 'fixTransition');
+        Route::get('{program}/versions/{version}', 'version');
+        Route::post('{program}/versions/{version}/copy', 'copy');
+        Route::put('{program}/versions/{version}/requirements', 'requirements');
+        Route::match(['put', 'delete'], '{program}/versions/{version}/courses/{course}', 'membership');
+        Route::post('{program}/versions/{version}/approve', 'approve');
+        Route::post('{program}/versions/{version}/default', 'setDefault');
+        Route::post('{program}/versions/{version}/transfer-preview', 'previewTransfer');
+        Route::post('{program}/versions/{version}/transfer', 'transfer');
+    });
+
     Route::prefix('vice-presidency/scientific/course-management')->controller(\App\Http\Controllers\Api\ScientificCourseManagementController::class)->group(function () {
         Route::get('options', 'options');
         Route::get('distribution-preview', 'distribution');

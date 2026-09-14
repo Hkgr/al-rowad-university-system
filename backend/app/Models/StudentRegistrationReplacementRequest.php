@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class StudentRegistrationReplacementRequest extends Model
 {
+    use \App\Models\Concerns\HasAcademicPlanRecord;
     protected $primaryKey = 'student_registration_replacement_request_id';
     protected $guarded = [];
     protected function casts(): array

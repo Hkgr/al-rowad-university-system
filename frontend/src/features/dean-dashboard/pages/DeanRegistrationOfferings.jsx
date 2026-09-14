@@ -521,6 +521,11 @@ export default function DeanRegistrationOfferings() {
   const [semesterId, setSemesterId] = useState('')
   const [departmentId, setDepartmentId] = useState('')
   const [programId, setProgramId] = useState('')
+  const [planChoice, setPlanChoice] = useState(null)
+  const [planOptions, setPlanOptions] = useState([])
+  const [resolvedPlanId, setResolvedPlanId] = useState(null)
+  const [pendingPlan, setPendingPlan] = useState(null)
+  const planVersionId = planChoice?.programId === programId ? planChoice.id : ''
   const [levels, setLevels] = useState([])
   const [summary, setSummary] = useState({})
   const [draftIds, setDraftIds] = useState([])
@@ -641,11 +646,14 @@ export default function DeanRegistrationOfferings() {
           academic_year_id: yearId,
           semester_id: semesterId,
           academic_program_id: programId,
+          ...(planVersionId ? { academic_plan_version_id: planVersionId } : {}),
         })
         const response = await apiRequest(`/v1/dean/registration-offerings?${params.toString()}`)
         if (!active) return
         const data = response?.data ?? {}
         setLevels(data.levels ?? [])
+        setPlanOptions(data.plan_options ?? [])
+        setResolvedPlanId(data.academic_plan_version_id ?? null)
         setSummary(data.summary ?? {})
         setMinimumEnrollments(existingGovernanceMinimums(data.levels ?? []))
         setCollege(data.college ?? null)
@@ -666,7 +674,7 @@ export default function DeanRegistrationOfferings() {
 
     loadCurriculum()
     return () => { active = false }
-  }, [handleRequestError, programId, semesterId, yearId])
+  }, [handleRequestError, programId, semesterId, yearId, planVersionId])
 
   useEffect(() => {
     let active = true
@@ -698,7 +706,7 @@ export default function DeanRegistrationOfferings() {
     setAddLevel(null)
     setNotice('')
     setCatalogRefreshRequired(false)
-  }, [programId, semesterId, yearId])
+  }, [programId, semesterId, yearId, planVersionId])
 
   const programs = useMemo(() => {
     const all = options.academic_programs ?? []
@@ -951,10 +959,13 @@ export default function DeanRegistrationOfferings() {
       academic_year_id: yearId,
       semester_id: semesterId,
       academic_program_id: programId,
+      ...(planVersionId ? { academic_plan_version_id: planVersionId } : {}),
     })
     const response = await apiRequest(`/v1/dean/registration-offerings?${params.toString()}`)
     const data = response?.data ?? {}
     setLevels(data.levels ?? [])
+    setPlanOptions(data.plan_options ?? [])
+    setResolvedPlanId(data.academic_plan_version_id ?? null)
     setSummary(data.summary ?? {})
     setMinimumEnrollments(existingGovernanceMinimums(data.levels ?? []))
     setCollege(data.college ?? null)
@@ -987,6 +998,7 @@ export default function DeanRegistrationOfferings() {
             method: 'POST',
             body: JSON.stringify({
               academic_program_id: Number(programId),
+              ...(resolvedPlanId ? { academic_plan_version_id: Number(resolvedPlanId) } : {}),
               academic_year_id: Number(yearId),
               semester_id: Number(semesterId),
               mode: 'selected',
@@ -1138,6 +1150,19 @@ export default function DeanRegistrationOfferings() {
           </label>
         </div>
       </div>
+
+      {!loading && programId && planOptions.length > 0 && <label className="mb-5 flex flex-col gap-1.5 rounded-[14px] border border-primary/12 bg-white p-4">
+        <span className="text-[12px] font-bold text-text-dark">الخطة المصدر لتجهيز المواد</span>
+        <select className="rounded-[10px] border border-primary/20 px-3 py-2.5 text-[13.5px]" value={resolvedPlanId ?? ''} disabled={Object.values(busyIds).some(Boolean)} onChange={e => {
+          const next = e.target.value
+          if (next === String(resolvedPlanId) || savingRef.current) return
+          setPendingPlan(next)
+        }}>
+          {planOptions.map(plan => <option key={plan.academic_plan_version_id} value={plan.academic_plan_version_id}>{plan.label} — {plan.status === 'transitional' ? 'مرجع انتقالي — ليس اعتمادًا تاريخيًا' : 'خطة معتمدة'}</option>)}
+        </select>
+        <p className="text-[12px] text-text-light">هذا مصدر التجهيز فقط؛ أهلية كل طالب تعتمد إسناد خطته الفعلي. هوية الطرح وسنة وفصل تشغيله لا تتغير.</p>
+      </label>}
+      {pendingPlan !== null && <DeanConfirmDialog title="تغيير الخطة المصدر" warning="ستبقى الطروحات المحفوظة كما هي؛ سيُفرغ التجهيز المحلي غير المحفوظ قبل تحميل مواد الخطة المختارة." confirmLabel="تغيير الخطة" confirmTone="primary" busy={false} onCancel={() => setPendingPlan(null)} onConfirm={() => { if (savingRef.current) return; setPlanChoice({ programId, id: pendingPlan }); setPendingPlan(null); setLevels([]) }} />}
 
       {notice && (
         <div className={`mb-4 rounded-[12px] px-[18px] py-3 text-[13.5px] font-semibold whitespace-pre-line ${

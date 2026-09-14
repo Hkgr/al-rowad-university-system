@@ -26,8 +26,9 @@ class SemesterOfferingNormalOpenGate
             throw SemesterOfferingGovernanceException::schemaNotReady();
         }
 
-        $programCourses = ProgramCourse::query()
-            ->where('academic_program_id', $lockedOffering->academic_program_id)
+        $source = $proof === null ? null : ProgramCourse::find($proof->request->program_course_id);
+        if ($proof !== null && $source === null) throw SemesterOfferingGovernanceException::curriculumUnavailable();
+        $programCourses = AcademicPlanContext::forOfferingSource((int) $lockedOffering->academic_program_id, $source)->courses()
             ->where('course_id', $lockedOffering->course_id)
             ->where('is_active', true)
             ->orderBy('program_course_id')

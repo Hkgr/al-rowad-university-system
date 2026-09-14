@@ -407,8 +407,7 @@ class SemesterOfferingGovernanceService
             throw SemesterOfferingGovernanceException::curriculumUnavailable();
         }
 
-        $query = ProgramCourse::query()
-            ->where('academic_program_id', $offering->academic_program_id)
+        $query = AcademicPlanContext::forOfferingSource((int) $offering->academic_program_id, $programCourse)->courses()
             ->where('course_id', $offering->course_id)
             ->where('is_active', true)
             ->orderBy('program_course_id');

@@ -21,7 +21,7 @@ final class CatalogFixture
             $key = $primary[$table] ?? array_key_first($fields); $columns=[];
             foreach (array_keys($fields) as $field) {
                 $type = match (true) {
-                    $field===$key => 'INT NOT NULL AUTO_INCREMENT PRIMARY KEY',
+                    $field===$key => ($table === 'user_activity_logs' ? 'BIGINT' : 'INT').' NOT NULL AUTO_INCREMENT PRIMARY KEY',
                     $field==='is_active' => 'TINYINT NOT NULL DEFAULT 1',
                     str_ends_with($field, '_at') => 'DATETIME NULL',
                     str_ends_with($field, '_id'), str_ends_with($field, '_hours'), $field==='duration_years', $field==='is_primary' => 'INT NULL',

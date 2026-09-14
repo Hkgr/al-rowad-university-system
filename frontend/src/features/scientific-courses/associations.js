@@ -1,7 +1,14 @@
 import { SCOPES, TYPES, queryString } from './catalog.js'
 
-export const emptyDistribution = () => ({ scope: '', college: null, department: null, course_type: 'mandatory', level: null, semester: null })
-export const distributionPath = value => { const scope = distributionScope(value); return scope ? `/distribution-preview?${queryString(scope)}` : null }
+export const emptyDistribution = () => ({ scope: '', college: null, department: null, course_type: 'mandatory', level: null, semester: null, draftSelections: {} })
+export const distributionPath = value => {
+  const scope = distributionScope(value)
+  if (!scope) return null
+  const { draft_version_ids = [], ...context } = scope
+  const query = new URLSearchParams(queryString(context))
+  draft_version_ids.forEach(id => query.append('draft_version_ids[]', id))
+  return `/distribution-preview?${query}`
+}
 
 export function classificationLabel(pc) {
   const c = pc?.requirement_classification
@@ -31,6 +38,7 @@ export function distributionScope(value) {
   if (value.scope !== 'university' && !value.college?.id) return null
   if (value.scope === 'department' && !value.department?.id) return null
   return { scope: value.scope, course_type: value.course_type,
+    ...(Object.values(value.draftSelections || {}).filter(Boolean).length ? { draft_version_ids: Object.values(value.draftSelections).filter(Boolean).map(Number) } : {}),
     ...(value.scope !== 'university' ? { college_id: Number(value.college.id) } : {}),
     ...(value.scope === 'department' ? { department_id: Number(value.department.id) } : {}) }
 }

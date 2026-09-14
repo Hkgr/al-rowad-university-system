@@ -2,12 +2,14 @@ import { FaCalendarAlt, FaChalkboardTeacher, FaChartBar, FaClipboardCheck, FaCli
 
 import { PERMISSIONS, ROLES } from '../auth/auth'
 import { CATALOG_ACCESS } from '../scientific-courses/catalog'
+import { PROGRAM_ACCESS } from '../scientific-programs/programs'
 
 export const scientificVicePresidentNav = [
   {
     label: 'نيابة الشؤون العلمية',
     items: [
       { to: '/vp/scientific/courses', Icon: FaClipboardList, ar: 'إدارة المواد', en: 'Course catalog', ...CATALOG_ACCESS },
+      { to: '/vp/scientific/programs', Icon: FaClipboardList, ar: 'البرامج الأكاديمية', en: 'Academic programs', ...PROGRAM_ACCESS },
       { to: '/vp/scientific/calendar', Icon: FaCalendarAlt, ar: 'التقويم الأكاديمي', en: 'Academic calendar' },
       {
         to: '/vp/scientific',

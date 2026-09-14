@@ -33,6 +33,7 @@ class DeanRegistrationOfferingController extends Controller
             'semester_id' => ['required_with:academic_program_id', 'integer', 'min:1', 'exists:semesters,semester_id'],
             'department_id' => ['sometimes', 'integer', 'min:1', 'exists:departments,department_id'],
             'academic_program_id' => ['sometimes', 'integer', 'min:1', 'exists:academic_programs,academic_program_id'],
+            'academic_plan_version_id' => ['sometimes', 'integer', 'min:1'],
             'search' => ['sometimes', 'string', 'min:1', 'max:150'],
         ]);
 

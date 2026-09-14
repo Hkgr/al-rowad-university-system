@@ -175,7 +175,7 @@ class SupplementaryExamRegistrationService
     {
         $this->ready();
         $periodId=(int)SupplementaryExamOffering::query()->whereKey($offeringId)->value('supplementary_exam_period_id');
-        $out=DB::transaction(function()use($actor,$offeringId,$registrationId,$studentId,$channel,$periodId){
+        $out=AcademicPlanContext::transaction(function()use($actor,$offeringId,$registrationId,$studentId,$channel,$periodId){
             $student=Student::query()->lockForUpdate()->findOrFail($studentId);
             $period=\App\Models\SupplementaryExamPeriod::query()->with('semester')->lockForUpdate()->findOrFail($periodId);
             $offering=SupplementaryExamOffering::query()->lockForUpdate()->findOrFail($offeringId);
@@ -202,7 +202,7 @@ class SupplementaryExamRegistrationService
     public function cancelForStudent(User $actor,int $id,string $reason): SupplementaryExamRegistration { $this->staff($actor,SupplementaryExamRegistrationGovernance::MANAGE);return $this->cancel($actor,$id,$reason,true); }
     private function cancel(User $actor,int $id,?string $reason,bool $staff): SupplementaryExamRegistration
     {
-        $this->ready();$seed=SupplementaryExamRegistration::query()->with('offering')->findOrFail($id);$out=DB::transaction(function()use($actor,$id,$reason,$staff,$seed){
+        $this->ready();$seed=SupplementaryExamRegistration::query()->with('offering')->findOrFail($id);$out=AcademicPlanContext::transaction(function()use($actor,$id,$reason,$staff,$seed){
             $student=Student::query()->lockForUpdate()->findOrFail($seed->student_id);$period=\App\Models\SupplementaryExamPeriod::query()->lockForUpdate()->findOrFail($seed->offering->supplementary_exam_period_id);SupplementaryExamOffering::query()->lockForUpdate()->findOrFail($seed->supplementary_exam_offering_id);StudentCourseRegistration::query()->lockForUpdate()->findOrFail($seed->student_course_registration_id);$row=SupplementaryExamRegistration::query()->lockForUpdate()->findOrFail($id);
             if(!$staff&&(int)$row->student_id!==(int)$actor->student_id)return ['error'=>['التسجيل لا يخص الطالب.','supplementary_exam_registration_not_owned',403]];
             if($staff&&(!$this->scope->canMutateStudent($actor,$student)||!$this->scope->canMutateProgram($actor,(int)$seed->offering->academic_program_id)))return ['error'=>['خارج النطاق.','supplementary_exam_registration_out_of_scope',403]];

@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class StudentRegistrationRequest extends Model
 {
+    use \App\Models\Concerns\HasAcademicPlanRecord;
     public const STATUS_DRAFT = 'draft';
 
     public const STATUS_SUBMITTED = 'submitted';

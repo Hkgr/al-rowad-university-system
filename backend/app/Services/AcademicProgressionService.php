@@ -83,7 +83,7 @@ class AcademicProgressionService
             throw AcademicRecordException::academicProgressionNotReady();
         }
 
-        return DB::transaction(function () use ($user, $student, $academicYearId, $decisionResult): array {
+        return AcademicPlanContext::transaction(function () use ($user, $student, $academicYearId, $decisionResult): array {
             [$locked] = $this->locks->lockStudentAcademicGraph((int) $student->student_id);
             $locked->loadMissing(['currentAcademicLevel', 'academicProgram', 'studentStatus']);
             $current = $this->locks->lockCurrentProgression((int) $locked->student_id, $academicYearId);
@@ -177,7 +177,7 @@ class AcademicProgressionService
 
     /**
      * HTTP conflicts for stale progression must be raised AFTER the supersede
-     * transaction commits. Throwing inside DB::transaction() would roll the
+     * transaction commits. Throwing inside AcademicPlanContext::transaction() would roll the
      * persisted stale/superseded state back.
      *
      * @param  array{decision: array, outcome: ?string}  $result
@@ -198,7 +198,7 @@ class AcademicProgressionService
      */
     private function decide(User $user, StudentProgressionDecision $decision, string $target, ?string $reason): array
     {
-        return DB::transaction(function () use ($user, $decision, $target, $reason): array {
+        return AcademicPlanContext::transaction(function () use ($user, $decision, $target, $reason): array {
             [$student] = $this->locks->lockStudentAcademicGraph((int) $decision->student_id);
             $student->loadMissing(['currentAcademicLevel', 'academicProgram', 'studentStatus']);
             $locked = $this->locks->lockProgressionById((int) $decision->student_progression_decision_id);
@@ -500,8 +500,7 @@ class AcademicProgressionService
             return null;
         }
 
-        $programLevelIds = ProgramCourse::query()
-            ->where('academic_program_id', $student->academic_program_id)
+        $programLevelIds = AcademicPlanContext::forStudent($student)->courses()
             ->where('is_active', true)
             ->pluck('academic_level_id')
             ->unique()

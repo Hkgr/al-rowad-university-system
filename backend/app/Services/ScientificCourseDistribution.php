@@ -23,7 +23,8 @@ final class ScientificCourseDistribution
     {
         $this->access->authorize($actor, true);
         $rules = ['scope' => 'required|in:university,college,department', 'college_id' => 'sometimes|integer|min:1',
-            'department_id' => 'sometimes|integer|min:1', 'course_type' => 'required|in:mandatory,elective'];
+            'department_id' => 'sometimes|integer|min:1', 'course_type' => 'required|in:mandatory,elective',
+            'draft_version_ids' => 'sometimes|array|max:200', 'draft_version_ids.*' => 'integer|min:1|distinct'];
         if (array_diff(array_keys($input), array_keys($rules))) $this->invalid('حقول نطاق غير مسموحة.');
         $v = Validator::make($input, $rules)->validate();
         if ($v['scope'] === 'university') {
@@ -45,20 +46,47 @@ final class ScientificCourseDistribution
         abort_if((clone $query)->whereNotIn('academic_program_id', $this->access->programs($actor)->select('academic_program_id'))->exists(), 403);
         $programs = $query->with('department.college')->orderBy('academic_program_id')->when($lock, fn ($q) => $q->lockForUpdate())->get();
         $ids = $programs->modelKeys();
+        $drafts = collect();
+        $availableDrafts = collect();
+        $versioned = AcademicPlanContext::installed();
+        if ($versioned) {
+            AcademicPlanContext::assertReady();
+            if (app(\App\Support\ScientificProgramAccess::class)->capabilities($actor)['plans']) {
+                $availableDrafts = \App\Models\AcademicPlanVersion::whereIn('academic_program_id', $ids)->where('status', 'draft')
+                    ->orderBy('academic_program_id')->orderBy('version_number')->get(['academic_plan_version_id', 'academic_program_id', 'label', 'version_number'])->groupBy('academic_program_id');
+            }
+            if (!empty($v['draft_version_ids'])) {
+                app(\App\Support\ScientificProgramAccess::class)->authorize($actor, \App\Support\ScientificProgramAccess::PLANS);
+                $drafts = \App\Models\AcademicPlanVersion::whereIn('academic_plan_version_id', $v['draft_version_ids'])
+                    ->whereIn('academic_program_id', $ids)->where('status', 'draft')->orderBy('academic_plan_version_id')->when($lock, fn ($q) => $q->lockForUpdate())->get();
+                if ($drafts->count() !== count($v['draft_version_ids']) || $drafts->pluck('academic_program_id')->unique()->count() !== $drafts->count()) {
+                    $this->invalid('حدد مسودة معلومة واحدة لكل برنامج ضمن النطاق؛ لا تُعدل الخطط الثابتة.');
+                }
+            }
+        } elseif (!empty($v['draft_version_ids'])) $this->invalid('إدارة الإصدارات غير جاهزة.');
+        $drafts = $drafts->keyBy('academic_program_id');
         $used = collect();
         // Fixed number of reference queries; no per-program queries or lazy loading.
         foreach (AcademicCatalogHistory::PROGRAM_REFERENCES as $table => [$key, $foreign]) {
             $used = $used->merge(DB::table($table)->whereIn($foreign, $ids)->distinct()->pluck($foreign));
         }
         $used = array_fill_keys($used->all(), true);
-        $groups = AcademicRequirementGroup::whereIn('academic_program_id', $ids)->where('is_active', true)
+        $groupsQuery = AcademicRequirementGroup::whereIn('academic_program_id', $ids)->where('is_active', true);
+        if ($versioned) $groupsQuery->where(fn ($q) => $q->whereNull('academic_plan_version_id')->orWhereIn('academic_plan_version_id', $drafts->pluck('academic_plan_version_id')));
+        $groups = $groupsQuery
             ->where('requirement_scope', $v['scope'])->where('requirement_type', $v['course_type'])
             ->orderBy('requirement_group_id')->when($lock, fn ($q) => $q->lockForUpdate())->get()->groupBy('academic_program_id');
-        $targets = $programs->map(function ($p) use ($used, $groups) {
-            $reason = isset($used[$p->getKey()]) ? 'البرنامج مرتبط بتاريخ أكاديمي؛ لا يمكن تغيير مواده.'
+        $targets = $programs->map(function ($p) use ($used, $groups, $drafts, $availableDrafts, $versioned) {
+            $draft = $drafts->get($p->getKey());
+            $reason = $versioned && $p->plan_state !== 'legacy' && !$draft ? 'حدد مسودة هذا البرنامج صراحةً قبل التوزيع.'
+                : (isset($used[$p->getKey()]) && !$draft ? 'البرنامج مرتبط بتاريخ أكاديمي؛ لا يمكن تغيير مواده.'
                 : (!$p->is_active || !$p->department?->is_active || !$p->department?->college?->is_active ? 'البرنامج أو قسمه أو كليته غير فعّال.'
-                    : (($groups[$p->getKey()] ?? collect())->count() !== 1 ? 'يجب إعداد مجموعة المتطلبات المطابقة وميزانيتها للبرنامج أولًا.' : null));
+                    : (($groups[$p->getKey()] ?? collect())->count() !== 1 ? 'يجب إعداد مجموعة المتطلبات المطابقة وميزانيتها للبرنامج أولًا.' : null)));
             return ['academic_program_id' => $p->getKey(), 'program_name' => $p->program_name,
+                'academic_plan_version_id' => $draft?->getKey(), 'plan_label' => $draft?->label,
+                'requires_explicit_plan' => $versioned && $p->plan_state !== 'legacy',
+                'draft_options' => ($availableDrafts->get($p->getKey()) ?? collect())->map(fn ($d) => [
+                    'id' => $d->getKey(), 'label' => $d->label.' — '.$d->version_number])->values()->all(),
                 'department_name' => $p->department?->department_name, 'college_name' => $p->department?->college?->college_name,
                 'requirement_group_id' => $reason ? null : $groups[$p->getKey()]->sole()->getKey(), 'block_reason' => $reason];
         });
@@ -70,9 +98,12 @@ final class ScientificCourseDistribution
     {
         // Called only for a newly created Course under the outer catalog writer lock/transaction.
         if (DB::transactionLevel() < 1 || !$plan['can_apply']) $this->invalid('تعذر ربط جميع البرامج؛ راجع معاينة النطاق. لم يُحفظ أي تغيير.');
+        $versioned = AcademicPlanContext::installed();
         foreach ($plan['targets'] as $target) {
-            $pc = ProgramCourse::create(['course_id' => $course->getKey(), 'academic_program_id' => $target['academic_program_id'],
+            $pc = new ProgramCourse(['course_id' => $course->getKey(), 'academic_program_id' => $target['academic_program_id'],
                 'course_type' => $plan['scope']['course_type'], 'is_active' => true, ...$advisory]);
+            if ($versioned) $pc->academic_plan_version_id = $target['academic_plan_version_id'];
+            $pc->save();
             ProgramCourseRequirementGroup::create(['program_course_id' => $pc->getKey(), 'requirement_group_id' => $target['requirement_group_id']]);
         }
         UserActivityLog::create(['user_id' => $actor->getKey(), 'module_code' => 'courses', 'action_code' => 'scientific_catalog.course.distribute',

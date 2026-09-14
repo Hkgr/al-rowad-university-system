@@ -42,7 +42,7 @@ class StudentController extends ApiController
         $request = app($this->storeRequestClass());
         $data = $request->validated();
         abort_unless(app(DataScopeService::class)->canAccessProgram($request->user(), (int) $data['academic_program_id']), 403);
-        $student = Student::query()->create($data);
+        $student = \App\Services\AcademicPlanContext::transaction(fn () => Student::query()->create($data));
 
         return $this->successResponse((new StudentResource($student))->resolve($request), 'Operation completed successfully', 201);
     }
@@ -58,7 +58,7 @@ class StudentController extends ApiController
             abort_unless(app(DataScopeService::class)->canAccessProgram($request->user(), (int) $data['academic_program_id']), 403);
         }
 
-        return DB::transaction(function () use ($student, $data, $request): JsonResponse {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($student, $data, $request): JsonResponse {
             $locked = Student::query()
                 ->whereKey($student->student_id)
                 ->lockForUpdate()
@@ -234,7 +234,7 @@ class StudentController extends ApiController
 
     public function forceDestroy(int $id, StudentPermanentDeleteGuard $guard): JsonResponse
     {
-        return DB::transaction(function () use ($id, $guard): JsonResponse {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($id, $guard): JsonResponse {
             $student = Student::withTrashed()
                 ->whereKey($id)
                 ->lockForUpdate()

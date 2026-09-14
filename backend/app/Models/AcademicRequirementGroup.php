@@ -37,6 +37,7 @@ class AcademicRequirementGroup extends Model
     protected function casts(): array
     {
         return [
+            'academic_plan_version_id' => 'integer',
             'required_credit_hours' => 'integer',
             'is_active' => 'boolean',
             'created_at' => 'datetime',

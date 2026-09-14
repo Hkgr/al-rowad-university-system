@@ -44,7 +44,7 @@ class RegistrationWithdrawalService
         $this->assertSchemaReady();
         $trimmed = $this->requireRequestReason($reason);
 
-        return DB::transaction(function () use ($student, $user, $registration, $trimmed): array {
+        return AcademicPlanContext::transaction(function () use ($student, $user, $registration, $trimmed): array {
             [$lockedStudent, $offering, $lockedRegistration, $current] = $this->lockStudentOfferingRegistrationThenCurrent(
                 (int) $student->student_id,
                 (int) $registration->student_course_registration_id
@@ -89,7 +89,7 @@ class RegistrationWithdrawalService
         $this->assertSchemaReady();
         $trimmed = $this->requireRequestReason($reason);
 
-        return DB::transaction(function () use ($student, $user, $request, $trimmed): array {
+        return AcademicPlanContext::transaction(function () use ($student, $user, $request, $trimmed): array {
             [$lockedStudent, $offering, $lockedRegistration, $locked] = $this->lockGraphByRequestId(
                 (int) $request->student_registration_withdrawal_request_id
             );
@@ -210,7 +210,7 @@ class RegistrationWithdrawalService
         string $decision,
         ?string $reason
     ): array {
-        return DB::transaction(function () use ($user, $request, $decision, $reason): array {
+        return AcademicPlanContext::transaction(function () use ($user, $request, $decision, $reason): array {
             [$student, $offering, $registration, $locked] = $this->lockGraphByRequestId(
                 (int) $request->student_registration_withdrawal_request_id
             );
@@ -297,7 +297,7 @@ class RegistrationWithdrawalService
 
     /**
      * HTTP conflicts for stale withdrawal must be raised AFTER the supersede
-     * transaction commits. Throwing inside DB::transaction() would roll the
+     * transaction commits. Throwing inside AcademicPlanContext::transaction() would roll the
      * persisted stale/superseded state back.
      *
      * @param  array{request: array, outcome: ?string}  $result

@@ -11,11 +11,24 @@ try {
     echo "{\"entered\":true}\n"; flush();
     $work=function () use ($job) {
         if ($job['handshake']??false) { echo "{\"locked\":true}\n"; flush(); fgets(STDIN); }
-        foreach ($job['sql'] as $sql) Illuminate\Support\Facades\DB::statement($sql);
+        if (isset($job['plan_action'])) {
+            $workflow = app(App\Services\AcademicPlanWorkflow::class);
+            $actor = App\Models\User::findOrFail(1);
+            $input = $job['input'];
+            match ($job['plan_action']) {
+                'begin' => $workflow->begin($actor, $job['program_id'], $input),
+                'fix' => $workflow->fixTransition($actor, $job['program_id'], $input),
+                'approve' => $workflow->approve($actor, $job['program_id'], $job['version_id'], $input),
+                'default' => $workflow->setDefault($actor, $job['program_id'], $job['version_id'], $input),
+                'transfer' => $workflow->transfer($actor, $job['program_id'], $job['version_id'], $input),
+                default => throw new RuntimeException('Unsupported test workflow'),
+            };
+        } else foreach ($job['sql'] as $sql) Illuminate\Support\Facades\DB::statement($sql);
         if ($job['acyclic']??false) app(App\Services\AcademicCatalogTransaction::class)->assertAcyclic();
     };
-    app(App\Services\AcademicCatalogTransaction::class)->run($work, $job['revision']??null);
+    if ($job['raw'] ?? false) Illuminate\Support\Facades\DB::transaction($work);
+    else app(App\Services\AcademicCatalogTransaction::class)->run($work, $job['revision']??null);
     echo "{\"ok\":true}\n";
 } catch (Throwable $e) {
-    echo json_encode(['ok'=>false,'class'=>get_class($e), 'message'=>$e->getMessage(), 'code'=>$e instanceof App\Exceptions\AcademicCatalogException ? $e->errorCode : null], JSON_UNESCAPED_UNICODE)."\n";
+    echo json_encode(['ok'=>false,'class'=>get_class($e), 'message'=>$e->getMessage(), 'code'=>($e instanceof App\Exceptions\AcademicCatalogException || $e instanceof App\Exceptions\AcademicPlanException) ? $e->errorCode : null], JSON_UNESCAPED_UNICODE)."\n";
 }

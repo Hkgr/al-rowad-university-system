@@ -127,7 +127,7 @@ UNION ALL SELECT 'result_statuses' table_name,'status_name' column_name
 ), checks AS (
 SELECT r.table_name,r.column_name,c.column_type,c.is_nullable,
  CASE WHEN c.column_name IS NULL OR NOT EXISTS(SELECT 1 FROM information_schema.tables t WHERE t.table_schema='alrowad_uni_rust' AND t.table_name=r.table_name AND t.engine='InnoDB') THEN 'BLOCKED'
- WHEN (r.column_name LIKE '%\\_id' OR r.column_name IN ('credit_hours','theoretical_hours','practical_hours','total_credit_hours','required_credit_hours')) AND (c.data_type<>'int' OR c.column_type LIKE '%unsigned%') THEN 'BLOCKED'
+ WHEN (r.column_name LIKE '%\\_id' OR r.column_name IN ('credit_hours','theoretical_hours','practical_hours','total_credit_hours','required_credit_hours')) AND (c.data_type<>CASE WHEN r.table_name='user_activity_logs' AND r.column_name='activity_log_id' THEN 'bigint' ELSE 'int' END OR c.column_type LIKE '%unsigned%') THEN 'BLOCKED'
  ELSE 'READY' END result
 FROM required_columns r LEFT JOIN information_schema.columns c ON c.table_schema='alrowad_uni_rust' AND c.table_name=r.table_name AND c.column_name=r.column_name
 )
@@ -271,7 +271,7 @@ UNION ALL SELECT 'result_statuses' table_name,'status_name' column_name
 ), checks AS (
 SELECT r.table_name,r.column_name,c.column_type,c.is_nullable,
  CASE WHEN c.column_name IS NULL OR NOT EXISTS(SELECT 1 FROM information_schema.tables t WHERE t.table_schema='alrowad_uni_rust' AND t.table_name=r.table_name AND t.engine='InnoDB') THEN 'BLOCKED'
- WHEN (r.column_name LIKE '%\\_id' OR r.column_name IN ('credit_hours','theoretical_hours','practical_hours','total_credit_hours','required_credit_hours')) AND (c.data_type<>'int' OR c.column_type LIKE '%unsigned%') THEN 'BLOCKED'
+ WHEN (r.column_name LIKE '%\\_id' OR r.column_name IN ('credit_hours','theoretical_hours','practical_hours','total_credit_hours','required_credit_hours')) AND (c.data_type<>CASE WHEN r.table_name='user_activity_logs' AND r.column_name='activity_log_id' THEN 'bigint' ELSE 'int' END OR c.column_type LIKE '%unsigned%') THEN 'BLOCKED'
  ELSE 'READY' END result
 FROM required_columns r LEFT JOIN information_schema.columns c ON c.table_schema='alrowad_uni_rust' AND c.table_name=r.table_name AND c.column_name=r.column_name
 )

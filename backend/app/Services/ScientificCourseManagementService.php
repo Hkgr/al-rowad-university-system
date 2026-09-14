@@ -31,10 +31,13 @@ final class ScientificCourseManagementService
             'sort' => 'sometimes|in:course_code,course_name,credit_hours', 'direction' => 'sometimes|in:asc,desc',
         ]);
         $programs = $this->context($actor, $v);
+        $visibleMemberships = AcademicPlanContext::constrainProgramProjection(ProgramCourse::whereIn('academic_program_id', $this->access->programs($actor)->select('academic_program_id')),
+            $this->access->programs($actor)->pluck('academic_program_id')->all())->select('program_course_id');
         $q = $this->access->courses($actor);
         if (!empty($v['q'])) $q->where(fn ($q) => $q->where('course_code', 'like', '%'.trim($v['q']).'%')->orWhere('course_name', 'like', '%'.trim($v['q']).'%'));
         if (isset($v['is_active'])) $q->where('is_active', $v['is_active']);
-        $membership = function ($p) use ($programs, $v) {
+        $membership = function ($p) use ($programs, $v, $visibleMemberships) {
+            $p->whereIn('program_course_id', clone $visibleMemberships);
             $p->whereIn('academic_program_id', (clone $programs)->select('academic_program_id'));
             if (isset($v['course_type'])) $p->where('course_type', $v['course_type']);
             if (isset($v['requirement_scope'])) $p->whereHas('requirementMapping.requirementGroup', fn ($g) => $g->where('requirement_scope', $v['requirement_scope'])->where('is_active', true)
@@ -59,13 +62,14 @@ final class ScientificCourseManagementService
             ->join('courses as c', 'c.course_id', '=', 'pc.course_id')->leftJoin('program_course_requirement_groups as m', 'm.program_course_id', '=', 'pc.program_course_id')
             ->leftJoin('academic_requirement_groups as g', fn ($g) => $g->on('g.requirement_group_id', '=', 'm.requirement_group_id')
                 ->on('g.academic_program_id', '=', 'pc.academic_program_id')->on('g.requirement_type', '=', 'pc.course_type')->where('g.is_active', true))
-            ->whereIn('pc.academic_program_id', (clone $programs)->select('academic_program_id'));
+            ->whereIn('pc.academic_program_id', (clone $programs)->select('academic_program_id'))
+            ->whereIn('pc.program_course_id', clone $visibleMemberships);
         if (isset($v['course_type'])) $groups->where('pc.course_type', $v['course_type']);
         if (isset($v['requirement_scope'])) $groups->where('g.requirement_scope', $v['requirement_scope']);
         $summary = $groups->selectRaw('g.requirement_scope, g.requirement_type AS course_type, COUNT(*) AS membership_count, SUM(c.credit_hours) AS available_credit_hours')
             ->groupBy('g.requirement_scope', 'g.requirement_type')->orderBy('g.requirement_scope')->orderBy('g.requirement_type')->get();
         // Filters choose courses; association counts still cover every visible link of each course.
-        $rows = $q->with(['courseDepartments' => fn ($d) => $d->whereIn('department_id', $this->access->departments($actor)->select('department_id')), 'courseDepartments.department.college', 'programCourses' => fn ($p) => $p->whereIn('academic_program_id', $this->access->programs($actor)->select('academic_program_id')), 'programCourses.academicProgram.department.college', 'programCourses.academicLevel', 'programCourses.recommendedSemester', 'programCourses.requirementMapping.requirementGroup'])
+        $rows = $q->with(['courseDepartments' => fn ($d) => $d->whereIn('department_id', $this->access->departments($actor)->select('department_id')), 'courseDepartments.department.college', 'programCourses' => fn ($p) => $p->whereIn('program_course_id', clone $visibleMemberships), 'programCourses.academicProgram.department.college', 'programCourses.academicLevel', 'programCourses.recommendedSemester', 'programCourses.requirementMapping.requirementGroup'])
             ->orderBy($v['sort'] ?? 'course_code', $v['direction'] ?? 'asc')->orderBy('course_id')->paginate($v['per_page'] ?? 20, ['*'], 'page', $v['page'] ?? 1);
         $instructors = $this->instructors(collect($rows->items())->pluck('course_id')->all());
         return ['revision' => $this->transaction->revision(), 'data' => collect($rows->items())->map(fn ($c) => $this->courseProjection($c) + ['instructors' => $instructors->get($c->getKey(), collect())->values()]), 'meta' => $this->meta($rows),
@@ -141,7 +145,7 @@ final class ScientificCourseManagementService
             'departments.*.department_id' => 'required|integer|min:1|distinct', 'departments.*.is_primary' => 'required|boolean',
             'prerequisites' => 'sometimes|array|max:100', 'prerequisites.*' => 'array:prerequisite_course_id,minimum_result_status_id',
             'prerequisites.*.prerequisite_course_id' => 'required|integer|min:1|distinct', 'prerequisites.*.minimum_result_status_id' => 'nullable|integer|exists:result_statuses,result_status_id',
-            ...($id ? [] : ['distribution' => 'sometimes|array:scope,college_id,department_id,course_type',
+            ...($id ? [] : ['distribution' => 'sometimes|array:scope,college_id,department_id,course_type,draft_version_ids',
                 'distribution_confirmed' => 'exclude_without:distribution|required|accepted',
                 'academic_level_id' => 'required_with:distribution|integer|exists:academic_levels,academic_level_id',
                 'recommended_semester_id' => 'required_with:distribution|integer|exists:semesters,semester_id']),
@@ -208,8 +212,10 @@ final class ScientificCourseManagementService
         $this->access->authorize($actor);
         return $this->transaction->snapshot(function () use ($actor, $id) {
             $p = $this->access->programs($actor)->findOrFail($id);
-            $locked = $this->history->programUsed($id, false);
-            $groups = AcademicRequirementGroup::where('academic_program_id', $id)->orderBy('requirement_scope')->orderBy('requirement_type')->get();
+            $versioned = AcademicPlanContext::installed() && $p->plan_state !== 'legacy';
+            $locked = $versioned || $this->history->programUsed($id, false);
+            $context = AcademicPlanContext::forProgram($id);
+            $groups = $context->constrain(AcademicRequirementGroup::where('academic_program_id', $id))->orderBy('requirement_scope')->orderBy('requirement_type')->get();
             $pools = DB::table('program_courses as pc')->join('courses as c', 'c.course_id', '=', 'pc.course_id')
                 ->join('program_course_requirement_groups as m', 'm.program_course_id', '=', 'pc.program_course_id')
                 ->where('pc.academic_program_id', $id)->where('pc.is_active', true)->where('c.is_active', true)
@@ -225,8 +231,9 @@ final class ScientificCourseManagementService
                 'available_minus_required_hours' => (int) ($pools[$g->getKey()]->available_credit_hours ?? 0) - (int) $g->required_credit_hours,
                 'course_count' => (int) ($pools[$g->getKey()]->course_count ?? 0)]),
                 'configuration' => $configuration, 'revision' => $this->transaction->revision(),
+                'versioned_plans' => $versioned, 'academic_plan_version_id' => $context->versionId,
                 'capabilities' => ['edit_curriculum' => !$locked && $actor->effectivePermissions()->contains(ScientificCourseAccess::MANAGE),
-                    'lock_reason' => $locked ? 'لا يمكن تغيير مواد هذا البرنامج أو متطلبات تخرجه لارتباطه بسجلات أكاديمية قائمة.' : null]];
+                    'lock_reason' => $versioned ? 'اختر نسخة للتعديل من إدارة البرامج الأكاديمية؛ الخطط الثابتة لا تعدّل من الدليل.' : ($locked ? 'لا يمكن تغيير مواد هذا البرنامج أو متطلبات تخرجه لارتباطه بسجلات أكاديمية قائمة.' : null)]];
         });
     }
 
@@ -241,6 +248,7 @@ final class ScientificCourseManagementService
         return $this->transaction->run(function () use ($actor, $programId, $courseId, $v, $delete) {
             $this->access->authorize($actor, true);
             $this->access->programs($actor)->lockForUpdate()->findOrFail($programId);
+            $this->assertLegacyCurriculum($programId);
             $this->access->courses($actor)->findOrFail($courseId);
             if ($this->history->programUsed($programId)) $this->locked();
             $pc = ProgramCourse::where('academic_program_id', $programId)->where('course_id', $courseId)->lockForUpdate()->first();
@@ -276,6 +284,7 @@ final class ScientificCourseManagementService
         return $this->transaction->run(function () use ($actor, $id, $v) {
             $this->access->authorize($actor, true);
             $p = $this->access->programs($actor)->lockForUpdate()->findOrFail($id);
+            $this->assertLegacyCurriculum($id);
             if ($this->history->programUsed($id)) $this->locked();
             $seen = [];
             foreach ($v['groups'] as $i => $row) {
@@ -298,6 +307,13 @@ final class ScientificCourseManagementService
             // configuration warning; NEVER silently change budgets to fit available courses.
             return $this->program($actor, $id);
         }, $v['revision']);
+    }
+
+    private function assertLegacyCurriculum(int $programId): void
+    {
+        if (AcademicPlanContext::installed() && AcademicProgram::findOrFail($programId)->plan_state !== 'legacy') {
+            throw \App\Exceptions\AcademicPlanException::conflict('academic_plan_explicit_version_required', 'اختر نسخة مسودة صريحة من إدارة البرامج الأكاديمية.');
+        }
     }
 
     private function context(User $actor, array $v)

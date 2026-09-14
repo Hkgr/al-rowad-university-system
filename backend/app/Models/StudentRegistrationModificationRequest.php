@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class StudentRegistrationModificationRequest extends Model
 {
+    use \App\Models\Concerns\HasAcademicPlanRecord;
     protected $table = 'student_registration_modification_requests';
     protected $primaryKey = 'student_registration_modification_request_id';
 

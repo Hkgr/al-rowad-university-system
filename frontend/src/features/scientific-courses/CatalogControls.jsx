@@ -24,9 +24,9 @@ export function CatalogDialog({ title, children, onClose, wide = false, closeBut
 }
 
 /** Search is paginated; the selected label survives query/page changes. */
-export function CatalogLookup({ label, resource, value, onChange, context = {}, disabled = false, clearLabel = 'كل الخيارات' }) {
+export function CatalogLookup({ label, resource, value, onChange, context = {}, disabled = false, clearLabel = 'كل الخيارات', loader }) {
   const [q, setQ] = useState(''), [page, setPage] = useState(1), [retry, setRetry] = useState(0)
-  const read = useCatalogRead(disabled ? null : `/options?${queryString({ resource, ...context, q: q.trim(), page })}`, { delay: 350, refresh: retry })
+  const read = useCatalogRead(disabled ? null : `/options?${queryString({ resource, ...context, q: q.trim(), page })}`, { delay: 350, refresh: retry, loader })
   const options = read.data?.data || [], selectedAbsent = value && !options.some(o => String(o.id) === String(value.id))
   return <div className="min-w-0 space-y-1"><Field label={label}><Select aria-label={label} value={value?.id ?? ''} disabled={disabled} onChange={e => onChange(options.find(o => String(o.id) === e.target.value) || null)}><option value="">{clearLabel}</option>{selectedAbsent && <option value={value.id}>{value.label}</option>}{options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}</Select></Field>
     {!disabled && <details className="text-[11.5px] text-text-light"><summary className="cursor-pointer py-1">بحث في الخيارات</summary><Input aria-label={`بحث ${label}`} placeholder={`بحث ${label}`} value={q} onChange={e => { setQ(e.target.value); setPage(1) }} />{read.data?.meta.last_page > 1 && <Pager meta={read.data.meta} onPage={setPage} disabled={read.loading} />}</details>}{!disabled && read.error && <div><Notice error>{catalogError(read.error)}</Notice><Button onClick={() => setRetry(x => x + 1)}>إعادة تحميل الخيارات</Button></div>}

@@ -66,7 +66,7 @@ final class MinistryPlacementStudentEnrollmentService
         }
         $batchId = (int) $batchId;
 
-        return DB::transaction(function () use ($recordId, $batchId, $input, $actor): array {
+        return AcademicPlanContext::transaction(function () use ($recordId, $batchId, $input, $actor): array {
             $batch = MinistryPlacementBatch::query()->with('academicYear')->lockForUpdate()->findOrFail($batchId);
             $record = MinistryPlacementRecord::query()->whereKey($recordId)->lockForUpdate()->first();
             if ($record === null || (int) $record->batch_id !== $batchId) {
@@ -158,7 +158,7 @@ final class MinistryPlacementStudentEnrollmentService
      */
     public function enrollAll(int $batchId, int $expectedEligibleCount, string $expectedSnapshot, array $inputs, User $actor): array
     {
-        return DB::transaction(function () use ($batchId, $expectedEligibleCount, $expectedSnapshot, $inputs, $actor): array {
+        return AcademicPlanContext::transaction(function () use ($batchId, $expectedEligibleCount, $expectedSnapshot, $inputs, $actor): array {
             $batch = MinistryPlacementBatch::query()->with('academicYear')->lockForUpdate()->findOrFail($batchId);
             $records = MinistryPlacementRecord::query()
                 ->where('batch_id', $batchId)

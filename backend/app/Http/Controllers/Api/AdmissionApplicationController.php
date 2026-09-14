@@ -9,6 +9,16 @@ use App\Models\AdmissionApplication;
 
 class AdmissionApplicationController extends ApiController
 {
+    public function store(): \Illuminate\Http\JsonResponse
+    {
+        return \App\Services\AcademicPlanContext::transaction(fn () => parent::store());
+    }
+
+    public function update($id): \Illuminate\Http\JsonResponse
+    {
+        return \App\Services\AcademicPlanContext::transaction(fn () => parent::update($id));
+    }
+
     protected function modelClass(): string
     {
         return AdmissionApplication::class;

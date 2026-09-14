@@ -19,6 +19,28 @@ use Illuminate\Support\Collection;
 
 class AcademicRequirementService
 {
+    private ?AcademicPlanContext $planContext = null;
+
+    public function forPlanContext(AcademicPlanContext $context): self
+    {
+        $copy = clone $this;
+        $copy->planContext = $context;
+        return $copy;
+    }
+
+    public function forStudent(Student $student): self
+    {
+        return $this->forPlanContext(AcademicPlanContext::forStudent($student));
+    }
+
+    private function curriculumContext(int $programId): AcademicPlanContext
+    {
+        $context = $this->planContext ?? AcademicPlanContext::forProgram($programId);
+        if ($context->programId !== $programId) {
+            throw \App\Exceptions\AcademicPlanException::conflict('academic_plan_context_invalid', 'خطة الدراسة لا تتبع برنامج الطالب.');
+        }
+        return $context;
+    }
     public const CLASSIFICATION_MAPPED = 'mapped';
 
     public const CLASSIFICATION_OUTSIDE_CURRENT_CURRICULUM = 'outside_current_curriculum';
@@ -59,6 +81,11 @@ class AcademicRequirementService
             ? $program
             : AcademicProgram::query()->findOrFail($this->programId($program));
         $programId = (int) $programModel->academic_program_id;
+        $context = $this->curriculumContext($programId);
+        if ($context->versionId !== null) {
+            $programModel = clone $programModel;
+            $programModel->total_credit_hours = $context->requiredHours;
+        }
         $curriculumByGroup = $this->loadValidatedCurriculum($programId);
         $groups = $this->loadActiveRequirementGroups($programId);
 
@@ -135,8 +162,7 @@ class AcademicRequirementService
         $programId = $this->programId($program);
         $courseId = $this->courseId($course);
 
-        $programCourses = ProgramCourse::query()
-            ->where('academic_program_id', $programId)
+        $programCourses = $this->curriculumContext($programId)->courses()
             ->where('course_id', $courseId)
             ->where('is_active', true)
             ->with(['course', 'requirementMapping.requirementGroup'])
@@ -167,6 +193,9 @@ class AcademicRequirementService
 
     public function getStudentRequirementProgress(Student $student): array
     {
+        if ($this->planContext === null && $student->academic_program_id !== null) {
+            return $this->forStudent($student)->getStudentRequirementProgress($student);
+        }
         $programId = $student->academic_program_id === null ? null : (int) $student->academic_program_id;
 
         if ($programId === null) {
@@ -339,6 +368,9 @@ class AcademicRequirementService
         ?RegistrationProjectionContext $projection = null,
     ): array
     {
+        if ($this->planContext === null && $student->academic_program_id !== null) {
+            return $this->forStudent($student)->buildRegistrationCommitmentContext($student, $projection);
+        }
         $programId = $student->academic_program_id === null ? null : (int) $student->academic_program_id;
         if ($programId === null) {
             return $this->emptyCommitmentContext($student);
@@ -634,8 +666,7 @@ class AcademicRequirementService
      */
     private function loadValidatedCurriculum(int $programId): Collection
     {
-        $programCourses = ProgramCourse::query()
-            ->where('academic_program_id', $programId)
+        $programCourses = $this->curriculumContext($programId)->courses()
             ->where('is_active', true)
             ->with(['course', 'requirementMapping.requirementGroup'])
             ->get();
@@ -690,8 +721,7 @@ class AcademicRequirementService
 
     private function loadActiveRequirementGroups(int $programId): Collection
     {
-        return AcademicRequirementGroup::query()
-            ->where('academic_program_id', $programId)
+        return $this->curriculumContext($programId)->constrain(AcademicRequirementGroup::query())
             ->where('is_active', true)
             ->orderBy('requirement_scope')
             ->orderBy('requirement_type')
@@ -761,6 +791,11 @@ class AcademicRequirementService
                 'program_course' => $programCourse,
                 'requirement_group' => $group,
             ];
+        }
+
+        if (AcademicPlanContext::installed() && $group->academic_plan_version_id !== $programCourse->academic_plan_version_id) {
+            return ['classification' => self::CLASSIFICATION_REQUIREMENT_CONFIGURATION_INVALID,
+                'reason' => 'requirement_group_plan_mismatch', 'program_course' => $programCourse, 'requirement_group' => $group];
         }
 
         if (! $group->is_active) {
@@ -909,7 +944,7 @@ class AcademicRequirementService
     private function mandatoryGroupCompleted(Collection $mappedCourses, array $earnedCourseIds): bool
     {
         if ($mappedCourses->isEmpty()) {
-            return false;
+            return $this->planContext?->policy === 'explicit_zero_v1';
         }
 
         return $mappedCourses->every(
@@ -1029,6 +1064,10 @@ class AcademicRequirementService
             $requiredHours = (int) $group->required_credit_hours;
             $poolHours = $this->poolCreditHours($mappedCourses);
             $type = strtolower((string) $group->requirement_type);
+
+            if ($group->required_credit_hours === null) {
+                $this->failClosedGroup($programId, $group, 'required_credit_hours_unspecified');
+            }
 
             if ($requiredHours < 0) {
                 $this->failClosedGroup($programId, $group, 'required_credit_hours_negative');

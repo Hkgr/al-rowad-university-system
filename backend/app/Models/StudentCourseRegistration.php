@@ -44,6 +44,8 @@ class StudentCourseRegistration extends Model
     protected function casts(): array
     {
         return [
+            'academic_plan_version_id' => 'integer',
+            'plan_program_course_id' => 'integer',
             'registration_date' => 'date',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',

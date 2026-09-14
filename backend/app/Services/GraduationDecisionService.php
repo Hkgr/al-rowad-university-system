@@ -71,7 +71,7 @@ class GraduationDecisionService
         $this->assertCanAccessStudent($user, $student);
         $this->assertSchemaReady();
 
-        return DB::transaction(function () use ($user, $student): array {
+        return AcademicPlanContext::transaction(function () use ($user, $student): array {
             [$locked] = $this->locks->lockStudentAcademicGraph((int) $student->student_id);
             $locked->loadMissing(['currentAcademicLevel', 'academicProgram', 'studentStatus']);
             $current = $this->locks->lockCurrentGraduation((int) $locked->student_id);
@@ -162,7 +162,7 @@ class GraduationDecisionService
 
     /**
      * HTTP conflicts for stale graduation must be raised AFTER the supersede
-     * transaction commits. Throwing inside DB::transaction() would roll the
+     * transaction commits. Throwing inside AcademicPlanContext::transaction() would roll the
      * persisted stale/superseded state back.
      *
      * @param  array{decision: array, outcome: ?string}  $result
@@ -185,7 +185,7 @@ class GraduationDecisionService
      */
     private function decide(User $user, StudentGraduationDecision $decision, string $target, ?string $reason): array
     {
-        return DB::transaction(function () use ($user, $decision, $target, $reason): array {
+        return AcademicPlanContext::transaction(function () use ($user, $decision, $target, $reason): array {
             [$student] = $this->locks->lockStudentAcademicGraph((int) $decision->student_id);
             $student->loadMissing(['currentAcademicLevel', 'academicProgram', 'studentStatus']);
             $locked = $this->locks->lockGraduationById((int) $decision->student_graduation_decision_id);

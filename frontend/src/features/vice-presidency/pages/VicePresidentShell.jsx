@@ -3,6 +3,7 @@ import { PERMISSIONS, ROLES, getIdentity, hasActualUniversityScope, hasAssignedP
 import { canAccessExecutiveReports } from '../../executive-reports/access'
 import ExecutiveOverview from '../../executive-reports/components/ExecutiveOverview'
 import { canViewCatalog } from '../../scientific-courses/catalog'
+import { canViewPrograms } from '../../scientific-programs/programs'
 
 const OFFICES = {
   scientific: {
@@ -51,6 +52,7 @@ export default function VicePresidentShell({ office }) {
       </div>
 
       {reportsAllowed && <ExecutiveOverview office={office} />}
+      {office === 'scientific' && canViewPrograms(identity) && <Link to="/vp/scientific/programs" className="rounded-[16px] border border-primary/15 bg-white p-5 shadow-sm hover:border-primary/40"><p className="text-[15px] font-black text-text-dark">البرامج الأكاديمية</p><p className="mt-1 text-[13px] text-text-light">خطط البرامج ومتطلبات التخرج وتهيئة القبول وإسناد الطلاب ضمن نطاقك.</p></Link>}
       {office === 'scientific' && canViewCatalog(identity) && <Link to="/vp/scientific/courses" className="rounded-[16px] border border-primary/15 bg-white p-5 shadow-sm hover:border-primary/40"><p className="text-[15px] font-black text-text-dark">إدارة المواد</p><p className="mt-1 text-[13px] text-text-light">الدليل الجامعي وتصنيف مواد البرامج وميزانيات المتطلبات ضمن نطاقك.</p></Link>}
 
       <details className="bg-white border border-black/5 rounded-[16px] p-5 shadow-sm">

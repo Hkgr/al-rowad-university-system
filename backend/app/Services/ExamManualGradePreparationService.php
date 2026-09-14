@@ -121,7 +121,7 @@ final class ExamManualGradePreparationService
         if (($input['confirmed'] ?? false) !== true || ($input['acknowledged'] ?? false) !== true || trim($input['reason'] ?? '') === '') {
             throw ValidationException::withMessages(['reason' => 'يلزم التأكيد والإقرار وسبب الإدخال.']);
         }
-        return DB::transaction(function () use ($actor, $student, $course, $input) {
+        return AcademicPlanContext::transaction(function () use ($actor, $student, $course, $input) {
             // Canonical student -> offering -> approvals -> registration -> components order.
             // Course lock serializes absent-context creation across students without a new lock table.
             $student = Student::whereKey($student->getKey())->lockForUpdate()->firstOrFail();

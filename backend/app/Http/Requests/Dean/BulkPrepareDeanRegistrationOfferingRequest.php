@@ -24,6 +24,7 @@ class BulkPrepareDeanRegistrationOfferingRequest extends FormRequest
     {
         return [
             'academic_program_id' => ['required', 'integer', 'min:1', 'exists:academic_programs,academic_program_id'],
+            'academic_plan_version_id' => ['sometimes', 'integer', 'min:1'],
             'academic_year_id' => ['required', 'integer', 'min:1', 'exists:academic_years,academic_year_id'],
             'semester_id' => ['required', 'integer', 'min:1', 'exists:semesters,semester_id'],
             'mode' => ['required', 'string', Rule::in([
