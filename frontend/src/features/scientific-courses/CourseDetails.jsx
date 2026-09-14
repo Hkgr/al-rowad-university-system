@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getIdentity } from '../auth/auth'
-import { canViewPrograms } from '../scientific-programs/programs'
+import { canViewPrograms, programPlanLink } from '../scientific-programs/programs'
 import { Button, CatalogDialog, Notice } from './CatalogControls'
 import CatalogConflict from './CatalogConflict'
 import useCatalogMutation from './useCatalogMutation'
@@ -17,7 +17,7 @@ export default function CourseDetails({ baseline, onEdit, onMembership, onBusy, 
     {c.description && <p>{c.description}</p>}
     <p>{c.course_departments.map(d => [d.department?.college?.college_name, d.department?.department_name].filter(Boolean).join(' / ')).join('، ') || 'غير مرتبطة بقسم'}</p>
     <h4 className="font-bold text-text-dark">البرامج المرتبطة</h4>
-    {c.program_courses.length ? <ul className="divide-y divide-primary/10">{c.program_courses.map(p => <li key={p.program_course_id} className="flex flex-wrap justify-between gap-2 py-2"><span>{p.academic_program?.program_name} — {SCOPES[p.requirement_classification?.requirement_scope] || 'غير مصنف'} / {TYPES[p.course_type]}</span><Button onClick={() => onMembership(p)}>تصنيف البرنامج</Button>{canViewPrograms(getIdentity()) && <Link className="text-[12px] font-semibold text-primary" to={`/vp/scientific/programs/${p.academic_program_id}`}>البرنامج ومتطلبات تخرجه</Link>}</li>)}</ul> : <p>لم تضف هذه المادة إلى برنامج بعد.</p>}
+    {c.program_courses.length ? <ul className="divide-y divide-primary/10">{c.program_courses.map(p => <li key={p.program_course_id} className="flex flex-wrap justify-between gap-2 py-2"><span>{p.academic_program?.program_name} — {SCOPES[p.requirement_classification?.requirement_scope] || 'غير مصنف'} / {TYPES[p.course_type]}</span><Button onClick={() => onMembership(p)}>تصنيف البرنامج</Button>{canViewPrograms(getIdentity()) && <Link className="text-[12px] font-semibold text-primary" to={programPlanLink(p)}>البرنامج ومتطلبات تخرجه</Link>}</li>)}</ul> : <p>لم تضف هذه المادة إلى برنامج بعد.</p>}
     {!!c.course_prerequisites?.length && <p>المتطلبات السابقة: {c.course_prerequisites.map(p => p.prerequisite_course?.course_name).join('، ')}</p>}
     <Notice>{caps.origin_lock_reason || caps.academic_lock_reason}</Notice>
     <div className="flex flex-wrap gap-2">{caps.edit_text && <Button primary onClick={onEdit} disabled={busy || mutation.blocked}>تعديل بيانات المادة</Button>}<Button danger disabled={!caps.delete || busy || mutation.blocked} onClick={() => setConfirm(true)}>حذف المادة</Button></div>

@@ -13,7 +13,7 @@ export default function ProgramDecision({ editor, busy, onDirty, onBusy, onBlock
   useEffect(() => () => { sequence.current++; controller.current?.abort() }, [])
   const { kind, programId, versionId, baseline, actionPath, method = 'POST' } = editor
   const versionPath = `/${programId}/versions/${versionId}`
-  const currentPath = versionId ? versionPath : `/${programId}`
+  const currentPath = kind === 'fix' ? `/${programId}/transition-preview` : versionId ? versionPath : `/${programId}`
   const mutation = useCatalogMutation({ currentPath, onSaved, onBusy, onBlocked, onUnauthorized, readCurrent: programRead, send: programWrite })
   const disabled = busy || mutation.blocked
   function select(next) { sequence.current++; controller.current?.abort(); setStudents(next); setPreview(null); setPreviewError(null); setChecking(false); onDirty(true) }
@@ -44,6 +44,7 @@ export default function ProgramDecision({ editor, busy, onDirty, onBusy, onBlock
     <p>{editor.message}</p>
     {baseline.version && <Notice>{baseline.version.label} — {VERSION_LABELS[baseline.version.status] || 'حالة غير معروفة'}</Notice>}
     {kind === 'fix' && <dl className="grid gap-2 sm:grid-cols-3">{[['student_count', 'الطلاب'], ['course_count', 'المواد'], ['group_count', 'المجموعات']].map(([key, title]) => <div key={key}><dt>{title}</dt><dd>{baseline[key]}</dd></div>)}</dl>}
+    {kind === 'fix' && <details><summary>المواد التي ستُثبت دون تغيير</summary><ul>{baseline.courses?.map(c => <li key={c.program_course_id}>{c.course?.course_name || 'مادة غير متاحة'} ({c.course?.course_code || 'غير محدد'}) — {SCOPE_LABEL[c.requirement_mapping?.requirement_group?.requirement_scope] || 'تصنيف غير محدد'} / {TYPES_LABEL[c.course_type] || 'غير محدد'}</li>)}</ul></details>}
     {kind === 'fix' && <><Notice>سيُحفظ الوضع الحالي بمعرّفاته ودلالاته، لا بوصفه اعتمادًا تاريخيًا. نواقص المتطلبات لا تُملأ تلقائيًا. يبقى القبول الجديد موقوفًا حتى تعيين خطة معتمدة صراحةً.</Notice><p>إجمالي ساعات التخرج: {baseline.total_credit_hours ?? 'لم يحدد'}</p><ul>{baseline.groups?.map(g => <li key={g.requirement_group_id}>{SCOPE_LABEL[g.requirement_scope]} — {TYPES_LABEL[g.requirement_type]}: {g.required_credit_hours ?? 'لم يحدد'}{!g.is_active && ' — غير فعال'}</li>)}</ul><details><summary>سياق العمليات الذي سيُحفظ</summary><ul>{Object.entries(baseline.operation_reference_counts || {}).map(([key, count]) => <li key={key}>{REFERENCE_LABEL[key]}: {count}</li>)}</ul></details>{baseline.blockers?.map(text => <Notice key={text} error>{text}</Notice>)}</>}
     {kind === 'delete' && <ul>{Object.entries(baseline.counts || {}).filter(([, n]) => n > 0).map(([k, n]) => <li key={k}>ارتباطات مانعة: {n}</li>)}</ul>}
     {kind === 'copy' && <Field label="اسم النسخة الجديدة"><Input disabled={disabled} value={label} maxLength={150} onChange={e => { setLabel(e.target.value); onDirty(true) }} /></Field>}

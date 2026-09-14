@@ -1,10 +1,24 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { PROGRAM_ACCESS, canViewPrograms, sixGroups, requirementsPayload, budgetDraftSummary } from '../src/features/scientific-programs/programs.js'
+import { PROGRAM_ACCESS, canViewPrograms, sixGroups, requirementsPayload, budgetDraftSummary, requirementDisplayGroups, programPlanLink } from '../src/features/scientific-programs/programs.js'
 import { distributionPath, distributionScope, emptyDistribution } from '../src/features/scientific-courses/associations.js'
 
 const read = path => readFile(new URL('../src/' + path, import.meta.url), 'utf8')
+test('legacy group display preserves stored zero/null/inactive definitions and exact membership links', () => {
+  const data = { groups: [{ requirement_group_id: 7, requirement_scope: 'college', requirement_type: 'mandatory', required_credit_hours: 0, is_active: false },
+    { requirement_group_id: 8, requirement_scope: 'college', requirement_type: 'elective', required_credit_hours: null, is_active: true }],
+  courses: [{ program_course_id: 9, requirement_mapping: { requirement_group_id: 7 } }, { program_course_id: 10, requirement_mapping: null }] }
+  const before = JSON.stringify(data), groups = requirementDisplayGroups(data)
+  assert.equal(groups.length, 6); assert.equal(groups[0].groups.length, 0)
+  assert.equal(groups[2].groups[0].required_credit_hours, 0); assert.equal(groups[2].groups[0].is_active, false)
+  assert.equal(groups[2].groups[0].courses[0].program_course_id, 9); assert.equal(groups[3].groups[0].required_credit_hours, null)
+  assert.equal(JSON.stringify(data), before)
+})
+test('course links preserve the named plan, without guessing a draft for legacy membership', () => {
+  assert.equal(programPlanLink({ academic_program_id: 2, academic_plan_version_id: null }), '/vp/scientific/programs/2?tab=membership')
+  assert.equal(programPlanLink({ academic_program_id: 2, academic_plan_version_id: 17 }), '/vp/scientific/programs/2?tab=membership&version=17')
+})
 test('program authority requires actual Scientific role, assigned permission and actual academic scope', () => {
   const valid = { roles: ['vice_president_scientific'], permissions: PROGRAM_ACCESS.assignedPermissions, access_scopes: [{ type: 'college', id: 1 }] }
   assert.equal(canViewPrograms(valid), true)

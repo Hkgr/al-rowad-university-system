@@ -60,6 +60,30 @@ function race(callable $first, array $second): array {
 function confirm(): array { return ['revision' => app(AcademicCatalogTransaction::class)->revision(), 'confirmed' => true]; }
 function failed(array $result, string $code): void { ensure(!$result['ok'] && str_contains(($result['code'] ?? '').' '.$result['message'], $code), json_encode($result)); }
 
+if (($argv[1] ?? '') === '--legacy-current') {
+    $programId = filter_var($argv[2] ?? null, FILTER_VALIDATE_INT);
+    ensure($programId > 0 && DB::table('academic_programs')->where('academic_program_id', $programId)->where('plan_state', 'legacy')->exists(), 'Named synthetic legacy program required');
+    ensure(!DB::table('students')->where('academic_program_id', $programId)->exists(), 'Use the unused legacy fixture for the permitted curriculum-edit race');
+    $group = DB::table('academic_requirement_groups')->where('academic_program_id', $programId)->whereNotNull('required_credit_hours')->first();
+    ensure($group !== null, 'Fixture requires one stored budget');
+    $preview = $workflow->previewTransition($actor, $programId);
+    failed(race(function () use ($group) {
+        DB::table('academic_requirement_groups')->where('requirement_group_id', $group->requirement_group_id)->update(['required_credit_hours' => (int) $group->required_credit_hours + 1]);
+        DB::table('academic_requirement_groups')->where('requirement_group_id', $group->requirement_group_id)->update(['required_credit_hours' => $group->required_credit_hours]);
+    }, ['plan_action' => 'fix', 'program_id' => $programId, 'input' => ['revision' => $preview['revision'], 'confirmed' => true]]), 'academic_catalog_stale');
+    $preview = $workflow->previewTransition($actor, $programId);
+    failed(race(fn () => DB::table('students')->insert(['academic_program_id' => $programId]),
+        ['plan_action' => 'fix', 'program_id' => $programId, 'input' => ['revision' => $preview['revision'], 'confirmed' => true]]), 'academic_catalog_stale');
+    $input = confirm();
+    failed(race(fn () => $workflow->fixTransition($actor, $programId, $input),
+        ['raw' => true, 'sql' => ["INSERT INTO students(academic_program_id) VALUES($programId)"]]), 'academic_plan_initialization_incomplete');
+    ensure(DB::table('academic_plan_versions')->where('academic_program_id', $programId)->count() === 1, 'Duplicate version');
+    ensure(DB::table('students as s')->leftJoin('student_academic_plan_assignments as a', fn ($q) => $q->on('a.student_id', '=', 's.student_id')->where('a.current_slot', 1))
+        ->where('s.academic_program_id', $programId)->whereNull('a.student_academic_plan_assignment_id')->count() === 0, 'Unassigned legacy student');
+    echo "PASS independent MariaDB connections: legacy preview versus new student, curriculum ABA, atomic direct fixation versus late admission; exactly one version and complete assignments\n";
+    exit;
+}
+
 // Program 2 is the still-legacy synthetic program from CatalogFixture. This runner uses a fresh fixture once.
 if (($argv[1] ?? '') !== '--transfer-only') {
 ensure(DB::table('academic_programs')->where('academic_program_id', 2)->value('plan_state') === 'legacy', 'Use a fresh disposable catalog fixture for this test');
