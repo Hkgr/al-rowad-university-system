@@ -7,6 +7,7 @@ export const ROLES = Object.freeze({
   vicePresidentScientific: 'vice_president_scientific',
   vicePresidentAdministrative: 'vice_president_administrative',
   vicePresidentLegacy: 'vice_president',
+  technicalTeam: 'technical_team',
 })
 
 export const PERMISSIONS = Object.freeze({
@@ -50,6 +51,9 @@ export const PERMISSIONS = Object.freeze({
   semesterOfferingGovernanceReviewScientific: 'course_offerings.semester_governance.review_scientific',
   admissionsView: 'admissions.view',
   admissionsManage: 'admissions.manage',
+  technicalPortalAccess: 'technical_portal.access',
+  userAccountsView: 'user_accounts.view',
+  userAccountsManage: 'user_accounts.manage',
 })
 
 export const ACCESS = Object.freeze({
@@ -65,6 +69,10 @@ export const ACCESS = Object.freeze({
   studentAffairsApprovedRegistrationRequests: { allPermissions: [PERMISSIONS.studentsView, PERMISSIONS.registrationView] },
   scientificVicePresident: { permissions: [PERMISSIONS.vicePresidencyScientificAccess] },
   administrativeVicePresident: { permissions: [PERMISSIONS.vicePresidencyAdministrativeAccess] },
+  // المكتب التقني: organizational placement grants nothing; access comes from role permissions only.
+  technicalPortal: { allPermissions: [PERMISSIONS.technicalPortalAccess] },
+  technicalAccounts: { allPermissions: [PERMISSIONS.technicalPortalAccess, PERMISSIONS.userAccountsView] },
+  technicalAccountsManage: { allPermissions: [PERMISSIONS.technicalPortalAccess, PERMISSIONS.userAccountsManage] },
 })
 
 export function getIdentity() {
@@ -116,6 +124,7 @@ export function landingRoute(user) {
   if (hasRole(ROLES.vicePresidentAdministrative, user)) return '/vp/administrative'
   if (hasRole(ROLES.examOfficer, user)) return '/exam-board'
   if (hasRole(ROLES.registrationOfficer, user)) return '/student-affairs'
+  if (hasRole(ROLES.technicalTeam, user) && canAccess(ACCESS.technicalPortal, user)) return '/technical'
   if (canAll(['exams.view', 'exams.manage'], user)) return '/exam-board'
   if (canAccess(ACCESS.courseRegistration, user) && hasPermission('registration.manage', user)) return '/exam-board/course-registration'
   if (canAny(['attendance.manage', 'grades.manage'], user) && user?.employee_id) return '/professor'

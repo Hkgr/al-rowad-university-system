@@ -8,7 +8,7 @@ class StoreUserRoleRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        return false; // Unrouted: writes go through AccountAdministrationService.
     }
 
     public function rules(): array
@@ -16,8 +16,8 @@ class StoreUserRoleRequest extends FormRequest
         return [
             'user_id' => 'required|integer|exists:users,user_id',
             'role_id' => 'required|integer|exists:roles,role_id',
-            'assigned_by_user_id' => 'nullable|integer|exists:users,user_id',
-            'assigned_at' => 'nullable|date',
+            'assigned_by_user_id' => 'prohibited',
+            'assigned_at' => 'prohibited',
             'is_active' => 'required|integer',
         ];
     }

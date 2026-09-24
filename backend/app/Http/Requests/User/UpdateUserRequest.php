@@ -8,7 +8,7 @@ class UpdateUserRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        return false; // Unrouted: writes go through AccountAdministrationService.
     }
 
     public function rules(): array
@@ -16,7 +16,7 @@ class UpdateUserRequest extends FormRequest
         return [
             'username' => 'sometimes|nullable|string|max:80',
             'email' => 'sometimes|nullable|string|max:150',
-            'password_hash' => 'sometimes|nullable|string|max:255',
+            'password_hash' => 'prohibited',
             'account_status_id' => 'sometimes|nullable|integer|exists:account_statuses,account_status_id',
             'student_id' => 'prohibited',
             'employee_id' => 'prohibited',
@@ -24,7 +24,7 @@ class UpdateUserRequest extends FormRequest
             'last_login_at' => 'sometimes|nullable|date',
             'email_verified_at' => 'sometimes|nullable|date',
             'failed_login_attempts' => 'sometimes|nullable|integer',
-            'created_by_user_id' => 'sometimes|nullable|integer|exists:users,user_id',
+            'created_by_user_id' => 'prohibited',
             'created_at' => 'sometimes|nullable|date',
             'updated_at' => 'sometimes|nullable|date',
         ];
