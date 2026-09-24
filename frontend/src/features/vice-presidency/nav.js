@@ -1,9 +1,10 @@
-import { FaCalendarAlt, FaChalkboardTeacher, FaChartBar, FaClipboardCheck, FaClipboardList, FaHome, FaUnlock, FaQuestionCircle } from 'react-icons/fa'
+import { FaCalendarAlt, FaChalkboardTeacher, FaChartBar, FaClipboardCheck, FaClipboardList, FaHome, FaUnlock, FaQuestionCircle, FaUniversity, FaUserTie } from 'react-icons/fa'
 
 import { PERMISSIONS, ROLES } from '../auth/auth'
 import { CATALOG_ACCESS } from '../scientific-courses/catalog'
 import { PROGRAM_ACCESS } from '../scientific-programs/programs'
 import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
+import { ADMINISTRATIVE_ACCESS, ADMINISTRATIVE_PATHS } from './utils/administrativeAccess'
 
 export const scientificVicePresidentNav = [
   {
@@ -103,6 +104,8 @@ export const administrativeVicePresidentNav = [
         en: 'Teaching assignments',
         permissions: [PERMISSIONS.teachingAssignmentsView],
       },
+      { to: ADMINISTRATIVE_PATHS.faculty, Icon: FaUserTie, ar: 'إدارة المدرسين', en: 'Teachers', ...ADMINISTRATIVE_ACCESS.facultyView },
+      { to: ADMINISTRATIVE_PATHS.deans, Icon: FaUniversity, ar: 'عمداء الكليات', en: 'College deans', ...ADMINISTRATIVE_ACCESS.deansView },
       {
         to: '/vp/administrative/exceptional-openings',
         Icon: FaUnlock,

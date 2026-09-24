@@ -98,6 +98,12 @@ class TeachingAssignmentRequest extends Model
         return $this->belongsTo(self::class, 'superseded_by_request_id', 'teaching_assignment_request_id');
     }
 
+    /** Earlier cycles of the same slot that this request superseded. */
+    public function previousRequests(): HasMany
+    {
+        return $this->hasMany(self::class, 'superseded_by_request_id', 'teaching_assignment_request_id');
+    }
+
     public function reviews(): HasMany
     {
         return $this->hasMany(TeachingAssignmentReview::class, 'teaching_assignment_request_id', 'teaching_assignment_request_id');

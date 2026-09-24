@@ -10,6 +10,7 @@ use App\Http\Resources\TeachingStaffResource;
 use App\Models\CourseOffering;
 use App\Models\CourseOfferingInstructor;
 use App\Models\FacultyMember;
+use App\Support\CollegeAffiliation;
 use App\Models\User;
 use App\Services\DataScopeService;
 use App\Services\TeachingAssignmentService;
@@ -139,7 +140,16 @@ class TeachingStaffAssignmentOfferingController extends Controller
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
             'page' => ['sometimes', 'integer', 'min:1'],
             'search' => ['sometimes', 'string', 'min:1', 'max:150'],
+            // Optional context: flag and sort members of the offering's college first.
+            // The candidate list itself stays university-wide (documented decision).
+            'course_offering_id' => ['sometimes', 'integer', 'min:1'],
         ]);
+
+        $collegeUnits = CollegeAffiliation::collegeUnits();
+        $offeringCollegeId = isset($validated['course_offering_id'])
+            ? CollegeAffiliation::offeringCollegeId((int) $validated['course_offering_id'])
+            : null;
+        $offeringUnitId = $offeringCollegeId !== null ? ($collegeUnits[$offeringCollegeId]['unit_id'] ?? null) : null;
 
         $query = FacultyMember::query()
             ->with([
@@ -168,6 +178,10 @@ class TeachingStaffAssignmentOfferingController extends Controller
             });
         }
 
+        if ($offeringUnitId !== null) {
+            CollegeAffiliation::orderMembersFirst($query, (int) $offeringUnitId);
+        }
+
         $staff = $query
             ->orderBy('faculty_member_id')
             ->paginate((int) ($validated['per_page'] ?? 15));
@@ -175,6 +189,18 @@ class TeachingStaffAssignmentOfferingController extends Controller
         $payload = TeachingStaffResource::collection($staff)
             ->response($request)
             ->getData(true);
+        $affiliations = CollegeAffiliation::collegesForEmployees(
+            collect($staff->items())->pluck('employee_id')->filter()->map(fn ($id) => (int) $id)->all(),
+            $collegeUnits
+        );
+        foreach ($staff->items() as $index => $member) {
+            $colleges = $affiliations[(int) $member->employee_id] ?? [];
+            $payload['data'][$index]['affiliated_colleges'] = $colleges;
+            $payload['data'][$index]['in_offering_college'] = $offeringCollegeId === null
+                ? null
+                : collect($colleges)->contains(fn (array $college): bool => $college['college_id'] === $offeringCollegeId);
+        }
+        $payload['offering_college_id'] = $offeringCollegeId;
 
         return $this->successResponse($payload);
     }

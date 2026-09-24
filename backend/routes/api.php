@@ -808,6 +808,30 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     |--------------------------------------------------------------------------
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Administrative Vice-Presidency — home indicators, teachers, college deans
+    |--------------------------------------------------------------------------
+    | Authorization lives in App\Support\AdministrativeGovernance (role +
+    | assigned permission + actual university scope, or super_admin + scope).
+    |--------------------------------------------------------------------------
+    */
+
+    Route::prefix('vice-presidency/administrative')->controller(\App\Http\Controllers\Api\AdministrativeGovernanceController::class)->group(function (): void {
+        Route::get('dashboard', 'dashboard');
+        Route::get('faculty', 'facultyIndex');
+        Route::get('faculty/employee-lookup', 'employeeLookup');
+        Route::post('faculty', 'facultyStore');
+        Route::get('faculty/{facultyMember}', 'facultyShow')->whereNumber('facultyMember');
+        Route::patch('faculty/{facultyMember}', 'facultyUpdate')->whereNumber('facultyMember');
+        Route::post('faculty/{facultyMember}/affiliation', 'facultyAffiliation')->whereNumber('facultyMember');
+        Route::get('deans', 'deansIndex');
+        Route::get('deans/account-lookup', 'accountLookup');
+        Route::post('deans', 'deansAppoint');
+        Route::post('deans/{college}/transfer', 'deansTransfer')->whereNumber('college');
+        Route::post('deans/{college}/end', 'deansEnd')->whereNumber('college');
+    });
+
     Route::prefix('technical/accounts')->controller(\App\Http\Controllers\Api\AccountAdministrationController::class)->group(function (): void {
         Route::middleware(\App\Http\Middleware\RequirePermission::class.':user_accounts.view')->group(function (): void {
             Route::get('/', 'index');

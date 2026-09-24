@@ -260,7 +260,7 @@ class TeachingAssignmentWorkflowService
         });
     }
 
-    public function approveScientific(User $user, TeachingAssignmentRequest $request): TeachingAssignmentRequest
+    public function approveScientific(User $user, TeachingAssignmentRequest $request, ?int $expectedSubmissionVersion = null): TeachingAssignmentRequest
     {
         $this->assertScientificReviewer($user);
 
@@ -269,11 +269,12 @@ class TeachingAssignmentWorkflowService
             $request,
             TeachingAssignmentWorkflow::AUTHORITY_SCIENTIFIC,
             TeachingAssignmentWorkflow::REVIEW_APPROVED,
-            null
+            null,
+            $expectedSubmissionVersion
         ));
     }
 
-    public function returnScientific(User $user, TeachingAssignmentRequest $request, string $reason): TeachingAssignmentRequest
+    public function returnScientific(User $user, TeachingAssignmentRequest $request, string $reason, ?int $expectedSubmissionVersion = null): TeachingAssignmentRequest
     {
         $this->assertScientificReviewer($user);
 
@@ -282,11 +283,12 @@ class TeachingAssignmentWorkflowService
             $request,
             TeachingAssignmentWorkflow::AUTHORITY_SCIENTIFIC,
             TeachingAssignmentWorkflow::REVIEW_RETURNED,
-            $reason
+            $reason,
+            $expectedSubmissionVersion
         ));
     }
 
-    public function approveAdministrative(User $user, TeachingAssignmentRequest $request): TeachingAssignmentRequest
+    public function approveAdministrative(User $user, TeachingAssignmentRequest $request, ?int $expectedSubmissionVersion = null): TeachingAssignmentRequest
     {
         $this->assertAdministrativeReviewer($user);
 
@@ -295,11 +297,12 @@ class TeachingAssignmentWorkflowService
             $request,
             TeachingAssignmentWorkflow::AUTHORITY_ADMINISTRATIVE,
             TeachingAssignmentWorkflow::REVIEW_APPROVED,
-            null
+            null,
+            $expectedSubmissionVersion
         ));
     }
 
-    public function returnAdministrative(User $user, TeachingAssignmentRequest $request, string $reason): TeachingAssignmentRequest
+    public function returnAdministrative(User $user, TeachingAssignmentRequest $request, string $reason, ?int $expectedSubmissionVersion = null): TeachingAssignmentRequest
     {
         $this->assertAdministrativeReviewer($user);
 
@@ -308,7 +311,8 @@ class TeachingAssignmentWorkflowService
             $request,
             TeachingAssignmentWorkflow::AUTHORITY_ADMINISTRATIVE,
             TeachingAssignmentWorkflow::REVIEW_RETURNED,
-            $reason
+            $reason,
+            $expectedSubmissionVersion
         ));
     }
 
@@ -347,11 +351,74 @@ class TeachingAssignmentWorkflowService
         }
     }
 
+    /**
+     * What the given reviewer may do on this request right now, derived from the
+     * same guards as decide() (role + assigned permission, scope, request and
+     * review state, distinct approver). Read-only; never used to authorize.
+     *
+     * @return array<string, mixed>
+     */
+    public function viewerContext(User $user, TeachingAssignmentRequest $request, string $authority, ?bool $isReviewer = null): array
+    {
+        $isReviewer ??= $this->isReviewerFor($user, $authority);
+        $otherAuthority = $authority === TeachingAssignmentWorkflow::AUTHORITY_SCIENTIFIC
+            ? TeachingAssignmentWorkflow::AUTHORITY_ADMINISTRATIVE
+            : TeachingAssignmentWorkflow::AUTHORITY_SCIENTIFIC;
+        $reviews = $request->relationLoaded('reviews') ? $request->reviews : $request->reviews()->get();
+        $own = $reviews->firstWhere('review_authority', $authority);
+        $other = $reviews->firstWhere('review_authority', $otherAuthority);
+
+        $blocked = null;
+        if (! $isReviewer) {
+            $blocked = 'not_reviewer';
+        } elseif ($request->status === TeachingAssignmentWorkflow::STATUS_SUPERSEDED || ! $request->isCurrent()) {
+            $blocked = 'superseded';
+        } elseif ($request->status === TeachingAssignmentWorkflow::STATUS_APPROVED) {
+            $blocked = 'already_effective';
+        } elseif ($own === null || (string) $own->status !== TeachingAssignmentWorkflow::REVIEW_PENDING) {
+            $blocked = 'review_locked';
+        }
+
+        $sameReviewer = $other !== null
+            && (string) $other->status === TeachingAssignmentWorkflow::REVIEW_APPROVED
+            && $other->reviewed_by_user_id !== null
+            && (int) $other->reviewed_by_user_id === (int) $user->user_id;
+
+        $effect = 'not_applicable';
+        if ($request->status === TeachingAssignmentWorkflow::STATUS_APPROVED) {
+            $effect = 'already_effective';
+        } elseif ($blocked === null) {
+            $effect = $other !== null && (string) $other->status === TeachingAssignmentWorkflow::REVIEW_APPROVED
+                ? 'effective_now'
+                : 'awaits_other_office';
+        }
+
+        return [
+            'authority' => $authority,
+            'own_review_status' => $own?->status,
+            'other_review_status' => $other?->status,
+            'can_approve' => $blocked === null && ! $sameReviewer,
+            'can_return' => $blocked === null,
+            'blocked_reason' => $blocked ?? ($sameReviewer ? 'same_reviewer' : null),
+            'approval_effect' => $effect,
+            'submission_version' => (int) $request->submission_version,
+        ];
+    }
+
+    public function isReviewerFor(User $user, string $authority): bool
+    {
+        return $authority === TeachingAssignmentWorkflow::AUTHORITY_SCIENTIFIC
+            ? ($user->isScientificVicePresident() && $this->holdsAssignedPermission($user, TeachingAssignmentWorkflow::PERMISSION_REVIEW_SCIENTIFIC))
+            : ($user->isAdministrativeVicePresident() && $this->holdsAssignedPermission($user, TeachingAssignmentWorkflow::PERMISSION_REVIEW_ADMINISTRATIVE));
+    }
+
     public function requestDisplayRelations(): array
     {
         return [
             ...$this->requestListRelations(),
             'events.actor',
+            'previousRequests.facultyMember.employee',
+            'previousRequests.reviews',
         ];
     }
 
@@ -383,9 +450,10 @@ class TeachingAssignmentWorkflowService
         TeachingAssignmentRequest $request,
         string $authority,
         string $decision,
-        ?string $reason
+        ?string $reason,
+        ?int $expectedSubmissionVersion = null
     ): array {
-        return DB::transaction(function () use ($user, $request, $authority, $decision, $reason): array {
+        return DB::transaction(function () use ($user, $request, $authority, $decision, $reason, $expectedSubmissionVersion): array {
             [$offering, $current] = $this->lockOfferingThenRequest(
                 (int) $request->teaching_assignment_request_id
             );
@@ -397,6 +465,13 @@ class TeachingAssignmentWorkflowService
 
             if ($current->status === TeachingAssignmentWorkflow::STATUS_SUPERSEDED || ! $current->isCurrent()) {
                 throw TeachingAssignmentException::superseded();
+            }
+
+            // Optimistic guard on top of the row locks: the reviewer decided on
+            // the submission version they were shown, not a later resubmission.
+            if ($expectedSubmissionVersion !== null
+                && (int) $current->submission_version !== $expectedSubmissionVersion) {
+                throw TeachingAssignmentException::versionMismatch();
             }
 
             $reviews = $this->lockReviewsInOrder($current);

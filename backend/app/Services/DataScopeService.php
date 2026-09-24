@@ -341,7 +341,8 @@ class DataScopeService
                 $membership->whereIn('organizational_unit_id', $unitIds)
                     ->orWhereHas('employeeUnitAssignments', function (Builder $assignment) use ($unitIds): void {
                         $assignment->whereIn('organizational_unit_id', $unitIds)
-                            ->where('is_active', true);
+                            ->where('is_active', true)
+                            ->where(fn (Builder $open) => $open->whereNull('end_date')->orWhereDate('end_date', '>=', now()->toDateString()));
                     });
             });
         });
@@ -381,7 +382,8 @@ class DataScopeService
                 $membership->whereIn('organizational_unit_id', $unitIds)
                     ->orWhereHas('employeeUnitAssignments', function (Builder $assignment) use ($unitIds): void {
                         $assignment->whereIn('organizational_unit_id', $unitIds)
-                            ->where('is_active', true);
+                            ->where('is_active', true)
+                            ->where(fn (Builder $open) => $open->whereNull('end_date')->orWhereDate('end_date', '>=', now()->toDateString()));
                     });
             });
         });
@@ -417,6 +419,7 @@ class DataScopeService
         if ($employee->employeeUnitAssignments()
             ->where('organizational_unit_id', $unitId)
             ->where('is_active', true)
+            ->where(fn (Builder $open) => $open->whereNull('end_date')->orWhereDate('end_date', '>=', now()->toDateString()))
             ->exists()) {
             return true;
         }

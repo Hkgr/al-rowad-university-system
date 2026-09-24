@@ -13,6 +13,7 @@ import {
   proposedFacultyId,
   reviewStatusLabel,
   teacherChoiceLabel,
+  teacherGroupLabel,
   workflowStatusLabel,
 } from '../utils/teacherDisplay'
 
@@ -94,6 +95,26 @@ function OfferingSummary({ offering }) {
   )
 }
 
+// Options carrying a `group` are rendered under an <optgroup>; the list stays
+// university-wide, college members of the selected offering are only listed first.
+function groupTeacherOptions(options) {
+  const result = []
+  const groups = new Map()
+  options.forEach(option => {
+    if (!option.group) {
+      result.push(option)
+      return
+    }
+    if (!groups.has(option.group)) {
+      const entry = { group: option.group, options: [] }
+      groups.set(option.group, entry)
+      result.push(entry)
+    }
+    groups.get(option.group).options.push(option)
+  })
+  return result
+}
+
 function TeacherSelect({
   id,
   label,
@@ -126,9 +147,15 @@ function TeacherSelect({
         disabled={disabled}
         dir="rtl"
       >
-        {options.map(option => (
-          <option key={String(option.value)} value={option.value}>{option.label}</option>
-        ))}
+        {groupTeacherOptions(options).map(entry => (entry.group
+          ? (
+            <optgroup key={entry.group} label={entry.group}>
+              {entry.options.map(option => (
+                <option key={String(option.value)} value={option.value}>{option.label}</option>
+              ))}
+            </optgroup>
+          )
+          : <option key={String(entry.value)} value={entry.value}>{entry.label}</option>))}
       </select>
     </label>
   )
@@ -164,18 +191,21 @@ export default function TeacherAssignmentManagerModal({
   const savingRef = useRef(false)
   const profileId = Number(profileTeacher?.faculty_member_id)
 
+  const contextOfferingId = selected?.course_offering_id ?? offeringId ?? null
+
   useEffect(() => {
     let active = true
+    const context = contextOfferingId != null ? `&course_offering_id=${encodeURIComponent(contextOfferingId)}` : ''
 
     async function loadTeachers() {
       try {
-        const first = await apiRequest(`/v1/teaching-staff/assignment-instructors?per_page=${TEACHER_PAGE_SIZE}&page=1`)
+        const first = await apiRequest(`/v1/teaching-staff/assignment-instructors?per_page=${TEACHER_PAGE_SIZE}&page=1${context}`)
         const rows = [...paginatedRows(first)]
         const lastPage = first?.data?.meta?.last_page ?? 1
         if (lastPage > 1) {
           const rest = await Promise.all(
             Array.from({ length: lastPage - 1 }, (_, index) => (
-              apiRequest(`/v1/teaching-staff/assignment-instructors?per_page=${TEACHER_PAGE_SIZE}&page=${index + 2}`)
+              apiRequest(`/v1/teaching-staff/assignment-instructors?per_page=${TEACHER_PAGE_SIZE}&page=${index + 2}${context}`)
             )),
           )
           rest.forEach(response => rows.push(...paginatedRows(response)))
@@ -193,7 +223,7 @@ export default function TeacherAssignmentManagerModal({
 
     loadTeachers()
     return () => { active = false }
-  }, [onUnauthorized])
+  }, [contextOfferingId, onUnauthorized])
 
   useEffect(() => {
     if (mode !== 'add') return undefined
@@ -285,7 +315,7 @@ export default function TeacherAssignmentManagerModal({
       const id = Number(teacher.faculty_member_id)
       if (!Number.isInteger(id) || id <= 0) return
       seen.add(id)
-      options.push({ value: String(id), label: teacherChoiceLabel(teacher) })
+      options.push({ value: String(id), label: teacherChoiceLabel(teacher), group: teacherGroupLabel(teacher) })
     })
     return { options, seen }
   }, [teachers])
