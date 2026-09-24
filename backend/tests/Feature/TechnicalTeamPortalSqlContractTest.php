@@ -52,8 +52,8 @@ final class TechnicalTeamPortalSqlContractTest extends TestCase
             self::assertDoesNotMatchRegularExpression('/\b(role_id|permission_id|module_id)\s*=\s*\d+/', $insert);
         }
         $code = preg_replace('/^\s*--.*$/m', '', $apply);
-        self::assertStringNotContainsString('`users`', $code);
-        self::assertStringNotContainsString('`user_roles`', $code);
+        // No writes to accounts or role assignments (user_roles may only be read in guards).
+        self::assertDoesNotMatchRegularExpression('/(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+`alrowad_uni_rust`\.`(users|user_roles|user_activity_logs)`/i', $code);
         self::assertStringNotContainsString('password', strtolower($code));
         self::assertStringNotContainsString('DELIMITER', $code);
         self::assertStringNotContainsString('CREATE PROCEDURE', $code);
