@@ -114,6 +114,11 @@ import technicalNav from '../features/technical-portal/nav'
 import TechnicalHome from '../features/technical-portal/pages/TechnicalHome'
 import AccountsPermissionsPage from '../features/technical-portal/pages/AccountsPermissionsPage'
 
+// ── دليل الاستخدام (per-portal user guides) ─────────────────────────────────
+import UserGuidePage from '../features/user-guide/UserGuidePage'
+import GuideLayout from '../features/user-guide/GuideLayout'
+import { GUIDE_ACCESS } from '../features/user-guide/guideAccess'
+
 function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], actualUniversityScope = false, actualAcademicScope = false, studentIdentity = false, employeeIdentity = false, anyAccess = [] }) {
   const token = localStorage.getItem('token')
   const [identity, setIdentity] = useState(getIdentity())
@@ -175,6 +180,11 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/student-affairs/calendar" element={<AcademicCalendarPage />} />
         </Route>
 
+        {/* ── دليل شؤون الطلاب: union of the three groups that render studentAffairsNav ── */}
+        <Route element={<ProtectedRoute {...GUIDE_ACCESS.studentAffairs}><GuideLayout nav={studentAffairsNav} guideId="studentAffairs" /></ProtectedRoute>}>
+          <Route path="/student-affairs/guide" element={<UserGuidePage guideId="studentAffairs" />} />
+        </Route>
+
         {/* Add Student safely hosts the manual and Ministry entry paths without widening other Student Affairs pages. */}
         <Route
           element={
@@ -212,6 +222,7 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/student/registration" element={<StudentRegistration />} />
           <Route path="/student/requirements" element={<StudentRequirements />} />
           <Route path="/student/calendar" element={<StudentCalendar />} />
+          <Route path="/student/guide" element={<UserGuidePage guideId="student" />} />
           <Route path="/student/supplementary-exams" element={protect(<StudentSupplementaryExams />, { studentIdentity: true, allRoles: ['student'], assignedPermissions: ['supplementary_exams.deferrals.self', 'supplementary_exams.registrations.self'] })} />
         </Route>
 
@@ -250,6 +261,11 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/exam-board/settings"         element={protect(<ExamPlaceholder title="الإعدادات" en="Settings" />, { permissions: ['exams.view'] })} />
         </Route>
 
+        {/* ── دليل هيئة الامتحانات / القبول والتسجيل / الإدخال اليدوي: union of the groups rendering examBoardNav ── */}
+        <Route element={<ProtectedRoute {...GUIDE_ACCESS.examBoard}><GuideLayout nav={examBoardNav} guideId="examBoard" /></ProtectedRoute>}>
+          <Route path="/exam-board/guide" element={<UserGuidePage guideId="examBoard" />} />
+        </Route>
+
         {/* ── الهيكل الأكاديمي dashboard ── */}
         <Route
           element={
@@ -263,6 +279,7 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/academic-structure/departments"   element={<DepartmentsPage />}       />
           <Route path="/academic-structure/programs"      element={<ProgramsPage />}          />
           <Route path="/academic-structure/calendar" element={<AcademicCalendarPage />} />
+          <Route path="/academic-structure/guide" element={<UserGuidePage guideId="academicStructure" />} />
         </Route>
 
         {/* ── الموارد البشرية dashboard ── */}
@@ -280,6 +297,7 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/hr/faculty"            element={<FacultyPage />}         />
           <Route path="/hr/positions"          element={<PositionsPage />}       />
           <Route path="/hr/calendar" element={<AcademicCalendarPage />} />
+          <Route path="/hr/guide" element={<UserGuidePage guideId="hr" />} />
         </Route>
 
         {/* ── بوابة الأستاذ dashboard ── */}
@@ -295,6 +313,7 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/professor/grades" element={protect(<ProfessorGradesPage />, { employeeIdentity: true, permissions: ['grades.manage'] })} />
           <Route path="/professor/supplementary-exams" element={protect(<ProfessorSupplementaryExams />, { employeeIdentity: true, allRoles: ['doctor_instructor'], assignedPermissions: ['supplementary_exams.grades.view'] })} />
           <Route path="/professor/calendar" element={<AcademicCalendarPage />} />
+          <Route path="/professor/guide" element={<UserGuidePage guideId="professor" />} />
         </Route>
 
         {/* ── بوابة عميد الكلية dashboard ── */}
@@ -320,6 +339,7 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/dean/supplementary-exams" element={protect(<DeanSupplementaryExams />, { allRoles: ['dean'], assignedPermissions: ['supplementary_exams.offerings.view'] })} />
           <Route path="/dean/reports"       element={<DeanReports />} />
           <Route path="/dean/calendar"      element={<DeanCalendar />} />
+          <Route path="/dean/guide"         element={<UserGuidePage guideId="dean" />} />
         </Route>
 
         {/* ── نيابة الشؤون العلمية ── */}
@@ -344,6 +364,7 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/vp/scientific/exceptional-openings/:id" element={<ExceptionalOpeningDetail office="scientific" />} />
           <Route path="/vp/scientific/supplementary-exams" element={protect(<SupplementaryExamPeriodsPage />, { allRoles: ['vice_president_scientific'], assignedPermissions: [PERMISSIONS.supplementaryExamsPeriodsView] })} />
           <Route path="/vp/scientific/calendar" element={<AcademicCalendarPage />} />
+          <Route path="/vp/scientific/guide" element={<UserGuidePage guideId="vpScientific" />} />
         </Route>
 
         {/* ── نيابة الشؤون الإدارية ── */}
@@ -361,6 +382,7 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/vp/administrative/exceptional-openings" element={<ExceptionalOpeningQueue office="administrative" />} />
           <Route path="/vp/administrative/exceptional-openings/:id" element={<ExceptionalOpeningDetail office="administrative" />} />
           <Route path="/vp/administrative/calendar" element={<AcademicCalendarPage />} />
+          <Route path="/vp/administrative/guide" element={<UserGuidePage guideId="vpAdministrative" />} />
         </Route>
 
         {/* ── المكتب التقني: التبعية التنظيمية لا تمنح صلاحية؛ الوصول من صلاحيات الأدوار فقط ── */}
@@ -373,6 +395,7 @@ const router = createBrowserRouter(createRoutesFromElements(
         >
           <Route path="/technical" element={<TechnicalHome />} />
           <Route path="/technical/accounts" element={protect(<AccountsPermissionsPage />, ACCESS.technicalAccounts)} />
+          <Route path="/technical/guide" element={<UserGuidePage guideId="technical" />} />
         </Route>
 
         {/* Default redirect */}

@@ -1,7 +1,8 @@
 import {
-  FaHome, FaGraduationCap, FaUserPlus, FaArchive, FaUsers, FaClipboardCheck, FaBookOpen, FaCalendarAlt,
+  FaHome, FaGraduationCap, FaUserPlus, FaArchive, FaUsers, FaClipboardCheck, FaBookOpen, FaCalendarAlt, FaQuestionCircle,
 } from 'react-icons/fa'
 import { ACCESS } from '../auth/auth'
+import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
 
 const studentAffairsNav = [
   {
@@ -32,6 +33,7 @@ const studentAffairsNav = [
       { to: '/student-affairs/graduates', Icon: FaGraduationCap, ar: 'قائمة الخريجين', en: 'Graduates', end: true, ...ACCESS.studentAffairs },
     ],
   },
+  { label: 'المساعدة', items: [{ to: GUIDE_PATHS.studentAffairs, Icon: FaQuestionCircle, ar: 'دليل الاستخدام', en: 'User guide', ...GUIDE_ACCESS.studentAffairs }] },
 ]
 
 export default studentAffairsNav

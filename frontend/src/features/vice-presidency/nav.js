@@ -1,8 +1,9 @@
-import { FaCalendarAlt, FaChalkboardTeacher, FaChartBar, FaClipboardCheck, FaClipboardList, FaHome, FaUnlock } from 'react-icons/fa'
+import { FaCalendarAlt, FaChalkboardTeacher, FaChartBar, FaClipboardCheck, FaClipboardList, FaHome, FaUnlock, FaQuestionCircle } from 'react-icons/fa'
 
 import { PERMISSIONS, ROLES } from '../auth/auth'
 import { CATALOG_ACCESS } from '../scientific-courses/catalog'
 import { PROGRAM_ACCESS } from '../scientific-programs/programs'
+import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
 
 export const scientificVicePresidentNav = [
   {
@@ -70,6 +71,7 @@ export const scientificVicePresidentNav = [
       },
     ],
   },
+  { label: 'المساعدة', items: [{ to: GUIDE_PATHS.vpScientific, Icon: FaQuestionCircle, ar: 'دليل الاستخدام', en: 'User guide', ...GUIDE_ACCESS.vpScientific }] },
 ]
 
 export const administrativeVicePresidentNav = [
@@ -110,4 +112,5 @@ export const administrativeVicePresidentNav = [
       },
     ],
   },
+  { label: 'المساعدة', items: [{ to: GUIDE_PATHS.vpAdministrative, Icon: FaQuestionCircle, ar: 'دليل الاستخدام', en: 'User guide', ...GUIDE_ACCESS.vpAdministrative }] },
 ]
