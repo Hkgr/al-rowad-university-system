@@ -1,9 +1,10 @@
 import {
   FaHome, FaClipboardList, FaCheckDouble, FaExclamationTriangle,
   FaCalendarAlt, FaChartBar, FaUsers, FaCog, FaBook,
-  FaLockOpen, FaBookOpen, FaTable,
+  FaLockOpen, FaBookOpen, FaTable, FaQuestionCircle,
 } from 'react-icons/fa'
 import { ACCESS, PERMISSIONS } from '../auth/auth'
+import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
 
 const examBoardNav = [
   { label: 'إدخال العلامات', items: [{ to: '/exam-board/manual-grade-entry', Icon: FaClipboardList, ar: 'إدخال العلامات اليدوي', en: 'Manual grade entry', ...ACCESS.manualGradeEntry }] },
@@ -37,6 +38,7 @@ const examBoardNav = [
       { to: '/exam-board/settings',            Icon: FaCog,                ar: 'الإعدادات',            en: 'Settings', permissions: ['exams.view'] },
     ],
   },
+  { label: 'المساعدة', items: [{ to: GUIDE_PATHS.examBoard, Icon: FaQuestionCircle, ar: 'دليل الاستخدام', en: 'User guide', ...GUIDE_ACCESS.examBoard }] },
 ]
 
 export default examBoardNav

@@ -1,4 +1,5 @@
-import { FaHome, FaCalendarAlt, FaCalendarCheck, FaEdit } from 'react-icons/fa'
+import { FaHome, FaCalendarAlt, FaCalendarCheck, FaEdit, FaQuestionCircle } from 'react-icons/fa'
+import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
 
 const professorNav = [
   {
@@ -11,6 +12,7 @@ const professorNav = [
       { to: '/professor/supplementary-exams', Icon: FaEdit, ar: 'الامتحانات التكميلية', en: 'Supplementary', allRoles: ['doctor_instructor'], assignedPermissions: ['supplementary_exams.grades.view'] },
     ],
   },
+  { label: 'المساعدة', items: [{ to: GUIDE_PATHS.professor, Icon: FaQuestionCircle, ar: 'دليل الاستخدام', en: 'User guide', ...GUIDE_ACCESS.professor }] },
 ]
 
 export default professorNav

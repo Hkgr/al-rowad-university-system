@@ -1,6 +1,7 @@
 import {
-  FaBook, FaCalendarAlt, FaChalkboardTeacher, FaChartBar, FaClipboardCheck, FaClipboardList, FaHome, FaLockOpen, FaUsers,
+  FaBook, FaCalendarAlt, FaChalkboardTeacher, FaChartBar, FaClipboardCheck, FaClipboardList, FaHome, FaLockOpen, FaUsers, FaQuestionCircle,
 } from 'react-icons/fa'
+import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
 
 const deanNav = [
   {
@@ -27,6 +28,7 @@ const deanNav = [
       { to: '/dean/calendar', Icon: FaCalendarAlt, ar: 'التقويم', en: 'Calendar' },
     ],
   },
+  { label: 'المساعدة', items: [{ to: GUIDE_PATHS.dean, Icon: FaQuestionCircle, ar: 'دليل الاستخدام', en: 'User guide', ...GUIDE_ACCESS.dean }] },
 ]
 
 export default deanNav

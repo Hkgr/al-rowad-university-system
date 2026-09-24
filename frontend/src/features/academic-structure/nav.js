@@ -1,6 +1,7 @@
 import {
-  FaHome, FaUniversity, FaBuilding, FaGraduationCap, FaCalendarAlt,
+  FaHome, FaUniversity, FaBuilding, FaGraduationCap, FaCalendarAlt, FaQuestionCircle,
 } from 'react-icons/fa'
+import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
 
 const academicStructureNav = [
   {
@@ -13,6 +14,7 @@ const academicStructureNav = [
       { to: '/academic-structure/programs',    Icon: FaGraduationCap, ar: 'الاختصاصات',  en: 'Programs'               },
     ],
   },
+  { label: 'المساعدة', items: [{ to: GUIDE_PATHS.academicStructure, Icon: FaQuestionCircle, ar: 'دليل الاستخدام', en: 'User guide', ...GUIDE_ACCESS.academicStructure }] },
 ]
 
 export default academicStructureNav

@@ -1,6 +1,7 @@
 import {
-  FaHome, FaUsers, FaChalkboardTeacher, FaBriefcase, FaUserPlus, FaCalendarAlt,
+  FaHome, FaUsers, FaChalkboardTeacher, FaBriefcase, FaUserPlus, FaCalendarAlt, FaQuestionCircle,
 } from 'react-icons/fa'
+import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
 
 const hrNav = [
   {
@@ -19,6 +20,7 @@ const hrNav = [
       { to: '/hr/positions', Icon: FaBriefcase, ar: 'المناصب', en: 'Positions' },
     ],
   },
+  { label: 'المساعدة', items: [{ to: GUIDE_PATHS.hr, Icon: FaQuestionCircle, ar: 'دليل الاستخدام', en: 'User guide', ...GUIDE_ACCESS.hr }] },
 ]
 
 export default hrNav

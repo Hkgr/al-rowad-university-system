@@ -1,6 +1,7 @@
 import {
-  FaHome, FaClipboardList, FaChartBar, FaCalendarCheck, FaPlusSquare, FaCalendarAlt, FaTasks,
+  FaHome, FaClipboardList, FaChartBar, FaCalendarCheck, FaPlusSquare, FaCalendarAlt, FaTasks, FaQuestionCircle,
 } from 'react-icons/fa'
+import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
 
 const studentNav = [
   {
@@ -16,6 +17,7 @@ const studentNav = [
       { to: '/student/attendance',   Icon: FaCalendarCheck, ar: 'الحضور والغياب', en: 'Attendance',        end: true },
     ],
   },
+  { label: 'المساعدة', items: [{ to: GUIDE_PATHS.student, Icon: FaQuestionCircle, ar: 'دليل الاستخدام', en: 'User guide', ...GUIDE_ACCESS.student }] },
 ]
 
 export default studentNav
