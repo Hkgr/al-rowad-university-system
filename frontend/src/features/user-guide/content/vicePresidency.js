@@ -26,7 +26,7 @@ function parallelReviewTasks(office) {
       link: { to: `${base}/teaching-assignments` },
       steps: [
         step('افتح «تكليفات المدرسين»؛ القائمة الافتراضية «بانتظار مراجعتي».'),
-        step('اضغط «مراجعة» لفتح الطلب.'),
+        step('اضغط «عرض الطلب» لفتح التفاصيل وحالة موافقة كل نائب.'),
         step('اضغط «موافقة»، أو «إعادة للعميد» واكتب سبب الإعادة ثم «تأكيد الإعادة».'),
       ],
       flows: [{
@@ -40,7 +40,7 @@ function parallelReviewTasks(office) {
         ],
       }],
       sources: [
-        source(V + 'TeachingAssignmentQueue.jsx', 'بانتظار مراجعتي', 'مراجعة'),
+        source(V + 'TeachingAssignmentQueue.jsx', 'بانتظار مراجعتي', 'عرض الطلب'),
         source(V + 'TeachingAssignmentDetail.jsx', 'موافقة', 'إعادة للعميد', 'تأكيد الإعادة'),
         source('backend/app/Support/TeachingAssignmentWorkflow.php', "'submitted'", "'returned'", "'approved'", "'pending'"),
       ],
@@ -233,9 +233,25 @@ export const scientific = {
 export const administrative = {
   id: 'vpAdministrative',
   title: 'نيابة الشؤون الإدارية',
-  intro: 'تراجع من هذه البوابة تكليفات المدرسين وطلبات الفتح الاستثنائي بالتوازي مع نيابة الشؤون العلمية، وتطّلع على التقارير والتقويم الأكاديمي.',
+  intro: 'تراجع من هذه البوابة تكليفات المدرسين وطلبات الفتح الاستثنائي بالتوازي مع نيابة الشؤون العلمية، وتدير ملفات المدرسين وتعيين عمداء الكليات بصلاحيات صريحة، وتطّلع على التقارير والتقويم الأكاديمي.',
   sections: [
     { id: 'reviews', title: 'المراجعات المشتركة مع النيابة العلمية', tasks: parallelReviewTasks('administrative') },
+    { id: 'personnel', title: 'المدرسون وعمداء الكليات', tasks: [
+      { id: 'faculty', title: 'إدارة المدرسين وانتمائهم',
+        summary: 'إضافة ملف مدرس أو تعديله وربطه بكلية ليظهر للعميد؛ انتماء المدرس لا يعني تكليفه بمقرر.',
+        access: { allRoles: [ADM], assignedPermissions: [PERMISSIONS.administrativeStaffView], actualUniversityScope: true },
+        link: { to: '/vp/administrative/faculty' },
+        steps: [step('افتح «إدارة المدرسين» وابحث عن المدرس أو اختر كليته.'),
+          step('إذا كنت مخوّلًا بالإدارة، أضف ملفًا أو عدّل بياناته واختر كليته.', { access: { allRoles: [ADM], assignedPermissions: [PERMISSIONS.administrativeStaffManage], actualUniversityScope: true } })],
+        sources: [source(V + 'AdministrativeFacultyPage.jsx', 'إدارة المدرسين', 'إضافة مدرس', 'الكلية')] },
+      { id: 'deans', title: 'عرض عمداء الكليات وتعيينهم',
+        summary: 'تعيين حساب عميد مرتبط بكلية واحدة؛ إنهاء تكليفه يسحب دور العميد ونطاق الكلية دون حذف الحساب.',
+        access: { allRoles: [ADM], assignedPermissions: [PERMISSIONS.administrativeDeansView], actualUniversityScope: true },
+        link: { to: '/vp/administrative/deans' },
+        steps: [step('افتح «عمداء الكليات» وراجع العميد المرتبط بكل كلية.'),
+          step('إذا كنت مخوّلًا بالإدارة، اختر «تعيين عميد» أو «إنهاء التكليف».', { access: { allRoles: [ADM], assignedPermissions: [PERMISSIONS.administrativeDeansManage], actualUniversityScope: true } })],
+        sources: [source(V + 'AdministrativeDeansPage.jsx', 'عمداء الكليات', 'تعيين عميد', 'إنهاء التكليف')] },
+    ] },
     {
       id: 'other',
       title: 'التقارير والتقويم',

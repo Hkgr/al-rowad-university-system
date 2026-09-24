@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import DataTable from '../../../components/table/DataTable'
 import FilterBar from '../../../components/table/FilterBar'
 import { apiRequest } from '../../../services/apiClient'
 import {
   facultyName,
+  actionLabel,
   formatDateTime,
   offeringTitle,
   requestStatusLabel,
@@ -18,15 +19,35 @@ function listRows(response) {
 
 export default function TeachingAssignmentQueue({ office }) {
   const navigate = useNavigate()
+  const [urlParams] = useSearchParams()
   const authority = office === 'administrative' ? 'administrative' : 'scientific'
   const basePath = office === 'administrative' ? '/vp/administrative' : '/vp/scientific'
   const ownReviewKey = authority === 'administrative' ? 'administrative_review' : 'scientific_review'
   const [rows, setRows] = useState([])
-  const [queue, setQueue] = useState('pending')
+  const [queue, setQueue] = useState(['pending', 'returned', 'approved', 'all'].includes(urlParams.get('queue')) ? urlParams.get('queue') : 'pending')
+  const [collegeId, setCollegeId] = useState(/^\d+$/.test(urlParams.get('college_id') || '') ? urlParams.get('college_id') : '')
+  const [colleges, setColleges] = useState([])
+  const [actionType, setActionType] = useState('')
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [page, setPage] = useState(1)
   const [lastPage, setLastPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  useEffect(() => {
+    if (authority !== 'administrative') return
+    let active = true
+    apiRequest('/v1/vice-presidency/teaching-assignments/administrative-summary')
+      .then(response => { if (active) setColleges(response?.data?.colleges ?? []) })
+      .catch(() => {})
+    return () => { active = false }
+  }, [authority])
 
   useEffect(() => {
     let active = true
@@ -40,6 +61,9 @@ export default function TeachingAssignmentQueue({ office }) {
         per_page: '20',
         page: String(page),
       })
+      if (actionType) params.set('action_type', actionType)
+      if (collegeId) params.set('college_id', collegeId)
+      if (debouncedSearch) params.set('search', debouncedSearch)
       try {
         const response = await apiRequest(`/v1/vice-presidency/teaching-assignments?${params.toString()}`)
         if (!active) return
@@ -62,9 +86,14 @@ export default function TeachingAssignmentQueue({ office }) {
 
     load()
     return () => { active = false }
-  }, [authority, navigate, page, queue])
+  }, [actionType, authority, collegeId, debouncedSearch, navigate, page, queue])
 
   const columns = useMemo(() => ([
+    { key: 'action', header: 'نوع الطلب', align: 'right', render: row => <span className="text-[12px] font-bold">{actionLabel(row.action_type)}</span> },
+    {
+      key: 'requester', header: 'مقدّم الطلب', align: 'right',
+      render: row => <span className="text-[12px]">{row.requester?.username || '—'}</span>,
+    },
     {
       key: 'offering',
       header: 'المادة',
@@ -135,7 +164,7 @@ export default function TeachingAssignmentQueue({ office }) {
           to={`${basePath}/teaching-assignments/${row.teaching_assignment_request_id}`}
           className="text-[12.5px] font-bold text-primary"
         >
-          مراجعة
+          عرض الطلب
         </Link>
       ),
     },
@@ -153,6 +182,7 @@ export default function TeachingAssignmentQueue({ office }) {
       </header>
 
       <FilterBar
+        search={{ value: search, onChange: value => { setSearch(value); setPage(1) }, placeholder: 'بحث باسم المدرس أو المادة أو رمزها أو رقم الموظف' }}
         filters={[{
           key: 'queue',
           value: queue,
@@ -167,6 +197,15 @@ export default function TeachingAssignmentQueue({ office }) {
             { value: 'approved', label: 'معتمد' },
             { value: 'all', label: 'الكل' },
           ],
+        }, ...(authority === 'administrative' ? [{ key: 'college', value: collegeId,
+          onChange: value => { setCollegeId(value || ''); setPage(1) },
+          placeholder: 'كل الكليات',
+          options: colleges.map(college => ({ value: String(college.college_id), label: college.college_name })),
+        }] : []), {
+          key: 'action_type', value: actionType,
+          onChange: value => { setActionType(value || ''); setPage(1) },
+          placeholder: 'نوع الطلب',
+          options: [{ value: 'assign', label: 'إسناد أو استبدال' }, { value: 'remove', label: 'إزالة التكليف' }],
         }]}
       />
 

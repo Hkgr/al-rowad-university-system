@@ -117,6 +117,8 @@ export const ROUTE_ACCESS = Object.freeze({
   '/vp/scientific/calendar': [G.vpScientific],
   '/vp/administrative/reports': [G.vpAdministrative, reportAccessForOffice('administrative')],
   '/vp/administrative/teaching-assignments': [G.vpAdministrative],
+  '/vp/administrative/faculty': [G.vpAdministrative, { allRoles: [ROLES.vicePresidentAdministrative], assignedPermissions: [PERMISSIONS.administrativeStaffView], actualUniversityScope: true }],
+  '/vp/administrative/deans': [G.vpAdministrative, { allRoles: [ROLES.vicePresidentAdministrative], assignedPermissions: [PERMISSIONS.administrativeDeansView], actualUniversityScope: true }],
   '/vp/administrative/exceptional-openings': [G.vpAdministrative],
   '/vp/administrative/calendar': [G.vpAdministrative],
 

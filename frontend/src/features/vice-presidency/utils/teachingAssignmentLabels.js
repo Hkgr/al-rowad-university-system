@@ -28,6 +28,9 @@ export const ROLE_LABELS = {
   practical: 'عملي',
 }
 
+export const ACTION_LABELS = { assign: 'إسناد أو استبدال', remove: 'إزالة التكليف' }
+export function actionLabel(action) { return ACTION_LABELS[action] || 'إسناد أو استبدال' }
+
 export function requestStatusLabel(status) {
   return REQUEST_STATUS_LABELS[status] || status || '—'
 }

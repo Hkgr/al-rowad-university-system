@@ -5,6 +5,7 @@ import { apiRequest } from '../../../services/apiClient'
 import { hasPermission, PERMISSIONS } from '../../auth/auth'
 import {
   eventLabel,
+  actionLabel,
   facultyName,
   formatDateTime,
   offeringTitle,
@@ -75,7 +76,15 @@ export default function TeachingAssignmentDetail({ office }) {
   }, [id, navigate])
 
   const ownReview = authority === 'administrative' ? row?.administrative_review : row?.scientific_review
-  const canAct = canDecide && row?.status !== 'superseded' && ownReview?.status !== 'approved'
+  const canAct = canDecide && row?.status === 'submitted' && ownReview?.status === 'pending'
+
+  async function reloadAfterConflict(requestError) {
+    if (requestError.status !== 409) return
+    try {
+      const response = await apiRequest(`/v1/vice-presidency/teaching-assignments/${id}`)
+      setRow(payload(response))
+    } catch { /* Keep the server's conflict message visible. */ }
+  }
 
   async function approve() {
     if (saving || !canAct) return
@@ -94,7 +103,8 @@ export default function TeachingAssignmentDetail({ office }) {
         navigate('/login', { replace: true })
         return
       }
-      setError(requestError.message || 'تعذّر تنفيذ الموافقة.')
+      setError(requestError.status === 409 ? 'تغيرت حالة الطلب؛ حدّثنا بياناته. راجع الحالة قبل إعادة المحاولة.' : (requestError.message || 'تعذّر تنفيذ الموافقة.'))
+      await reloadAfterConflict(requestError)
     } finally {
       setSaving(false)
     }
@@ -122,7 +132,8 @@ export default function TeachingAssignmentDetail({ office }) {
         navigate('/login', { replace: true })
         return
       }
-      setError(requestError.message || 'تعذّر إعادة الطلب.')
+      setError(requestError.status === 409 ? 'تغيرت حالة الطلب؛ حدّثنا بياناته. راجع الحالة قبل إعادة المحاولة.' : (requestError.message || 'تعذّر إعادة الطلب.'))
+      await reloadAfterConflict(requestError)
     } finally {
       setSaving(false)
     }
@@ -156,6 +167,7 @@ export default function TeachingAssignmentDetail({ office }) {
       ) : (
         <>
           <header className="bg-white border border-primary/12 rounded-[18px] px-6 py-5">
+            <p className="text-[12px] font-bold text-primary">{actionLabel(row.action_type)} · نسخة الإرسال {row.submission_version || '—'}</p>
             <p className="text-[12px] font-bold text-text-light mb-1">{roleLabel(row.instructor_role)}</p>
             <h1 className="text-[20px] font-black text-text-dark">{offeringTitle(row.course_offering)}</h1>
             <p className="mt-2 text-[13px] text-text-gray">
@@ -167,6 +179,8 @@ export default function TeachingAssignmentDetail({ office }) {
               ].filter(Boolean).join(' • ')}
             </p>
             <p className="mt-3 text-[13px] font-bold text-text-dark">الحالة: {requestStatusLabel(row.status)}</p>
+            <p className="mt-2 text-[12px] text-text-gray">مقدّم الطلب: {row.requester?.username || '—'} · تاريخ الإرسال: {formatDateTime(row.submitted_at)}</p>
+            {row.action_reason && <p className="mt-2 text-[13px] text-amber-900 whitespace-pre-wrap">سبب الطلب: {row.action_reason}</p>}
           </header>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -182,6 +196,10 @@ export default function TeachingAssignmentDetail({ office }) {
               <p className="text-[12px] text-text-gray">يبقى نافذًا إلى أن يوافق النائبان على البديل.</p>
             </div>
           </div>
+
+          <p className="bg-primary/5 border border-primary/15 rounded-[12px] px-4 py-3 text-[12.5px] text-text-dark">
+            {row.action_type === 'remove' ? 'إزالة التكليف الحالي لا تصبح نافذة إلا بعد موافقتي النائبين.' : 'يبقى المدرس المعتمد الحالي نافذًا حتى يوافق النائبان على الطلب؛ عند اكتمال الموافقتين يصبح المقترح نافذًا.'}
+          </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <ReviewCard title="موافقة النائب العلمي" review={row.scientific_review} />
