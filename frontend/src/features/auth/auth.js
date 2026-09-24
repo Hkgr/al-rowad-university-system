@@ -54,6 +54,10 @@ export const PERMISSIONS = Object.freeze({
   technicalPortalAccess: 'technical_portal.access',
   userAccountsView: 'user_accounts.view',
   userAccountsManage: 'user_accounts.manage',
+  administrativeStaffView: 'administrative_staff.view',
+  administrativeStaffManage: 'administrative_staff.manage',
+  administrativeDeansView: 'administrative_deans.view',
+  administrativeDeansManage: 'administrative_deans.manage',
 })
 
 export const ACCESS = Object.freeze({

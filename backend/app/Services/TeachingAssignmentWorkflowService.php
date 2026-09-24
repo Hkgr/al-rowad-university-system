@@ -333,8 +333,8 @@ class TeachingAssignmentWorkflowService
         }
 
         return TeachingAssignmentRequest::query()
-            ->where('current_slot', 1)
-            ->whereIn('course_offering_id', $this->scopedOfferingIdsQuery($user));
+            ->where('teaching_assignment_requests.current_slot', 1)
+            ->whereIn('teaching_assignment_requests.course_offering_id', $this->scopedOfferingIdsQuery($user));
     }
 
     public function assertCanViewRequest(User $user, TeachingAssignmentRequest $request): void

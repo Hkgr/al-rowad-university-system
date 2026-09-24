@@ -677,6 +677,18 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::post('dean/course-offering-closures', [DeanCourseOfferingClosureController::class, 'store']);
     Route::get('dean/course-offering-closures/{courseOfferingClosureRequest}', [DeanCourseOfferingClosureController::class, 'show']);
     Route::post('dean/course-offering-closures/{courseOfferingClosureRequest}/resubmit', [DeanCourseOfferingClosureController::class, 'resubmit']);
+    Route::get('vice-presidency/teaching-assignments/administrative-summary', [VicePresidencyTeachingAssignmentController::class, 'administrativeSummary']);
+    Route::prefix('vice-presidency/administrative/personnel')->controller(\App\Http\Controllers\Api\AdministrativePersonnelController::class)->group(function (): void {
+        Route::get('colleges', 'colleges');
+        Route::get('employees', 'employees');
+        Route::get('faculty', 'faculty');
+        Route::post('faculty', 'saveFaculty');
+        Route::put('faculty/{facultyMember}', 'saveFaculty')->whereNumber('facultyMember');
+        Route::get('deans', 'deans');
+        Route::get('dean-candidates', 'deanCandidates');
+        Route::post('deans', 'appointDean');
+        Route::post('deans/{user}/colleges/{college}/retire', 'retireDean')->whereNumber(['user', 'college']);
+    });
     Route::get('vice-presidency/teaching-assignments', [VicePresidencyTeachingAssignmentController::class, 'index']);
     Route::get('vice-presidency/teaching-assignments/{teachingAssignmentRequest}', [VicePresidencyTeachingAssignmentController::class, 'show']);
     Route::post('vice-presidency/teaching-assignments/{teachingAssignmentRequest}/scientific/approve', [VicePresidencyTeachingAssignmentController::class, 'approveScientific']);

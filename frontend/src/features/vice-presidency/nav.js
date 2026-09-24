@@ -103,6 +103,10 @@ export const administrativeVicePresidentNav = [
         en: 'Teaching assignments',
         permissions: [PERMISSIONS.teachingAssignmentsView],
       },
+      { to: '/vp/administrative/faculty', Icon: FaChalkboardTeacher, ar: 'إدارة المدرسين', en: 'Teaching staff',
+        allRoles: [ROLES.vicePresidentAdministrative], assignedPermissions: [PERMISSIONS.administrativeStaffView], actualUniversityScope: true },
+      { to: '/vp/administrative/deans', Icon: FaClipboardCheck, ar: 'عمداء الكليات', en: 'College deans',
+        allRoles: [ROLES.vicePresidentAdministrative], assignedPermissions: [PERMISSIONS.administrativeDeansView], actualUniversityScope: true },
       {
         to: '/vp/administrative/exceptional-openings',
         Icon: FaUnlock,

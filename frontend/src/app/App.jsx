@@ -96,6 +96,8 @@ import { administrativeVicePresidentNav, scientificVicePresidentNav } from '../f
 import VicePresidentShell from '../features/vice-presidency/pages/VicePresidentShell'
 import TeachingAssignmentQueue from '../features/vice-presidency/pages/TeachingAssignmentQueue'
 import TeachingAssignmentDetail from '../features/vice-presidency/pages/TeachingAssignmentDetail'
+import AdministrativeFacultyPage from '../features/vice-presidency/pages/AdministrativeFacultyPage'
+import AdministrativeDeansPage from '../features/vice-presidency/pages/AdministrativeDeansPage'
 import ExceptionalOpeningQueue from '../features/vice-presidency/pages/ExceptionalOpeningQueue'
 import ExceptionalOpeningDetail from '../features/vice-presidency/pages/ExceptionalOpeningDetail'
 import SupplementaryExamPeriodsPage from '../features/vice-presidency/pages/SupplementaryExamPeriods'
@@ -379,6 +381,8 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/vp/administrative/reports" element={protect(<ExecutiveReportsPage office="administrative" />, reportAccessForOffice('administrative'))} />
           <Route path="/vp/administrative/teaching-assignments" element={<TeachingAssignmentQueue office="administrative" />} />
           <Route path="/vp/administrative/teaching-assignments/:id" element={<TeachingAssignmentDetail office="administrative" />} />
+          <Route path="/vp/administrative/faculty" element={protect(<AdministrativeFacultyPage />, { allRoles: [ROLES.vicePresidentAdministrative], assignedPermissions: [PERMISSIONS.administrativeStaffView], actualUniversityScope: true })} />
+          <Route path="/vp/administrative/deans" element={protect(<AdministrativeDeansPage />, { allRoles: [ROLES.vicePresidentAdministrative], assignedPermissions: [PERMISSIONS.administrativeDeansView], actualUniversityScope: true })} />
           <Route path="/vp/administrative/exceptional-openings" element={<ExceptionalOpeningQueue office="administrative" />} />
           <Route path="/vp/administrative/exceptional-openings/:id" element={<ExceptionalOpeningDetail office="administrative" />} />
           <Route path="/vp/administrative/calendar" element={<AcademicCalendarPage />} />
