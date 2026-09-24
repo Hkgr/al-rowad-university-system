@@ -8,6 +8,7 @@ export const NODE_KINDS = Object.freeze({
   action: 'إجراء المستخدم',
   review: 'مراجعة واعتماد',
   system: 'إجراء تلقائي من النظام',
+  other: 'إجراء جهة أخرى',
   end: 'نهاية',
   return: 'إرجاع أو رفض',
 })
@@ -28,10 +29,25 @@ export function visibleTask(task, user) {
   const steps = (task.steps ?? [])
     .filter(step => allows(step.access, user))
     .map(step => ({ ...step, link: step.link ? resolveLink(step.link, user) : null }))
-  const flows = (task.flows ?? []).filter(flow => allows(flow.access, user))
+  const flows = (task.flows ?? []).filter(flow => allows(flow.access, user)).map(flow => visibleFlow(flow, user))
   const notes = (task.notes ?? []).filter(note => allows(note.access, user))
   const link = task.link ? resolveLink(task.link, user) : null
   return { ...task, steps, flows, notes, link }
+}
+
+/**
+ * A node may carry the `access` of the person who performs it. When the viewer
+ * lacks it, the step stays in the diagram for context but is shown as another
+ * party's action, never as something the viewer can do.
+ */
+export function visibleFlow(flow, user) {
+  return {
+    ...flow,
+    nodes: flow.nodes.map(node => {
+      if (!node.access || allows(node.access, user) || node.kind !== 'action') return node
+      return { ...node, kind: 'other', explain: `${node.explain} (يتولاه صاحب الصلاحية المختصة؛ لا يملكها حسابك.)` }
+    }),
+  }
 }
 
 export function visibleSections(guide, user) {
@@ -155,14 +171,41 @@ export const CONTACT_NOTICE = 'لم تُعتمد بعد في النظام وسي
 
 export const REPORT_PRIVACY_NOTE = 'لا تكتب في البلاغ كلمة المرور أو رمز الدخول (التوكن)، ولا بيانات طلاب أو درجات. يكفي وصف الخطوات ونص الخطأ.'
 
-/** Plain-text report the user copies locally; nothing is sent anywhere. */
-export function buildReportTemplate({ portalTitle, pagePath, time = new Date() }) {
-  const stamp = time instanceof Date && !Number.isNaN(time.getTime()) ? time.toLocaleString('ar-SY') : ''
+const PORTAL_PREFIXES = Object.freeze({
+  student: '/student/',
+  professor: '/professor/',
+  studentAffairs: '/student-affairs/',
+  examBoard: '/exam-board/',
+  dean: '/dean/',
+  hr: '/hr/',
+  academicStructure: '/academic-structure/',
+  vpScientific: '/vp/scientific/',
+  vpAdministrative: '/vp/administrative/',
+  technical: '/technical/',
+})
+
+/** Pages of this portal the viewer can open — offered as suggestions for «صفحة حدوث المشكلة». */
+export function reportPageSuggestions(guideId, user) {
+  const prefix = PORTAL_PREFIXES[guideId]
+  if (!prefix) return []
+  return Object.keys(ROUTE_ACCESS).filter(path => path.startsWith(prefix) && resolveLink({ to: path }, user))
+}
+
+const EMPTY_PAGE = '(اكتب هنا الصفحة التي ظهرت فيها المشكلة، لا صفحة الدليل)'
+const EMPTY_TIME = '(اكتب هنا وقت حدوث المشكلة)'
+
+/**
+ * Plain-text report the user copies locally; nothing is sent anywhere.
+ * The page and time are what the user enters — never the guide page itself or the copy time.
+ */
+export function buildReportTemplate({ portalTitle, problemPage, occurredAt }) {
+  const page = typeof problemPage === 'string' && problemPage.trim() ? problemPage.trim() : EMPTY_PAGE
+  const time = typeof occurredAt === 'string' && occurredAt.trim() ? occurredAt.trim().replace('T', ' ') : EMPTY_TIME
   return [
     'بلاغ مشكلة — نظام جامعة الرواد',
     `البوابة: ${portalTitle ?? ''}`,
-    `الصفحة: ${pagePath ?? ''}`,
-    `وقت المشكلة: ${stamp}`,
+    `صفحة حدوث المشكلة: ${page}`,
+    `وقت حدوث المشكلة: ${time}`,
     'الخطوات التي نفذتها:',
     '1. ',
     '2. ',

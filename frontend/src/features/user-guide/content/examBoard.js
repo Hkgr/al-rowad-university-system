@@ -3,6 +3,8 @@ import { node, branch, source, step } from './helpers.js'
 
 const EB = 'frontend/src/features/exam-board/'
 const BOARD = { allPermissions: ['exams.view', 'exams.manage'] }
+const SUPP = 'supplementary_exams.grades.review'
+const suppStep = permissions => ({ allRoles: ['exam_officer'], assignedPermissions: permissions })
 const both = extra => ({ ...extra, allPermissions: [...BOARD.allPermissions, ...(extra.allPermissions ?? [])] })
 
 export default {
@@ -86,26 +88,31 @@ export default {
           link: { to: '/exam-board/supplementary-grades' },
           steps: [
             step('اختر الدورة وراجع تقرير المطابقة.'),
-            step('بعد إغلاق التسجيل اضغط «تثبيت القائمة وفتح العلامات».'),
-            step('لكل مقرر اختر المصحح ثم «حفظ الإسناد».'),
+            step('بعد إغلاق التسجيل اضغط «تثبيت القائمة وفتح العلامات» (يتطلب النطاق الجامعي).', { access: { ...suppStep([SUPP]), actualUniversityScope: true } }),
+            step('لكل مقرر اختر المصحح ثم «حفظ الإسناد».', { access: suppStep(['supplementary_exams.grades.assign']) }),
             step('بعد إرسال المدرّس: «اعتماد» أو «إرجاع مع سبب».'),
-            step('بعد الاعتماد «نشر»، ثم «ترحيل إلى السجل الرسمي» لمن يملك صلاحية الترحيل. تحقق من نتيجة كل عملية قبل تكرارها.'),
+            step('بعد الاعتماد اضغط «نشر». تحقق من نتيجة كل عملية قبل تكرارها.', { access: suppStep(['supplementary_exams.grades.publish']) }),
+            step('بعد النشر اضغط «ترحيل إلى السجل الرسمي». تحقق من نتيجة الترحيل قبل أي محاولة أخرى.', { access: suppStep(['supplementary_exams.results.materialize']) }),
           ],
           flows: [{
             title: 'مسار علامات الدورة التكميلية',
             nodes: [
               node('closed', 'start', 'إغلاق التسجيل من مكتب التسجيل', 'تبدأ بعد تثبيت قائمة المسجلين.'),
-              node('open', 'action', 'تثبيت القائمة وفتح العلامات', 'تنتقل الدورة إلى مرحلة التصحيح.'),
-              node('assign', 'action', 'إسناد المصحح لكل مقرر', 'يظهر المقرر في بوابة الأستاذ المسند إليه.'),
+              { ...node('open', 'action', 'تثبيت القائمة وفتح العلامات', 'تنتقل الدورة إلى مرحلة التصحيح.'), access: { ...suppStep([SUPP]), actualUniversityScope: true } },
+              { ...node('assign', 'action', 'إسناد المصحح لكل مقرر', 'يظهر المقرر في بوابة الأستاذ المسند إليه.'), access: suppStep(['supplementary_exams.grades.assign']) },
               node('review', 'review', 'مراجعة الدفعة المرسلة', 'تراجع الدفعة التي أرسلها المصحح.', [branch('عند الاعتماد', 'publish'), branch('عند الإرجاع مع سبب', 'returned')]),
               node('returned', 'return', 'إعادة الدفعة للمصحح', 'يعدّل المصحح ويعيد الإرسال فتعود للمراجعة.', [branch('بعد إعادة الإرسال', 'review')]),
-              node('publish', 'action', 'نشر النتائج', 'يرى الطالب النتيجة المنشورة قبل تحديث سجله الرسمي.'),
-              node('materialize', 'end', 'ترحيل إلى السجل الرسمي', 'تصبح النتيجة جزءًا من السجل الأكاديمي الرسمي.'),
+              { ...node('publish', 'action', 'نشر النتائج', 'يرى الطالب النتيجة المنشورة قبل تحديث سجله الرسمي.'), access: suppStep(['supplementary_exams.grades.publish']) },
+              { ...node('materialize', 'action', 'ترحيل إلى السجل الرسمي', 'يُنفذه صاحب صلاحية الترحيل بعد النشر.'), access: suppStep(['supplementary_exams.results.materialize']) },
+              node('official', 'end', 'نتيجة رسمية', 'تصبح النتيجة جزءًا من السجل الأكاديمي الرسمي وتظهر في كشف الطالب.'),
             ],
           }],
           sources: [
             source(EB + 'pages/SupplementaryGradesPage.jsx', 'تثبيت القائمة وفتح العلامات', 'حفظ الإسناد', 'إرجاع مع سبب', 'نشر', 'ترحيل إلى السجل الرسمي'),
             source('frontend/src/features/supplementary-exams/supplementaryStatus.js', 'registration_closed', 'grading_open', 'grading_submitted', 'results_approved', 'results_published', 'results_materialized'),
+            source('backend/app/Services/SupplementaryExamGradingService.php', '$this->exam($actor, Governance::REVIEW)', '$this->exam($actor, Governance::ASSIGN)', "$action === 'publish' ? Governance::PUBLISH : Governance::REVIEW"),
+            source('backend/app/Support/SupplementaryExamGradingGovernance.php', "ASSIGN = 'supplementary_exams.grades.assign'", "PUBLISH = 'supplementary_exams.grades.publish'"),
+            source('backend/app/Support/SupplementaryExamMaterializationGovernance.php', "MATERIALIZE = 'supplementary_exams.results.materialize'"),
           ],
         },
       ],

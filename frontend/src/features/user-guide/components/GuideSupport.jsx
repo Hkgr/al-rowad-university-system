@@ -30,18 +30,30 @@ export function TroubleshootingSection({ items }) {
   )
 }
 
-export function HelpSection({ portalTitle, pagePath }) {
+export function HelpSection({ portalTitle, pageSuggestions = [] }) {
+  const [problemPage, setProblemPage] = useState('')
+  const [occurredAt, setOccurredAt] = useState('')
+  const [text, setText] = useState(() => buildReportTemplate({ portalTitle }))
   const [copied, setCopied] = useState(false)
-  const template = buildReportTemplate({ portalTitle, pagePath })
+
+  // Regenerate the template from the fields; the user can still edit the text before copying.
+  const update = (page, time) => {
+    setProblemPage(page)
+    setOccurredAt(time)
+    setText(buildReportTemplate({ portalTitle, problemPage: page, occurredAt: time }))
+    setCopied(false)
+  }
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(template)
+      await navigator.clipboard.writeText(text)
       setCopied(true)
     } catch {
       setCopied(false)
     }
   }
+
+  const inputClass = 'w-full rounded-[10px] border border-primary/20 bg-white px-3 py-2 text-[13px] text-text-dark outline-none focus:border-primary'
 
   return (
     <section className={sectionClass} dir="rtl" aria-labelledby="guide-help">
@@ -57,8 +69,25 @@ export function HelpSection({ portalTitle, pagePath }) {
         ))}
       </div>
       <p className="text-[12.5px] text-amber-800 bg-amber-50 border border-amber-200 rounded-[10px] px-4 py-2.5 mb-3">{CONTACT_NOTICE}</p>
-      <label htmlFor="guide-report" className="block text-[12.5px] font-black text-text-dark mb-1.5">صيغة بلاغ قابلة للنسخ</label>
-      <textarea id="guide-report" readOnly value={template} rows={10} dir="rtl"
+
+      <div className="grid grid-cols-2 max-[700px]:grid-cols-1 gap-3 mb-3">
+        <div>
+          <label htmlFor="guide-report-page" className="block text-[12.5px] font-black text-text-dark mb-1">صفحة حدوث المشكلة</label>
+          <input id="guide-report-page" list="guide-report-pages" value={problemPage} onChange={event => update(event.target.value, occurredAt)}
+            placeholder="اختر من القائمة أو اكتب اسم الصفحة" className={inputClass} dir="auto" />
+          <datalist id="guide-report-pages">
+            {pageSuggestions.map(path => <option key={path} value={path} />)}
+          </datalist>
+          <p className="text-[11.5px] text-text-light mt-1 mb-0">اكتب الصفحة التي ظهر فيها الخطأ، لا صفحة الدليل.</p>
+        </div>
+        <div>
+          <label htmlFor="guide-report-time" className="block text-[12.5px] font-black text-text-dark mb-1">وقت حدوث المشكلة</label>
+          <input id="guide-report-time" type="datetime-local" value={occurredAt} onChange={event => update(problemPage, event.target.value)} className={inputClass} />
+        </div>
+      </div>
+
+      <label htmlFor="guide-report" className="block text-[12.5px] font-black text-text-dark mb-1.5">صيغة البلاغ (يمكنك إكمالها وتعديلها قبل النسخ أو بعده)</label>
+      <textarea id="guide-report" value={text} onChange={event => { setText(event.target.value); setCopied(false) }} rows={10} dir="rtl"
         className="w-full rounded-[12px] border border-primary/20 bg-[#fbfdf9] p-3 text-[12.5px] text-text-dark leading-6 font-[inherit] resize-y" />
       <p className="text-[12px] text-red-700 mt-2 mb-3">{REPORT_PRIVACY_NOTE}</p>
       <button type="button" onClick={copy}

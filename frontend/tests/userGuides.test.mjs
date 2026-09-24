@@ -5,7 +5,7 @@ import { canAccess } from '../src/features/auth/auth.js'
 import { GROUP_GUARDS, GUIDE_ACCESS, GUIDE_PATHS, ROUTE_ACCESS } from '../src/features/user-guide/guideAccess.js'
 import { GUIDES } from '../src/features/user-guide/content/index.js'
 import {
-  COMMON_TROUBLESHOOTING, HELP_CHANNELS, buildReportTemplate, flowsToNext, guideTitle, resolveLink,
+  COMMON_TROUBLESHOOTING, HELP_CHANNELS, buildReportTemplate, flowsToNext, guideTitle, reportPageSuggestions, resolveLink,
   visibleSections, visibleTroubleshooting, visibleUnavailable,
 } from '../src/features/user-guide/guideModel.js'
 
@@ -70,6 +70,14 @@ const SAMPLE_USERS = {
   vpAdministrative: id(['vice_president_administrative'], ['vice_presidency.administrative.access', 'teaching_assignments.review_administrative', 'course_offerings.exceptional_open.review_administrative'], { access_scopes: uni }),
   technical: id(['technical_team'], ['technical_portal.access', 'user_accounts.view', 'user_accounts.manage']),
   superAdmin: id(['super_admin'], []),
+  ministryViewer: id([], ['admissions.view'], { access_scopes: uni }),
+  ministryManager: id([], ['admissions.view', 'admissions.manage'], { access_scopes: uni }),
+  suppViewer: id(['registration_officer'], ['students.view', 'supplementary_exams.registrations.view'], { access_scopes: uni }),
+  suppWindowNoScope: id(['registration_officer'], ['students.view', 'supplementary_exams.registrations.view', 'supplementary_exams.registrations.window'], { access_scopes: college }),
+  suppWindow: id(['registration_officer'], ['students.view', 'supplementary_exams.registrations.view', 'supplementary_exams.registrations.window'], { access_scopes: uni }),
+  suppManager: id(['registration_officer'], ['students.view', 'supplementary_exams.registrations.view', 'supplementary_exams.registrations.manage'], { access_scopes: college }),
+  examReviewOnly: id(['exam_officer'], ['exams.view', 'exams.manage', 'supplementary_exams.grades.review'], { access_scopes: uni }),
+  examFullSupplementary: id(['exam_officer'], ['exams.view', 'exams.manage', 'supplementary_exams.grades.review', 'supplementary_exams.grades.assign', 'supplementary_exams.grades.publish', 'supplementary_exams.results.materialize'], { access_scopes: uni }),
   deanAndVp: id(['dean', 'vice_president_scientific'], ['registration_requests.review', 'vice_presidency.scientific.access', 'teaching_assignments.review_scientific'], { access_scopes: uni }),
 }
 
@@ -268,9 +276,13 @@ test('troubleshooting and help sections are complete, safe and invent no contact
   assert.doesNotMatch(everything, /(?:\+?\d[\d\s-]{7,}\d)/, 'no phone numbers')
   assert.doesNotMatch(everything, /https?:\/\//, 'no external URLs')
 
-  const template = buildReportTemplate({ portalTitle: 'بوابة الطالب', pagePath: '/student/guide', time: new Date('2026-09-24T10:00:00Z') })
-  for (const field of ['البوابة: بوابة الطالب', 'الصفحة: /student/guide', 'وقت المشكلة:', 'الخطوات التي نفذتها:', 'نص الخطأ أو رقمه']) assert.ok(template.includes(field), field)
-  assert.doesNotMatch(template, /كلمة المرور|password|token|توكن|درجة|علامة/i)
+  const empty = buildReportTemplate({ portalTitle: 'بوابة الطالب' })
+  assert.ok(empty.includes('صفحة حدوث المشكلة: (اكتب هنا الصفحة التي ظهرت فيها المشكلة، لا صفحة الدليل)'))
+  assert.ok(empty.includes('وقت حدوث المشكلة: (اكتب هنا وقت حدوث المشكلة)'))
+  assert.doesNotMatch(empty, /\/guide/)
+  const filled = buildReportTemplate({ portalTitle: 'بوابة الطالب', problemPage: '/student/registration', occurredAt: '2026-09-24T10:15' })
+  for (const field of ['البوابة: بوابة الطالب', 'صفحة حدوث المشكلة: /student/registration', 'وقت حدوث المشكلة: 2026-09-24 10:15', 'الخطوات التي نفذتها:', 'نص الخطأ أو رقمه']) assert.ok(filled.includes(field), field)
+  for (const template of [empty, filled]) assert.doesNotMatch(template, /كلمة المرور|password|token|توكن|درجة|علامة/i)
 })
 
 test('guide UI uses the shared components and sends nothing to external services', async () => {
@@ -281,10 +293,80 @@ test('guide UI uses the shared components and sends nothing to external services
   assert.match(page, /غير متاح حاليًا/)
   assert.match(support, /عند حدوث مشكلة/)
   assert.match(support, /التواصل وطلب المساعدة/)
-  assert.match(support, /navigator\.clipboard\.writeText\(template\)/)
+  assert.match(support, /navigator\.clipboard\.writeText\(text\)/)
+  // The report must not default to the guide page the user is reading.
+  assert.doesNotMatch(page, /location\.pathname|useLocation/)
+  assert.doesNotMatch(support, /location\.pathname|useLocation/)
+  assert.match(support, /صفحة حدوث المشكلة/)
+  assert.match(page, /reportPageSuggestions\(guideId, user\)/)
   for (const file of [page, support, flow]) assert.doesNotMatch(file, /fetch\(|apiRequest|XMLHttpRequest|sendBeacon/)
   assert.match(flow, /dir="rtl"/)
   assert.match(flow, /NODE_KINDS\[node\.kind\]/)
   const pkg = JSON.parse(await read('frontend/package.json'))
   assert.deepEqual(Object.keys(pkg.dependencies).sort(), ['@tailwindcss/vite', 'framer-motion', 'html2canvas-pro', 'jspdf', 'react', 'react-dom', 'react-icons', 'react-router-dom', 'tailwindcss', 'xlsx'])
+})
+
+test('ministry placements: view-only users get a review task, never the operational workflow', () => {
+  const viewer = taskIds('studentAffairs', SAMPLE_USERS.ministryViewer)
+  assert.deepEqual(viewer, ['ministry-review'])
+  const review = tasksOf('studentAffairs', SAMPLE_USERS.ministryViewer)[0]
+  assert.equal(review.flows.length, 0)
+  assert.ok(review.link, 'viewer can open the page')
+  const manager = taskIds('studentAffairs', SAMPLE_USERS.ministryManager)
+  assert.ok(manager.includes('ministry-placements') && manager.includes('ministry-review'))
+  const operational = tasksOf('studentAffairs', SAMPLE_USERS.ministryManager).find(task => task.id === 'ministry-placements')
+  assert.ok(operational.flows[0].nodes.some(node => node.kind === 'action'))
+  // admissions.manage without admissions.view cannot open the page at all.
+  assert.equal(canAccess(GUIDE_ACCESS.studentAffairs, id([], ['admissions.manage'], { access_scopes: uni })), true)
+  assert.ok(!taskIds('studentAffairs', id([], ['admissions.manage'], { access_scopes: uni })).includes('ministry-placements'))
+})
+
+test('supplementary registration office: view, window and registration are separate tasks', () => {
+  assert.deepEqual(taskIds('studentAffairs', SAMPLE_USERS.suppViewer).filter(t => t.startsWith('supplementary')), ['supplementary-office-view'])
+  assert.deepEqual(taskIds('studentAffairs', SAMPLE_USERS.suppWindowNoScope).filter(t => t.startsWith('supplementary')), ['supplementary-office-view'])
+  assert.deepEqual(taskIds('studentAffairs', SAMPLE_USERS.suppWindow).filter(t => t.startsWith('supplementary')), ['supplementary-office-view', 'supplementary-window'])
+  assert.deepEqual(taskIds('studentAffairs', SAMPLE_USERS.suppManager).filter(t => t.startsWith('supplementary')), ['supplementary-office-view', 'supplementary-register'])
+  const window = tasksOf('studentAffairs', SAMPLE_USERS.suppWindow).find(task => task.id === 'supplementary-window')
+  const registering = window.flows[0].nodes.find(node => node.id === 'registering')
+  assert.equal(registering.kind, 'other', 'registering students is shown as another party action in the window flow')
+  assert.ok(!taskIds('studentAffairs', SAMPLE_USERS.superAdmin).some(t => t.startsWith('supplementary')), 'role + assigned permissions required')
+})
+
+test('exam board supplementary grades: each action follows its own permission', () => {
+  const steps = user => stepTexts('examBoard', 'supplementary-grades', user)
+  const flowKinds = user => Object.fromEntries(tasksOf('examBoard', user).find(task => task.id === 'supplementary-grades').flows[0].nodes.map(node => [node.id, node.kind]))
+  const reviewOnly = steps(SAMPLE_USERS.examReviewOnly)
+  assert.ok(reviewOnly.some(text => text.includes('«اعتماد» أو «إرجاع مع سبب»')))
+  assert.ok(reviewOnly.some(text => text.includes('تثبيت القائمة وفتح العلامات')))
+  for (const hidden of ['حفظ الإسناد', '«نشر»', 'ترحيل إلى السجل الرسمي']) assert.ok(!reviewOnly.some(text => text.includes(hidden)), hidden)
+  assert.deepEqual(flowKinds(SAMPLE_USERS.examReviewOnly), { closed: 'start', open: 'action', assign: 'other', review: 'review', returned: 'return', publish: 'other', materialize: 'other', official: 'end' })
+  const noScope = { ...SAMPLE_USERS.examReviewOnly, access_scopes: college }
+  assert.equal(flowKinds(noScope).open, 'other')
+  assert.ok(!steps(noScope).some(text => text.includes('تثبيت القائمة وفتح العلامات')))
+  const full = steps(SAMPLE_USERS.examFullSupplementary)
+  for (const shown of ['حفظ الإسناد', '«نشر»', 'ترحيل إلى السجل الرسمي']) assert.ok(full.some(text => text.includes(shown)), shown)
+  assert.deepEqual(Object.values(flowKinds(SAMPLE_USERS.examFullSupplementary)).filter(kind => kind === 'other'), [])
+})
+
+test('no diagram presents an action the viewer cannot perform as their own', () => {
+  for (const [guideId, guide] of Object.entries(GUIDES)) {
+    for (const [name, user] of Object.entries(SAMPLE_USERS)) {
+      if (!canAccess(GUIDE_ACCESS[guideId], user)) continue
+      for (const task of visibleSections(guide, user).flatMap(section => section.tasks)) {
+        for (const flow of task.flows) {
+          for (const node of flow.nodes) {
+            if (node.kind === 'action' && node.access) assert.ok(canAccess(node.access, user), `${guideId}/${task.id}/${node.id} for ${name}`)
+          }
+        }
+      }
+    }
+  }
+})
+
+test('report page suggestions are this portal\'s pages the viewer can open, never the guide', () => {
+  const professor = reportPageSuggestions('professor', SAMPLE_USERS.professor)
+  assert.ok(professor.includes('/professor/grades') && professor.includes('/professor/attendance'))
+  assert.ok(professor.every(path => path.startsWith('/professor/') && !path.endsWith('/guide')))
+  assert.ok(!reportPageSuggestions('professor', { ...SAMPLE_USERS.professor, permissions: ['attendance.manage'] }).includes('/professor/grades'))
+  assert.deepEqual(reportPageSuggestions('studentAffairs', SAMPLE_USERS.ministryViewer), ['/student-affairs/ministry-placements'])
 })

@@ -6,6 +6,7 @@ const KIND_STYLE = {
   action: 'border border-solid border-primary/35 bg-white',
   review: 'border-[3px] border-double border-sky-600/60 bg-sky-50/60',
   system: 'border border-dashed border-slate-400 bg-slate-50',
+  other: 'border border-dashed border-violet-400/70 bg-violet-50/50',
   end: 'border-[2px] border-solid border-primary-dark bg-primary/12',
   return: 'border-[2px] border-dotted border-red-500/70 bg-red-50/60',
 }

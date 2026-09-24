@@ -1,14 +1,12 @@
-import { useLocation } from 'react-router-dom'
 import { FaBookOpen, FaBan } from 'react-icons/fa'
 import { getIdentity } from '../auth/auth'
 import { GUIDES } from './content/index.js'
-import { guideTitle, visibleSections, visibleTroubleshooting, visibleUnavailable } from './guideModel'
+import { guideTitle, reportPageSuggestions, visibleSections, visibleTroubleshooting, visibleUnavailable } from './guideModel'
 import GuideTaskCard from './components/GuideTaskCard'
 import { HelpSection, TroubleshootingSection } from './components/GuideSupport'
 
 /** One shared page renders every portal guide from its structured definition. */
 export default function UserGuidePage({ guideId }) {
-  const location = useLocation()
   const user = getIdentity()
   const guide = GUIDES[guideId]
   const title = guideTitle(guide, user)
@@ -52,7 +50,7 @@ export default function UserGuidePage({ guideId }) {
       )}
 
       <TroubleshootingSection items={troubleshooting} />
-      <HelpSection portalTitle={title} pagePath={location.pathname} />
+      <HelpSection portalTitle={title} pageSuggestions={reportPageSuggestions(guideId, user)} />
     </div>
   )
 }

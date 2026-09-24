@@ -5,6 +5,13 @@ const SA = 'frontend/src/features/student-affairs/pages/'
 const MANUAL = { allPermissions: [PERMISSIONS.studentsView, PERMISSIONS.studentsManage] }
 const MINISTRY_IMPORT = { assignedPermissions: [PERMISSIONS.admissionsManage], actualUniversityScope: true }
 const MINISTRY_VIEW = { assignedPermissions: [PERMISSIONS.admissionsView], actualUniversityScope: true }
+// Writes: MinistryPlacementAccess::canManage (assigned admissions.manage + university scope) on a page reachable with admissions.view.
+const MINISTRY_MANAGE = { assignedPermissions: [PERMISSIONS.admissionsView, PERMISSIONS.admissionsManage], actualUniversityScope: true }
+// Supplementary registration office: page guard, then per-action server rules
+// (SupplementaryExamRegistrationWindowService::assertCanGovernPeriod, SupplementaryExamRegistrationService::staff).
+const SUPP_VIEW = { allPermissions: ['students.view'], allRoles: ['registration_officer'], assignedPermissions: ['supplementary_exams.registrations.view'] }
+const SUPP_WINDOW = { ...SUPP_VIEW, assignedPermissions: ['supplementary_exams.registrations.view', 'supplementary_exams.registrations.window'], actualUniversityScope: true }
+const SUPP_MANAGE = { ...SUPP_VIEW, assignedPermissions: ['supplementary_exams.registrations.view', 'supplementary_exams.registrations.manage'] }
 
 export default {
   id: 'studentAffairs',
@@ -84,18 +91,18 @@ export default {
         {
           id: 'ministry-placements',
           title: 'استيراد طلاب المفاضلة وقيدهم',
-          summary: 'مراحل متتابعة من ملف المفاضلة إلى إنشاء سجلات الطلاب. التعديل يتطلب صلاحية إدارة القبول؛ العرض وحده يسمح بالاطلاع والتدقيق فقط.',
+          summary: 'مراحل متتابعة من ملف المفاضلة إلى إنشاء سجلات الطلاب. تتطلب صلاحية إدارة القبول المسندة مع النطاق الجامعي.',
+          access: MINISTRY_MANAGE,
           link: { to: '/student-affairs/ministry-placements' },
           steps: [
-            step('«رفع ملف مفاضلة»: اختر السنة واسم الدفعة والملف، ثم «فحص الملف». صحّح أخطاء الملف قبل «اعتماد واستيراد الدفعة».', { access: MINISTRY_IMPORT }),
-            step('«مطابقة البرامج»: طابق كل سجل مع البرنامج الأكاديمي المناسب (فرديًا أو لمجموعة).', { access: MINISTRY_IMPORT }),
-            step('«تحويل إلى متقدم»: ينشئ متقدمًا وطلب قبول للسجلات الجاهزة.', { access: MINISTRY_IMPORT }),
-            step('«اعتماد وإنشاء طالب»: أدخل رقم القيد والسنة الدراسية وتاريخ القيد لإنشاء سجل الطالب.', { access: MINISTRY_IMPORT }),
-            step('«التدقيق النهائي»: راجع تقرير الجاهزية والملاحظات (للقراءة).'),
+            step('«رفع ملف مفاضلة»: اختر السنة واسم الدفعة والملف، ثم «فحص الملف». صحّح أخطاء الملف قبل «اعتماد واستيراد الدفعة».'),
+            step('«مطابقة البرامج»: طابق كل سجل مع البرنامج الأكاديمي المناسب (فرديًا أو لمجموعة).'),
+            step('«تحويل إلى متقدم»: ينشئ متقدمًا وطلب قبول للسجلات الجاهزة.'),
+            step('«اعتماد وإنشاء طالب»: أدخل رقم القيد والسنة الدراسية وتاريخ القيد لإنشاء سجل الطالب.'),
+            step('«التدقيق النهائي»: راجع تقرير الجاهزية والملاحظات قبل إغلاق العمل على الدفعة.'),
           ],
           flows: [{
             title: 'مسار المفاضلة الوزارية',
-            access: MINISTRY_VIEW,
             nodes: [
               node('file', 'start', 'رفع ملف المفاضلة وفحصه', 'يُفحص الملف أولًا؛ لا يُسمح بالاستيراد مع وجود صفوف خاطئة أو مكررة.'),
               node('imported', 'action', 'اعتماد واستيراد الدفعة', 'تُنشأ السجلات بحالة «مستورد».'),
@@ -106,9 +113,27 @@ export default {
             ],
           }],
           sources: [
-            source(SA + 'MinistryPlacementsPage.jsx', 'رفع ملف مفاضلة', 'فحص الملف', 'اعتماد واستيراد الدفعة', 'مطابقة البرامج', 'تحويل إلى متقدم', 'اعتماد وإنشاء طالب', 'التدقيق النهائي'),
+            source(SA + 'MinistryPlacementsPage.jsx', 'رفع ملف مفاضلة', 'فحص الملف', 'اعتماد واستيراد الدفعة', 'مطابقة البرامج', 'تحويل إلى متقدم', 'اعتماد وإنشاء طالب', 'التدقيق النهائي', 'hasAssignedPermission(PERMISSIONS.admissionsManage)'),
+            source('backend/app/Support/MinistryPlacementAccess.php', "public const MANAGE = 'admissions.manage'", 'hasActualUniversityScope'),
             source('backend/app/Models/MinistryPlacementRecord.php', "'imported'", "'program_matched'"),
             source('backend/app/Services/MinistryPlacementApplicantConversionService.php', "'applicant_created'"),
+          ],
+        },
+        {
+          id: 'ministry-review',
+          title: 'الاطلاع على دفعات المفاضلة وتدقيقها',
+          summary: 'اطلاع وتدقيق فقط: تعرض الصفحة الدفعات المستوردة وحالة سجلاتها في كل مرحلة. أزرار الاستيراد والمطابقة والتحويل والقيد لا تظهر إلا لمن يملك صلاحية إدارة القبول، وتظهر المراحل لغيره «للقراءة فقط».',
+          link: { to: '/student-affairs/ministry-placements' },
+          steps: [
+            step('اختر دفعة من «الدفعات المستوردة».'),
+            step('راجع تبويب «السجلات» وابحث فيها، ثم تبويبات المراحل لمعرفة ما طُوبق وما حُوّل وما قُيّد.'),
+            step('افتح «التدقيق النهائي» لعرض تقرير الجاهزية والملاحظات.'),
+            step('إذا وجدت سجلًا يحتاج تصحيحًا فأبلغ صاحب صلاحية إدارة القبول؛ لا يمكن تعديله من حساب العرض.'),
+          ],
+          sources: [
+            source(SA + 'MinistryPlacementsPage.jsx', 'الدفعات المستوردة', 'بحث في السجلات', 'التدقيق النهائي'),
+            source(SA + '../components/MinistryApplicantConversionPanel.jsx', 'للقراءة فقط'),
+            source('backend/app/Support/MinistryPlacementAccess.php', "public const VIEW = 'admissions.view'"),
           ],
         },
       ],
@@ -118,29 +143,66 @@ export default {
       title: 'التسجيل',
       tasks: [
         {
-          id: 'supplementary-office',
-          title: 'التسجيل في الامتحانات التكميلية (مكتب التسجيل)',
-          summary: 'فتح فترة التسجيل وإغلاقها يتطلب صلاحية النافذة والنطاق الجامعي؛ التسجيل والإلغاء يتطلبان صلاحية الإدارة ضمن نطاق الطالب.',
-          access: { allPermissions: ['students.view'], allRoles: ['registration_officer'], assignedPermissions: ['supplementary_exams.registrations.view'] },
+          id: 'supplementary-office-view',
+          title: 'متابعة التسجيل في الامتحانات التكميلية',
+          summary: 'اطلاع على حالة الدورة وقائمة المسجلين (أولية أو نهائية). أزرار الفتح والإغلاق والتسجيل تبقى معطّلة ما لم يمنحك الخادم صلاحيتها.',
+          access: SUPP_VIEW,
           link: { to: '/student-affairs/supplementary-exams' },
           steps: [
-            step('اختر الدورة التكميلية، ثم «فتح التسجيل» عندما تكون الدورة معلنة.'),
-            step('ابحث عن الطالب («بحث»)، راجع أهليته، ثم «تسجيل».'),
-            step('لإلغاء تسجيل اضغط «إلغاء» واكتب السبب.'),
-            step('في النهاية «إغلاق التسجيل وتثبيت القائمة»؛ بعدها تصبح القائمة نهائية ولا يمكن إعادة فتحها.'),
+            step('اختر الدورة التكميلية لعرض حالتها وحالة القائمة.'),
+            step('ابحث في قائمة المسجلين عن طالب معين.'),
+          ],
+          sources: [source(SA + 'SupplementaryExamRegistrations.jsx', 'حالة القائمة', 'أولية', 'نهائية', 'can_manage_window', 'can_manage_registrations')],
+        },
+        {
+          id: 'supplementary-window',
+          title: 'فتح التسجيل التكميلي وإغلاقه',
+          summary: 'يتطلب دور موظف التسجيل الفعلي وصلاحية نافذة التسجيل المسندة والنطاق الجامعي.',
+          access: SUPP_WINDOW,
+          link: { to: '/student-affairs/supplementary-exams' },
+          steps: [
+            step('اختر دورة معلنة ثم «فتح التسجيل».'),
+            step('بعد انتهاء التسجيل اضغط «إغلاق التسجيل وتثبيت القائمة»؛ تصبح القائمة نهائية ولا يمكن إعادة فتح التسجيل.'),
           ],
           flows: [{
-            title: 'مسار فترة التسجيل التكميلي',
+            title: 'مسار نافذة التسجيل التكميلي',
             nodes: [
               node('announced', 'start', 'دورة معلنة', 'تعلنها نيابة الشؤون العلمية.'),
-              node('open', 'action', 'فتح التسجيل', 'تنتقل الدورة إلى «التسجيل مفتوح».'),
-              node('register', 'action', 'تسجيل الطلاب المؤهلين أو إلغاء تسجيلهم', 'الإلغاء يتطلب كتابة سبب.'),
-              node('closed', 'end', 'إغلاق التسجيل وتثبيت القائمة', 'تصبح القائمة نهائية وتنتقل الدورة إلى مرحلة التصحيح لدى هيئة الامتحانات.'),
+              node('open', 'action', 'فتح التسجيل', 'تنتقل الدورة إلى «التسجيل مفتوح»؛ يشترط وجود مقرر مطروح مفتوح.'),
+              node('registering', 'other', 'تسجيل الطلاب', 'يسجّل الطلابُ أنفسهم أو يسجّلهم موظف يملك صلاحية إدارة التسجيل.'),
+              node('closed', 'action', 'إغلاق التسجيل وتثبيت القائمة', 'تصبح القائمة نهائية.'),
+              node('exam', 'end', 'انتقال الدورة إلى هيئة الامتحانات', 'تبدأ هيئة الامتحانات مرحلة العلامات على القائمة النهائية.'),
             ],
           }],
           sources: [
-            source(SA + 'SupplementaryExamRegistrations.jsx', 'فتح التسجيل', 'إغلاق التسجيل وتثبيت القائمة'),
-            source('backend/app/Services/SupplementaryExamRegistrationWindowService.php', "'registration_open'", "'registration_closed'", "'announced'"),
+            source(SA + 'SupplementaryExamRegistrations.jsx', 'فتح التسجيل', 'إغلاق التسجيل وتثبيت القائمة', 'can_manage_window'),
+            source('backend/app/Services/SupplementaryExamRegistrationWindowService.php', "'registration_open'", "'registration_closed'", "'announced'", 'SupplementaryExamRegistrationGovernance::WINDOW', 'hasActualUniversityScope'),
+          ],
+        },
+        {
+          id: 'supplementary-register',
+          title: 'تسجيل طالب في الامتحان التكميلي أو إلغاء تسجيله',
+          summary: 'يتطلب دور موظف التسجيل وصلاحية إدارة التسجيل المسندة، وأن يكون الطالب ضمن نطاقك، وأن تكون نافذة التسجيل مفتوحة.',
+          access: SUPP_MANAGE,
+          link: { to: '/student-affairs/supplementary-exams' },
+          steps: [
+            step('ابحث عن الطالب («بحث») واختره؛ تُعرض المقررات المؤهل لها.'),
+            step('اضغط «تسجيل» للمقرر المطلوب.'),
+            step('لإلغاء تسجيل اضغط «إلغاء» واكتب السبب (إلزامي).'),
+          ],
+          flows: [{
+            title: 'مسار تسجيل طالب',
+            nodes: [
+              node('find', 'start', 'البحث عن الطالب', 'يُشترط أن تكون نافذة التسجيل مفتوحة.'),
+              node('eligible', 'system', 'فحص الأهلية', 'يعرض النظام المقررات التي يحق للطالب التسجيل فيها فقط.'),
+              node('register', 'action', 'تسجيل الطالب في المقرر', 'يُسجَّل الطالب ويظهر في القائمة الأولية.', [branch('عند الإلغاء مع سبب', 'cancelled'), branch('عند إغلاق التسجيل', 'fixed')]),
+              { ...node('cancelled', 'return', 'إلغاء التسجيل', 'يُلغى التسجيل مع حفظ السبب؛ متاح فقط ما دامت النافذة مفتوحة.'), terminal: true },
+              node('fixed', 'end', 'تثبيت ضمن القائمة النهائية', 'بعد الإغلاق لا يمكن التعديل من هذه الصفحة.'),
+            ],
+          }],
+          sources: [
+            source(SA + 'SupplementaryExamRegistrations.jsx', 'تسجيل', 'إلغاء', 'بحث', 'can_manage_registrations'),
+            source('backend/app/Services/SupplementaryExamRegistrationService.php', 'SupplementaryExamRegistrationGovernance::MANAGE', 'isRegistrationOfficer'),
           ],
         },
         {
