@@ -109,6 +109,11 @@ import SemesterOfferingDetail from '../features/vice-presidency/pages/SemesterOf
 import ExecutiveReportsPage from '../features/executive-reports/pages/ExecutiveReportsPage'
 import { reportAccessForOffice } from '../features/executive-reports/access'
 
+// ── المكتب التقني (Technical Office portal) ────────────────────────────────
+import technicalNav from '../features/technical-portal/nav'
+import TechnicalHome from '../features/technical-portal/pages/TechnicalHome'
+import AccountsPermissionsPage from '../features/technical-portal/pages/AccountsPermissionsPage'
+
 function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], actualUniversityScope = false, actualAcademicScope = false, studentIdentity = false, employeeIdentity = false, anyAccess = [] }) {
   const token = localStorage.getItem('token')
   const [identity, setIdentity] = useState(getIdentity())
@@ -356,6 +361,18 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/vp/administrative/exceptional-openings" element={<ExceptionalOpeningQueue office="administrative" />} />
           <Route path="/vp/administrative/exceptional-openings/:id" element={<ExceptionalOpeningDetail office="administrative" />} />
           <Route path="/vp/administrative/calendar" element={<AcademicCalendarPage />} />
+        </Route>
+
+        {/* ── المكتب التقني: التبعية التنظيمية لا تمنح صلاحية؛ الوصول من صلاحيات الأدوار فقط ── */}
+        <Route
+          element={
+            <ProtectedRoute {...ACCESS.technicalPortal}>
+              <DashboardLayout nav={technicalNav} appTitle="المكتب التقني" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/technical" element={<TechnicalHome />} />
+          <Route path="/technical/accounts" element={protect(<AccountsPermissionsPage />, ACCESS.technicalAccounts)} />
         </Route>
 
         {/* Default redirect */}

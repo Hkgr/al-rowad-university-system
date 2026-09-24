@@ -9,9 +9,11 @@ use Symfony\Component\HttpFoundation\Response;
 
 class RequireSystemAdministrator
 {
-    public function handle(Request $request, Closure $next, AcademicAuthorizationService $authorization): Response
+    public function __construct(private readonly AcademicAuthorizationService $authorization) {}
+
+    public function handle(Request $request, Closure $next): Response
     {
-        $authorization->assertSystemAdministrator($request->user());
+        $this->authorization->assertSystemAdministrator($request->user());
 
         return $next($request);
     }

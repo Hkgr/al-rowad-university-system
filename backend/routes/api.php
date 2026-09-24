@@ -783,11 +783,44 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     |--------------------------------------------------------------------------
     */
 
-    Route::apiResource('users', UserController::class);
-    Route::apiResource('roles', RoleController::class);
-    Route::apiResource('permissions', PermissionController::class);
-    Route::apiResource('user-roles', UserRoleController::class);
-    Route::apiResource('role-permissions', RolePermissionController::class);
+    // Accounts, role assignments and account status are written only through
+    // the audited account-administration service below. The generic users and
+    // user-roles resources are read-only for everyone, including super_admin.
+    Route::apiResource('users', UserController::class)->only(['index', 'show']);
+    Route::apiResource('user-roles', UserRoleController::class)->only(['index', 'show']);
+    Route::apiResource('roles', RoleController::class)->only(['index', 'show']);
+    Route::apiResource('permissions', PermissionController::class)->only(['index', 'show']);
+    Route::apiResource('role-permissions', RolePermissionController::class)->only(['index', 'show']);
+    // Role definitions (including system roles) are reserved to super_admin.
+    Route::middleware(\App\Http\Middleware\RequireSystemAdministrator::class)->group(function (): void {
+        Route::apiResource('roles', RoleController::class)->only(['store', 'update', 'destroy']);
+        Route::apiResource('permissions', PermissionController::class)->only(['store', 'update', 'destroy']);
+        Route::apiResource('role-permissions', RolePermissionController::class)->only(['store', 'update', 'destroy']);
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Technical Office portal — الحسابات والصلاحيات
+    |--------------------------------------------------------------------------
+    | Organizational placement grants nothing; access comes from role permissions.
+    | Finer rules (allowlisted roles, self-change, last super_admin) are enforced
+    | by AccountAdministrationService on every request.
+    |--------------------------------------------------------------------------
+    */
+
+    Route::prefix('technical/accounts')->controller(\App\Http\Controllers\Api\AccountAdministrationController::class)->group(function (): void {
+        Route::middleware(\App\Http\Middleware\RequirePermission::class.':user_accounts.view')->group(function (): void {
+            Route::get('/', 'index');
+            Route::get('options', 'options');
+            Route::get('{user}', 'show')->whereNumber('user');
+        });
+        Route::middleware(\App\Http\Middleware\RequirePermission::class.':user_accounts.manage')->group(function (): void {
+            Route::post('/', 'store');
+            Route::post('{user}/roles', 'assignRole')->whereNumber('user');
+            Route::delete('{user}/roles/{role}', 'revokeRole')->whereNumber(['user', 'role']);
+            Route::put('{user}/status', 'updateStatus')->whereNumber('user');
+        });
+    });
 
     /*
     |--------------------------------------------------------------------------
@@ -800,7 +833,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::apiResource('login-audit-logs', LoginAuditLogController::class)
         ->only(['index', 'show'])
         ->middleware(\App\Http\Middleware\RequireSystemAdministrator::class);
-    Route::apiResource('user-activity-logs', UserActivityLogController::class);
+    // Audit trail is append-only through services; the API exposes reads only.
+    Route::apiResource('user-activity-logs', UserActivityLogController::class)
+        ->only(['index', 'show'])
+        ->middleware(\App\Http\Middleware\RequireSystemAdministrator::class);
     Route::apiResource('system-modules', SystemModuleController::class);
     Route::apiResource('password-reset-tokens', PasswordResetTokenController::class)
         ->only(['index', 'show'])

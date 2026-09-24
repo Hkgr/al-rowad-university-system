@@ -8,7 +8,7 @@ class StoreUserRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        return false; // Unrouted: writes go through AccountAdministrationService.
     }
 
     public function rules(): array
@@ -16,7 +16,7 @@ class StoreUserRequest extends FormRequest
         return [
             'username' => 'required|string|max:80',
             'email' => 'required|string|max:150',
-            'password_hash' => 'required|string|max:255',
+            'password_hash' => 'prohibited',
             'account_status_id' => 'required|integer|exists:account_statuses,account_status_id',
             'student_id' => 'prohibited',
             'employee_id' => 'prohibited',
@@ -24,7 +24,7 @@ class StoreUserRequest extends FormRequest
             'last_login_at' => 'nullable|date',
             'email_verified_at' => 'nullable|date',
             'failed_login_attempts' => 'required|integer',
-            'created_by_user_id' => 'nullable|integer|exists:users,user_id',
+            'created_by_user_id' => 'prohibited',
             'created_at' => 'nullable|date',
             'updated_at' => 'nullable|date',
         ];
