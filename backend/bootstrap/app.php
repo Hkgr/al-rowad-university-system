@@ -2,6 +2,7 @@
 
 use App\Exceptions\AcademicCalendarException;
 use App\Exceptions\AccountAdministrationException;
+use App\Support\AdministrativeGovernanceException;
 use App\Exceptions\AcademicRecordException;
 use App\Exceptions\AcademicRequirementConfigurationException;
 use App\Exceptions\AttendanceException;
@@ -60,6 +61,19 @@ return Application::configure(basePath: dirname(__DIR__))
                 'message' => 'Validation failed',
                 'errors' => $exception->errors(),
             ], 422);
+        });
+
+        $exceptions->render(function (AdministrativeGovernanceException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+            ], $exception->status);
         });
 
         $exceptions->render(function (AccountAdministrationException $exception, Request $request) {

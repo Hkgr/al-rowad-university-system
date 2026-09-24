@@ -2,6 +2,7 @@ import { PERMISSIONS, ROLES } from '../../auth/auth.js'
 import { CATALOG_MANAGE } from '../../scientific-courses/catalog.js'
 import { PROGRAM_ACCESS } from '../../scientific-programs/programs.js'
 import { reportAccessForOffice } from '../../executive-reports/access.js'
+import { ADMINISTRATIVE_ACCESS } from '../../vice-presidency/utils/administrativeAccess.js'
 import { node, branch, source, step } from './helpers.js'
 
 const V = 'frontend/src/features/vice-presidency/pages/'
@@ -27,7 +28,9 @@ function parallelReviewTasks(office) {
       steps: [
         step('افتح «تكليفات المدرسين»؛ القائمة الافتراضية «بانتظار مراجعتي».'),
         step('اضغط «مراجعة» لفتح الطلب.'),
-        step('اضغط «موافقة»، أو «إعادة للعميد» واكتب سبب الإعادة ثم «تأكيد الإعادة».'),
+        step('راجع نوع الطلب وسببه وبيانات المدرس المقترح والنافذ ومراجعة النائب الآخر، ثم اقرأ «الأثر المتوقع».'),
+        step('اضغط زر «موافقة» الخاص بمكتبك على النسخة المعروضة، أو «إعادة للعميد» واكتب سبب الإعادة ثم «تأكيد الإعادة».'),
+        step('إذا ظهر أن الطلب تغيّر أو اعتُمد أو استُبدل، تُعاد الصفحة تحميل الحالة من الخادم؛ راجع النسخة الحالية ثم قرّر.'),
       ],
       flows: [{
         title: 'مسار مراجعة التكليف التدريسي',
@@ -41,7 +44,7 @@ function parallelReviewTasks(office) {
       }],
       sources: [
         source(V + 'TeachingAssignmentQueue.jsx', 'بانتظار مراجعتي', 'مراجعة'),
-        source(V + 'TeachingAssignmentDetail.jsx', 'موافقة', 'إعادة للعميد', 'تأكيد الإعادة'),
+        source(V + 'TeachingAssignmentDetail.jsx', 'موافقة', 'إعادة للعميد', 'تأكيد الإعادة', 'الأثر المتوقع', 'expected_submission_version'),
         source('backend/app/Support/TeachingAssignmentWorkflow.php', "'submitted'", "'returned'", "'approved'", "'pending'"),
       ],
     },
@@ -230,12 +233,107 @@ export const scientific = {
   ],
 }
 
+const FACULTY_PAGE = V + 'AdministrativeFacultyPage.jsx'
+const DEANS_PAGE = V + 'AdministrativeDeansPage.jsx'
+
+const governanceTasks = [
+  {
+    id: 'home-indicators',
+    title: 'قراءة مؤشرات الصفحة الرئيسية',
+    summary: 'أعداد الطلاب والمدرسين النشطين وطلبات التكليف (بانتظار مراجعتك، معادة، معتمدة) لإجمالي الجامعة وحسب الكلية.',
+    access: ADMINISTRATIVE_ACCESS.dashboard,
+    link: { to: '/vp/administrative' },
+    steps: [
+      step('افتح «الرئيسية» واختر عند الحاجة السنة والفصل والكلية.'),
+      step('السنة والفصل يُطبّقان على التكليفات فقط؛ الطلاب والمدرسون لقطة حالية.'),
+      step('اضغط بطاقة تكليفات أو رقمًا في جدول الكليات لفتح قائمة التكليفات بالتصفية نفسها.'),
+      step('عبارة «غير متاح» تعني أن البيانات لا يمكن حسابها لحسابك أو للنظام، وليست صفرًا.'),
+    ],
+    sources: [source('frontend/src/features/vice-presidency/components/AdministrativeDashboard.jsx', 'إجمالي الجامعة', 'التوزيع حسب الكلية', 'غير متاح')],
+  },
+  {
+    id: 'faculty-view',
+    title: 'عرض المدرسين وانتمائهم إلى الكليات',
+    summary: 'قائمة الملفات التدريسية مع الكليات المنتسب إليها كل مدرس وعدد تكليفاته النافذة.',
+    access: ADMINISTRATIVE_ACCESS.facultyView,
+    link: { to: '/vp/administrative/faculty' },
+    steps: [
+      step('افتح «إدارة المدرسين» وابحث بالاسم أو رقم الموظف، أو صفِّ حسب الكلية («بلا انتماء لكلية» متاح).'),
+      step('اضغط زر العرض لفتح الملف: الانتماء الحالي، سجل الانتماء، والتكليفات النافذة للاطلاع.'),
+    ],
+    sources: [source(FACULTY_PAGE, 'إدارة المدرسين', 'بلا انتماء لكلية', 'سجل الانتماء')],
+  },
+  {
+    id: 'faculty-manage',
+    title: 'إضافة مدرس وتغيير انتمائه',
+    summary: 'إنشاء ملف تدريسي أو ربط موظف قائم، ثم إسناده إلى كلية أو نقله أو إنهاء انتمائه مع حفظ السجل. لا يُنشأ تكليف بمادة ولا حساب دخول.',
+    access: ADMINISTRATIVE_ACCESS.facultyManage,
+    link: { to: '/vp/administrative/faculty' },
+    steps: [
+      step('اضغط «إضافة مدرس» واختر «موظف جديد + ملف تدريسي» أو «ربط موظف قائم».'),
+      step('في الربط: أدخل رقم الموظف واضغط البحث، ثم أدخل الكنية للتحقق.'),
+      step('اختر الكلية إن أردت، ثم «حفظ الملف التدريسي».'),
+      step('لتغيير الانتماء: افتح الملف، اختر العملية في «تغيير الانتماء» ثم «نقل الانتماء» أو «إسناد الانتماء» أو «إنهاء الانتماء» وأكّد.'),
+    ],
+    flows: [{
+      title: 'من الملف التدريسي إلى ظهوره لدى العميد',
+      nodes: [
+        node('profile', 'start', 'ملف تدريسي نشط لموظف نشط'),
+        node('affiliate', 'action', 'إسناد الانتماء إلى كلية', 'يُسجَّل إسناد وحدة بتاريخ بدء؛ النقل يغلق الإسناد السابق ولا يحذفه.', [branch('بعد الإسناد', 'dean')]),
+        node('dean', 'system', 'يظهر في قائمة مدرسي الكلية لدى عميدها', 'ويظهر أولًا بعلامة «من كلية الطرح» عند اختيار مدرس لطرح من الكلية.'),
+        node('assignment', 'end', 'التكليف بمادة مسار مستقل', 'يقترحه العميد ويعتمده النائبان؛ لا يتغير التكليف النافذ بتغيير الانتماء.'),
+      ],
+    }],
+    sources: [
+      source(FACULTY_PAGE, 'إضافة مدرس', 'ربط موظف قائم', 'حفظ الملف التدريسي', 'نقل الانتماء', 'إنهاء الانتماء'),
+      source('backend/app/Services/AdministrativeFacultyService.php', 'faculty.affiliation_', 'NOTE_TAG'),
+    ],
+  },
+  {
+    id: 'deans-view',
+    title: 'عرض عمداء الكليات',
+    summary: 'كل كلية مع عميدها النشط وتاريخ بدء منصبه، وتنبيه عند غياب العميد أو تعدده.',
+    access: ADMINISTRATIVE_ACCESS.deansView,
+    link: { to: '/vp/administrative/deans' },
+    steps: [step('افتح «عمداء الكليات» لعرض الكليات وعمدائها.')],
+    sources: [source(DEANS_PAGE, 'عمداء الكليات', 'العميد الحالي')],
+  },
+  {
+    id: 'deans-manage',
+    title: 'تعيين عميد أو نقله أو إنهاء تكليفه',
+    summary: 'يمنح المسار دور العميد ونطاق كلية واحدة فقط مع ربط الحساب بالموظف. النقل والإنهاء يسحبان نطاق الكلية السابقة ويبقيان الحساب والسجل.',
+    access: ADMINISTRATIVE_ACCESS.deansManage,
+    link: { to: '/vp/administrative/deans' },
+    steps: [
+      step('اضغط «تعيين» (أو «استبدال») بجانب الكلية.'),
+      step('حدّد سجل الموظف (جديد أو قائم بالرقم والكنية) وحساب الدخول (جديد بكلمة مرور قوية أو ربط حساب قائم قابل للربط).'),
+      step('إن كان للكلية عميد فأكّد استبداله صراحة، ثم أكّد التحقق من الهوية واضغط «تعيين العميد».'),
+      step('للنقل اضغط «نقل» واختر الكلية الجديدة؛ للإنهاء اضغط «إنهاء» وأكّد.'),
+    ],
+    flows: [{
+      title: 'مسار تكليف العميد',
+      nodes: [
+        node('college', 'start', 'كلية مفعّلة مرتبطة بوحدة تنظيمية', 'بلا عميد، أو بعميد حالي يلزم تأكيد استبداله صراحة.', [branch('بعد التحقق من الهوية', 'appoint')]),
+        node('appoint', 'action', 'تعيين عميد لكلية', 'دور العميد + نطاق هذه الكلية فقط + منصب العميد بتاريخ البدء.', [branch('عند النقل', 'transfer'), branch('عند الإنهاء', 'end')]),
+        node('transfer', 'action', 'نقل إلى كلية أخرى', 'يُسحب نطاق الكلية السابقة ويُغلق منصبها في العملية نفسها.', [branch('لاحقًا', 'end')]),
+        node('end', 'end', 'إنهاء التكليف', 'يُسحب النطاق والدور (إن لم يبقَ عميدًا لكلية أخرى) ويبقى الحساب وسجله.'),
+      ],
+    }],
+    notes: [{ text: 'لا يعدّل هذا المسار حساب مدير النظام، ولا الحسابات ذات نطاق الجامعة أو الأدوار الأخرى، ولا حسابك الشخصي.' }],
+    sources: [
+      source(DEANS_PAGE, 'تعيين العميد', 'نقل', 'إنهاء'),
+      source('backend/app/Services/AdministrativeDeanService.php', 'dean.appointed', 'dean.transferred', 'dean.ended', 'protected_account'),
+    ],
+  },
+]
+
 export const administrative = {
   id: 'vpAdministrative',
   title: 'نيابة الشؤون الإدارية',
-  intro: 'تراجع من هذه البوابة تكليفات المدرسين وطلبات الفتح الاستثنائي بالتوازي مع نيابة الشؤون العلمية، وتطّلع على التقارير والتقويم الأكاديمي.',
+  intro: 'تراجع من هذه البوابة تكليفات المدرسين وطلبات الفتح الاستثنائي بالتوازي مع نيابة الشؤون العلمية، وتتابع المؤشرات الإدارية، وتدير ملفات المدرسين وانتماءهم وعمداء الكليات ضمن صلاحياتك، وتطّلع على التقارير والتقويم الأكاديمي.',
   sections: [
     { id: 'reviews', title: 'المراجعات المشتركة مع النيابة العلمية', tasks: parallelReviewTasks('administrative') },
+    { id: 'governance', title: 'المؤشرات والمدرسون وعمداء الكليات', tasks: governanceTasks },
     {
       id: 'other',
       title: 'التقارير والتقويم',

@@ -4,6 +4,8 @@ import { canAccessExecutiveReports } from '../../executive-reports/access'
 import ExecutiveOverview from '../../executive-reports/components/ExecutiveOverview'
 import { canViewCatalog } from '../../scientific-courses/catalog'
 import { canViewPrograms } from '../../scientific-programs/programs'
+import AdministrativeDashboard from '../components/AdministrativeDashboard'
+import { ADMINISTRATIVE_PATHS, canUseAdministrative } from '../utils/administrativeAccess'
 
 const OFFICES = {
   scientific: {
@@ -51,7 +53,11 @@ export default function VicePresidentShell({ office }) {
         <p className="text-[13px] text-text-light mt-1">{copy.scopeNote}</p>
       </div>
 
-      {reportsAllowed && <ExecutiveOverview office={office} />}
+      {office === 'administrative'
+        ? canUseAdministrative('dashboard', identity) && <AdministrativeDashboard />
+        : reportsAllowed && <ExecutiveOverview office={office} />}
+      {office === 'administrative' && canUseAdministrative('facultyView', identity) && <Link to={ADMINISTRATIVE_PATHS.faculty} className="rounded-[16px] border border-primary/15 bg-white p-5 shadow-sm hover:border-primary/40"><p className="text-[15px] font-black text-text-dark">إدارة المدرسين</p><p className="mt-1 text-[13px] text-text-light">ملفات المدرسين وانتماؤهم إلى الكليات مع السجل. الانتماء لا يعني تكليفًا بمادة.</p></Link>}
+      {office === 'administrative' && canUseAdministrative('deansView', identity) && <Link to={ADMINISTRATIVE_PATHS.deans} className="rounded-[16px] border border-primary/15 bg-white p-5 shadow-sm hover:border-primary/40"><p className="text-[15px] font-black text-text-dark">عمداء الكليات</p><p className="mt-1 text-[13px] text-text-light">تعيين عميد لكلية واحدة أو نقله أو إنهاء تكليفه مع إبقاء الحساب والسجل.</p></Link>}
       {office === 'scientific' && canViewPrograms(identity) && <Link to="/vp/scientific/programs" className="rounded-[16px] border border-primary/15 bg-white p-5 shadow-sm hover:border-primary/40"><p className="text-[15px] font-black text-text-dark">البرامج الأكاديمية</p><p className="mt-1 text-[13px] text-text-light">خطط البرامج ومتطلبات التخرج وتهيئة القبول وإسناد الطلاب ضمن نطاقك.</p></Link>}
       {office === 'scientific' && canViewCatalog(identity) && <Link to="/vp/scientific/courses" className="rounded-[16px] border border-primary/15 bg-white p-5 shadow-sm hover:border-primary/40"><p className="text-[15px] font-black text-text-dark">إدارة المواد</p><p className="mt-1 text-[13px] text-text-light">الدليل الجامعي وتصنيف مواد البرامج وميزانيات المتطلبات ضمن نطاقك.</p></Link>}
 

@@ -52,6 +52,8 @@ class TeachingAssignmentException extends Exception
 
     public const ACTION_INVALID = 'teaching_assignment_action_invalid';
 
+    public const VERSION_MISMATCH = 'teaching_assignment_version_mismatch';
+
     public function __construct(
         string $message,
         public readonly array $errors = [],
@@ -59,6 +61,13 @@ class TeachingAssignmentException extends Exception
         public readonly ?string $errorCode = null,
     ) {
         parent::__construct($message);
+    }
+
+    public static function versionMismatch(): self
+    {
+        $message = 'تغيّر طلب التكليف منذ فتحه (أُعيد إرساله بنسخة أحدث). أعد تحميل الطلب وراجِع النسخة الحالية قبل القرار.';
+
+        return new self($message, ['teaching_assignment' => [$message]], 409, self::VERSION_MISMATCH);
     }
 
     public static function notCurrent(): self

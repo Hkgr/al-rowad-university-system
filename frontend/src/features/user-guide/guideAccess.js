@@ -6,6 +6,7 @@ import { ACCESS, PERMISSIONS, ROLES } from '../auth/auth.js'
 import { CATALOG_ACCESS } from '../scientific-courses/catalog.js'
 import { PROGRAM_ACCESS } from '../scientific-programs/programs.js'
 import { reportAccessForOffice } from '../executive-reports/access.js'
+import { ADMINISTRATIVE_ACCESS } from '../vice-presidency/utils/administrativeAccess.js'
 
 // Route-group guards exactly as written in App.jsx.
 export const GROUP_GUARDS = Object.freeze({
@@ -115,9 +116,12 @@ export const ROUTE_ACCESS = Object.freeze({
   '/vp/scientific/exceptional-openings': [G.vpScientific],
   '/vp/scientific/supplementary-exams': [G.vpScientific, { allRoles: ['vice_president_scientific'], assignedPermissions: [PERMISSIONS.supplementaryExamsPeriodsView] }],
   '/vp/scientific/calendar': [G.vpScientific],
+  '/vp/administrative': [G.vpAdministrative],
   '/vp/administrative/reports': [G.vpAdministrative, reportAccessForOffice('administrative')],
   '/vp/administrative/teaching-assignments': [G.vpAdministrative],
   '/vp/administrative/exceptional-openings': [G.vpAdministrative],
+  '/vp/administrative/faculty': [G.vpAdministrative, ADMINISTRATIVE_ACCESS.facultyView],
+  '/vp/administrative/deans': [G.vpAdministrative, ADMINISTRATIVE_ACCESS.deansView],
   '/vp/administrative/calendar': [G.vpAdministrative],
 
   '/technical/accounts': [G.technical, ACCESS.technicalAccounts],

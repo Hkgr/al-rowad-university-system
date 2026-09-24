@@ -231,6 +231,13 @@ export function teacherChoiceLabel(teacher) {
   return [name, number, rank === '—' ? null : rank, home].filter(Boolean).join(' — ')
 }
 
+// Membership flag from the picker (course_offering_id context). null = no context.
+export function teacherGroupLabel(teacher) {
+  if (teacher?.in_offering_college === true) return 'من كلية الطرح'
+  if (teacher?.in_offering_college === false) return 'من خارج الكلية'
+  return null
+}
+
 export function workflowStatusLabel(status) {
   if (status === 'submitted') return 'بانتظار الموافقة'
   if (status === 'returned') return 'معاد للتعديل'

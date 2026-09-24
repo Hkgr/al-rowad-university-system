@@ -54,6 +54,11 @@ export const PERMISSIONS = Object.freeze({
   technicalPortalAccess: 'technical_portal.access',
   userAccountsView: 'user_accounts.view',
   userAccountsManage: 'user_accounts.manage',
+  // نيابة الشؤون الإدارية: ملفات المدرسين وعمداء الكليات
+  vpAdministrativeFacultyView: 'vice_presidency.administrative.faculty.view',
+  vpAdministrativeFacultyManage: 'vice_presidency.administrative.faculty.manage',
+  vpAdministrativeDeansView: 'vice_presidency.administrative.deans.view',
+  vpAdministrativeDeansManage: 'vice_presidency.administrative.deans.manage',
 })
 
 export const ACCESS = Object.freeze({

@@ -69,6 +69,21 @@ class TeachingAssignmentRequestResource extends JsonResource
                 ],
             ],
             'proposed_faculty_member' => $this->safeFaculty($this->facultyMember),
+            // Removal requests: the faculty member of the effective slot being removed.
+            'removal_target' => TeachingAssignmentWorkflow::schemaReady() && $this->relationLoaded('targetInstructor')
+                ? $this->safeFaculty($this->targetInstructor?->facultyMember)
+                : null,
+            'previous_requests' => $this->whenLoaded('previousRequests', fn () => $this->previousRequests
+                ->sortByDesc('submission_version')
+                ->values()
+                ->map(fn ($previous) => [
+                    'teaching_assignment_request_id' => $previous->teaching_assignment_request_id,
+                    'status' => $previous->status,
+                    'submission_version' => $previous->submission_version,
+                    'submitted_at' => $previous->submitted_at,
+                    'superseded_at' => $previous->superseded_at,
+                    'faculty_member' => $this->safeFaculty($previous->facultyMember),
+                ])),
             'effective_faculty_member' => $this->safeFaculty($effective),
             'requester' => $this->safeUser($this->requester),
             'scientific_review' => $this->reviewPayload($this->scientificReview()),
@@ -128,6 +143,8 @@ class TeachingAssignmentRequestResource extends JsonResource
             'faculty_member_id' => $facultyMember->faculty_member_id,
             'full_name' => $fullName !== '' ? $fullName : null,
             'academic_rank' => $facultyMember->academic_rank,
+            'specialization' => $facultyMember->specialization,
+            'is_active' => (bool) $facultyMember->is_active,
             'home_unit' => $employee?->organizationalUnit === null ? null : [
                 'unit_code' => $employee->organizationalUnit->unit_code,
                 'unit_name' => $employee->organizationalUnit->unit_name,
