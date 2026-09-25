@@ -107,3 +107,26 @@ test('states and numbers never turn "unavailable" into zero', () => {
   assert.match(errorMessage({ status: 403 }), /صلاحية/)
   assert.equal(errorMessage({ status: 422, details: { program_id: ['البرنامج المختار لا يتبع الكلية المختارة.'] } }), 'البرنامج المختار لا يتبع الكلية المختارة.')
 })
+
+test('college drilldowns retain college and explicit active/inactive selection', async () => {
+  for (const active of ['1', '0', '']) {
+    const filters = readFilters('colleges', new URLSearchParams(`college_id=4&active=${active}&program_id=8`))
+    assert.deepEqual(filters, { college_id: '4', active })
+    assert.equal(buildQuery('colleges', filters), `college_id=4${active ? '&active=' + active : ''}`)
+  }
+  const page = await source('features/ministry-portal/pages/MinistryColleges.jsx')
+  assert.match(page, /fetchMinistryList\('colleges', query\), \[query\]/)
+  assert.match(page, /label="حالة الكلية"/)
+  assert.match(page, /meta\?\.total/)
+})
+
+test('list and detail distinguish account evidence, recorded position and overall state', async () => {
+  for (const file of ['MinistryDeans', 'MinistryDeanDetail']) {
+    const page = await source(`features/ministry-portal/pages/${file}.jsx`)
+    for (const part of ['DeanAccountState', 'DeanPositionState', 'DeanOverallState']) assert.ok(page.includes(part))
+    assert.match(page, /formatDate\((row|r)\.end_date\)/)
+  }
+  const state = await source('features/ministry-portal/components/DeanStatus.jsx')
+  for (const key of ['account_active', 'role_active', 'college_scope_active', 'account_current', 'position_state_label', 'has_conflict']) assert.ok(state.includes(key))
+  assert.doesNotMatch(state, /new Date|Date\.now/)
+})

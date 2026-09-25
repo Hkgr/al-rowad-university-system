@@ -14,9 +14,9 @@ final class MinistryAcademicService
 
     // ── colleges ───────────────────────────────────────────────────────────
 
-    public function colleges(): array
+    public function colleges(array $filters = []): array
     {
-        $colleges = DB::table('colleges')->orderBy('college_name')->get(['college_id', 'college_code', 'college_name', 'is_active']);
+        $colleges = MinistryQueries::colleges($filters)->orderBy('college_name')->orderBy('college_id')->get(['college_id', 'college_code', 'college_name', 'is_active']);
         $departments = DB::table('departments')->where('is_active', 1)->groupBy('college_id')->selectRaw('college_id as k, COUNT(*) as n')->pluck('n', 'k');
         $programs = DB::table('academic_programs as ap')->join('departments as d', 'd.department_id', '=', 'ap.department_id')
             ->where('ap.is_active', 1)->whereNull('ap.archived_at')->groupBy('d.college_id')->selectRaw('d.college_id as k, COUNT(*) as n')->pluck('n', 'k');

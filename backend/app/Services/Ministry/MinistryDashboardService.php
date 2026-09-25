@@ -120,7 +120,7 @@ final class MinistryDashboardService
         $facultyCollege = $scope['college_id'] ?? $scope['program_college_id'];
         $courseFilters = ['college_id' => $scope['college_id'], 'program_id' => $scope['program_id'], 'active' => 1];
 
-        $colleges = DB::table('colleges')->when($scope['college_id'] || $scope['program_college_id'], fn (Builder $q) => $q->where('college_id', $scope['college_id'] ?? $scope['program_college_id']));
+        $colleges = MinistryQueries::colleges(['college_id' => $facultyCollege]);
         $departments = DB::table('departments')->where('is_active', 1)->when($facultyCollege, fn (Builder $q) => $q->where('college_id', $facultyCollege));
         $programs = DB::table('academic_programs as ap')->join('departments as d', 'd.department_id', '=', 'ap.department_id')
             ->where('ap.is_active', 1)->whereNull('ap.archived_at')
@@ -140,9 +140,9 @@ final class MinistryDashboardService
         $query = $this->query($scope);
 
         return [
-            'colleges' => ['value' => $activeColleges->count(), 'inactive' => (clone $colleges)->where('is_active', 0)->count(), 'link' => '/ministry/colleges'],
-            'departments' => ['value' => $departments->count(), 'link' => '/ministry/colleges'.($facultyCollege ? '/'.$facultyCollege : '')],
-            'programs' => ['value' => $programs->count(), 'link' => '/ministry/colleges'.($facultyCollege ? '/'.$facultyCollege : '')],
+            'colleges' => ['value' => $activeColleges->count(), 'inactive' => (clone $colleges)->where('is_active', 0)->count(), 'link' => $this->link('colleges', ['college_id' => $facultyCollege, 'active' => 1])],
+            'departments' => ['value' => $departments->count(), 'link' => null],
+            'programs' => ['value' => $programs->count(), 'link' => null],
             'students' => ['value' => MinistryQueries::filterStudents(MinistryQueries::students(), $studentFilters)->count(), 'link' => $this->link('students', $query)],
             'active_students' => [
                 'value' => MinistryQueries::filterStudents(MinistryQueries::students(), $studentFilters + ['status' => 'active'])->count(),
@@ -159,7 +159,7 @@ final class MinistryDashboardService
                 'colleges_without_dean' => $activeColleges->reject(fn ($id) => $collegesWithDean->contains((int) $id))->count(),
                 'link' => $this->link('deans', ['college_id' => $facultyCollege, 'state' => 'current']),
             ],
-            'vice_presidents' => ['value' => (clone $vicePresidents)->distinct()->count('ur.user_id'), 'link' => '/ministry/leadership'],
+            'vice_presidents' => ['value' => (clone $vicePresidents)->distinct()->count('ur.user_id'), 'link' => null],
             'courses' => ['value' => MinistryQueries::courses($courseFilters)->count(), 'link' => $this->link('courses', $query + ['active' => 1])],
         ];
     }

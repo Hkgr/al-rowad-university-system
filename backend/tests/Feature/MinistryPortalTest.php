@@ -239,9 +239,11 @@ final class MinistryPortalTest extends TestCase
             $linked = 0;
             foreach ($items as $key => $item) {
                 $link = $item['link'] ?? null;
-                if ($link === null || ($item['value'] ?? null) === null || ! preg_match('#^/ministry/(students|faculty|courses|deans)(\?.*)?$#', $link, $m)) {
+                if ($link === null || ($item['value'] ?? null) === null) {
                     continue;
                 }
+                $this->assertMatchesRegularExpression('#^/ministry/(colleges|students|faculty|courses|deans)(\?.*)?$#', $link, 'Every linked number must have an exact, testable list');
+                preg_match('#^/ministry/(colleges|students|faculty|courses|deans)(\?.*)?$#', $link, $m);
                 $total = $this->getJson(self::API.'/'.$m[1].($m[2] ?? '?').(isset($m[2]) ? '&' : '').'per_page=1')->assertOk()->json('meta.total');
                 $this->assertSame($item['value'], $total, "{$query} {$key} → {$link}");
                 $linked++;
@@ -251,6 +253,99 @@ final class MinistryPortalTest extends TestCase
     }
 
     // ── lists: search, filters, pagination ────────────────────────────────
+
+    public function test_college_card_matches_filtered_directory_including_inactive_college_selection(): void
+    {
+        $this->actingAsUser(self::MINISTRY);
+        foreach (['' => 3, '?college_id=1' => 1, '?college_id=4' => 0, '?program_id=2' => 1] as $query => $expected) {
+            $counts = $this->getJson(self::API.'/dashboard'.$query)->assertOk()->json('data.counts');
+            $link = $counts['colleges']['link'];
+            $this->assertStringContainsString('active=1', $link);
+            if ($query === '?college_id=1') $this->assertStringContainsString('college_id=1', $link);
+            if ($query === '?program_id=2') $this->assertStringContainsString('college_id=2', $link);
+            $list = $this->getJson('/api/v1'.$link)->assertOk();
+            $this->assertSame($expected, $counts['colleges']['value']);
+            $list->assertJsonPath('meta.total', $expected)->assertJsonCount($expected, 'data');
+            foreach ($list->json('data') as $row) $this->assertTrue($row['is_active']);
+            foreach (['departments', 'programs', 'vice_presidents'] as $key) $this->assertNull($counts[$key]['link']);
+        }
+        $this->getJson(self::API.'/colleges')->assertOk()->assertJsonPath('meta.total', 4);
+        $this->getJson(self::API.'/colleges?active=0')->assertOk()->assertJsonPath('meta.total', 1)->assertJsonPath('data.0.college_id', 4);
+        $this->getJson(self::API.'/colleges?college_id=4')->assertOk()->assertJsonPath('meta.total', 1);
+        $this->getJson(self::API.'/colleges?active=wrong')->assertUnprocessable();
+    }
+
+    public function test_dean_dates_and_independent_evidence_agree_in_list_detail_and_dashboard(): void
+    {
+        $this->actingAsUser(self::MINISTRY);
+        DB::table('employee_positions')->where('employee_id', 1)->update(['end_date' => '2025-08-31']);
+        $assertRow = function (bool $role, bool $scope, bool $account, string $position, string $state, ?string $end, int $total) {
+            $list = $this->getJson(self::API.'/deans?college_id=1')->assertOk()->json('data');
+            $row = collect($list)->firstWhere('person', 'employee-1');
+            $detail = $this->getJson(self::API.'/deans/employee-1')->assertOk()->json('data');
+            $this->assertSame($row, $detail['dean_assignments'][0]);
+            $this->assertSame([$role, $scope, $account, $position, $state, '2024-09-01', $end], [
+                $row['role_active'], $row['college_scope_active'], $row['account_current'], $row['position_state'], $row['state'], $row['start_date'], $row['end_date'],
+            ]);
+            $this->assertSame($end, $detail['positions'][0]['end_date']);
+            $this->getJson(self::API.'/dashboard?college_id=1')->assertOk()->assertJsonPath('data.counts.deans.value', $total);
+            $this->getJson(self::API.'/deans?college_id=1&state=current')->assertOk()->assertJsonPath('meta.total', $total);
+            return $row;
+        };
+        // Account still authorized, but actual position ended: retain the date and show conflict.
+        $row = $assertRow(true, true, true, 'ended', 'current', '2025-08-31', 1);
+        $this->assertTrue($row['has_conflict']);
+        $this->assertStringContainsString('تعارض', implode(' ', $row['notes']));
+        // Open position, no active dean role: current via position only, not account authority.
+        DB::table('employee_positions')->where('employee_id', 1)->update(['end_date' => null]);
+        DB::table('user_roles')->where('user_id', self::DEAN_A)->update(['is_active' => 0]);
+        $row = $assertRow(false, true, false, 'active', 'current', null, 1);
+        $this->assertNotEmpty($row['notes']);
+        // Both ended; an unrelated still-active scope does not make the dean current.
+        DB::table('employee_positions')->where('employee_id', 1)->update(['end_date' => '2025-08-31', 'is_active' => 0]);
+        $assertRow(false, true, false, 'ended', 'historical', '2025-08-31', 0);
+        // Active role alone cannot hide a missing/revoked college scope or inactive account.
+        DB::table('user_roles')->where('user_id', self::DEAN_A)->update(['is_active' => 1]);
+        DB::table('user_access_scopes')->where('user_id', self::DEAN_A)->update(['is_active' => 0]);
+        $assertRow(true, false, false, 'ended', 'historical', '2025-08-31', 0);
+        DB::table('user_access_scopes')->where('user_id', self::DEAN_A)->update(['is_active' => 1]);
+        DB::table('users')->where('user_id', self::DEAN_A)->update(['account_status_id' => 2]);
+        $assertRow(true, true, false, 'ended', 'historical', '2025-08-31', 0);
+    }
+
+    public function test_active_position_keeps_its_recorded_future_end_and_account_only_has_no_invented_dates(): void
+    {
+        $this->actingAsUser(self::MINISTRY);
+        DB::table('employee_positions')->where('employee_id', 1)->update(['end_date' => '2030-08-31']);
+        $this->getJson(self::API.'/deans/employee-1')->assertOk()
+            ->assertJsonPath('data.dean_assignments.0.position_state', 'active')
+            ->assertJsonPath('data.dean_assignments.0.end_date', '2030-08-31');
+        $this->getJson(self::API.'/deans/account-5')->assertOk()
+            ->assertJsonPath('data.dean_assignments.0.position_state', 'not_recorded')
+            ->assertJsonPath('data.dean_assignments.0.start_date', null)->assertJsonPath('data.dean_assignments.0.end_date', null);
+        DB::table('employee_positions')->where('employee_id', 1)->update(['start_date' => '2029-09-01']);
+        DB::table('user_roles')->where('user_id', self::DEAN_A)->update(['is_active' => 0]);
+        $this->getJson(self::API.'/deans/employee-1')->assertOk()
+            ->assertJsonPath('data.dean_assignments.0.position_state', 'scheduled')
+            ->assertJsonPath('data.dean_assignments.0.state', 'historical')
+            ->assertJsonPath('data.positions.0.state_label', 'لم يبدأ بعد');
+    }
+
+    public function test_dean_currentness_never_combines_role_and_scope_from_different_accounts(): void
+    {
+        $this->actingAsUser(self::MINISTRY);
+        DB::table('employee_positions')->where('employee_id', 1)->update(['end_date' => '2025-08-31']);
+        DB::table('user_access_scopes')->where('user_id', self::DEAN_A)->update(['is_active' => 0]);
+        DB::table('users')->where('user_id', self::DEAN_B)->update(['employee_id' => 1]);
+        DB::table('user_roles')->where('user_id', self::DEAN_B)->update(['is_active' => 0]);
+        DB::table('user_access_scopes')->where('user_id', self::DEAN_B)->update(['scope_id' => 1]);
+        $this->getJson(self::API.'/deans/employee-1')->assertOk()
+            ->assertJsonPath('data.dean_assignments.0.role_active', true)
+            ->assertJsonPath('data.dean_assignments.0.college_scope_active', true)
+            ->assertJsonPath('data.dean_assignments.0.account_current', false)
+            ->assertJsonPath('data.dean_assignments.0.state', 'historical');
+        $this->getJson(self::API.'/dashboard?college_id=1')->assertOk()->assertJsonPath('data.counts.deans.value', 0);
+    }
 
     public function test_lists_search_filter_and_paginate(): void
     {

@@ -251,6 +251,14 @@ final class MinistryQueries
             .'(SELECT od2.college_id FROM departments od2 WHERE od2.department_id = co.department_id))';
     }
 
+    /** Same college population for the dashboard and its linked directory. */
+    public static function colleges(array $filters = []): Builder
+    {
+        return DB::table('colleges')
+            ->when(! empty($filters['college_id']), fn (Builder $q) => $q->where('college_id', (int) $filters['college_id']))
+            ->when(isset($filters['active']) && $filters['active'] !== '', fn (Builder $q) => $q->where('is_active', (int) (bool) $filters['active']));
+    }
+
     // ── deans ─────────────────────────────────────────────────────────────
 
     /** Current dean assignments: active `dean` role + active college scope (the rule the system itself uses for dean access). */

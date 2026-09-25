@@ -105,7 +105,7 @@ export default function MinistryHome() {
 
       {state !== 'ready' ? <StatePanel state={state} error={error} onRetry={reload} /> : (
         <div className="grid gap-5">
-          <Section title="الجامعة في أرقام (الوضع الحالي)" subtitle="لقطة حالية لا تتأثر بمرشح السنة والفصل. اضغط أي رقم لفتح القائمة التي تكوّنه." id="counts">
+          <Section title="الجامعة في أرقام (الوضع الحالي)" subtitle="لقطة حالية لا تتأثر بمرشح السنة والفصل. الأرقام المرتبطة فقط تفتح القوائم المطابقة لها." id="counts">
             <div className="grid grid-cols-4 gap-3 max-[1200px]:grid-cols-3 max-[800px]:grid-cols-2 max-[480px]:grid-cols-1">
               {card('colleges', d.counts.colleges, { Icon: FaUniversity, note: d.counts.colleges.inactive ? `و${formatNumber(d.counts.colleges.inactive)} غير مفعّلة` : null })}
               {card('programs', d.counts.programs, { Icon: FaLayerGroup, note: `${formatNumber(d.counts.departments.value)} قسمًا مفعّلًا` })}

@@ -77,9 +77,10 @@ class MinistryPortalController extends Controller
         return $this->found($this->students->show($student), 'الطالب غير موجود.');
     }
 
-    public function colleges(): JsonResponse
+    public function colleges(Request $request): JsonResponse
     {
-        return response()->json(['data' => $this->academic->colleges()]);
+        $rows = $this->academic->colleges($request->validate(['college_id' => self::ID, 'active' => ['nullable', 'boolean']]));
+        return response()->json(['data' => $rows, 'meta' => ['total' => count($rows)]]);
     }
 
     public function college(int $college): JsonResponse

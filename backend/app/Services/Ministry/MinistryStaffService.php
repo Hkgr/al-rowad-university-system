@@ -38,7 +38,7 @@ final class MinistryStaffService
         $positions = DB::table('employee_positions as ep')->join('positions as p', 'p.position_id', '=', 'ep.position_id')
             ->join('employees as e', 'e.employee_id', '=', 'ep.employee_id')
             ->where('p.position_code', 'DEAN')
-            ->orderBy('ep.start_date')
+            ->orderBy('ep.start_date')->orderBy('ep.employee_position_id')
             ->get(['ep.employee_id', 'ep.organizational_unit_id', 'ep.start_date', 'ep.end_date', 'ep.is_active', DB::raw(MinistryQueries::fullName('e').' as full_name')]);
         foreach ($positions as $p) {
             $college = $collegeByUnit->get($p->organizational_unit_id);
@@ -46,38 +46,59 @@ final class MinistryStaffService
                 continue;
             }
             $key = 'employee-'.$p->employee_id.'|'.$college->college_id;
-            $open = (bool) $p->is_active && ($p->end_date === null || $p->end_date >= $today);
+            $positionState = $p->end_date !== null && $p->end_date < $today ? 'ended'
+                : (! $p->is_active ? 'inactive' : ($p->start_date > $today ? 'scheduled' : 'active'));
+            $open = $positionState === 'active';
             $existing = $rows[$key] ?? null;
             // Keep the open position, else the latest one.
-            if ($existing === null || ($open && ! $existing['position_open']) || (! $existing['position_open'] && $p->start_date > $existing['start_date'])) {
+            if ($existing === null || ($open && ! $existing['position_open']) || ($open === $existing['position_open'] && $p->start_date >= $existing['start_date'])) {
                 $rows[$key] = [
                     'person' => 'employee-'.$p->employee_id, 'full_name' => $p->full_name, 'college_id' => (int) $college->college_id, 'college_name' => $college->college_name,
-                    'start_date' => $p->start_date, 'end_date' => $p->end_date, 'position_open' => $open, 'position_recorded' => true, 'account_current' => false,
+                    'start_date' => $p->start_date, 'end_date' => $p->end_date, 'position_open' => $open, 'position_recorded' => true, 'position_state' => $positionState,
                 ];
             }
         }
 
-        $accounts = MinistryQueries::currentDeanAssignments()->leftJoin('employees as e', 'e.employee_id', '=', 'u.employee_id')
-            ->get(['us.scope_id', 'u.user_id', 'u.employee_id', DB::raw(MinistryQueries::fullName('e').' as full_name')]);
+        // Bulk evidence only: role, account and college scope are distinct facts.
+        // Never combine a role on one account with a scope on another to infer current access.
+        $accounts = DB::table('users as u')->leftJoin('employees as e', 'e.employee_id', '=', 'u.employee_id')
+            ->leftJoin('account_statuses as ast', 'ast.account_status_id', '=', 'u.account_status_id')
+            ->leftJoin('user_roles as ur', fn ($j) => $j->on('ur.user_id', '=', 'u.user_id')->whereIn('ur.role_id', DB::table('roles')->where('role_code', 'dean')->select('role_id')))
+            ->leftJoin('roles as r', 'r.role_id', '=', 'ur.role_id')
+            ->where(fn ($q) => $q->whereNotNull('ur.role_id')->orWhereIn('u.employee_id', $positions->pluck('employee_id')))
+            ->get(['u.user_id', 'u.employee_id', 'ur.role_id', 'ur.is_active as assignment_active', 'r.is_active as role_active', 'ast.status_code as account_status', DB::raw(MinistryQueries::fullName('e').' as full_name')]);
+        $scopes = DB::table('user_access_scopes')->whereIn('user_id', $accounts->pluck('user_id'))->where('scope_type', 'college')
+            ->get(['user_id', 'scope_id', 'is_active'])->groupBy('user_id');
         foreach ($accounts as $a) {
+            // Account-only rows still require current authority. Historical evidence
+            // enriches existing position rows, not a new directory of revoked accounts.
+            if ($a->account_status !== 'active' || ! $a->assignment_active || ! $a->role_active) continue;
             $person = $a->employee_id ? 'employee-'.$a->employee_id : 'account-'.$a->user_id;
-            $key = $person.'|'.$a->scope_id;
-            $rows[$key] = ($rows[$key] ?? [
-                'person' => $person, 'full_name' => $a->full_name, 'college_id' => (int) $a->scope_id, 'college_name' => $collegeNames[$a->scope_id] ?? null,
-                'start_date' => null, 'end_date' => null, 'position_open' => false, 'position_recorded' => false,
-            ]);
-            $rows[$key]['account_current'] = true;
-        }
-
-        return collect($rows)->map(function (array $r) {
-            $current = $r['account_current'] || $r['position_open'];
-            $notes = [];
-            if ($r['account_current'] && ! $r['position_recorded']) {
-                $notes[] = 'حساب عميد فعّال دون قيد منصب؛ تاريخ التكليف غير مسجل.';
-            } elseif ($r['account_current'] && ! $r['position_open']) {
-                $notes[] = 'حساب العميد فعّال لكن قيد المنصب منتهٍ.';
+            foreach ($scopes->get($a->user_id, collect()) as $scope) {
+                if (! $scope->is_active || ! $collegeNames->has($scope->scope_id)) continue;
+                $key = $person.'|'.$scope->scope_id;
+                $rows[$key] ??= [
+                    'person' => $person, 'full_name' => $a->full_name, 'college_id' => (int) $scope->scope_id, 'college_name' => $collegeNames[$scope->scope_id],
+                    'start_date' => null, 'end_date' => null, 'position_open' => false, 'position_recorded' => false, 'position_state' => 'not_recorded',
+                ];
             }
-            if ($r['position_open'] && ! $r['account_current']) {
+        }
+        $accountsByPerson = $accounts->groupBy(fn ($a) => $a->employee_id ? 'employee-'.$a->employee_id : 'account-'.$a->user_id);
+
+        return collect($rows)->map(function (array $r) use ($accountsByPerson, $scopes) {
+            $people = $accountsByPerson->get($r['person'], collect());
+            $roleActive = fn ($a) => (bool) $a->assignment_active && (bool) $a->role_active;
+            $scopeActive = fn ($a) => $scopes->get($a->user_id, collect())->contains(fn ($s) => (int) $s->scope_id === $r['college_id'] && (bool) $s->is_active);
+            $accountCurrent = $people->contains(fn ($a) => $a->account_status === 'active' && $roleActive($a) && $scopeActive($a));
+            $current = $accountCurrent || $r['position_open'];
+            $conflict = $accountCurrent && $r['position_recorded'] && ! $r['position_open'];
+            $notes = [];
+            if ($accountCurrent && ! $r['position_recorded']) {
+                $notes[] = 'حساب عميد فعّال دون قيد منصب؛ تاريخ التكليف غير مسجل.';
+            } elseif ($conflict) {
+                $notes[] = 'تعارض في السجل: حساب العميد مخوّل حاليًا لهذه الكلية، لكن قيد المنصب ليس ساريًا؛ تاريخاه معروضان كما سُجلا.';
+            }
+            if ($r['position_open'] && ! $accountCurrent) {
                 $notes[] = 'منصب عميد مسجل دون حساب عميد فعّال لهذه الكلية.';
             }
 
@@ -86,9 +107,16 @@ final class MinistryStaffService
                 'full_name' => trim((string) $r['full_name']) !== '' ? $r['full_name'] : 'حساب غير مرتبط بسجل موظف',
                 'college' => ['id' => $r['college_id'], 'name' => $r['college_name']],
                 'state' => $current ? 'current' : 'historical',
-                'state_label' => $current ? 'حالي' : 'سابق',
+                'state_label' => $current ? ($conflict ? 'حالي — تعارض في السجل' : 'حالي') : 'سابق / غير حالي',
+                'account_active' => $people->contains(fn ($a) => $a->account_status === 'active'),
+                'role_active' => $people->contains($roleActive),
+                'college_scope_active' => $people->contains($scopeActive),
+                'account_current' => $accountCurrent,
+                'position_state' => $r['position_state'],
+                'position_state_label' => ['active' => 'قيد منصب سارٍ', 'ended' => 'قيد منصب منتهٍ', 'inactive' => 'قيد منصب غير فعّال', 'scheduled' => 'قيد منصب لم يبدأ بعد', 'not_recorded' => 'قيد المنصب غير مسجل'][$r['position_state']],
+                'has_conflict' => $conflict,
                 'start_date' => $r['start_date'],
-                'end_date' => $current ? null : $r['end_date'],
+                'end_date' => $r['end_date'],
                 'notes' => $notes,
             ];
         })->sortBy(fn ($r) => ($r['state'] === 'current' ? '0' : '1').$r['college']['name'].($r['start_date'] ?? ''))->values();
@@ -123,7 +151,7 @@ final class MinistryStaffService
             'faculty_member_id' => $faculty ? (int) $faculty->faculty_member_id : null,
             'dean_assignments' => $rows,
             'positions' => $employeeId ? $this->positionsOf($employeeId) : [],
-            'source_note' => 'العمادة الحالية مأخوذة من دور العميد ونطاق الكلية الفعّالين، وتواريخ التكليف من قيود المناصب (employee_positions).',
+            'source_note' => 'الحالي: حساب فعّال يجمع دور العميد ونطاق هذه الكلية الفعّالين، أو قيد منصب سارٍ. حالة الحساب والدور والنطاق مستقلة عن قيد المنصب؛ تاريخا البداية والنهاية من القيد كما سُجلا، والتعارض ظاهر ولا يُصلح تلقائيًا.',
         ];
     }
 
@@ -335,7 +363,8 @@ final class MinistryStaffService
             ->where('ep.employee_id', $employeeId)->orderByDesc('ep.start_date')
             ->get(['p.position_code', 'p.position_title', 'ou.organizational_unit_id', 'ou.unit_name', 'ep.start_date', 'ep.end_date', 'ep.is_active', 'ep.is_primary'])
             ->map(function ($p) use ($today) {
-                $current = (bool) $p->is_active && ($p->end_date === null || $p->end_date >= $today);
+                $futureDean = $p->position_code === 'DEAN' && $p->start_date > $today;
+                $current = ! $futureDean && (bool) $p->is_active && ($p->end_date === null || $p->end_date >= $today);
 
                 return [
                     'position' => MinistryLabels::POSITION[$p->position_code] ?? $p->position_title,
@@ -344,7 +373,7 @@ final class MinistryStaffService
                     'end_date' => $p->end_date,
                     'is_primary' => (bool) $p->is_primary,
                     'state' => $current ? 'current' : 'historical',
-                    'state_label' => $current ? 'حالي' : 'سابق',
+                    'state_label' => $futureDean ? 'لم يبدأ بعد' : ($current ? 'حالي' : 'سابق'),
                 ];
             })->values()->all();
     }

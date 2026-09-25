@@ -2,6 +2,7 @@
 
 /** Query keys each list page accepts; anything else in the URL is ignored. */
 export const LIST_FILTERS = Object.freeze({
+  colleges: ['college_id', 'active'],
   students: ['search', 'college_id', 'department_id', 'program_id', 'status', 'level_id', 'enrollment_year_id', 'registered_year_id', 'registered_semester_id', 'graduated_year_id'],
   courses: ['search', 'college_id', 'department_id', 'program_id', 'active', 'offered_year_id', 'offered_semester_id'],
   faculty: ['search', 'college_id', 'active'],
@@ -111,7 +112,7 @@ export const INDICATORS = Object.freeze({
   students: { label: 'الطلاب', definition: 'طلاب فريدون غير محذوفين، بكل الحالات (لقطة حالية). الكلية = كلية برنامج الطالب الحالي.' },
   active_students: { label: 'الطلاب النشطون', definition: 'الطلاب الفريدون الذين حالتهم الحالية «نشط».' },
   faculty: { label: 'أعضاء الهيئة التدريسية', definition: 'أعضاء فريدون ملفهم التدريسي مفعّل. مع مرشح الكلية: المنتمون إليها بالوحدة الأساسية أو بتكليف فعّال (قد ينتمي عضو لأكثر من كلية).' },
-  deans: { label: 'العمداء الحاليون', definition: 'تكليفات عمادة حالية (دور العميد ونطاق الكلية فعّالان، أو قيد منصب عميد مفتوح).' },
+  deans: { label: 'العمداء الحاليون', definition: 'شخص × كلية: حساب فعّال يجمع دور العميد ونطاق الكلية الفعّالين، أو قيد منصب سارٍ. التعارض مع قيد منتهٍ يظهر صراحةً ولا يخفي تاريخه.' },
   vice_presidents: { label: 'نواب الرئيس (حسابات)', definition: 'حسابات فعّالة تحمل دور نائب رئيس. المناصب غير المسجلة لا تُحسب.' },
   courses: { label: 'المقررات', definition: 'تعريفات المقررات المفعّلة، كل مقرر مرة واحدة. مع مرشح البرنامج: مقررات خطته الفعّالة فقط.' },
   registered_students: { label: 'الطلاب المسجلون في الفترة', definition: 'طلاب فريدون لهم تسجيل «مسجل» أو «مكتمل» في طرح من الفترة. المنسحب والملغى لا يُحسبان.' },
