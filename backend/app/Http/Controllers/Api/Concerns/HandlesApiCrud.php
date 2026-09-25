@@ -7,6 +7,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Gate;
 use App\Services\ResourceAuthorizationService;
 use App\Services\DataScopeService;
+use App\Services\ResourceAuditService;
 
 trait HandlesApiCrud
 {
@@ -48,6 +49,7 @@ trait HandlesApiCrud
         $modelClass = $this->modelClass();
 
         $model = $modelClass::query()->create($request->validated());
+        app(ResourceAuditService::class)->record(request()->user()?->getKey(), 'created', $model, array_keys($request->validated()));
 
         $resourceClass = $this->resourceClass();
 
@@ -89,6 +91,7 @@ trait HandlesApiCrud
         }
 
         $model->update($request->validated());
+        app(ResourceAuditService::class)->record(request()->user()?->getKey(), 'updated', $model, array_keys($model->getChanges()));
 
         $resourceClass = $this->resourceClass();
 
@@ -108,6 +111,7 @@ trait HandlesApiCrud
         }
 
         $model->delete();
+        app(ResourceAuditService::class)->record(request()->user()?->getKey(), 'deleted', $model);
 
         return $this->successResponse(
             [],

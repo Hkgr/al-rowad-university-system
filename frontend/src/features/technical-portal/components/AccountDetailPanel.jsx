@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { FaTimes, FaSpinner, FaPlus, FaMinusCircle, FaLock, FaInfoCircle, FaToggleOn, FaToggleOff } from 'react-icons/fa'
 import { assignAccountRole, fetchAccount, revokeAccountRole, updateAccountStatus } from '../lib/accountsApi'
 import { RESTRICTION_AR, STATUS_AR, STATUS_BADGE, accountErrorMessage, assignableRolesFor, groupPermissionsByRole } from '../lib/accountsState'
+import { HolderNameSection, LoginIdentitySection, PasswordResetSection } from './AccountEditSections'
 
 const formatDate = value => value ? new Date(value).toLocaleString('ar-SY', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
 
@@ -41,6 +42,8 @@ export default function AccountDetailPanel({ userId, roles, onClose, onChanged }
     }
   }
 
+  const applyChange = async data => { setDetail(data); await onChanged(data) }
+
   const capabilities = detail?.capabilities ?? {}
   const roleById = new Map(roles.map(role => [role.role_id, role]))
   const candidates = detail && capabilities.can_manage ? assignableRolesFor(detail, roles) : []
@@ -74,6 +77,7 @@ export default function AccountDetailPanel({ userId, roles, onClose, onChanged }
               <div>
                 <p className="text-[17px] font-black text-text-dark" dir="ltr">{detail.username}</p>
                 <p className="text-[12.5px] text-text-gray" dir="ltr">{detail.email}</p>
+                <p className="text-[12.5px] text-text-dark mt-0.5">{detail.holder?.display_name ? `صاحب الحساب: ${detail.holder.display_name}` : 'غير مرتبط بشخص'}</p>
                 <div className="flex flex-wrap gap-1.5 mt-2 text-[11px]">
                   <span className={`font-bold px-2 py-0.5 rounded-full ${STATUS_BADGE[statusCode] ?? 'bg-gray-100 text-gray-600'}`}>{STATUS_AR[statusCode] ?? statusCode ?? '—'}</span>
                   {detail.student_id && <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-bold">مرتبط بطالب #{detail.student_id}</span>}
@@ -104,6 +108,10 @@ export default function AccountDetailPanel({ userId, roles, onClose, onChanged }
             )}
             {notice && <p className="text-[12.5px] text-green-700 bg-green-50 border border-green-200 rounded-[10px] px-4 py-2.5" role="status">✓ {notice}</p>}
             {error && <p className="text-[12.5px] text-red-600 bg-red-50 border border-red-200 rounded-[10px] px-4 py-2.5" role="alert">⚠ {error}</p>}
+
+            <HolderNameSection key={`holder-${detail.holder?.display_name}`} detail={detail} onDone={applyChange} onStale={load} />
+            {capabilities.can_edit_login && <LoginIdentitySection key={`login-${detail.username}-${detail.email}`} detail={detail} onDone={applyChange} onStale={load} />}
+            {capabilities.can_reset_password && <PasswordResetSection detail={detail} onDone={applyChange} onStale={load} />}
 
             <section>
               <h4 className="text-[14px] font-extrabold text-text-dark mb-2">الأدوار المسندة</h4>

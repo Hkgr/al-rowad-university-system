@@ -20,6 +20,9 @@ class LoginAuditService
 
     public const STATUS_INACTIVE = 'inactive';
 
+    /** Token revoked by the user through POST /api/logout. */
+    public const STATUS_LOGOUT = 'logout';
+
     public function record(Request $request, ?User $user, string $loginStatus): void
     {
         if (! Schema::hasTable('login_audit_logs')) {

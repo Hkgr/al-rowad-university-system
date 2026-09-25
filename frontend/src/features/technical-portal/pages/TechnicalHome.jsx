@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { FaUserShield, FaInfoCircle, FaArrowLeft } from 'react-icons/fa'
+import { FaUserShield, FaInfoCircle, FaArrowLeft, FaHistory } from 'react-icons/fa'
 import { ACCESS, canAccess, getIdentity } from '../../auth/auth'
 
 // Brief landing page for the Technical Office portal. No statistics by design.
@@ -9,6 +9,7 @@ export default function TechnicalHome() {
   const roles = user.roles ?? []
   const permissions = user.permissions ?? []
   const canOpenAccounts = canAccess(ACCESS.technicalAccounts, user)
+  const canOpenActivity = canAccess(ACCESS.technicalActivity, user)
   const dateStr = new Date().toLocaleDateString('ar-SY', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
 
   return (
@@ -41,8 +42,8 @@ export default function TechnicalHome() {
         <section className="bg-white border border-primary/12 rounded-[16px] p-6 shadow-[0_2px_16px_rgba(26,46,16,0.06)]">
           <h3 className="text-[16px] font-extrabold text-text-dark mb-2">مهمة البوابة</h3>
           <p className="text-[13px] text-text-gray leading-7 mb-4">
-            إنشاء حسابات المستخدمين وإسناد الأدوار المناسبة لها وسحبها، وتفعيل الحسابات أو تعطيلها،
-            ومراجعة الصلاحيات التي يكتسبها كل حساب من أدواره.
+            إنشاء حسابات المستخدمين وتعديل بيانات دخولها وإعادة تعيين كلمات مرورها، وإسناد الأدوار المناسبة وسحبها،
+            وتفعيل الحسابات أو تعطيلها، ومراجعة الصلاحيات التي يكتسبها كل حساب من أدواره وسجل النشاط.
           </p>
           <div className="flex items-start gap-2 bg-primary/5 border border-primary/15 rounded-[12px] px-4 py-3 text-[12.5px] text-text-gray mb-5">
             <FaInfoCircle className="text-primary mt-1 flex-shrink-0" />
@@ -54,6 +55,14 @@ export default function TechnicalHome() {
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-br from-primary to-primary-dark text-white rounded-[12px] text-[14px] font-bold shadow-[0_4px_16px_rgba(86,153,51,0.35)] hover:-translate-y-0.5 transition-all duration-[220ms] no-underline"
             >
               <FaUserShield /> الحسابات والصلاحيات <FaArrowLeft className="text-[11px]" />
+            </Link>
+          )}
+          {canOpenActivity && (
+            <Link
+              to="/technical/activity"
+              className="inline-flex items-center gap-2 px-5 py-2.5 mr-2 mt-2 border border-primary/25 bg-primary/8 text-primary-dark rounded-[12px] text-[14px] font-bold hover:bg-primary/15 transition-colors no-underline"
+            >
+              <FaHistory /> سجل النشاط <FaArrowLeft className="text-[11px]" />
             </Link>
           )}
         </section>

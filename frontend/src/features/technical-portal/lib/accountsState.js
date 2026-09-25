@@ -13,13 +13,13 @@ export const RESTRICTION_AR = Object.freeze({
   role_not_assignable: 'دور محجوز لمدير النظام',
   role_carries_restricted_permission: 'يحمل صلاحية إدارة حسابات أو صلاحيات',
   role_inactive: 'دور غير مفعّل',
-  self_change_forbidden: 'لا يمكنك تعديل أدوار أو حالة حسابك الشخصي.',
+  self_change_forbidden: 'لا يمكنك تعديل أدوار حسابك الشخصي أو حالته أو بيانات دخوله من هذه البوابة.',
   protected_account: 'هذا الحساب يحمل دورًا محجوزًا لمدير النظام؛ تعديله متاح لـ super_admin فقط.',
   manage_permission_missing: 'لديك صلاحية العرض فقط.',
 })
 
 const ERROR_CODE_AR = Object.freeze({
-  self_change_forbidden: 'لا يمكنك تعديل أدوار أو حالة حسابك الشخصي.',
+  self_change_forbidden: 'لا يمكنك تعديل حسابك الشخصي من هذه البوابة.',
   protected_account: 'هذا الحساب محمي؛ تعديله متاح لمدير النظام فقط.',
   role_not_assignable: 'هذا الدور ليس ضمن الأدوار المسموح للفريق التقني بإسنادها أو سحبها.',
   role_carries_restricted_permission: 'هذا الدور يحمل صلاحية إدارة حسابات أو صلاحيات، وإسناده محصور بمدير النظام.',
@@ -28,7 +28,15 @@ const ERROR_CODE_AR = Object.freeze({
   role_not_assigned: 'هذا الدور غير مُسند للحساب حاليًا.',
   status_unchanged: 'الحساب على هذه الحالة مسبقًا.',
   role_inactive: 'لا يمكن إسناد دور غير مفعّل.',
+  account_unchanged: 'لم تتغير أي قيمة؛ اسم المستخدم والبريد مطابقان للقيم الحالية.',
+  holder_name_unchanged: 'الاسم المدخل مطابق للاسم الحالي؛ لم يتغير شيء.',
+  holder_not_linked: 'الحساب غير مرتبط بموظف أو طالب؛ لا يوجد اسم صاحب حساب لتصحيحه.',
+  holder_link_ambiguous: 'الحساب مرتبط بموظف وطالب معًا؛ راجع الربط مع مدير النظام قبل تصحيح الاسم.',
+  holder_link_changed: 'تغيّر السجل المرتبط بالحساب؛ أعد تحميل الحساب.',
+  holder_name_permission_missing: 'لا تملك صلاحية تصحيح اسم صاحب الحساب.',
 })
+
+export const HOLDER_TYPE_AR = Object.freeze({ employee: 'موظف', student: 'طالب' })
 
 /** Map an apiRequest error to { status, message, fieldErrors } in Arabic. */
 export function accountErrorMessage(error) {

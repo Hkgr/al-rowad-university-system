@@ -20,12 +20,17 @@ class UserIdentityLinkService
                 }
             }
             $changed = array_intersect_key($links, array_flip(['student_id', 'employee_id', 'board_member_id']));
+            $previous = $target->only(array_keys($changed));
             $target->forceFill($changed)->save();
             UserActivityLog::query()->create([
                 'user_id' => $actor->user_id,
                 'module_code' => 'users_permissions',
                 'action_code' => 'user_identity_linked',
-                'description' => 'Updated explicit identity links for user '.$target->user_id.': '.implode(', ', array_keys($changed)),
+                'description' => json_encode([
+                    'target_user_id' => $target->user_id,
+                    'changes' => collect($changed)->mapWithKeys(fn ($value, $field) => [$field => ['from' => $previous[$field] ?? null, 'to' => $value]])->all(),
+                    'outcome' => 'success',
+                ], JSON_UNESCAPED_UNICODE),
                 'ip_address' => $ipAddress,
                 'created_at' => now(),
             ]);

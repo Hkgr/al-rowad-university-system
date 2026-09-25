@@ -54,6 +54,8 @@ export const PERMISSIONS = Object.freeze({
   technicalPortalAccess: 'technical_portal.access',
   userAccountsView: 'user_accounts.view',
   userAccountsManage: 'user_accounts.manage',
+  userAccountsHolderNameManage: 'user_accounts.holder_name.manage',
+  systemActivityView: 'system_activity.view',
   // نيابة الشؤون الإدارية: ملفات المدرسين وعمداء الكليات
   vpAdministrativeFacultyView: 'vice_presidency.administrative.faculty.view',
   vpAdministrativeFacultyManage: 'vice_presidency.administrative.faculty.manage',
@@ -78,6 +80,7 @@ export const ACCESS = Object.freeze({
   technicalPortal: { allPermissions: [PERMISSIONS.technicalPortalAccess] },
   technicalAccounts: { allPermissions: [PERMISSIONS.technicalPortalAccess, PERMISSIONS.userAccountsView] },
   technicalAccountsManage: { allPermissions: [PERMISSIONS.technicalPortalAccess, PERMISSIONS.userAccountsManage] },
+  technicalActivity: { allPermissions: [PERMISSIONS.technicalPortalAccess, PERMISSIONS.systemActivityView] },
 })
 
 export function getIdentity() {
