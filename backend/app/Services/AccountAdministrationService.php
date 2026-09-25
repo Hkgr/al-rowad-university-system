@@ -149,6 +149,8 @@ class AccountAdministrationService
                     $this->assertRoleAssignable($role, $actorIsAdmin);
                 }
 
+                $employeeId = $this->lockLinkableEmployee($data['employee_id'] ?? null);
+
                 $user = new User();
                 $user->forceFill([
                     'username' => $data['username'],
@@ -157,6 +159,7 @@ class AccountAdministrationService
                     'account_status_id' => $status->account_status_id,
                     'failed_login_attempts' => 0,
                     'created_by_user_id' => $actor->user_id,
+                    'employee_id' => $employeeId,
                 ])->save();
 
                 foreach ($roles as $role) {
@@ -174,6 +177,7 @@ class AccountAdministrationService
                     'username' => $user->username,
                     'status' => $status->status_code,
                     'roles' => $roles->pluck('role_code')->values()->all(),
+                    'employee_id' => $employeeId,
                 ]);
 
                 return $user;
@@ -289,6 +293,26 @@ class AccountAdministrationService
                 'to' => $status->status_code,
             ]);
         });
+    }
+
+    /**
+     * Optional employee link at creation (server-side callers only; the HTTP
+     * request does not accept it). One account per employee, fail closed.
+     */
+    private function lockLinkableEmployee(mixed $employeeId): ?int
+    {
+        if ($employeeId === null || $employeeId === '') {
+            return null;
+        }
+        $employee = DB::table('employees')->where('employee_id', (int) $employeeId)->lockForUpdate()->first();
+        if ($employee === null) {
+            throw ValidationException::withMessages(['employee_id' => ['سجل الموظف غير موجود.']]);
+        }
+        if (User::query()->where('employee_id', (int) $employeeId)->lockForUpdate()->exists()) {
+            throw AccountAdministrationException::conflict('employee_has_account', 'لهذا الموظف حساب دخول قائم.');
+        }
+
+        return (int) $employeeId;
     }
 
     public function isSuperAdmin(User $user): bool

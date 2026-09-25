@@ -1,0 +1,2309 @@
+{
+    "mode": "dry-run",
+    "generated_at": "2026-09-25T01:08:25+00:00",
+    "effective_date": "2025-01-01",
+    "rows": [
+        {
+            "row_no": "1",
+            "source_college": "كلية الإعلام والاتصال",
+            "source_name": "د عيسى درويش",
+            "source_designation": "عميد الكلية",
+            "source_title": "د",
+            "equivalence_status_source": "",
+            "is_dean": true,
+            "college": {
+                "college_id": 16,
+                "college_code": "FM",
+                "college_name": "كلية الإعلام والاتصال"
+            },
+            "first_name": "عيسى",
+            "last_name": "درويش",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "appoint",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "2",
+            "source_college": "كلية الإعلام والاتصال",
+            "source_name": "د عبد المجيد شيخو",
+            "source_designation": "غير معادل",
+            "source_title": "د",
+            "equivalence_status_source": "غير معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 16,
+                "college_code": "FM",
+                "college_name": "كلية الإعلام والاتصال"
+            },
+            "first_name": "عبد المجيد",
+            "last_name": "شيخو",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "3",
+            "source_college": "كلية الإعلام والاتصال",
+            "source_name": "ا . معاوية الدمشقي",
+            "source_designation": "غير معادل",
+            "source_title": "ا",
+            "equivalence_status_source": "غير معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 16,
+                "college_code": "FM",
+                "college_name": "كلية الإعلام والاتصال"
+            },
+            "first_name": "معاوية",
+            "last_name": "الدمشقي",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "4",
+            "source_college": "هندسة البناء وإعادة الاعمار",
+            "source_name": "د عباس عباس",
+            "source_designation": "عميد الكلية",
+            "source_title": "د",
+            "equivalence_status_source": "",
+            "is_dean": true,
+            "college": {
+                "college_id": 13,
+                "college_code": "FBER",
+                "college_name": "كلية الهندسة وإعادة الإعمار"
+            },
+            "first_name": "عباس",
+            "last_name": "عباس",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "appoint",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "5",
+            "source_college": "هندسة البناء وإعادة الاعمار",
+            "source_name": "د محمد منير الحموي",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 13,
+                "college_code": "FBER",
+                "college_name": "كلية الهندسة وإعادة الإعمار"
+            },
+            "first_name": "محمد منير",
+            "last_name": "الحموي",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر.",
+                "تقسيم الاسم إلى اسم أول وكنية مقترح ويحتاج تأكيد المشغّل (name_split_confirmed=yes)."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "6",
+            "source_college": "هندسة البناء وإعادة الاعمار",
+            "source_name": "د جهاد الخطيب",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 13,
+                "college_code": "FBER",
+                "college_name": "كلية الهندسة وإعادة الإعمار"
+            },
+            "first_name": "جهاد",
+            "last_name": "الخطيب",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "7",
+            "source_college": "هندسة البناء وإعادة الاعمار",
+            "source_name": "د وفاء يخني",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 13,
+                "college_code": "FBER",
+                "college_name": "كلية الهندسة وإعادة الإعمار"
+            },
+            "first_name": "وفاء",
+            "last_name": "يخني",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "8",
+            "source_college": "هندسة البناء وإعادة الاعمار",
+            "source_name": "د عدنان يعقوب",
+            "source_designation": "غير معادل",
+            "source_title": "د",
+            "equivalence_status_source": "غير معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 13,
+                "college_code": "FBER",
+                "college_name": "كلية الهندسة وإعادة الإعمار"
+            },
+            "first_name": "عدنان",
+            "last_name": "يعقوب",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "9",
+            "source_college": "هندسة البناء وإعادة الاعمار",
+            "source_name": "د . فراس المصطفى",
+            "source_designation": "غير معادل",
+            "source_title": "د",
+            "equivalence_status_source": "غير معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 13,
+                "college_code": "FBER",
+                "college_name": "كلية الهندسة وإعادة الإعمار"
+            },
+            "first_name": "فراس",
+            "last_name": "المصطفى",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "10",
+            "source_college": "هندسة البناء وإعادة الاعمار",
+            "source_name": "د عبد العزيز ايوبي",
+            "source_designation": "غير معادل",
+            "source_title": "د",
+            "equivalence_status_source": "غير معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 13,
+                "college_code": "FBER",
+                "college_name": "كلية الهندسة وإعادة الإعمار"
+            },
+            "first_name": "عبد العزيز",
+            "last_name": "ايوبي",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "11",
+            "source_college": "هندسة البناء وإعادة الاعمار",
+            "source_name": "د ضياء الدين نعساني",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 13,
+                "college_code": "FBER",
+                "college_name": "كلية الهندسة وإعادة الإعمار"
+            },
+            "first_name": "ضياء الدين",
+            "last_name": "نعساني",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر.",
+                "تقسيم الاسم إلى اسم أول وكنية مقترح ويحتاج تأكيد المشغّل (name_split_confirmed=yes)."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "12",
+            "source_college": "هندسة البناء وإعادة الاعمار",
+            "source_name": "د ناهد فرهود",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 13,
+                "college_code": "FBER",
+                "college_name": "كلية الهندسة وإعادة الإعمار"
+            },
+            "first_name": "ناهد",
+            "last_name": "فرهود",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "13",
+            "source_college": "هندسة البناء وإعادة الاعمار",
+            "source_name": "ا.علي رجب",
+            "source_designation": "غير معادل",
+            "source_title": "ا",
+            "equivalence_status_source": "غير معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 13,
+                "college_code": "FBER",
+                "college_name": "كلية الهندسة وإعادة الإعمار"
+            },
+            "first_name": "علي",
+            "last_name": "رجب",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "14",
+            "source_college": "كلية التربية الرياضية والبدنية",
+            "source_name": "د زيد حسينو",
+            "source_designation": "عميد الكلية",
+            "source_title": "د",
+            "equivalence_status_source": "",
+            "is_dean": true,
+            "college": {
+                "college_id": 18,
+                "college_code": "ES",
+                "college_name": "كلية التربية الرياضية"
+            },
+            "first_name": "زيد",
+            "last_name": "حسينو",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "appoint",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "15",
+            "source_college": "كلية التربية الرياضية والبدنية",
+            "source_name": "د طاهر حميدي",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 18,
+                "college_code": "ES",
+                "college_name": "كلية التربية الرياضية"
+            },
+            "first_name": "طاهر",
+            "last_name": "حميدي",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "16",
+            "source_college": "كلية التربية الرياضية والبدنية",
+            "source_name": "ا عبد الناصر حميدي",
+            "source_designation": "غير معادل",
+            "source_title": "ا",
+            "equivalence_status_source": "غير معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 18,
+                "college_code": "ES",
+                "college_name": "كلية التربية الرياضية"
+            },
+            "first_name": "عبد الناصر",
+            "last_name": "حميدي",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "17",
+            "source_college": "كلية التربية الرياضية والبدنية",
+            "source_name": "ا محمد مهند حلبي",
+            "source_designation": "معادل",
+            "source_title": "ا",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 18,
+                "college_code": "ES",
+                "college_name": "كلية التربية الرياضية"
+            },
+            "first_name": "محمد مهند",
+            "last_name": "حلبي",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر.",
+                "تقسيم الاسم إلى اسم أول وكنية مقترح ويحتاج تأكيد المشغّل (name_split_confirmed=yes)."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "18",
+            "source_college": "كلية التربية الرياضية والبدنية",
+            "source_name": "ا. يوسف العمر",
+            "source_designation": "غير محدد",
+            "source_title": "ا",
+            "equivalence_status_source": "غير محدد",
+            "is_dean": false,
+            "college": {
+                "college_id": 18,
+                "college_code": "ES",
+                "college_name": "كلية التربية الرياضية"
+            },
+            "first_name": "يوسف",
+            "last_name": "العمر",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "19",
+            "source_college": "كلية التربية الرياضية والبدنية",
+            "source_name": "ا .عبد الرحمن شيخو",
+            "source_designation": "غير محدد",
+            "source_title": "ا",
+            "equivalence_status_source": "غير محدد",
+            "is_dean": false,
+            "college": {
+                "college_id": 18,
+                "college_code": "ES",
+                "college_name": "كلية التربية الرياضية"
+            },
+            "first_name": "عبد الرحمن",
+            "last_name": "شيخو",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "20",
+            "source_college": "كلية التربية والتنمية المجتمعية",
+            "source_name": "د محمد برهو",
+            "source_designation": "عميد الكلية",
+            "source_title": "د",
+            "equivalence_status_source": "",
+            "is_dean": true,
+            "college": {
+                "college_id": 15,
+                "college_code": "FED",
+                "college_name": "كلية التربية والتنمية المجتمعية"
+            },
+            "first_name": "محمد",
+            "last_name": "برهو",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "appoint",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "21",
+            "source_college": "كلية التربية والتنمية المجتمعية",
+            "source_name": "د مصطفى طيفور",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 15,
+                "college_code": "FED",
+                "college_name": "كلية التربية والتنمية المجتمعية"
+            },
+            "first_name": "مصطفى",
+            "last_name": "طيفور",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "22",
+            "source_college": "كلية التربية والتنمية المجتمعية",
+            "source_name": "د سيف قدة",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 15,
+                "college_code": "FED",
+                "college_name": "كلية التربية والتنمية المجتمعية"
+            },
+            "first_name": "سيف",
+            "last_name": "قدة",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "23",
+            "source_college": "كلية التربية والتنمية المجتمعية",
+            "source_name": "د خلدون مصطفى",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 15,
+                "college_code": "FED",
+                "college_name": "كلية التربية والتنمية المجتمعية"
+            },
+            "first_name": "خلدون",
+            "last_name": "مصطفى",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "24",
+            "source_college": "كلية التربية والتنمية المجتمعية",
+            "source_name": "د حسين حاج احمد",
+            "source_designation": "غير محدد",
+            "source_title": "د",
+            "equivalence_status_source": "غير محدد",
+            "is_dean": false,
+            "college": {
+                "college_id": 15,
+                "college_code": "FED",
+                "college_name": "كلية التربية والتنمية المجتمعية"
+            },
+            "first_name": "حسين حاج",
+            "last_name": "احمد",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر.",
+                "تقسيم الاسم إلى اسم أول وكنية مقترح ويحتاج تأكيد المشغّل (name_split_confirmed=yes)."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "25",
+            "source_college": "كلية التربية والتنمية المجتمعية",
+            "source_name": "د ياسر جاجان",
+            "source_designation": "غير محدد",
+            "source_title": "د",
+            "equivalence_status_source": "غير محدد",
+            "is_dean": false,
+            "college": {
+                "college_id": 15,
+                "college_code": "FED",
+                "college_name": "كلية التربية والتنمية المجتمعية"
+            },
+            "first_name": "ياسر",
+            "last_name": "جاجان",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "26",
+            "source_college": "كلية التربية والتنمية المجتمعية",
+            "source_name": "د منذر قباني",
+            "source_designation": "غير معادل",
+            "source_title": "د",
+            "equivalence_status_source": "غير معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 15,
+                "college_code": "FED",
+                "college_name": "كلية التربية والتنمية المجتمعية"
+            },
+            "first_name": "منذر",
+            "last_name": "قباني",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "27",
+            "source_college": "كلية الحقوق",
+            "source_name": "د عبد الكريم المصطفى",
+            "source_designation": "عميد الكلية",
+            "source_title": "د",
+            "equivalence_status_source": "",
+            "is_dean": true,
+            "college": {
+                "college_id": 17,
+                "college_code": "FL",
+                "college_name": "كلية الحقوق"
+            },
+            "first_name": "عبد الكريم",
+            "last_name": "المصطفى",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "appoint",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "28",
+            "source_college": "كلية الحقوق",
+            "source_name": "د مصطفى الحافظ",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 17,
+                "college_code": "FL",
+                "college_name": "كلية الحقوق"
+            },
+            "first_name": "مصطفى",
+            "last_name": "الحافظ",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "29",
+            "source_college": "كلية الحقوق",
+            "source_name": "د عبد القادر الشيخ",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 17,
+                "college_code": "FL",
+                "college_name": "كلية الحقوق"
+            },
+            "first_name": "عبد القادر",
+            "last_name": "الشيخ",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "30",
+            "source_college": "كلية الحقوق",
+            "source_name": "د وسيم الرشيد",
+            "source_designation": "غير معادل",
+            "source_title": "د",
+            "equivalence_status_source": "غير معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 17,
+                "college_code": "FL",
+                "college_name": "كلية الحقوق"
+            },
+            "first_name": "وسيم",
+            "last_name": "الرشيد",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "31",
+            "source_college": "كلية الحقوق",
+            "source_name": "دخالد الخطيب",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 17,
+                "college_code": "FL",
+                "college_name": "كلية الحقوق"
+            },
+            "first_name": "خالد",
+            "last_name": "الخطيب",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "32",
+            "source_college": "كلية الحقوق",
+            "source_name": "ا . ياسر معراوي",
+            "source_designation": "غير معادل",
+            "source_title": "ا",
+            "equivalence_status_source": "غير معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 17,
+                "college_code": "FL",
+                "college_name": "كلية الحقوق"
+            },
+            "first_name": "ياسر",
+            "last_name": "معراوي",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "33",
+            "source_college": "كلية العلوم الإدارية والمالية",
+            "source_name": "د طه المرشد",
+            "source_designation": "عميد الكلية",
+            "source_title": "د",
+            "equivalence_status_source": "",
+            "is_dean": true,
+            "college": {
+                "college_id": 10,
+                "college_code": "FMF",
+                "college_name": "كلية العلوم الإدارية والمالية"
+            },
+            "first_name": "طه",
+            "last_name": "المرشد",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "CONFLICT",
+            "reasons": [
+                "للكلية عميد حالي (dean.fmf.test); لا يُستبدل تلقائيًا (replace_current_dean=yes للاستبدال الصريح).",
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": [
+                    9
+                ]
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "34",
+            "source_college": "كلية العلوم الإدارية والمالية",
+            "source_name": "د عبد الله حمادة",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 10,
+                "college_code": "FMF",
+                "college_name": "كلية العلوم الإدارية والمالية"
+            },
+            "first_name": "عبد الله",
+            "last_name": "حمادة",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "35",
+            "source_college": "كلية العلوم الإدارية والمالية",
+            "source_name": "د سليمان عوض",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 10,
+                "college_code": "FMF",
+                "college_name": "كلية العلوم الإدارية والمالية"
+            },
+            "first_name": "سليمان",
+            "last_name": "عوض",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "36",
+            "source_college": "كلية العلوم الإدارية والمالية",
+            "source_name": "د عبدو حمادة",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 10,
+                "college_code": "FMF",
+                "college_name": "كلية العلوم الإدارية والمالية"
+            },
+            "first_name": "عبدو",
+            "last_name": "حمادة",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "37",
+            "source_college": "كلية العلوم الإدارية والمالية",
+            "source_name": "د هاشم عبد اللطيف",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 10,
+                "college_code": "FMF",
+                "college_name": "كلية العلوم الإدارية والمالية"
+            },
+            "first_name": "هاشم",
+            "last_name": "عبد اللطيف",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "38",
+            "source_college": "كلية العلوم الإدارية والمالية",
+            "source_name": "د محمد باسل مصري",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 10,
+                "college_code": "FMF",
+                "college_name": "كلية العلوم الإدارية والمالية"
+            },
+            "first_name": "محمد باسل",
+            "last_name": "مصري",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر.",
+                "تقسيم الاسم إلى اسم أول وكنية مقترح ويحتاج تأكيد المشغّل (name_split_confirmed=yes)."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "39",
+            "source_college": "كلية العلوم الإدارية والمالية",
+            "source_name": "د عبد العزيز الدغيم",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 10,
+                "college_code": "FMF",
+                "college_name": "كلية العلوم الإدارية والمالية"
+            },
+            "first_name": "عبد العزيز",
+            "last_name": "الدغيم",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "40",
+            "source_college": "كلية العلوم الإدارية والمالية",
+            "source_name": "د عبد الحكيم مصري",
+            "source_designation": "غير محدد",
+            "source_title": "د",
+            "equivalence_status_source": "غير محدد",
+            "is_dean": false,
+            "college": {
+                "college_id": 10,
+                "college_code": "FMF",
+                "college_name": "كلية العلوم الإدارية والمالية"
+            },
+            "first_name": "عبد الحكيم",
+            "last_name": "مصري",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "41",
+            "source_college": "كلية العلوم الإدارية والمالية",
+            "source_name": "د حسن كتلو",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 10,
+                "college_code": "FMF",
+                "college_name": "كلية العلوم الإدارية والمالية"
+            },
+            "first_name": "حسن",
+            "last_name": "كتلو",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "42",
+            "source_college": "كلية العلوم الإدارية والمالية",
+            "source_name": "د احمد حميدي",
+            "source_designation": "غير معادل",
+            "source_title": "د",
+            "equivalence_status_source": "غير معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 10,
+                "college_code": "FMF",
+                "college_name": "كلية العلوم الإدارية والمالية"
+            },
+            "first_name": "احمد",
+            "last_name": "حميدي",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "43",
+            "source_college": "كلية الهندسة المعلوماتية وتقاناتها",
+            "source_name": "د احمد الأحمد",
+            "source_designation": "عميد الكلية",
+            "source_title": "د",
+            "equivalence_status_source": "",
+            "is_dean": true,
+            "college": {
+                "college_id": 14,
+                "college_code": "FIE",
+                "college_name": "كلية الهندسة المعلوماتية وتقاناتها"
+            },
+            "first_name": "احمد",
+            "last_name": "الأحمد",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "appoint",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "44",
+            "source_college": "كلية الهندسة المعلوماتية وتقاناتها",
+            "source_name": "د صهيب بكور",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 14,
+                "college_code": "FIE",
+                "college_name": "كلية الهندسة المعلوماتية وتقاناتها"
+            },
+            "first_name": "صهيب",
+            "last_name": "بكور",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "45",
+            "source_college": "كلية الهندسة المعلوماتية وتقاناتها",
+            "source_name": "د احمد طيار",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 14,
+                "college_code": "FIE",
+                "college_name": "كلية الهندسة المعلوماتية وتقاناتها"
+            },
+            "first_name": "احمد",
+            "last_name": "طيار",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "46",
+            "source_college": "كلية الهندسة المعلوماتية وتقاناتها",
+            "source_name": "عبد الحميد هورو",
+            "source_designation": "معادل",
+            "source_title": "",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 14,
+                "college_code": "FIE",
+                "college_name": "كلية الهندسة المعلوماتية وتقاناتها"
+            },
+            "first_name": "عبد الحميد",
+            "last_name": "هورو",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "47",
+            "source_college": "كلية الهندسة المعلوماتية وتقاناتها",
+            "source_name": "وائل عبد العال",
+            "source_designation": "غير معادل",
+            "source_title": "",
+            "equivalence_status_source": "غير معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 14,
+                "college_code": "FIE",
+                "college_name": "كلية الهندسة المعلوماتية وتقاناتها"
+            },
+            "first_name": "وائل",
+            "last_name": "عبد العال",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "48",
+            "source_college": "كلية الهندسة المعلوماتية وتقاناتها",
+            "source_name": "د محمد ايمن نعال",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 14,
+                "college_code": "FIE",
+                "college_name": "كلية الهندسة المعلوماتية وتقاناتها"
+            },
+            "first_name": "محمد ايمن",
+            "last_name": "نعال",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر.",
+                "تقسيم الاسم إلى اسم أول وكنية مقترح ويحتاج تأكيد المشغّل (name_split_confirmed=yes)."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "49",
+            "source_college": "كلية الهندسة المعلوماتية وتقاناتها",
+            "source_name": "د محمد الرواس",
+            "source_designation": "غير معادل",
+            "source_title": "د",
+            "equivalence_status_source": "غير معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 14,
+                "college_code": "FIE",
+                "college_name": "كلية الهندسة المعلوماتية وتقاناتها"
+            },
+            "first_name": "محمد",
+            "last_name": "الرواس",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "50",
+            "source_college": "كلية الهندسة المعلوماتية وتقاناتها",
+            "source_name": "د مرهف العبد الله",
+            "source_designation": "معادل",
+            "source_title": "د",
+            "equivalence_status_source": "معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 14,
+                "college_code": "FIE",
+                "college_name": "كلية الهندسة المعلوماتية وتقاناتها"
+            },
+            "first_name": "مرهف",
+            "last_name": "العبد الله",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        },
+        {
+            "row_no": "51",
+            "source_college": "كلية الهندسة المعلوماتية وتقاناتها",
+            "source_name": "ا باسل ريحاوي",
+            "source_designation": "غير معادل",
+            "source_title": "ا",
+            "equivalence_status_source": "غير معادل",
+            "is_dean": false,
+            "college": {
+                "college_id": 14,
+                "college_code": "FIE",
+                "college_name": "كلية الهندسة المعلوماتية وتقاناتها"
+            },
+            "first_name": "باسل",
+            "last_name": "ريحاوي",
+            "employee_number": "",
+            "email": "",
+            "username": "",
+            "status": "NEEDS_REVIEW",
+            "reasons": [
+                "الرقم الوظيفي (employee_number) غير متوفر.",
+                "البريد المعتمد غير متوفر."
+            ],
+            "changes": [],
+            "name_candidates": [],
+            "employee_id": null,
+            "faculty_member_id": null,
+            "user_id": null,
+            "already_affiliated": false,
+            "dean": {
+                "action": "none",
+                "current_dean_user_ids": []
+            },
+            "before": {
+                "employee_id": null,
+                "faculty_member_id": null,
+                "colleges": [],
+                "user_id": null,
+                "roles": [],
+                "college_scopes": []
+            },
+            "after": null
+        }
+    ],
+    "summary": {
+        "rows": 51,
+        "dean_rows": 7,
+        "ready": 0,
+        "ready_deans": 0,
+        "blocked": 51,
+        "by_status": {
+            "EXISTING_LINK": 0,
+            "CREATE": 0,
+            "UPDATE_AFFILIATION": 0,
+            "NEEDS_REVIEW": 50,
+            "CONFLICT": 1
+        },
+        "by_college": {
+            "FM": {
+                "college_name": "كلية الإعلام والاتصال",
+                "rows": 3,
+                "deans": 1,
+                "ready": 0,
+                "blocked": 3,
+                "EXISTING_LINK": 0,
+                "CREATE": 0,
+                "UPDATE_AFFILIATION": 0,
+                "NEEDS_REVIEW": 3,
+                "CONFLICT": 0
+            },
+            "FBER": {
+                "college_name": "كلية الهندسة وإعادة الإعمار",
+                "rows": 10,
+                "deans": 1,
+                "ready": 0,
+                "blocked": 10,
+                "EXISTING_LINK": 0,
+                "CREATE": 0,
+                "UPDATE_AFFILIATION": 0,
+                "NEEDS_REVIEW": 10,
+                "CONFLICT": 0
+            },
+            "ES": {
+                "college_name": "كلية التربية الرياضية",
+                "rows": 6,
+                "deans": 1,
+                "ready": 0,
+                "blocked": 6,
+                "EXISTING_LINK": 0,
+                "CREATE": 0,
+                "UPDATE_AFFILIATION": 0,
+                "NEEDS_REVIEW": 6,
+                "CONFLICT": 0
+            },
+            "FED": {
+                "college_name": "كلية التربية والتنمية المجتمعية",
+                "rows": 7,
+                "deans": 1,
+                "ready": 0,
+                "blocked": 7,
+                "EXISTING_LINK": 0,
+                "CREATE": 0,
+                "UPDATE_AFFILIATION": 0,
+                "NEEDS_REVIEW": 7,
+                "CONFLICT": 0
+            },
+            "FL": {
+                "college_name": "كلية الحقوق",
+                "rows": 6,
+                "deans": 1,
+                "ready": 0,
+                "blocked": 6,
+                "EXISTING_LINK": 0,
+                "CREATE": 0,
+                "UPDATE_AFFILIATION": 0,
+                "NEEDS_REVIEW": 6,
+                "CONFLICT": 0
+            },
+            "FMF": {
+                "college_name": "كلية العلوم الإدارية والمالية",
+                "rows": 10,
+                "deans": 1,
+                "ready": 0,
+                "blocked": 10,
+                "EXISTING_LINK": 0,
+                "CREATE": 0,
+                "UPDATE_AFFILIATION": 0,
+                "NEEDS_REVIEW": 9,
+                "CONFLICT": 1
+            },
+            "FIE": {
+                "college_name": "كلية الهندسة المعلوماتية وتقاناتها",
+                "rows": 9,
+                "deans": 1,
+                "ready": 0,
+                "blocked": 9,
+                "EXISTING_LINK": 0,
+                "CREATE": 0,
+                "UPDATE_AFFILIATION": 0,
+                "NEEDS_REVIEW": 9,
+                "CONFLICT": 0
+            }
+        }
+    }
+}
