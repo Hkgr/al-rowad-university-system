@@ -25,7 +25,8 @@ export default function DashboardLayout({ nav = [], appTitle = 'جامعة ال�
     .filter(section => section.items.length > 0)
   const allItems   = authorizedNav.flatMap(s => s.items)
   const activeItem = allItems.find(item => location.pathname === item.to)
-    ?? allItems.find(item => location.pathname.startsWith(item.to + '/'))
+    // Longest matching prefix, so a detail page is titled after its own section, not the portal home.
+    ?? allItems.filter(item => location.pathname.startsWith(item.to + '/')).sort((a, b) => b.to.length - a.to.length)[0]
   const pageTitle  = activeItem?.ar || appTitle
 
   const logout = () => {

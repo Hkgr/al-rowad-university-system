@@ -118,6 +118,22 @@ import TechnicalHome from '../features/technical-portal/pages/TechnicalHome'
 import AccountsPermissionsPage from '../features/technical-portal/pages/AccountsPermissionsPage'
 import ActivityLogPage from '../features/technical-portal/pages/ActivityLogPage'
 
+// ── وزارة التربية والتعليم (read-only ministry portal) ─────────────────────
+import ministryNav from '../features/ministry-portal/nav'
+import MinistryHome from '../features/ministry-portal/pages/MinistryHome'
+import MinistryDeans from '../features/ministry-portal/pages/MinistryDeans'
+import MinistryDeanDetail from '../features/ministry-portal/pages/MinistryDeanDetail'
+import MinistryStudents from '../features/ministry-portal/pages/MinistryStudents'
+import MinistryStudentDetail from '../features/ministry-portal/pages/MinistryStudentDetail'
+import MinistryColleges from '../features/ministry-portal/pages/MinistryColleges'
+import MinistryCollegeDetail from '../features/ministry-portal/pages/MinistryCollegeDetail'
+import MinistryCourses from '../features/ministry-portal/pages/MinistryCourses'
+import MinistryCourseDetail from '../features/ministry-portal/pages/MinistryCourseDetail'
+import MinistryFaculty from '../features/ministry-portal/pages/MinistryFaculty'
+import MinistryFacultyDetail from '../features/ministry-portal/pages/MinistryFacultyDetail'
+import MinistryLeadership from '../features/ministry-portal/pages/MinistryLeadership'
+import MinistryUnitDetail from '../features/ministry-portal/pages/MinistryUnitDetail'
+
 // ── دليل الاستخدام (per-portal user guides) ─────────────────────────────────
 import UserGuidePage from '../features/user-guide/UserGuidePage'
 import GuideLayout from '../features/user-guide/GuideLayout'
@@ -403,6 +419,30 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/technical/accounts" element={protect(<AccountsPermissionsPage />, ACCESS.technicalAccounts)} />
           <Route path="/technical/activity" element={protect(<ActivityLogPage />, ACCESS.technicalActivity)} />
           <Route path="/technical/guide" element={<UserGuidePage guideId="technical" />} />
+        </Route>
+
+        {/* ── وزارة التربية والتعليم: قراءة فقط؛ الخادم يحصر حساب الوزارة في /api/v1/ministry ── */}
+        <Route
+          element={
+            <ProtectedRoute {...ACCESS.ministryPortal}>
+              <DashboardLayout nav={ministryNav} appTitle="وزارة التربية والتعليم" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/ministry" element={protect(<MinistryHome />, ACCESS.ministryDashboard)} />
+          <Route path="/ministry/deans" element={protect(<MinistryDeans />, ACCESS.ministryDeans)} />
+          <Route path="/ministry/deans/:person" element={protect(<MinistryDeanDetail />, ACCESS.ministryDeans)} />
+          <Route path="/ministry/students" element={protect(<MinistryStudents />, ACCESS.ministryStudents)} />
+          <Route path="/ministry/students/:id" element={protect(<MinistryStudentDetail />, ACCESS.ministryStudents)} />
+          <Route path="/ministry/colleges" element={protect(<MinistryColleges />, ACCESS.ministryColleges)} />
+          <Route path="/ministry/colleges/:id" element={protect(<MinistryCollegeDetail />, ACCESS.ministryColleges)} />
+          <Route path="/ministry/courses" element={protect(<MinistryCourses />, ACCESS.ministryCourses)} />
+          <Route path="/ministry/courses/:id" element={protect(<MinistryCourseDetail />, ACCESS.ministryCourses)} />
+          <Route path="/ministry/faculty" element={protect(<MinistryFaculty />, ACCESS.ministryFaculty)} />
+          <Route path="/ministry/faculty/:id" element={protect(<MinistryFacultyDetail />, ACCESS.ministryFaculty)} />
+          <Route path="/ministry/leadership" element={protect(<MinistryLeadership />, ACCESS.ministryLeadership)} />
+          <Route path="/ministry/leadership/units/:id" element={protect(<MinistryUnitDetail />, ACCESS.ministryLeadership)} />
+          <Route path="/ministry/guide" element={<UserGuidePage guideId="ministry" />} />
         </Route>
 
         {/* Default redirect */}
