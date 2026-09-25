@@ -857,6 +857,23 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     | Ministry of Education follow-up portal: read-only, GET only. Each route carries its own
     | ministry_portal.* permission, checked server-side (RequireMinistryPortal); no write route exists.
     */
+    // University president: independent assigned read permissions and actual PRES scope.
+    Route::prefix('president')->controller(\App\Http\Controllers\Api\PresidentPortalController::class)->group(function (): void {
+        $guard = fn ($section) => \App\Http\Middleware\RequirePresidentPortal::class.':'.$section;
+        Route::get('filters', 'filters')->middleware($guard('access'));
+        Route::get('dashboard', 'dashboard')->middleware($guard('dashboard'));
+        Route::get('reports', 'dashboard')->middleware($guard('reports'));
+        Route::get('followup', 'followup')->middleware($guard('followup'));
+        Route::get('followup/{source}', 'workflow')->middleware($guard('followup'));
+        Route::get('followup/{source}/{id}', 'workflowRecord')->whereNumber('id')->middleware($guard('followup'));
+        foreach (\App\Http\Controllers\Api\PresidentPortalController::RESOURCES as $resource => $section) {
+            Route::get($resource, 'index')->defaults('resource', $resource)->middleware($guard($section));
+            $route = Route::get($resource.'/{id}', 'show')->defaults('resource', $resource)->middleware($guard($section));
+            if ($resource === 'deans') $route->where('id', '(employee|account)-[0-9]+');
+            else $route->whereNumber('id');
+        }
+    });
+
     Route::prefix('ministry')->controller(\App\Http\Controllers\Api\MinistryPortalController::class)->group(function (): void {
         $guard = fn (string $permission) => \App\Http\Middleware\RequireMinistryPortal::class.':'.$permission;
         Route::get('filters', 'filters')->middleware($guard(\App\Support\MinistryPortal::ACCESS));

@@ -152,6 +152,14 @@ export function landingRoute(user) {
   // No existing account holds this role, so the precedence of existing roles is unchanged.
   if (hasRole(ROLES.ministryObserver, user)) return canAccess(ACCESS.ministryPortal, user) ? '/ministry' : '/forbidden'
 
+  // President portal is independent of VP/dean permissions and super-admin virtual grants.
+  // Ministry confinement remains first for mixed ministry identities.
+  if (hasRole('university_president', user) && hasActualUniversityScope(user) && hasAssignedPermission('president_portal.access', user)) {
+    const pages = [['dashboard', ''], ['colleges', '/colleges'], ['students', '/students'], ['exams', '/exams'], ['staff', '/faculty'], ['leadership', '/leadership'], ['followup', '/followup'], ['reports', '/reports']]
+    const landing = pages.find(([section]) => hasAssignedPermission(`president_portal.${section}.view`, user))
+    if (landing) return '/president' + landing[1]
+  }
+
   // Portal roles take precedence over permission-based staff landing pages.
   if (hasRole(ROLES.dean, user)) return '/dean'
   if (hasRole(ROLES.vicePresidentScientific, user)) return '/vp/scientific'

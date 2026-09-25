@@ -133,6 +133,9 @@ import MinistryFaculty from '../features/ministry-portal/pages/MinistryFaculty'
 import MinistryFacultyDetail from '../features/ministry-portal/pages/MinistryFacultyDetail'
 import MinistryLeadership from '../features/ministry-portal/pages/MinistryLeadership'
 import MinistryUnitDetail from '../features/ministry-portal/pages/MinistryUnitDetail'
+import presidentNav from '../features/president-portal/nav'
+import { presidentAccess, RESOURCES as presidentResources } from '../features/president-portal/president'
+import { PresidentHome, PresidentList, PresidentDetail, PresidentFollowup } from '../features/president-portal/PresidentPages'
 
 // ── دليل الاستخدام (per-portal user guides) ─────────────────────────────────
 import UserGuidePage from '../features/user-guide/UserGuidePage'
@@ -419,6 +422,18 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/technical/accounts" element={protect(<AccountsPermissionsPage />, ACCESS.technicalAccounts)} />
           <Route path="/technical/activity" element={protect(<ActivityLogPage />, ACCESS.technicalActivity)} />
           <Route path="/technical/guide" element={<UserGuidePage guideId="technical" />} />
+        </Route>
+
+        <Route element={<ProtectedRoute {...presidentAccess()}><DashboardLayout nav={presidentNav} appTitle="رئيس جامعة الروّاد للعلوم والتقانة" /></ProtectedRoute>}>
+          <Route path="/president" element={protect(<PresidentHome />, presidentAccess('dashboard'))} />
+          <Route path="/president/reports" element={protect(<PresidentHome reports />, presidentAccess('reports'))} />
+          <Route path="/president/followup" element={protect(<PresidentFollowup />, presidentAccess('followup'))} />
+          <Route path="/president/followup/:source" element={protect(<PresidentFollowup />, presidentAccess('followup'))} />
+          <Route path="/president/followup/:source/:id" element={protect(<PresidentFollowup />, presidentAccess('followup'))} />
+          {Object.entries(presidentResources).map(([resource, config]) => <Route key={resource}>
+            <Route path={`/president/${resource}`} element={protect(<PresidentList resource={resource} />, presidentAccess(config[1]))} />
+            <Route path={`/president/${resource}/:id`} element={protect(<PresidentDetail resource={resource} />, presidentAccess(config[1]))} />
+          </Route>)}
         </Route>
 
         {/* ── وزارة التربية والتعليم: قراءة فقط؛ الخادم يحصر حساب الوزارة في /api/v1/ministry ── */}
