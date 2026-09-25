@@ -125,4 +125,5 @@ export const ROUTE_ACCESS = Object.freeze({
   '/vp/administrative/calendar': [G.vpAdministrative],
 
   '/technical/accounts': [G.technical, ACCESS.technicalAccounts],
+  '/technical/activity': [G.technical, ACCESS.technicalActivity],
 })

@@ -1,4 +1,4 @@
-import { ACCESS } from '../../auth/auth.js'
+import { ACCESS, PERMISSIONS } from '../../auth/auth.js'
 import { node, branch, source, step } from './helpers.js'
 
 const HR = 'frontend/src/features/hr-dashboard/pages/'
@@ -121,7 +121,7 @@ export const academicStructure = {
 export const technical = {
   id: 'technical',
   title: 'المكتب التقني',
-  intro: 'تنشئ من هذه البوابة حسابات المستخدمين، وتسند الأدوار المسموح بها أو تسحبها، وتفعّل الحسابات أو تعطّلها. الصلاحيات تُكتسب من الأدوار فقط، والتبعية التنظيمية للمكتب لا تمنح صلاحية.',
+  intro: 'تنشئ من هذه البوابة حسابات المستخدمين، وتعدّل اسم المستخدم والبريد، وتعيد تعيين كلمات المرور، وتصحّح اسم صاحب الحساب بصلاحية مستقلة، وتسند الأدوار المسموح بها أو تسحبها، وتفعّل الحسابات أو تعطّلها، وتراجع سجل النشاط. الصلاحيات تُكتسب من الأدوار فقط، والتبعية التنظيمية للمكتب لا تمنح صلاحية.',
   sections: [
     {
       id: 'accounts',
@@ -163,10 +163,91 @@ export const technical = {
             source('backend/app/Services/AccountAdministrationService.php', 'role_not_assignable', 'self_change_forbidden', 'last_super_admin'),
           ],
         },
+        {
+          id: 'accounts-login-edit',
+          title: 'تعديل اسم المستخدم أو البريد',
+          summary: '«اسم المستخدم» معرّف الحساب؛ الدخول يتم بالبريد وكلمة المرور. يُرفض اسم أو بريد مستخدم لحساب آخر، ولا تُعدَّل حساباتك أو الحسابات المحمية.',
+          access: ACCESS.technicalAccountsManage,
+          link: { to: '/technical/accounts' },
+          steps: [
+            step('افتح تفاصيل الحساب، ثم «تعديل اسم المستخدم أو البريد».'),
+            step('غيّر القيمة واضغط «حفظ بيانات الدخول»؛ يُحوَّل البريد إلى أحرف صغيرة. أبلغ صاحب الحساب إن تغيّر بريد دخوله.'),
+          ],
+          sources: [
+            source('frontend/src/features/technical-portal/components/AccountEditSections.jsx', 'تعديل اسم المستخدم أو البريد', 'حفظ بيانات الدخول'),
+            source('backend/app/Services/AccountAdministrationService.php', 'account.login_identity_updated', 'account_unchanged'),
+          ],
+        },
+        {
+          id: 'accounts-password-reset',
+          title: 'إعادة تعيين كلمة المرور',
+          summary: 'كلمة المرور السابقة غير قابلة للعرض أو الاسترجاع. تعيين كلمة جديدة ينهي كل جلسات الحساب المفتوحة، وتُسلَّم الكلمة لصاحبها بقناة آمنة.',
+          access: ACCESS.technicalAccountsManage,
+          link: { to: '/technical/accounts' },
+          steps: [
+            step('افتح تفاصيل الحساب، ثم «إعادة تعيين كلمة المرور».'),
+            step('أدخل كلمة مرور قوية وتأكيدها، ثم «تعيين كلمة المرور» وأكّد إنهاء الجلسات.'),
+            step('سلّم الكلمة الجديدة لصاحب الحساب بقناة آمنة؛ لن تظهر مرة أخرى.'),
+          ],
+          flows: [{
+            title: 'مسار إعادة تعيين كلمة المرور',
+            nodes: [
+              node('enter', 'start', 'إدخال كلمة المرور الجديدة وتأكيدها', 'تُرسل مرة واحدة إلى الخادم وتُشفَّر هناك.'),
+              node('check', 'review', 'تحقق الخادم', 'الصلاحية، وأن الحساب ليس حسابك ولا محميًا، وقوة الكلمة.', [branch('إذا كانت مقبولة', 'done'), branch('إذا خالفت القواعد', 'denied')]),
+              node('denied', 'return', 'رفض مع سبب واضح', 'يُسجَّل الرفض في سجل النشاط دون أي قيمة سرية.'),
+              node('done', 'end', 'حفظ الكلمة وإنهاء الجلسات', 'يُسجَّل الحدث في سجل النشاط مع عدد الجلسات المنهاة.'),
+            ],
+          }],
+          sources: [
+            source('frontend/src/features/technical-portal/components/AccountEditSections.jsx', 'إعادة تعيين كلمة المرور', 'تعيين كلمة المرور'),
+            source('backend/app/Services/AccountAdministrationService.php', 'account.password_reset', 'tokens()->delete()'),
+          ],
+        },
+        {
+          id: 'accounts-holder-name',
+          title: 'تصحيح اسم صاحب الحساب',
+          summary: 'اسم صاحب الحساب محفوظ في سجل الموظف أو الطالب المرتبط، لا في الحساب. التصحيح يعدّل الاسم الأول والكنية واسمي الأب والأم فقط، ويبقي الربط كما هو.',
+          access: { allPermissions: [PERMISSIONS.technicalPortalAccess, PERMISSIONS.userAccountsHolderNameManage] },
+          link: { to: '/technical/accounts' },
+          steps: [
+            step('افتح تفاصيل الحساب؛ قسم «اسم صاحب الحساب» يعرض الاسم ونوع السجل المرتبط.'),
+            step('اضغط «تصحيح الاسم»، عدّل الحقول، ثم «حفظ الاسم».'),
+            step('الحساب غير المرتبط بشخص لا يملك اسمًا للتصحيح؛ ربطه يتم عبر مسار مطابقة الهوية لدى مدير النظام.'),
+          ],
+          sources: [
+            source('frontend/src/features/technical-portal/components/AccountEditSections.jsx', 'اسم صاحب الحساب', 'تصحيح الاسم', 'حفظ الاسم'),
+            source('backend/app/Services/PersonNameCorrectionService.php', "'first_name', 'last_name', 'father_name', 'mother_name'"),
+          ],
+        },
+      ],
+    },
+    {
+      id: 'activity',
+      title: 'سجل النشاط',
+      tasks: [
+        {
+          id: 'activity-view',
+          title: 'مراجعة سجل النشاط',
+          summary: 'سجل للقراءة فقط لأحداث التدقيق ومحاولات الدخول والخروج، مع البحث والتصفية بالوحدة والإجراء والمنفّذ والفترة. لا يعرض كلمات المرور أو التوكنات.',
+          access: ACCESS.technicalActivity,
+          link: { to: '/technical/activity' },
+          steps: [
+            step('افتح «سجل النشاط»؛ الأحداث مرتبة من الأحدث.'),
+            step('ابحث أو صفِّ حسب الوحدة والإجراء واسم مستخدم المنفّذ والفترة الزمنية.'),
+            step('اضغط زر العرض لتفاصيل الحدث: الحقول الآمنة والقيم السابقة والجديدة. اسم الحساب المتأثر رابط إلى تفاصيله.'),
+          ],
+          sources: [
+            source('frontend/src/features/technical-portal/pages/ActivityLogPage.jsx', 'سجل النشاط', 'حالة العملية', 'الحساب المتأثر'),
+            source('backend/app/Support/SystemActivityCatalog.php', 'TECHNICAL_MODULES', 'isSecretKey'),
+          ],
+        },
       ],
     },
   ],
-  unavailable: [],
+  unavailable: [
+    { id: 'historic-activity', title: 'أحداث سابقة غير مسجلة', text: 'لا يمكن استرجاع حركات لم تكن تُسجَّل قبل تفعيل تسجيلها؛ يظهر في السجل ما سُجّل فعليًا فقط.' },
+    { id: 'force-password-change', title: 'إلزام تغيير كلمة المرور عند أول دخول', text: 'غير متاح حاليًا في النظام؛ اطلب من صاحب الحساب تغيير كلمته بعد استلامها.' },
+  ],
   troubleshooting: [
     { id: 'role-denied', title: 'رسالة «هذا الدور ليس ضمن الأدوار المسموح…»', who: 'admin', steps: ['الأدوار القيادية والإدارية ودور الفريق التقني لا يسندها إلا مدير النظام؛ ارفع الطلب إليه.'] },
   ],

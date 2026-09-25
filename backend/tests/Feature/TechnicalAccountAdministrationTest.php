@@ -91,7 +91,7 @@ final class TechnicalAccountAdministrationTest extends TestCase
             ->assertJsonPath('data.meta.total', 6)
             ->assertJsonPath('data.meta.last_page', 3)
             ->assertJsonCount(2, 'data.data');
-        self::assertStringNotContainsString('password', $response->getContent());
+        self::assertDoesNotMatchRegularExpression('/"password(_hash)?":/', $response->getContent());
 
         $this->getJson(self::URL.'?search=instructor')->assertOk()
             ->assertJsonPath('data.meta.total', 1)
@@ -111,7 +111,7 @@ final class TechnicalAccountAdministrationTest extends TestCase
             ->assertJsonPath('data.effective_permissions.0.granted_by_roles.0.role_code', 'doctor_instructor')
             ->assertJsonPath('data.capabilities.can_manage', true)
             ->assertJsonPath('data.employee_id', 50);
-        self::assertStringNotContainsString('password', $response->getContent());
+        self::assertDoesNotMatchRegularExpression('/"password(_hash)?":/', $response->getContent());
 
         $this->getJson(self::URL.'/'.self::ADMIN)->assertOk()
             ->assertJsonPath('data.capabilities.can_manage', false)
@@ -153,7 +153,7 @@ final class TechnicalAccountAdministrationTest extends TestCase
             ->assertJsonPath('data.effective_permissions.0.permission_code', 'exams.view');
         $content = $response->getContent();
         self::assertStringNotContainsString(self::STRONG_PASSWORD, $content);
-        self::assertStringNotContainsString('password', $content);
+        self::assertDoesNotMatchRegularExpression('/"password(_hash)?":/', $content);
 
         $row = DB::table('users')->where('username', 'new.officer')->first();
         self::assertNotSame(self::STRONG_PASSWORD, $row->password_hash);
@@ -196,7 +196,10 @@ final class TechnicalAccountAdministrationTest extends TestCase
         $this->postJson(self::URL, $this->newAccount(['role_ids' => [self::ROLE_EXAM, self::ROLE_SUPER_ADMIN]]))
             ->assertForbidden()->assertJsonPath('error_code', 'role_not_assignable');
         self::assertSame(6, DB::table('users')->count());
-        self::assertSame(0, DB::table('user_activity_logs')->count());
+        // Nothing was changed; the refused attempt itself is audited with its outcome.
+        self::assertSame(0, $this->successfulAudits());
+        $failed = json_decode((string) DB::table('user_activity_logs')->where('action_code', 'account.created')->value('description'), true);
+        self::assertSame(['failed', 'role_not_assignable'], [$failed['outcome'], $failed['error_code']]);
     }
 
     // ── Role assignment / revocation ──────────────────────────────────────
@@ -224,7 +227,7 @@ final class TechnicalAccountAdministrationTest extends TestCase
 
         self::assertSame(
             ['account.role_assigned', 'account.role_revoked', 'account.role_assigned'],
-            DB::table('user_activity_logs')->orderBy('activity_log_id')->pluck('action_code')->all()
+            DB::table('user_activity_logs')->where('description', 'not like', '%"outcome":"failed"%')->orderBy('activity_log_id')->pluck('action_code')->all()
         );
         self::assertSame(50, (int) DB::table('users')->where('user_id', self::STAFF)->value('employee_id'));
     }
@@ -260,7 +263,7 @@ final class TechnicalAccountAdministrationTest extends TestCase
         // Seed an (inactive, so the account stays manageable) row: revocation is refused by the allowlist itself.
         DB::table('user_roles')->insert(['user_id' => self::STAFF, 'role_id' => $roleId, 'is_active' => 0]);
         $this->deleteJson(self::URL.'/'.self::STAFF.'/roles/'.$roleId)->assertForbidden();
-        self::assertSame(0, DB::table('user_activity_logs')->count());
+        self::assertSame(0, $this->successfulAudits());
     }
 
     public function test_allowlisted_role_that_gains_a_restricted_permission_fails_closed(): void
@@ -421,6 +424,236 @@ final class TechnicalAccountAdministrationTest extends TestCase
 
     // ── Fixture ───────────────────────────────────────────────────────────
 
+    // ── Login identity (username / email) ────────────────────────────────
+
+    public function test_login_identity_update_normalizes_checks_uniqueness_and_audits(): void
+    {
+        $this->actingAsUser(self::TECH);
+        $this->patchJson(self::URL.'/'.self::STAFF.'/login', ['username' => 'instructor.new', 'email' => '  New.Mail@Alrowad.TEST '])
+            ->assertOk()->assertJsonPath('data.username', 'instructor.new')->assertJsonPath('data.email', 'new.mail@alrowad.test');
+        $log = json_decode((string) DB::table('user_activity_logs')->where('action_code', 'account.login_identity_updated')->value('description'), true);
+        self::assertSame(self::STAFF, $log['target_user_id']);
+        self::assertSame(['from' => 'instructor', 'to' => 'instructor.new'], $log['changes']['username']);
+        self::assertSame('success', $log['outcome']);
+
+        $this->patchJson(self::URL.'/'.self::STAFF.'/login', ['username' => 'ADMIN'])->assertUnprocessable()
+            ->assertJsonPath('errors.username.0', 'اسم المستخدم مستخدم لحساب آخر.');
+        $this->patchJson(self::URL.'/'.self::STAFF.'/login', ['email' => 'Tech2@alrowad.test'])->assertUnprocessable()
+            ->assertJsonPath('errors.email.0', 'البريد الإلكتروني مستخدم لحساب آخر.');
+        $this->patchJson(self::URL.'/'.self::STAFF.'/login', ['username' => 'instructor.new'])->assertStatus(409)->assertJsonPath('error_code', 'account_unchanged');
+        $this->patchJson(self::URL.'/'.self::STAFF.'/login', [])->assertUnprocessable();
+        $this->patchJson(self::URL.'/'.self::STAFF.'/login', ['username' => 'bad name!'])->assertUnprocessable()->assertJsonValidationErrors('username');
+        foreach (['password_hash' => 'x', 'account_status_id' => 1, 'created_by_user_id' => 1, 'employee_id' => 9, 'updated_at' => '2020-01-01'] as $field => $value) {
+            $this->patchJson(self::URL.'/'.self::STAFF.'/login', ['username' => 'another.name', $field => $value])->assertUnprocessable()->assertJsonValidationErrors($field);
+        }
+        $this->patchJson(self::URL.'/'.self::TECH.'/login', ['username' => 'tech.self'])->assertForbidden()->assertJsonPath('error_code', 'self_change_forbidden');
+        foreach ([self::ADMIN, self::DEAN, self::SECOND_TECH, self::STUDENT] as $protected) {
+            $this->patchJson(self::URL.'/'.$protected.'/login', ['username' => 'renamed'.$protected])->assertForbidden()->assertJsonPath('error_code', 'protected_account');
+        }
+        self::assertSame(['admin', 'dean.user', 'student.user', 'tech', 'tech2'], DB::table('users')->whereIn('user_id', [1, 2, 4, 5, 6])->orderBy('username')->pluck('username')->all());
+
+        // Refused attempts are audited with their outcome and no submitted values.
+        $failed = DB::table('user_activity_logs')->where('action_code', 'account.login_identity_updated')->where('description', 'like', '%"outcome":"failed"%')->pluck('description');
+        self::assertGreaterThanOrEqual(6, $failed->count());
+        self::assertStringNotContainsString('renamed', $failed->implode(' '));
+
+        $this->actingAsUser(self::ADMIN);
+        $this->patchJson(self::URL.'/'.self::DEAN.'/login', ['email' => 'Dean.New@alrowad.test'])->assertOk()->assertJsonPath('data.email', 'dean.new@alrowad.test');
+        // The list search also matches the holder's name (stored on the linked record).
+        $this->getJson(self::URL.'?search=الخطيب')->assertOk()->assertJsonCount(1, 'data.data')->assertJsonPath('data.data.0.holder_name', 'احمد الخطيب');
+
+        DB::table('role_permissions')->where('role_id', self::ROLE_TECHNICAL)->where('permission_id', 3)->delete();
+        $this->actingAsUser(self::TECH);
+        $this->patchJson(self::URL.'/'.self::STAFF.'/login', ['username' => 'viewer.try'])->assertForbidden();
+        $this->putJson(self::URL.'/'.self::STAFF.'/password', ['password' => self::STRONG_PASSWORD, 'password_confirmation' => self::STRONG_PASSWORD])->assertForbidden();
+        $this->getJson(self::URL.'/'.self::STAFF)->assertOk()
+            ->assertJsonPath('data.capabilities.can_edit_login', false)->assertJsonPath('data.capabilities.can_reset_password', false);
+    }
+
+    // ── Password reset ────────────────────────────────────────────────────
+
+    public function test_password_reset_hashes_on_server_revokes_every_token_and_leaks_nothing(): void
+    {
+        $staff = User::findOrFail(self::STAFF);
+        $oldToken = $staff->createToken('api-token')->plainTextToken;
+        $staff->createToken('second-device');
+        // A valid token of an account without view permission: authenticated, then refused (403).
+        $this->withHeader('Authorization', 'Bearer '.$oldToken)->getJson(self::URL)->assertForbidden();
+        $this->app['auth']->forgetGuards();
+
+        $this->actingAsUser(self::TECH);
+        $newPassword = 'Brand-New-Pass-2026';
+        $response = $this->putJson(self::URL.'/'.self::STAFF.'/password', ['password' => $newPassword, 'password_confirmation' => $newPassword])
+            ->assertOk()->assertJsonPath('data.sessions_ended', 2);
+        self::assertStringNotContainsString($newPassword, $response->getContent());
+        self::assertDoesNotMatchRegularExpression('/"password(_hash)?":/', $response->getContent());
+        self::assertTrue(Hash::check($newPassword, (string) DB::table('users')->where('user_id', self::STAFF)->value('password_hash')));
+        self::assertSame(0, DB::table('personal_access_tokens')->where('tokenable_id', self::STAFF)->count());
+
+        $log = DB::table('user_activity_logs')->where('action_code', 'account.password_reset')->first();
+        self::assertSame(self::TECH, (int) $log->user_id);
+        self::assertSame(['target_user_id' => self::STAFF, 'tokens_revoked' => 2, 'outcome' => 'success'], json_decode($log->description, true));
+        self::assertNotNull($log->created_at);
+        self::assertSame(0, DB::table('user_activity_logs')->where('description', 'like', '%'.$newPassword.'%')->orWhere('description', 'like', '%$2y$%')->count());
+        $laravelLog = storage_path('logs/laravel.log');
+        if (is_file($laravelLog)) {
+            self::assertStringNotContainsString($newPassword, (string) file_get_contents($laravelLog));
+        }
+
+        $this->app['auth']->forgetGuards();
+        $this->withHeader('Authorization', 'Bearer '.$oldToken)->getJson(self::URL)->assertUnauthorized();
+
+        $this->actingAsUser(self::TECH);
+        $this->putJson(self::URL.'/'.self::STAFF.'/password', ['password' => 'short', 'password_confirmation' => 'short'])->assertUnprocessable()
+            ->assertJsonPath('errors.password.0', 'كلمة المرور يجب ألا تقل عن 10 محارف.');
+        $this->putJson(self::URL.'/'.self::STAFF.'/password', ['password' => $newPassword, 'password_confirmation' => 'Other-Pass-2026'])->assertUnprocessable()->assertJsonValidationErrors('password');
+        $this->putJson(self::URL.'/'.self::STAFF.'/password', ['password' => $newPassword, 'password_confirmation' => $newPassword, 'password_hash' => 'x'])->assertUnprocessable()->assertJsonValidationErrors('password_hash');
+        $this->putJson(self::URL.'/'.self::TECH.'/password', ['password' => $newPassword, 'password_confirmation' => $newPassword])->assertForbidden()->assertJsonPath('error_code', 'self_change_forbidden');
+        $this->putJson(self::URL.'/'.self::ADMIN.'/password', ['password' => $newPassword, 'password_confirmation' => $newPassword])->assertForbidden()->assertJsonPath('error_code', 'protected_account');
+        self::assertTrue(Hash::check('Existing-Pass-2026', (string) DB::table('users')->where('user_id', self::ADMIN)->value('password_hash')));
+    }
+
+    // ── Holder name (on the linked employee/student record) ───────────────
+
+    public function test_holder_name_is_corrected_on_the_linked_record_only(): void
+    {
+        $this->actingAsUser(self::TECH);
+        $this->getJson(self::URL.'/'.self::STAFF)->assertOk()
+            ->assertJsonPath('data.holder.type', 'employee')->assertJsonPath('data.holder.display_name', 'احمد الخطيب')
+            ->assertJsonPath('data.capabilities.can_correct_holder_name', true);
+
+        $this->patchJson(self::URL.'/'.self::STAFF.'/holder-name', ['person_type' => 'employee', 'first_name' => ' أحمد ', 'last_name' => 'الخطيب', 'father_name' => 'محمد'])
+            ->assertOk()->assertJsonPath('data.holder.display_name', 'أحمد محمد الخطيب');
+        $employee = DB::table('employees')->where('employee_id', 50)->first();
+        self::assertSame(['أحمد', 'الخطيب', 'محمد', 'E-50'], [$employee->first_name, $employee->last_name, $employee->father_name, $employee->employee_number]);
+        self::assertSame(50, (int) DB::table('users')->where('user_id', self::STAFF)->value('employee_id'), 'the link is kept');
+        self::assertSame(4, DB::table('employees')->count(), 'no second person is created');
+        $log = json_decode((string) DB::table('user_activity_logs')->where('action_code', 'account.holder_name_corrected')->value('description'), true);
+        self::assertSame(['from' => 'احمد', 'to' => 'أحمد'], $log['changes']['first_name']);
+        self::assertSame(['employee', 50], [$log['person_type'], $log['person_id']]);
+
+        $this->patchJson(self::URL.'/'.self::STAFF.'/holder-name', ['person_type' => 'employee', 'first_name' => 'أحمد', 'last_name' => 'الخطيب', 'father_name' => 'محمد'])
+            ->assertStatus(409)->assertJsonPath('error_code', 'holder_name_unchanged');
+        $this->patchJson(self::URL.'/'.self::STAFF.'/holder-name', ['person_type' => 'student', 'first_name' => 'x', 'last_name' => 'y'])
+            ->assertStatus(409)->assertJsonPath('error_code', 'holder_link_changed');
+        $this->patchJson(self::URL.'/'.self::STAFF.'/holder-name', ['person_type' => 'employee', 'first_name' => 'x', 'last_name' => 'y', 'employee_number' => 'E-99'])
+            ->assertUnprocessable()->assertJsonValidationErrors('employee_number');
+        $this->patchJson(self::URL.'/'.self::STAFF.'/holder-name', ['person_type' => 'employee', 'first_name' => '', 'last_name' => 'y'])->assertUnprocessable()->assertJsonValidationErrors('first_name');
+        $this->patchJson(self::URL.'/'.self::STUDENT.'/holder-name', ['person_type' => 'student', 'first_name' => 'x', 'last_name' => 'y'])
+            ->assertForbidden()->assertJsonPath('error_code', 'protected_account');
+
+        // An account not linked to any person has no holder name to correct.
+        $plain = DB::table('users')->insertGetId(['username' => 'plain', 'email' => 'plain@alrowad.test', 'password_hash' => 'x', 'account_status_id' => 1]);
+        DB::table('user_roles')->insert(['user_id' => $plain, 'role_id' => self::ROLE_EXAM, 'is_active' => 1]);
+        $this->getJson(self::URL.'/'.$plain)->assertOk()->assertJsonPath('data.holder.type', null)->assertJsonPath('data.capabilities.can_correct_holder_name', false);
+        $this->patchJson(self::URL.'/'.$plain.'/holder-name', ['person_type' => 'employee', 'first_name' => 'x', 'last_name' => 'y'])
+            ->assertStatus(409)->assertJsonPath('error_code', 'holder_not_linked');
+
+        // super_admin corrects a student's name; academic data is untouched.
+        $this->actingAsUser(self::ADMIN);
+        $this->patchJson(self::URL.'/'.self::STUDENT.'/holder-name', ['person_type' => 'student', 'first_name' => 'سامي', 'last_name' => 'الطالب'])->assertOk();
+        $student = DB::table('students')->where('student_id', 77)->first();
+        self::assertSame(['سامي', 'الطالب', 'S-77', 1], [$student->first_name, $student->last_name, $student->student_number, (int) $student->academic_program_id]);
+
+        // The separate permission is required.
+        DB::table('role_permissions')->where('role_id', self::ROLE_TECHNICAL)->where('permission_id', 8)->delete();
+        $this->actingAsUser(self::TECH);
+        $this->patchJson(self::URL.'/'.self::STAFF.'/holder-name', ['person_type' => 'employee', 'first_name' => 'x', 'last_name' => 'y'])->assertForbidden();
+        $this->getJson(self::URL.'/'.self::STAFF)->assertJsonPath('data.capabilities.can_correct_holder_name', false);
+    }
+
+    // ── Activity feed ─────────────────────────────────────────────────────
+
+    public function test_activity_feed_is_scoped_filtered_paginated_and_sanitized(): void
+    {
+        $this->actingAsUser(self::TECH);
+        $this->putJson(self::URL.'/'.self::STAFF.'/password', ['password' => 'Brand-New-Pass-2026', 'password_confirmation' => 'Brand-New-Pass-2026'])->assertOk();
+        $this->patchJson(self::URL.'/'.self::STAFF.'/login', ['email' => 'staff.new@alrowad.test'])->assertOk();
+        $this->postJson(self::URL.'/'.self::DEAN.'/roles', ['role_id' => self::ROLE_EXAM])->assertForbidden();
+        DB::table('user_activity_logs')->insert([
+            ['user_id' => self::ADMIN, 'module_code' => 'grades', 'action_code' => 'manual_grade_entry.context', 'description' => '{"student_id":1144,"reason":"x"}', 'created_at' => '2026-01-10 10:00:00'],
+            ['user_id' => self::ADMIN, 'module_code' => 'users_permissions', 'action_code' => 'account.created', 'description' => '{"target_user_id":3,"username":"x","password_hash":"$2y$12$abcdefghijklmnopqrstuv","api_token":"1|abcdefghijklmnopqrstuvwxyz","outcome":"success"}', 'created_at' => '2026-01-05 09:00:00'],
+        ]);
+        DB::table('login_audit_logs')->insert([
+            ['user_id' => self::STAFF, 'username_attempted' => 'instructor@alrowad.test', 'login_status' => 'success', 'ip_address' => '10.0.0.1', 'attempted_at' => '2026-01-07 08:00:00'],
+            ['user_id' => null, 'username_attempted' => 'unknown.person@alrowad.test', 'login_status' => 'failed', 'ip_address' => '10.0.0.2', 'attempted_at' => '2026-01-08 08:00:00'],
+        ]);
+
+        $all = $this->getJson('/api/v1/technical/activity?per_page=100')->assertOk()->json('data');
+        $modules = collect($all['data'])->pluck('module.code')->unique()->values()->all();
+        self::assertNotContains('grades', $modules, 'technical team does not see academic modules');
+        self::assertContains('authentication', $modules);
+        $times = collect($all['data'])->pluck('occurred_at')->all();
+        $sorted = $times;
+        rsort($sorted);
+        self::assertSame($sorted, $times, 'newest first');
+        $content = json_encode($all, JSON_UNESCAPED_UNICODE);
+        foreach (['$2y$', 'password_hash', 'api_token', 'Brand-New-Pass', 'unknown.person'] as $secret) {
+            self::assertStringNotContainsString($secret, $content, $secret);
+        }
+        self::assertStringContainsString("un••••••@alrowad.test", $content, json_encode(collect($all["data"])->where("source", "login")->values(), JSON_UNESCAPED_UNICODE));
+
+        $reset = collect($all['data'])->firstWhere('action.code', 'account.password_reset');
+        self::assertSame(['user_id' => self::STAFF, 'username' => 'instructor', 'link' => '/technical/accounts?user='.self::STAFF], $reset['target']);
+        $detail = $this->getJson('/api/v1/technical/activity/activity/'.$reset['id'])->assertOk()->json('data');
+        self::assertStringContainsString('لا تُحفظ قيمتها', $detail['notes'][0]);
+        $email = collect($all['data'])->firstWhere('action.code', 'account.login_identity_updated');
+        self::assertSame(['field' => 'email', 'label' => 'البريد الإلكتروني', 'from' => 'instructor@alrowad.test', 'to' => 'staff.new@alrowad.test', 'values_hidden' => false], $email['changes'][0]);
+        $denied = collect($all['data'])->firstWhere('action.code', 'account.role_assigned');
+        self::assertSame('failed', $denied['outcome']);
+        self::assertStringContainsString('محاولة مرفوضة', $denied['summary']);
+
+        // Filters and pagination.
+        $this->getJson('/api/v1/technical/activity?module=authentication')->assertOk()->assertJsonCount(2, 'data.data');
+        $this->getJson('/api/v1/technical/activity?action=login.failed')->assertOk()->assertJsonCount(1, 'data.data')->assertJsonPath('data.data.0.outcome', 'failed');
+        $this->getJson('/api/v1/technical/activity?actor=admin')->assertOk()->assertJsonCount(1, 'data.data');
+        $this->getJson('/api/v1/technical/activity?from=2026-01-06&to=2026-01-07')->assertOk()->assertJsonCount(1, 'data.data');
+        $this->getJson('/api/v1/technical/activity?target_user_id='.self::STAFF.'&source=activity')->assertOk()->assertJsonCount(3, 'data.data');
+        $this->getJson('/api/v1/technical/activity?search=10.0.0.2')->assertOk()->assertJsonCount(1, 'data.data');
+        $page = $this->getJson('/api/v1/technical/activity?per_page=2&page=2')->assertOk()->json('data');
+        self::assertSame(['current_page' => 2, 'last_page' => (int) ceil($all['meta']['total'] / 2), 'per_page' => 2, 'total' => $all['meta']['total']], $page['meta']);
+        self::assertSame(array_slice(array_column($all['data'], 'key'), 2, 2), array_column($page['data'], 'key'));
+        $this->getJson('/api/v1/technical/activity?from=2026-02-01&to=2026-01-01')->assertUnprocessable();
+        $grades = DB::table('user_activity_logs')->where('module_code', 'grades')->value('activity_log_id');
+        $this->getJson('/api/v1/technical/activity/activity/'.$grades)->assertNotFound();
+
+        // Read-only, own permission; the old administrative routes keep their restriction.
+        $this->postJson('/api/v1/technical/activity', [])->assertStatus(405);
+        $this->deleteJson('/api/v1/technical/activity/activity/1')->assertStatus(405);
+        $this->getJson('/api/v1/user-activity-logs')->assertForbidden();
+
+        $this->actingAsUser(self::ADMIN);
+        self::assertContains('grades', collect($this->getJson('/api/v1/technical/activity?per_page=100')->json('data.data'))->pluck('module.code')->all());
+
+        $this->actingAsUser(self::DEAN);
+        $this->getJson('/api/v1/technical/activity')->assertForbidden();
+        DB::table('role_permissions')->where('role_id', self::ROLE_TECHNICAL)->where('permission_id', 9)->delete();
+        $this->actingAsUser(self::TECH);
+        $this->getJson('/api/v1/technical/activity')->assertForbidden();
+    }
+
+    public function test_logout_and_generic_record_changes_are_audited_without_values(): void
+    {
+        $token = User::findOrFail(self::STAFF)->createToken('api-token')->plainTextToken;
+        $this->withHeader('Authorization', 'Bearer '.$token)->postJson('/api/logout')->assertOk();
+        self::assertSame(1, DB::table('login_audit_logs')->where('user_id', self::STAFF)->where('login_status', 'logout')->count());
+        $this->app['auth']->forgetGuards();
+
+        $this->actingAsUser(self::ADMIN);
+        $this->postJson('/api/v1/account-statuses', ['status_code' => 'pending', 'status_name' => 'بانتظار التفعيل', 'is_active' => true])->assertCreated();
+        $log = DB::table('user_activity_logs')->where('action_code', 'resource.created')->first();
+        self::assertNotNull($log);
+        $details = json_decode($log->description, true);
+        self::assertSame('account_statuses', $details['resource']);
+        self::assertContains('status_name', $details['fields']);
+        self::assertStringNotContainsString('بانتظار التفعيل', $log->description, 'values are never copied into the log');
+    }
+
+    private function successfulAudits(): int
+    {
+        return DB::table('user_activity_logs')->where('description', 'not like', '%"outcome":"failed"%')->count();
+    }
+
     private function actingAsUser(int $userId): void
     {
         Sanctum::actingAs(User::findOrFail($userId));
@@ -533,6 +766,38 @@ final class TechnicalAccountAdministrationTest extends TestCase
             $t->integer('scope_id')->nullable();
             $t->boolean('is_active')->default(true);
         });
+        Schema::create('login_audit_logs', function (Blueprint $t): void {
+            $t->bigIncrements('login_audit_id');
+            $t->integer('user_id')->nullable();
+            $t->string('username_attempted', 100)->nullable();
+            $t->string('login_status', 50);
+            $t->string('ip_address', 45)->nullable();
+            $t->string('user_agent', 255)->nullable();
+            $t->timestamp('attempted_at')->useCurrent();
+        });
+        // Account holders' names live on these rows (users has no name column).
+        Schema::create('employees', function (Blueprint $t): void {
+            $t->increments('employee_id');
+            $t->string('employee_number', 50)->unique();
+            $t->string('first_name', 100);
+            $t->string('last_name', 100);
+            $t->string('father_name', 100)->nullable();
+            $t->string('mother_name', 100)->nullable();
+            $t->string('email', 150)->nullable();
+            $t->integer('employee_status_id')->default(1);
+            $t->timestamps();
+        });
+        Schema::create('students', function (Blueprint $t): void {
+            $t->increments('student_id');
+            $t->string('student_number', 50)->unique();
+            $t->string('first_name', 100);
+            $t->string('last_name', 100);
+            $t->string('father_name', 100)->nullable();
+            $t->string('mother_name', 100)->nullable();
+            $t->integer('academic_program_id')->default(1);
+            $t->timestamps();
+            $t->softDeletes();
+        });
         Schema::create('personal_access_tokens', function (Blueprint $t): void {
             $t->id();
             $t->morphs('tokenable');
@@ -563,16 +828,22 @@ final class TechnicalAccountAdministrationTest extends TestCase
         foreach ([
             1 => 'technical_portal.access', 2 => 'user_accounts.view', 3 => 'user_accounts.manage',
             4 => 'users_permissions.view', 5 => 'users_permissions.manage', 6 => 'exams.view', 7 => 'grades.manage',
+            8 => 'user_accounts.holder_name.manage', 9 => 'system_activity.view',
         ] as $id => $code) {
             DB::table('permissions')->insert(['permission_id' => $id, 'permission_code' => $code, 'permission_name' => $code]);
         }
         foreach ([
             [self::ROLE_SUPER_ADMIN, 2], [self::ROLE_SUPER_ADMIN, 3], [self::ROLE_SUPER_ADMIN, 4], [self::ROLE_SUPER_ADMIN, 5],
-            [self::ROLE_TECHNICAL, 1], [self::ROLE_TECHNICAL, 2], [self::ROLE_TECHNICAL, 3],
+            [self::ROLE_TECHNICAL, 1], [self::ROLE_TECHNICAL, 2], [self::ROLE_TECHNICAL, 3], [self::ROLE_TECHNICAL, 8], [self::ROLE_TECHNICAL, 9],
             [self::ROLE_INSTRUCTOR, 7], [self::ROLE_EXAM, 6],
         ] as [$role, $permission]) {
             DB::table('role_permissions')->insert(['role_id' => $role, 'permission_id' => $permission]);
         }
+
+        foreach ([40 => ['T-40', 'فني', 'أول'], 41 => ['T-41', 'فني', 'ثان'], 50 => ['E-50', 'احمد', 'الخطيب'], 60 => ['E-60', 'عميد', 'الكلية']] as $id => [$number, $first, $last]) {
+            DB::table('employees')->insert(['employee_id' => $id, 'employee_number' => $number, 'first_name' => $first, 'last_name' => $last]);
+        }
+        DB::table('students')->insert(['student_id' => 77, 'student_number' => 'S-77', 'first_name' => 'سامي', 'last_name' => 'طالب']);
 
         $hash = Hash::make('Existing-Pass-2026');
         foreach ([

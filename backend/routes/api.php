@@ -161,10 +161,11 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
         ]);
     });
 
-    Route::post('logout', function (Request $request) {
+    Route::post('logout', function (Request $request, \App\Services\LoginAuditService $loginAudit) {
         $token = $request->user()?->currentAccessToken();
         if ($token !== null && method_exists($token, 'delete')) {
             $token->delete();
+            $loginAudit->record($request, $request->user(), \App\Services\LoginAuditService::STATUS_LOGOUT);
         }
 
         return response()->json([
@@ -843,8 +844,21 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
             Route::post('{user}/roles', 'assignRole')->whereNumber('user');
             Route::delete('{user}/roles/{role}', 'revokeRole')->whereNumber(['user', 'role']);
             Route::put('{user}/status', 'updateStatus')->whereNumber('user');
+            Route::patch('{user}/login', 'updateLogin')->whereNumber('user');
+            Route::put('{user}/password', 'resetPassword')->whereNumber('user');
         });
+        // Separate from login management: corrects the linked employee/student name only.
+        Route::patch('{user}/holder-name', 'correctHolderName')->whereNumber('user')
+            ->middleware(\App\Http\Middleware\RequirePermission::class.':user_accounts.holder_name.manage');
     });
+
+    Route::prefix('technical/activity')->controller(\App\Http\Controllers\Api\SystemActivityController::class)
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':system_activity.view')
+        ->group(function (): void {
+            Route::get('/', 'index');
+            Route::get('options', 'options');
+            Route::get('{source}/{id}', 'show')->whereIn('source', ['activity', 'login'])->whereNumber('id');
+        });
 
     /*
     |--------------------------------------------------------------------------

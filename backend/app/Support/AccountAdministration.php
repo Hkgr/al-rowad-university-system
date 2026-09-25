@@ -23,6 +23,22 @@ final class AccountAdministration
     public const MODULE_CODE = 'users_permissions';
 
     /**
+     * Correct the account holder's name (first/last/father/mother) on the linked
+     * employee or student record. Separate from login management on purpose: it
+     * never touches academic, employment or login fields.
+     */
+    public const HOLDER_NAME_MANAGE = 'user_accounts.holder_name.manage';
+
+    /** Read the filtered, sanitized activity feed of the technical portal. */
+    public const ACTIVITY_VIEW = 'system_activity.view';
+
+    /** Fields the browser may never send to account write endpoints. */
+    public const SERVER_OWNED_FIELDS = [
+        'password_hash', 'created_by_user_id', 'account_status_id', 'student_id', 'employee_id', 'board_member_id',
+        'failed_login_attempts', 'last_login_at', 'email_verified_at', 'created_at', 'updated_at', 'user_id', 'remember_token',
+    ];
+
+    /**
      * Explicit allowlist: the only roles a non-super_admin account manager may
      * assign or revoke. Every other role, including roles created later, is
      * reserved to super_admin. Never derive this list from permissions.

@@ -116,6 +116,7 @@ import { reportAccessForOffice } from '../features/executive-reports/access'
 import technicalNav from '../features/technical-portal/nav'
 import TechnicalHome from '../features/technical-portal/pages/TechnicalHome'
 import AccountsPermissionsPage from '../features/technical-portal/pages/AccountsPermissionsPage'
+import ActivityLogPage from '../features/technical-portal/pages/ActivityLogPage'
 
 // ── دليل الاستخدام (per-portal user guides) ─────────────────────────────────
 import UserGuidePage from '../features/user-guide/UserGuidePage'
@@ -400,6 +401,7 @@ const router = createBrowserRouter(createRoutesFromElements(
         >
           <Route path="/technical" element={<TechnicalHome />} />
           <Route path="/technical/accounts" element={protect(<AccountsPermissionsPage />, ACCESS.technicalAccounts)} />
+          <Route path="/technical/activity" element={protect(<ActivityLogPage />, ACCESS.technicalActivity)} />
           <Route path="/technical/guide" element={<UserGuidePage guideId="technical" />} />
         </Route>
 

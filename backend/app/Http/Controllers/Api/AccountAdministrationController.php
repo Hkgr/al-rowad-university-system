@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AccountAdministration\AssignAccountRoleRequest;
+use App\Http\Requests\AccountAdministration\CorrectAccountHolderNameRequest;
+use App\Http\Requests\AccountAdministration\ResetAccountPasswordRequest;
+use App\Http\Requests\AccountAdministration\UpdateAccountLoginRequest;
 use App\Http\Requests\AccountAdministration\StoreAccountRequest;
 use App\Http\Requests\AccountAdministration\UpdateAccountStatusRequest;
 use App\Models\User;
@@ -65,6 +68,31 @@ class AccountAdministrationController extends Controller
         $this->accounts->setStatus($request->user(), $user, (string) $request->validated('account_status'), $request->ip());
 
         return $this->ok($this->accounts->show($request->user(), User::query()->findOrFail($user)), 'تم تحديث حالة الحساب بنجاح.');
+    }
+
+    public function updateLogin(UpdateAccountLoginRequest $request, int $user): JsonResponse
+    {
+        $this->accounts->updateLoginIdentity($request->user(), $user, $request->safe()->only(['username', 'email']), $request->ip());
+
+        return $this->ok($this->accounts->show($request->user(), User::query()->findOrFail($user)), 'تم تحديث بيانات الدخول.');
+    }
+
+    public function resetPassword(ResetAccountPasswordRequest $request, int $user): JsonResponse
+    {
+        $revoked = $this->accounts->resetPassword($request->user(), $user, (string) $request->validated('password'), $request->ip());
+
+        return $this->ok(
+            $this->accounts->show($request->user(), User::query()->findOrFail($user)) + ['sessions_ended' => $revoked],
+            'تم تعيين كلمة مرور جديدة وإنهاء جلسات الحساب. سلّم الكلمة لصاحبها بقناة آمنة؛ لا تُعرض مرة أخرى.'
+        );
+    }
+
+    public function correctHolderName(CorrectAccountHolderNameRequest $request, int $user): JsonResponse
+    {
+        $validated = $request->validated();
+        $this->accounts->correctHolderName($request->user(), $user, $validated['person_type'], array_intersect_key($validated, array_flip(['first_name', 'last_name', 'father_name', 'mother_name'])), $request->ip());
+
+        return $this->ok($this->accounts->show($request->user(), User::query()->findOrFail($user)), 'تم تصحيح اسم صاحب الحساب في سجله المرتبط.');
     }
 
     private function ok(array $data, string $message = 'Operation completed successfully', int $status = 200): JsonResponse

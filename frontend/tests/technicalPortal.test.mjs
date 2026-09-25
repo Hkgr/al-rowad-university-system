@@ -38,10 +38,11 @@ test('portal and accounts access derive from role permissions only', () => {
   assert.equal(canAccess(ACCESS.technicalAccounts, { roles: ['super_admin'], permissions: [] }), true)
 })
 
-test('sidebar has exactly one item, guarded by the accounts access rule', async () => {
+test('sidebar has the accounts and activity items, each behind its own access rule', async () => {
   const nav = await source('features/technical-portal/nav.js')
-  assert.equal((nav.match(/\bto: '/g) ?? []).length, 1)
+  assert.equal((nav.match(/\bto: '/g) ?? []).length, 2)
   assert.match(nav, /to: '\/technical\/accounts', Icon: FaUserShield, ar: 'الحسابات والصلاحيات'.*\.\.\.ACCESS\.technicalAccounts/)
+  assert.match(nav, /to: '\/technical\/activity', Icon: FaHistory, ar: 'سجل النشاط'.*\.\.\.ACCESS\.technicalActivity/)
   const layout = await source('components/layout/DashboardLayout.jsx')
   assert.match(layout, /items: section\.items\.filter\(item => canAccess\(item\)\)/)
 })

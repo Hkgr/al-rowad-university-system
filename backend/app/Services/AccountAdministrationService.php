@@ -23,6 +23,8 @@ use Illuminate\Validation\ValidationException;
  */
 class AccountAdministrationService
 {
+    public function __construct(private readonly ?PersonNameCorrectionService $names = null) {}
+
     /** @return array<string, mixed> */
     public function list(User $actor, array $filters): array
     {
@@ -34,7 +36,10 @@ class AccountAdministrationService
         if ($search !== '') {
             $like = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search).'%';
             $query->where(function ($q) use ($like, $search): void {
-                $q->where('username', 'like', $like)->orWhere('email', 'like', $like);
+                $q->where('username', 'like', $like)->orWhere('email', 'like', $like)
+                    // Holder names live on the linked employee/student record.
+                    ->orWhereHas('employee', fn ($e) => $e->where('first_name', 'like', $like)->orWhere('last_name', 'like', $like))
+                    ->orWhereHas('student', fn ($st) => $st->where('first_name', 'like', $like)->orWhere('last_name', 'like', $like));
                 if (ctype_digit($search)) {
                     $q->orWhere('user_id', (int) $search);
                 }
@@ -52,6 +57,7 @@ class AccountAdministrationService
 
         return [
             'data' => collect($page->items())->map(fn (User $user) => $this->summary($user) + [
+                'holder_name' => $this->holder($user)['display_name'],
                 'can_manage' => $this->targetRestriction($actor, $user, $actorIsAdmin) === null,
             ])->values()->all(),
             'meta' => AcademicQueuePagination::meta($page),
@@ -96,6 +102,8 @@ class AccountAdministrationService
         $actorIsAdmin = $this->isSuperAdmin($actor);
         $restriction = $this->targetRestriction($actor, $user, $actorIsAdmin);
         $canManage = $actor->hasPermission(AccountAdministration::MANAGE);
+        $isSelf = (int) $actor->user_id === (int) $user->user_id;
+        $holder = $this->holder($user);
 
         $permissions = DB::table('role_permissions')
             ->join('permissions', 'permissions.permission_id', '=', 'role_permissions.permission_id')
@@ -127,9 +135,14 @@ class AccountAdministrationService
             ])->values()->all(),
             'effective_permissions' => $permissions,
             'super_admin_bypass' => $user->userRoleRecords->contains(fn ($r) => $r->is_active && $r->role?->is_active && $r->role?->role_code === AccountAdministration::ROLE_SUPER_ADMIN),
+            'holder' => $holder,
             'capabilities' => [
                 'can_manage' => $canManage && $restriction === null,
-                'can_change_status' => $canManage && $restriction === null && $actor->user_id !== $user->user_id,
+                'can_change_status' => $canManage && $restriction === null && ! $isSelf,
+                'can_edit_login' => $canManage && $restriction === null && ! $isSelf,
+                'can_reset_password' => $canManage && $restriction === null && ! $isSelf,
+                'can_correct_holder_name' => $actor->hasPermission(AccountAdministration::HOLDER_NAME_MANAGE) && $restriction === null && ! $isSelf
+                    && $holder['type'] !== null && $holder['links'] === 1,
                 'restriction' => $canManage ? $restriction : 'manage_permission_missing',
             ],
             'is_current_user' => $actor->user_id === $user->user_id,
@@ -137,6 +150,11 @@ class AccountAdministrationService
     }
 
     public function create(User $actor, array $data, ?string $ip): User
+    {
+        return $this->audited($actor, 'account.created', null, $ip, fn () => $this->createAccount($actor, $data, $ip));
+    }
+
+    private function createAccount(User $actor, array $data, ?string $ip): User
     {
         $actorIsAdmin = $this->isSuperAdmin($actor);
 
@@ -178,6 +196,7 @@ class AccountAdministrationService
                     'status' => $status->status_code,
                     'roles' => $roles->pluck('role_code')->values()->all(),
                     'employee_id' => $employeeId,
+                    'outcome' => 'success',
                 ]);
 
                 return $user;
@@ -191,6 +210,11 @@ class AccountAdministrationService
     }
 
     public function assignRole(User $actor, int $userId, int $roleId, ?string $ip): void
+    {
+        $this->audited($actor, 'account.role_assigned', $userId, $ip, fn () => $this->assignRoleNow($actor, $userId, $roleId, $ip));
+    }
+
+    private function assignRoleNow(User $actor, int $userId, int $roleId, ?string $ip): void
     {
         $actorIsAdmin = $this->isSuperAdmin($actor);
 
@@ -215,6 +239,7 @@ class AccountAdministrationService
                     'target_user_id' => $target->user_id,
                     'role_code' => $role->role_code,
                     'reactivated' => $row !== null,
+                    'outcome' => 'success',
                 ]);
             });
         } catch (QueryException $exception) {
@@ -226,6 +251,11 @@ class AccountAdministrationService
     }
 
     public function revokeRole(User $actor, int $userId, int $roleId, ?string $ip): void
+    {
+        $this->audited($actor, 'account.role_revoked', $userId, $ip, fn () => $this->revokeRoleNow($actor, $userId, $roleId, $ip));
+    }
+
+    private function revokeRoleNow(User $actor, int $userId, int $roleId, ?string $ip): void
     {
         $actorIsAdmin = $this->isSuperAdmin($actor);
 
@@ -252,11 +282,17 @@ class AccountAdministrationService
             $this->audit($actor, 'account.role_revoked', $ip, [
                 'target_user_id' => $target->user_id,
                 'role_code' => $role->role_code,
+                'outcome' => 'success',
             ]);
         });
     }
 
     public function setStatus(User $actor, int $userId, string $statusCode, ?string $ip): void
+    {
+        $this->audited($actor, 'account.status_changed', $userId, $ip, fn () => $this->setStatusNow($actor, $userId, $statusCode, $ip));
+    }
+
+    private function setStatusNow(User $actor, int $userId, string $statusCode, ?string $ip): void
     {
         $actorIsAdmin = $this->isSuperAdmin($actor);
 
@@ -283,16 +319,189 @@ class AccountAdministrationService
             }
             $target->forceFill($changes)->save();
 
-            if ($status->status_code !== 'active') {
-                $target->tokens()->delete();
-            }
+            $revoked = $status->status_code !== 'active' ? $target->tokens()->delete() : 0;
 
             $this->audit($actor, 'account.status_changed', $ip, [
                 'target_user_id' => $target->user_id,
                 'from' => $previous,
                 'to' => $status->status_code,
+                'tokens_revoked' => $revoked,
+                'outcome' => 'success',
             ]);
         });
+    }
+
+    /**
+     * Change the login identity (username and/or email) of a manageable account.
+     * Uniqueness is case-insensitive; the email is stored trimmed and lower-cased.
+     */
+    public function updateLoginIdentity(User $actor, int $userId, array $data, ?string $ip): void
+    {
+        $this->audited($actor, 'account.login_identity_updated', $userId, $ip, function () use ($actor, $userId, $data, $ip): void {
+            DB::transaction(function () use ($actor, $userId, $data, $ip): void {
+                $target = User::query()->lockForUpdate()->findOrFail($userId);
+                $this->assertNotSelf($actor, $target, 'لا يمكنك تعديل بيانات دخول حسابك الشخصي من هذه البوابة.');
+                $this->assertTargetManageable($actor, $target, $this->isSuperAdmin($actor));
+
+                $changes = [];
+                if (array_key_exists('username', $data)) {
+                    $username = trim((string) $data['username']);
+                    if ($username !== $target->username) {
+                        if (User::query()->whereRaw('LOWER(username) = ?', [mb_strtolower($username)])->whereKeyNot($target->user_id)->exists()) {
+                            throw ValidationException::withMessages(['username' => ['اسم المستخدم مستخدم لحساب آخر.']]);
+                        }
+                        $changes['username'] = ['from' => $target->username, 'to' => $username];
+                    }
+                }
+                if (array_key_exists('email', $data)) {
+                    $email = mb_strtolower(trim((string) $data['email']));
+                    if ($email !== $target->email) {
+                        if (User::query()->whereRaw('LOWER(email) = ?', [$email])->whereKeyNot($target->user_id)->exists()) {
+                            throw ValidationException::withMessages(['email' => ['البريد الإلكتروني مستخدم لحساب آخر.']]);
+                        }
+                        $changes['email'] = ['from' => $target->email, 'to' => $email];
+                    }
+                }
+                if ($changes === []) {
+                    throw AccountAdministrationException::conflict('account_unchanged', 'لم تتغير أي قيمة؛ اسم المستخدم والبريد مطابقان للقيم الحالية.');
+                }
+
+                $target->forceFill(array_map(fn ($change) => $change['to'], $changes))->save();
+                $this->audit($actor, 'account.login_identity_updated', $ip, [
+                    'target_user_id' => $target->user_id,
+                    'changes' => $changes,
+                    'outcome' => 'success',
+                ]);
+            });
+        });
+    }
+
+    /**
+     * Set a new password chosen by the operator. The previous password cannot be
+     * recovered or shown. Every token of the target is revoked (Sanctum), so all of
+     * its sessions end; the value never appears in responses or logs.
+     *
+     * @return int number of revoked tokens
+     */
+    public function resetPassword(User $actor, int $userId, string $password, ?string $ip): int
+    {
+        return $this->audited($actor, 'account.password_reset', $userId, $ip, function () use ($actor, $userId, $password, $ip): int {
+            return DB::transaction(function () use ($actor, $userId, $password, $ip): int {
+                $target = User::query()->lockForUpdate()->findOrFail($userId);
+                $this->assertNotSelf($actor, $target, 'لا يمكنك إعادة تعيين كلمة مرور حسابك الشخصي من هذه البوابة.');
+                $this->assertTargetManageable($actor, $target, $this->isSuperAdmin($actor));
+
+                $target->forceFill(['password_hash' => Hash::make($password), 'failed_login_attempts' => 0])->save();
+                $revoked = $target->tokens()->delete();
+
+                $this->audit($actor, 'account.password_reset', $ip, [
+                    'target_user_id' => $target->user_id,
+                    'tokens_revoked' => $revoked,
+                    'outcome' => 'success',
+                ]);
+
+                return $revoked;
+            });
+        });
+    }
+
+    /**
+     * Correct the holder's name on the employee/student row the account is already
+     * linked to. The link is kept; no person is created; nothing else changes.
+     */
+    public function correctHolderName(User $actor, int $userId, string $personType, array $names, ?string $ip): void
+    {
+        $this->audited($actor, 'account.holder_name_corrected', $userId, $ip, function () use ($actor, $userId, $personType, $names, $ip): void {
+            DB::transaction(function () use ($actor, $userId, $personType, $names, $ip): void {
+                if (! $actor->hasPermission(AccountAdministration::HOLDER_NAME_MANAGE)) {
+                    throw AccountAdministrationException::forbidden('holder_name_permission_missing', 'لا تملك صلاحية تصحيح اسم صاحب الحساب.');
+                }
+                $target = User::query()->lockForUpdate()->findOrFail($userId);
+                $this->assertNotSelf($actor, $target, 'لا يمكنك تصحيح اسمك من هذه البوابة؛ راجع الجهة المختصة.');
+                $this->assertTargetManageable($actor, $target, $this->isSuperAdmin($actor));
+
+                $personId = $this->linkedPersonId($target, $personType);
+                $result = $this->nameService()->correct($personType, $personId, $names);
+                if ($result['changed'] === []) {
+                    throw AccountAdministrationException::conflict('holder_name_unchanged', 'الاسم المدخل مطابق للاسم الحالي؛ لم يتغير شيء.');
+                }
+
+                $this->audit($actor, 'account.holder_name_corrected', $ip, [
+                    'target_user_id' => $target->user_id,
+                    'person_type' => $personType,
+                    'person_id' => $personId,
+                    'changes' => collect($result['changed'])->mapWithKeys(fn ($field) => [$field => ['from' => $result['before'][$field], 'to' => $result['after'][$field]]])->all(),
+                    'outcome' => 'success',
+                ]);
+            });
+        });
+    }
+
+    /** @return array{type:?string, id:?int, first_name:?string, last_name:?string, father_name:?string, mother_name:?string, display_name:?string, links:int} */
+    public function holder(User $user): array
+    {
+        $links = ($user->employee_id !== null ? 1 : 0) + ($user->student_id !== null ? 1 : 0);
+        $person = $user->employee_id !== null
+            ? $this->nameService()->current('employee', (int) $user->employee_id)
+            : ($user->student_id !== null ? $this->nameService()->current('student', (int) $user->student_id) : null);
+        $display = $person === null ? null : trim(implode(' ', array_filter([$person['first_name'], $person['father_name'] ?? null, $person['last_name']])));
+
+        return [
+            'type' => $person['type'] ?? null,
+            'id' => $person['id'] ?? null,
+            'first_name' => $person['first_name'] ?? null,
+            'last_name' => $person['last_name'] ?? null,
+            'father_name' => $person['father_name'] ?? null,
+            'mother_name' => $person['mother_name'] ?? null,
+            'display_name' => $display ?: null,
+            'links' => $links,
+        ];
+    }
+
+    private function linkedPersonId(User $target, string $personType): int
+    {
+        if ($target->employee_id !== null && $target->student_id !== null) {
+            throw AccountAdministrationException::conflict('holder_link_ambiguous', 'الحساب مرتبط بموظف وطالب معًا؛ صحّح الاسم من الجهة المختصة بعد مراجعة الربط.');
+        }
+        $id = $personType === 'employee' ? $target->employee_id : ($personType === 'student' ? $target->student_id : null);
+        if ($target->employee_id === null && $target->student_id === null) {
+            throw AccountAdministrationException::conflict('holder_not_linked', 'الحساب غير مرتبط بموظف أو طالب؛ لا يوجد اسم صاحب حساب لتصحيحه.');
+        }
+        if ($id === null) {
+            throw AccountAdministrationException::conflict('holder_link_changed', 'نوع السجل المرتبط بالحساب تغيّر؛ أعد تحميل الحساب.');
+        }
+
+        return (int) $id;
+    }
+
+    private function nameService(): PersonNameCorrectionService
+    {
+        return $this->names ?? app(PersonNameCorrectionService::class);
+    }
+
+    private function assertNotSelf(User $actor, User $target, string $message): void
+    {
+        if ((int) $actor->user_id === (int) $target->user_id) {
+            throw AccountAdministrationException::forbidden('self_change_forbidden', $message);
+        }
+    }
+
+    /**
+     * Runs a sensitive operation; when it is refused by the rules (403/409/422 from
+     * the service) a separate, committed audit row records the attempt with its
+     * outcome. The audited event is the attempt; `outcome` is the operation status.
+     */
+    private function audited(User $actor, string $action, ?int $targetUserId, ?string $ip, callable $operation): mixed
+    {
+        try {
+            return $operation();
+        } catch (AccountAdministrationException $exception) {
+            $this->audit($actor, $action, $ip, ['target_user_id' => $targetUserId, 'outcome' => 'failed', 'error_code' => $exception->errorCode, 'http_status' => $exception->status]);
+            throw $exception;
+        } catch (ValidationException $exception) {
+            $this->audit($actor, $action, $ip, ['target_user_id' => $targetUserId, 'outcome' => 'failed', 'error_code' => 'validation_failed', 'fields' => array_keys($exception->errors()), 'http_status' => 422]);
+            throw $exception;
+        }
     }
 
     /**

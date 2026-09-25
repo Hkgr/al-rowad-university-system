@@ -26,7 +26,10 @@ export default function AccountsPermissionsPage() {
   const [options, setOptions] = useState({ roles: [], statuses: [], actor: { can_manage: false } })
   const [optionsError, setOptionsError] = useState('')
   const [creating, setCreating] = useState(false)
-  const [selectedId, setSelectedId] = useState(null)
+  const [selectedId, setSelectedId] = useState(() => {
+    const requested = Number(new URLSearchParams(location.search).get('user'))
+    return Number.isInteger(requested) && requested > 0 ? requested : null
+  })
   const [success, setSuccess] = useState('')
   const debounceRef = useRef(null)
   const firstLoad = useRef(true)
@@ -95,6 +98,7 @@ export default function AccountsPermissionsPage() {
         <div>
           <div className="font-semibold text-[13.5px] text-text-dark" dir="ltr">{row.username}</div>
           <div className="text-[12px] text-text-gray" dir="ltr">{row.email}</div>
+          {row.holder_name && <div className="text-[12px] text-text-dark">{row.holder_name}</div>}
         </div>
       ),
     },
