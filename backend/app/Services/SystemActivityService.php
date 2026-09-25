@@ -72,15 +72,15 @@ class SystemActivityService
                 $q->where('l.action_code', $action);
             }
             if ($targetUserId !== null) {
-                $q->where(fn (Builder $w) => $w->where('l.description', 'like', '%"target_user_id":'.$targetUserId.',%')
-                    ->orWhere('l.description', 'like', '%"target_user_id":'.$targetUserId.'}%')
-                    ->orWhere('l.description', 'like', '%"user_id":'.$targetUserId.',%')
-                    ->orWhere('l.description', 'like', '%"user_id":'.$targetUserId.'}%'));
+                $q->where(fn (Builder $w) => $this->whereTargetsAny($w, [$targetUserId]));
             }
             if ($search !== '') {
-                $like = $this->like($search);
-                $q->where(fn (Builder $w) => $w->where('l.action_code', 'like', $like)->orWhere('l.description', 'like', $like)
-                    ->orWhereIn('l.user_id', $this->usernameMatches($search)));
+                // Safe fields only; the raw description is never matched (see searchTerms()).
+                $terms = $this->searchTerms($search, $modules);
+                $q->where(fn (Builder $w) => $w->whereIn('l.action_code', $terms['actions'] ?: [''])
+                    ->orWhere('l.ip_address', 'like', $terms['like'])
+                    ->orWhereIn('l.user_id', $terms['user_ids'])
+                    ->orWhere(fn (Builder $t) => $this->whereTargetsAny($t, $terms['user_ids'])));
             }
             $parts[] = $q;
         }
@@ -97,9 +97,13 @@ class SystemActivityService
                 $q->where('g.user_id', $targetUserId);
             }
             if ($search !== '') {
-                $like = $this->like($search);
-                $q->where(fn (Builder $w) => $w->where('g.username_attempted', 'like', $like)->orWhere('g.login_status', 'like', $like)
-                    ->orWhere('g.ip_address', 'like', $like)->orWhereIn('g.user_id', $this->usernameMatches($search)));
+                // The attempted identifier is never matched: it is shown masked, and a
+                // full-address (or mistyped password) search must not confirm its value.
+                $terms = $this->searchTerms($search, $modules);
+                $statuses = array_map(fn ($code) => substr($code, strlen('login.')), array_filter($terms['actions'], fn ($code) => str_starts_with($code, 'login.')));
+                $q->where(fn (Builder $w) => $w->whereIn('g.login_status', $statuses ?: [''])
+                    ->orWhere('g.ip_address', 'like', $terms['like'])
+                    ->orWhereIn('g.user_id', $terms['user_ids']));
             }
             $parts[] = $q;
         }
@@ -200,11 +204,12 @@ class SystemActivityService
                 ],
                 'summary' => SystemActivityCatalog::summary($action, $detail['fields'], $detail['outcome']),
                 'changes' => $detail['changes'],
+                'details_available' => ! $detail['legacy'],
             ];
             if ($full) {
                 $item['fields'] = $detail['fields'];
                 $item['ip_address'] = $row->ip_address;
-                $item['user_agent'] = $row->user_agent === null ? null : mb_substr((string) $row->user_agent, 0, 120);
+                $item['user_agent'] = $row->user_agent === null ? null : SystemActivityCatalog::scrubText(mb_substr((string) $row->user_agent, 0, 120));
                 $item['notes'] = $detail['notes'];
             }
 
@@ -223,15 +228,16 @@ class SystemActivityService
                 'changes' => [],
                 'outcome' => in_array($status, ['success', 'logout'], true) ? 'success' : 'failed',
                 'notes' => [],
+                'legacy' => false,
             ];
         }
         $decoded = is_string($row->details) ? json_decode($row->details, true) : null;
         if (! is_array($decoded)) {
-            // Legacy plain-text descriptions (e.g. identity links) carry no secrets; shown as text.
-            return ['fields' => [], 'changes' => [], 'outcome' => 'success', 'notes' => $row->details ? [mb_substr((string) $row->details, 0, 300)] : []];
+            // Legacy free text is never echoed (it may hold an address, a password or a token).
+            return ['fields' => [], 'changes' => [], 'outcome' => 'success', 'notes' => [SystemActivityCatalog::LEGACY_NOTE], 'legacy' => true];
         }
 
-        return SystemActivityCatalog::sanitize((string) $row->action, $decoded);
+        return SystemActivityCatalog::sanitize((string) $row->action, $decoded) + ['legacy' => false];
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
@@ -263,10 +269,47 @@ class SystemActivityService
         return DB::table('users')->whereRaw('LOWER(username) = ?', [mb_strtolower($actor)])->pluck('user_id')->map(fn ($id) => (int) $id)->all();
     }
 
-    /** @return list<int> */
-    private function usernameMatches(string $search): array
+    /**
+     * What the free-text search may match — and nothing else:
+     *  - an account username (as the actor or as the affected account),
+     *  - an action code or its Arabic label (within the viewer's modules),
+     *  - an IP address.
+     * Descriptions, e-mail addresses and attempted login identifiers are never
+     * searched, so a hit can never confirm a value that the feed masks.
+     *
+     * @param  list<string>|null  $modules
+     * @return array{like: string, user_ids: list<int>, actions: list<string>}
+     */
+    private function searchTerms(string $search, ?array $modules): array
     {
-        return DB::table('users')->where('username', 'like', $this->like($search))->limit(50)->pluck('user_id')->map(fn ($id) => (int) $id)->all() ?: [0];
+        $like = $this->like($search);
+        $needle = mb_strtolower($search);
+        $actions = collect(SystemActivityCatalog::ACTIONS)
+            ->filter(fn ($meta, $code) => ($modules === null || in_array($meta['module'], $modules, true))
+                && (str_contains(mb_strtolower($code), $needle) || str_contains($meta['label'], $search)))
+            ->keys()->all();
+        $userIds = DB::table('users')->where('username', 'like', $like)->limit(50)->pluck('user_id')->map(fn ($id) => (int) $id)->all();
+
+        return ['like' => $like, 'user_ids' => $userIds ?: [0], 'actions' => $actions];
+    }
+
+    /**
+     * Structured events whose target is one of the given accounts. Only the
+     * JSON key/number pattern is matched (never user-supplied text), and only
+     * on structured (JSON) descriptions.
+     *
+     * @param  list<int>  $userIds
+     */
+    private function whereTargetsAny(Builder $w, array $userIds): void
+    {
+        $w->where('l.description', 'like', '{%')->where(function (Builder $any) use ($userIds): void {
+            foreach ($userIds as $id) {
+                foreach (['target_user_id', 'user_id'] as $key) {
+                    $any->orWhere('l.description', 'like', '%"'.$key.'":'.(int) $id.',%')
+                        ->orWhere('l.description', 'like', '%"'.$key.'":'.(int) $id.'}%');
+                }
+            }
+        });
     }
 
     private function like(string $value): string

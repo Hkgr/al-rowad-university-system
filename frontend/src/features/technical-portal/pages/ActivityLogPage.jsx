@@ -8,6 +8,7 @@ import { clearIdentity } from '../../auth/auth'
 import { fetchActivity, fetchActivityEvent, fetchActivityOptions } from '../lib/activityApi'
 import {
   EMPTY_FILTERS, OUTCOME_AR, OUTCOME_BADGE, SOURCE_AR, actionsForModule, activityErrorMessage, buildActivityQuery, changeText, formatActivityTime, hasActiveFilters,
+  SEARCH_HELP, SEARCH_PLACEHOLDER,
 } from '../lib/activityState'
 
 const PER_PAGE = 25
@@ -163,13 +164,14 @@ export default function ActivityLogPage() {
       <div className="flex items-start gap-2 bg-primary/5 border border-primary/15 rounded-[12px] px-4 py-3 mb-4 text-[12.5px] text-text-gray" dir="rtl">
         <FaInfoCircle className="text-primary mt-0.5 flex-shrink-0" />
         <span>
-          سجل للقراءة فقط يعرض أحداث التدقيق المسجّلة فعليًا منذ تفعيل كل نوع منها، ومحاولات تسجيل الدخول والخروج. لا يعرض كلمات المرور أو التوكنات، ولا يمكن تعديل أي حدث أو حذفه.
+          سجل للقراءة فقط يعرض أحداث التدقيق المسجّلة فعليًا منذ تفعيل كل نوع منها، ومحاولات تسجيل الدخول والخروج. لا يعرض كلمات المرور أو التوكنات، ويُظهر البريد الإلكتروني مقنّعًا، ولا يمكن تعديل أي حدث أو حذفه.
+          {` ${SEARCH_HELP}`}
           {options.scope === 'technical_modules' ? ' يقتصر عرضك على وحدات الحسابات وتسجيل الدخول وتعيينات النيابة الإدارية وتعديلات السجلات العامة (أسماء الحقول فقط).' : ' تعرض كمدير نظام جميع الوحدات.'}
         </span>
       </div>
 
       <FilterBar
-        search={{ value: filters.search, onChange: set('search'), placeholder: 'ابحث في الإجراء أو اسم المستخدم أو عنوان IP أو تفاصيل الحدث…' }}
+        search={{ value: filters.search, onChange: set('search'), placeholder: SEARCH_PLACEHOLDER }}
         filters={[
           { key: 'module', value: filters.module, onChange: set('module'), placeholder: 'كل الوحدات', minWidth: 190, options: options.modules.map(m => ({ value: m.code, label: m.label })) },
           { key: 'action', value: filters.action, onChange: set('action'), placeholder: 'كل الإجراءات', minWidth: 200, options: actionsForModule(options.actions, filters.module).map(a => ({ value: a.code, label: a.label })) },

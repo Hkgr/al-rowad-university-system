@@ -598,7 +598,10 @@ final class TechnicalAccountAdministrationTest extends TestCase
         $detail = $this->getJson('/api/v1/technical/activity/activity/'.$reset['id'])->assertOk()->json('data');
         self::assertStringContainsString('لا تُحفظ قيمتها', $detail['notes'][0]);
         $email = collect($all['data'])->firstWhere('action.code', 'account.login_identity_updated');
-        self::assertSame(['field' => 'email', 'label' => 'البريد الإلكتروني', 'from' => 'instructor@alrowad.test', 'to' => 'staff.new@alrowad.test', 'values_hidden' => false], $email['changes'][0]);
+        // E-mail values are masked in every place they appear (same mask as login identifiers).
+        self::assertSame(['field' => 'email', 'label' => 'البريد الإلكتروني', 'from' => 'in••••••@alrowad.test', 'to' => 'st••••••@alrowad.test', 'values_hidden' => false], $email['changes'][0]);
+        self::assertStringNotContainsString('staff.new@', $content);
+        self::assertStringNotContainsString('instructor@', $content);
         $denied = collect($all['data'])->firstWhere('action.code', 'account.role_assigned');
         self::assertSame('failed', $denied['outcome']);
         self::assertStringContainsString('محاولة مرفوضة', $denied['summary']);
@@ -630,6 +633,83 @@ final class TechnicalAccountAdministrationTest extends TestCase
         DB::table('role_permissions')->where('role_id', self::ROLE_TECHNICAL)->where('permission_id', 9)->delete();
         $this->actingAsUser(self::TECH);
         $this->getJson('/api/v1/technical/activity')->assertForbidden();
+    }
+
+    public function test_activity_feed_never_leaks_legacy_text_emails_or_secrets_in_list_detail_summary_or_search(): void
+    {
+        $this->actingAsUser(self::TECH);
+        $this->putJson(self::URL.'/'.self::STAFF.'/password', ['password' => 'Brand-New-Pass-2026', 'password_confirmation' => 'Brand-New-Pass-2026'])->assertOk();
+        DB::table('user_activity_logs')->insert([
+            // Legacy, unstructured description holding an address, a password and a Sanctum token.
+            ['user_id' => self::ADMIN, 'module_code' => 'users_permissions', 'action_code' => 'user_identity_linked', 'ip_address' => '10.9.9.1',
+                'description' => 'linked leaked.person@secret.test password=Hunter2-Secret token 7|AbCdEfGhIjKlMnOpQrStUvWxYz123', 'created_at' => '2026-01-03 09:00:00'],
+            // Structured event with addresses in previous/new values, in a free-text key, as a username and as a nested key.
+            ['user_id' => self::ADMIN, 'module_code' => 'users_permissions', 'action_code' => 'account.login_identity_updated', 'ip_address' => '10.9.9.2',
+                'description' => json_encode(['target_user_id' => self::STAFF, 'changes' => ['email' => ['from' => 'old.private@secret.test', 'to' => 'new.private@secret.test'],
+                    'contact.email' => ['from' => 'hidden.contact@secret.test', 'to' => 'x@secret.test']], 'reason' => 'requested by other.private@secret.test with Bearer Zz9SecretBearerValue',
+                    'roles' => ['keeper.private@secret.test' => 'x', 'dean'], 'outcome' => 'success']), 'created_at' => '2026-01-04 09:00:00'],
+            ['user_id' => self::ADMIN, 'module_code' => 'users_permissions', 'action_code' => 'account.created', 'ip_address' => '10.9.9.3',
+                'description' => json_encode(['target_user_id' => self::STAFF, 'username' => 'created.private@secret.test', 'roles' => ['doctor_instructor'], 'outcome' => 'success']), 'created_at' => '2026-01-05 09:00:00'],
+            ['user_id' => self::ADMIN, 'module_code' => 'grades', 'action_code' => 'manual_grade_entry.context', 'ip_address' => '10.9.9.4',
+                'description' => '{"student_id":1144,"reason":"note grades.private@secret.test $2y$12$abcdefghijklmnopqrstuv"}', 'created_at' => '2026-01-06 09:00:00'],
+        ]);
+        DB::table('login_audit_logs')->insert([
+            ['user_id' => null, 'username_attempted' => 'Hunter2-Secret', 'login_status' => 'failed', 'ip_address' => '10.9.9.5', 'attempted_at' => '2026-01-07 08:00:00'],
+            ['user_id' => null, 'username_attempted' => 'hidden.login@secret.test', 'login_status' => 'failed', 'ip_address' => '10.9.9.6', 'attempted_at' => '2026-01-08 08:00:00'],
+        ]);
+        $secrets = ['leaked.person', 'Hunter2', 'AbCdEfGh', 'old.private', 'new.private', 'hidden.contact', 'other.private', 'Zz9SecretBearerValue',
+            'keeper.private', 'created.private', 'grades.private', 'hidden.login', '$2y$', 'Brand-New-Pass', 'password=', 'password_hash'];
+
+        foreach ([self::TECH, self::ADMIN] as $viewer) {
+            $this->actingAsUser($viewer);
+            $list = $this->getJson('/api/v1/technical/activity?per_page=100')->assertOk()->json('data');
+            $dump = json_encode($list, JSON_UNESCAPED_UNICODE);
+            foreach ($list['data'] as $item) {
+                $dump .= json_encode($this->getJson('/api/v1/technical/activity/'.$item['source'].'/'.$item['id'])->assertOk()->json('data'), JSON_UNESCAPED_UNICODE);
+            }
+            foreach ($secrets as $secret) {
+                self::assertStringNotContainsString($secret, $dump, "viewer {$viewer} must not receive {$secret}");
+            }
+            self::assertStringContainsString('ol••••••@secret.test', $dump);
+            self::assertStringContainsString('ne••••••@secret.test', $dump);
+            self::assertStringContainsString('إنشاء الحساب cr••••••@secret.test', $dump, 'summary masks an address too');
+
+            $legacy = collect($list['data'])->firstWhere('action.code', 'user_identity_linked');
+            self::assertFalse($legacy['details_available']);
+            $detail = $this->getJson('/api/v1/technical/activity/activity/'.$legacy['id'])->assertOk()->json('data');
+            self::assertSame([\App\Support\SystemActivityCatalog::LEGACY_NOTE], $detail['notes']);
+            self::assertSame([], $detail['fields']);
+            self::assertSame([], $detail['changes']);
+            $structured = collect($list['data'])->firstWhere('action.code', 'account.login_identity_updated');
+            self::assertTrue($structured['details_available']);
+            self::assertSame(['from' => null, 'to' => null, 'values_hidden' => true], array_intersect_key(collect($structured['changes'])->firstWhere('field', 'contact.email'), ['from' => 1, 'to' => 1, 'values_hidden' => 1]));
+
+            // A secret, a full address or an attempted identifier cannot be confirmed through search:
+            // every such query behaves exactly like a query for a value that does not exist.
+            $none = $this->getJson('/api/v1/technical/activity?search=no-such-value-q7')->assertOk()->json('data.meta.total');
+            self::assertSame(0, $none);
+            foreach (['Hunter2', 'Hunter2-Secret', 'leaked.person@secret.test', 'old.private', 'new.private@secret.test', 'hidden.login@secret.test',
+                'AbCdEfGh', 'Zz9SecretBearerValue', 'secret.test', 'other.private', 'created.private', 'grades.private'] as $term) {
+                $this->getJson('/api/v1/technical/activity?search='.urlencode($term))->assertOk()->assertJsonPath('data.meta.total', 0);
+            }
+
+            // Allowed search still works: usernames (actor or affected account), action labels/codes and IP addresses.
+            $byUser = collect($this->getJson('/api/v1/technical/activity?per_page=100&search=instructor')->assertOk()->json('data.data'));
+            self::assertContains('account.password_reset', $byUser->pluck('action.code')->all(), 'affected-account username');
+            self::assertContains('account.login_identity_updated', $byUser->pluck('action.code')->all());
+            self::assertNotContains('user_identity_linked', $byUser->pluck('action.code')->all(), 'legacy text is never matched');
+            $byActor = collect($this->getJson('/api/v1/technical/activity?per_page=100&search=tech')->assertOk()->json('data.data'));
+            self::assertContains('account.password_reset', $byActor->pluck('action.code')->all(), 'actor username');
+            $byLabel = collect($this->getJson('/api/v1/technical/activity?per_page=100&search='.urlencode('إعادة تعيين كلمة المرور'))->assertOk()->json('data.data'));
+            self::assertSame(['account.password_reset'], $byLabel->pluck('action.code')->unique()->values()->all());
+            $this->getJson('/api/v1/technical/activity?search=account.created')->assertOk()->assertJsonPath('data.data.0.action.code', 'account.created');
+            $this->getJson('/api/v1/technical/activity?search=10.9.9.5')->assertOk()->assertJsonCount(1, 'data.data')->assertJsonPath('data.data.0.action.code', 'login.failed');
+            $this->getJson('/api/v1/technical/activity?search=10.9.9.1')->assertOk()->assertJsonCount(1, 'data.data')->assertJsonPath('data.data.0.action.code', 'user_identity_linked');
+            $this->getJson('/api/v1/technical/activity?search='.urlencode('محاولة دخول فاشلة'))->assertOk()->assertJsonCount(2, 'data.data');
+        }
+        // The grades event stays super_admin-only; the technical team cannot find it by IP either.
+        $this->actingAsUser(self::TECH);
+        $this->getJson('/api/v1/technical/activity?search=10.9.9.4')->assertOk()->assertJsonPath('data.meta.total', 0);
     }
 
     public function test_logout_and_generic_record_changes_are_audited_without_values(): void

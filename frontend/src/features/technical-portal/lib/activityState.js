@@ -62,3 +62,7 @@ export function activityErrorMessage(error) {
   if (status === 422) return 'قيمة تصفية غير صالحة؛ راجع التواريخ والحقول.'
   return 'حدث خطأ غير متوقع في الخادم.'
 }
+
+/** The server searches these fields only (never descriptions, e-mail addresses or attempted login identifiers). */
+export const SEARCH_PLACEHOLDER = 'ابحث باسم مستخدم المنفّذ أو الحساب المتأثر أو اسم الإجراء أو عنوان IP…'
+export const SEARCH_HELP = 'البحث يشمل: اسم مستخدم المنفّذ، اسم مستخدم الحساب المتأثر، اسم الإجراء، وعنوان IP فقط؛ لا يبحث في البريد الإلكتروني ولا في نص تفاصيل الحدث.'

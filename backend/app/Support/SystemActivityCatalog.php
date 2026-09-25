@@ -107,13 +107,40 @@ final class SystemActivityCatalog
         return (bool) preg_match('/pass|token(?!s_revoked)|secret|hash|remember|otp|api_key|authorization/i', $key);
     }
 
+    /** Hidden-value marker used wherever a secret-looking value is removed. */
+    public const REDACTED = '[محجوب]';
+
+    /** Shown instead of a legacy description that is not structured JSON. */
+    public const LEGACY_NOTE = 'تفاصيل هذا الحدث القديم غير متاحة: سُجّل قبل اعتماد الصيغة المنظّمة، ولا يُعرض نصه الخام حمايةً لأي بيانات حساسة قد يحتويها.';
+
+    /** Longest free-text value that may leave the server. */
+    private const MAX_TEXT = 200;
+
+    /**
+     * Every string that leaves the feed passes through here, whatever its key:
+     * password hashes, API/Sanctum tokens and long hex digests are replaced,
+     * e-mail addresses anywhere in the text are masked, and length is capped.
+     */
+    public static function scrubText(string $value): string
+    {
+        $value = preg_replace('/\$2[abxy]?\$\S*/', self::REDACTED, $value) ?? self::REDACTED;
+        $value = preg_replace('/\b\d+\|[A-Za-z0-9]{20,}\b/', self::REDACTED, $value) ?? self::REDACTED;
+        $value = preg_replace('/\b[a-f0-9]{32,}\b/i', self::REDACTED, $value) ?? self::REDACTED;
+        $value = preg_replace('/\b(?:bearer|basic)\s+\S+/i', self::REDACTED, $value) ?? self::REDACTED;
+        $value = preg_replace_callback('/[^\s@"\'<>(),;:]+@[^\s@"\'<>(),;:]+/u', fn (array $m) => self::maskEmail($m[0]), $value) ?? self::REDACTED;
+
+        return mb_strlen($value) > self::MAX_TEXT ? mb_substr($value, 0, self::MAX_TEXT).'…' : $value;
+    }
+
     private static function redactValue(mixed $value): mixed
     {
-        if (is_string($value) && (preg_match('/^\$2[aby]\$/', $value) || preg_match('/^[a-f0-9]{40,}$/i', $value) || preg_match('/^\d+\|[A-Za-z0-9]{20,}$/', $value))) {
-            return '[محجوب]';
-        }
+        return is_string($value) ? self::scrubText($value) : $value;
+    }
 
-        return $value;
+    /** Structured keys are short identifiers; anything else (e.g. an address used as a key) is dropped. */
+    private static function isPlainKey(int|string $key): bool
+    {
+        return is_int($key) || (preg_match('/^[A-Za-z0-9_.]{1,64}$/', $key) === 1 && ! self::isSecretKey($key));
     }
 
     /** Scalars, or lists/maps of scalars (depth ≤ 2), with secrets removed. */
@@ -127,7 +154,7 @@ final class SystemActivityCatalog
         }
         $clean = [];
         foreach ($value as $key => $item) {
-            if (is_string($key) && self::isSecretKey($key)) {
+            if (! self::isPlainKey($key)) {
                 continue;
             }
             $clean[$key] = self::safeValue($item, $depth + 1);
@@ -148,7 +175,7 @@ final class SystemActivityCatalog
         $changes = [];
         if (isset($data['changes']) && is_array($data['changes'])) {
             foreach ($data['changes'] as $field => $change) {
-                if (! is_string($field) || self::isSecretKey($field)) {
+                if (! is_string($field) || ! self::isPlainKey($field)) {
                     continue;
                 }
                 $changes[] = self::change($field, is_array($change) ? ($change['from'] ?? null) : null, is_array($change) ? ($change['to'] ?? null) : null);
@@ -158,7 +185,7 @@ final class SystemActivityCatalog
             $before = self::flatten($data['before']);
             $after = self::flatten($data['after']);
             foreach (array_unique(array_merge(array_keys($before), array_keys($after))) as $field) {
-                if (self::isSecretKey($field) || ($before[$field] ?? null) === ($after[$field] ?? null)) {
+                if (! self::isPlainKey($field) || ($before[$field] ?? null) === ($after[$field] ?? null)) {
                     continue;
                 }
                 $changes[] = self::change($field, $before[$field] ?? null, $after[$field] ?? null);
@@ -180,6 +207,12 @@ final class SystemActivityCatalog
     /** @param array<string, mixed> $fields */
     public static function summary(string $action, array $fields, string $outcome): string
     {
+        return self::scrubText(self::composeSummary($action, $fields, $outcome));
+    }
+
+    /** @param array<string, mixed> $fields */
+    private static function composeSummary(string $action, array $fields, string $outcome): string
+    {
         $label = self::actionLabel($action);
         if ($outcome === 'failed' && ! str_starts_with($action, 'login.')) {
             $reason = self::ERROR_LABELS[$fields['error_code'] ?? ''] ?? ($fields['error_code'] ?? 'رفض');
@@ -199,16 +232,27 @@ final class SystemActivityCatalog
         };
     }
 
-    /** Masks a login identifier: keeps the first two characters and the domain. */
+    /**
+     * Masks a login identifier. An e-mail keeps its first two characters and its
+     * domain; anything else (a mistyped username or, worse, a password typed into
+     * the login field) is masked completely.
+     */
     public static function maskIdentifier(?string $identifier): ?string
     {
         $identifier = trim((string) $identifier);
         if ($identifier === '') {
             return null;
         }
-        [$local, $domain] = array_pad(explode('@', $identifier, 2), 2, null);
 
-        return mb_substr($local, 0, 2).str_repeat('•', max(1, min(6, mb_strlen($local) - 2))).($domain !== null ? '@'.$domain : '');
+        return str_contains($identifier, '@') ? self::maskEmail($identifier) : '••••••';
+    }
+
+    /** name@domain → na••••••@domain (same mask everywhere: summary, changes, fields, login identifiers). */
+    public static function maskEmail(string $email): string
+    {
+        [$local, $domain] = array_pad(explode('@', trim($email), 2), 2, '');
+
+        return mb_substr($local, 0, 2).'••••••@'.mb_substr($domain, 0, 80);
     }
 
     private static function change(string $field, mixed $from, mixed $to): array

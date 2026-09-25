@@ -68,3 +68,14 @@ test('holder name UI explains the difference and the unlinked case; buttons foll
   const page = await source('features/technical-portal/pages/ActivityLogPage.jsx')
   assert.doesNotMatch(page, /method: '(POST|PUT|PATCH|DELETE)'/, 'the activity page never writes')
 })
+
+test('activity search copy names only the safe fields the server searches', async () => {
+  const state = await import('../src/features/technical-portal/lib/activityState.js')
+  assert.match(state.SEARCH_PLACEHOLDER, /اسم مستخدم المنفّذ.*الحساب المتأثر.*اسم الإجراء.*عنوان IP/)
+  assert.doesNotMatch(state.SEARCH_PLACEHOLDER, /تفاصيل الحدث|البريد/)
+  assert.match(state.SEARCH_HELP, /لا يبحث في البريد الإلكتروني ولا في نص تفاصيل الحدث/)
+  const page = await readFile(new URL('../src/features/technical-portal/pages/ActivityLogPage.jsx', import.meta.url), 'utf8')
+  assert.match(page, /placeholder: SEARCH_PLACEHOLDER/)
+  assert.match(page, /SEARCH_HELP/)
+  assert.match(page, /البريد الإلكتروني مقنّعًا/)
+})
