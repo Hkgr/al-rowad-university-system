@@ -32,6 +32,7 @@ const NAV_FILES = {
   vpScientific: 'features/vice-presidency/nav.js',
   vpAdministrative: 'features/vice-presidency/nav.js',
   technical: 'features/technical-portal/nav.js',
+  ministry: 'features/ministry-portal/nav.js',
 }
 
 // The ProtectedRoute that encloses each guide route in App.jsx.
@@ -46,6 +47,7 @@ const EXPECTED_GUARD = {
   vpScientific: '<ProtectedRoute {...ACCESS.scientificVicePresident}>',
   vpAdministrative: '<ProtectedRoute {...ACCESS.administrativeVicePresident}>',
   technical: '<ProtectedRoute {...ACCESS.technicalPortal}>',
+  ministry: '<ProtectedRoute {...ACCESS.ministryPortal}>',
 }
 
 const SAMPLE_USERS = {
@@ -78,6 +80,8 @@ const SAMPLE_USERS = {
   suppManager: id(['registration_officer'], ['students.view', 'supplementary_exams.registrations.view', 'supplementary_exams.registrations.manage'], { access_scopes: college }),
   examReviewOnly: id(['exam_officer'], ['exams.view', 'exams.manage', 'supplementary_exams.grades.review'], { access_scopes: uni }),
   examFullSupplementary: id(['exam_officer'], ['exams.view', 'exams.manage', 'supplementary_exams.grades.review', 'supplementary_exams.grades.assign', 'supplementary_exams.grades.publish', 'supplementary_exams.results.materialize'], { access_scopes: uni }),
+  ministryObserver: id(['ministry_observer'], ['ministry_portal.access', 'ministry_portal.dashboard.view', 'ministry_portal.deans.view', 'ministry_portal.students.view', 'ministry_portal.colleges.view', 'ministry_portal.courses.view', 'ministry_portal.faculty.view', 'ministry_portal.leadership.view']),
+  ministryStudentsOnly: id(['ministry_observer'], ['ministry_portal.access', 'ministry_portal.students.view']),
   deanAndVp: id(['dean', 'vice_president_scientific'], ['registration_requests.review', 'vice_presidency.scientific.access', 'teaching_assignments.review_scientific'], { access_scopes: uni }),
 }
 
@@ -125,6 +129,7 @@ test('guide access equals the union of the route groups rendering the same sideb
     vpScientific: [GROUP_GUARDS.vpScientific],
     vpAdministrative: [GROUP_GUARDS.vpAdministrative],
     technical: [GROUP_GUARDS.technical],
+    ministry: [GROUP_GUARDS.ministry],
   }
   for (const [guideId, groups] of Object.entries(groupsFor)) {
     for (const [name, user] of Object.entries(SAMPLE_USERS)) {

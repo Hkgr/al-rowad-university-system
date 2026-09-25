@@ -6,6 +6,7 @@ import examBoard from './examBoard.js'
 import dean from './dean.js'
 import { scientific, administrative } from './vicePresidency.js'
 import { hr, academicStructure, technical } from './staff.js'
+import ministry from './ministry.js'
 
 export const GUIDES = Object.freeze({
   student,
@@ -18,4 +19,5 @@ export const GUIDES = Object.freeze({
   vpScientific: scientific,
   vpAdministrative: administrative,
   technical,
+  ministry,
 })

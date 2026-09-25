@@ -185,7 +185,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
 |--------------------------------------------------------------------------
 */
 
-Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::class])->prefix('v1')->group(function (): void {
+// ConfineMinistryAccounts: the read-only ministry account reaches /api/v1/ministry only.
+Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::class, \App\Http\Middleware\ConfineMinistryAccounts::class])->prefix('v1')->group(function (): void {
     Route::prefix('exams/manual-grade-entry')->controller(\App\Http\Controllers\Api\ExamManualGradeEntryController::class)->group(function (): void {
         Route::get('students/{student}/catalog', 'catalog');
         Route::get('students/{student}/periods', 'periods');
@@ -850,6 +851,28 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
         // Separate from login management: corrects the linked employee/student name only.
         Route::patch('{user}/holder-name', 'correctHolderName')->whereNumber('user')
             ->middleware(\App\Http\Middleware\RequirePermission::class.':user_accounts.holder_name.manage');
+    });
+
+    /*
+    | Ministry of Education follow-up portal: read-only, GET only. Each route carries its own
+    | ministry_portal.* permission, checked server-side (RequireMinistryPortal); no write route exists.
+    */
+    Route::prefix('ministry')->controller(\App\Http\Controllers\Api\MinistryPortalController::class)->group(function (): void {
+        $guard = fn (string $permission) => \App\Http\Middleware\RequireMinistryPortal::class.':'.$permission;
+        Route::get('filters', 'filters')->middleware($guard(\App\Support\MinistryPortal::ACCESS));
+        Route::get('dashboard', 'dashboard')->middleware($guard(\App\Support\MinistryPortal::DASHBOARD));
+        Route::get('students', 'students')->middleware($guard(\App\Support\MinistryPortal::STUDENTS));
+        Route::get('students/{student}', 'student')->whereNumber('student')->middleware($guard(\App\Support\MinistryPortal::STUDENTS));
+        Route::get('colleges', 'colleges')->middleware($guard(\App\Support\MinistryPortal::COLLEGES));
+        Route::get('colleges/{college}', 'college')->whereNumber('college')->middleware($guard(\App\Support\MinistryPortal::COLLEGES));
+        Route::get('courses', 'courses')->middleware($guard(\App\Support\MinistryPortal::COURSES));
+        Route::get('courses/{course}', 'course')->whereNumber('course')->middleware($guard(\App\Support\MinistryPortal::COURSES));
+        Route::get('faculty', 'faculty')->middleware($guard(\App\Support\MinistryPortal::FACULTY));
+        Route::get('faculty/{facultyMember}', 'facultyMember')->whereNumber('facultyMember')->middleware($guard(\App\Support\MinistryPortal::FACULTY));
+        Route::get('deans', 'deans')->middleware($guard(\App\Support\MinistryPortal::DEANS));
+        Route::get('deans/{person}', 'dean')->where('person', '(employee|account)-[0-9]+')->middleware($guard(\App\Support\MinistryPortal::DEANS));
+        Route::get('leadership', 'leadership')->middleware($guard(\App\Support\MinistryPortal::LEADERSHIP));
+        Route::get('leadership/units/{unit}', 'unit')->whereNumber('unit')->middleware($guard(\App\Support\MinistryPortal::LEADERSHIP));
     });
 
     Route::prefix('technical/activity')->controller(\App\Http\Controllers\Api\SystemActivityController::class)

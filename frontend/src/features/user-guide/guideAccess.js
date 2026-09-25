@@ -24,6 +24,7 @@ export const GROUP_GUARDS = Object.freeze({
   vpScientific: ACCESS.scientificVicePresident,
   vpAdministrative: ACCESS.administrativeVicePresident,
   technical: ACCESS.technicalPortal,
+  ministry: ACCESS.ministryPortal,
 })
 
 const G = GROUP_GUARDS
@@ -40,6 +41,7 @@ export const GUIDE_ACCESS = Object.freeze({
   vpScientific: G.vpScientific,
   vpAdministrative: G.vpAdministrative,
   technical: G.technical,
+  ministry: G.ministry,
 })
 
 export const GUIDE_PATHS = Object.freeze({
@@ -53,6 +55,7 @@ export const GUIDE_PATHS = Object.freeze({
   vpScientific: '/vp/scientific/guide',
   vpAdministrative: '/vp/administrative/guide',
   technical: '/technical/guide',
+  ministry: '/ministry/guide',
 })
 
 const semesterGovernanceVp = { allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView], actualUniversityScope: true }
@@ -126,4 +129,12 @@ export const ROUTE_ACCESS = Object.freeze({
 
   '/technical/accounts': [G.technical, ACCESS.technicalAccounts],
   '/technical/activity': [G.technical, ACCESS.technicalActivity],
+
+  '/ministry': [G.ministry, ACCESS.ministryDashboard],
+  '/ministry/deans': [G.ministry, ACCESS.ministryDeans],
+  '/ministry/students': [G.ministry, ACCESS.ministryStudents],
+  '/ministry/colleges': [G.ministry, ACCESS.ministryColleges],
+  '/ministry/courses': [G.ministry, ACCESS.ministryCourses],
+  '/ministry/faculty': [G.ministry, ACCESS.ministryFaculty],
+  '/ministry/leadership': [G.ministry, ACCESS.ministryLeadership],
 })

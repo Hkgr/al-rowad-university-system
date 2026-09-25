@@ -8,6 +8,7 @@ export const ROLES = Object.freeze({
   vicePresidentAdministrative: 'vice_president_administrative',
   vicePresidentLegacy: 'vice_president',
   technicalTeam: 'technical_team',
+  ministryObserver: 'ministry_observer',
 })
 
 export const PERMISSIONS = Object.freeze({
@@ -61,7 +62,20 @@ export const PERMISSIONS = Object.freeze({
   vpAdministrativeFacultyManage: 'vice_presidency.administrative.faculty.manage',
   vpAdministrativeDeansView: 'vice_presidency.administrative.deans.view',
   vpAdministrativeDeansManage: 'vice_presidency.administrative.deans.manage',
+  // بوابة وزارة التربية والتعليم: اطلاع للقراءة فقط
+  ministryPortalAccess: 'ministry_portal.access',
+  ministryDashboardView: 'ministry_portal.dashboard.view',
+  ministryDeansView: 'ministry_portal.deans.view',
+  ministryStudentsView: 'ministry_portal.students.view',
+  ministryCollegesView: 'ministry_portal.colleges.view',
+  ministryCoursesView: 'ministry_portal.courses.view',
+  ministryFacultyView: 'ministry_portal.faculty.view',
+  ministryLeadershipView: 'ministry_portal.leadership.view',
 })
+
+// Ministry portal: the role AND the permission assigned through roles (no super_admin bypass),
+// mirroring App\Support\MinistryPortal on the server.
+const ministry = permission => Object.freeze({ allRoles: [ROLES.ministryObserver], assignedPermissions: [PERMISSIONS.ministryPortalAccess, permission] })
 
 export const ACCESS = Object.freeze({
   manualGradeEntry: { allRoles: ['exam_officer'], assignedPermissions: ['exams.manage', 'grades.manage'], permissions: ['students.view'] },
@@ -81,6 +95,14 @@ export const ACCESS = Object.freeze({
   technicalAccounts: { allPermissions: [PERMISSIONS.technicalPortalAccess, PERMISSIONS.userAccountsView] },
   technicalAccountsManage: { allPermissions: [PERMISSIONS.technicalPortalAccess, PERMISSIONS.userAccountsManage] },
   technicalActivity: { allPermissions: [PERMISSIONS.technicalPortalAccess, PERMISSIONS.systemActivityView] },
+  ministryPortal: { allRoles: [ROLES.ministryObserver], assignedPermissions: [PERMISSIONS.ministryPortalAccess] },
+  ministryDashboard: ministry(PERMISSIONS.ministryDashboardView),
+  ministryDeans: ministry(PERMISSIONS.ministryDeansView),
+  ministryStudents: ministry(PERMISSIONS.ministryStudentsView),
+  ministryColleges: ministry(PERMISSIONS.ministryCollegesView),
+  ministryCourses: ministry(PERMISSIONS.ministryCoursesView),
+  ministryFaculty: ministry(PERMISSIONS.ministryFacultyView),
+  ministryLeadership: ministry(PERMISSIONS.ministryLeadershipView),
 })
 
 export function getIdentity() {
@@ -125,6 +147,10 @@ export function canAccess({ permissions = [], allPermissions = [], roles = [], a
 }
 export function landingRoute(user) {
   if (!user) return '/login'
+
+  // The ministry account is confined to its read-only portal on the server; it lands there first.
+  // No existing account holds this role, so the precedence of existing roles is unchanged.
+  if (hasRole(ROLES.ministryObserver, user)) return canAccess(ACCESS.ministryPortal, user) ? '/ministry' : '/forbidden'
 
   // Portal roles take precedence over permission-based staff landing pages.
   if (hasRole(ROLES.dean, user)) return '/dean'

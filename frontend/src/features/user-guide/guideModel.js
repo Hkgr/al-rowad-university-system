@@ -182,6 +182,7 @@ const PORTAL_PREFIXES = Object.freeze({
   vpScientific: '/vp/scientific/',
   vpAdministrative: '/vp/administrative/',
   technical: '/technical/',
+  ministry: '/ministry',
 })
 
 /** Pages of this portal the viewer can open — offered as suggestions for «صفحة حدوث المشكلة». */
