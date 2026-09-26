@@ -28,3 +28,12 @@ test('root and wildcard use the landing resolver and protected routes still reje
   assert.match(source, /if \(!identity\) return <Navigate to="\/login" replace \/>/)
   assert.match(source, /return allowed \? children : <Navigate to="\/forbidden" replace \/>/)
 })
+
+test('forbidden page offers logout without a home link that loops back to forbidden', async () => {
+  const source = await readFile(new URL('../src/features/auth/pages/ForbiddenPage.jsx', import.meta.url), 'utf8')
+
+  assert.match(source, /clearIdentity\(\)/)
+  assert.match(source, /navigate\('\/login', \{ replace: true \}\)/)
+  assert.match(source, /home !== '\/forbidden' && home !== '\/login'/)
+  assert.match(source, /<button type="button" onClick=\{logout\}[^>]*>تسجيل الخروج<\/button>/)
+})
