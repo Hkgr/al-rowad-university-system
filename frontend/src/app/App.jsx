@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { createBrowserRouter, createRoutesFromElements, RouterProvider, Route, Navigate } from 'react-router-dom'
 
 import DashboardLayout from '../components/layout/DashboardLayout'
+import PortalReportsPage from '../features/portal-reports/PortalReportsPage'
+import { reportAccess, REPORT_PATHS } from '../features/portal-reports/reports'
 
 // ── Auth ────────────────────────────────────────────────────────────────────
 import LoginPage from '../features/auth/pages/LoginPage'
@@ -275,7 +277,6 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/exam-board/deprivation"   element={protect(<DeprivationPage />, { permissions: ['exams.manage'] })} />
           <Route path="/exam-board/supplementary" element={protect(<SupplementaryExamsPage />, { permissions: [PERMISSIONS.supplementaryExamsRegistrationsView] })} />
           <Route path="/exam-board/supplementary-grades" element={protect(<SupplementaryGradesPage />, { allRoles: ['exam_officer'], assignedPermissions: ['supplementary_exams.grades.review'] })} />
-          <Route path="/exam-board/results"       element={protect(<ExamPlaceholder title="النتائج والتقارير" en="Results" />, { permissions: ['grades.view'] })} />
           <Route path="/exam-board/courses"             element={protect(<CoursesPage />, ACCESS.courseManagement)} />
           <Route path="/exam-board/course-offerings"    element={protect(<CourseOfferingsPage />, ACCESS.courseManagement)} />
           <Route path="/exam-board/course-table"        element={protect(<CourseTablePage />, ACCESS.courseManagement)} />
@@ -360,7 +361,7 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/dean/registration-modifications/:id" element={<DeanRegistrationModificationDetail />} />
           <Route path="/dean/registration-replacements/:id" element={<DeanRegistrationReplacementDetail />} />
           <Route path="/dean/supplementary-exams" element={protect(<DeanSupplementaryExams />, { allRoles: ['dean'], assignedPermissions: ['supplementary_exams.offerings.view'] })} />
-          <Route path="/dean/reports"       element={<DeanReports />} />
+          <Route path="/dean/reports"       element={protect(<DeanReports />, reportAccess('dean'))} />
           <Route path="/dean/calendar"      element={<DeanCalendar />} />
           <Route path="/dean/guide"         element={<UserGuidePage guideId="dean" />} />
         </Route>
@@ -426,7 +427,7 @@ const router = createBrowserRouter(createRoutesFromElements(
 
         <Route element={<ProtectedRoute {...presidentAccess()}><DashboardLayout nav={presidentNav} appTitle="رئيس جامعة الروّاد للعلوم والتقانة" /></ProtectedRoute>}>
           <Route path="/president" element={protect(<PresidentHome />, presidentAccess('dashboard'))} />
-          <Route path="/president/reports" element={protect(<PresidentHome reports />, presidentAccess('reports'))} />
+          <Route path="/president/reports" element={protect(<PortalReportsPage portal="president" />, reportAccess('president'))} />
           <Route path="/president/followup" element={protect(<PresidentFollowup />, presidentAccess('followup'))} />
           <Route path="/president/followup/:source" element={protect(<PresidentFollowup />, presidentAccess('followup'))} />
           <Route path="/president/followup/:source/:id" element={protect(<PresidentFollowup />, presidentAccess('followup'))} />
@@ -435,6 +436,8 @@ const router = createBrowserRouter(createRoutesFromElements(
             <Route path={`/president/${resource}/:id`} element={protect(<PresidentDetail resource={resource} />, presidentAccess(config[1]))} />
           </Route>)}
         </Route>
+
+        {Object.entries({ 'student-affairs':studentAffairsNav, admissions:examBoardNav, 'exam-board':examBoardNav, professor:professorNav, student:studentNav, hr:hrNav, 'academic-structure':academicStructureNav, technical:technicalNav, ministry:ministryNav }).map(([portal,nav]) => <Route key={'reports-'+portal} element={<ProtectedRoute {...reportAccess(portal)}><DashboardLayout nav={nav} appTitle="التقارير" /></ProtectedRoute>}><Route path={REPORT_PATHS[portal]} element={<PortalReportsPage portal={portal}/>} /></Route>)}
 
         {/* ── وزارة التربية والتعليم: قراءة فقط؛ الخادم يحصر حساب الوزارة في /api/v1/ministry ── */}
         <Route

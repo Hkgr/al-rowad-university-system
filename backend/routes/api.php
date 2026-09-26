@@ -857,6 +857,13 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     | Ministry of Education follow-up portal: read-only, GET only. Each route carries its own
     | ministry_portal.* permission, checked server-side (RequireMinistryPortal); no write route exists.
     */
+    // Read-only role reports: every report rechecks its own source permission and actual scope.
+    Route::get('portal-reports/{portal}', [\App\Http\Controllers\Api\PortalReportController::class, 'definitions']);
+    Route::get('portal-reports/{portal}/{report}', [\App\Http\Controllers\Api\PortalReportController::class, 'show']);
+    // Ministry identities are intentionally confined to their existing URL namespace.
+    Route::get('ministry/reports', [\App\Http\Controllers\Api\PortalReportController::class, 'definitions'])->defaults('portal','ministry');
+    Route::get('ministry/reports/{report}', [\App\Http\Controllers\Api\PortalReportController::class, 'show'])->defaults('portal','ministry');
+
     // University president: independent assigned read permissions and actual PRES scope.
     Route::prefix('president')->controller(\App\Http\Controllers\Api\PresidentPortalController::class)->group(function (): void {
         $guard = fn ($section) => \App\Http\Middleware\RequirePresidentPortal::class.':'.$section;

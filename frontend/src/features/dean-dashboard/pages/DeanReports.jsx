@@ -1,5 +1,5 @@
-import DeanPlaceholder from '../components/DeanPlaceholder'
+import PortalReportsPage from '../../portal-reports/PortalReportsPage'
 
 export default function DeanReports() {
-  return <DeanPlaceholder title="التقارير" description="ستتوفر تقارير الكلية في مرحلة لاحقة." />
+  return <PortalReportsPage portal="dean" />
 }

@@ -1,5 +1,6 @@
 import { PERMISSIONS, ROLES } from '../../auth/auth.js'
 import { node, branch, source, step } from './helpers.js'
+import { reportAccess } from '../../portal-reports/reports.js'
 
 const D = 'frontend/src/features/dean-dashboard/'
 const GOV_VIEW = { allRoles: [ROLES.dean], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView] }
@@ -10,6 +11,10 @@ export default {
   title: 'بوابة عميد الكلية',
   intro: 'تتابع من هذه البوابة طلاب الكلية ومدرسيها وموادها، وتراجع طلبات تسجيل الطلاب، وتجهّز طروحات الفصل وترسلها للاعتماد العلمي، وتقترح تكليفات التدريس، وتدير الطروحات التكميلية ضمن كليتك.',
   sections: [
+    {
+      id: 'reports', title: 'تقارير الكلية', access: reportAccess('dean'),
+      tasks: [{id:'college-reports',title:'عرض تقرير الكلية',summary:'اختر الطلاب أو المدرسين أو الطروحات أو التسجيلات أو النتائج الرسمية. الفترة متاحة للمؤشرات المرتبطة بالطرح فقط.',access:reportAccess('dean'),link:{to:'/dean/reports'},steps:[step('اختر التقرير والفترة، ثم اضغط عدد الحالة لعرض قائمتها المطابقة.')],sources:[source('frontend/src/features/portal-reports/PortalReportsPage.jsx','ماذا تريد أن تعرف؟','إجمالي السجلات:')]}],
+    },
     {
       id: 'requests',
       title: 'طلبات تسجيل الطلاب',
@@ -167,7 +172,6 @@ export default {
     },
   ],
   unavailable: [
-    { id: 'reports', title: 'تقارير الكلية', text: 'صفحة «التقارير» تعرض حاليًا أنها ستتوفر في مرحلة لاحقة.', source: source(D + 'pages/DeanReports.jsx', 'ستتوفر تقارير الكلية في مرحلة لاحقة') },
     { id: 'closure-approval', title: 'إكمال اعتماد إغلاق التسجيل', text: 'يمكنك إرسال طلب الإغلاق ومتابعة حالته، لكن شاشات مراجعة النائبين لطلبات الإغلاق غير مفعّلة حاليًا في الواجهة.', access: { permissions: [PERMISSIONS.closureRequest] } },
   ],
   troubleshooting: [

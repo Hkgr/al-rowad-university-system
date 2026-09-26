@@ -30,7 +30,7 @@ export function PageHeader({ title, en, subtitle, back, children }) {
   )
 }
 
-export function StatePanel({ state, error, onRetry, emptyTitle = 'لا توجد بيانات مسجلة', emptyHint }) {
+export function StatePanel({ state, error, onRetry, emptyTitle = 'لا توجد بيانات مسجلة', emptyHint, message }) {
   if (state === 'loading') {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-16 text-primary-light text-[14px] font-medium bg-white rounded-[16px] border border-primary/12" role="status">
@@ -44,7 +44,7 @@ export function StatePanel({ state, error, onRetry, emptyTitle = 'لا توجد 
     return (
       <div className={`flex flex-col items-center gap-3 py-12 px-6 rounded-[16px] border text-center ${state === 'forbidden' ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-red-50 border-red-200 text-red-700'}`} role="alert" dir="rtl">
         <Icon className="text-[26px]" />
-        <p className="text-[14px] font-bold">{errorMessage(error)}</p>
+        <p className="text-[14px] font-bold">{message || errorMessage(error)}</p>
         {onRetry && state === 'error' && (
           <button type="button" onClick={onRetry} className="flex items-center gap-2 px-4 py-2 rounded-[10px] border border-red-300 bg-white text-[13px] font-bold hover:bg-red-100">
             <FaSyncAlt className="text-[11px]" /> إعادة المحاولة
@@ -153,12 +153,13 @@ export function MiniTable({ columns, rows, rowKey, empty = 'لا توجد سجل
   )
 }
 
-export function FilterSelect({ label, value, onChange, options, placeholder = 'الكل', minWidth = 170 }) {
+export function FilterSelect({ label, value, onChange, options, placeholder = 'الكل', minWidth = 170, disabled = false }) {
   return (
-    <label className="flex flex-col gap-1 text-[11.5px] font-bold text-text-light" dir="rtl">
+    <label className={`flex flex-col gap-1 text-[11.5px] font-bold text-text-light ${disabled ? 'opacity-70' : ''}`} dir="rtl">
       {label}
       <select
-        className="py-2 px-3 border-[1.5px] border-primary/20 rounded-[10px] bg-white text-[13px] text-text-dark outline-none focus:border-primary"
+        disabled={disabled}
+        className="py-2 px-3 border-[1.5px] border-primary/20 rounded-[10px] bg-white text-[13px] text-text-dark outline-none focus:border-primary disabled:cursor-not-allowed disabled:bg-black/[0.03]"
         style={{ minWidth }} value={value} onChange={event => onChange(event.target.value)}
       >
         <option value="">{placeholder}</option>

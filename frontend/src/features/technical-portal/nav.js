@@ -3,7 +3,10 @@ import { ACCESS } from '../auth/auth'
 import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
 
 // بوابة المكتب التقني.
+import { reportNav } from '../portal-reports/reportNav'
+
 const technicalNav = [
+  reportNav('technical'),
   {
     label: 'المكتب التقني',
     items: [
