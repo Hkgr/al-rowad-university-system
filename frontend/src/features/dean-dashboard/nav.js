@@ -2,6 +2,7 @@ import {
   FaBook, FaCalendarAlt, FaChalkboardTeacher, FaChartBar, FaClipboardCheck, FaClipboardList, FaHome, FaLockOpen, FaUsers, FaQuestionCircle,
 } from 'react-icons/fa'
 import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
+import { reportAccess } from '../portal-reports/reports'
 
 const deanNav = [
   {
@@ -24,7 +25,7 @@ const deanNav = [
   {
     label: 'المتابعة',
     items: [
-      { to: '/dean/reports', Icon: FaChartBar, ar: 'التقارير', en: 'Reports' },
+      { to: '/dean/reports', Icon: FaChartBar, ar: 'التقارير', en: 'Reports', ...reportAccess('dean') },
       { to: '/dean/calendar', Icon: FaCalendarAlt, ar: 'التقويم', en: 'Calendar' },
     ],
   },

@@ -37,6 +37,13 @@ final class MinistryDashboardService
         ];
     }
 
+    /** Shared read projection: reports need the trends, not the dashboard's unrelated counts. */
+    public function trendReport(array $input): array
+    {
+        [$scope] = $this->resolveScope($input);
+        return ['trends' => $this->trends($scope), 'unavailable' => self::UNAVAILABLE];
+    }
+
     /** Indicators the current data cannot support with confidence; shown as such, never as numbers. */
     public const UNAVAILABLE = [
         ['code' => 'dropout_rate', 'label' => 'نسبة التسرب', 'reason' => 'لا يحفظ النظام سجلًا تاريخيًا لتغيّرات حالة الطالب؛ تتوفر الحالة الحالية فقط.'],

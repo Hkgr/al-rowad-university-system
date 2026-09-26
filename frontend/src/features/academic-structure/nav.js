@@ -3,7 +3,10 @@ import {
 } from 'react-icons/fa'
 import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
 
+import { reportNav } from '../portal-reports/reportNav'
+
 const academicStructureNav = [
+  reportNav('academic-structure'),
   {
     label: 'الهيكل الأكاديمي',
     items: [

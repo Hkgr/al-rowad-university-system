@@ -1,12 +1,16 @@
 import {
   FaHome, FaClipboardList, FaCheckDouble, FaExclamationTriangle,
-  FaCalendarAlt, FaChartBar, FaUsers, FaCog, FaBook,
+  FaCalendarAlt, FaUsers, FaCog, FaBook,
   FaLockOpen, FaBookOpen, FaTable, FaQuestionCircle,
 } from 'react-icons/fa'
 import { ACCESS, PERMISSIONS } from '../auth/auth'
 import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
 
+import { reportNav } from '../portal-reports/reportNav'
+
 const examBoardNav = [
+  reportNav('exam-board'),
+  reportNav('admissions'),
   { label: 'إدخال العلامات', items: [{ to: '/exam-board/manual-grade-entry', Icon: FaClipboardList, ar: 'إدخال العلامات اليدوي', en: 'Manual grade entry', ...ACCESS.manualGradeEntry }] },
   {
     label: 'هيئة الامتحانات',
@@ -18,7 +22,6 @@ const examBoardNav = [
       { to: '/exam-board/deprivation',      Icon: FaExclamationTriangle, ar: 'الحضور والحرمان',      en: 'Deprivation', permissions: ['exams.manage'] },
       { to: '/exam-board/supplementary',    Icon: FaCalendarAlt,         ar: 'الامتحانات التكميلية', en: 'Supplementary', permissions: [PERMISSIONS.supplementaryExamsRegistrationsView] },
       { to: '/exam-board/supplementary-grades', Icon: FaCheckDouble, ar: 'علامات الامتحانات التكميلية', en: 'Supplementary Grades', allRoles: ['exam_officer'], assignedPermissions: ['supplementary_exams.grades.review'] },
-      { to: '/exam-board/results',          Icon: FaChartBar,            ar: 'النتائج والتقارير',    en: 'Results', permissions: ['grades.view'] },
     ],
   },
   {

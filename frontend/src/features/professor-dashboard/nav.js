@@ -1,7 +1,10 @@
 import { FaHome, FaCalendarAlt, FaCalendarCheck, FaEdit, FaQuestionCircle } from 'react-icons/fa'
 import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
 
+import { reportNav } from '../portal-reports/reportNav'
+
 const professorNav = [
+  reportNav('professor'),
   {
     label: 'بوابة الأستاذ',
     items: [

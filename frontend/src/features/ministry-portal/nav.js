@@ -3,7 +3,10 @@ import { ACCESS } from '../auth/auth'
 import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
 
 // بوابة وزارة التربية والتعليم: اطلاع للقراءة فقط، كل عنصر خلف صلاحيته الخاصة.
+import { reportNav } from '../portal-reports/reportNav'
+
 const ministryNav = [
+  reportNav('ministry'),
   {
     label: 'متابعة الجامعة',
     items: [

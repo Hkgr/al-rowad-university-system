@@ -129,12 +129,13 @@ export function hasActualUniversityScope(user = getIdentity()) {
 export function can(permission, user = getIdentity()) { return hasPermission(permission, user) }
 export function canAny(permissions, user = getIdentity()) { return permissions.some(permission => can(permission, user)) }
 export function canAll(permissions, user = getIdentity()) { return permissions.every(permission => can(permission, user)) }
-export function canAccess({ permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], actualUniversityScope = false, actualAcademicScope = false, studentIdentity = false, employeeIdentity = false, anyAccess = [] } = {}, user = getIdentity()) {
+export function canAccess({ permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], actualUniversityScope = false, actualAcademicScope = false, actualScopeTypes = [], studentIdentity = false, employeeIdentity = false, anyAccess = [] } = {}, user = getIdentity()) {
   if (!user) return false
   if (anyAccess.length > 0) return anyAccess.some(access => canAccess(access, user))
   if (studentIdentity && !user.student_id) return false
   if (employeeIdentity && !user.employee_id) return false
   if (actualUniversityScope && !hasActualUniversityScope(user)) return false
+  if (actualScopeTypes.length && !user.access_scopes?.some(scope => actualScopeTypes.includes(scope?.type) && Number(scope.id) > 0)) return false
   if (actualAcademicScope && !user.access_scopes?.some(scope => ['university', 'college', 'department', 'program'].includes(scope?.type) && Number(scope.id) > 0)) return false
   const hasEveryRequiredPermission = allPermissions.every(permission => hasPermission(permission, user))
   const hasEveryRequiredRole = allRoles.every(role => hasRole(role, user))

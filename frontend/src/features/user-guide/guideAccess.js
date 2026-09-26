@@ -3,6 +3,7 @@
 // same sidebar; ROUTE_ACCESS mirrors App.jsx so guide links never point to a page
 // the viewer cannot open.
 import { ACCESS, PERMISSIONS, ROLES } from '../auth/auth.js'
+import { reportAccess } from '../portal-reports/reports.js'
 import { CATALOG_ACCESS } from '../scientific-courses/catalog.js'
 import { PROGRAM_ACCESS } from '../scientific-programs/programs.js'
 import { reportAccessForOffice } from '../executive-reports/access.js'
@@ -96,6 +97,7 @@ export const ROUTE_ACCESS = Object.freeze({
   '/dean/students': [G.dean],
   '/dean/teachers': [G.dean],
   '/dean/courses': [G.dean],
+  '/dean/reports': [G.dean, reportAccess('dean')],
   '/dean/registration-offerings': [G.dean, { allRoles: [ROLES.dean], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView] }],
   '/dean/registration-requests': [G.dean],
   '/dean/supplementary-exams': [G.dean, { allRoles: ['dean'], assignedPermissions: ['supplementary_exams.offerings.view'] }],
