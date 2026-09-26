@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { canAccess } from '../src/features/auth/auth.js'
-import { reportAccess, REPORT_PATHS, reportEndpoint, reportQuery, changeReportFilter, reportLabel } from '../src/features/portal-reports/reports.js'
+import { reportAccess, REPORT_PATHS, reportEndpoint, reportQuery, changeReportFilter, reportLabel, reportSourceLabel } from '../src/features/portal-reports/reports.js'
 
 test('role reports require assigned permissions and the actual source scope, not virtual admin grants',()=>{
   const dean={roles:['dean'],permissions:['students.view'],access_scopes:[{type:'college',id:1}]}
@@ -19,6 +19,8 @@ test('role reports require assigned permissions and the actual source scope, not
 test('period, scope and pagination state are allowlisted and dependent filters clear',()=>{
   const params=new URLSearchParams('academic_year_id=10&semester_id=2&college_id=1&program_id=2&page=3&category=active&student_id=99')
   assert.equal(reportQuery(params,{period:false,scoped:false}),'page=3&category=active')
+  assert.equal(reportQuery(new URLSearchParams('semester_id=2'),{period:true,scoped:true}),'')
+  assert.ok(reportQuery(params,{period:true,scoped:true}).includes('semester_id=2'))
   assert.ok(!reportQuery(params,{period:true,scoped:true}).includes('student_id'))
   assert.equal(changeReportFilter(params,'academic_year_id','11').has('semester_id'),false)
   assert.equal(changeReportFilter(params,'college_id','3').has('program_id'),false)
@@ -36,6 +38,10 @@ test('all implemented shells receive guarded report navigation; no link director
   assert.match(app,/PortalReportsPage portal="president"/)
   assert.match(page,/response\.meta\.last_page/);assert.match(page,/response\.generated_at/)
   assert.match(page,/response\.total/);assert.match(page,/response\.groups/)
+  assert.match(page,/لا يملك حسابك صلاحية هذا التقرير/)
+  assert.match(page,/reportSourceLabel/)
+  assert.equal(reportSourceLabel.activity,'أكواد النشاط المرئية')
+  assert.doesNotMatch(page,/response\.source/)
   assert.match(page,/identity=JSON\.stringify\(getIdentity\(\)\)/)
   assert.doesNotMatch(page,/method:\s*['"](?:POST|PUT|DELETE|PATCH)|\.reduce\(/)
   const hook=await source('features/ministry-portal/lib/useMinistryResource.js')

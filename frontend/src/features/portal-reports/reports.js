@@ -8,7 +8,8 @@ export function reportAccess(portal) {
 }
 export const reportEndpoint = portal => portal==='ministry'?'/v1/ministry/reports':`/v1/portal-reports/${portal}`
 export function reportQuery(params, definition) {
-  return new URLSearchParams([...params].filter(([key,v])=>v!==''&&(['category','search','page','per_page'].includes(key)||(definition?.period&&['academic_year_id','semester_id'].includes(key))||(definition?.scoped&&['college_id','program_id'].includes(key))))).toString()
+  const yearSelected = params.get('academic_year_id')
+  return new URLSearchParams([...params].filter(([key,v])=>v!==''&&(['category','search','page','per_page'].includes(key)||(definition?.period&&(key==='academic_year_id'||(key==='semester_id'&&yearSelected)))||(definition?.scoped&&['college_id','program_id'].includes(key))))).toString()
 }
 export function changeReportFilter(params,key,value) {
   const next=new URLSearchParams(params);next.delete('page')
@@ -19,6 +20,7 @@ export function changeReportFilter(params,key,value) {
   return next
 }
 export const reportLabel = value => value==null?'غير محدد':({draft:'مسودة',submitted:'مرسل',approved:'معتمد',returned:'معاد',returned_for_correction:'معاد للتصحيح',registered:'مسجل',completed:'مكتمل',active:'فعال',inactive:'غير فعال',disabled:'معطل',open:'مفتوح',closed:'مغلق',passed:'ناجح',failed:'راسب',deprived:'محروم',graduated:'متخرج',archived:'مؤرشف',pending:'قيد الانتظار',accepted:'مقبول',rejected:'مرفوض',theoretical:'نظري',practical:'عملي',present:'حاضر',absent:'غائب',expired:'منتهٍ',superseded:'مستبدل',frozen:'مجمّد',withdrawn:'منسحب',cancelled:'ملغى',dropped:'مسقط'})[value]??String(value)
+export const reportSourceLabel = { students:'الطلاب وحالاتهم الحالية', offerings:'الطروحات الأكاديمية', registrations:'تسجيلات المقررات الحالية', results:'النتائج الرسمية المعتمدة', parts:'أجزاء العلامات المطلوبة', requests:'طلبات التسجيل الأولية', progression:'قرارات الترفيع', graduation:'قرارات التخرج', admissions:'طلبات القبول', deprivation:'حالات الحرمان المسجلة', sessions:'جلسات الحضور المسجلة', attendance:'قيود الحضور المسجلة', programs:'البرامج الأكاديمية الحالية', employees:'الموظفون ووحداتهم الحالية', faculty:'المدرسون وانتماؤهم الحالي', supplementary:'تسجيلات التكميلي', accounts:'حالات الحسابات', activity:'أكواد النشاط المرئية', academic:'الكشف والتقدم الرسميان للحساب', trends:'سلاسل الالتحاق والتخرج والنتائج الرسمية' }
 
 // Only record-detail routes already present in these same authorized shells.
 export function reportDetailLink(portal,report,id) {

@@ -13,7 +13,7 @@ export default {
   sections: [
     {
       id: 'reports', title: 'تقارير الكلية', access: reportAccess('dean'),
-      tasks: [{id:'college-reports',title:'عرض تقرير الكلية',summary:'اختر الطلاب أو المدرسين أو الطروحات أو التسجيلات أو النتائج الرسمية. الفترة متاحة للمؤشرات المرتبطة بالطرح فقط.',access:reportAccess('dean'),link:{to:'/dean/reports'},steps:[step('اختر التقرير والفترة، ثم اضغط عدد الحالة لعرض قائمتها المطابقة.')],sources:[source('frontend/src/features/portal-reports/PortalReportsPage.jsx','ماذا تريد أن تعرف؟','إجمالي القائمة المعروضة:')]}],
+      tasks: [{id:'college-reports',title:'عرض تقرير الكلية',summary:'اختر الطلاب أو المدرسين أو الطروحات أو التسجيلات أو النتائج الرسمية. الفترة متاحة للمؤشرات المرتبطة بالطرح فقط.',access:reportAccess('dean'),link:{to:'/dean/reports'},steps:[step('اختر التقرير والفترة، ثم اضغط عدد الحالة لعرض قائمتها المطابقة.')],sources:[source('frontend/src/features/portal-reports/PortalReportsPage.jsx','ماذا تريد أن تعرف؟','إجمالي السجلات:')]}],
     },
     {
       id: 'requests',

@@ -64,7 +64,10 @@ final class PortalReportsTest extends TestCase
             $t->text('description');
             $t->timestamps();
         });
-        DB::table('user_activity_logs')->insert(['module_code' => 'users_permissions', 'action_code' => 'account.created', 'description' => 'SECRET NOT FOR REPORTS', 'created_at' => now()]);
+        DB::table('user_activity_logs')->insert([
+            ['module_code' => 'users_permissions', 'action_code' => 'account.created', 'description' => 'SECRET NOT FOR REPORTS', 'created_at' => now(), 'updated_at' => now()],
+            ['module_code' => 'hidden_secret_module', 'action_code' => 'SHOULD_NOT_LEAK', 'description' => 'RAW SECRET DESCRIPTION', 'created_at' => now(), 'updated_at' => now()],
+        ]);
         Schema::table('student_course_registrations', fn (Blueprint $t) => $t->integer('result_status_id')->nullable());
         Schema::create('attendance_sessions', function (Blueprint $t) {
             $t->increments('attendance_session_id');
@@ -121,11 +124,22 @@ final class PortalReportsTest extends TestCase
         foreach (['students', 'offerings', 'registrations', 'results'] as $r) {
             $d = $this->getJson('/api/v1/portal-reports/dean/'.$r.'?per_page=1')->assertOk()->json('data');
             $this->assertSame($d['total'], $d['meta']['total']);
+            $this->assertSame((int) $d['total'], array_sum(array_map('intval', array_column($d['groups'], 'total'))));
             $this->assertLessThanOrEqual(1, count($d['rows']));
             foreach ($d['groups'] as $g) {
                 $this->getJson('/api/v1/portal-reports/dean/'.$r.'?category='.urlencode($g['category']))->assertOk()->assertJsonPath('data.meta.total', $g['total']);
             }
         }
+        $students = $this->getJson('/api/v1/portal-reports/dean/students')->assertOk();
+        $students->assertJsonPath('data.total', 3);
+        $body = $students->getContent();
+        $this->assertStringNotContainsString('S-004', $body);
+        $this->assertStringNotContainsString('S-008', $body);
+        $this->assertStringNotContainsString('الأم السرية', $body);
+        $this->assertStringNotContainsString('0999000', $body);
+        $this->assertStringNotContainsString('عنوان سري', $body);
+        $results = $this->getJson('/api/v1/portal-reports/dean/results')->assertOk()->getContent();
+        $this->assertStringNotContainsString('ملاحظة داخلية', $results);
         foreach (DB::getQueryLog() as $q) {
             $this->assertDoesNotMatchRegularExpression('/^\s*(insert|update|delete|alter)\b/i', $q['query']);
         }
@@ -147,6 +161,10 @@ final class PortalReportsTest extends TestCase
         $this->getJson('/api/v1/portal-reports/dean/results')->assertForbidden();
         $this->postJson('/api/v1/portal-reports/dean/students')->assertStatus(405);
         $this->getJson('/api/v1/portal-reports/dean/students?student_id=2')->assertUnprocessable();
+        $this->actor('student', ['grades.view', 'registration.view', 'attendance.view'], [], 1);
+        $this->getJson('/api/v1/portal-reports/dean/students')->assertForbidden();
+        $this->getJson('/api/v1/portal-reports/professor/offerings')->assertForbidden();
+        $this->getJson('/api/v1/portal-reports/student/registrations?student_id=4')->assertUnprocessable();
     }
 
     public function test_parts_missing_approval_are_distinct_drafts_and_results_require_latest_approval(): void
@@ -187,8 +205,13 @@ final class PortalReportsTest extends TestCase
         $this->actor('technical_team', ['technical_portal.access', 'system_activity.view', 'user_accounts.view'], []);
         $json = $this->getJson('/api/v1/portal-reports/technical/activity')->assertOk()->getContent();
         $this->assertStringNotContainsString('SECRET', $json);
+        $this->assertStringNotContainsString('SHOULD_NOT_LEAK', $json);
         $this->assertStringNotContainsString('description', $json);
-        $this->getJson('/api/v1/portal-reports/technical/accounts')->assertOk();
+        $accounts = $this->getJson('/api/v1/portal-reports/technical/accounts')->assertOk();
+        $accounts->assertJsonPath('data.rows.0.label', 'active');
+        $accountBody = $accounts->getContent();
+        $this->assertStringNotContainsString('password', $accountBody);
+        $this->assertStringNotContainsString('@example.invalid', $accountBody);
     }
 
     public function test_each_remaining_portal_has_real_read_projection_and_missing_permission_denial(): void
@@ -202,7 +225,11 @@ final class PortalReportsTest extends TestCase
         ] as [$portal,$role,$permissions,$report]) {
             $u = $this->actor($role, $permissions, ['university', 91]);
             $this->getJson('/api/v1/portal-reports/'.$portal)->assertOk();
-            $this->getJson('/api/v1/portal-reports/'.$portal.'/'.$report)->assertOk();
+            $payload = $this->getJson('/api/v1/portal-reports/'.$portal.'/'.$report)->assertOk()->json('data');
+            if ($portal === 'hr') {
+                $this->assertNotEmpty($payload['rows']);
+                $this->assertTrue(collect($payload['rows'])->every(fn ($row) => $row['category'] === 'active'));
+            }
             DB::table('user_access_scopes')->where('user_id', $u->user_id)->update(['is_active' => 0]);
             $this->getJson('/api/v1/portal-reports/'.$portal.'/'.$report)->assertForbidden();
         }
@@ -210,13 +237,15 @@ final class PortalReportsTest extends TestCase
 
     public function test_professor_cannot_use_university_scope_to_read_unassigned_offerings(): void
     {
-        $u = $this->actor('doctor_instructor', ['grades.manage'], ['university', 91]);
+        $u = $this->actor('doctor_instructor', ['grades.manage', 'attendance.manage'], ['university', 91]);
         DB::table('users')->where('user_id', $u->user_id)->update(['employee_id' => 2]);
         $this->app['auth']->forgetGuards();
         Sanctum::actingAs(User::findOrFail($u->user_id));
         DB::table('course_offering_instructors')->insert(['course_offering_id' => 5, 'faculty_member_id' => 2, 'instructor_role' => 'theoretical', 'is_active' => 1]);
         $this->getJson('/api/v1/portal-reports/professor/offerings')->assertOk()->assertJsonPath('data.total', 1)->assertJsonPath('data.rows.0.id', 5);
         $this->getJson('/api/v1/portal-reports/professor/registrations')->assertOk();
+        $this->getJson('/api/v1/portal-reports/professor/attendance')->assertOk()->assertJsonPath('data.total', 0);
+        $this->getJson('/api/v1/portal-reports/professor/sessions')->assertOk()->assertJsonPath('data.total', 0);
     }
 
     public function test_personal_report_runs_canonical_snapshot_and_trends_do_not_require_a_current_year(): void

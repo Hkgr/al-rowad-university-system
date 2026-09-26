@@ -163,7 +163,7 @@ final class PortalReportService
                 ->selectRaw("fm.faculty_member_id as id, fm.academic_rank as label, CASE WHEN fm.is_active=1 THEN 'active' ELSE 'inactive' END as category");
         }
         if ($r === 'employees') {
-            if (! Schema::hasColumns('employees', ['employee_id', 'organizational_unit_id', 'employee_status_id']) || ! Schema::hasColumns('employee_statuses', ['employee_status_id', 'status_name'])) {
+            if (! Schema::hasColumns('employees', ['employee_id', 'organizational_unit_id', 'employee_status_id']) || ! Schema::hasColumns('employee_statuses', ['employee_status_id', 'status_name', 'status_code'])) {
                 return null;
             }
             $q = DB::table('employees as e')->leftJoin('employee_statuses as st', 'st.employee_status_id', '=', 'e.employee_status_id')->leftJoin('organizational_units as ou', 'ou.organizational_unit_id', '=', 'e.organizational_unit_id');
@@ -171,10 +171,10 @@ final class PortalReportService
                 $q->whereIn('e.organizational_unit_id', College::query()->whereIn('college_id', $this->collegeIds($u))->select('organizational_unit_id'));
             }
 
-            return $q->selectRaw("e.employee_id as id, COALESCE(ou.unit_name,'غير محدد') as label, COALESCE(st.status_name,'غير محدد') as category");
+            return $q->selectRaw("e.employee_id as id, COALESCE(ou.unit_name,'غير محدد') as label, COALESCE(NULLIF(st.status_name, ''), st.status_code, 'غير محدد') as category");
         }
         if ($r === 'accounts') {
-            return DB::table('users as u')->join('account_statuses as st', 'st.account_status_id', '=', 'u.account_status_id')->selectRaw('u.user_id as id, st.status_name as label, st.status_code as category');
+            return DB::table('users as u')->join('account_statuses as st', 'st.account_status_id', '=', 'u.account_status_id')->selectRaw("u.user_id as id, COALESCE(NULLIF(st.status_name, ''), st.status_code) as label, st.status_code as category");
         }
         if ($r === 'activity') {
             if (! Schema::hasColumns('user_activity_logs', ['activity_log_id', 'module_code', 'action_code', 'created_at'])) {
