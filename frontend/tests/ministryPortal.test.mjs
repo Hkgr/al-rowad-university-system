@@ -20,14 +20,14 @@ test('the ministry account lands on its portal; every existing landing is unchan
   assert.equal(landingRoute({ roles: ['dean'], permissions: [] }), '/dean')
   assert.equal(landingRoute({ roles: ['vice_president_scientific'], permissions: [] }), '/vp/scientific')
   assert.equal(landingRoute({ roles: ['technical_team'], permissions: ['technical_portal.access'] }), '/technical')
-  assert.equal(landingRoute({ roles: ['super_admin'], permissions: [] }), '/exam-board')
+  assert.equal(landingRoute({ roles: ['super_admin'], permissions: [] }), '/technical')
   assert.equal(landingRoute({ roles: [], permissions: ['hr.view'] }), '/hr')
 })
 
-test('portal access needs the ministry role AND each assigned permission; super_admin gets no bypass', () => {
+test('ordinary portal access needs ministry role AND assigned permission; administrator has central authority', () => {
   for (const page of PAGES) {
     assert.equal(canAccess(ACCESS[page], ministry), true, page)
-    assert.equal(canAccess(ACCESS[page], { roles: ['super_admin'], permissions: [] }), false, `${page} super_admin`)
+    assert.equal(canAccess(ACCESS[page], { roles: ['super_admin'], permissions: [] }), true, `${page} super_admin`)
     assert.equal(canAccess(ACCESS[page], { roles: ['dean'], permissions: ALL }), false, `${page} other role`)
   }
   const studentsOnly = { roles: ['ministry_observer'], permissions: ['ministry_portal.access', 'ministry_portal.students.view'] }

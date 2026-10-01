@@ -11,6 +11,7 @@ final class ExecutiveReportAccess
 
     public function allows(?User $actor): bool
     {
+        if ($actor?->isSuperAdmin()) return true;
         if ($actor === null || $actor->accountStatus?->status_code !== 'active' || ! $this->scope->hasActualUniversityScope($actor)) return false;
         $roles = $actor->effectiveRoles();
         $permissions = $actor->effectivePermissions();

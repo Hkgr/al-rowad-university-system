@@ -1296,7 +1296,7 @@ class SupplementaryExamReconciliationService
     private function assertAuthorized(User $actor): void
     {
         if (! $actor->isExamOfficer()
-            || ! $actor->effectivePermissions()->contains(GradingGovernance::REVIEW)) {
+            || ! $actor->hasPermission(GradingGovernance::REVIEW)) {
             $this->fail(
                 'An actual Exam Officer role and assigned supplementary review permission are required.',
                 'supplementary_reconciliation_forbidden',

@@ -31,7 +31,8 @@ test('confirmed save updates only its visible summary and leaves pagination and 
 test('dedicated view, manage and health permissions are assigned and do not imply account management', () => {
   for (const access of [ACCESS.universityEmail, ACCESS.universityEmailManage, ACCESS.universityEmailCheck]) assert.equal(canAccess(access, technical), true)
   assert.equal(canAccess(ACCESS.technicalAccountsManage, technical), false)
-  for (const roles of [['super_admin'], ['dean'], ['student'], []]) assert.equal(canAccess(ACCESS.universityEmail, { ...technical, roles }), false)
+  for (const roles of [['dean'], ['student'], []]) assert.equal(canAccess(ACCESS.universityEmail, { ...technical, roles }), false)
+  assert.equal(canAccess(ACCESS.universityEmail, {roles:['super_admin']}), true)
   const view = { ...technical, permissions: ['technical_portal.access', 'university_email.view'] }
   assert.equal(canAccess(ACCESS.universityEmail, view), true)
   assert.equal(canAccess(ACCESS.universityEmailManage, view), false)
@@ -71,8 +72,9 @@ test('route/nav access parity and local-only draft boundary (static)', () => {
   assert.match(page, /useBlocker/)
   assert.match(page, /beforeunload/)
   assert.match(page, /350/)
-  assert.match(page, /setReview\(requiresReview/)
-  assert.match(page, /اعتماد النسخة المحفوظة وإلغاء مسودتي/)
-  assert.match(page, /setReviewed\(false\); if \(await onRefresh\(\)\)/)
-  assert.doesNotMatch(page, /MAILCOW_API_KEY|localStorage\.setItem|password|createMailbox|retry\(/)
+  assert.match(page, /UniversityEmailMailboxDialog/)
+  const dialog = source('features/technical-portal/components/UniversityEmailMailboxDialog.jsx')
+  assert.match(dialog, /setReviewRequired\(true\)/)
+  assert.match(dialog, /لن يُرسل طلب إنشاء ثانٍ تلقائيًا/)
+  assert.doesNotMatch(page + dialog, /MAILCOW_API_KEY|localStorage\.setItem|createMailbox|retry\(/)
 })

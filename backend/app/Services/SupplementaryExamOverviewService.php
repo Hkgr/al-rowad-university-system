@@ -111,7 +111,7 @@ class SupplementaryExamOverviewService
             ],
             'capabilities' => [
                 'can_access_grades' => $actor->isExamOfficer()
-                    && $actor->effectivePermissions()->contains(SupplementaryExamGradingGovernance::REVIEW)
+                    && $actor->hasPermission(SupplementaryExamGradingGovernance::REVIEW)
                     && in_array((string) $selected->status, SupplementaryExamGradingGovernance::PERIOD_STATUSES, true),
             ],
         ];
@@ -125,7 +125,7 @@ class SupplementaryExamOverviewService
             ->where('status', '<>', 'legacy')
             ->orderByDesc('supplementary_exam_period_id');
 
-        if ($this->scope->hasActualUniversityScope($actor)) {
+        if ($this->scope->canAdministerUniversity($actor)) {
             return $query;
         }
 

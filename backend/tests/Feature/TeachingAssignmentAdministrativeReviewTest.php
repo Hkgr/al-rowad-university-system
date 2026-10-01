@@ -126,7 +126,7 @@ final class TeachingAssignmentAdministrativeReviewTest extends TestCase
         self::assertSame('pending', $this->reviewStatus(1, 'administrative'));
     }
 
-    public function test_return_requires_a_reason_and_super_admin_reads_but_cannot_decide(): void
+    public function test_return_requires_a_reason_and_super_admin_cannot_override_locked_reviews(): void
     {
         $this->actingAsUser(self::VP);
         $this->postJson(self::API.'/1/administrative/return', ['reason' => ''])->assertStatus(422);
@@ -135,8 +135,9 @@ final class TeachingAssignmentAdministrativeReviewTest extends TestCase
 
         $this->actingAsUser(self::SUPER);
         $this->getJson(self::API.'?authority=administrative&queue=all')->assertOk()
-            ->assertJsonPath('data.data.0.viewer_context.blocked_reason', 'not_reviewer');
-        $this->postJson(self::API.'/3/administrative/approve')->assertForbidden()->assertJsonPath('error_code', 'administrative_review_forbidden');
+            ->assertJsonPath('data.data.0.viewer_context.blocked_reason', 'review_locked');
+        $this->postJson(self::API.'/1/administrative/approve')->assertConflict()->assertJsonPath('error_code', 'teaching_assignment_review_locked');
+        $this->postJson(self::API.'/3/administrative/approve')->assertOk(); // Canonical repeat remains idempotent.
     }
 
     public function test_detail_exposes_previous_cycle_and_teacher_data(): void

@@ -180,9 +180,9 @@ test('tasks, steps and flows are hidden without the real role, permission or sco
   assert.equal(stepTexts('hr', 'faculty', SAMPLE_USERS.hrManager).length, 1)
   assert.ok(!taskIds('academicStructure', SAMPLE_USERS.structureViewer).includes('structure-manage'))
 
-  // Assigned-permission tasks do not appear for super_admin (backend ignores the bypass there).
-  assert.ok(!taskIds('vpScientific', SAMPLE_USERS.superAdmin).includes('teaching-assignments'))
-  assert.ok(!taskIds('vpScientific', SAMPLE_USERS.superAdmin).includes('semester-offerings'))
+  // Administrative tasks use central authority, but self identity is never fabricated.
+  assert.ok(taskIds('vpScientific', SAMPLE_USERS.superAdmin).includes('teaching-assignments'))
+  assert.ok(taskIds('vpScientific', SAMPLE_USERS.superAdmin).includes('semester-offerings'))
   assert.ok(!taskIds('student', SAMPLE_USERS.superAdmin).includes('supplementary'))
 
   // Manual grade entry does not expose the rest of the exam board.
@@ -334,7 +334,7 @@ test('supplementary registration office: view, window and registration are separ
   const window = tasksOf('studentAffairs', SAMPLE_USERS.suppWindow).find(task => task.id === 'supplementary-window')
   const registering = window.flows[0].nodes.find(node => node.id === 'registering')
   assert.equal(registering.kind, 'other', 'registering students is shown as another party action in the window flow')
-  assert.ok(!taskIds('studentAffairs', SAMPLE_USERS.superAdmin).some(t => t.startsWith('supplementary')), 'role + assigned permissions required')
+  assert.ok(taskIds('studentAffairs', SAMPLE_USERS.superAdmin).some(t => t.startsWith('supplementary')), 'administrator can manage the office; ordinary assigned permissions remain required')
 })
 
 test('exam board supplementary grades: each action follows its own permission', () => {

@@ -105,12 +105,12 @@ final class AdministrativeGovernanceTest extends TestCase
         }
     }
 
-    public function test_super_admin_without_university_scope_is_refused(): void
+    public function test_super_admin_without_university_scope_has_central_administrative_authority(): void
     {
         DB::table('user_access_scopes')->where('user_id', self::SUPER)->delete();
         $this->actingAsUser(self::SUPER);
-        $this->getJson(self::API.'/faculty')->assertForbidden();
-        $this->getJson(self::API.'/dashboard')->assertForbidden();
+        $this->getJson(self::API.'/faculty')->assertOk();
+        $this->getJson(self::API.'/dashboard')->assertOk();
     }
 
     public function test_generic_crud_routes_do_not_open_a_bypass_for_the_vp(): void

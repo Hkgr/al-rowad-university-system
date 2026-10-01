@@ -531,7 +531,7 @@ class GraduationDecisionService
     private function assertCanReview(User $user): void
     {
         if (! $user->isRegistrationOfficer()
-            || ! $user->effectivePermissions()->contains(AcademicRecordWorkflow::PERMISSION_GRADUATION_REVIEW)) {
+            || ! $user->hasPermission(AcademicRecordWorkflow::PERMISSION_GRADUATION_REVIEW)) {
             throw AcademicRecordException::graduationReviewForbidden();
         }
     }

@@ -620,7 +620,7 @@ class AcademicProgressionService
     private function assertCanReview(User $user): void
     {
         if (! $user->isRegistrationOfficer()
-            || ! $user->effectivePermissions()->contains(AcademicRecordWorkflow::PERMISSION_PROGRESSION_REVIEW)) {
+            || ! $user->hasPermission(AcademicRecordWorkflow::PERMISSION_PROGRESSION_REVIEW)) {
             throw AcademicRecordException::academicProgressionReviewForbidden();
         }
     }

@@ -25,6 +25,11 @@ final class UniversityEmailProvisioningController extends Controller
         $this->input($r, [], Access::VIEW);
         return $this->response($s->state($r->user(), $student));
     }
+    public function create(Request $r, int $student, Service $s): JsonResponse
+    {
+        $i = $this->input($r, ['english_first_name' => 'required|string|max:64', 'confirmed' => 'required|accepted'], Access::CREATE);
+        return $this->response($s->create($r->user(), $student, $i['english_first_name']));
+    }
     public function password(Request $r, int $student, Service $s): JsonResponse
     {
         $i = $this->input($r, ['revision' => 'required|integer|min:1'], Access::CREATE);

@@ -118,7 +118,7 @@ class ExamManualGradeGridBehaviorTest extends ExamManualGradeEntryBehaviorTest
         $this->getJson(self::GRID.'/periods')->assertForbidden();
         DB::table('roles')->where('role_id', 1)->update(['role_code' => 'super_admin']);
         Sanctum::actingAs(User::findOrFail(1));
-        $this->getJson(self::GRID.'/periods')->assertForbidden();
+        $this->getJson(self::GRID.'/periods')->assertOk()->assertJsonCount(2, 'data.terms');
     }
 
     public function test_partial_optional_and_inactive_configuration_is_not_replaced(): void
@@ -179,7 +179,12 @@ class ExamManualGradeGridBehaviorTest extends ExamManualGradeEntryBehaviorTest
         // The dedicated recording exception now explicitly supports closed student windows.
         $this->postJson($path, $this->confirmation())->assertOk();
         self::assertSame(1, DB::table('user_activity_logs')->count());
-        foreach (['super_admin', 'doctor_instructor', 'student'] as $role) {
+        DB::table('roles')->where('role_id', 1)->update(['role_code' => 'super_admin']);
+        Sanctum::actingAs(User::findOrFail(1));
+        $this->postJson($path, $this->confirmation())->assertOk();
+        DB::table('grade_approvals')->insert(['course_offering_id' => 1, 'approval_status_id' => 1]);
+        $this->postJson($path, $this->confirmation())->assertConflict();
+        foreach (['doctor_instructor', 'student'] as $role) {
             DB::table('roles')->where('role_id', 1)->update(['role_code' => $role]);
             Sanctum::actingAs(User::findOrFail(1));
             $this->postJson($path, $this->confirmation())->assertForbidden();

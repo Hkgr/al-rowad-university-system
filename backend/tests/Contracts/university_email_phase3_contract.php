@@ -9,7 +9,7 @@ $access = $read('app/Support/UniversityEmailAccess.php');
 $controller = $read('app/Http/Controllers/Api/UniversityEmailProvisioningController.php');
 $migration = $read('database/migrations/2026_10_01_000003_add_university_email_account_management.php');
 foreach (['reset_password', 'suspend', 'activate', 'link_existing'] as $permission) $assert(str_contains($access, 'university_email.'.$permission), 'Independent assigned permission required');
-$assert(str_contains($service, 'scopeManualGradeStudents') && str_contains($access, 'effectivePermissions()') && str_contains($access, 'effectiveRoles()'), 'Actual role/assigned permissions and scope required');
+$assert(str_contains($service, 'scopeUniversityEmailStudents') && str_contains($access, 'effectivePermissions()') && str_contains($access, 'effectiveRoles()') && str_contains($access, 'isSuperAdmin()'), 'Ordinary assigned/scoped authority plus central administrator');
 $assert(str_contains($service, 'executeWithKinds') && str_contains($service, "['suspend', 'activate', 'link']"), 'Explicit domain operation boundaries');
 $assert(str_contains($controller, 'ownership_confirmed') && str_contains($service, 'linkProof') && str_contains($service, 'previous_address'), 'Verified, cancellable, explicit legacy linking');
 $assert(str_contains($service, "where('active_slot', 1)") && str_contains($service, "write_started_at = now()") && str_contains($service, 'operation_unconfirmed'), 'Existing lock/slots and audited durable boundaries');

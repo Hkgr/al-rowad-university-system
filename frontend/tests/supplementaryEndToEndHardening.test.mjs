@@ -137,11 +137,10 @@ test('supplementary route and navigation gates require backend-matching authorit
     assert.ok(source.includes(permission), `${path}: ${permission}`)
   }
   const vpHome = read('src/features/vice-presidency/pages/VicePresidentShell.jsx')
-  assert.ok(vpHome.includes('hasRole(ROLES.vicePresidentScientific, identity)'))
-  assert.ok(vpHome.includes('hasAssignedPermission(PERMISSIONS.supplementaryExamsPeriodsView, identity)'))
+  assert.ok(vpHome.includes('canAccess({ allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.supplementaryExamsPeriodsView] }, identity)'))
 
   const gate = { allRoles: ['exam_officer'], assignedPermissions: ['supplementary_exams.grades.review'] }
-  assert.equal(canAccess(gate, { roles: ['super_admin'], permissions: [] }), false)
+  assert.equal(canAccess(gate, { roles: ['super_admin'], permissions: [] }), true)
   assert.equal(canAccess(gate, { roles: ['exam_officer'], permissions: [] }), false)
   assert.equal(canAccess(gate, { roles: ['exam_officer'], permissions: ['supplementary_exams.grades.review'] }), true)
 })

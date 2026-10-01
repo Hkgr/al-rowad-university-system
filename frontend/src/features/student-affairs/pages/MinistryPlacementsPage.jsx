@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FaArrowRight, FaCheckCircle, FaExclamationTriangle, FaFileExcel, FaSearch, FaSpinner, FaUpload } from 'react-icons/fa'
-import { hasAssignedPermission, PERMISSIONS } from '../../auth/auth'
+import { hasPermission, PERMISSIONS } from '../../auth/auth'
 import { apiRequest } from '../../../services/apiClient'
 import MinistryProgramMatchingPanel from '../components/MinistryProgramMatchingPanel'
 import MinistryApplicantConversionPanel from '../components/MinistryApplicantConversionPanel'
@@ -35,7 +35,7 @@ function metric(label, value, tone = 'green') {
 
 export default function MinistryPlacementsPage() {
   const navigate = useNavigate()
-  const canManage = hasAssignedPermission(PERMISSIONS.admissionsManage)
+  const canManage = hasPermission(PERMISSIONS.admissionsManage)
   const [form, setForm] = useState(emptyForm)
   const [preview, setPreview] = useState(null)
   const [batches, setBatches] = useState([])

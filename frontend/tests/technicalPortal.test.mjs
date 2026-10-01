@@ -16,8 +16,8 @@ test('technical team lands on its portal without changing existing portal preced
   assert.equal(landingRoute({ ...technical, roles: ['vice_president_administrative', 'technical_team'] }), '/vp/administrative')
   assert.equal(landingRoute({ ...technical, roles: ['exam_officer', 'technical_team'] }), '/exam-board')
   assert.equal(landingRoute({ ...technical, roles: ['registration_officer', 'technical_team'] }), '/student-affairs')
-  // super_admin passes every permission check but keeps its previous landing.
-  assert.equal(landingRoute({ roles: ['super_admin'], permissions: [] }), '/exam-board')
+  // Administrator has a clear management landing; ordinary precedence is unchanged.
+  assert.equal(landingRoute({ roles: ['super_admin'], permissions: [] }), '/technical')
   // Permissions without the role, or the role without the portal permission, do not redirect.
   assert.equal(landingRoute({ roles: [], permissions: technical.permissions }), '/forbidden')
   assert.equal(landingRoute({ roles: ['technical_team'], permissions: [] }), '/forbidden')

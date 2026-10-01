@@ -423,7 +423,7 @@ class SupplementaryExamOfferingService
 
     private function holdsAssignedPermission(User $user, string $permission): bool
     {
-        return $user->effectivePermissions()->contains($permission);
+        return $user->hasPermission($permission);
     }
 
     private function assertCanManage(User $user): void

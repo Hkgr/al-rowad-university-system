@@ -44,11 +44,8 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
 
         $superAdmin = $this->createActor(3, 'super_admin');
         $this->assertTrue($superAdmin->hasPermission('supplementary_exams.results.materialize'));
-        $this->expectGradeError(
-            fn () => $this->service()->materializeOffering($superAdmin, $this->offering()),
-            'supplementary_materialization_forbidden',
-            403,
-        );
+        $this->assertTrue($superAdmin->isExamOfficer());
+        $this->assertTrue(app(DataScopeService::class)->canMutateProgram($superAdmin, 10));
 
         DB::table('role_permissions')->delete();
         $this->expectGradeError(
@@ -2304,6 +2301,11 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
 
     private function createSchema(): void
     {
+        Schema::create('account_statuses', function (Blueprint $table): void {
+            $table->increments('account_status_id');
+            $table->string('status_code');
+        });
+        DB::table('account_statuses')->insert(['account_status_id' => 1, 'status_code' => 'active']);
         Schema::create('system_modules', function (Blueprint $table): void {
             $table->increments('module_id');
             $table->string('module_code');
@@ -2332,6 +2334,7 @@ class SupplementaryExamMaterializationBehaviorTest extends TestCase
         Schema::create('users', function (Blueprint $table): void {
             $table->increments('user_id');
             $table->string('username');
+            $table->integer('account_status_id')->default(1);
             $table->integer('employee_id')->nullable();
             $table->integer('student_id')->nullable();
             $table->timestamps();

@@ -22,7 +22,8 @@ export function printableCredentials(state, credentials) {
 }
 export function provisioningFailure(error) {
   if ([401, 403].includes(error?.status)) return 'انتهت الصلاحية؛ أُخفيت بيانات الدخول.'
-  if (error?.status === 422) return 'تحقق من التأكيد وبيانات العملية؛ لم يُرسل طلب إنشاء صالح.'
+  if (error?.status === 422) return 'تحقق من التأكيد والبيانات المدخلة؛ لم يُرسل طلب صالح.'
+  if (error?.status === 503 && error?.errorCode === 'university_email_provisioning_disabled') return 'إنشاء البريد غير مفعّل على الخادم بعد.'
   if (error?.status === 503) return 'إنشاء البريد غير جاهز أو معطّل في إعدادات الخادم.'
-  return 'تعذر تأكيد العملية. قد تكون نجحت على خادم البريد؛ راجع الحالة الرسمية ولا تُعد إرسال الكتابة تلقائيًا.'
+  return 'تعذر تأكيد النتيجة. قد يكون الطلب نجح على خادم البريد؛ راجع الحالة الرسمية ولا تُعد إرسال الطلب تلقائيًا.'
 }

@@ -13,7 +13,7 @@ class AnnounceSupplementaryExamPeriodRequest extends FormRequest
 
         return $user !== null
             && $user->isScientificVicePresident()
-            && $user->effectivePermissions()->contains(SupplementaryExamPeriodGovernance::PERMISSION_DECIDE);
+            && $user->hasPermission(SupplementaryExamPeriodGovernance::PERMISSION_DECIDE);
     }
 
     public function rules(): array

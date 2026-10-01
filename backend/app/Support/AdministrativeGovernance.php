@@ -7,8 +7,8 @@ use App\Services\DataScopeService;
 
 /**
  * Administrative Vice-Presidency governance: teacher profiles, college affiliation
- * and college deans. Access = active account + actual university scope + either
- * (the administrative VP role AND the assigned permission) or super_admin.
+ * and college deans. Access = active actual super_admin, or an active account
+ * with actual university scope + administrative VP role + assigned permission.
  * Organizational-chart placement grants nothing by itself.
  */
 final class AdministrativeGovernance
@@ -39,11 +39,9 @@ final class AdministrativeGovernance
 
     public function allows(?User $actor, string $permission): bool
     {
+        if ($actor?->isSuperAdmin()) return true;
         if ($actor === null || $actor->accountStatus?->status_code !== 'active' || ! $this->scope->hasActualUniversityScope($actor)) {
             return false;
-        }
-        if ($actor->hasRoleCode('super_admin')) {
-            return true;
         }
 
         return $actor->isAdministrativeVicePresident() && $actor->effectivePermissions()->contains($permission);
@@ -56,15 +54,15 @@ final class AdministrativeGovernance
         }
     }
 
-    /** Home dashboard: administrative VP executive access, or super_admin, both with university scope. */
+    /** Home dashboard: administrative VP with actual scope/assigned access, or active super_admin. */
     public function allowsDashboard(?User $actor): bool
     {
+        if ($actor?->isSuperAdmin()) return true;
         if ($actor === null || $actor->accountStatus?->status_code !== 'active' || ! $this->scope->hasActualUniversityScope($actor)) {
             return false;
         }
 
-        return $actor->hasRoleCode('super_admin')
-            || ($actor->isAdministrativeVicePresident() && $actor->effectivePermissions()->contains(VicePresidency::PERMISSION_ADMINISTRATIVE_ACCESS));
+        return $actor->isAdministrativeVicePresident() && $actor->effectivePermissions()->contains(VicePresidency::PERMISSION_ADMINISTRATIVE_ACCESS);
     }
 
     public static function isRestrictedPermission(string $code): bool

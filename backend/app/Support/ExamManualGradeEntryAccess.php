@@ -29,9 +29,9 @@ final class ExamManualGradeEntryAccess
     {
         $actor = $actor->fresh();
         abort_if($actor === null, 403);
-        abort_unless($actor->accountStatus?->status_code === 'active'
+        abort_unless($actor->isSuperAdmin() || ($actor->accountStatus?->status_code === 'active'
             && $actor->effectiveRoles()->contains('exam_officer')
-            && collect(['exams.manage', 'grades.manage'])->diff($actor->effectivePermissions())->isEmpty(), 403);
+            && collect(['exams.manage', 'grades.manage'])->diff($actor->effectivePermissions())->isEmpty()), 403);
         Gate::forUser($actor)->authorize('viewAny', Student::class);
         if ($student !== null) {
             $student = $student->fresh();

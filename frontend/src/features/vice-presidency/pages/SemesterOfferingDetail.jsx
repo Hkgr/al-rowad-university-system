@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { apiRequest } from '../../../services/apiClient'
-import { PERMISSIONS, ROLES, getIdentity, hasActualUniversityScope, hasAssignedPermission, hasRole } from '../../auth/auth'
+import { PERMISSIONS, ROLES, getIdentity, canAccess } from '../../auth/auth'
 import { courseTypeLabel, coverageLabel, semesterOfferingStatusLabel } from '../utils/semesterOfferingLabels'
 
 export default function SemesterOfferingDetail() {
@@ -40,9 +40,7 @@ export default function SemesterOfferingDetail() {
   if (loading) return <p className="p-8 text-center" dir="rtl">جاري التحميل...</p>
   if (!row) return <div className="p-8" dir="rtl"><p className="text-red-600">{error || 'الطرح غير متاح.'}</p></div>
   const offering = row.course_offering
-  const canReview = hasRole(ROLES.vicePresidentScientific, identity)
-    && hasAssignedPermission(PERMISSIONS.semesterOfferingGovernanceReviewScientific, identity)
-    && hasActualUniversityScope(identity)
+  const canReview = canAccess({ allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceReviewScientific], actualUniversityScope: true }, identity)
   const pending = canReview && row.status === 'submitted' && !row.materialized_at
 
   return <div className="space-y-5 px-2 py-6" dir="rtl">

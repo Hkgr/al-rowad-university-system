@@ -160,12 +160,12 @@ class SupplementaryExamPeriodGovernanceService
     }
 
     /**
-     * Assigned role_permissions only. Super Admin virtual grants from
-     * User::hasPermission() must not impersonate academic authorities.
+     * Assigned permissions for ordinary actors; central administrator authority.
+     * Period state and materialization rules remain unchanged.
      */
     private function holdsAssignedPermission(User $user, string $permission): bool
     {
-        return $user->effectivePermissions()->contains($permission);
+        return $user->hasPermission($permission);
     }
 
     private function assertCanDecide(User $user): void

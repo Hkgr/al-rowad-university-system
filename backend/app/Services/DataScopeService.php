@@ -15,8 +15,15 @@ use App\Models\OrganizationalUnit;
 
 class DataScopeService
 {
-    /** Explicit scopes only: neither virtual super-admin nor teaching membership grants manual entry. */
+    /** Explicit ordinary-operator scopes; central administrative authority may access every target. */
     public function scopeManualGradeStudents(Builder $query, User $user): Builder
+    {
+        if ($user->isSuperAdmin()) return $query;
+        return $this->scopeActualAcademicStudents($query, $user);
+    }
+
+    /** Shared actual resource scope only: no personal or instructor-derived entitlement. */
+    private function scopeActualAcademicStudents(Builder $query, User $user): Builder
     {
         $scopes = $this->grouped($user);
         if ($scopes['university'] !== []) return $query;
@@ -30,6 +37,7 @@ class DataScopeService
 
     public function scopeManualGradeOfferings(Builder $query, User $user): Builder
     {
+        if ($user->isSuperAdmin()) return $query;
         $scopes = $this->grouped($user);
         if ($scopes['university'] !== []) return $query;
         return $query->where(fn (Builder $offering) => $offering
@@ -39,9 +47,10 @@ class DataScopeService
             ->orWhereIn('course_offering_id', CourseOffering::idsResolvedToColleges($scopes['college'])));
     }
 
-    /** Catalog reads use actual scope only, including courses without offerings. */
+    /** Actual ordinary scope, or administrator; includes courses without offerings. */
     public function scopeManualGradeCourses(Builder $query, User $user): Builder
     {
+        if ($user->isSuperAdmin()) return $query;
         $scopes = $this->grouped($user);
         if ($scopes['university'] !== []) return $query;
         return $query->where(fn (Builder $course) => $course
@@ -59,14 +68,28 @@ class DataScopeService
             ->values()->all();
     }
 
-    /** Mutation-safe checks intentionally never honor the super-admin read bypass. */
+    /** Factual scopes remain factual: do not synthesize a PRES assignment for an administrator. */
     public function hasActualUniversityScope(User $user): bool
     {
         return collect($this->scopes($user))->contains(fn (array $scope) => $scope['type'] === 'university');
     }
 
+    public function canAdministerUniversity(User $user): bool
+    {
+        return $user->isSuperAdmin() || $this->hasActualUniversityScope($user);
+    }
+
+    /** Email has no self-student or instructor entitlement: technical actual scopes or administrator. */
+    public function scopeUniversityEmailStudents(Builder $query, User $user): Builder
+    {
+        if ($user->isSuperAdmin()) return $query;
+        if (! $user->hasRoleCode('technical_team')) return $query->whereRaw('1 = 0');
+        return $this->scopeActualAcademicStudents($query, $user);
+    }
+
     public function canMutateStudent(User $user, Student $student): bool
     {
+        if ($user->isSuperAdmin()) return $student->exists;
         return $this->canMutateProgram($user, (int) $student->academic_program_id);
     }
 
@@ -74,6 +97,7 @@ class DataScopeService
     {
         $program = $program instanceof AcademicProgram ? $program->loadMissing('department') : AcademicProgram::query()->with('department')->find($program);
         if (! $program) return false;
+        if ($user->isSuperAdmin()) return true;
         $scopes = collect($this->scopes($user));
         return $scopes->contains(fn (array $s) => $s['type'] === 'university')
             || $scopes->contains(fn (array $s) => $s['type'] === 'program' && $s['id'] === (int) $program->academic_program_id)
@@ -300,9 +324,10 @@ class DataScopeService
                 ->orWhereHas('department', fn (Builder $department) => $department->whereIn('college_id', $scopes['college'])));
     }
 
-    /** Mutation-safe program scope; effective Super Admin grants never bypass assigned scopes. */
+    /** Administrative mutations use the same administrator exception as administrative reads. */
     public function scopeProgramsForMutation(Builder $query, User $user): Builder
     {
+        if ($user->isSuperAdmin()) return $query;
         $scopes = $this->grouped($user);
         if ($scopes['university'] !== []) return $query;
 
@@ -348,9 +373,10 @@ class DataScopeService
         });
     }
 
-    /** Mutation-safe faculty scope; effective Super Admin grants never bypass assigned scopes. */
+    /** Actual ordinary faculty scopes, or central active administrator authority. */
     public function scopeFacultyMembersForMutation(Builder $query, User $user): Builder
     {
+        if ($user->isSuperAdmin()) return $query;
         $scopes = collect($this->scopes($user));
         $collegeQuery = College::query();
 
@@ -501,6 +527,6 @@ class DataScopeService
 
     private function bypassesScope(User $user): bool
     {
-        return $user->effectiveRoles()->contains('super_admin');
+        return $user->isSuperAdmin();
     }
 }

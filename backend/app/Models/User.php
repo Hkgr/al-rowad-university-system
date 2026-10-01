@@ -226,8 +226,18 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function hasPermission(string $permission): bool
     {
-        return $this->effectivePermissions()->contains($permission)
-            || $this->effectiveRoles()->contains('super_admin');
+        return $this->isSuperAdmin() || $this->effectivePermissions()->contains($permission);
+    }
+
+    /** Administrative authority only; never manufactures personal identity or assigned roles/scopes. */
+    public function isSuperAdmin(): bool
+    {
+        return $this->accountStatus?->status_code === 'active' && $this->hasRoleCode('super_admin');
+    }
+
+    private function canActAs(string $administrativeRole): bool
+    {
+        return $this->isSuperAdmin() || $this->hasRoleCode($administrativeRole);
     }
 
     public function hasRoleCode(string $roleCode): bool
@@ -237,7 +247,7 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function isDean(): bool
     {
-        return $this->hasRoleCode('dean');
+        return $this->canActAs('dean');
     }
 
     public function isStudent(): bool
@@ -247,12 +257,12 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function isAcademicAdvisor(): bool
     {
-        return $this->hasRoleCode('academic_advisor');
+        return $this->canActAs('academic_advisor');
     }
 
     public function isRegistrationOfficer(): bool
     {
-        return $this->hasRoleCode('registration_officer');
+        return $this->canActAs('registration_officer');
     }
 
     public function isProfessor(): bool
@@ -262,17 +272,17 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function isExamOfficer(): bool
     {
-        return $this->hasRoleCode('exam_officer');
+        return $this->canActAs('exam_officer');
     }
 
     public function isScientificVicePresident(): bool
     {
-        return $this->hasRoleCode(VicePresidency::ROLE_SCIENTIFIC);
+        return $this->canActAs(VicePresidency::ROLE_SCIENTIFIC);
     }
 
     public function isAdministrativeVicePresident(): bool
     {
-        return $this->hasRoleCode(VicePresidency::ROLE_ADMINISTRATIVE);
+        return $this->canActAs(VicePresidency::ROLE_ADMINISTRATIVE);
     }
 
 }

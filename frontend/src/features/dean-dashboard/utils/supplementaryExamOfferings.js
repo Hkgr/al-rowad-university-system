@@ -1,17 +1,15 @@
-import { hasRole, ROLES } from '../../auth/auth'
+import { canAccess, ROLES } from '../../auth/auth'
 
 export function hasAssignedPermission(permission, user) {
   return user?.permissions?.includes(permission) ?? false
 }
 
 export function canViewSupplementaryExamOfferings(user) {
-  return hasRole(ROLES.dean, user)
-    && hasAssignedPermission('supplementary_exams.offerings.view', user)
+  return canAccess({ allRoles: [ROLES.dean], assignedPermissions: ['supplementary_exams.offerings.view'] }, user)
 }
 
 export function canManageSupplementaryExamOfferings(user) {
-  return hasRole(ROLES.dean, user)
-    && hasAssignedPermission('supplementary_exams.offerings.manage', user)
+  return canAccess({ allRoles: [ROLES.dean], assignedPermissions: ['supplementary_exams.offerings.manage'] }, user)
 }
 
 export function semesterOrderLabel(order) {

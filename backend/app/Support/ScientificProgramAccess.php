@@ -21,6 +21,7 @@ final class ScientificProgramAccess
     public function authorize(User $actor, string $permission = self::VIEW): void
     {
         $fresh = $actor->fresh();
+        if ($fresh?->isSuperAdmin()) return;
         abort_unless($fresh && $fresh->accountStatus?->status_code === 'active'
             && $fresh->effectiveRoles()->contains('vice_president_scientific')
             && collect(['vice_presidency.scientific.access', self::VIEW, $permission])->diff($fresh->effectivePermissions())->isEmpty(), 403);
@@ -34,9 +35,9 @@ final class ScientificProgramAccess
 
     public function capabilities(User $actor): array
     {
-        $permissions = $actor->fresh()->effectivePermissions();
+        $actor = $actor->fresh();
         return collect(['edit' => self::MANAGE, 'plans' => self::PLANS, 'approve' => self::APPROVE,
             'assign' => self::ASSIGN, 'archive' => self::ARCHIVE, 'delete' => self::DELETE])
-            ->map(fn ($code) => $permissions->contains($code))->all();
+            ->map(fn ($code) => $actor->hasPermission($code))->all();
     }
 }

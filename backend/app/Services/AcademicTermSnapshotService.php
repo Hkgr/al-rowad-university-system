@@ -219,7 +219,7 @@ class AcademicTermSnapshotService
     private function assertCanFinalize(User $user): void
     {
         if (! $user->isRegistrationOfficer()
-            || ! $user->effectivePermissions()->contains(AcademicRecordWorkflow::PERMISSION_RECORDS_FINALIZE)) {
+            || ! $user->hasPermission(AcademicRecordWorkflow::PERMISSION_RECORDS_FINALIZE)) {
             throw new AccessDeniedHttpException(
                 'Only a registration officer with assigned academic-record finalize permission may finalize term snapshots.'
             );

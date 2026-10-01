@@ -451,7 +451,7 @@ class AcademicCalendarService
 
     public function assertCanManage(User $user): void
     {
-        if (! $user->isScientificVicePresident() || ! $user->effectivePermissions()->contains(AcademicCalendar::PERMISSION_MANAGE)) {
+        if (! $user->isScientificVicePresident() || ! $user->hasPermission(AcademicCalendar::PERMISSION_MANAGE)) {
             throw AcademicCalendarException::forbidden();
         }
     }

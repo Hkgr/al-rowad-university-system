@@ -57,9 +57,9 @@ class ExamBoardCourseCatalogDataScopeTest extends TestCase
         self::assertFalse($this->scope->hasActualUniversityScope($examOfficerWithoutScope));
         self::assertFalse($this->scope->canMutateProgram($examOfficerWithoutScope, 18));
         self::assertSame([1, 2, 3, 4, 5], $this->courseIds($superAdminWithoutScope));
-        self::assertFalse(
+        self::assertTrue(
             $this->scope->canMutateProgram($superAdminWithoutScope, AcademicProgram::query()->findOrFail(18)),
-            'The existing super-admin read bypass must not become a mutation scope.',
+            'An active actual administrator can mutate resources without a fabricated scope.',
         );
     }
 
@@ -98,6 +98,7 @@ class ExamBoardCourseCatalogDataScopeTest extends TestCase
             'student_id' => null,
         ]);
         $user->method('effectiveRoles')->willReturn(collect($roles));
+        $user->setRelation('accountStatus', new \App\Models\AccountStatus(['status_code' => 'active']));
 
         return $user;
     }

@@ -161,15 +161,17 @@ class SupplementaryExamPhase7AuthorizationMatrixTest extends TestCase
         $this->assertStringContainsString('isExamOfficer()', $sources['grading']);
         $this->assertStringContainsString('isExamOfficer()', $sources['materialization']);
 
-        foreach ($sources as $source) {
-            $this->assertStringContainsString('effectivePermissions()', $source);
+        $this->assertStringContainsString('effectivePermissions()', $sources['eligibility']); // Self identity unchanged.
+        $this->assertStringContainsString('effectivePermissions()', $sources['registration']); // Self identity unchanged.
+        foreach (['period', 'offering', 'registration', 'window', 'grading', 'materialization'] as $administrative) {
+            $this->assertStringContainsString('hasPermission(', $sources[$administrative]);
         }
         foreach (['offering', 'registration', 'grading', 'materialization'] as $scoped) {
             $this->assertStringContainsString('canMutateProgram(', $sources[$scoped]);
         }
         $this->assertStringContainsString('canMutateStudent(', $sources['registration']);
-        $this->assertStringContainsString('hasActualUniversityScope(', $sources['window']);
-        $this->assertStringContainsString('hasActualUniversityScope(', $sources['grading']);
+        $this->assertStringContainsString('canAdministerUniversity(', $sources['window']);
+        $this->assertStringContainsString('canAdministerUniversity(', $sources['grading']);
     }
 
     private function actor(string $roleMethod, bool $hasActualRole, array $permissions): User

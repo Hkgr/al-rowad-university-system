@@ -14,8 +14,8 @@ class SupplementaryExamOverviewController extends Controller
     {
         $actor = $request->user();
         abort_unless(
-            $actor->effectivePermissions()->contains(SupplementaryExamRegistrationGovernance::VIEW)
-                || $actor->hasRoleCode('super_admin'),
+            $actor->hasPermission(SupplementaryExamRegistrationGovernance::VIEW)
+                || $actor->isSuperAdmin(),
             403,
         );
         $validated = $request->validate([

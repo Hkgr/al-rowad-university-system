@@ -13,7 +13,7 @@ export const EXECUTIVE_REPORT_ACCESS = Object.freeze({
   }),
 })
 
-const DENIED_REPORT_ACCESS = Object.freeze({ allRoles: ['__executive_report_office_invalid__'] })
+const DENIED_REPORT_ACCESS = Object.freeze({ denied: true, allRoles: ['__executive_report_office_invalid__'] })
 
 export function reportAccessForOffice(office) {
   return EXECUTIVE_REPORT_ACCESS[office] ?? DENIED_REPORT_ACCESS

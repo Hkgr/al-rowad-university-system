@@ -211,7 +211,7 @@ class SupplementaryExamRegistrationService
             $row->update(['status'=>'cancelled','current_slot'=>null,'cancelled_by_user_id'=>$actor->user_id,'cancelled_at'=>now(),'cancellation_reason'=>$reason]);$this->event($row,'cancelled','registered','cancelled',$actor,$reason);return ['row'=>$row->fresh()];
         },3);if(isset($out['error']))$this->fail(...$out['error']);return $out['row'];
     }
-    private function staff(User $u,string $permission): void { if(!$u->isRegistrationOfficer()||!$u->effectivePermissions()->contains($permission))$this->fail('يتطلب موظف تسجيل فعلي وصلاحية مسندة.','supplementary_exam_registration_out_of_scope',403); }
+    private function staff(User $u,string $permission): void { if(!$u->isRegistrationOfficer()||!$u->hasPermission($permission))$this->fail('يتطلب موظف تسجيل فعلي وصلاحية مسندة.','supplementary_exam_registration_out_of_scope',403); }
     public function ready(): void { if(!SupplementaryExamRegistrationGovernance::schemaReady())$this->fail('مخطط التسجيل التكميلي غير جاهز.','supplementary_exam_registration_schema_not_ready',503); }
     private function event($r,$type,$from,$to,$actor,$notes):void{SupplementaryExamRegistrationEvent::query()->create(['supplementary_exam_registration_id'=>$r->getKey(),'event_type'=>$type,'from_status'=>$from,'to_status'=>$to,'actor_user_id'=>$actor->user_id,'notes'=>$notes,'created_at'=>now()]);}
     private function fail(string $message,string $code,int $status):never{throw new GradeException($message,status:$status,errorCode:$code);}

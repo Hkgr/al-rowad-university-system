@@ -23,7 +23,7 @@ class ConfineMinistryAccounts
     public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
-        if ($user !== null && ! $request->is('api/v1/ministry', 'api/v1/ministry/*') && $this->holdsMinistryRole((int) $user->user_id)) {
+        if ($user !== null && ! $user->isSuperAdmin() && ! $request->is('api/v1/ministry', 'api/v1/ministry/*') && $this->holdsMinistryRole((int) $user->user_id)) {
             return response()->json([
                 'message' => 'حساب وزارة التربية والتعليم مقصور على بوابة الوزارة للاطلاع فقط.',
                 'error_code' => 'ministry_account_confined',

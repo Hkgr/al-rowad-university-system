@@ -8,7 +8,8 @@ test('four management actions require actual technical role plus their own assig
   for (const [access, permission] of [[ACCESS.universityEmailReset, 'reset_password'], [ACCESS.universityEmailSuspend, 'suspend'], [ACCESS.universityEmailActivate, 'activate'], [ACCESS.universityEmailLink, 'link_existing']]) {
     const actor = { roles: ['technical_team'], permissions: ['technical_portal.access', 'university_email.view', 'university_email.'+permission] }
     assert.equal(canAccess(access, actor), true)
-    for (const roles of [['super_admin'], ['student'], ['dean'], []]) assert.equal(canAccess(access, { ...actor, roles }), false)
+    for (const roles of [['student'], ['dean'], []]) assert.equal(canAccess(access, { ...actor, roles }), false)
+    assert.equal(canAccess(access, {roles:['super_admin'], permissions:[], access_scopes:[]}), true)
     assert.equal(canAccess(access, { ...actor, permissions: ['technical_portal.access', 'university_email.view'] }), false)
   }
 })

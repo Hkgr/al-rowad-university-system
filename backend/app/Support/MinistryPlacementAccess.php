@@ -26,7 +26,7 @@ final class MinistryPlacementAccess
     private function allows(?User $actor, string $permission): bool
     {
         return $actor !== null
-            && $actor->effectivePermissions()->contains($permission)
-            && $this->scope->hasActualUniversityScope($actor);
+            && $actor->hasPermission($permission)
+            && $this->scope->canAdministerUniversity($actor);
     }
 }

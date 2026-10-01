@@ -342,7 +342,7 @@ class SemesterOfferingGovernancePhase1BehaviorTest extends TestCase
     {
         $scope = Mockery::mock(DataScopeService::class);
         $scope->shouldReceive('canAccessProgram')->andReturn(true);
-        $scope->shouldReceive('hasActualUniversityScope')->andReturnUsing(fn (User $user): bool => (bool) ($user->test_university_scope ?? false));
+        $scope->shouldReceive('canAdministerUniversity')->andReturnUsing(fn (User $user): bool => (bool) ($user->test_university_scope ?? false));
         $coverage ??= $this->passingCoverage();
         $opening = $actualOpening ? $this->opening($coverage) : Mockery::mock(CourseOfferingOpeningService::class);
 

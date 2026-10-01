@@ -49,7 +49,7 @@ $expect(str_contains($source['grading'], "->orderByDesc('submission_version')")
     && str_contains($source['grading'], "->orderByDesc('supplementary_exam_grade_submission_id')"), 'Latest submission ordering is incomplete.');
 $expect(substr_count($source['service'], 'latestSubmissionsForOfferings(') === 1, 'Overview must load latest submissions once.');
 $expect(! str_contains($source['service'], "hasRoleCode('super_admin')"), 'Super Admin role must not bypass actual DataScope in the overview service.');
-$expect(str_contains($source['service'], 'if ($this->scope->hasActualUniversityScope($actor))'), 'Actual university scope must remain the only full-catalog bypass.');
+$expect(str_contains($source['service'], 'if ($this->scope->canAdministerUniversity($actor))'), 'Full catalog requires actual university scope or active administrator.');
 $expect(! str_contains($source['service'], 'MAX(submission_version)'), 'Published counts must not approximate the canonical latest submission with MAX(version).');
 $expect(str_contains($source['service'], '$publishedWinners = $latestSubmissions'), 'Published counts must use the canonical latest-submission collection.');
 $expect(! preg_match('/\b(?:insert|update|delete|create|save|forceFill)\s*\(/i', $source['service'].$source['controller']), 'Overview backend must remain read-only.');

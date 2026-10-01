@@ -31,7 +31,7 @@ const USERS = {
   superAdminWithoutScope: { roles: ['super_admin'], permissions: [], access_scopes: [] },
 }
 
-test('access matrix mirrors the server rule: VP role + assigned permission + university scope, or super_admin with scope', () => {
+test('access matrix mirrors ordinary VP authority and administrator without artificial scope', () => {
   const expected = {
     none: [false, false, false, false, false],
     viewOnlyVp: [true, false, true, false, true],
@@ -41,7 +41,7 @@ test('access matrix mirrors the server rule: VP role + assigned permission + uni
     dean: [false, false, false, false, false],
     multiRole: [true, true, true, true, true],
     superAdmin: [true, true, true, true, true],
-    superAdminWithoutScope: [false, false, false, false, false],
+    superAdminWithoutScope: [true, true, true, true, true],
   }
   for (const [name, user] of Object.entries(USERS)) {
     const actual = ['facultyView', 'facultyManage', 'deansView', 'deansManage', 'dashboard'].map(key => canAccess(ADMINISTRATIVE_ACCESS[key], user))

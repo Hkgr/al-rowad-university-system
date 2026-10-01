@@ -107,7 +107,7 @@ $contract = static function (string $backendRoot): array {
     $expect(! preg_match('/<button[^>]*>[^<]*(إصلاح|دمج|تجاوز|فرض)/u', $sources['panel']), 'Reconciliation panel exposes a repair control.');
 
     $expect(str_contains($sources['add_student'], 'رفع طلاب المفاضلة') && str_contains($sources['add_student'], "navigate('/student-affairs/ministry-placements')"), 'Add Student must provide the Ministry entry action.');
-    $expect(str_contains($sources['add_student'], 'hasAssignedPermission(PERMISSIONS.admissionsManage)') && str_contains($sources['add_student'], 'hasActualUniversityScope()'), 'Ministry import entry must require assigned manage plus actual university scope.');
+    $expect(str_contains($sources['add_student'], 'canAccess({ assignedPermissions: [PERMISSIONS.admissionsManage], actualUniversityScope: true })'), 'Ministry entry uses the central administrative guard with ordinary assigned manage and actual scope.');
     $expect(! str_contains($sources['nav'], '/student-affairs/ministry-placements'), 'Ministry Placement must not be in Student Affairs navigation.');
     $expect(! str_contains($sources['nav'].$sources['app'], 'ministryPlacementNav'), 'Dedicated Ministry-only navigation must be removed.');
     $expect(str_contains($sources['app'], '<DashboardLayout nav={studentAffairsNav}') && str_contains($sources['page'], 'العودة إلى إضافة طالب'), 'Ministry page must use the normal shell and explicit return action.');
