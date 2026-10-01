@@ -35,6 +35,17 @@ final class UniversityEmailProvisioningController extends Controller
         $i = $this->input($r, ['revision' => 'required|integer|min:1'], Access::CREATE);
         return $this->response($s->password($r->user(), $student, (int) $i['revision'], 'create'));
     }
+    public function retryCreate(Request $r, int $student, Service $s): JsonResponse
+    {
+        $i = $this->input($r, ['english_first_name' => 'required|string|max:64', 'confirmed' => 'required|accepted',
+            'operation_id' => 'required|uuid', 'generation' => 'required|integer|min:1'], Access::CREATE);
+        return $this->response($s->retryCreate($r->user(), $student, $i['english_first_name'], $i['operation_id'], (int) $i['generation']));
+    }
+    public function checkCreation(Request $r, int $student, Service $s): JsonResponse
+    {
+        $this->input($r, [], Access::CREATE);
+        return $this->response($s->checkCreation($r->user(), $student));
+    }
     public function reissue(Request $r, int $student, Service $s): JsonResponse
     {
         $i = $this->input($r, ['revision' => 'required|integer|min:1'], Access::RECOVER);

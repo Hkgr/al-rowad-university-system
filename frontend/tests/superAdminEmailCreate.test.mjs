@@ -37,14 +37,14 @@ test('credentials require exact confirmation and cannot be recovered from a refr
   assert.equal(printableCredentials({ ...state, operations: [{ ...state.operations[0], status: 'uncertain' }] }, c), false)
   assert.equal(printableCredentials(state, { ...c, generation: 2 }), false)
 })
-test('one guarded create dialog reuses current UI and keeps advanced review and receipts', () => {
+test('one guarded create dialog reuses current UI and keeps exceptional diagnostics and receipts', () => {
   const dialog = source('features/technical-portal/components/UniversityEmailMailboxDialog.jsx')
   const page = source('features/technical-portal/pages/UniversityEmailPage.jsx')
   const manager = source('features/technical-portal/components/UniversityEmailProvisioning.jsx')
   assert.match(dialog, /ManualGradeDialog/)
-  assert.match(dialog, /apiRequest\(`\$\{api\}\/create`/)
+  assert.match(dialog, /sendCreation\(api, state, name, apiRequest\)/)
   assert.match(dialog, /writing\.current \|\| blocked/)
-  assert.match(dialog, /previousAttempt \|\| reviewRequired/)
+  assert.match(dialog, /!\['ready', 'retry'\]\.includes\(mode\)/)
   assert.match(dialog, /setCredentials\(null\); setReceipt\(null\)/)
   assert.match(dialog, /onSensitive\(false\)/)
   assert.match(dialog, /json\.data\.credentials/)

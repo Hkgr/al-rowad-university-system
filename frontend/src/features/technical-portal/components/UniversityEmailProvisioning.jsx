@@ -11,7 +11,7 @@ import UniversityEmailReceipt from './UniversityEmailReceipt'
 const action = 'inline-flex items-center justify-center py-2 px-4 rounded-[10px] bg-primary text-white text-[13px] font-bold disabled:opacity-50'
 const secondary = 'inline-flex items-center justify-center py-2 px-4 rounded-[10px] border border-primary/20 bg-white text-primary-dark text-[13px] font-bold disabled:opacity-50'
 
-export default function UniversityEmailProvisioning({ studentId, studentName, revision, draftDirty, draftPending, isCurrent, onSensitive, onPending, onDenied, onRefresh, simple = false }) {
+export default function UniversityEmailProvisioning({ studentId, studentName, revision, draftDirty, draftPending, isCurrent, onSensitive, onPending, onDenied, onRefresh, simple = false, diagnostics = true }) {
   const [state, setState] = useState(null), [error, setError] = useState(''), [loading, setLoading] = useState(true)
   const [credentials, setCredentials] = useState(null), [receipt, setReceipt] = useState(null), [busy, setBusy] = useState(false)
   const [confirm, setConfirm] = useState(false), [needsReview, setNeedsReview] = useState(false)
@@ -104,11 +104,14 @@ export default function UniversityEmailProvisioning({ studentId, studentName, re
   const permits = { create: mayCreate, reset: mayReset, password_reset: mayGeneralReset, suspend: maySuspend, activate: mayActivate, link: mayLink }
   const op = credentials && state?.operations?.find(item => item.operation_id === credentials.operation_id)
   const blocked = busy || loading || draftPending || draftDirty
+  const pendingAccount = state?.operations?.find(item => ['suspend', 'activate', 'link'].includes(item.kind) && item.status === 'prepared' && permits[item.kind])
+  const pendingCancellation = state?.operations?.find(item => canCancelOperation(item, authority))
+  const showDiagnostics = diagnostics || (simple && state?.operations?.some(item => ['preflight', 'in_progress', 'uncertain'].includes(item.status)))
   return <Section title="إدارة البريد وإيصال PDF" subtitle="عمليات فردية بصلاحيات مستقلة. التنزيل لا يسجل استلامًا أو تسليمًا.">
     {loading && !state && <StatePanel state="loading" />}
     {error && <Notice tone="warning">{error}</Notice>}
     {state?.enabled === false && <Notice tone="warning">إنشاء الصناديق معطّل في إعدادات الخادم إلى حين التحقق من توافق Mailcow.</Notice>}
-    <button className={secondary} type="button" disabled={busy || loading || draftPending} onClick={load}>مراجعة الحالة الرسمية</button>
+    <button className={secondary} type="button" disabled={busy || loading || draftPending} onClick={load}>{simple ? 'التحقق من حالة البريد' : 'مراجعة الحالة الرسمية'}</button>
     {state?.account_schema_ready === false && <Notice tone="warning">إدارة الحسابات غير جاهزة؛ يلزم تطبيق migration المرحلة الثالثة. لا يعني ذلك أن الصندوق غير موجود.</Notice>}
     {state?.account_schema_ready && revision > 0 && <div className="mt-4 space-y-3">
       <InfoGrid items={[[ 'العنوان المحلي', state.email_address ], ['الربط', state.provisioning_status === 'created' ? (state.linkage_origin === 'linked' ? 'حساب سابق مرتبط ومؤكد' : 'حساب منشأ ومؤكد') : 'مسودة — ليست إثبات ملكية' ],
@@ -126,11 +129,15 @@ export default function UniversityEmailProvisioning({ studentId, studentName, re
         {state.provisioning_status === 'draft' && mayLink && <button className={secondary} type="button" disabled={blocked} onClick={() => openAccountAction('link')}>التحقق وربط صندوق سابق</button>}
       </div>}
     </div>}
-    <details open={state?.operations?.some(item => ['preflight', 'in_progress', 'uncertain', 'conflict', 'failed'].includes(item.status))}><summary className="mt-3 cursor-pointer text-[13px] font-bold">تفاصيل متقدمة</summary>{state?.operations?.map(item => <p key={item.operation_id} className="mt-3 text-[13px]"><Badge>{kindLabels[item.kind] || 'عملية غير معروفة'}</Badge> {operationLabels[item.status] || 'حالة غير معروفة'}
+    {simple && !showDiagnostics && (pendingAccount || pendingCancellation) && <div className="mt-3 flex flex-wrap gap-2">
+      {pendingAccount && <button className={secondary} type="button" disabled={blocked || needsReview} onClick={() => { setCredentials(null); setReceipt(null); setExecutingAccount(pendingAccount) }}>متابعة {kindLabels[pendingAccount.kind]}</button>}
+      {pendingCancellation && <button className={secondary} type="button" disabled={blocked} onClick={() => setCancelling(pendingCancellation)}>إلغاء الإجراء المعلّق</button>}
+    </div>}
+    {showDiagnostics && <details open={state?.operations?.some(item => ['preflight', 'in_progress', 'uncertain', 'conflict', 'failed'].includes(item.status))}><summary className="mt-3 cursor-pointer text-[13px] font-bold">{simple ? 'تفاصيل تقنية' : 'تفاصيل متقدمة'}</summary>{state?.operations?.map(item => <p key={item.operation_id} className="mt-3 text-[13px]"><Badge>{kindLabels[item.kind] || 'عملية غير معروفة'}</Badge> {operationLabels[item.status] || 'حالة غير معروفة'}
       {canCancelOperation(item, authority) && <button type="button" className={`${secondary} mr-2`} disabled={blocked} onClick={() => setCancelling(item)}>إلغاء العملية قبل الكتابة</button>}
       {['suspend', 'activate', 'link'].includes(item.kind) && item.status === 'prepared' && permits[item.kind] && <button className={`${secondary} mr-2`} type="button" disabled={blocked || needsReview} onClick={() => { setCredentials(null); setReceipt(null); setExecutingAccount(item) }}>تنفيذ {kindLabels[item.kind]}</button>}
       {['preflight', 'in_progress', 'uncertain'].includes(item.status) && (['create', 'reset'].includes(item.kind) ? mayCreate : permits[item.kind]) && <button type="button" className={`${secondary} mr-2`} disabled={blocked} onClick={() => run('reconcile', { operation_id: item.operation_id }, data => { setState(data); onRefresh() })}>مصالحة للقراءة فقط</button>}
-    </p>)}</details>
+    </p>)}</details>}
     {!simple && !revision && <Notice>احفظ الاسم الإنكليزي والمسودة أولًا.</Notice>}
     {draftDirty && <Notice>احفظ مسودة الاسم أو ألغِ تغييراتها قبل بدء عملية البريد.</Notice>}
     {state?.enabled && revision > 0 && !needsReview && <div className="mt-4 flex flex-wrap gap-2">

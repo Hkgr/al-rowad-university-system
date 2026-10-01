@@ -75,6 +75,7 @@ test('route/nav access parity and local-only draft boundary (static)', () => {
   assert.match(page, /UniversityEmailMailboxDialog/)
   const dialog = source('features/technical-portal/components/UniversityEmailMailboxDialog.jsx')
   assert.match(dialog, /setReviewRequired\(true\)/)
-  assert.match(dialog, /لن يُرسل طلب إنشاء ثانٍ تلقائيًا/)
+  assert.match(dialog, /unresolvedCreation/)
+  assert.match(source('features/technical-portal/lib/emailCreation.js'), /لم يتم إرسال طلب إنشاء جديد حفاظًا على الحساب/)
   assert.doesNotMatch(page + dialog, /MAILCOW_API_KEY|localStorage\.setItem|createMailbox|retry\(/)
 })
