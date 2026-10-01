@@ -59,7 +59,10 @@ final class MailcowProvisioningClient
         if (! isset($data['username'], $data['quota'], $data['domain'], $data['active_int'])
             || strtolower($data['username']) !== $address || ! is_numeric($data['quota'])
             || ! is_array($data['tags'] ?? null) || ! is_array($data['attributes'] ?? null)) $this->fail('university_email_remote_invalid', 502);
+        if (! in_array($data['active_int'], [0, 1, '0', '1'], true) || (int) $data['quota'] < 0
+            || (isset($data['quota_used']) && (! is_numeric($data['quota_used']) || (int) $data['quota_used'] < 0))) $this->fail('university_email_remote_invalid', 502);
         return ['address' => strtolower($data['username']), 'domain' => $data['domain'], 'quota_bytes' => (int) $data['quota'],
+            'used_bytes' => isset($data['quota_used']) ? (int) $data['quota_used'] : null,
             'active' => (int) $data['active_int'] === 1, 'force_password_change' => (int) ($data['attributes']['force_pw_update'] ?? 0) === 1,
             'tags' => array_values(array_filter($data['tags'], 'is_string'))];
     }
@@ -89,6 +92,16 @@ final class MailcowProvisioningClient
         $data = $this->request('POST', 'edit/mailbox', ['items' => [$address], 'attr' => ['password' => $password,
             'password2' => $password, 'force_pw_update' => '1', 'tags' => array_values(array_unique($tags))]]);
         $this->success($data, 'mailbox_modified', $address);
+    }
+
+    public function setActive(string $address, bool $active): void
+    {
+        $this->success($this->request('POST', 'edit/mailbox', ['items' => [$address], 'attr' => ['active' => $active ? '1' : '0']]), 'mailbox_modified', $address);
+    }
+
+    public function link(string $address, array $tags): void
+    {
+        $this->success($this->request('POST', 'edit/mailbox', ['items' => [$address], 'attr' => ['tags' => array_values(array_unique($tags))]]), 'mailbox_modified', $address);
     }
 
     private function success(array $data, string $code, string $address): void

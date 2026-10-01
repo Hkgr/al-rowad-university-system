@@ -1,0 +1,21 @@
+<?php
+declare(strict_types=1);
+$root = dirname(__DIR__, 2);
+$read = fn (string $p): string => file_get_contents($root.'/'.$p);
+$assert = function (bool $ok, string $why): void { if (! $ok) throw new RuntimeException($why); };
+$service = $read('app/Services/UniversityEmailProvisioningService.php');
+$client = $read('app/Services/MailcowProvisioningClient.php');
+$access = $read('app/Support/UniversityEmailAccess.php');
+$controller = $read('app/Http/Controllers/Api/UniversityEmailProvisioningController.php');
+$migration = $read('database/migrations/2026_10_01_000003_add_university_email_account_management.php');
+foreach (['reset_password', 'suspend', 'activate', 'link_existing'] as $permission) $assert(str_contains($access, 'university_email.'.$permission), 'Independent assigned permission required');
+$assert(str_contains($service, 'scopeManualGradeStudents') && str_contains($access, 'effectivePermissions()') && str_contains($access, 'effectiveRoles()'), 'Actual role/assigned permissions and scope required');
+$assert(str_contains($service, 'executeWithKinds') && str_contains($service, "['suspend', 'activate', 'link']"), 'Explicit domain operation boundaries');
+$assert(str_contains($controller, 'ownership_confirmed') && str_contains($service, 'linkProof') && str_contains($service, 'previous_address'), 'Verified, cancellable, explicit legacy linking');
+$assert(str_contains($service, "where('active_slot', 1)") && str_contains($service, "write_started_at = now()") && str_contains($service, 'operation_unconfirmed'), 'Existing lock/slots and audited durable boundaries');
+$assert(str_contains($client, "['active' => \$active ? '1' : '0']") && str_contains($client, "['tags' => array_values(array_unique(\$tags))]"), 'Narrow remote property updates');
+$assert(! preg_match('/->retry\(|->withoutVerifying\(|DELETE/', $client), 'No automatic writes/deletes/unsafe transport');
+$assert(! str_contains($migration, 'Schema::create') && ! preg_match('/\$t->.*(?:password|credential_proof)/', $migration), 'Reuse operation history; never persist credentials');
+$assert(str_contains($migration, 'rollback refused') && str_contains($service, "'receipt_purpose'"), 'Preserve history and reuse safe receipt');
+$assert(! str_contains($controller, 'function deliver') && ! str_contains($service, 'function deliver'), 'PDF only; no delivery confirmation');
+echo "University email Phase 3 dependency-free contract passed\n";

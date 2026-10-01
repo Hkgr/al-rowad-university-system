@@ -1,5 +1,7 @@
 # University email Phase 2 provisioning and PDF receipts
 
+Current combined deployment/incident sequence: [Phases 1–3 operations runbook](university-email-operations.md). [Phase 3](university-email-phase3.md) adds separate account-management permissions; it does not broaden the limited initial-password reissue described here.
+
 Phase 2 adds a one-student Mailcow provisioning flow to the existing Technical Office. It starts from develop `5f5e2eb17828fa5dab67a9a55d64aa02c2677bb8`, containing merged PR #146. Personal student email, university login accounts and academic data remain independent. No production deployment, database operation or live mailbox creation was performed.
 
 The user's final clarification replaces paper-signature handover confirmation with **explicit PDF download only**. There is no delivery-confirmation endpoint, button or permission, and no signed-paper requirement. Downloading a PDF does not change `handover_status`, prove delivery or assign a delivery actor/date. Existing Phase 1 handover fields remain intact for compatibility; their legacy values are not inferred from downloads. The receipt states the issuer and issue time, not a fabricated delivery time. The downloaded file contains the initial password and must be treated as confidential.

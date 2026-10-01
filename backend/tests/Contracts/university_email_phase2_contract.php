@@ -12,7 +12,9 @@ $assert(str_contains($cancellation, "'cancelled'") && str_contains($cancellation
 $assert(str_contains($service, 'function cancel(') && str_contains($service, "'creation_slot' => null, 'active_slot' => null") && str_contains($service, '$op->generation++'), 'Cancellation releases unused slots and invalidates issued credentials');
 $assert(str_contains($service, '$op->write_started_at') && str_contains($service, "['prepared', 'failed', 'preflight', 'conflict']"), 'Only explicitly cancellable pre-write states');
 $assert(str_contains($client, "'name' => \$studentName") && !str_contains($client, 'University student'), 'Mailcow receives server student name');
-$assert(str_contains($service, 'scopeManualGradeStudents') && str_contains($service, 'Access::RECOVER') && str_contains($service, 'Access::RECEIPT'), 'Assigned operation permissions and actual scope required');
+$access = $read('app/Support/UniversityEmailAccess.php');
+$assert(str_contains($service, 'scopeManualGradeStudents') && str_contains($service, 'Access::operationPermission')
+    && str_contains($access, "'reset' => self::RECOVER") && str_contains($service, 'Access::RECEIPT'), 'Assigned operation permissions and actual scope required');
 $assert(str_contains($service, 'random_int') && str_contains($service, 'hash_hmac') && str_contains($service, '#[\SensitiveParameter]'), 'Ephemeral credentials must be cryptographic and bound');
 $assert(! preg_match('/(?:password|credential_proof).*\$t->|\$t->.*(?:password|credential_proof)/', $migration), 'No credentials columns');
 $assert(str_contains($migration, 'ue_operation_creation_unique') && str_contains($migration, 'ue_operation_active_unique'), 'Durable concurrency identities required');

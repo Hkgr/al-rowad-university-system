@@ -364,6 +364,10 @@ class UniversityEmailPhase2Test extends TestCase
         $this->assertNotFalse($directory);
         $this->assertStringStartsWith(strtolower(realpath(sys_get_temp_dir())).DIRECTORY_SEPARATOR, strtolower($directory).DIRECTORY_SEPARATOR);
         $this->assertSame(':memory:', config('database.connections.sqlite.database'));
+        if (getenv('UNIVERSITY_EMAIL_PHASE3_FIXTURE') === '1') {
+            (require database_path('migrations/2026_10_01_000003_add_university_email_account_management.php'))->up();
+            $this->artisan('university-email:enable-permissions --phase3')->assertExitCode(0);
+        }
         // Long synthetic identity/address fixtures; never production student data.
         DB::table('students')->where('student_id', 1)->update(['first_name' => 'عبد الرحمن محمد أحمد الاختبار الاصطناعي الطويل', 'last_name' => 'الطالب ذو الاسم العربي الطويل لاختبار الإيصال']);
         DB::table('students')->where('student_id', 2)->update(['student_number' => 'SYNTHETIC2']);

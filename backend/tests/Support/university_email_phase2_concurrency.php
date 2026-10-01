@@ -6,7 +6,8 @@ declare(strict_types=1);
 $directory = realpath((string) getenv('UNIVERSITY_EMAIL_PHASE2_BROWSER_DIR'));
 if (! $directory || ! str_starts_with(strtolower($directory), strtolower(realpath(sys_get_temp_dir())).DIRECTORY_SEPARATOR)
     || ! is_file($directory.'/email.sqlite')) throw new RuntimeException('Private temporary synthetic fixture required');
-$database = 'ue_review_147_'.substr(hash('sha256', $directory), 0, 10);
+$phase3 = getenv('UNIVERSITY_EMAIL_PHASE3_FIXTURE') === '1';
+$database = ($phase3 ? 'ue_phase3_' : 'ue_review_147_').substr(hash('sha256', $directory), 0, 10);
 $assert = function (bool $ok, string $why): void { if (! $ok) throw new RuntimeException($why); };
 $worker = ($argv[1] ?? '') === 'worker';
 
@@ -71,8 +72,8 @@ Http::fake(function ($request) use ($directory, $worker, $argv) {
     if (DB::transactionLevel() !== 0) throw new RuntimeException('Remote call under transaction');
     $stage = $worker ? ($argv[2] ?? '') : '';
     if ($request->method() === 'GET' && str_contains($request->url(), '/get/mailbox/')) {
-        if ($stage === 'before-write' && ! is_file($directory.'/before-write.ready')) checkpoint($directory, 'before-write');
-        if ($stage === 'after-remote' && is_file($directory.'/after-remote.sent') && ! is_file($directory.'/after-remote.ready')) checkpoint($directory, 'after-remote');
+        if (in_array($stage, ['before-write', 'control-before'], true) && ! is_file($directory.'/'.$stage.'.ready')) checkpoint($directory, $stage);
+        if (in_array($stage, ['after-remote', 'control-after'], true) && is_file($directory.'/'.$stage.'.sent') && ! is_file($directory.'/'.$stage.'.ready')) checkpoint($directory, $stage);
     }
     $file = fopen($directory.'/fake-mailcow.json', 'c+'); flock($file, LOCK_EX);
     $contents = stream_get_contents($file);
@@ -83,10 +84,16 @@ Http::fake(function ($request) use ($directory, $worker, $argv) {
         $reset = str_contains($request->url(), '/edit/mailbox');
         $address = $reset ? $request['items'][0] : $request['local_part'].'@'.$request['domain'];
         $data['posts'][] = ['address' => $address, 'reset' => $reset]; // Never store request/password.
-        $data['boxes'][$address] = ['username' => $address, 'domain' => 'alrowaduni.edu.sy', 'quota' => 50 * 1048576,
-            'active_int' => 1, 'attributes' => ['force_pw_update' => 1], 'tags' => $reset ? $request['attr']['tags'] : $request['tags']];
+        if (! $reset) $data['boxes'][$address] = ['username' => $address, 'domain' => 'alrowaduni.edu.sy', 'quota' => 50 * 1048576, 'quota_used' => 1048576,
+            'active_int' => 1, 'attributes' => ['force_pw_update' => 1], 'tags' => $request['tags']];
+        else {
+            $attr = $request['attr'];
+            if (isset($attr['tags'])) $data['boxes'][$address]['tags'] = $attr['tags'];
+            if (isset($attr['active'])) $data['boxes'][$address]['active_int'] = (int) $attr['active'];
+            if (isset($attr['force_pw_update'])) $data['boxes'][$address]['attributes']['force_pw_update'] = (int) $attr['force_pw_update'];
+        }
         rewind($file); ftruncate($file, 0); fwrite($file, json_encode($data, JSON_THROW_ON_ERROR)); fflush($file);
-        if ($stage === 'after-remote') file_put_contents($directory.'/after-remote.sent', 'sent');
+        if (in_array($stage, ['after-remote', 'control-after'], true)) file_put_contents($directory.'/'.$stage.'.sent', 'sent');
         return Http::response([['type' => 'success', 'msg' => [$reset ? 'mailbox_modified' : 'mailbox_added', $address]]]);
     } finally { flock($file, LOCK_UN); fclose($file); }
 });
@@ -101,16 +108,32 @@ if ($worker) {
         if ($job['action'] === 'execute') $service->execute($user, $student, $job['credentials']);
         elseif ($job['action'] === 'cancel') $service->cancel($user, $student, $job['id'], $job['generation']);
         elseif ($job['action'] === 'receipt') $service->receipt($user, $student, $job['id'], $job['generation']);
+        elseif ($job['action'] === 'account') $service->executeAccount($user, $student, ['operation_id' => $job['id'], 'generation' => $job['generation']]);
+        elseif ($job['action'] === 'prepare-password') $service->password($user, $student, $job['revision'], 'reset');
+        elseif ($job['action'] === 'prepare-link') {
+            $preview = $service->previewLink($user, $student, $job['address']);
+            checkpoint($directory, $argv[2]);
+            $service->prepareAccount($user, $student, ['kind' => 'link', 'revision' => 1, 'reason' => 'Synthetic ownership attestation',
+                'ownership_confirmed' => true, 'email_address' => $job['address'], 'preview_proof' => $preview['preview_proof']]);
+        }
         else throw new RuntimeException('Unknown test action');
         echo json_encode(['result' => 'ok', 'connection' => DB::selectOne('SELECT CONNECTION_ID() AS id')->id]);
     } catch (\App\Exceptions\UniversityEmailException $failure) {
         echo json_encode(['result' => $failure->errorCode, 'connection' => DB::selectOne('SELECT CONNECTION_ID() AS id')->id]);
+    } catch (\Throwable $failure) {
+        // Do not let Laravel's console renderer leak worker payloads or disguise failure as exit 0.
+        echo json_encode(['result' => 'unexpected:'.get_class($failure).':'.$failure->getLine(), 'connection' => DB::selectOne('SELECT CONNECTION_ID() AS id')->id]);
     }
     exit;
 }
 
 foreach (['000000_create_student_university_emails', '000001_add_university_email_provisioning', '000002_add_university_email_operation_cancellation'] as $migration) {
     (require dirname(__DIR__, 2).'/database/migrations/2026_10_01_'.$migration.'.php')->up();
+}
+if ($phase3) {
+    (require dirname(__DIR__, 2).'/database/migrations/2026_10_01_000003_add_university_email_account_management.php')->up();
+    $assert(\Illuminate\Support\Facades\Artisan::call('university-email:enable-permissions', ['--phase3' => true]) === 0, 'Phase 3 test permissions');
+    $user = User::findOrFail(8);
 }
 $start = function (array $job, string $stage = '') use ($directory): array {
     $process = proc_open([PHP_BINARY, __FILE__, 'worker', $stage], [['pipe', 'r'], ['pipe', 'w'], ['pipe', 'w']], $pipes);
@@ -173,5 +196,53 @@ $service->reconcile($user, 2, $c['operation_id']);
 $assert($posts() === 3, 'Reconciliation never posts');
 $assert(DB::table('user_activity_logs')->where('action_code', 'university_email.operation_cancelled')->count() === 1, 'Exactly one cancellation audit');
 $assert(DB::table('student_university_emails')->where('handover_status', '!=', 'not_delivered')->count() === 0, 'No delivery mutation');
+if ($phase3) {
+    $prepare = function (string $kind) use ($service, $user): array {
+        $state = $service->prepareAccount($user, 1, ['kind' => $kind, 'revision' => 1, 'reason' => 'Synthetic independent-connection test']);
+        return ['action' => 'account', 'id' => $state['operations'][0]['operation_id'], 'generation' => 1];
+    };
+    $job = $prepare('suspend'); $a = $start($job, 'control-before'); $await('control-before');
+    $b = $finish($start($job)); $assert($b['result'] === 'university_email_operation_stale', 'Duplicate control execute denied');
+    $b = $finish($start(['action' => 'prepare-password', 'revision' => 1])); $assert($b['result'] === 'university_email_operation_not_retryable', 'Phase 2 reset cannot race control operation');
+    $b = $finish($start(['action' => 'cancel', 'id' => $job['id'], 'generation' => 1])); $assert($b['result'] === 'ok', 'Control pre-write cancellation wins');
+    $release('control-before'); $assert($finish($a)['result'] === 'university_email_operation_stale' && $posts() === 3, 'Cancelled control makes zero posts');
+
+    $job = $prepare('suspend'); $a = $start($job, 'control-after'); $await('control-after');
+    $b = $finish($start($job)); $assert($b['result'] === 'university_email_operation_stale', 'Duplicate started operation denied');
+    $b = $finish($start(['action' => 'cancel', 'id' => $job['id'], 'generation' => 1])); $assert($b['result'] === 'university_email_operation_not_cancellable', 'Control write wins cancellation');
+    $release('control-after'); $assert($finish($a)['result'] === 'ok' && $posts() === 4, 'Exactly one control POST');
+
+    foreach (['control-after.ready', 'control-after.release', 'control-after.sent'] as $marker) unlink($directory.'/'.$marker);
+    $new = $service->password($user, 1, 1, 'password_reset', 'Synthetic confirmed general reset');
+    $a = $start(['action' => 'execute', 'credentials' => $new], 'control-after'); $await('control-after');
+    $b = $finish($start(['action' => 'receipt', 'id' => $reset['operation_id'], 'generation' => 1])); $assert($b['result'] === 'university_email_credentials_unavailable', 'Old receipt denied during general reset');
+    $release('control-after'); $assert($finish($a)['result'] === 'ok' && $posts() === 5, 'General reset confirmed without activation');
+
+    $job = $prepare('activate');
+    DB::unprepared("CREATE TRIGGER synthetic_account_confirmation_failure BEFORE INSERT ON user_activity_logs FOR EACH ROW BEGIN IF NEW.action_code = 'university_email.activate_confirmed' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'synthetic failure'; END IF; END");
+    $b = $finish($start($job)); $assert($b['result'] === 'university_email_local_confirmation_failed' && $posts() === 6, 'Remote control success/local commit failure');
+    $b = $finish($start($job)); $assert($b['result'] === 'university_email_operation_stale' && $posts() === 6, 'Uncertain control cannot repost');
+    DB::unprepared('DROP TRIGGER synthetic_account_confirmation_failure');
+    DB::table('university_email_operations')->where('operation_id', $job['id'])->update(['updated_at' => now()->subMinutes(2)]);
+    $service->reconcile($user, 1, $job['id']); $assert($posts() === 6, 'Control reconciliation is read only upstream');
+    $assert(DB::table('student_university_emails')->where('handover_status', '!=', 'not_delivered')->count() === 0, 'Phase 3 never records delivery');
+
+    // Two distinct student locks still cannot reserve the same verified legacy address.
+    foreach ([3, 4] as $student) {
+        DB::table('students')->where('student_id', $student)->update(['student_number' => 'SYNTHETIC'.$student]);
+        app(\App\Services\UniversityEmailService::class)->save($user, $student, ['english_first_name' => 'Synthetic', 'revision' => 0]);
+    }
+    $address = 'synthetic.legacy@alrowaduni.edu.sy';
+    $fake = json_decode(file_get_contents($directory.'/fake-mailcow.json'), true, flags: JSON_THROW_ON_ERROR);
+    $fake['boxes'][$address] = ['username' => $address, 'domain' => 'alrowaduni.edu.sy', 'quota' => 200 * 1048576,
+        'quota_used' => 0, 'active_int' => 0, 'attributes' => ['force_pw_update' => 0], 'tags' => ['synthetic-existing-tag']];
+    file_put_contents($directory.'/fake-mailcow.json', json_encode($fake, JSON_THROW_ON_ERROR), LOCK_EX);
+    $a = $start(['action' => 'prepare-link', 'student' => 3, 'address' => $address], 'link-a');
+    $b = $start(['action' => 'prepare-link', 'student' => 4, 'address' => $address], 'link-b');
+    $await('link-a'); $await('link-b'); $release('link-a'); $release('link-b');
+    $one = $finish($a); $two = $finish($b); $results = [$one['result'], $two['result']]; sort($results);
+    $assert($results === ['ok', 'university_email_address_conflict'] && $one['connection'] !== $two['connection'], 'One legacy-address reservation across independent student locks: '.implode(',', $results));
+    $assert(DB::table('student_university_emails')->where('email_address', $address)->count() === 1 && $posts() === 6, 'Reservation makes no remote write');
+}
 echo json_encode(['passed' => true, 'server' => DB::selectOne('SELECT VERSION() AS version')->version,
-    'scenarios' => 4, 'remote_posts' => $posts(), 'verification' => 'independent PHP processes and MariaDB connections, isolated synthetic data; no production'], JSON_THROW_ON_ERROR).PHP_EOL;
+    'scenarios' => $phase3 ? 9 : 4, 'remote_posts' => $posts(), 'verification' => 'independent PHP processes and MariaDB connections, isolated synthetic data; no production'], JSON_THROW_ON_ERROR).PHP_EOL;
