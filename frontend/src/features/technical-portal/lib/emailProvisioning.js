@@ -1,6 +1,12 @@
 export const operationLabels = {
   prepared: 'كلمة أولية مجهزة مؤقتًا', preflight: 'جارٍ التحقق من العنوان', in_progress: 'عملية إنشاء قيد التنفيذ',
   uncertain: 'نتيجة غير مؤكدة — يلزم التحقق', confirmed: 'عملية مؤكدة', conflict: 'تعارض عنوان — لا يتم تبنيه', failed: 'فشل قبل الكتابة',
+  cancelled: 'أُلغيت قبل الكتابة — بياناتها غير صالحة',
+}
+export function canCancelOperation(operation, { mayCreate, mayReset }) {
+  return operation?.can_cancel === true && !operation.write_started_at
+    && ['prepared', 'failed', 'preflight', 'conflict'].includes(operation.status)
+    && (operation.kind === 'create' ? mayCreate : operation.kind === 'reset' && mayReset)
 }
 export function printableCredentials(state, credentials) {
   if (!state || !credentials || state.provisioning_status !== 'created' || state.credential_operation_id !== credentials.operation_id) return false

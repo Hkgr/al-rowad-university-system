@@ -12,5 +12,5 @@ final class UniversityEmailOperation extends Model
     protected $guarded = [];
     protected $casts = ['generation' => 'integer', 'draft_revision' => 'integer', 'quota_mb' => 'integer',
         'active_slot' => 'integer', 'creation_slot' => 'integer', 'issued_by_user_id' => 'integer', 'initiated_by_user_id' => 'integer',
-        'write_started_at' => 'datetime', 'verified_at' => 'datetime'];
+        'write_started_at' => 'datetime', 'verified_at' => 'datetime', 'cancelled_at' => 'datetime', 'cancelled_by_user_id' => 'integer'];
 }

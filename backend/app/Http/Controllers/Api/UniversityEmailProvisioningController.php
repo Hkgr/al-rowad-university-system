@@ -52,6 +52,11 @@ final class UniversityEmailProvisioningController extends Controller
         $i = $this->input($r, ['operation_id' => 'required|uuid'], Access::CREATE);
         return $this->response($s->reconcile($r->user(), $student, $i['operation_id']));
     }
+    public function cancel(Request $r, int $student, Service $s): JsonResponse
+    {
+        $i = $this->input($r, ['operation_id' => 'required|uuid', 'generation' => 'required|integer|min:1', 'confirmed' => 'required|accepted'], Access::VIEW);
+        return $this->response($s->cancel($r->user(), $student, $i['operation_id'], (int) $i['generation']));
+    }
     public function receipt(Request $r, int $student, Service $s): JsonResponse
     {
         $i = $this->input($r, ['operation_id' => 'required|uuid', 'generation' => 'required|integer|min:1'], Access::RECEIPT);

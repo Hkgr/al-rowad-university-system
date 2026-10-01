@@ -76,10 +76,10 @@ final class MailcowProvisioningClient
         return false;
     }
 
-    public function create(string $address, string $marker, #[\SensitiveParameter] string $password): void
+    public function create(string $address, string $marker, #[\SensitiveParameter] string $password, string $studentName): void
     {
         $data = $this->request('POST', 'add/mailbox', ['local_part' => explode('@', $address)[0], 'domain' => 'alrowaduni.edu.sy',
-            'name' => 'University student', 'active' => '1', 'authsource' => 'mailcow', 'quota' => '50',
+            'name' => $studentName, 'active' => '1', 'authsource' => 'mailcow', 'quota' => '50',
             'password' => $password, 'password2' => $password, 'force_pw_update' => '1', 'sogo_access' => '1', 'tags' => [$marker]]);
         $this->success($data, 'mailbox_added', $address);
     }

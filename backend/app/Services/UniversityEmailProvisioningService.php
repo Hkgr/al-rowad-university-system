@@ -16,6 +16,7 @@ final class UniversityEmailProvisioningService
     public static function schemaReady(): bool
     {
         return Schema::hasTable('university_email_operations') && Schema::hasTable('university_email_receipts')
+            && Schema::hasColumns('university_email_operations', ['cancelled_at', 'cancelled_by_user_id'])
             && Schema::hasColumns('student_university_emails', ['creation_operation_id', 'credential_operation_id']);
     }
 
@@ -51,11 +52,33 @@ final class UniversityEmailProvisioningService
         $operations = $email ? UniversityEmailOperation::where('university_email_id', $email->university_email_id)
             ->orderByRaw('CASE WHEN active_slot = 1 THEN 0 WHEN operation_id = ? THEN 1 ELSE 2 END', [$email->credential_operation_id ?? ''])
             ->orderByDesc('created_at')->orderByDesc('operation_id')->limit(50)->get() : collect();
-        return ['schema_ready' => true, 'enabled' => $this->remote->enabled(), 'draft_locked' => $operations->isNotEmpty(),
+        return ['schema_ready' => true, 'enabled' => $this->remote->enabled(), 'draft_locked' => $email && UniversityEmailOperation::where('university_email_id', $email->university_email_id)->where('status', '!=', 'cancelled')->exists(),
             'email_address' => $email?->email_address, 'provisioning_status' => $email?->provisioning_status,
             'handover_status' => $email?->handover_status, 'creation_operation_id' => $email?->creation_operation_id,
             'credential_operation_id' => $email?->credential_operation_id,
-            'operations' => $operations->map(fn ($op) => $op->only(['operation_id', 'kind', 'status', 'generation', 'draft_revision', 'failure_code', 'write_started_at', 'verified_at']))->all()];
+            'operations' => $operations->map(fn ($op) => $op->only(['operation_id', 'kind', 'status', 'generation', 'draft_revision', 'failure_code', 'write_started_at', 'verified_at', 'cancelled_at']) +
+                ['can_cancel' => ! $op->write_started_at && in_array($op->status, ['prepared', 'failed', 'preflight', 'conflict'], true)])->all()];
+    }
+
+    /** Explicit cancellation releases only unused slots; no remote action or history deletion. */
+    public function cancel(User $user, int $student, string $id, int $generation): array
+    {
+        $this->authorize($user, $student, Access::VIEW);
+        return DB::transaction(function () use ($user, $student, $id, $generation) {
+            $email = $this->locked($student, $user);
+            $op = UniversityEmailOperation::whereKey($id)->where('university_email_id', $email->university_email_id)->lockForUpdate()->first();
+            abort_unless($op, 403);
+            Access::authorize($user, $op->kind === 'create' ? Access::CREATE : Access::RECOVER);
+            if ($op->generation !== $generation || $op->write_started_at
+                || ! in_array($op->status, ['prepared', 'failed', 'preflight', 'conflict'], true)) $this->fail('university_email_operation_not_cancellable');
+            // Invalidates all issued proofs and the old preflight worker's generation.
+            $op->generation++;
+            $op->fill(['status' => 'cancelled', 'creation_slot' => null, 'active_slot' => null,
+                'cancelled_at' => now(), 'cancelled_by_user_id' => $user->user_id, 'failure_code' => null]);
+            $op->save();
+            $this->audit($user, $email, $op, 'operation_cancelled');
+            return $this->describe($email);
+        });
     }
 
     /** Password and proof exist only in this response and the browser's ephemeral memory. */
@@ -138,7 +161,7 @@ final class UniversityEmailProvisioningService
                 $email = StudentUniversityEmail::findOrFail($op->university_email_id);
                 if (! $this->verified($mailbox, $email->creation_operation_id)) $this->fail('university_email_not_owned');
             }
-            DB::transaction(function () use ($op, $user) {
+            $studentName = DB::transaction(function () use ($op, $user) {
                 $email = $this->locked(StudentUniversityEmail::findOrFail($op->university_email_id)->student_id, $user);
                 Access::authorize($user, $op->kind === 'create' ? Access::CREATE : Access::RECOVER);
                 Access::authorize($user, Access::RECEIPT);
@@ -147,9 +170,11 @@ final class UniversityEmailProvisioningService
                     || $current->issued_by_user_id !== $op->issued_by_user_id || $email->revision !== $op->draft_revision
                     || $email->email_address !== $op->email_address || $email->handover_status !== 'not_delivered') $this->fail('university_email_operation_stale');
                 $current->status = 'in_progress'; $current->write_started_at = now(); $current->save();
+                $student = Student::findOrFail($email->student_id);
+                return trim($student->first_name.' '.$student->last_name);
             });
             $op->refresh();
-            if ($op->kind === 'create') $this->remote->create($op->email_address, $this->marker($op->operation_id), $input['password']);
+            if ($op->kind === 'create') $this->remote->create($op->email_address, $this->marker($op->operation_id), $input['password'], $studentName);
             else $this->remote->reset($op->email_address, [...$mailbox['tags'], $this->marker($op->operation_id)], $input['password']);
             if (! $this->verified($this->remote->mailbox($op->email_address), $op->operation_id)) $this->fail('university_email_remote_verification_failed', 502);
             return $this->confirm($user, $student, $op, true);
@@ -169,7 +194,7 @@ final class UniversityEmailProvisioningService
             DB::transaction(function () use ($op, $code) {
                 $this->locked(StudentUniversityEmail::findOrFail($op->university_email_id)->student_id);
                 $current = UniversityEmailOperation::whereKey($op->operation_id)->lockForUpdate()->firstOrFail();
-                if ($current->status === 'confirmed' || $current->generation !== $op->generation) return;
+                if (in_array($current->status, ['confirmed', 'cancelled'], true) || $current->generation !== $op->generation) return;
                 $current->status = $current->write_started_at ? 'uncertain' : ($code === 'university_email_address_conflict' ? 'conflict' : 'failed');
                 $current->active_slot = $current->write_started_at ? 1 : null;
                 $current->failure_code = $code; $current->save();

@@ -34,6 +34,7 @@ class UniversityEmailPhase2Test extends TestCase
         $this->artisan('university-email:enable-permissions --phase2')->assertExitCode(0);
         (require database_path('migrations/2026_10_01_000000_create_student_university_emails.php'))->up();
         (require database_path('migrations/2026_10_01_000001_add_university_email_provisioning.php'))->up();
+        (require database_path('migrations/2026_10_01_000002_add_university_email_operation_cancellation.php'))->up();
         DB::table('students')->where('student_id', 1)->update(['student_number' => 'R24011002', 'first_name' => 'أحمد', 'last_name' => 'اختبار']);
         config(['app.key' => 'base64:'.base64_encode(str_repeat('s', 32)), 'mailcow.provisioning_enabled' => true,
             'mailcow.contract_verified' => true, 'mailcow.write_api_key' => 'synthetic-write-key', 'mailcow.password_length' => 24]);
@@ -42,6 +43,11 @@ class UniversityEmailPhase2Test extends TestCase
             $this->assertSame(0, DB::transactionLevel(), 'Remote calls must not hold DB locks');
             if (str_contains($r->url(), '/get/alias/all')) return Http::response($this->aliases);
             if (str_contains($r->url(), '/get/mailbox/')) {
+                if ($this->failure === 'preflight_cancelled') {
+                    $this->failure = null;
+                    $op = UniversityEmailOperation::firstOrFail();
+                    app(\App\Services\UniversityEmailProvisioningService::class)->cancel(User::findOrFail(8), 1, $op->operation_id, $op->generation);
+                }
                 if ($this->failure === 'preflight_replaced') {
                     // Deterministic interleaving, not a claim of MariaDB concurrency.
                     DB::table('university_email_operations')->increment('generation');
@@ -50,6 +56,15 @@ class UniversityEmailPhase2Test extends TestCase
                 return Http::response(str_contains($r->url(), '/all/') ? array_values($this->boxes) : ($this->boxes[rawurldecode(basename($r->url()))] ?? []));
             }
             $this->writes++;
+            if ($this->failure === 'cancel_after_write_authority') {
+                $op = UniversityEmailOperation::firstOrFail();
+                try {
+                    app(\App\Services\UniversityEmailProvisioningService::class)->cancel(User::findOrFail(8), 1, $op->operation_id, $op->generation);
+                    $this->fail('Write authority must make cancellation impossible');
+                } catch (\App\Exceptions\UniversityEmailException $failure) {
+                    $this->assertSame('university_email_operation_not_cancellable', $failure->errorCode);
+                }
+            }
             if (in_array($this->failure, ['401', '403', '429'], true)) return Http::response(['secret' => $r['password']], (int) $this->failure);
             if ($this->failure === 'danger') return Http::response([['type' => 'danger', 'msg' => ['password '.$r['password']], 'log' => $r->data()]]);
             if ($this->failure === 'invalid') return Http::response('not-json', 200);
@@ -74,6 +89,107 @@ class UniversityEmailPhase2Test extends TestCase
     private function execute(array $credentials): \Illuminate\Testing\TestResponse
     {
         return $this->postJson(self::ROOT.'/provisioning/execute', array_diff_key($credentials, ['kind' => true]) + ['confirmed' => true]);
+    }
+
+    public function test_cancel_preserves_history_releases_slots_and_invalidates_old_credentials(): void
+    {
+        $c = $this->credentials();
+        $this->postJson(self::ROOT.'/provisioning/cancel', ['operation_id' => $c['operation_id'], 'generation' => 1, 'confirmed' => true])
+            ->assertOk()->assertJsonPath('data.draft_locked', false)->assertJsonPath('data.operations.0.status', 'cancelled');
+        $this->assertDatabaseHas('university_email_operations', ['operation_id' => $c['operation_id'], 'generation' => 2,
+            'creation_slot' => null, 'active_slot' => null, 'cancelled_by_user_id' => 8]);
+        $this->getJson(self::ROOT)->assertOk()->assertJsonPath('data.draft_locked', false);
+        $this->execute($c)->assertConflict()->assertJsonPath('error_code', 'university_email_operation_stale');
+        Http::assertNothingSent();
+        $this->putJson(self::ROOT.'/draft', ['english_first_name' => 'Corrected', 'revision' => 1])->assertOk();
+        $next = $this->postJson(self::ROOT.'/provisioning/password', ['revision' => 2])->assertOk()->json('data');
+        $this->assertNotSame($c['operation_id'], $next['operation_id']);
+        $this->assertDatabaseCount('university_email_operations', 2);
+        $this->assertSame(1, DB::table('university_email_operations')->where('creation_slot', 1)->count());
+        $this->assertSame(1, DB::table('user_activity_logs')->where('action_code', 'university_email.operation_cancelled')->count());
+        $this->execute($next)->assertOk();
+        $this->assertSame(1, $this->writes);
+    }
+
+    public function test_failed_operation_can_be_cancelled_but_started_or_confirmed_operations_cannot(): void
+    {
+        foreach (['failed', 'prepared', 'conflict', 'preflight', 'in_progress', 'uncertain', 'confirmed'] as $state) {
+            $this->travel(2)->minutes();
+            if (! isset($c)) $c = $this->credentials();
+            DB::table('university_email_operations')->where('operation_id', $c['operation_id'])->update([
+                'status' => $state, 'generation' => 1, 'creation_slot' => 1, 'active_slot' => 1,
+                'write_started_at' => in_array($state, ['in_progress', 'uncertain', 'confirmed']) ? now() : null]);
+            $response = $this->postJson(self::ROOT.'/provisioning/cancel', ['operation_id' => $c['operation_id'], 'generation' => 1, 'confirmed' => true]);
+            if (in_array($state, ['in_progress', 'uncertain', 'confirmed'])) $response->assertConflict()->assertJsonPath('error_code', 'university_email_operation_not_cancellable');
+            else $response->assertOk()->assertJsonPath('data.operations.0.status', 'cancelled');
+        }
+        Http::assertNothingSent();
+    }
+
+    public function test_preflight_cancellation_stops_old_worker_without_overwriting_cancellation(): void
+    {
+        $c = $this->credentials(); $this->failure = 'preflight_cancelled';
+        $this->execute($c)->assertConflict()->assertJsonPath('error_code', 'university_email_operation_stale');
+        $this->assertSame(0, $this->writes);
+        $this->assertDatabaseHas('university_email_operations', ['operation_id' => $c['operation_id'], 'status' => 'cancelled', 'generation' => 2, 'write_started_at' => null]);
+        $this->assertDatabaseCount('university_email_receipts', 0);
+    }
+
+    public function test_write_authority_wins_interleaving_and_cancellation_is_denied(): void
+    {
+        $c = $this->credentials(); $this->failure = 'cancel_after_write_authority';
+        $this->execute($c)->assertOk();
+        $this->assertSame(1, $this->writes);
+        $this->assertDatabaseHas('university_email_operations', ['status' => 'confirmed', 'generation' => 1]);
+    }
+
+    public function test_mailcow_name_is_server_student_name_and_password_supports_64_characters(): void
+    {
+        config(['mailcow.password_length' => 64]);
+        DB::table('students')->where('student_id', 1)->update(['first_name' => 'عبد الرحمن محمد أحمد', 'last_name' => 'الاختبار الاصطناعي الطويل']);
+        $c = $this->credentials();
+        $this->assertSame(64, strlen($c['password']));
+        $this->execute($c)->assertOk();
+        Http::assertSent(fn ($r) => str_contains($r->url(), '/add/mailbox') && $r['name'] === 'عبد الرحمن محمد أحمد الاختبار الاصطناعي الطويل'
+            && $r['local_part'] === 'ahmad.r24011002' && $r['password'] === $c['password'] && $r['password2'] === $c['password']);
+        $this->postJson(self::ROOT.'/provisioning/execute', array_diff_key($c, ['kind' => true]) + ['confirmed' => true, 'name' => 'Untrusted'])->assertUnprocessable();
+    }
+
+    public function test_pending_reset_blocks_old_receipt_and_cancel_restores_confirmed_credentials_only(): void
+    {
+        $c = $this->credentials(); $this->execute($c)->assertOk();
+        $reset = $this->postJson(self::ROOT.'/provisioning/reissue', ['revision' => 1])->assertOk()->json('data');
+        $this->postJson(self::ROOT.'/provisioning/receipt', ['operation_id' => $c['operation_id'], 'generation' => 1])->assertConflict();
+        $this->postJson(self::ROOT.'/provisioning/cancel', ['operation_id' => $reset['operation_id'], 'generation' => 1, 'confirmed' => true])->assertOk();
+        $this->execute($reset)->assertConflict();
+        $this->postJson(self::ROOT.'/provisioning/receipt', ['operation_id' => $c['operation_id'], 'generation' => 1])->assertOk();
+        $this->assertDatabaseHas('student_university_emails', ['handover_status' => 'not_delivered']);
+        $this->assertSame(1, $this->writes);
+    }
+
+    public function test_cancel_requires_permission_confirmation_and_current_generation(): void
+    {
+        $c = $this->credentials();
+        $payload = ['operation_id' => $c['operation_id'], 'generation' => 1, 'confirmed' => true];
+        $this->postJson(self::ROOT.'/provisioning/cancel', $payload + ['name' => 'Untrusted'])->assertUnprocessable();
+        $this->postJson(self::ROOT.'/provisioning/cancel', array_replace($payload, ['confirmed' => false]))->assertUnprocessable();
+        $this->postJson(self::ROOT.'/provisioning/cancel', array_replace($payload, ['generation' => 2]))->assertConflict();
+        $id = DB::table('permissions')->where('permission_code', Access::CREATE)->value('permission_id');
+        DB::table('role_permissions')->where('permission_id', $id)->delete();
+        $this->postJson(self::ROOT.'/provisioning/cancel', $payload)->assertForbidden();
+        $this->assertDatabaseHas('university_email_operations', ['status' => 'prepared', 'generation' => 1, 'creation_slot' => 1]);
+        Http::assertNothingSent();
+    }
+
+    public function test_cancel_audit_failure_rolls_back_slots_generation_and_draft_unlock(): void
+    {
+        $c = $this->credentials();
+        DB::statement("CREATE TRIGGER synthetic_cancel_audit_failure BEFORE INSERT ON user_activity_logs WHEN NEW.action_code = 'university_email.operation_cancelled' BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END");
+        $this->postJson(self::ROOT.'/provisioning/cancel', ['operation_id' => $c['operation_id'], 'generation' => 1, 'confirmed' => true])->assertStatus(500);
+        $this->assertDatabaseHas('university_email_operations', ['operation_id' => $c['operation_id'], 'status' => 'prepared', 'generation' => 1,
+            'creation_slot' => 1, 'active_slot' => 1, 'cancelled_at' => null]);
+        $this->getJson(self::ROOT)->assertOk()->assertJsonPath('data.draft_locked', true);
+        Http::assertNothingSent();
     }
 
     public function test_complete_real_http_flow_and_idempotent_receipt_without_delivery_claim(): void
@@ -248,6 +364,9 @@ class UniversityEmailPhase2Test extends TestCase
         $this->assertNotFalse($directory);
         $this->assertStringStartsWith(strtolower(realpath(sys_get_temp_dir())).DIRECTORY_SEPARATOR, strtolower($directory).DIRECTORY_SEPARATOR);
         $this->assertSame(':memory:', config('database.connections.sqlite.database'));
+        // Long synthetic identity/address fixtures; never production student data.
+        DB::table('students')->where('student_id', 1)->update(['first_name' => 'عبد الرحمن محمد أحمد الاختبار الاصطناعي الطويل', 'last_name' => 'الطالب ذو الاسم العربي الطويل لاختبار الإيصال']);
+        DB::table('students')->where('student_id', 2)->update(['student_number' => 'SYNTHETIC2']);
         Schema::create('personal_access_tokens', function (Blueprint $t) {
             $t->id(); $t->string('tokenable_type'); $t->unsignedBigInteger('tokenable_id'); $t->string('name');
             $t->string('token', 64)->unique(); $t->text('abilities')->nullable(); $t->timestamp('last_used_at')->nullable();

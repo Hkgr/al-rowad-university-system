@@ -1,7 +1,25 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { printableCredentials, provisioningFailure, operationLabels } from '../src/features/technical-portal/lib/emailProvisioning.js'
+import { canCancelOperation, printableCredentials, provisioningFailure, operationLabels } from '../src/features/technical-portal/lib/emailProvisioning.js'
+
+test('cancel UI requires server capability, original operation permission and no write start', () => {
+  const op = { kind: 'create', status: 'prepared', can_cancel: true, write_started_at: null }
+  assert.equal(canCancelOperation(op, { mayCreate: true, mayReset: false }), true)
+  assert.equal(canCancelOperation(op, { mayCreate: false, mayReset: true }), false)
+  for (const status of ['in_progress', 'uncertain', 'confirmed', 'cancelled']) assert.equal(canCancelOperation({ ...op, status }, { mayCreate: true }), false)
+  assert.equal(canCancelOperation({ ...op, write_started_at: 'now' }, { mayCreate: true }), false)
+  assert.equal(canCancelOperation({ ...op, can_cancel: false }, { mayCreate: true }), false)
+  assert.equal(canCancelOperation({ ...op, kind: 'reset' }, { mayReset: true }), true)
+})
+
+test('receipt preserves exact credential text with LTR isolation and wrap instead of slicing', () => {
+  const src = readFileSync(new URL('../src/features/technical-portal/components/UniversityEmailReceipt.jsx', import.meta.url), 'utf8')
+  assert.match(src, /data-receipt-password dir="ltr"/)
+  assert.match(src, /overflowWrap: 'anywhere', whiteSpace: 'pre-wrap', unicodeBidi: 'isolate', hyphens: 'none'/)
+  assert.match(src, /\{password\}/)
+  assert.doesNotMatch(src, /password\.(slice|substring|replace)|textOverflow|overflow: 'hidden'/)
+})
 
 test('only currently confirmed credentials can produce a PDF', () => {
   const c = { operation_id: 'one', generation: 2 }

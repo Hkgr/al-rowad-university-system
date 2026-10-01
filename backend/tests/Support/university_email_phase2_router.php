@@ -12,7 +12,8 @@ if (! $app->environment('testing') || ! $directory
     http_response_code(503); exit('Isolated email fixture required');
 }
 config(['app.key' => 'base64:'.base64_encode(str_repeat('s', 32)), 'mailcow.provisioning_enabled' => true,
-    'mailcow.contract_verified' => true, 'mailcow.write_api_key' => 'synthetic-write-key', 'mailcow.api_key' => 'synthetic-read-key']);
+    'mailcow.contract_verified' => true, 'mailcow.write_api_key' => 'synthetic-write-key', 'mailcow.api_key' => 'synthetic-read-key',
+    'mailcow.password_length' => (int) (getenv('UNIVERSITY_EMAIL_PHASE2_PASSWORD_LENGTH') ?: 24)]);
 Http::preventStrayRequests();
 Http::fake(function ($request) use ($directory) {
     if (DB::transactionLevel() !== 0) throw new RuntimeException('Synthetic Mailcow transport under transaction');

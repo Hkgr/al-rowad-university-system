@@ -68,7 +68,7 @@ final class UniversityEmailService
                 }
                 $name = strtolower(preg_replace('/\A\s+|\s+\z/u', '', $input['english_first_name']));
                 if ($draft && Schema::hasTable('university_email_operations')
-                    && \App\Models\UniversityEmailOperation::where('university_email_id', $draft->university_email_id)->exists()) {
+                    && \App\Models\UniversityEmailOperation::where('university_email_id', $draft->university_email_id)->where('status', '!=', 'cancelled')->exists()) {
                     throw new UniversityEmailException('university_email_identity_frozen', 'بدأت عملية إنشاء مرتبطة بهذه المسودة؛ لا يمكن تغيير عنوانها.');
                 }
                 $number = strtolower(trim($student->student_number));
@@ -123,7 +123,7 @@ final class UniversityEmailService
         $draft = StudentUniversityEmail::query()->where('student_id', $student->student_id)->first();
         return ['student' => $this->studentData($student) + ['email_preparation' => $this->emailSummary($draft, true)], 'draft' => $draft ? $draft->only(['university_email_id', 'english_first_name', 'email_address', 'quota_mb', 'provisioning_status', 'handover_status', 'revision', 'created_at', 'updated_at']) : null,
             'settings' => $this->settings(), 'draft_locked' => $draft && Schema::hasTable('university_email_operations')
-                && \App\Models\UniversityEmailOperation::where('university_email_id', $draft->university_email_id)->exists()];
+                && \App\Models\UniversityEmailOperation::where('university_email_id', $draft->university_email_id)->where('status', '!=', 'cancelled')->exists()];
     }
     private function emailSummary(?StudentUniversityEmail $draft, bool $available): array
     {

@@ -1,5 +1,5 @@
 export default function UniversityEmailReceipt({ receipt, password }) {
-  return <article dir="rtl" data-email-receipt style={{ width: 730, minHeight: 1000, padding: 42, background: 'white', color: '#172c24', fontFamily: 'Cairo, sans-serif', boxSizing: 'border-box' }}>
+  return <article dir="rtl" data-email-receipt style={{ width: 730, minHeight: 1000, padding: 42, background: 'white', color: '#172c24', fontFamily: 'Cairo, sans-serif', boxSizing: 'border-box', overflowWrap: 'anywhere' }}>
     <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '3px solid #176648', paddingBottom: 18 }}>
       <div><h1 style={{ fontSize: 22, margin: 0 }}>جامعة الروّاد للعلوم والتقانة</h1><p style={{ fontSize: 18 }}>إيصال تسليم البريد الجامعي</p></div>
       <img src="/logo.png" alt="شعار الجامعة" style={{ width: 90, height: 90 }} />
@@ -9,8 +9,8 @@ export default function UniversityEmailReceipt({ receipt, password }) {
     <p>الاسم: {receipt.student.full_name}</p><p>الرقم الجامعي: <span dir="ltr">{receipt.student.student_number}</span></p>
     <p>الكلية: {receipt.student.college || 'غير محدد'}</p>
     <section style={{ border: '1px solid #176648', borderRadius: 10, padding: 20, margin: '25px 0' }}>
-      <p>البريد الجامعي</p><p dir="ltr" style={{ fontSize: 19, overflowWrap: 'anywhere', textAlign: 'left' }}>{receipt.email_address}</p>
-      <p>كلمة المرور الأولية</p><p dir="ltr" style={{ fontSize: 22, fontFamily: 'monospace', letterSpacing: 1, textAlign: 'left' }}>{password}</p>
+      <p>البريد الجامعي</p><p data-receipt-address dir="ltr" style={{ fontSize: 19, overflowWrap: 'anywhere', textAlign: 'left', unicodeBidi: 'isolate', hyphens: 'none' }}>{receipt.email_address}</p>
+      <p>كلمة المرور الأولية</p><p data-receipt-password dir="ltr" style={{ fontSize: 22, fontFamily: 'monospace', letterSpacing: 1, textAlign: 'left', overflowWrap: 'anywhere', whiteSpace: 'pre-wrap', unicodeBidi: 'isolate', hyphens: 'none' }}>{password}</p>
     </section>
     <h2 style={{ fontSize: 18 }}>الدخول وتغيير كلمة المرور</h2>
     <p>افتح صفحة حساب البريد وسجّل الدخول باستخدام العنوان الكامل وكلمة المرور الأولية، ثم غيّر كلمة المرور من واجهة حساب Mailcow قبل استخدام البريد.</p>
