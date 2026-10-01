@@ -117,6 +117,7 @@ import { reportAccessForOffice } from '../features/executive-reports/access'
 // ── المكتب التقني (Technical Office portal) ────────────────────────────────
 import technicalNav from '../features/technical-portal/nav'
 import TechnicalHome from '../features/technical-portal/pages/TechnicalHome'
+import UniversityEmailPage from '../features/technical-portal/pages/UniversityEmailPage'
 import AccountsPermissionsPage from '../features/technical-portal/pages/AccountsPermissionsPage'
 import ActivityLogPage from '../features/technical-portal/pages/ActivityLogPage'
 
@@ -422,6 +423,7 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/technical" element={<TechnicalHome />} />
           <Route path="/technical/accounts" element={protect(<AccountsPermissionsPage />, ACCESS.technicalAccounts)} />
           <Route path="/technical/activity" element={protect(<ActivityLogPage />, ACCESS.technicalActivity)} />
+          <Route path="/technical/university-email" element={protect(<UniversityEmailPage />, ACCESS.universityEmail)} />
           <Route path="/technical/guide" element={<UserGuidePage guideId="technical" />} />
         </Route>
 

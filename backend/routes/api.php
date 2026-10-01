@@ -834,6 +834,13 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
         Route::post('deans/{college}/end', 'deansEnd')->whereNumber('college');
     });
 
+    Route::prefix('technical/university-email')->controller(\App\Http\Controllers\Api\UniversityEmailController::class)->group(function (): void {
+        Route::get('students', 'index');
+        Route::get('students/{student}', 'show')->whereNumber('student');
+        Route::put('students/{student}/draft', 'save')->whereNumber('student');
+        Route::get('connection', 'check')->middleware('throttle:10,1');
+    });
+
     Route::prefix('technical/accounts')->controller(\App\Http\Controllers\Api\AccountAdministrationController::class)->group(function (): void {
         Route::middleware(\App\Http\Middleware\RequirePermission::class.':user_accounts.view')->group(function (): void {
             Route::get('/', 'index');
