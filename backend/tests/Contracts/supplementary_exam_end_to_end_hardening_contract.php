@@ -66,7 +66,7 @@ $expect(str_contains($source['office'], "'per_page' => ['nullable', 'integer', '
     && str_contains($source['office'], "'search' => ['nullable', 'string', 'max:100']")
     && str_contains($source['office'], "'summary'")
     && str_contains($source['office'], "'meta'"), 'Student Affairs bounded read contract is incomplete.');
-$expect(str_contains($source['office'], 'hasActualUniversityScope($user)'), 'Student Affairs period DataScope guard is missing.');
+$expect(str_contains($source['office'], 'canAdministerUniversity($user)'), 'Student Affairs period DataScope guard must use actual university scope or active administrator.');
 $expect(substr_count($source['office'], '$fields->where(') >= 3, 'Student Affairs relation search predicates are not grouped safely.');
 $expect(str_contains($source['student'], 'registrationsByAttempt')
     && str_contains($source['student'], 'supplementaryRegistrationAttemptKey(')

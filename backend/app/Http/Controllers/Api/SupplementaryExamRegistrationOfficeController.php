@@ -66,8 +66,8 @@ class SupplementaryExamRegistrationOfficeController extends Controller
         $this->service->ready();
         $user = $request->user();
         abort_unless(
-            $user->effectivePermissions()->contains(SupplementaryExamRegistrationGovernance::VIEW)
-                || $user->hasRoleCode('super_admin'),
+            $user->hasPermission(SupplementaryExamRegistrationGovernance::VIEW)
+                || $user->isSuperAdmin(),
             403,
         );
 
@@ -110,8 +110,8 @@ class SupplementaryExamRegistrationOfficeController extends Controller
         $this->service->ready();
         $user = $request->user();
         abort_unless(
-            $user->effectivePermissions()->contains(SupplementaryExamRegistrationGovernance::VIEW)
-                || $user->hasRoleCode('super_admin'),
+            $user->hasPermission(SupplementaryExamRegistrationGovernance::VIEW)
+                || $user->isSuperAdmin(),
             403,
         );
 
@@ -122,7 +122,7 @@ class SupplementaryExamRegistrationOfficeController extends Controller
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
         $periodQuery = SupplementaryExamPeriod::query();
-        if (! $this->scope->hasActualUniversityScope($user)) {
+        if (! $this->scope->canAdministerUniversity($user)) {
             $periodQuery->whereHas('supplementaryExamOfferings', function (Builder $offering) use ($user): void {
                 $offering->whereHas('academicProgram', function (Builder $program) use ($user): void {
                     $this->scope->scopeProgramsForMutation($program, $user);
@@ -157,7 +157,6 @@ class SupplementaryExamRegistrationOfficeController extends Controller
         }
 
         $status = (string) $periodRecord->status;
-        $permissions = $user->effectivePermissions();
         $actualRegistrationOfficer = $user->isRegistrationOfficer();
         $summaryQuery = clone $query;
         $paginator = $query
@@ -169,9 +168,9 @@ class SupplementaryExamRegistrationOfficeController extends Controller
             'list_status' => SupplementaryExamRegistrationGovernance::isRosterFixed($status) ? 'fixed' : 'draft',
             'capabilities' => [
                 'can_manage_registrations' => $actualRegistrationOfficer
-                    && $permissions->contains(SupplementaryExamRegistrationGovernance::MANAGE),
+                    && $user->hasPermission(SupplementaryExamRegistrationGovernance::MANAGE),
                 'can_manage_window' => $actualRegistrationOfficer
-                    && $permissions->contains(SupplementaryExamRegistrationGovernance::WINDOW),
+                    && $user->hasPermission(SupplementaryExamRegistrationGovernance::WINDOW),
             ],
             'summary' => [
                 'registered_students' => (clone $summaryQuery)->distinct()->count('student_id'),

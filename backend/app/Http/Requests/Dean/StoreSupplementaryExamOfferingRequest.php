@@ -13,7 +13,7 @@ class StoreSupplementaryExamOfferingRequest extends FormRequest
 
         return $user !== null
             && $user->isDean()
-            && $user->effectivePermissions()->contains(SupplementaryExamOfferingGovernance::PERMISSION_MANAGE);
+            && $user->hasPermission(SupplementaryExamOfferingGovernance::PERMISSION_MANAGE);
     }
 
     public function rules(): array

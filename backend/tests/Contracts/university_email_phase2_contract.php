@@ -13,7 +13,7 @@ $assert(str_contains($service, 'function cancel(') && str_contains($service, "'c
 $assert(str_contains($service, '$op->write_started_at') && str_contains($service, "['prepared', 'failed', 'preflight', 'conflict']"), 'Only explicitly cancellable pre-write states');
 $assert(str_contains($client, "'name' => \$studentName") && !str_contains($client, 'University student'), 'Mailcow receives server student name');
 $access = $read('app/Support/UniversityEmailAccess.php');
-$assert(str_contains($service, 'scopeManualGradeStudents') && str_contains($service, 'Access::operationPermission')
+$assert(str_contains($service, 'scopeUniversityEmailStudents') && str_contains($service, 'Access::operationPermission')
     && str_contains($access, "'reset' => self::RECOVER") && str_contains($service, 'Access::RECEIPT'), 'Assigned operation permissions and actual scope required');
 $assert(str_contains($service, 'random_int') && str_contains($service, 'hash_hmac') && str_contains($service, '#[\SensitiveParameter]'), 'Ephemeral credentials must be cryptographic and bound');
 $assert(! preg_match('/(?:password|credential_proof).*\$t->|\$t->.*(?:password|credential_proof)/', $migration), 'No credentials columns');

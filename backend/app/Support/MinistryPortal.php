@@ -9,10 +9,11 @@ use Illuminate\Support\Facades\DB;
 /**
  * Ministry of Education follow-up portal (بوابة وزارة التربية والتعليم).
  *
- * Read-only, university-wide view of allowlisted data. Access requires ALL of:
+ * Read-only university-wide allowlisted data. Active administrators may read it.
+ * Ordinary ministry access requires ALL of:
  *  - an active account,
  *  - an active user_roles row for the active role `ministry_observer`,
- *  - the permission granted by THAT role (no super_admin bypass, no permission
+ *  - the permission granted by THAT role (no permission
  *    inherited from another role),
  *  - the role itself carrying only `ministry_portal.*` permissions: if anyone ever
  *    maps a write or other-module permission to it, the portal fails closed.
@@ -53,6 +54,7 @@ final class MinistryPortal
         if ($user === null || $user->accountStatus?->status_code !== 'active' || ! in_array($permission, self::PERMISSIONS, true)) {
             return false;
         }
+        if ($user->isSuperAdmin()) return true;
         $granted = $this->roleGrants();
         if ($granted === null || ! $this->holdsRole($user)) {
             return false;

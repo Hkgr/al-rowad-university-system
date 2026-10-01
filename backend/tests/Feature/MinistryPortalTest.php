@@ -64,13 +64,15 @@ final class MinistryPortalTest extends TestCase
     public function test_every_other_account_is_refused_by_the_server_whatever_its_role(): void
     {
         $this->getJson(self::API.'/dashboard')->assertUnauthorized();
-        foreach ([self::ADMIN, self::REGISTRAR, self::DEAN_A, self::VP, self::PLAIN] as $user) {
+        foreach ([self::REGISTRAR, self::DEAN_A, self::VP, self::PLAIN] as $user) {
             $this->actingAsUser($user);
             foreach (self::PORTAL_PAGES as $page) {
                 $this->getJson(self::API.'/'.$page)->assertForbidden()->assertJsonPath('error_code', 'ministry_portal_forbidden');
             }
         }
-        // super_admin has no bypass: the permission must come from the ministry role itself.
+        $this->actingAsUser(self::ADMIN);
+        $this->getJson(self::API.'/dashboard')->assertOk();
+        // An inactive ministry account still has no administrative authority.
         $this->actingAsUser(self::MINISTRY_DISABLED);
         $this->getJson(self::API.'/dashboard')->assertForbidden();
     }
@@ -113,6 +115,8 @@ final class MinistryPortalTest extends TestCase
                 continue;
             }
             foreach (array_diff($route->methods(), ['HEAD']) as $method) {
+                // Preserve throttle middleware while exercising every route independently.
+                $this->travel(2)->minutes();
                 $url = $this->concreteUrl($route, $method);
                 if ($url === null) {
                     continue;

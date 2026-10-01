@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { PERMISSIONS, ROLES, getIdentity, hasActualUniversityScope, hasAssignedPermission, hasRole } from '../../auth/auth'
+import { PERMISSIONS, ROLES, getIdentity, canAccess } from '../../auth/auth'
 import { canAccessExecutiveReports } from '../../executive-reports/access'
 import ExecutiveOverview from '../../executive-reports/components/ExecutiveOverview'
 import { canViewCatalog } from '../../scientific-courses/catalog'
@@ -92,9 +92,7 @@ export default function VicePresidentShell({ office }) {
       </Link>
 
       {copy.semesterOfferingsPath
-        && hasRole(ROLES.vicePresidentScientific, identity)
-        && hasAssignedPermission(PERMISSIONS.semesterOfferingGovernanceView, identity)
-        && hasActualUniversityScope(identity) && (
+        && canAccess({ allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView], actualUniversityScope: true }, identity) && (
       <Link to={copy.semesterOfferingsPath} className="bg-white border border-primary/15 rounded-[16px] p-5 shadow-sm hover:border-primary/40">
         <p className="text-[15px] font-black text-text-dark">اعتماد الطروحات الفصلية</p>
         <p className="text-[13px] text-text-light mt-1">مراجعة كل طرح فصلي بعد اكتمال التكليف الفعّال واعتماده أو إعادته للعميد.</p>
@@ -110,8 +108,7 @@ export default function VicePresidentShell({ office }) {
       </Link>
 
       {copy.supplementaryPath
-        && hasRole(ROLES.vicePresidentScientific, identity)
-        && hasAssignedPermission(PERMISSIONS.supplementaryExamsPeriodsView, identity) && (
+        && canAccess({ allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.supplementaryExamsPeriodsView] }, identity) && (
       <Link
         to={copy.supplementaryPath}
         className="bg-white border border-primary/15 rounded-[16px] p-5 shadow-sm hover:border-primary/40"

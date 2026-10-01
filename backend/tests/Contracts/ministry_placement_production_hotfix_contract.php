@@ -65,7 +65,7 @@ $contract = static function (string $backendRoot): array {
         $expect(str_contains($routes, $route), 'A production Ministry route changed or disappeared: '.$route);
     }
     $access = file_get_contents($backendRoot.'/app/Support/MinistryPlacementAccess.php');
-    foreach (['effectivePermissions()', 'hasActualUniversityScope', 'admissions.view', 'admissions.manage'] as $authority) {
+    foreach (['hasPermission($permission)', 'canAdministerUniversity', 'admissions.view', 'admissions.manage'] as $authority) {
         $expect(str_contains($access, $authority), 'Ministry authorization contract changed: '.$authority);
     }
     $expect(! str_contains($access, 'super_admin'), 'Ministry access must not add a super-admin shortcut.');

@@ -33,6 +33,7 @@ final class UniversityEmailAccess
 
     public static function authorize(?User $user, string $permission): void
     {
+        if ($user?->isSuperAdmin()) return;
         abort_unless($user && $user->accountStatus?->status_code === 'active'
             && $user->effectiveRoles()->contains(AccountAdministration::ROLE_TECHNICAL_TEAM), 403);
         $assigned = $user->effectivePermissions();

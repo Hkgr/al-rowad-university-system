@@ -218,7 +218,8 @@ class ExamManualGradePreparationBehaviorTest extends ExamManualGradeGridBehavior
         $this->postJson(self::PATH.'save', $this->contextPayload($preview) + ['skip_timetable' => true])->assertUnprocessable();
         DB::table('roles')->where('role_id', 1)->update(['role_code' => 'super_admin']);
         Sanctum::actingAs(User::findOrFail(1));
-        $this->getJson(self::PATH.'preview?academic_year_id=1&semester_id=1')->assertForbidden();
+        $this->getJson(self::PATH.'preview?academic_year_id=1&semester_id=1')->assertConflict();
+        $this->getJson(self::PATH.'preview?academic_year_id=1&semester_id=1&course_offering_id=1&registration_id=1')->assertOk();
         self::assertSame(0, DB::table('student_grade_components')->count());
     }
 

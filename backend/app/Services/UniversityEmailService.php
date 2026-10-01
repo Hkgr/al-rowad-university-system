@@ -16,8 +16,7 @@ final class UniversityEmailService
 
     private function students(User $user): Builder
     {
-        // Existing explicit academic scopes, without virtual admin or teaching grants.
-        return $this->scope->scopeManualGradeStudents(Student::query(), $user);
+        return $this->scope->scopeUniversityEmailStudents(Student::query(), $user);
     }
 
     public function search(User $user, array $input): array

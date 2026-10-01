@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FaSpinner, FaCheckCircle, FaUserPlus, FaFolderOpen, FaListUl, FaFileExcel } from 'react-icons/fa'
-import { hasActualUniversityScope, hasAssignedPermission, hasPermission, PERMISSIONS } from '../../auth/auth'
+import { canAccess, hasPermission, PERMISSIONS } from '../../auth/auth'
 
 const API = `${import.meta.env.VITE_API_BASE_URL || 'https://rust.alrowaduni.edu.sy/api'}/v1`
 
@@ -66,7 +66,7 @@ export default function AddStudentPage() {
   const [levels, setLevels]     = useState([])
   const [statuses, setStatuses] = useState([])
   const navigate                = useNavigate()
-  const canImportMinistry = hasAssignedPermission(PERMISSIONS.admissionsManage) && hasActualUniversityScope()
+  const canImportMinistry = canAccess({ assignedPermissions: [PERMISSIONS.admissionsManage], actualUniversityScope: true })
   const canCreateManualStudent = hasPermission(PERMISSIONS.studentsView) && hasPermission(PERMISSIONS.studentsManage)
 
   useEffect(() => {

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Exceptions\UniversityEmailException;
 use App\Models\{Student, StudentUniversityEmail, UniversityEmailOperation, User, UserActivityLog};
 use App\Support\UniversityEmailAccess as Access;
+use Illuminate\Database\DeadlockException;
 use Illuminate\Support\Facades\{DB, Schema};
 use Illuminate\Support\Str;
 
@@ -35,7 +36,7 @@ final class UniversityEmailProvisioningService
     {
         Access::authorize($user, Access::VIEW);
         Access::authorize($user, $permission);
-        abort_unless($this->scope->scopeManualGradeStudents(Student::query(), $user)->whereKey($student)->exists(), 403);
+        abort_unless($this->scope->scopeUniversityEmailStudents(Student::query(), $user)->whereKey($student)->exists(), 403);
         if (! self::schemaReady()) $this->fail('university_email_phase2_schema_not_ready', 503);
     }
 
@@ -44,7 +45,7 @@ final class UniversityEmailProvisioningService
         Student::query()->whereKey($student)->lockForUpdate()->firstOrFail();
         if ($user) {
             Access::authorize($user, Access::VIEW);
-            abort_unless($this->scope->scopeManualGradeStudents(Student::query(), $user)->whereKey($student)->exists(), 403);
+            abort_unless($this->scope->scopeUniversityEmailStudents(Student::query(), $user)->whereKey($student)->exists(), 403);
         }
         $email = StudentUniversityEmail::where('student_id', $student)->lockForUpdate()->first();
         if (! $email) $this->fail('university_email_draft_required');
@@ -56,6 +57,39 @@ final class UniversityEmailProvisioningService
         $this->authorize($user, $student, Access::VIEW);
         $email = StudentUniversityEmail::where('student_id', $student)->first();
         return $this->describe($email);
+    }
+
+    /** One user action; preparation commits before the existing single-write state machine runs. */
+    public function create(User $user, int $student, string $name): array
+    {
+        $this->authorize($user, $student, Access::CREATE);
+        Access::authorize($user, Access::MANAGE);
+        Access::authorize($user, Access::RECEIPT);
+        $this->remote->requireEnabled();
+        try {
+            $credentials = DB::transaction(function () use ($user, $student, $name) {
+                Student::query()->whereKey($student)->lockForUpdate()->firstOrFail();
+                $this->authorize($user, $student, Access::CREATE);
+                Access::authorize($user, Access::MANAGE);
+                Access::authorize($user, Access::RECEIPT);
+                $email = StudentUniversityEmail::where('student_id', $student)->lockForUpdate()->first();
+                // A previous attempt is never regenerated or executed implicitly, even before writing.
+                // The operator must review/cancel it explicitly; this also serializes concurrent create calls.
+                if ($email && UniversityEmailOperation::where('university_email_id', $email->university_email_id)
+                    ->where('status', '!=', 'cancelled')->exists()) $this->fail('university_email_operation_requires_review');
+                $saved = app(UniversityEmailService::class)->save($user, $student,
+                    ['english_first_name' => $name, 'revision' => $email?->revision ?? 0]);
+                return $this->password($user, $student, $saved['draft']['revision'], 'create');
+            });
+        } catch (DeadlockException) {
+            // Competing address reservations can deadlock across different student locks.
+            // Preparation has rolled back and no remote write has begun. Never retry it here.
+            $this->fail('university_email_conflict');
+        }
+        // No remote calls under the preparation locks, no automatic retry, no stored password.
+        $state = $this->execute($user, $student, $credentials);
+        return $state + ['credentials' => array_intersect_key($credentials,
+            array_flip(['operation_id', 'generation', 'kind', 'password']))];
     }
 
     private function describe(?StudentUniversityEmail $email): array

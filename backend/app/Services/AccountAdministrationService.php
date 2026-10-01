@@ -526,7 +526,7 @@ class AccountAdministrationService
 
     public function isSuperAdmin(User $user): bool
     {
-        return $user->hasRoleCode(AccountAdministration::ROLE_SUPER_ADMIN);
+        return $user->isSuperAdmin();
     }
 
     /**

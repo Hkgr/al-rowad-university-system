@@ -113,8 +113,8 @@ export default {
             ],
           }],
           sources: [
-            source(SA + 'MinistryPlacementsPage.jsx', 'رفع ملف مفاضلة', 'فحص الملف', 'اعتماد واستيراد الدفعة', 'مطابقة البرامج', 'تحويل إلى متقدم', 'اعتماد وإنشاء طالب', 'التدقيق النهائي', 'hasAssignedPermission(PERMISSIONS.admissionsManage)'),
-            source('backend/app/Support/MinistryPlacementAccess.php', "public const MANAGE = 'admissions.manage'", 'hasActualUniversityScope'),
+            source(SA + 'MinistryPlacementsPage.jsx', 'رفع ملف مفاضلة', 'فحص الملف', 'اعتماد واستيراد الدفعة', 'مطابقة البرامج', 'تحويل إلى متقدم', 'اعتماد وإنشاء طالب', 'التدقيق النهائي', 'hasPermission(PERMISSIONS.admissionsManage)'),
+            source('backend/app/Support/MinistryPlacementAccess.php', "public const MANAGE = 'admissions.manage'", 'canAdministerUniversity'),
             source('backend/app/Models/MinistryPlacementRecord.php', "'imported'", "'program_matched'"),
             source('backend/app/Services/MinistryPlacementApplicantConversionService.php', "'applicant_created'"),
           ],
@@ -176,7 +176,7 @@ export default {
           }],
           sources: [
             source(SA + 'SupplementaryExamRegistrations.jsx', 'فتح التسجيل', 'إغلاق التسجيل وتثبيت القائمة', 'can_manage_window'),
-            source('backend/app/Services/SupplementaryExamRegistrationWindowService.php', "'registration_open'", "'registration_closed'", "'announced'", 'SupplementaryExamRegistrationGovernance::WINDOW', 'hasActualUniversityScope'),
+            source('backend/app/Services/SupplementaryExamRegistrationWindowService.php', "'registration_open'", "'registration_closed'", "'announced'", 'SupplementaryExamRegistrationGovernance::WINDOW', 'canAdministerUniversity'),
           ],
         },
         {

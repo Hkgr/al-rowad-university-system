@@ -74,8 +74,8 @@ final class ScientificCourseManagementService
         $instructors = $this->instructors(collect($rows->items())->pluck('course_id')->all());
         return ['revision' => $this->transaction->revision(), 'data' => collect($rows->items())->map(fn ($c) => $this->courseProjection($c) + ['instructors' => $instructors->get($c->getKey(), collect())->values()]), 'meta' => $this->meta($rows),
             'summary' => ['catalog_count' => $total, 'groups' => $summary, 'hours_context' => isset($v['academic_program_id']) ? 'program_available_pool' : 'not_a_graduation_total'],
-            'can_manage' => $actor->effectivePermissions()->contains(ScientificCourseAccess::MANAGE),
-            'can_create' => $actor->effectivePermissions()->contains(ScientificCourseAccess::MANAGE) && $this->access->canCreateOrigin($actor)];
+            'can_manage' => $actor->hasPermission(ScientificCourseAccess::MANAGE),
+            'can_create' => $actor->hasPermission(ScientificCourseAccess::MANAGE) && $this->access->canCreateOrigin($actor)];
     }
 
     public function options(User $actor, array $input): array
@@ -112,7 +112,7 @@ final class ScientificCourseManagementService
             $course = $this->access->courses($actor)->findOrFail($id);
             $origin = $this->access->canEditOrigin($actor, $course);
             $used = $this->history->courseUsed($id, false);
-            $manage = $actor->effectivePermissions()->contains(ScientificCourseAccess::MANAGE);
+            $manage = $actor->hasPermission(ScientificCourseAccess::MANAGE);
             // Do not disclose the names/IDs of programs or prerequisites outside the actor's scope.
             $course->load(['courseDepartments' => fn ($q) => $q->whereIn('department_id', $this->access->departments($actor)->select('department_id')),
                 'courseDepartments.department.college', 'coursePrerequisites' => fn ($q) => $q->whereIn('prerequisite_course_id', $this->access->courses($actor)->select('course_id')),
@@ -232,7 +232,7 @@ final class ScientificCourseManagementService
                 'course_count' => (int) ($pools[$g->getKey()]->course_count ?? 0)]),
                 'configuration' => $configuration, 'revision' => $this->transaction->revision(),
                 'versioned_plans' => $versioned, 'academic_plan_version_id' => $context->versionId,
-                'capabilities' => ['edit_curriculum' => !$locked && $actor->effectivePermissions()->contains(ScientificCourseAccess::MANAGE),
+                'capabilities' => ['edit_curriculum' => !$locked && $actor->hasPermission(ScientificCourseAccess::MANAGE),
                     'lock_reason' => $versioned ? 'اختر نسخة للتعديل من إدارة البرامج الأكاديمية؛ الخطط الثابتة لا تعدّل من الدليل.' : ($locked ? 'لا يمكن تغيير مواد هذا البرنامج أو متطلبات تخرجه لارتباطه بسجلات أكاديمية قائمة.' : null)]];
         });
     }

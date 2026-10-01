@@ -5,9 +5,10 @@ import { CATALOG_ACCESS, canViewCatalog, groupedCourses, editableCourse, courseP
 import { canAccess } from '../src/features/auth/auth.js'
 
 const identity = { roles: ['vice_president_scientific'], permissions: [...CATALOG_ACCESS.assignedPermissions], access_scopes: [{ type: 'college', id: 1 }] }
-test('actual Scientific VP, assigned permissions and actual academic scope; no super-admin shortcut', () => {
+test('ordinary Scientific VP requires assigned permissions and actual scope; administrator has central authority', () => {
   assert.equal(canViewCatalog(identity), true)
-  for (const user of [null, { ...identity, roles: ['super_admin'] }, { ...identity, roles: ['vice_president_administrative'] }, { ...identity, permissions: ['vice_presidency.scientific.access'] }, { ...identity, access_scopes: [] }]) assert.equal(canViewCatalog(user), false)
+  for (const user of [null, { ...identity, roles: ['vice_president_administrative'] }, { ...identity, permissions: ['vice_presidency.scientific.access'] }, { ...identity, access_scopes: [] }]) assert.equal(canViewCatalog(user), false)
+  assert.equal(canViewCatalog({roles:['super_admin']}), true)
   assert.equal(canAccess({ permissions: ['existing'] }, { roles: ['super_admin'] }), true, 'Unrelated legacy policy unchanged')
 })
 test('both grouping views preserve exactly the same six membership identities and unlinked origins', () => {

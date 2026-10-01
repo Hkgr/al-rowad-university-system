@@ -89,7 +89,7 @@ class ExamBoardSupplementaryOverviewTest extends TestCase
     {
         $actor = Mockery::mock(User::class)->makePartial();
         $actor->shouldReceive('effectivePermissions')->once()->andReturn(collect());
-        $actor->shouldReceive('hasRoleCode')->with('super_admin')->once()->andReturnFalse();
+        $actor->shouldReceive('isSuperAdmin')->andReturnFalse();
         $overview = Mockery::mock(SupplementaryExamOverviewService::class);
         $overview->shouldNotReceive('overview');
         $request = Request::create('/api/v1/exams/supplementary-overview', 'GET');
@@ -117,8 +117,7 @@ class ExamBoardSupplementaryOverviewTest extends TestCase
     public function test_super_admin_role_preserves_controller_view_compatibility_only(): void
     {
         $actor = Mockery::mock(User::class)->makePartial();
-        $actor->shouldReceive('effectivePermissions')->once()->andReturn(collect());
-        $actor->shouldReceive('hasRoleCode')->with('super_admin')->once()->andReturnTrue();
+        $actor->shouldReceive('isSuperAdmin')->andReturnTrue();
         $overview = Mockery::mock(SupplementaryExamOverviewService::class);
         $overview->shouldReceive('overview')->once()->with($actor, null, null, null, null)->andReturn(['periods' => []]);
         $request = Request::create('/api/v1/exams/supplementary-overview', 'GET');
@@ -214,15 +213,14 @@ class ExamBoardSupplementaryOverviewTest extends TestCase
         self::assertSame('approved', $latest->get(1)->status);
     }
 
-    public function test_super_admin_without_actual_scope_does_not_gain_period_visibility(): void
+    public function test_super_admin_without_actual_scope_has_administrative_period_visibility(): void
     {
         $payload = $this->service(false)->overview($this->actor(superAdmin: true));
 
-        self::assertSame([], $payload['periods']);
-        self::assertNull($payload['selected_period']);
-
-        $this->expectException(NotFoundHttpException::class);
-        $this->service(false)->overview($this->actor(superAdmin: true), periodId: 1);
+        self::assertCount(1, $payload['periods']);
+        self::assertSame(1, $payload['selected_period']['supplementary_exam_period_id']);
+        $payload = $this->service(false)->overview($this->actor(superAdmin: true), periodId: 1);
+        self::assertSame(1, $payload['selected_period']['supplementary_exam_period_id']);
     }
 
     public function test_super_admin_with_actual_university_scope_sees_all_non_legacy_periods(): void
@@ -303,16 +301,16 @@ class ExamBoardSupplementaryOverviewTest extends TestCase
     ): SupplementaryExamOverviewService
     {
         $scope = Mockery::mock(DataScopeService::class);
-        $scope->shouldReceive('hasActualUniversityScope')->andReturn($universityScope);
-        $scope->shouldReceive('scopePrograms')->andReturnUsing(function (Builder $query) use ($universityScope, $programScopeId): Builder {
-            if ($universityScope) {
+        $scope->shouldReceive('canAdministerUniversity')->andReturnUsing(fn (User $u) => $u->isSuperAdmin() || $universityScope);
+        $scope->shouldReceive('scopePrograms')->andReturnUsing(function (Builder $query, User $u) use ($universityScope, $programScopeId): Builder {
+            if ($universityScope || $u->isSuperAdmin()) {
                 return $query;
             }
 
             return $programScopeId === null ? $query->whereRaw('1 = 0') : $query->whereKey($programScopeId);
         });
-        $scope->shouldReceive('scopeStudents')->andReturnUsing(function (Builder $query) use ($universityScope, $programScopeId): Builder {
-            if ($universityScope) {
+        $scope->shouldReceive('scopeStudents')->andReturnUsing(function (Builder $query, User $u) use ($universityScope, $programScopeId): Builder {
+            if ($universityScope || $u->isSuperAdmin()) {
                 return $query;
             }
 
@@ -349,7 +347,7 @@ class ExamBoardSupplementaryOverviewTest extends TestCase
     {
         $actor = Mockery::mock(User::class)->makePartial();
         $actor->setAttribute('user_id', 99);
-        $actor->shouldReceive('hasRoleCode')->with('super_admin')->andReturn($superAdmin);
+        $actor->shouldReceive('isSuperAdmin')->andReturn($superAdmin);
         $actor->shouldReceive('isExamOfficer')->andReturnFalse();
         $actor->shouldReceive('effectivePermissions')->andReturn(collect(['supplementary_exams.registrations.view']));
 

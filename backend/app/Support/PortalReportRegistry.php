@@ -49,6 +49,7 @@ final class PortalReportRegistry
         if ($user->accountStatus?->status_code !== 'active' || ! in_array($report, self::PORTALS[$portal] ?? [], true)) {
             return false;
         }
+        if ($user->isSuperAdmin() && $portal !== 'student') return true;
         if ($portal === 'ministry') {
             return app(MinistryPortal::class)->allows($user, match ($report) {
                 'students','results' => MinistryPortal::STUDENTS, 'programs' => MinistryPortal::COLLEGES, 'faculty' => MinistryPortal::FACULTY, 'offerings' => MinistryPortal::COURSES, default => MinistryPortal::DASHBOARD

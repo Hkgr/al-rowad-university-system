@@ -504,7 +504,7 @@ class CourseOfferingScheduleService
     private function assertDeanCanManage(User $actor, CourseOffering $offering): void
     {
         if (! $actor->isDean()
-            || ! $actor->effectivePermissions()->contains(SemesterOfferingGovernance::PERMISSION_MANAGE)) {
+            || ! $actor->hasPermission(SemesterOfferingGovernance::PERMISSION_MANAGE)) {
             throw new AccessDeniedHttpException('Only an authorized Dean may manage the official timetable.');
         }
         if ($offering->academic_program_id === null

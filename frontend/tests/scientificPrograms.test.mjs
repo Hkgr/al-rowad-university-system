@@ -22,7 +22,8 @@ test('course links preserve the named plan, without guessing a draft for legacy 
 test('program authority requires actual Scientific role, assigned permission and actual academic scope', () => {
   const valid = { roles: ['vice_president_scientific'], permissions: PROGRAM_ACCESS.assignedPermissions, access_scopes: [{ type: 'college', id: 1 }] }
   assert.equal(canViewPrograms(valid), true)
-  for (const user of [null, { ...valid, roles: ['super_admin'] }, { ...valid, roles: ['vice_president_administrative'] }, { ...valid, permissions: [] }, { ...valid, access_scopes: [] }]) assert.equal(canViewPrograms(user), false)
+  for (const user of [null, { ...valid, roles: ['vice_president_administrative'] }, { ...valid, permissions: [] }, { ...valid, access_scopes: [] }]) assert.equal(canViewPrograms(user), false)
+  assert.equal(canViewPrograms({roles:['super_admin']}), true)
 })
 test('six categories distinguish missing budgets from explicit zero and never invent groups during reads', () => {
   const groups = sixGroups([{ requirement_scope: 'university', requirement_type: 'mandatory', required_credit_hours: 0, is_active: true }])

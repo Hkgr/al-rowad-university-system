@@ -136,7 +136,7 @@ class SupplementaryExamRegistrationWindowService
 
         return $out['p'];
     }
-    private function assertCanGovernPeriod(User $u):void{if(!$u->isRegistrationOfficer()||!$u->effectivePermissions()->contains(SupplementaryExamRegistrationGovernance::WINDOW)||!$this->scope->hasActualUniversityScope($u))$this->fail('يتطلب موظف تسجيل فعلي وصلاحية ونطاق الجامعة.','supplementary_exam_registration_out_of_scope',403);}
+    private function assertCanGovernPeriod(User $u):void{if(!$u->isRegistrationOfficer()||!$u->hasPermission(SupplementaryExamRegistrationGovernance::WINDOW)||!$this->scope->canAdministerUniversity($u))$this->fail('يتطلب موظف تسجيل فعلي وصلاحية ونطاق الجامعة.','supplementary_exam_registration_out_of_scope',403);}
     private function ready():void{if(!SupplementaryExamRegistrationGovernance::schemaReady())$this->fail('المخطط غير جاهز.','supplementary_exam_registration_schema_not_ready',503);}
     private function periodEvent($p,$u,$type,$from,$to):void{SupplementaryExamPeriodEvent::query()->create(['supplementary_exam_period_id'=>$p->getKey(),'event_type'=>$type,'from_status'=>$from,'to_status'=>$to,'actor_user_id'=>$u->user_id,'created_at'=>now()]);}
     private function fail(string $m,string $c,int $s):never{throw new GradeException($m,status:$s,errorCode:$c);}

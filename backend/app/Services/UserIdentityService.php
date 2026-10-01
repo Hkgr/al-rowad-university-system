@@ -39,6 +39,7 @@ class UserIdentityService
             'user_id' => $user->user_id,
             'username' => $user->username,
             'email' => $user->email,
+            'is_super_admin' => $user->isSuperAdmin(),
             'student_id' => $user->student_id,
             'employee_id' => $user->employee_id,
             'organizational_unit' => $user->employee?->organizationalUnit ? [

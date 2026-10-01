@@ -36,7 +36,7 @@ $contract = static function (string $backendRoot): array {
     ] as $route) $expect(str_contains($sources['routes'], $route), 'Missing Phase 4 route: '.$route);
     $expect(str_contains($sources['controller'], 'MinistryPlacementAccess') && str_contains($sources['controller'], 'canView'), 'Phase 4 reads must use Ministry authorization.');
     $expect(str_contains($sources['individual_request'], 'canManage') && str_contains($sources['batch_request'], 'canManage'), 'Phase 4 mutations must use Ministry admissions.manage authority.');
-    $expect(! str_contains($sources['access'], 'hasPermission(') && ! str_contains($sources['access'], 'super_admin'), 'Phase 4 must preserve assigned permission plus actual scope semantics.');
+    $expect(str_contains($sources['access'], 'hasPermission($permission)') && str_contains($sources['access'], 'canAdministerUniversity($actor)'), 'Phase 4 uses central authority without weakening ordinary scope.');
 
     $individualAllowlist = substr($sources['individual_request'], strpos($sources['individual_request'], 'private const ALLOWED_KEYS'), 240);
     preg_match_all("/'([^']+)'/", $individualAllowlist, $individualKeys);

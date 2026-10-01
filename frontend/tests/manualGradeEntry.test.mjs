@@ -13,9 +13,10 @@ const actor = { roles: ['exam_officer'], permissions: ['exams.manage', 'grades.m
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
 test('manual access is actual officer plus assigned permissions and existing student read', () => {
   assert.equal(canAccess(ACCESS.manualGradeEntry, actor), true)
-  for (const roles of [[], ['super_admin'], ['doctor_instructor']]) assert.equal(canAccess(ACCESS.manualGradeEntry, { ...actor, roles }), false)
+  for (const roles of [[], ['doctor_instructor']]) assert.equal(canAccess(ACCESS.manualGradeEntry, { ...actor, roles }), false)
+  assert.equal(canAccess(ACCESS.manualGradeEntry, { roles: ['super_admin'], permissions: [] }), true)
   for (const permission of actor.permissions) assert.equal(canAccess(ACCESS.manualGradeEntry, { ...actor, permissions: actor.permissions.filter(p => p !== permission) }), false)
-  assert.equal(canAccess(ACCESS.manualGradeEntry, { roles: ['super_admin', 'exam_officer'], permissions: [] }), false)
+  assert.equal(canAccess(ACCESS.manualGradeEntry, { roles: ['super_admin', 'exam_officer'], permissions: [] }), true)
 })
 test('zero, null, precision and numeric validation do not invent a split', () => {
   assert.equal(markValue('0'), 0); assert.equal(markValue(''), null); assert.equal(markText(0), '0'); assert.equal(markText(null), '—')

@@ -65,8 +65,8 @@ $contract = static function (string $backendRoot): array {
     $expect(! str_contains($sources['controller'], 'first_parsed_row_debug'), 'Raw debug row leakage is forbidden.');
     $expect(str_contains($sources['controller'], "'per_page' => ['sometimes', 'integer', 'min:1', 'max:100']"), 'Record pagination must cap per_page at 100.');
     $expect(! preg_match("/convert-to-applicant[^\n]*MinistryPlacementController::class/", $sources['routes']), 'The Phase 1 controller must never own applicant conversion.');
-    $expect(str_contains($sources['access'], 'effectivePermissions()->contains') && str_contains($sources['access'], 'hasActualUniversityScope'), 'Authorization must use effective/actually assigned RBAC permission and actual university scope.');
-    $expect(! str_contains($sources['access'], 'hasPermission(') && ! str_contains($sources['access'], 'super_admin'), 'Ministry authorization must not use role bypasses.');
+    $expect(str_contains($sources['access'], 'hasPermission($permission)') && str_contains($sources['access'], 'canAdministerUniversity($actor)'), 'Ministry authority uses central permissions and actual university scope or active administrator.');
+    $expect(! str_contains($sources['access'], 'effectiveRoles()'), 'Ordinary Ministry placement authority must not gain unrelated role shortcuts.');
 
     $auditStart = strpos($sources['service'], 'UserActivityLog::query()->create');
     $auditEnd = strpos($sources['service'], 'return $batch', $auditStart === false ? 0 : $auditStart);

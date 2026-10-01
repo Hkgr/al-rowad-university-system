@@ -15,10 +15,10 @@ class UniversityEmailPhase2Test extends TestCase
     use MinistryReadFixture;
     private const ROLE_MINISTRY = 2;
     private const ROOT = '/api/v1/technical/university-email/students/1';
-    private array $boxes = [];
-    private array $aliases = [];
-    private ?string $failure = null;
-    private int $writes = 0;
+    protected array $boxes = [];
+    protected array $aliases = [];
+    protected ?string $failure = null;
+    protected int $writes = 0;
 
     protected function setUp(): void
     {
@@ -43,6 +43,7 @@ class UniversityEmailPhase2Test extends TestCase
             $this->assertSame(0, DB::transactionLevel(), 'Remote calls must not hold DB locks');
             if (str_contains($r->url(), '/get/alias/all')) return Http::response($this->aliases);
             if (str_contains($r->url(), '/get/mailbox/')) {
+                if ($this->failure === 'preflight_timeout') throw new \Illuminate\Http\Client\ConnectionException('Synthetic pre-write timeout');
                 if ($this->failure === 'preflight_cancelled') {
                     $this->failure = null;
                     $op = UniversityEmailOperation::firstOrFail();
@@ -220,7 +221,7 @@ class UniversityEmailPhase2Test extends TestCase
         DB::table('role_permissions')->where('permission_id', $id)->delete();
         $this->postJson(self::ROOT.'/provisioning/password', ['revision' => 1])->assertForbidden();
         Sanctum::actingAs(User::findOrFail(1));
-        $this->postJson(self::ROOT.'/provisioning/password', ['revision' => 1])->assertForbidden();
+        $this->postJson(self::ROOT.'/provisioning/password', ['revision' => 1])->assertOk();
         Sanctum::actingAs(User::findOrFail(8));
         DB::table('user_access_scopes')->where('user_id', 8)->delete();
         $this->getJson(self::ROOT.'/provisioning')->assertForbidden();
@@ -349,6 +350,7 @@ class UniversityEmailPhase2Test extends TestCase
         $c = $this->credentials(); $this->execute($c)->assertOk();
         DB::table('roles')->insert(['role_id' => 11, 'role_code' => 'student', 'role_name' => 'Student', 'is_active' => true]);
         DB::table('user_roles')->insert(['user_id' => 1, 'role_id' => 11, 'is_active' => true]);
+        DB::table('user_roles')->where('user_id', 1)->where('role_id', 1)->update(['is_active' => false]);
         DB::table('users')->where('user_id', 1)->update(['student_id' => 1]);
         Sanctum::actingAs(User::findOrFail(1));
         $response = $this->getJson('/api/v1/student/university-email')->assertOk()->assertJsonPath('data.email_address', 'ahmad.r24011002@alrowaduni.edu.sy');
@@ -378,9 +380,13 @@ class UniversityEmailPhase2Test extends TestCase
         });
         DB::table('roles')->insert(['role_id' => 11, 'role_code' => 'student', 'role_name' => 'Student', 'is_active' => true]);
         DB::table('user_roles')->insert(['user_id' => 1, 'role_id' => 11, 'is_active' => true]);
+        // Export a true self-student, separate from the administrator fixture.
+        DB::table('user_roles')->where('user_id', 1)->where('role_id', 1)->update(['is_active' => false]);
         DB::table('users')->where('user_id', 1)->update(['student_id' => 1]);
         $actors = [];
-        foreach (['technical' => 8, 'unauthorized' => 2, 'student' => 1] as $name => $id) {
+        DB::table('users')->insert(['user_id' => 9, 'username' => 'synthetic.admin', 'email' => 'admin@example.invalid', 'password_hash' => 'x', 'account_status_id' => 1]);
+        DB::table('user_roles')->insert(['user_id' => 9, 'role_id' => 1, 'is_active' => true]);
+        foreach (['technical' => 8, 'unauthorized' => 2, 'student' => 1, 'administrator' => 9] as $name => $id) {
             $user = User::findOrFail($id);
             $actors[$name] = ['identity' => app(\App\Services\UserIdentityService::class)->payload($user),
                 'token' => $user->createToken('isolated-email-phase2-browser')->plainTextToken];

@@ -9,7 +9,7 @@ $context = $read('backend/app/Services/AcademicPlanContext.php');
 $sql = $read('backend/database/sql/academic-program-management/01_apply.sql');
 $access = $read('backend/app/Support/ScientificProgramAccess.php');
 foreach (['effectiveRoles()', 'effectivePermissions()', 'vice_president_scientific', 'scopeProgramsForMutation'] as $token) $check(str_contains($access, $token), 'Assigned scoped authority: '.$token);
-$check(!str_contains($access, 'hasPermission('), 'No virtual permission bypass');
+$check(str_contains($access, 'isSuperAdmin()') && str_contains($access, 'hasPermission('), 'Central administrator authority; ordinary assigned/scoped authority remains');
 foreach (['previewTransition', 'fixTransition', 'previewTransfer', 'transferProjection', 'transferBlockers', 'setDefault', 'pinTransition', 'current_state_not_historical_approval'] as $token) $check(str_contains($workflow, $token), 'Explicit workflow: '.$token);
 $studentContext = substr($context, strpos($context, 'public static function forStudent'), strpos($context, 'public static function forProgram') - strpos($context, 'public static function forStudent'));
 $check(!str_contains($studentContext, 'default_academic_plan_version_id'), 'Existing student never resolves default');

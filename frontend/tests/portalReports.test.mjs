@@ -4,10 +4,11 @@ import { readFile } from 'node:fs/promises'
 import { canAccess } from '../src/features/auth/auth.js'
 import { reportAccess, REPORT_PATHS, reportEndpoint, reportQuery, changeReportFilter, reportLabel, reportSourceLabel } from '../src/features/portal-reports/reports.js'
 
-test('role reports require assigned permissions and the actual source scope, not virtual admin grants',()=>{
+test('ordinary role reports require assigned permissions and actual scope; administrator has central authority',()=>{
   const dean={roles:['dean'],permissions:['students.view'],access_scopes:[{type:'college',id:1}]}
   assert.equal(canAccess(reportAccess('dean'),dean),true)
-  for(const replacement of [{roles:['super_admin']},{permissions:[]},{access_scopes:[]},{access_scopes:[{type:'university',id:91}]}]) assert.equal(canAccess(reportAccess('dean'),{...dean,...replacement}),false)
+  for(const replacement of [{permissions:[]},{access_scopes:[]},{access_scopes:[{type:'university',id:91}]}]) assert.equal(canAccess(reportAccess('dean'),{...dean,...replacement}),false)
+  assert.equal(canAccess(reportAccess('dean'),{roles:['super_admin']}),true)
   assert.equal(canAccess(reportAccess('student'),{roles:['student'],permissions:['grades.view'],student_id:1}),true)
   assert.equal(canAccess(reportAccess('student'),{roles:['student'],permissions:['grades.view']}),false)
   assert.equal(canAccess(reportAccess('professor'),{roles:['doctor_instructor'],permissions:['grades.manage'],employee_id:1}),true)

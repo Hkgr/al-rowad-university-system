@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FaPaperPlane, FaPlus, FaSpinner, FaTimes } from 'react-icons/fa'
 import { apiRequest } from '../../../services/apiClient'
-import { hasAssignedPermission, hasPermission, PERMISSIONS } from '../../auth/auth'
+import { hasPermission, PERMISSIONS } from '../../auth/auth'
 import DeanConfirmDialog from '../components/DeanConfirmDialog'
 import DeanTimetableDialog from '../components/DeanTimetableDialog'
 import OfficialTimetable from '../../registration-requests/OfficialTimetable'
@@ -504,7 +504,7 @@ function AddCourseDialog({
 
 export default function DeanRegistrationOfferings() {
   const navigate = useNavigate()
-  const canManageLocal = hasAssignedPermission(PERMISSIONS.semesterOfferingGovernanceManage)
+  const canManageLocal = hasPermission(PERMISSIONS.semesterOfferingGovernanceManage)
   const canRequestException = hasPermission(PERMISSIONS.exceptionalOpenRequest)
   const canRequestClosure = hasPermission(PERMISSIONS.closureRequest)
   const [exceptionReason, setExceptionReason] = useState('')

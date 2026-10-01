@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { FaChevronRight } from 'react-icons/fa'
-import { canAccess, clearIdentity } from '../../features/auth/auth'
+import { canAccess, clearIdentity, isSuperAdmin } from '../../features/auth/auth'
+import { adminPortalNav } from '../../features/auth/adminPortalNav'
 import DashboardHeader from './DashboardHeader'
 import DashboardFooter from './DashboardFooter'
 
@@ -20,7 +21,7 @@ export default function DashboardLayout({ nav = [], appTitle = 'جامعة ال�
   const user      = JSON.parse(localStorage.getItem('user') || '{}')
 
   // Auto-derive page title from nav items based on current URL
-  const authorizedNav = nav
+  const authorizedNav = (isSuperAdmin(user) ? [...nav, adminPortalNav] : nav)
     .map(section => ({ ...section, items: section.items.filter(item => canAccess(item)) }))
     .filter(section => section.items.length > 0)
   const allItems   = authorizedNav.flatMap(s => s.items)

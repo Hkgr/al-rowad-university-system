@@ -49,6 +49,11 @@ require dirname(__DIR__, 2).'/vendor/autoload.php';
 $app = require dirname(__DIR__, 2).'/bootstrap/app.php';
 $assert(! $app->configurationIsCached(), 'Cached configuration is not safe for isolated test');
 $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+// Laravel's console renderer must not turn a failed standalone exercise into exit 0.
+set_exception_handler(function (\Throwable $failure): void {
+    fwrite(STDERR, get_class($failure).':'.$failure->getLine().(get_class($failure) === \RuntimeException::class ? ':'.$failure->getMessage() : '')."\n");
+    exit(1);
+});
 use Illuminate\Support\Facades\{DB, Http};
 use App\Services\UniversityEmailProvisioningService;
 use App\Models\User;
@@ -103,9 +108,11 @@ $user = User::findOrFail(8);
 if ($worker) {
     // Credentials are piped, never written to an artifact or process command line.
     $job = json_decode(stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR);
+    $user = User::findOrFail($job['user'] ?? 8);
     $student = $job['student'] ?? 1;
     try {
-        if ($job['action'] === 'execute') $service->execute($user, $student, $job['credentials']);
+        if ($job['action'] === 'create') $service->create($user, $student, $job['name']);
+        elseif ($job['action'] === 'execute') $service->execute($user, $student, $job['credentials']);
         elseif ($job['action'] === 'cancel') $service->cancel($user, $student, $job['id'], $job['generation']);
         elseif ($job['action'] === 'receipt') $service->receipt($user, $student, $job['id'], $job['generation']);
         elseif ($job['action'] === 'account') $service->executeAccount($user, $student, ['operation_id' => $job['id'], 'generation' => $job['generation']]);
@@ -244,5 +251,36 @@ if ($phase3) {
     $assert($results === ['ok', 'university_email_address_conflict'] && $one['connection'] !== $two['connection'], 'One legacy-address reservation across independent student locks: '.implode(',', $results));
     $assert(DB::table('student_university_emails')->where('email_address', $address)->count() === 1 && $posts() === 6, 'Reservation makes no remote write');
 }
+
+if (getenv('UNIVERSITY_EMAIL_ONE_STEP_FIXTURE') === '1') {
+    // Actual administrator, no technical role, assigned permissions or access scope.
+    $template = (array) DB::table('students')->where('student_id', 1)->first();
+    foreach ([55, 56, 57, 58] as $id) DB::table('students')->insert(array_replace($template, ['student_id' => $id, 'student_number' => 'SYNTHETIC'.$id]));
+    foreach (['before-write.ready', 'before-write.release'] as $marker) if (is_file($directory.'/'.$marker)) unlink($directory.'/'.$marker);
+    $count = $posts();
+    $job = ['action' => 'create', 'user' => 9, 'student' => 55, 'name' => 'Admin'];
+    $a = $start($job, 'before-write'); $await('before-write');
+    $b = $finish($start($job));
+    $assert($b['result'] === 'university_email_operation_requires_review', 'Concurrent orchestration cannot replace the first operation');
+    $release('before-write'); $one = $finish($a);
+    $assert($one['result'] === 'ok' && $one['connection'] !== $b['connection'] && $posts() === $count + 1, 'Concurrent create has exactly one POST from independent connections');
+
+    foreach (['before-write.ready', 'before-write.release'] as $marker) unlink($directory.'/'.$marker);
+    $job['student'] = 56;
+    $a = $start($job, 'before-write'); $await('before-write');
+    $op = DB::table('university_email_operations')->join('student_university_emails as e', 'e.university_email_id', '=', 'university_email_operations.university_email_id')->where('e.student_id', 56)->select('university_email_operations.*')->first();
+    $b = $finish($start(['action' => 'cancel', 'user' => 9, 'student' => 56, 'id' => $op->operation_id, 'generation' => $op->generation]));
+    $assert($b['result'] === 'ok', 'Cancellation wins before orchestration write authority');
+    $release('before-write'); $assert($finish($a)['result'] === 'university_email_operation_stale' && $posts() === $count + 1, 'Cancelled orchestration never posts');
+
+    // Intentionally duplicate synthetic student numbers to challenge address uniqueness.
+    DB::table('students')->whereIn('student_id', [57, 58])->update(['student_number' => 'SYNTHETICSHARED']);
+    $a = $start(['action' => 'create', 'user' => 9, 'student' => 57, 'name' => 'Shared']);
+    $b = $start(['action' => 'create', 'user' => 9, 'student' => 58, 'name' => 'Shared']);
+    $one = $finish($a); $two = $finish($b); $results = [$one['result'], $two['result']]; sort($results);
+    $assert($results === ['ok', 'university_email_conflict'] && $one['connection'] !== $two['connection'], 'Same address: one reservation and controlled conflict: '.implode(',', $results));
+    $assert($posts() === $count + 2 && DB::table('student_university_emails')->where('email_address', 'shared.syntheticshared@alrowaduni.edu.sy')->count() === 1, 'Same address makes only one remote POST');
+}
+
 echo json_encode(['passed' => true, 'server' => DB::selectOne('SELECT VERSION() AS version')->version,
-    'scenarios' => $phase3 ? 9 : 4, 'remote_posts' => $posts(), 'verification' => 'independent PHP processes and MariaDB connections, isolated synthetic data; no production'], JSON_THROW_ON_ERROR).PHP_EOL;
+    'scenarios' => ($phase3 ? 9 : 4) + (getenv('UNIVERSITY_EMAIL_ONE_STEP_FIXTURE') === '1' ? 3 : 0), 'remote_posts' => $posts(), 'verification' => 'independent PHP processes and MariaDB connections, isolated synthetic data; no production'], JSON_THROW_ON_ERROR).PHP_EOL;

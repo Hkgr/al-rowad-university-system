@@ -1,4 +1,4 @@
-import { hasRole, ROLES } from '../../auth/auth'
+import { canAccess, ROLES } from '../../auth/auth'
 import { periodStatusLabel } from '../../supplementary-exams/supplementaryStatus'
 
 export const STATUS_LEGACY = 'legacy'
@@ -9,13 +9,11 @@ export function hasAssignedPermission(permission, user) {
 }
 
 export function canDecideSupplementaryExamPeriod(user) {
-  return hasRole(ROLES.vicePresidentScientific, user)
-    && hasAssignedPermission('supplementary_exams.periods.decide', user)
+  return canAccess({ allRoles: [ROLES.vicePresidentScientific], assignedPermissions: ['supplementary_exams.periods.decide'] }, user)
 }
 
 export function canViewSupplementaryExamPeriod(user) {
-  return hasRole(ROLES.vicePresidentScientific, user)
-    && hasAssignedPermission('supplementary_exams.periods.view', user)
+  return canAccess({ allRoles: [ROLES.vicePresidentScientific], assignedPermissions: ['supplementary_exams.periods.view'] }, user)
 }
 
 export function periodForIdentity(periods, academicYearId, semesterId) {

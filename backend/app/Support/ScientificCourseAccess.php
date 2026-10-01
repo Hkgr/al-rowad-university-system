@@ -16,6 +16,7 @@ final class ScientificCourseAccess
     public function authorize(User $actor, bool $write = false): void
     {
         $actor = $actor->fresh();
+        if ($actor?->isSuperAdmin()) return;
         abort_unless($actor && $actor->accountStatus?->status_code === 'active'
             && $actor->effectiveRoles()->contains('vice_president_scientific')
             && collect(['vice_presidency.scientific.access', self::VIEW, ...($write ? [self::MANAGE] : [])])->diff($actor->effectivePermissions())->isEmpty(), 403);
@@ -29,7 +30,7 @@ final class ScientificCourseAccess
 
     public function departments(User $actor): Builder
     {
-        if ($this->scope->hasActualUniversityScope($actor)) return Department::query();
+        if ($this->scope->canAdministerUniversity($actor)) return Department::query();
         $scopes = collect($this->scope->scopes($actor));
         return Department::query()->where(fn ($q) => $q->whereIn('college_id', $scopes->where('type', 'college')->pluck('id'))
             ->orWhereIn('department_id', $scopes->where('type', 'department')->pluck('id'))
@@ -38,14 +39,14 @@ final class ScientificCourseAccess
 
     public function courses(User $actor): Builder
     {
-        if ($this->scope->hasActualUniversityScope($actor)) return Course::query();
+        if ($this->scope->canAdministerUniversity($actor)) return Course::query();
         return Course::query()->where(fn ($q) => $q->whereHas('courseDepartments', fn ($d) => $d->whereIn('department_id', $this->departments($actor)->select('department_id')))
             ->orWhereHas('programCourses', fn ($p) => $p->whereIn('academic_program_id', $this->programs($actor)->select('academic_program_id'))));
     }
 
     public function canEditOrigin(User $actor, Course $course): bool
     {
-        if ($this->scope->hasActualUniversityScope($actor)) return true;
+        if ($this->scope->canAdministerUniversity($actor)) return true;
         // Curriculum visibility is NOT ownership of a shared origin.
         if (!$course->courseDepartments()->exists()) return false;
         if ($course->programCourses()->whereHas('requirementMapping.requirementGroup', fn ($q) => $q->where('requirement_scope', 'university'))->exists()) return false;
@@ -56,10 +57,11 @@ final class ScientificCourseAccess
             && !$course->programCourses()->whereNotIn('academic_program_id', $this->programs($actor)->select('academic_program_id'))->exists();
     }
 
-    public function university(User $actor): bool { return $this->scope->hasActualUniversityScope($actor); }
+    public function university(User $actor): bool { return $this->scope->canAdministerUniversity($actor); }
 
     public function canCreateOrigin(User $actor): bool
     {
+        if ($actor->isSuperAdmin()) return true;
         return collect($this->scope->scopes($actor))->contains(fn ($s) => in_array($s['type'], ['university', 'college', 'department'], true));
     }
 }

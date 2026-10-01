@@ -627,9 +627,8 @@ class RegistrationWithdrawalService
     }
 
     /**
-     * Actual academic_advisor role plus assigned role_permissions.
-     * Super Admin virtual grants from User::hasPermission() must not
-     * impersonate academic review authority.
+     * Ordinary academic advisor authority, or the active administrator.
+     * Ownership, state, deadlines and canonical withdrawal semantics remain.
      */
     private function assertCanReview(User $user): void
     {
@@ -640,7 +639,7 @@ class RegistrationWithdrawalService
 
     private function holdsAssignedPermission(User $user, string $permission): bool
     {
-        return $user->effectivePermissions()->contains($permission);
+        return $user->hasPermission($permission);
     }
 
     private function assertCanAccessRequest(User $user, StudentRegistrationWithdrawalRequest $request): void

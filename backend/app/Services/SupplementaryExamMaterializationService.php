@@ -48,7 +48,7 @@ class SupplementaryExamMaterializationService
     {
         $ready = Governance::schemaReady();
         $authorized = $actor->isExamOfficer()
-            && $actor->effectivePermissions()->contains(Governance::MATERIALIZE);
+            && $actor->hasPermission(Governance::MATERIALIZE);
 
         $rows = collect($rows);
         $offeringIds = $rows->pluck('offering')
@@ -1782,7 +1782,7 @@ class SupplementaryExamMaterializationService
 
     private function assertExamOfficer(User $actor): void
     {
-        if (! $actor->isExamOfficer() || ! $actor->effectivePermissions()->contains(Governance::MATERIALIZE)) {
+        if (! $actor->isExamOfficer() || ! $actor->hasPermission(Governance::MATERIALIZE)) {
             $this->fail('An actual Exam Officer role and assigned materialization permission are required.', 'supplementary_materialization_forbidden', 403);
         }
     }

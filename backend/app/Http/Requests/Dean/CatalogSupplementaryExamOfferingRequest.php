@@ -13,7 +13,7 @@ class CatalogSupplementaryExamOfferingRequest extends FormRequest
 
         return $user !== null
             && $user->isDean()
-            && $user->effectivePermissions()->contains(SupplementaryExamOfferingGovernance::PERMISSION_VIEW);
+            && $user->hasPermission(SupplementaryExamOfferingGovernance::PERMISSION_VIEW);
     }
 
     public function rules(): array

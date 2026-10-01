@@ -25,7 +25,7 @@ final class PortalReportService
 
         return ['reports' => $reports, 'years' => collect($reports)->contains('period',true) ? DB::table('academic_years')->orderByDesc('start_date')->get(['academic_year_id as id', 'year_name as name']) : [],
             'semesters' => collect($reports)->contains('period',true) ? DB::table('semesters')->orderBy('semester_order')->get(['semester_id as id', 'semester_name as name']) : [],
-            'scope' => $this->scopeLabel($portal),
+            'scope' => $this->scopeLabel($portal, $u),
             'programs' => !collect($reports)->contains('scoped',true) ? [] : $this->programs($u, $portal)->join('departments as rd', 'rd.department_id', '=', 'academic_programs.department_id')->join('colleges as rc', 'rc.college_id', '=', 'rd.college_id')->orderBy('academic_program_id')->get(['academic_program_id as id', 'program_name as name', 'rc.college_id', 'rc.college_name'])];
     }
 
@@ -52,7 +52,7 @@ final class PortalReportService
         if (! $period && (! empty($f['academic_year_id']) || ! empty($f['semester_id']))) {
             throw ValidationException::withMessages(['period' => ['هذا التقرير لقطة حالية أو سجل بلا حدود فصلية موثوقة.']]);
         }
-        $base = ['id' => $report, 'title' => $title, 'definition' => $definition, 'scope' => $this->scopeLabel($portal),
+        $base = ['id' => $report, 'title' => $title, 'definition' => $definition, 'scope' => $this->scopeLabel($portal, $u),
             'period' => $period ? ['academic_year_id' => $f['academic_year_id'] ?? null, 'semester_id' => $f['semester_id'] ?? null, 'label' => empty($f['academic_year_id']) ? 'جميع الفترات المسجلة' : 'الفترة المختارة'] : ['label' => 'الحالة الحالية / السجل المسجل؛ ليس اتجاهًا تاريخيًا'],
             'generated_at' => now()->utc()->toIso8601String(), 'available' => true];
         if ($report === 'academic') {
@@ -98,6 +98,7 @@ final class PortalReportService
         if ($p === 'student') {
             return $q->whereKey($u->student_id);
         }
+        if ($u->isSuperAdmin()) return $q;
         if ($p === 'professor') {
             return $q->whereHas('studentCourseRegistrations', fn ($r) => $r->whereIn('course_offering_id', $this->offerings($u, $p, $f)->select('course_offering_id')));
         }
@@ -116,7 +117,7 @@ final class PortalReportService
         $q = CourseOffering::query()->when($f['program_id'] ?? null, fn ($q, $id) => $q->where('academic_program_id', $id))->when($f['college_id'] ?? null, fn ($q, $id) => $q->whereIn('course_offering_id', CourseOffering::idsResolvedToColleges([(int) $id])));
         if ($p === 'student') {
             $q->whereHas('studentCourseRegistrations', fn ($r) => $r->where('student_id', $u->student_id));
-        } elseif ($p === 'professor') {
+        } elseif ($p === 'professor' && ! $u->isSuperAdmin()) {
             // Canonical service owns effective/legacy assignment semantics, not a broad faculty DataScope.
             $ids = collect(app(ProfessorGradeAssignmentService::class)->offeringsForProfessor($u))->pluck('course_offering_id');
             $q->whereIn('course_offering_id', $ids);
@@ -131,6 +132,7 @@ final class PortalReportService
 
     private function collegeIds(User $u): array
     {
+        if ($u->isSuperAdmin()) return College::query()->pluck('college_id')->map(fn ($id) => (int) $id)->all();
         return collect($this->scope->scopes($u))->where('type', 'college')->pluck('id')->all();
     }
 
@@ -144,7 +146,7 @@ final class PortalReportService
             return $q;
         }
 
-        // scopeProgramsForMutation intentionally omits the virtual super-admin bypass.
+        // Administrative reports share the canonical mutation-safe scope.
         return $this->scope->scopeProgramsForMutation($q, $u);
     }
 
@@ -167,7 +169,7 @@ final class PortalReportService
                 return null;
             }
             $q = DB::table('employees as e')->leftJoin('employee_statuses as st', 'st.employee_status_id', '=', 'e.employee_status_id')->leftJoin('organizational_units as ou', 'ou.organizational_unit_id', '=', 'e.organizational_unit_id');
-            if (! $this->scope->hasActualUniversityScope($u)) {
+            if (! $this->scope->canAdministerUniversity($u)) {
                 $q->whereIn('e.organizational_unit_id', College::query()->whereIn('college_id', $this->collegeIds($u))->select('organizational_unit_id'));
             }
 
@@ -264,8 +266,9 @@ final class PortalReportService
         return $q->selectRaw('scr.student_course_registration_id as id, c.course_code as label, rs.status_code as category');
     }
 
-    private function scopeLabel(string $p): string
+    private function scopeLabel(string $p, User $u): string
     {
+        if ($p !== 'student' && $u->isSuperAdmin()) return 'الجامعة — سلطة مدير النظام على الموارد الإدارية';
         return match ($p) {
             'student' => 'سجل الطالب المرتبط بالحساب فقط', 'professor' => 'الطروحات المفتوحة المسندة فعليًا للحساب فقط', 'dean' => 'الكليات المسندة فعليًا للعميد فقط', 'ministry','president' => 'الجامعة — صلاحية قراءة البوابة', 'technical' => 'نطاق الحسابات ووحدات النشاط المسموح بها', default => 'النطاق الفعلي المعين للحساب؛ لا تجاوز مدير نظام ضمني'
         };

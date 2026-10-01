@@ -5,7 +5,7 @@ namespace App\Support;
 use App\Models\User;
 use App\Services\DataScopeService;
 
-/** Dedicated assigned read permissions; neither virtual administrator grants nor ministry roles suffice. */
+/** Dedicated ordinary-president permissions, with central administrative authority. */
 final class PresidentPortal
 {
     public const SECTIONS = ['dashboard', 'colleges', 'students', 'exams', 'staff', 'leadership', 'followup', 'reports'];
@@ -17,6 +17,7 @@ final class PresidentPortal
 
     public function allows(?User $user, string $section): bool
     {
+        if ($user?->isSuperAdmin()) return $section === 'access' || in_array($section, self::SECTIONS, true);
         if (! $user || $user->accountStatus?->status_code !== 'active') return false;
         $roles = $user->effectiveRoles();
         if (! $roles->contains('university_president') || $roles->contains('ministry_observer')) return false;

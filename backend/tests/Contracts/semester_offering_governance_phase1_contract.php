@@ -152,8 +152,8 @@ $contract = static function (string $backendRoot): array {
     $prepareCurriculum = strpos($prepare, 'ProgramCourse::query()');
     $expect($prepareOffering !== false && $prepareRequest !== false && $prepareCurriculum !== false
         && $prepareOffering < $prepareRequest && $prepareRequest < $prepareCurriculum, 'Preparation lock order must be Offering then governance root then ProgramCourse.');
-    $expect(substr_count($source['workflow'], 'effectivePermissions()->contains(') >= 2 && ! str_contains($source['workflow'], 'hasPermission('), 'Governance mutations must require directly effective assigned permissions without the super-admin permission shortcut.');
-    $expect(str_contains($source['workflow'], 'hasActualUniversityScope($actor)') && str_contains($source['workflow'], 'canAccessProgram($actor, $programId)'), 'Scientific and Dean governance must retain actual university/program DataScope checks.');
+    $expect(substr_count($source['workflow'], 'hasPermission(') >= 2, 'Governance mutations must use central permissions; ordinary assigned permissions remain required.');
+    $expect(str_contains($source['workflow'], 'canAdministerUniversity($actor)') && str_contains($source['workflow'], 'canAccessProgram($actor, $programId)'), 'Scientific and Dean governance must retain scoped resource checks with administrator authority.');
     $expect(str_contains($source['dean'], "->where('course_type', 'mandatory')") && ! preg_match('/course_type[^\n]{0,180}recommended_semester_id/', $source['dean']), 'Regular mandatory preparation must not be gated by advisory semester metadata.');
     $expect(substr_count($source['dean'], 'if ($regularSemester)') >= 2, 'Non-selected regular modes must not auto-select electives; regular electives require explicit selected mode.');
     $expect(str_contains($source['dean'], "semester_code === 'summer' && \$mode !== 'selected'"), 'Summer preparation must require explicit selected-mode choices.');

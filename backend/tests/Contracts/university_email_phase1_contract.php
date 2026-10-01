@@ -16,7 +16,7 @@ $contract = static function (string $root): array {
     $expect(! str_contains($mailcow, '->throw(') && ! str_contains($mailcow, 'Log::'), 'No upstream exception/body logging');
     $expect(str_contains($mailcow, 'JSON_THROW_ON_ERROR') && str_contains($mailcow, 'mailcow_invalid_response'), 'JSON semantic validation');
     $expect(str_contains($access, 'effectivePermissions()') && ! str_contains($access, 'hasPermission(') && str_contains($access, 'ROLE_TECHNICAL_TEAM'), 'Assigned technical RBAC only');
-    $expect(str_contains($service, 'scopeManualGradeStudents') && str_contains($service, 'lockForUpdate()') && str_contains($service, 'university_email_stale'), 'Explicit scopes and monotonic revision with student lock');
+    $expect(str_contains($service, 'scopeUniversityEmailStudents') && str_contains($service, 'lockForUpdate()') && str_contains($service, 'university_email_stale'), 'Dedicated email scope and monotonic revision with student lock');
     $expect(! preg_match('/(?:MailcowReadService|Http::|password|student->save|student->update)/', $service), 'Local drafts independent of Mailcow and student/login writes');
     $expect(str_contains($migration, "integer('student_id')->unique()") && str_contains($migration, "string('email_address', 254)->unique()"), 'Student/address uniqueness and signed key');
     $expect(str_contains($migration, "integer('created_by_user_id')") && str_contains($migration, 'restrictOnDelete()'), 'Compatible signed restrictive audit keys');

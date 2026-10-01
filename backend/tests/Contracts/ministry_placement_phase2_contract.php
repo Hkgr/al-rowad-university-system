@@ -40,8 +40,8 @@ $contract = static function (string $backendRoot): array {
     $expect(! preg_match("/convert-to-applicant[^\n]*MinistryPlacementController::class/", $sources['routes']), 'The Phase 2 matching controller must never own applicant conversion.');
     $expect(str_contains($sources['routes'], "[MinistryPlacementApplicantConversionController::class, 'convert']"), 'Later conversion must remain isolated in its dedicated Phase 3 controller.');
 
-    $expect(str_contains($sources['access'], 'effectivePermissions()->contains') && str_contains($sources['access'], 'hasActualUniversityScope'), 'Phase 2 must retain exact Ministry authority.');
-    $expect(! str_contains($sources['access'], 'hasPermission(') && ! str_contains($sources['access'], 'super_admin'), 'Phase 2 access must not use a role bypass.');
+    $expect(str_contains($sources['access'], 'hasPermission($permission)') && str_contains($sources['access'], 'canAdministerUniversity($actor)'), 'Phase 2 uses central authority without weakening ordinary scope.');
+    $expect(! str_contains($sources['access'], 'effectiveRoles()'), 'No unrelated ordinary role shortcut.');
 
     foreach (['locked', 'stale_match', 'matched', 'unmatched'] as $state) {
         $expect(str_contains($sources['model'], "return '".$state."'"), 'Missing fail-closed state: '.$state);

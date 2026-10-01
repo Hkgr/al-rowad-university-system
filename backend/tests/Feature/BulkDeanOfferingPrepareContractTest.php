@@ -322,7 +322,7 @@ class BulkDeanOfferingPrepareContractTest extends TestCase
         self::assertStringNotContainsString('bypass', $dean);
     }
 
-    public function test_auth_bulk_01_dean_with_course_offerings_manage_is_allowed_by_gate(): void
+    public function test_auth_bulk_01_dean_with_semester_governance_manage_is_allowed_by_gate(): void
     {
         $canManage = self::extractMethod(
             self::source('app/Services/DeanRegistrationOfferingService.php'),
@@ -331,15 +331,14 @@ class BulkDeanOfferingPrepareContractTest extends TestCase
 
         self::assertStringContainsString('if (! $user->isDean())', $canManage);
         self::assertStringContainsString('return false;', $canManage);
-        self::assertStringContainsString('$user->effectivePermissions()', $canManage);
-        self::assertStringContainsString("\$permissions->contains('course_offerings.manage')", $canManage);
+        self::assertStringContainsString('$user->hasPermission(SemesterOfferingGovernance::PERMISSION_MANAGE)', $canManage);
         self::assertGreaterThan(
             strpos($canManage, 'if (! $user->isDean())'),
-            strpos($canManage, "\$permissions->contains('course_offerings.manage')")
+            strpos($canManage, '$user->hasPermission(SemesterOfferingGovernance::PERMISSION_MANAGE)')
         );
     }
 
-    public function test_auth_bulk_02_dean_with_courses_manage_is_allowed_by_gate(): void
+    public function test_auth_bulk_02_generic_course_permission_does_not_replace_governance_permission(): void
     {
         $canManage = self::extractMethod(
             self::source('app/Services/DeanRegistrationOfferingService.php'),
@@ -347,12 +346,8 @@ class BulkDeanOfferingPrepareContractTest extends TestCase
         );
 
         self::assertStringContainsString('if (! $user->isDean())', $canManage);
-        self::assertStringContainsString('$user->effectivePermissions()', $canManage);
-        self::assertStringContainsString("\$permissions->contains('courses.manage')", $canManage);
-        self::assertStringContainsString(
-            "return \$permissions->contains('course_offerings.manage')\n            || \$permissions->contains('courses.manage');",
-            $canManage
-        );
+        self::assertStringContainsString('return $user->hasPermission(SemesterOfferingGovernance::PERMISSION_MANAGE);', $canManage);
+        self::assertStringNotContainsString("'courses.manage'", $canManage);
     }
 
     public function test_auth_bulk_03_dean_role_without_assigned_mutation_permission_is_denied(): void
@@ -363,14 +358,13 @@ class BulkDeanOfferingPrepareContractTest extends TestCase
         );
 
         self::assertStringContainsString('if (! $user->isDean())', $canManage);
-        self::assertStringContainsString('$user->effectivePermissions()', $canManage);
+        self::assertStringContainsString('$user->hasPermission(', $canManage);
         self::assertStringNotContainsString('return true;', $canManage);
         self::assertDoesNotMatchRegularExpression(
             '/isDean\(\)\)\s*\{\s*return true;/',
             $canManage
         );
-        self::assertStringContainsString("\$permissions->contains('course_offerings.manage')", $canManage);
-        self::assertStringContainsString("\$permissions->contains('courses.manage')", $canManage);
+        self::assertStringContainsString('$user->hasPermission(SemesterOfferingGovernance::PERMISSION_MANAGE)', $canManage);
     }
 
     public function test_auth_bulk_04_permission_without_dean_role_is_denied(): void
@@ -384,13 +378,13 @@ class BulkDeanOfferingPrepareContractTest extends TestCase
         self::assertStringContainsString('return false;', $canManage);
         self::assertGreaterThan(
             strpos($canManage, 'if (! $user->isDean())'),
-            strpos($canManage, '$user->effectivePermissions()')
+            strpos($canManage, '$user->hasPermission(')
         );
-        self::assertStringNotContainsString('hasPermission(', $canManage);
+        self::assertStringContainsString('hasPermission(', $canManage);
         self::assertStringNotContainsString('hasRoleCode(', $canManage);
     }
 
-    public function test_auth_bulk_05_super_admin_only_is_denied_by_dean_mutation_gate(): void
+    public function test_auth_bulk_05_super_admin_authority_is_central_not_a_local_role_fabrication(): void
     {
         $canManage = self::extractMethod(
             self::source('app/Services/DeanRegistrationOfferingService.php'),
@@ -402,8 +396,8 @@ class BulkDeanOfferingPrepareContractTest extends TestCase
         );
 
         self::assertStringContainsString('$user->isDean()', $canManage);
-        self::assertStringContainsString('$user->effectivePermissions()', $canManage);
-        self::assertStringNotContainsString('hasPermission(', $canManage);
+        self::assertStringContainsString('$user->hasPermission(', $canManage);
+        self::assertStringContainsString("\$this->canActAs('dean')", self::extractMethod(self::source('app/Models/User.php'), 'isDean'));
         self::assertStringNotContainsString('effectiveRoles()', $canManage);
         self::assertStringNotContainsString("'super_admin'", $canManage);
         self::assertStringNotContainsString('isSuperAdmin', $canManage);
@@ -412,7 +406,7 @@ class BulkDeanOfferingPrepareContractTest extends TestCase
         self::assertStringNotContainsString("'super_admin'", $assert);
     }
 
-    public function test_auth_bulk_06_super_admin_virtual_has_permission_does_not_satisfy_dean_gate(): void
+    public function test_auth_bulk_06_only_active_actual_super_admin_satisfies_central_authority(): void
     {
         $canManage = self::extractMethod(
             self::source('app/Services/DeanRegistrationOfferingService.php'),
@@ -424,9 +418,11 @@ class BulkDeanOfferingPrepareContractTest extends TestCase
         );
 
         self::assertStringContainsString('effectivePermissions()->contains($permission)', $hasPermission);
-        self::assertStringContainsString("effectiveRoles()->contains('super_admin')", $hasPermission);
-        self::assertStringNotContainsString('hasPermission(', $canManage);
-        self::assertStringContainsString('effectivePermissions()', $canManage);
+        self::assertStringContainsString('$this->isSuperAdmin()', $hasPermission);
+        $admin = self::extractMethod(self::source('app/Models/User.php'), 'isSuperAdmin');
+        self::assertStringContainsString("status_code === 'active'", $admin);
+        self::assertStringContainsString("\$this->hasRoleCode('super_admin')", $admin);
+        self::assertStringContainsString('hasPermission(', $canManage);
         self::assertStringContainsString('isDean()', $canManage);
     }
 
@@ -455,8 +451,7 @@ class BulkDeanOfferingPrepareContractTest extends TestCase
         self::assertStringContainsString('assertCanManage($user)', $close);
         self::assertStringContainsString('canManage($user)', $assert);
         self::assertStringContainsString('$user->isDean()', $canManage);
-        self::assertStringContainsString('effectivePermissions()', $canManage);
-        self::assertStringNotContainsString('hasPermission(', $canManage);
+        self::assertStringContainsString('hasPermission(SemesterOfferingGovernance::PERMISSION_MANAGE)', $canManage);
         self::assertStringNotContainsString('hasPermission(', $open);
         self::assertStringNotContainsString('hasPermission(', $bulk);
         self::assertStringNotContainsString('hasPermission(', $reopen);

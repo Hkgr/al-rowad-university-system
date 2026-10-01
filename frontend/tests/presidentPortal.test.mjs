@@ -7,9 +7,10 @@ const president={ roles:['university_president'], permissions:['president_portal
 test('president requires actual role, assigned permissions and university scope for each section',()=>{
   for(const section of SECTIONS){
     assert.equal(canAccess(presidentAccess(section),president),true)
-    for(const role of ['super_admin','dean','vice_president_scientific','ministry_observer']) assert.equal(canAccess(presidentAccess(section),{...president,roles:[role]}),false)
+    for(const role of ['dean','vice_president_scientific','ministry_observer']) assert.equal(canAccess(presidentAccess(section),{...president,roles:[role]}),false)
+    assert.equal(canAccess(presidentAccess(section),{roles:['super_admin'],permissions:[],access_scopes:[]}),true)
     assert.equal(canAccess(presidentAccess(section),{...president,access_scopes:[]}),false)
-    assert.equal(canAccess(presidentAccess(section),{...president,roles:['university_president','super_admin'],permissions:['president_portal.access']}),false)
+    assert.equal(canAccess(presidentAccess(section),{...president,roles:['university_president','super_admin'],permissions:['president_portal.access']}),true)
   }
 })
 test('landing preserves ministry confinement and other portal roles',()=>{

@@ -152,8 +152,8 @@ final class PortalReportsTest extends TestCase
     public function test_denials_role_permission_scope_identity_and_read_only(): void
     {
         $this->getJson('/api/v1/portal-reports/dean')->assertUnauthorized();
-        $this->actor('super_admin', [], ['university', 91]);
-        $this->getJson('/api/v1/portal-reports/dean')->assertForbidden();
+        $this->actor('super_admin', [], []);
+        $this->getJson('/api/v1/portal-reports/dean')->assertOk();
         $u = $this->actor('dean', ['students.view'], []);
         $this->getJson('/api/v1/portal-reports/dean')->assertForbidden();
         DB::table('user_access_scopes')->insert(['user_id' => $u->user_id, 'scope_type' => 'college', 'scope_id' => 1, 'is_active' => 1]);

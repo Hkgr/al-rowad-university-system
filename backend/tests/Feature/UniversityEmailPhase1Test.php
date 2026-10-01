@@ -162,7 +162,7 @@ class UniversityEmailPhase1Test extends TestCase
 
     public function test_permission_role_and_active_account_enforced_for_every_endpoint(): void
     {
-        foreach ([1, 2, 3, 4, 6, 7] as $id) {
+        foreach ([2, 3, 4, 6, 7] as $id) {
             Sanctum::actingAs(User::findOrFail($id));
             $this->getJson(self::ROOT.'/students')->assertForbidden();
             $this->getJson(self::ROOT.'/students/1')->assertForbidden();

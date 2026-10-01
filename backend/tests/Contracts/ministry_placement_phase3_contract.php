@@ -38,8 +38,8 @@ $contract = static function (string $backendRoot): array {
     }
     $expect(str_contains($sources['routes'], 'MinistryPlacementApplicantConversionController'), 'Conversion routes need a dedicated controller.');
 
-    $expect(str_contains($sources['access'], 'effectivePermissions()->contains') && str_contains($sources['access'], 'hasActualUniversityScope'), 'Phase 3 must reuse assigned admissions permission plus actual university scope.');
-    $expect(! str_contains($sources['access'], 'hasPermission(') && ! str_contains($sources['access'], 'super_admin'), 'Phase 3 must not inherit a role/scope bypass.');
+    $expect(str_contains($sources['access'], 'hasPermission($permission)') && str_contains($sources['access'], 'canAdministerUniversity($actor)'), 'Phase 3 uses central authority without weakening ordinary scope.');
+    $expect(! str_contains($sources['access'], 'effectiveRoles()'), 'No unrelated ordinary role shortcut.');
     $expect(str_contains($sources['individual_request'], 'MinistryPlacementAccess::class') && str_contains($sources['individual_request'], 'canManage'), 'Individual conversion must authorize server side.');
     $expect(str_contains($sources['individual_request'], '$this->all() !== []') && str_contains($sources['individual_request'], 'ministry_placement_conversion_payload_not_allowed') && str_contains($sources['individual_request'], '422'), 'The no-input endpoint must explicitly reject every non-empty payload.');
     $allowlistStart = strpos($sources['batch_request'], 'private const ALLOWED_KEYS');

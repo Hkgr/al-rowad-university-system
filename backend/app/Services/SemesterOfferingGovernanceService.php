@@ -489,7 +489,7 @@ class SemesterOfferingGovernanceService
     private function assertDeanManage(User $actor, int $programId): void
     {
         if (! $actor->isDean()
-            || ! $actor->effectivePermissions()->contains(SemesterOfferingGovernance::PERMISSION_MANAGE)
+            || ! $actor->hasPermission(SemesterOfferingGovernance::PERMISSION_MANAGE)
             || ! $this->scope->canAccessProgram($actor, $programId)) {
             throw SemesterOfferingGovernanceException::forbidden();
         }
@@ -498,7 +498,7 @@ class SemesterOfferingGovernanceService
     public function assertDeanView(User $actor): void
     {
         if (! $actor->isDean()
-            || ! $actor->effectivePermissions()->contains(SemesterOfferingGovernance::PERMISSION_VIEW)) {
+            || ! $actor->hasPermission(SemesterOfferingGovernance::PERMISSION_VIEW)) {
             throw SemesterOfferingGovernanceException::forbidden();
         }
     }
@@ -506,8 +506,8 @@ class SemesterOfferingGovernanceService
     private function assertScientificReview(User $actor, string $permission = SemesterOfferingGovernance::PERMISSION_REVIEW_SCIENTIFIC): void
     {
         if (! $actor->isScientificVicePresident()
-            || ! $actor->effectivePermissions()->contains($permission)
-            || ! $this->scope->hasActualUniversityScope($actor)) {
+            || ! $actor->hasPermission($permission)
+            || ! $this->scope->canAdministerUniversity($actor)) {
             throw SemesterOfferingGovernanceException::forbidden();
         }
     }

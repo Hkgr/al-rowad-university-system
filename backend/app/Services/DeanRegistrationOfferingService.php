@@ -669,9 +669,7 @@ class DeanRegistrationOfferingService
             return false;
         }
 
-        $permissions = $user->effectivePermissions();
-
-        return $permissions->contains(SemesterOfferingGovernance::PERMISSION_MANAGE);
+        return $user->hasPermission(SemesterOfferingGovernance::PERMISSION_MANAGE);
     }
 
     private function assertGovernanceReady(): void

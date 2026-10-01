@@ -389,7 +389,7 @@ class SupplementaryExamGradingService
     {
         $this->exam($actor, Governance::REVIEW);
         $this->ready();
-        if (! $this->scope->hasActualUniversityScope($actor)) {
+        if (! $this->scope->canAdministerUniversity($actor)) {
             $this->fail('Opening grading for a whole period requires an actual university scope.', 'supplementary_grading_out_of_scope', 403);
         }
 
@@ -604,8 +604,8 @@ class SupplementaryExamGradingService
                 && in_array($registration->gradeResult->status, ['draft', 'returned'], true));
             $assignmentLocked = $submission
                 && in_array($submission->status, ['submitted', 'approved', 'published'], true);
-            $canReview = $inProgramScope && $actor->isExamOfficer() && $permissions->contains(Governance::REVIEW);
-            $canPublish = $inProgramScope && $actor->isExamOfficer() && $permissions->contains(Governance::PUBLISH);
+            $canReview = $inProgramScope && $actor->isExamOfficer() && $actor->hasPermission(Governance::REVIEW);
+            $canPublish = $inProgramScope && $actor->isExamOfficer() && $actor->hasPermission(Governance::PUBLISH);
 
             $rosterPayload = $roster->map(function ($registration) use (
                 $canEdit,
@@ -691,7 +691,7 @@ class SupplementaryExamGradingService
                     'can_submit' => $canEdit && ! $hasOfficialTargetLock && $submission === null && $batchComplete,
                     'can_resubmit' => $canEdit && ! $hasOfficialTargetLock && $submission?->status === 'returned' && $batchComplete,
                     'can_assign_grader' => $inProgramScope
-                        && $permissions->contains(Governance::ASSIGN)
+                        && $actor->hasPermission(Governance::ASSIGN)
                         && in_array($periodStatus, ['registration_closed', 'grading_open'], true)
                         && ! $assignmentLocked,
                     'can_return' => $canReview
@@ -704,7 +704,7 @@ class SupplementaryExamGradingService
                         && $submission?->status === 'approved'
                         && $periodStatus === 'results_approved',
                     'can_materialize' => $inProgramScope
-                        && $permissions->contains(MaterializationGovernance::MATERIALIZE)
+                        && $actor->hasPermission(MaterializationGovernance::MATERIALIZE)
                         && $submission?->status === 'published'
                         && $periodStatus === MaterializationGovernance::SOURCE_PERIOD_STATUS
                         && $roster->isNotEmpty()
@@ -947,6 +947,7 @@ class SupplementaryExamGradingService
 
         $scopes = collect($this->scope->scopes($actor));
         $programIds = $offerings->pluck('academic_program_id')->map(fn ($id): int => (int) $id)->unique();
+        if ($actor->isSuperAdmin()) return $programIds->values();
         if ($scopes->contains(fn (array $scope): bool => $scope['type'] === 'university')) {
             return $programIds->values();
         }
@@ -1130,7 +1131,7 @@ class SupplementaryExamGradingService
 
     private function exam(User $actor, string $permission): void
     {
-        if (! $actor->isExamOfficer() || ! $actor->effectivePermissions()->contains($permission)) {
+        if (! $actor->isExamOfficer() || ! $actor->hasPermission($permission)) {
             $this->fail('An actual Exam Officer role and assigned permission are required.', 'supplementary_exam_officer_forbidden', 403);
         }
     }

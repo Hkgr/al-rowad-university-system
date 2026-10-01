@@ -73,7 +73,7 @@ export const PERMISSIONS = Object.freeze({
   ministryLeadershipView: 'ministry_portal.leadership.view',
 })
 
-// Ministry portal: the role AND the permission assigned through roles (no super_admin bypass),
+// Ministry portal: assigned role and permission for ordinary accounts; administrative authority is centralized below.
 // mirroring App\Support\MinistryPortal on the server.
 const ministry = permission => Object.freeze({ allRoles: [ROLES.ministryObserver], assignedPermissions: [PERMISSIONS.ministryPortalAccess, permission] })
 
@@ -127,8 +127,11 @@ export function clearIdentity() {
   localStorage.removeItem(IDENTITY_KEY)
 }
 export function hasRole(role, user = getIdentity()) { return user?.roles?.includes(role) ?? false }
+export function isSuperAdmin(user = getIdentity()) {
+  return hasRole('super_admin', user) && user?.is_super_admin !== false
+}
 export function hasPermission(permission, user = getIdentity()) {
-  return hasRole('super_admin', user) || (user?.permissions?.includes(permission) ?? false)
+  return isSuperAdmin(user) || (user?.permissions?.includes(permission) ?? false)
 }
 export function hasAssignedPermission(permission, user = getIdentity()) {
   return user?.permissions?.includes(permission) ?? false
@@ -139,11 +142,13 @@ export function hasActualUniversityScope(user = getIdentity()) {
 export function can(permission, user = getIdentity()) { return hasPermission(permission, user) }
 export function canAny(permissions, user = getIdentity()) { return permissions.some(permission => can(permission, user)) }
 export function canAll(permissions, user = getIdentity()) { return permissions.every(permission => can(permission, user)) }
-export function canAccess({ permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], actualUniversityScope = false, actualAcademicScope = false, actualScopeTypes = [], studentIdentity = false, employeeIdentity = false, anyAccess = [] } = {}, user = getIdentity()) {
-  if (!user) return false
+export function canAccess({ permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], actualUniversityScope = false, actualAcademicScope = false, actualScopeTypes = [], studentIdentity = false, employeeIdentity = false, anyAccess = [], denied = false } = {}, user = getIdentity()) {
+  if (!user || denied) return false
   if (anyAccess.length > 0) return anyAccess.some(access => canAccess(access, user))
   if (studentIdentity && !user.student_id) return false
   if (employeeIdentity && !user.employee_id) return false
+  // Personal identity gates are never manufactured by administrative access.
+  if (isSuperAdmin(user) && !studentIdentity && !employeeIdentity) return true
   if (actualUniversityScope && !hasActualUniversityScope(user)) return false
   if (actualScopeTypes.length && !user.access_scopes?.some(scope => actualScopeTypes.includes(scope?.type) && Number(scope.id) > 0)) return false
   if (actualAcademicScope && !user.access_scopes?.some(scope => ['university', 'college', 'department', 'program'].includes(scope?.type) && Number(scope.id) > 0)) return false
@@ -158,6 +163,7 @@ export function canAccess({ permissions = [], allPermissions = [], roles = [], a
 }
 export function landingRoute(user) {
   if (!user) return '/login'
+  if (isSuperAdmin(user)) return '/technical'
 
   // The ministry account is confined to its read-only portal on the server; it lands there first.
   // No existing account holds this role, so the precedence of existing roles is unchanged.

@@ -35,7 +35,7 @@ final class PresidentPortalTest extends \Tests\TestCase
     {
         $paths = ['dashboard', 'reports', 'filters', 'students', 'colleges', 'programs', 'courses', 'faculty', 'deans', 'leadership', 'exams', 'results', 'followup'];
         $this->getJson('/api/v1/president/dashboard')->assertUnauthorized();
-        foreach ([1, 2, 3, 4, 6, 8] as $id) {
+        foreach ([2, 3, 4, 6, 8] as $id) {
             $this->president($id);
             foreach ($paths as $p) $this->getJson('/api/v1/president/'.$p)->assertForbidden();
         }
@@ -93,9 +93,9 @@ final class PresidentPortalTest extends \Tests\TestCase
         DB::table('role_permissions')->where('role_id', 20)->where('permission_id', $permission)->delete();
         $this->president(); $this->getJson('/api/v1/president/students')->assertForbidden();
         $this->getJson('/api/v1/president/dashboard')->assertOk();
-        // Neither super-admin's virtual grants nor role alone restore the missing permission.
+        // Active administrator authority does not require the missing president permission.
         DB::table('user_roles')->insert(['user_id' => 20, 'role_id' => 1, 'is_active' => 1]);
-        $this->president(); $this->getJson('/api/v1/president/students')->assertForbidden();
+        $this->president(); $this->getJson('/api/v1/president/students')->assertOk();
     }
 
     public function test_assigned_permissions_without_actual_president_role_and_role_without_access_are_denied(): void

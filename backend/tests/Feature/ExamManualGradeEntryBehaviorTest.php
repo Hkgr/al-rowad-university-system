@@ -49,7 +49,9 @@ class ExamManualGradeEntryBehaviorTest extends TestCase
 
     public function test_authorization_requires_real_role_assigned_permissions_active_account_and_scope(): void
     {
-        foreach (['super_admin', 'doctor_instructor', 'employee'] as $role) {
+        DB::table('roles')->where('role_id', 1)->update(['role_code' => 'super_admin']);
+        $this->getJson(self::BASE.'/students?q=Student')->assertOk();
+        foreach (['doctor_instructor', 'employee'] as $role) {
             DB::table('roles')->where('role_id', 1)->update(['role_code' => $role]);
             $this->getJson(self::BASE.'/students?q=Student')->assertForbidden();
         }

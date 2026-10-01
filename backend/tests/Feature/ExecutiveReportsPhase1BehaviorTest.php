@@ -59,7 +59,7 @@ class ExecutiveReportsPhase1BehaviorTest extends TestCase
         self::assertTrue($access->allows($this->actor(1,'vice_president_scientific','vice_presidency.scientific.access',true)));
         self::assertTrue($access->allows($this->actor(2,'vice_president_administrative','vice_presidency.administrative.access',true)));
         self::assertFalse($access->allows($this->actor(3,'vice_president_scientific','vice_presidency.administrative.access',true)));
-        self::assertFalse($access->allows($this->actor(4,'super_admin','vice_presidency.scientific.access',true)));
+        self::assertTrue($access->allows($this->actor(4,'super_admin','vice_presidency.scientific.access',false)));
         self::assertFalse($access->allows($this->actor(5,'vice_president_scientific','vice_presidency.scientific.access',false)));
         self::assertFalse($access->allows($this->actor(6,'employee','vice_presidency.scientific.access',true)));
         self::assertFalse($access->allows($this->actor(7,'vice_president_scientific','students.view',true)));

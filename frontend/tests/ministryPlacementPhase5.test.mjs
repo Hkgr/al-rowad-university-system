@@ -44,7 +44,7 @@ assert.match(reconciliationIssueLabel({ code: 'identity_conflict_multiple_termin
 assert.match(reconciliationIssueLabel({ code: 'identity_conflict_terminal_record' }), /تحذير تاريخي/)
 
 assert.match(addStudent, /رفع طلاب المفاضلة/, 'MINISTRY-UX-P5-01: Add Student must expose the Ministry entry')
-assert.match(addStudent, /hasAssignedPermission\(PERMISSIONS\.admissionsManage\) && hasActualUniversityScope\(\)/, 'MINISTRY-UX-P5-02: entry requires assigned manage and actual scope')
+assert.match(addStudent, /canAccess\(\{ assignedPermissions: \[PERMISSIONS\.admissionsManage\], actualUniversityScope: true \}\)/, 'MINISTRY-UX-P5-02: central guard preserves ordinary assigned manage and actual scope')
 assert.match(addStudent, /navigate\('\/student-affairs\/ministry-placements'\)/, 'MINISTRY-UX-P5-03: entry uses same-tab router navigation')
 assert.doesNotMatch(nav, /student-affairs\/ministry-placements/, 'MINISTRY-UX-P5-04: Ministry must not be in sidebar navigation')
 assert.doesNotMatch(nav + app, /ministryPlacementNav/, 'MINISTRY-UX-P5-05: dedicated Ministry-only nav must not remain')

@@ -279,7 +279,7 @@ test('reporting access requires the paired actual role, assigned permission, and
   const scientific = { roles: ['vice_president_scientific'], permissions: ['vice_presidency.scientific.access'], access_scopes: [{ type: 'university' }] }
   assert.equal(canAccessExecutiveReports('scientific', scientific), true)
   assert.equal(canAccessExecutiveReports('administrative', scientific), false)
-  assert.equal(canAccessExecutiveReports('scientific', { ...scientific, roles: ['super_admin'] }), false)
+  assert.equal(canAccessExecutiveReports('scientific', { roles: ['super_admin'], permissions: [], access_scopes: [] }), true)
   assert.equal(canAccessExecutiveReports('scientific', { ...scientific, permissions: [] }), false)
   assert.equal(canAccessExecutiveReports('scientific', { ...scientific, access_scopes: [] }), false)
   assert.equal(canAccessExecutiveReports('unexpected', scientific), false)
