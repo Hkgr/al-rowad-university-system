@@ -1,5 +1,5 @@
 import {
-  FaHome, FaClipboardList, FaChartBar, FaCalendarCheck, FaPlusSquare, FaCalendarAlt, FaTasks, FaQuestionCircle,
+  FaHome, FaClipboardList, FaChartBar, FaCalendarCheck, FaPlusSquare, FaCalendarAlt, FaTasks, FaQuestionCircle, FaEnvelope,
 } from 'react-icons/fa'
 import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
 
@@ -11,6 +11,7 @@ const studentNav = [
     label: 'بوابة الطالب',
     items: [
       { to: '/student',              Icon: FaHome,          ar: 'الرئيسية',       en: 'Home',              end: true },
+      { to: '/student/university-email', Icon: FaEnvelope, ar: 'بريدي الجامعي', en: 'University email', end: true, studentIdentity: true, allRoles: ['student'] },
       { to: '/student/registration', Icon: FaPlusSquare,    ar: 'تسجيل المواد',   en: 'Registration',      end: true },
       { to: '/student/requirements', Icon: FaTasks,         ar: 'الخطة والتقدم',  en: 'Academic Progress', end: true },
       { to: '/student/supplementary-exams', Icon: FaClipboardList, ar: 'الامتحانات التكميلية', en: 'Supplementary Exams', end: true, allRoles: ['student'], assignedPermissions: ['supplementary_exams.deferrals.self', 'supplementary_exams.registrations.self'] },

@@ -67,6 +67,10 @@ final class UniversityEmailService
                     throw new UniversityEmailException('university_email_not_draft', 'لا يمكن تعديل عنوان تم إنشاؤه أو تسليمه من تجهيز المسودات.');
                 }
                 $name = strtolower(preg_replace('/\A\s+|\s+\z/u', '', $input['english_first_name']));
+                if ($draft && Schema::hasTable('university_email_operations')
+                    && \App\Models\UniversityEmailOperation::where('university_email_id', $draft->university_email_id)->exists()) {
+                    throw new UniversityEmailException('university_email_identity_frozen', 'بدأت عملية إنشاء مرتبطة بهذه المسودة؛ لا يمكن تغيير عنوانها.');
+                }
                 $number = strtolower(trim($student->student_number));
                 $settings = $this->settings();
                 if (! preg_match('/\A[a-z]+\z/D', $name) || ! preg_match('/\A[a-z0-9]+\z/D', $number)) {
@@ -118,7 +122,8 @@ final class UniversityEmailService
         $student->loadMissing('academicProgram.department.college');
         $draft = StudentUniversityEmail::query()->where('student_id', $student->student_id)->first();
         return ['student' => $this->studentData($student) + ['email_preparation' => $this->emailSummary($draft, true)], 'draft' => $draft ? $draft->only(['university_email_id', 'english_first_name', 'email_address', 'quota_mb', 'provisioning_status', 'handover_status', 'revision', 'created_at', 'updated_at']) : null,
-            'settings' => $this->settings()];
+            'settings' => $this->settings(), 'draft_locked' => $draft && Schema::hasTable('university_email_operations')
+                && \App\Models\UniversityEmailOperation::where('university_email_id', $draft->university_email_id)->exists()];
     }
     private function emailSummary(?StudentUniversityEmail $draft, bool $available): array
     {

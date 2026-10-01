@@ -1,0 +1,65 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Services\UniversityEmailProvisioningService as Service;
+use App\Support\UniversityEmailAccess as Access;
+use Illuminate\Http\{JsonResponse, Request};
+use Illuminate\Validation\ValidationException;
+
+final class UniversityEmailProvisioningController extends Controller
+{
+    private function input(Request $request, array $rules, ?string $permission = null): array
+    {
+        if ($permission) Access::authorize($request->user(), $permission);
+        if (array_diff(array_keys($request->all()), array_keys($rules))) throw ValidationException::withMessages(['request' => 'توجد حقول غير مسموحة.']);
+        return $request->validate($rules);
+    }
+    private function response(array $data): JsonResponse
+    {
+        return response()->json(['data' => $data])->withHeaders(['Cache-Control' => 'no-store, private', 'Pragma' => 'no-cache', 'Referrer-Policy' => 'no-referrer']);
+    }
+    public function state(Request $r, int $student, Service $s): JsonResponse
+    {
+        $this->input($r, [], Access::VIEW);
+        return $this->response($s->state($r->user(), $student));
+    }
+    public function password(Request $r, int $student, Service $s): JsonResponse
+    {
+        $i = $this->input($r, ['revision' => 'required|integer|min:1'], Access::CREATE);
+        return $this->response($s->password($r->user(), $student, (int) $i['revision'], 'create'));
+    }
+    public function reissue(Request $r, int $student, Service $s): JsonResponse
+    {
+        $i = $this->input($r, ['revision' => 'required|integer|min:1'], Access::RECOVER);
+        return $this->response($s->password($r->user(), $student, (int) $i['revision'], 'reset'));
+    }
+    public function execute(Request $r, int $student, Service $s): JsonResponse
+    {
+        try {
+            $i = $this->input($r, ['operation_id' => 'required|uuid', 'generation' => 'required|integer|min:1',
+                'password' => 'required|string|min:24|max:64', 'credential_proof' => 'required|string|size:64', 'confirmed' => 'required|accepted'], Access::VIEW);
+            return $this->response($s->execute($r->user(), $student, $i));
+        } finally {
+            // Scrub before exception handling: never flash credentials or return upstream errors.
+            $r->request->remove('password'); $r->request->remove('credential_proof');
+            if ($r->isJson()) { $r->json()->remove('password'); $r->json()->remove('credential_proof'); }
+        }
+    }
+    public function reconcile(Request $r, int $student, Service $s): JsonResponse
+    {
+        $i = $this->input($r, ['operation_id' => 'required|uuid'], Access::CREATE);
+        return $this->response($s->reconcile($r->user(), $student, $i['operation_id']));
+    }
+    public function receipt(Request $r, int $student, Service $s): JsonResponse
+    {
+        $i = $this->input($r, ['operation_id' => 'required|uuid', 'generation' => 'required|integer|min:1'], Access::RECEIPT);
+        return $this->response($s->receipt($r->user(), $student, $i['operation_id'], (int) $i['generation']));
+    }
+    public function selfEmail(Request $r, Service $s): JsonResponse
+    {
+        $this->input($r, []);
+        return $this->response($s->selfEmail($r->user()));
+    }
+}

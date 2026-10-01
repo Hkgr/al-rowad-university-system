@@ -1,0 +1,107 @@
+# University email Phase 2 provisioning and PDF receipts
+
+Phase 2 adds a one-student Mailcow provisioning flow to the existing Technical Office. It starts from develop `5f5e2eb17828fa5dab67a9a55d64aa02c2677bb8`, containing merged PR #146. Personal student email, university login accounts and academic data remain independent. No production deployment, database operation or live mailbox creation was performed.
+
+The user's final clarification replaces paper-signature handover confirmation with **explicit PDF download only**. There is no delivery-confirmation endpoint, button or permission, and no signed-paper requirement. Downloading a PDF does not change `handover_status`, prove delivery or assign a delivery actor/date. Existing Phase 1 handover fields remain intact for compatibility; their legacy values are not inferred from downloads. The receipt states the issuer and issue time, not a fabricated delivery time. The downloaded file contains the initial password and must be treated as confidential.
+
+## Authorization and API
+
+All technical operations require an active account, actual effective `technical_team`, assigned `technical_portal.access` and `university_email.view`, plus actual student DataScope. Virtual super-admin permission is insufficient. The student is rechecked after its lock, separately from operation identity. Account creation and receipt issuance are not granted by draft management.
+
+| Path after `/api/v1/technical/university-email/students/{student}` | Method | Additional permission |
+| --- | --- | --- |
+| `provisioning` | GET | view only |
+| `provisioning/password` | POST | `university_email.provision` and `university_email.issue_receipt` |
+| `provisioning/reissue` | POST | `university_email.reissue_initial_password` and `university_email.issue_receipt` |
+| `provisioning/execute` | POST | persisted operation's create/reissue permission and receipt permission |
+| `provisioning/reconcile` | POST | `university_email.provision` |
+| `provisioning/receipt` | POST | `university_email.issue_receipt` |
+
+Inputs are allowlisted. Address, domain and quota are never client-supplied. Execute requires an explicit creation/reset confirmation; this is **not** a receipt/delivery confirmation. Receipt metadata issuance is idempotent for operation and issuer, and is performed by the PDF-download button. No password is sent to or returned by the receipt endpoint.
+
+`GET /api/v1/student/university-email` requires an active actual student account linked through `user.student_id`; it accepts no student ID or other input. It returns only that student's confirmed address and login links, never a draft, password or another student's data. A protected sibling student route avoids inheriting unrelated grades/registration permissions.
+
+## Durable operations and failure handling
+
+The additive migration creates `university_email_operations` and `university_email_receipts`, and nullable creation/credential operation references on Phase 1 drafts. Restrictive FKs preserve history. A unique creation slot permits one creation operation per draft/student; a unique active slot permits only one unfinished operation. Student, draft and operation locks are acquired in that order. Draft edits use the same student lock and are blocked once an operation exists, including failed/conflicting operations. No mailbox deletion compensates a local failure.
+
+Passwords use `random_int`, all four character classes and a configured 24–64-character length. Generation has a monotonic version; its stateless HMAC binds operation, generation, issuing operator and password. Neither password nor proof is stored or hashed into a database field. A regenerated prepared password invalidates the old generation. After confirmation, recovery changes the actual mailbox password through the separately authorized reissue path; it never pretends that a newly generated string is already valid.
+
+Every network request is outside local transactions, with TLS verification, redirects disabled, fixed trusted host, 5-second connection timeout and 15-second total timeout. No HTTP retry, job or automatic scheduler is used. HTTP 200 alone is not success: the adapter checks the exact success code/address, then reads the mailbox's identity, active state, 50 × 1,048,576-byte quota, forced-password-change attribute and ownership tag.
+
+| State | Meaning and safe next step |
+| --- | --- |
+| `prepared` | Local operation exists; password/proof are only in current page memory. Explicit generation may replace this version. |
+| `preflight` | Remote reads are running; no write authority acquired yet. An abandoned preflight can be invalidated under locks after 60 seconds. The old worker must recheck before writing. |
+| `in_progress` | A write-start marker is durable. Do not issue another create/reset POST. |
+| `uncertain` | Write may have succeeded; explicit read-only reconciliation after the 60-second guard, never automatic retry. |
+| `confirmed` | Success and read-back were verified and local audit committed. |
+| `conflict` | Pre-existing mailbox/alias; never adopt, reset or delete it. Manual investigation required. |
+| `failed` | No remote write started. Explicit regeneration on the same operation may prepare a new generation. |
+
+Reconciliation requires the creation tag `alrowad-university-email:{operation UUID}` and the complete mailbox contract. Address alone is not ownership evidence. Existing exact and catch-all aliases are checked, including inactive aliases. A crash after remote creation but before local commit can be reconciled without a second POST. Such reconciliation confirms mailbox ownership **not password validity**; credential operation remains null and a separately authorized reset is required before PDF issuance. If an execute response was lost but the local confirmation committed, reviewing local state permits receipt issuance only with the matching credentials still in memory.
+
+An uncertain reset cannot be proved by a tag or address alone and remains blocked for manual review: do not print its proposed password or initiate another potentially racing reset. Similarly, a write-started creation with no verifiable ownership marker is not automatically retried. These cases intentionally require investigation by an authorized Mailcow administrator outside this limited workflow. Never edit database rows to manufacture confirmation.
+
+Reissue is restricted to a mailbox with this module's confirmed creation operation and matching remote ownership, and rejects legacy records marked delivered. It preserves existing tags and adds the reset operation's tag. It is not a general password-reset/account administration feature. Because PDF download no longer proves delivery, the operator must establish that reissue is appropriate; a confirmed reset invalidates **all previous PDFs/passwords**. The UI explicitly warns about that effect.
+
+## Secret handling and PDF
+
+Only the password-generation response and explicit execute POST carry credentials; both use protected authenticated routes. Responses are `no-store, private`; proofs/passwords are scrubbed from parsed request input on completion and excluded from Laravel flashed input. Transport exceptions/raw responses are caught and replaced with safe codes without retaining previous exceptions. Audits contain IDs, revision, generation and receipt reference only. No secret is written to sessions, cache, jobs, failed jobs, URLs, browser storage or logs by this feature.
+
+Disable request/response-body capture for these routes and Mailcow HTTP calls in reverse-proxy logging, APM, telemetry, debug tooling and browser session recording. In production set `APP_DEBUG=false`. External logging products were not configured or production-audited by this PR; application guards cannot prevent a separately enabled upstream recorder from capturing request bodies.
+
+Credentials exist in the current page's React memory only, bound to student and operation generation. Navigation/unload/student changes are guarded; confirmed exit, finish and authorization loss unmount/clear the sensitive view. After reload the password cannot be retrieved. No operation is retried automatically after a write-response loss.
+
+The one-page A4 PDF uses existing Cairo, `/logo.png`, green identity and RTL. Email/password/links are LTR, with the exact confidentiality warning. Its metadata comes from Laravel's safe student projection, `UserIdentityService::documentGenerator` and server UTC issue time. No fake employee or delivery date is inserted. The document is built in browser memory using existing jsPDF/html2canvas dependencies and downloaded only after the user clicks **«تنزيل الإيصال PDF»**. There is no public URL, server PDF, automatic download, upload, `window.print`, `afterprint` or handover mutation. Re-download is possible only while the matching confirmed password remains in RAM. The browser canvas is cleared after export.
+
+Visual references are `AccountsPermissionsPage.jsx`, Phase 1 `UniversityEmailPage.jsx`, `MinistryUi` headers/sections/notices/badges, `DataTable`, `FilterBar` and `ManualGradeDialog`. No global styles or unrelated page designs changed.
+
+## Mailcow contract sources and activation
+
+The contract was reviewed against official Mailcow source commit `ca07d8d3331849ae294179aedce95c8126d3050f`: [OpenAPI](https://github.com/mailcow/mailcow-dockerized/blob/ca07d8d3331849ae294179aedce95c8126d3050f/data/web/api/openapi.yaml), [API router](https://github.com/mailcow/mailcow-dockerized/blob/ca07d8d3331849ae294179aedce95c8126d3050f/data/web/json_api.php) and [mailbox implementation](https://github.com/mailcow/mailcow-dockerized/blob/ca07d8d3331849ae294179aedce95c8126d3050f/data/web/inc/functions.mailbox.inc.php). The APIs used are `get/mailbox/all/alrowaduni.edu.sy`, `get/alias/all`, `add/mailbox` and `edit/mailbox`. The fixed-domain mailbox list avoids confusing an individual missing lookup with a denied lookup; only the selected address's strictly validated projection is retained. All raw remote rows remain temporary, never returned/logged/persisted. The write key must have verified full visibility of the configured domain. [Official tag documentation](https://docs.mailcow.email/manual-guides/mailcow-UI/u_e-mailcow_ui-tags/) requires a tags-capable version; administrators must preserve module tags. Tags are ownership evidence within the trusted Mailcow administrator boundary, not immutable cryptographic proof against a malicious administrator.
+
+The deployed university Mailcow version and login screens were **not** tested. Therefore both deployment gates default false. Confirm the deployed contract, tag persistence, byte/MiB quota semantics, API-key privileges and password policy before enabling. Password updates request `force_pw_update=1`. Instructions direct users to the Mailcow account UI at `https://mail.alrowaduni.edu.sy/` to change the initial password, then SOGo at `/SOGo/`; they do not claim that direct SOGo/IMAP login itself forces a change. Deployment sign-off must verify those routes/screens on the actual installed version.
+
+## Plesk deployment order
+
+These instructions are not authorization to deploy or create a live account during this task.
+
+1. Back up and deploy only the reviewed application/build. Preserve Phase 1 storage. Stop affected writes while applying the **specific** additive migration; do not run every unrelated pending migration:
+
+   ```sh
+   php artisan migrate --path=database/migrations/2026_10_01_000001_add_university_email_provisioning.php --force
+   php artisan university-email:enable-permissions --phase2
+   ```
+
+   The command idempotently provisions only the three Phase 1 plus three Phase 2 permission definitions/mappings for the existing active technical role/module. It creates no user, role, scope or global account-management grant. Existing portal access/scope must already be legitimately assigned. Rollback refuses to remove populated operation/receipt history.
+2. Retain the Phase 1 read key. Supply a separate server-only write key privately, restrict its allowed outbound IP in Mailcow, and leave these gates disabled:
+
+   ```dotenv
+   MAILCOW_BASE_URL=https://mail.alrowaduni.edu.sy
+   MAILCOW_WRITE_API_KEY=
+   MAILCOW_PROVISIONING_ENABLED=false
+   MAILCOW_CONTRACT_VERIFIED=false
+   MAILCOW_INITIAL_PASSWORD_LENGTH=24
+   ```
+
+   Never put API keys into `VITE_*` variables or source control. Preserve `APP_KEY`; changing it invalidates prepared proofs. Validate TLS, outbound DNS and the configured Mailcow password-length policy. Do not disable certificate verification.
+3. Use the normal production API configuration when building Vite, not localhost test settings. Verify authenticated Phase 1 search/drafts still work, Phase 2 schema reports ready, unauthorized actors are rejected, and no upstream body capture is enabled. No queue/scheduler is required; operations are synchronous with persisted boundaries and explicit reconciliation.
+4. Only after separate approval, verify the installed contract with a synthetic authorized test student/mailbox. Set both gates true, refresh Laravel cached config, and explicitly create that single test mailbox. Check quota/tags and the account UI's password-change behavior, then send/receive synthetic messages. Never adopt an existing production mailbox or test with a real student's credentials. Confirm old PDFs are invalid after a deliberately approved reset. Restore gates false if contract verification fails; read-only reconciliation remains available with the configured key.
+
+## Executed verification and remaining limitations
+
+Executed on the local development environment with existing dependencies only:
+
+- Targeted Laravel/PHPUnit suites: 74 tests, 1,140 assertions passed (Phase 1/2 behavior and contracts, technical account administration and existing SQL contracts). HTTP tests execute real Laravel middleware with synthetic SQLite fixtures and a mocked Mailcow transport.
+- Cases include separate permissions/scope, stale generations, proof tampering, draft freezing, existing alias/mailbox, tagged reconciliation, lost remote response, local audit-commit rollback, limited reset, quota mismatch, HTTP-200 danger/invalid bodies, 401/403/429, no credential persistence, idempotent receipt metadata and student self-only read.
+- Real local Laravel server HTTP integration passed using a separate exported synthetic SQLite file and test-only upstream Mailcow fake: draft, creation, repeat-write denial, no-store, idempotent receipt, own student address, unauthorized denial and frozen draft. This is **not React rendering**.
+- 259 dependency-free Node tests passed, including Phase 2 pure logic/source checks. These do not prove visual rendering or backend integration.
+- Frontend production build, modified-source lint and Composer validation/platform checks passed. Full frontend lint still reports the same pre-existing 90 errors and 16 warnings outside this change.
+- Running all dependency-free PHP contracts passed 32 of 34. Two pre-existing historical contracts remain incompatible with develop: `academic_calendar_schema_compatibility_repair_contract.php` requires an already-present Phase 3 policy service to be absent, and `supplementary_exam_end_to_end_hardening_contract.php` rejects any migration in its historical PR boundary. Those files were not weakened or changed; the targeted email contracts pass.
+
+The in-app browser connection failed because its execution metadata was unavailable, and the tool rejected the standalone Chrome-launch command. **React-to-Laravel browser execution, desktop/mobile visual comparison and actual PDF download/layout inspection were not executed.** A ready-to-run regression script is `frontend/tests/browser/university-email-phase2-live.mjs`; it does not intercept application APIs. The test-only PHP router is `backend/tests/Support/university_email_phase2_router.php`, guarded by testing environment and an isolated temporary SQLite path. Synthetic browser PDFs/screenshots may contain synthetic passwords and should remain private test artifacts.
+
+No local MariaDB/MySQL client or listening test instance was found. **Two-connection MariaDB concurrency, production lock behavior, deployed migration compatibility and live Mailcow/first-login/send/receive checks remain unexecuted.** SQLite proves local constraints/rollback behavior, not MariaDB row-lock concurrency. This PR is not a claim of production verification or complete visual/runtime acceptance.
+
+To run the browser regression in an approved local automation environment, export a **fresh** fixture with `UNIVERSITY_EMAIL_PHASE2_BROWSER_DIR` pointing to an existing private temporary directory and PHPUnit's `test_export_isolated_phase2_browser_fixture_when_requested`; serve the test-only router with `APP_ENV=testing`, `DB_CONNECTION=sqlite`, `DB_DATABASE` pointing to that exported `email.sqlite`, array cache/session and null logging. Build React with `VITE_API_BASE_URL=http://127.0.0.1:8099/api`, preview at localhost:5173, launch an isolated Chrome at debug port 9244, then run the script with the same fixture directory. Do not reuse a previously provisioned fixture. Stop helpers and rebuild with normal production configuration afterwards. No production reference/dump is used.

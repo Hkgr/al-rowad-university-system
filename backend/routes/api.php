@@ -840,6 +840,16 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
         Route::put('students/{student}/draft', 'save')->whereNumber('student');
         Route::get('connection', 'check')->middleware('throttle:10,1');
     });
+    Route::prefix('technical/university-email/students/{student}')->whereNumber('student')
+        ->controller(\App\Http\Controllers\Api\UniversityEmailProvisioningController::class)->group(function (): void {
+            Route::get('provisioning', 'state');
+            Route::post('provisioning/password', 'password')->middleware('throttle:10,1');
+            Route::post('provisioning/reissue', 'reissue')->middleware('throttle:10,1');
+            Route::post('provisioning/execute', 'execute')->middleware('throttle:10,1');
+            Route::post('provisioning/reconcile', 'reconcile')->middleware('throttle:10,1');
+            Route::post('provisioning/receipt', 'receipt')->middleware('throttle:10,1');
+        });
+    Route::get('student/university-email', [\App\Http\Controllers\Api\UniversityEmailProvisioningController::class, 'selfEmail']);
 
     Route::prefix('technical/accounts')->controller(\App\Http\Controllers\Api\AccountAdministrationController::class)->group(function (): void {
         Route::middleware(\App\Http\Middleware\RequirePermission::class.':user_accounts.view')->group(function (): void {

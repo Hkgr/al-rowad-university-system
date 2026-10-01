@@ -25,6 +25,7 @@ import MinistryPlacementsPage from '../features/student-affairs/pages/MinistryPl
 // ── بوابة الطالب (Student Dashboard) ────────────────────────────────────────
 import studentNav        from '../features/student-dashboard/nav'
 import StudentHome         from '../features/student-dashboard/pages/StudentHome'
+import StudentUniversityEmail from '../features/student-dashboard/pages/StudentUniversityEmail'
 import StudentTranscript  from '../features/student-dashboard/pages/StudentTranscript'
 import StudentGPA         from '../features/student-dashboard/pages/StudentGPA'
 import StudentAttendance  from '../features/student-dashboard/pages/StudentAttendance'
@@ -253,6 +254,9 @@ const router = createBrowserRouter(createRoutesFromElements(
         </Route>
 
         {/* ── هيئة الامتحانات dashboard ── */}
+        <Route element={<ProtectedRoute studentIdentity allRoles={['student']}><DashboardLayout nav={studentNav} appTitle="بوابة الطالب" /></ProtectedRoute>}>
+          <Route path="/student/university-email" element={<StudentUniversityEmail />} />
+        </Route>
         <Route
           element={
             <ProtectedRoute {...ACCESS.courseRegistration}>

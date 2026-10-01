@@ -7,6 +7,7 @@ import DataTable from '../../../components/table/DataTable'
 import FilterBar from '../../../components/table/FilterBar'
 import { PageHeader, Section, Notice, StatePanel, InfoGrid, Badge } from '../../ministry-portal/components/MinistryUi'
 import ManualGradeDialog from '../../exam-board/components/ManualGradeDialog'
+import UniversityEmailProvisioning from '../components/UniversityEmailProvisioning'
 import { EMAIL_API, draftPayload, emailFailure, preparationLabels, previewAddress, requestSequence, requiresReview, studentSearchQuery, updateStudentSummary } from '../lib/universityEmail'
 
 const button = 'inline-flex items-center justify-center gap-2 py-2 px-4 rounded-[10px] bg-primary text-white text-[13px] font-bold disabled:opacity-50 hover:bg-primary-dark'
@@ -29,6 +30,7 @@ function Workspace({ identity }) {
   const [list, setList] = useState(null), [listError, setListError] = useState(null), [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null), [snapshot, setSnapshot] = useState(null), [detailError, setDetailError] = useState(null), [detailBusy, setDetailBusy] = useState(false)
   const [dirty, setDirty] = useState(false), [pending, setPending] = useState(false), [notice, setNotice] = useState('')
+  const [sensitive, setSensitive] = useState(false)
   const [health, setHealth] = useState(null), [healthError, setHealthError] = useState(''), [healthBusy, setHealthBusy] = useState(false)
   const [retry, setRetry] = useState(0)
   const [denied, setDenied] = useState(false)
@@ -45,13 +47,13 @@ function Workspace({ identity }) {
     }
     return false
   }, [])
-  const blocker = useBlocker(() => isCurrent() && (dirty || pending))
+  const blocker = useBlocker(() => isCurrent() && (dirty || pending || sensitive))
   useEffect(() => { if (blocker.state === 'blocked' && !isCurrent()) blocker.proceed() }, [blocker, isCurrent, dirty, pending])
   useEffect(() => {
-    const warn = event => { if (isCurrent() && (dirty || pending)) { event.preventDefault(); event.returnValue = '' } }
+    const warn = event => { if (isCurrent() && (dirty || pending || sensitive)) { event.preventDefault(); event.returnValue = '' } }
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
-  }, [dirty, pending, isCurrent])
+  }, [dirty, pending, sensitive, isCurrent])
   useEffect(() => {
     authorized.current = true
     const searches = listSequence.current, details = detailSequence.current
@@ -99,7 +101,7 @@ function Workspace({ identity }) {
   const select = id => {
     if (pending) { setNotice('انتظر اكتمال الحفظ قبل تغيير الطالب.'); return }
     if (selected === id) return
-    if (dirty && !window.confirm('هل تريد إلغاء المسودة غير المحفوظة والانتقال إلى الطالب الآخر؟')) return
+    if ((dirty || sensitive) && !window.confirm('الانتقال يلغي المسودة غير المحفوظة ويفقد بيانات الدخول المؤقتة. هل تريد المتابعة؟')) return
     setDirty(false); setSnapshot(null); setSelected(id); setNotice(''); loadStudent(id)
   }
   const checkHealth = async () => {
@@ -114,13 +116,12 @@ function Workspace({ identity }) {
     { key: 'college', header: 'الكلية', render: row => row.college || 'غير محدد' },
     { key: 'program', header: 'البرنامج', render: row => row.program || 'غير محدد' },
     { key: 'preparation', header: 'تجهيز البريد — محلي', render: row => <div><Badge>{preparationLabels(row.email_preparation).preparation}</Badge>{row.email_preparation?.email_address && <div dir="ltr" className="mt-1 text-[12px] break-all">{row.email_preparation.email_address}</div>}</div> },
-    { key: 'handover', header: 'التسليم', render: row => preparationLabels(row.email_preparation).handover },
     { key: 'action', header: 'الإجراء', render: row => <button type="button" className={secondary} onClick={() => select(row.student_id)} disabled={pending}>تجهيز البريد</button> },
   ]
   if (denied) return <StatePanel state="forbidden" message="انتهى الوصول المصرح؛ أُخفيت بيانات الطلاب. أعد تسجيل الدخول بعد التحقق من صلاحياتك." />
   return <div dir="rtl" className="space-y-4">
-    <PageHeader title="البريد الجامعي" en="University email" subtitle="تجهيز مسودات الطلاب — المرحلة الأولى" />
-    <Notice>الحفظ محلي فقط، ولا يؤكد وجود الصندوق أو توافر العنوان على خادم البريد. إنشاء الصندوق وكلمة المرور وورقة التسليم الموقعة مؤجلة للمرحلة الثانية.</Notice>
+    <PageHeader title="البريد الجامعي" en="University email" subtitle="تجهيز الطلاب وإنشاء البريد وإيصال PDF" />
+    <Notice>حفظ المسودة محلي فقط. إنشاء الصندوق عملية مستقلة بصلاحية خاصة، وتنزيل الإيصال لا يثبت الاستلام ولا يغيّر حالة التسليم.</Notice>
     {notice && <Notice>{notice}</Notice>}
     {canAccess(ACCESS.universityEmailCheck) && <Section title="اتصال خادم البريد — قراءة فقط" action={<button type="button" className={secondary} disabled={healthBusy} onClick={checkHealth}><FaSyncAlt />{healthBusy ? 'جاري الفحص…' : 'فحص اتصال Mailcow'}</button>}>
       {healthError && <Notice tone="warning">{healthError} البحث والحفظ المحلي مستقلان عن هذا الفحص.</Notice>}
@@ -132,27 +133,31 @@ function Workspace({ identity }) {
     {!listError && <DataTable columns={columns} rows={list?.data || []} rowKey={row => row.student_id} loading={loading} page={page} totalPages={list?.meta?.last_page || 1} onPageChange={value => { if (value === page) return; currentPage.current = value; listSequence.current.invalidate(); listAbort.current?.abort(); setLoading(true); setPage(value) }} emptyIcon={FaEnvelope} emptyTitle="لا توجد نتائج ضمن نطاقك" />}
     {selected && detailBusy && !snapshot && <StatePanel state="loading" />}
     {detailError && <StatePanel state={[401,403].includes(detailError.status) ? 'forbidden' : 'error'} message={detailError.message} onRetry={() => loadStudent(selected)} />}
-    {snapshot?.id === selected && <DraftEditor key={selected} data={snapshot.data} canManage={canAccess(ACCESS.universityEmailManage)} isCurrent={isCurrent} onDirty={setDirty} onPending={setPending} onDenied={deny} onSaved={student => setList(current => updateStudentSummary(current, student))} onRefresh={() => loadStudent(selected)} refreshing={detailBusy} />}
+    {snapshot?.id === selected && <DraftEditor key={selected} data={snapshot.data} externalPending={pending} canManage={canAccess(ACCESS.universityEmailManage)} isCurrent={isCurrent} onDirty={setDirty} onPending={setPending} onDenied={deny} onSaved={student => setList(current => updateStudentSummary(current, student))} onRefresh={() => loadStudent(selected)} refreshing={detailBusy} />}
+    {snapshot?.id === selected && <UniversityEmailProvisioning key={`provisioning-${selected}`} studentId={selected} revision={snapshot.data.draft?.revision || 0} draftDirty={dirty} draftPending={pending} isCurrent={isCurrent} onSensitive={setSensitive} onPending={setPending} onDenied={deny} onRefresh={async () => {
+      if (await loadStudent(selected)) { setRetry(r => r + 1) }
+    }} />}
     {blocker.state === 'blocked' && <ManualGradeDialog title={pending ? 'عملية حفظ قيد التنفيذ' : 'مسودة غير محفوظة'} disabled={pending} onConfirm={() => { if (!pending) blocker.proceed() }} confirmLabel="إلغاء المسودة والمتابعة" confirmTone="discard" onCancel={() => blocker.reset()}>
-      <p>{pending ? 'انتظر نتيجة الحفظ قبل مغادرة الصفحة.' : 'هل تريد إلغاء المسودة والانتقال إلى الصفحة المطلوبة؟'}</p>
+      <p>{pending ? 'انتظر نتيجة العملية قبل مغادرة الصفحة.' : 'المغادرة تلغي المسودة غير المحفوظة وتفقد بيانات الدخول المؤقتة. هل تريد المتابعة؟'}</p>
     </ManualGradeDialog>}
   </div>
 }
 
-function DraftEditor({ data, canManage, isCurrent, onDirty, onPending, onDenied, onSaved, onRefresh, refreshing }) {
+function DraftEditor({ data, externalPending, canManage, isCurrent, onDirty, onPending, onDenied, onSaved, onRefresh, refreshing }) {
   const [baseline, setBaseline] = useState(data.draft), [name, setName] = useState(data.draft?.english_first_name || '')
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [success, setSuccess] = useState(''), [review, setReview] = useState(false)
   const [reviewed, setReviewed] = useState(false)
   const writing = useRef(false), alive = useRef(true)
   const dirty = name !== (baseline?.english_first_name || '')
   const serverChanged = (data.draft?.revision ?? 0) !== (baseline?.revision ?? 0)
-  const readOnly = !canManage || (baseline && (baseline.provisioning_status !== 'draft' || baseline.handover_status !== 'not_delivered'))
+  const readOnly = !canManage || data.draft_locked || (baseline && (baseline.provisioning_status !== 'draft' || baseline.handover_status !== 'not_delivered'))
   const preview = previewAddress(name, data.student.student_number, data.settings.domain)
+  const stored = data.draft
   useEffect(() => { onDirty(dirty) }, [dirty, onDirty])
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
   const save = async event => {
     event.preventDefault()
-    if (writing.current || readOnly || review || serverChanged || !preview || !isCurrent()) return
+    if (writing.current || externalPending || readOnly || review || serverChanged || !preview || !isCurrent()) return
     writing.current = true; setBusy(true); onPending(true); setError(''); setSuccess('')
     const proposed = name
     try {
@@ -174,8 +179,8 @@ function DraftEditor({ data, canManage, isCurrent, onDirty, onPending, onDenied,
   const reviewServer = async () => { setReviewed(false); if (await onRefresh()) setReviewed(true) }
   // A refresh never silently replaces/rebases the local proposal or its original revision.
   return <Section title={`تجهيز بريد ${data.student.full_name}`} subtitle="المسودة مستقلة عن البريد الشخصي وحساب الدخول. حصة الطالب 50 MiB.">
-    <InfoGrid items={[[ 'الرقم الجامعي', data.student.student_number ], ['الكلية', data.student.college || 'غير محدد'], ['التجهيز', baseline ? (baseline.provisioning_status === 'draft' ? 'مسودة — لم ينشأ الصندوق' : 'تم إنشاء الصندوق') : 'لم تُحفظ مسودة'], ['التسليم', baseline?.handover_status === 'delivered' ? 'تم التسليم' : 'غير مسلّم']]} />
-    {success && <div className="bg-green-50 border border-green-200 rounded-[12px] px-5 py-3 mt-3 text-[13px] text-green-700" role="status">{success}</div>}
+    <InfoGrid items={[[ 'الرقم الجامعي', data.student.student_number ], ['الكلية', data.student.college || 'غير محدد'], ['التجهيز', stored ? (stored.provisioning_status === 'draft' ? 'مسودة — لم ينشأ الصندوق' : 'تم إنشاء الصندوق') : 'لم تُحفظ مسودة']]} />
+    {success && stored?.provisioning_status !== 'created' && <div className="bg-green-50 border border-green-200 rounded-[12px] px-5 py-3 mt-3 text-[13px] text-green-700" role="status">{success}</div>}
     {error && <div className="bg-red-50 border border-red-200 rounded-[12px] px-5 py-3 mt-3 text-[13px] text-red-700" role="alert">{error}</div>}
     {(review || serverChanged) && <div className="mt-4 space-y-3"><Notice tone="warning">قيمك المقترحة محفوظة محليًا. لا يمكن الحفظ حتى مراجعة الحالة الرسمية واتخاذ قرار صريح.</Notice>
       <button type="button" className={secondary} onClick={reviewServer} disabled={refreshing || busy}>مراجعة النسخة المحفوظة</button>
@@ -185,11 +190,11 @@ function DraftEditor({ data, canManage, isCurrent, onDirty, onPending, onDenied,
     </div>}
     <form onSubmit={save} className="mt-4 space-y-3">
       <label htmlFor="english-first-name" className="block text-[13px] font-bold text-text-dark">الاسم الأول بالإنكليزي</label>
-      <input id="english-first-name" value={name} onChange={e => { setName(e.target.value); setSuccess('') }} disabled={busy || readOnly} required maxLength={64} dir="ltr" autoComplete="off" aria-describedby="name-help" className="w-full py-2.5 px-3 border-[1.5px] border-primary/20 rounded-[10px] text-[14px] outline-none focus:border-primary" />
+      <input id="english-first-name" value={name} onChange={e => { setName(e.target.value); setSuccess('') }} disabled={busy || externalPending || readOnly} required maxLength={64} dir="ltr" autoComplete="off" aria-describedby="name-help" className="w-full py-2.5 px-3 border-[1.5px] border-primary/20 rounded-[10px] text-[14px] outline-none focus:border-primary" />
       <p id="name-help" className="text-[12px] text-text-light">أحرف إنكليزية فقط دون أرقام أو رموز أو مسافات داخلية. الاسم المركب متصل مثل abdulrahman. ستزال المسافات الطرفية وتصبح الأحرف صغيرة.</p>
       <div className="rounded-[12px] border border-primary/15 bg-primary/5 p-3"><p className="text-[12px] text-text-light">معاينة مقترحة — يعيد الخادم التحقق عند الحفظ</p><p id="email-preview" dir="ltr" className="text-[14px] font-bold break-all">{preview || 'أدخل اسمًا صالحًا ضمن الطول المسموح'}</p></div>
       {readOnly && <Notice>العرض فقط؛ تعديل المسودة يتطلب صلاحية التجهيز، والعنوان المنشأ أو المسلّم غير قابل للتحرير هنا.</Notice>}
-      {!readOnly && <button type="submit" className={button} disabled={busy || review || serverChanged || !preview}><FaSave />{busy ? 'جاري الحفظ…' : 'حفظ المسودة'}</button>}
+      {!readOnly && <button type="submit" className={button} disabled={busy || externalPending || review || serverChanged || !preview}><FaSave />{busy ? 'جاري الحفظ…' : 'حفظ المسودة'}</button>}
     </form>
   </Section>
 }

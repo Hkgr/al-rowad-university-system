@@ -9,7 +9,12 @@ final class UniversityEmailAccess
     public const VIEW = 'university_email.view';
     public const MANAGE = 'university_email.manage';
     public const CHECK = 'university_email.check_connection';
+    public const CREATE = 'university_email.provision';
+    public const RECEIPT = 'university_email.issue_receipt';
+    public const RECOVER = 'university_email.reissue_initial_password';
     public const PERMISSIONS = [self::VIEW => 'عرض البريد الجامعي', self::MANAGE => 'تجهيز مسودات البريد الجامعي', self::CHECK => 'فحص اتصال البريد الجامعي'];
+    public const PHASE2_PERMISSIONS = [self::CREATE => 'إنشاء صندوق البريد الجامعي', self::RECEIPT => 'إصدار إيصال بيانات دخول البريد الجامعي',
+        self::RECOVER => 'إعادة إصدار كلمة أولية لبريد جامعي غير مسلّم'];
 
     public static function authorize(?User $user, string $permission): void
     {
