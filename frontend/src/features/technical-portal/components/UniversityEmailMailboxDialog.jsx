@@ -6,6 +6,7 @@ import ManualGradeDialog from '../../exam-board/components/ManualGradeDialog'
 import { InfoGrid, Notice, StatePanel } from '../../ministry-portal/components/MinistryUi'
 import { EMAIL_API, previewAddress } from '../lib/universityEmail'
 import { printableCredentials, provisioningFailure } from '../lib/emailProvisioning'
+import { creationMode, loadCreationState, sendCreation, unresolvedCreation } from '../lib/emailCreation'
 import UniversityEmailReceipt from './UniversityEmailReceipt'
 import UniversityEmailProvisioning from './UniversityEmailProvisioning'
 
@@ -17,7 +18,9 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
   const [name, setName] = useState(data.draft?.english_first_name || '')
   const [state, setState] = useState(null), [credentials, setCredentials] = useState(null), [receipt, setReceipt] = useState(null)
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState('')
-  const [reviewRequired, setReviewRequired] = useState(false), [advanced, setAdvanced] = useState(data.draft?.provisioning_status === 'created')
+  const [reviewRequired, setReviewRequired] = useState(false), [technical, setTechnical] = useState(false)
+  const [management, setManagement] = useState(false)
+  const mayCreate = canAccess(ACCESS.universityEmailCreate) && canAccess(ACCESS.universityEmailManage) && canAccess(ACCESS.universityEmailReceipt)
   const alive = useRef(true), writing = useRef(false), sequence = useRef(0), receiptElement = useRef(null)
   const current = useCallback(() => alive.current && isCurrent(), [isCurrent])
   useEffect(() => { alive.current = true; const requestSequence = sequence; return () => { alive.current = false; requestSequence.current++ } }, [])
@@ -25,33 +28,34 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
   const load = useCallback(async () => {
     const seq = ++sequence.current; setLoading(true)
     try {
-      const json = await apiRequest(`${api}/provisioning`, { cache: 'no-store' })
+      const result = await loadCreationState(api, apiRequest, () => current() && sequence.current === seq, mayCreate)
       if (!current() || sequence.current !== seq) return
-      setState(json.data); setReviewRequired(false)
+      setState(result); setReviewRequired(false)
+      if (creationMode(result) === 'existing') setManagement(true)
     } catch (failure) {
       if (current() && sequence.current === seq) { onDenied(failure); setError(provisioningFailure(failure)); setReviewRequired(true) }
     } finally { if (current() && sequence.current === seq) setLoading(false) }
-  }, [api, current, onDenied])
+  }, [api, current, onDenied, mayCreate])
   useEffect(() => { const timer = setTimeout(load, 0); return () => clearTimeout(timer) }, [load])
 
-  const confirmed = state?.provisioning_status === 'created'
+  const mode = creationMode(state, reviewRequired)
+  const confirmed = mode === 'existing'
   const usable = canAccess(ACCESS.universityEmailReceipt) && printableCredentials(state, credentials)
-  const previousAttempt = state?.operations?.some(op => op.status !== 'cancelled')
-  const mayCreate = canAccess(ACCESS.universityEmailCreate) && canAccess(ACCESS.universityEmailManage) && canAccess(ACCESS.universityEmailReceipt)
   const preview = previewAddress(name, student.student_number, data.settings.domain)
   const blocked = busy || externalPending || loading
   const create = async () => {
-    if (writing.current || blocked || !mayCreate || !preview || confirmed || previousAttempt || reviewRequired || !current()) return
+    if (writing.current || blocked || !mayCreate || !preview || !['ready', 'retry'].includes(mode) || !current()) return
     writing.current = true; setBusy(true); onPending(true); setError('')
     try {
-      const json = await apiRequest(`${api}/create`, { method: 'POST', cache: 'no-store', body: JSON.stringify({ english_first_name: name, confirmed: true }) })
+      const json = await sendCreation(api, state, name, apiRequest)
       if (!current()) return
       if (!printableCredentials(json.data, json.data.credentials)) throw new Error('لم يصل تأكيد صالح للإنشاء.')
       setState(json.data); setCredentials(json.data.credentials); onDirty(false); onRefresh()
     } catch (failure) {
       if (!current() || onDenied(failure)) return
       // Never retry a write. A lost response cannot authorize another create or recover its password.
-      setCredentials(null); setReceipt(null); setError(provisioningFailure(failure)); setReviewRequired(true); onRefresh()
+      setCredentials(null); setReceipt(null); setError(provisioningFailure(failure)); setReviewRequired(true)
+      await load(); onRefresh()
     } finally { writing.current = false; if (current()) { setBusy(false); onPending(false) } }
   }
   const download = async () => {
@@ -82,15 +86,16 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
     await load(); onRefresh()
   }
   return <ManualGradeDialog title={confirmed ? 'إدارة البريد الجامعي' : 'إنشاء بريد جامعي'} busy={busy || externalPending}
-    disabled={!confirmed && (blocked || !mayCreate || !preview || previousAttempt || reviewRequired || !state?.enabled)}
-    onConfirm={confirmed ? close : create} onCancel={close} confirmLabel={confirmed ? 'إنهاء' : 'إنشاء البريد'}>
+    disabled={!confirmed && (blocked || !mayCreate || (mode !== 'verify' && (!preview || !state?.enabled)))}
+    onConfirm={confirmed ? close : mode === 'verify' ? review : create} onCancel={close}
+    confirmLabel={confirmed ? 'إنهاء' : mode === 'retry' ? 'إعادة المحاولة' : mode === 'verify' ? 'التحقق مرة أخرى' : 'إنشاء البريد'}>
     <InfoGrid items={[[ 'الطالب', student.full_name ], ['الرقم الجامعي', student.student_number ], ['الكلية', student.college || 'غير محدد'], ['البرنامج', student.program || 'غير محدد']]} />
     {loading && <StatePanel state="loading" />}
     {error && <Notice tone="warning">{error}</Notice>}
     {state?.enabled === false && <Notice tone="warning">إنشاء البريد غير مفعّل على الخادم بعد.</Notice>}
-    {!confirmed && <>
+    {!confirmed && mode !== 'verify' && <>
       <label htmlFor="english-first-name" className="block text-[13px] font-bold">الاسم الأول بالإنكليزي</label>
-      <input id="english-first-name" value={name} onChange={e => { setName(e.target.value); onDirty(true) }} disabled={blocked || previousAttempt || reviewRequired || !mayCreate}
+      <input id="english-first-name" value={name} onChange={e => { setName(e.target.value); onDirty(true) }} disabled={blocked || !mayCreate}
         maxLength={64} autoComplete="off" dir="ltr" className="w-full py-2.5 px-3 border-[1.5px] border-primary/20 rounded-[10px] text-[14px] outline-none focus:border-primary" />
       <p className="text-[12px] text-text-light">أحرف إنكليزية فقط؛ يعيد الخادم التحقق من الاسم والرقم والعنوان.</p>
       <p dir="ltr" id="email-preview" className="rounded-[12px] border border-primary/15 bg-primary/5 p-3 font-bold break-all">{preview || 'أدخل اسمًا صالحًا لمعاينة البريد'}</p>
@@ -107,15 +112,16 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
         <button type="button" className={secondary} disabled={blocked} onClick={download}>تنزيل بيانات الدخول PDF</button>
       </div>
     </div>}
-    {!usable && (reviewRequired || previousAttempt || confirmed) && <>
-      {reviewRequired && <Notice tone="warning">تعذر تأكيد نتيجة الإنشاء؛ راجع الحالة. لن يُرسل طلب إنشاء ثانٍ تلقائيًا.</Notice>}
-      <button type="button" className={secondary} disabled={blocked} onClick={review}>مراجعة الحالة</button>
-      {confirmed && <Notice>البريد مؤكد. كلمة المرور السابقة غير قابلة للاسترجاع؛ إعادة تعيينها إجراء مستقل.</Notice>}
-      {!confirmed && previousAttempt && <Notice tone="warning">توجد محاولة إنشاء سابقة تحتاج مراجعة قبل تصحيح الاسم أو الإنشاء مجددًا.</Notice>}
-      <button type="button" className={secondary} disabled={blocked} onClick={() => setAdvanced(value => !value)}>{confirmed ? 'عرض إدارة البريد' : 'تفاصيل متقدمة'}</button>
+    {!loading && mode === 'verify' && <>
+      <Notice tone="warning">{unresolvedCreation}</Notice>
+      <button type="button" className={secondary} disabled={blocked} onClick={() => setTechnical(value => !value)}>تفاصيل تقنية</button>
     </>}
-    {advanced && <UniversityEmailProvisioning studentId={student.student_id} studentName={student.full_name} revision={data.draft?.revision || 0}
-      simple draftDirty={false} draftPending={false} isCurrent={current} onSensitive={onSensitive} onPending={onPending} onDenied={onDenied} onRefresh={() => { load(); onRefresh() }} />}
+    {confirmed && !usable && <>
+      <Notice>البريد موجود وتم تأكيده</Notice>
+      <button type="button" className={secondary} disabled={blocked} onClick={() => setManagement(value => !value)}>إدارة البريد</button>
+    </>}
+    {!usable && ((confirmed && management) || (mode === 'verify' && technical)) && <UniversityEmailProvisioning studentId={student.student_id} studentName={student.full_name} revision={data.draft?.revision || 0}
+      simple diagnostics={mode === 'verify'} draftDirty={false} draftPending={false} isCurrent={current} onSensitive={onSensitive} onPending={onPending} onDenied={onDenied} onRefresh={() => { load(); onRefresh() }} />}
     {receipt && usable && createPortal(<div aria-hidden="true" style={{ position: 'fixed', left: -10000, top: 0, pointerEvents: 'none' }}><div ref={receiptElement}><UniversityEmailReceipt receipt={receipt} password={credentials.password} /></div></div>, document.body)}
   </ManualGradeDialog>
 }

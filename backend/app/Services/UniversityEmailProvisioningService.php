@@ -62,19 +62,38 @@ final class UniversityEmailProvisioningService
     /** One user action; preparation commits before the existing single-write state machine runs. */
     public function create(User $user, int $student, string $name): array
     {
+        return $this->createWithPreparation($user, $student, $name);
+    }
+
+    /** Explicit retry consumes exactly the reviewed pre-write attempt, never a newer one. */
+    public function retryCreate(User $user, int $student, string $name, string $id, int $generation): array
+    {
+        return $this->createWithPreparation($user, $student, $name, ['operation_id' => $id, 'generation' => $generation]);
+    }
+
+    private function createWithPreparation(User $user, int $student, string $name, ?array $previous = null): array
+    {
         $this->authorize($user, $student, Access::CREATE);
         Access::authorize($user, Access::MANAGE);
         Access::authorize($user, Access::RECEIPT);
         $this->remote->requireEnabled();
         try {
-            $credentials = DB::transaction(function () use ($user, $student, $name) {
+            $credentials = DB::transaction(function () use ($user, $student, $name, $previous) {
                 Student::query()->whereKey($student)->lockForUpdate()->firstOrFail();
                 $this->authorize($user, $student, Access::CREATE);
                 Access::authorize($user, Access::MANAGE);
                 Access::authorize($user, Access::RECEIPT);
                 $email = StudentUniversityEmail::where('student_id', $student)->lockForUpdate()->first();
-                // A previous attempt is never regenerated or executed implicitly, even before writing.
-                // The operator must review/cancel it explicitly; this also serializes concurrent create calls.
+                if ($previous) {
+                    $op = $email ? UniversityEmailOperation::where('university_email_id', $email->university_email_id)
+                        ->whereKey($previous['operation_id'])->lockForUpdate()->first() : null;
+                    if (! $op || $email->provisioning_status === 'created' || $op->kind !== 'create')
+                        $this->fail('university_email_operation_not_cancellable');
+                    // Canonical cancellation checks generation/write authority again under these locks.
+                    // Its history/audit and the new preparation commit or roll back together.
+                    $this->cancel($user, $student, $op->operation_id, $previous['generation']);
+                }
+                // Plain create still refuses all previous attempts. Retry never replaces another one.
                 if ($email && UniversityEmailOperation::where('university_email_id', $email->university_email_id)
                     ->where('status', '!=', 'cancelled')->exists()) $this->fail('university_email_operation_requires_review');
                 $saved = app(UniversityEmailService::class)->save($user, $student,
@@ -97,7 +116,17 @@ final class UniversityEmailProvisioningService
         $operations = $email ? UniversityEmailOperation::where('university_email_id', $email->university_email_id)
             ->orderByRaw('CASE WHEN active_slot = 1 THEN 0 WHEN operation_id = ? THEN 1 ELSE 2 END', [$email->credential_operation_id ?? ''])
             ->orderByDesc('created_at')->orderByDesc('operation_id')->limit(50)->get() : collect();
-        return ['schema_ready' => true, 'enabled' => $this->remote->enabled(), 'draft_locked' => $email && UniversityEmailOperation::where('university_email_id', $email->university_email_id)->where('status', '!=', 'cancelled')->exists(),
+        // Do not infer safety from the bounded history projection (cancelled history can exceed it).
+        $remaining = $email ? UniversityEmailOperation::where('university_email_id', $email->university_email_id)
+            ->where('status', '!=', 'cancelled')->limit(2)->get() : collect();
+        $previous = $remaining->count() === 1 ? $remaining->first() : null;
+        $creation = ['status' => $email?->provisioning_status === 'created' ? 'existing' : ($remaining->isEmpty() ? 'ready' : 'verify')];
+        if ($creation['status'] === 'verify' && $previous?->kind === 'create') {
+            $creation += ['operation_id' => $previous->operation_id, 'generation' => $previous->generation];
+            if (! $previous->write_started_at && in_array($previous->status, ['prepared', 'failed', 'preflight', 'conflict'], true))
+                $creation['status'] = 'retry';
+        }
+        return ['creation' => $creation, 'schema_ready' => true, 'enabled' => $this->remote->enabled(), 'draft_locked' => $remaining->isNotEmpty(),
             'email_address' => $email?->email_address, 'provisioning_status' => $email?->provisioning_status,
             'handover_status' => $email?->handover_status, 'creation_operation_id' => $email?->creation_operation_id,
             'credential_operation_id' => $email?->credential_operation_id,
@@ -106,6 +135,25 @@ final class UniversityEmailProvisioningService
             'remote_snapshot' => $email?->remote_snapshot, 'remote_checked_at' => $email?->remote_checked_at?->toIso8601String(),
             'operations' => $operations->map(fn ($op) => $op->only(['operation_id', 'kind', 'status', 'generation', 'draft_revision', 'failure_code', 'write_started_at', 'verified_at', 'cancelled_at']) +
                 ['can_cancel' => ! $op->write_started_at && in_array($op->status, ['prepared', 'failed', 'preflight', 'conflict'], true)])->all()];
+    }
+
+    /** Remote reads only; cannot revoke write authority or authorize a second remote creation. */
+    public function checkCreation(User $user, int $student): array
+    {
+        $this->authorize($user, $student, Access::CREATE);
+        $state = $this->state($user, $student);
+        if ($state['creation']['status'] !== 'verify' || ! isset($state['creation']['operation_id'])) return $state;
+        try {
+            return $this->reconcile($user, $student, $state['creation']['operation_id']);
+        } catch (UniversityEmailException $failure) {
+            // Grace periods, uncertain outcomes and unavailable remote reads stay unresolved.
+            // Authorization/schema failures must retain their real HTTP status.
+            if (! in_array($failure->errorCode, ['university_email_operation_in_progress',
+                'university_email_operation_stale', 'university_email_manual_review_required',
+                'university_email_remote_uncertain', 'university_email_remote_auth_failed',
+                'university_email_remote_rate_limited', 'university_email_remote_invalid'], true)) throw $failure;
+            return $this->state($user, $student);
+        }
     }
 
     /** Explicit cancellation releases only unused slots; no remote action or history deletion. */
