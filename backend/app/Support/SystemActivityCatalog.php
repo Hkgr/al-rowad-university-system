@@ -26,6 +26,8 @@ final class SystemActivityCatalog
     ];
 
     public const ACTIONS = [
+        'university_email.draft_created' => ['module' => 'users_permissions', 'label' => 'حفظ مسودة بريد جامعي'],
+        'university_email.draft_updated' => ['module' => 'users_permissions', 'label' => 'تعديل مسودة بريد جامعي'],
         'account.created' => ['module' => 'users_permissions', 'label' => 'إنشاء حساب'],
         'account.login_identity_updated' => ['module' => 'users_permissions', 'label' => 'تعديل اسم المستخدم أو البريد'],
         'account.password_reset' => ['module' => 'users_permissions', 'label' => 'إعادة تعيين كلمة المرور'],
