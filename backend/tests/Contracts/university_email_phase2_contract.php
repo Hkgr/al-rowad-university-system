@@ -1,0 +1,25 @@
+<?php
+declare(strict_types=1);
+$root = dirname(__DIR__, 2);
+$read = fn (string $p): string => file_get_contents($root.'/'.$p);
+$assert = function (bool $ok, string $why): void { if (! $ok) throw new RuntimeException($why); };
+$service = $read('app/Services/UniversityEmailProvisioningService.php');
+$client = $read('app/Services/MailcowProvisioningClient.php');
+$controller = $read('app/Http/Controllers/Api/UniversityEmailProvisioningController.php');
+$migration = $read('database/migrations/2026_10_01_000001_add_university_email_provisioning.php');
+$cancellation = $read('database/migrations/2026_10_01_000002_add_university_email_operation_cancellation.php');
+$assert(str_contains($cancellation, "'cancelled'") && str_contains($cancellation, 'rollback refused'), 'Additive cancellation history upgrade; no destructive rollback');
+$assert(str_contains($service, 'function cancel(') && str_contains($service, "'creation_slot' => null, 'active_slot' => null") && str_contains($service, '$op->generation++'), 'Cancellation releases unused slots and invalidates issued credentials');
+$assert(str_contains($service, '$op->write_started_at') && str_contains($service, "['prepared', 'failed', 'preflight', 'conflict']"), 'Only explicitly cancellable pre-write states');
+$assert(str_contains($client, "'name' => \$studentName") && !str_contains($client, 'University student'), 'Mailcow receives server student name');
+$assert(str_contains($service, 'scopeManualGradeStudents') && str_contains($service, 'Access::RECOVER') && str_contains($service, 'Access::RECEIPT'), 'Assigned operation permissions and actual scope required');
+$assert(str_contains($service, 'random_int') && str_contains($service, 'hash_hmac') && str_contains($service, '#[\SensitiveParameter]'), 'Ephemeral credentials must be cryptographic and bound');
+$assert(! preg_match('/(?:password|credential_proof).*\$t->|\$t->.*(?:password|credential_proof)/', $migration), 'No credentials columns');
+$assert(str_contains($migration, 'ue_operation_creation_unique') && str_contains($migration, 'ue_operation_active_unique'), 'Durable concurrency identities required');
+$assert(str_contains($client, "'verify' => true") && str_contains($client, "'allow_redirects' => false") && str_contains($client, 'transactionLevel() !== 0'), 'Safe transport outside locks');
+$assert(! preg_match('/->retry\(|->withoutVerifying\(|DELETE/', $client), 'Never retry writes or compensate by deletion');
+$assert(str_contains($service, 'alrowad-university-email:') && str_contains($service, "50 * 1048576"), 'Reconciliation requires tagged ownership and exact quota');
+$assert(str_contains($controller, 'no-store') && str_contains($controller, "remove('password')"), 'Credential response/input protection required');
+$assert(! str_contains($service, 'function deliver(') && ! str_contains($controller, 'paper_signed'), 'User clarification: PDF only, no receipt-delivery workflow');
+$assert(str_contains($service, "where('student_id', \$user->student_id)") && str_contains($service, "contains('student')"), 'Student projection is self only');
+echo "University email Phase 2 dependency-free contract passed\n";

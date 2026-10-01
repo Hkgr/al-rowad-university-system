@@ -13,7 +13,8 @@ final class UniversityEmailException extends \RuntimeException
 
     public function render(): JsonResponse
     {
-        return response()->json(['success' => false, 'error_code' => $this->errorCode, 'message' => $this->getMessage()], $this->status);
+        return response()->json(['success' => false, 'error_code' => $this->errorCode, 'message' => $this->getMessage()], $this->status)
+            ->withHeaders(['Cache-Control' => 'no-store, private', 'Pragma' => 'no-cache']);
     }
 
     // Controlled failures contain no upstream exceptions or requests and need no log.
