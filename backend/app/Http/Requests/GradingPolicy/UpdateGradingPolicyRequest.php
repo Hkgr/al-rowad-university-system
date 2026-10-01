@@ -21,6 +21,7 @@ class UpdateGradingPolicyRequest extends FormRequest
             'minimum_practical_mark' => 'sometimes|nullable|numeric',
             'minimum_final_mark' => 'sometimes|nullable|numeric',
             'absence_deprivation_percentage' => 'sometimes|nullable|numeric',
+            'incomplete_expiry_status_code' => 'sometimes|nullable|in:failed,deprived',
             'is_default' => 'sometimes|nullable|integer',
             'is_active' => 'sometimes|nullable|integer',
             'created_at' => 'sometimes|nullable|date',

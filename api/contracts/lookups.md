@@ -141,7 +141,7 @@ Every lookup resource supports:
 |------|--------------|------------|
 | `passed` | A+ to D | Included |
 | `failed` | F (0.00 points) | Included |
-| `deprived` | Z | **Excluded** |
+| `deprived` | Z | **Included** at 0.00 points |
 | `incomplete` | I | **Excluded** |
 | `withdrawn` | W | **Excluded** |
 

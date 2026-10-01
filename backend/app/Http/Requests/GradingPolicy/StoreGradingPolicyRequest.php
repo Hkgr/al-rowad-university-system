@@ -21,6 +21,7 @@ class StoreGradingPolicyRequest extends FormRequest
             'minimum_practical_mark' => 'nullable|numeric',
             'minimum_final_mark' => 'nullable|numeric',
             'absence_deprivation_percentage' => 'nullable|numeric',
+            'incomplete_expiry_status_code' => 'nullable|in:failed,deprived',
             'is_default' => 'required|integer',
             'is_active' => 'required|integer',
             'created_at' => 'nullable|date',

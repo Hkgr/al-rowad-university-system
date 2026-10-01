@@ -24,7 +24,7 @@ Content-Type: application/json
 |------|--------|
 | Deprivation threshold | **15%** absence |
 | Deprivation result | Grade **Z** (deprived status); `final_mark = 0` |
-| GPA impact | Deprived courses **excluded** from GPA/CGPA |
+| GPA impact | Deprived courses are grade **Z**, **included** in GPA/CGPA at 0.00 points |
 | Absence counting | Uses `attendance_statuses.counts_as_absent` flag |
 | Present statuses | Typically `present` and `late` |
 | Active registrations only | Only `registered` students appear in session rosters |

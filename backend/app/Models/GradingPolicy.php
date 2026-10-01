@@ -20,6 +20,7 @@ class GradingPolicy extends Model
         'minimum_practical_mark',
         'minimum_final_mark',
         'absence_deprivation_percentage',
+        'incomplete_expiry_status_code',
         'is_default',
         'is_active',
         'created_at',

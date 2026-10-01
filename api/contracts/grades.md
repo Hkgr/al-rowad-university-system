@@ -26,9 +26,10 @@ Content-Type: application/json
 | Practical mark | Out of **40** — `numeric\|min:0\|max:40` |
 | Final mark | `theoretical_mark + practical_mark` (max **100**) |
 | Passing (default policy) | `theoretical_mark >= 15`, `practical_mark >= 10`, `final_mark >= 50` |
-| Letter grade F | Counts as **0.00** grade points |
-| W, Z, I | Excluded from GPA/CGPA (0.00 points, not in weighted average) |
-| Deprived (Z) | Absence > 15%; cannot recalculate automatically |
+| Letter grade F | Counts as **0.00** grade points and stays in the GPA denominator |
+| Z | Deprived. Included in GPA/CGPA as **0.00** points, with its credit hours in the denominator |
+| W, I | Excluded from GPA/CGPA. I is excluded only while it is unresolved |
+| Deprived (Z) | Absence > 15%; cannot be replaced by grade entry or recalculated automatically |
 | Dropped/withdrawn | Grading blocked; excluded from GPA |
 
 ### Letter grade scale (when passed)
@@ -39,7 +40,8 @@ A+ (≥98), A (≥95), A- (≥90), B+ (≥85), B (≥80), B- (≥75), C+ (≥70)
 
 - **GPA:** Credit-hour weighted average for a specific term.
 - **CGPA:** Best attempt per course across all terms.
-- Excludes: dropped/withdrawn registrations; incomplete, deprived, withdrawn results.
+- Excludes: dropped/withdrawn registrations; unresolved incomplete results; withdrawn results.
+- Includes Z (deprived) at 0.00 points.
 
 ---
 
@@ -53,6 +55,8 @@ A+ (≥98), A (≥95), A- (≥90), B+ (≥85), B (≥80), B- (≥75), C+ (≥70)
 | POST | `/api/v1/registrations/{id}/grades` | Enter grades (first time) |
 | PUT | `/api/v1/registrations/{id}/grades` | Update existing grades |
 | POST | `/api/v1/registrations/{id}/calculate-result` | Recalculate letter grade & status |
+| POST | `/api/v1/registrations/{id}/incomplete` | Grant unresolved incomplete (I) |
+| POST | `/api/v1/registrations/{id}/resolve-incomplete` | Replace unresolved I with the earned grade |
 
 ### Offering-level grade views
 
@@ -327,5 +331,6 @@ Updated grade object (same shape as GET).
 ### Frontend notes
 
 - Grade entry UI should key off `student_course_registration_id` from the grade sheet.
-- Display W/Z/I courses distinctly in transcript and exclude from GPA displays.
-- F shows 0.00 points but remains in GPA denominator.
+- Display W/Z/I courses distinctly in the transcript.
+- F and Z show 0.00 points and remain in the GPA denominator.
+- W and unresolved I stay out of GPA displays.

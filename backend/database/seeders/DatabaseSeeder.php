@@ -1,27 +1,33 @@
-<?php
+    <?php
 
-namespace Database\Seeders;
+    namespace Database\Seeders;
 
-use App\Models\User;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
-use Illuminate\Database\Seeder;
+    use App\Models\User;
+    use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+    use Illuminate\Database\Seeder;
 
-class DatabaseSeeder extends Seeder
-{
-    use WithoutModelEvents;
-
-    /**
-     * Seed the application's database.
-     */
-    public function run(): void
+    class DatabaseSeeder extends Seeder
     {
-        // User::factory(10)->create();
+        use WithoutModelEvents;
 
-        // User::factory()->create([
-        //     'name' => 'Test User',
-        //     'email' => 'test@example.com',
-        // ]);
+        /**
+         * Seed the application's database.
+         */
+        public function run(): void
+        {
+            // User::factory(10)->create();
 
-        $this->call(DemoAcademicSeeder::class);
+            // User::factory()->create([
+            //     'name' => 'Test User',
+            //     'email' => 'test@example.com',
+            // ]);
+
+            $this->call(DemoAcademicSeeder::class);
+        }
     }
-}
+    dir backend\database\seeders
+    dir backend\database\seeders
+    cd "D:\Alrowad University\University\al-rowad-university-system\backend"
+
+    php -l database/seeders/DemoAcademicSeeder.php
+    php artisan optimize:clear

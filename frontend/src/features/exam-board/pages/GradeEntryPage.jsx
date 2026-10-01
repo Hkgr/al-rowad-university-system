@@ -25,6 +25,29 @@ function calcLetter(t, p) {
   return { letter: f >= 50 ? 'D' : 'F', color: f >= 50 ? 'text-orange-500' : 'text-red-600' }
 }
 
+const LOCKED_SYMBOLS = {
+  Z: { label: 'محروم', color: 'text-red-700' },
+  W: { label: 'منسحب', color: 'text-slate-600' },
+  I: { label: 'غير مكتمل', color: 'text-amber-700' },
+}
+
+function presentGrade(serverLetter, local) {
+  if (LOCKED_SYMBOLS[serverLetter]) {
+    return { letter: serverLetter, label: LOCKED_SYMBOLS[serverLetter].label, color: LOCKED_SYMBOLS[serverLetter].color, locked: true }
+  }
+  if (local.letter === 'F') return { letter: 'F', label: 'راسب', color: 'text-red-600', locked: false }
+  return { letter: local.letter, label: serverLetter === 'F' ? 'راسب' : null, color: local.color, locked: false }
+}
+
+async function postJson(url, body) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return res.json()
+}
+
 async function saveGrade(registrationId, theory, prac) {
   const body    = JSON.stringify({ theoretical_mark: theory, practical_mark: prac })
   const headers = { ...authHeaders(), 'Content-Type': 'application/json' }
@@ -46,19 +69,55 @@ function BulkRow({ row }) {
   const [saving,  setSaving]  = useState(false)
   const [saved,   setSaved]   = useState(false)
   const [err,     setErr]     = useState('')
+  const [showIncomplete, setShowIncomplete] = useState(false)
+  const [reason, setReason] = useState(row.reason ?? '')
+  const [requirements, setRequirements] = useState(row.requirements ?? '')
+  const [deadline, setDeadline] = useState(row.deadline ?? '')
 
+  const serverLetter = row.letter_grade
+  const locked = Boolean(LOCKED_SYMBOLS[serverLetter])
   const t   = parseFloat(theory) || 0
   const p   = parseFloat(prac)   || 0
-  const fin = theory !== '' && prac !== '' ? t + p : null
-  const { letter, color } = fin !== null ? calcLetter(t, p) : { letter: '—', color: 'text-text-light' }
-  const tWarn = theory !== '' && t < 15
-  const pWarn = prac   !== '' && p < 10
+  const fin = !locked && theory !== '' && prac !== '' ? t + p : (locked ? null : null)
+  const local = fin !== null ? calcLetter(t, p) : { letter: '—', color: 'text-text-light' }
+  const shown = presentGrade(locked ? serverLetter : null, local)
+  const letter = shown.letter
+  const color = shown.color
+  const inputsDisabled = !canEdit || serverLetter === 'Z' || serverLetter === 'W'
+  const tWarn = !locked && theory !== '' && t < 15
+  const pWarn = !locked && prac !== '' && p < 10
 
   async function handleSave() {
-    if (!canEdit || theory === '' || prac === '') return
+    if (!canEdit || serverLetter === 'I' || theory === '' || prac === '') return
     setSaving(true); setErr('')
     try {
       const json = await saveGrade(row.student_course_registration_id, t, p)
+      if (json.success) setSaved(true)
+      else setErr(json.message || 'فشل')
+    } catch { setErr('خطأ') }
+    finally { setSaving(false) }
+  }
+
+  async function handleIncomplete() {
+    if (!canEdit || !reason.trim() || !requirements.trim() || !deadline) return
+    setSaving(true); setErr('')
+    try {
+      const json = await postJson(`${API}/registrations/${row.student_course_registration_id}/incomplete`, {
+        reason: reason.trim(), requirements: requirements.trim(), deadline,
+      })
+      if (json.success) setSaved(true)
+      else setErr(json.message || 'فشل')
+    } catch { setErr('خطأ') }
+    finally { setSaving(false) }
+  }
+
+  async function handleResolve() {
+    if (!canEdit || theory === '' || prac === '') return
+    setSaving(true); setErr('')
+    try {
+      const json = await postJson(`${API}/registrations/${row.student_course_registration_id}/resolve-incomplete`, {
+        theoretical_mark: t, practical_mark: p,
+      })
       if (json.success) setSaved(true)
       else setErr(json.message || 'فشل')
     } catch { setErr('خطأ') }
@@ -71,13 +130,15 @@ function BulkRow({ row }) {
       <td className="px-4 py-3" dir="rtl">
         <div className="font-semibold text-[13px] text-text-dark">{row.full_name}</div>
         <div className="text-[11px] text-text-light font-mono">{row.student_number}</div>
+        {serverLetter === 'Z' && row.notes && <div className="text-[11px] text-red-700 mt-1">{row.notes}</div>}
+        {serverLetter === 'I' && <div className="text-[11px] text-amber-800 mt-1">{row.reason} — حتى {row.deadline}</div>}
       </td>
       {/* Theoretical */}
       <td className="px-3 py-3">
         <input
           type="number" min="0" max="60" step="0.5"
           value={theory}
-          disabled={!canEdit}
+          disabled={inputsDisabled}
           onChange={e => { setTheory(e.target.value); setSaved(false) }}
           className={`w-[80px] px-2.5 py-1.5 border rounded-[8px] text-[13px] text-center outline-none focus:shadow-[0_0_0_2px_rgba(86,153,51,0.15)] ${tWarn ? 'border-red-400 bg-red-50' : 'border-primary/20 focus:border-primary'}`}
           dir="ltr"
@@ -89,7 +150,7 @@ function BulkRow({ row }) {
         <input
           type="number" min="0" max="40" step="0.5"
           value={prac}
-          disabled={!canEdit}
+          disabled={inputsDisabled}
           onChange={e => { setPrac(e.target.value); setSaved(false) }}
           className={`w-[80px] px-2.5 py-1.5 border rounded-[8px] text-[13px] text-center outline-none focus:shadow-[0_0_0_2px_rgba(86,153,51,0.15)] ${pWarn ? 'border-red-400 bg-red-50' : 'border-primary/20 focus:border-primary'}`}
           dir="ltr"
@@ -97,26 +158,49 @@ function BulkRow({ row }) {
         {pWarn && <div className="text-[10px] text-red-500 text-center mt-0.5">min 10</div>}
       </td>
       {/* Final preview */}
-      <td className="px-3 py-3 text-center font-bold text-text-dark">{fin ?? '—'}</td>
+      <td className="px-3 py-3 text-center font-bold text-text-dark">{locked ? '—' : (fin ?? '—')}</td>
       {/* Letter */}
-      <td className={`px-3 py-3 text-center text-[15px] font-black ${color}`}>{letter}</td>
+      <td className={`px-3 py-3 text-center text-[15px] font-black ${color}`}>
+        <div>{letter}</div>
+        {shown.label && <div className="text-[11px] font-bold" dir="rtl">{shown.label}</div>}
+        {(letter === 'F' || letter === 'Z') && <div className="text-[10px] font-bold text-text-light">0</div>}
+      </td>
       {/* Save */}
       <td className="px-3 py-3 text-center">
-        {!canEdit
-          ? <span className="text-[11px] font-bold text-amber-700" dir="rtl">للعرض فقط<br />سجل تاريخي</span>
+        {serverLetter === 'Z'
+          ? <span className="text-[11px] font-bold text-red-700" dir="rtl">محروم</span>
+          : serverLetter === 'W' || !canEdit
+          ? <span className="text-[11px] font-bold text-amber-700" dir="rtl">{serverLetter === 'W' ? 'منسحب' : <>للعرض فقط<br />سجل تاريخي</>}</span>
+          : serverLetter === 'I'
+          ? (
+            <button onClick={handleResolve} disabled={theory === '' || prac === '' || saving}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-700 text-white rounded-[7px] text-[12px] font-bold disabled:opacity-40">
+              {saving ? <FaSpinner className="animate-spin text-[10px]" /> : <FaSave className="text-[10px]" />}
+              حفظ النتيجة
+            </button>
+          )
           : saved
           ? <span className="inline-flex items-center gap-1 text-[11.5px] text-green-700 font-bold"><FaCheck className="text-[10px]" /> تم</span>
           : (
-            <button
-              onClick={handleSave}
-              disabled={!canEdit || theory === '' || prac === '' || saving}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-[7px] text-[12px] font-bold disabled:opacity-40 hover:enabled:bg-primary-dark transition-colors"
-            >
-              {saving ? <FaSpinner className="animate-spin text-[10px]" /> : <FaSave className="text-[10px]" />}
-              حفظ
-            </button>
+            <div className="flex flex-col items-center gap-1">
+              <button onClick={handleSave} disabled={theory === '' || prac === '' || saving}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-[7px] text-[12px] font-bold disabled:opacity-40 hover:enabled:bg-primary-dark transition-colors">
+                {saving ? <FaSpinner className="animate-spin text-[10px]" /> : <FaSave className="text-[10px]" />}
+                حفظ
+              </button>
+              <button type="button" onClick={() => setShowIncomplete(v => !v)} className="text-[11px] font-bold text-amber-800" dir="rtl">غير مكتمل</button>
+            </div>
           )
         }
+        {showIncomplete && canEdit && serverLetter !== 'I' && serverLetter !== 'Z' && (
+          <div className="mt-2 flex flex-col gap-1" dir="rtl">
+            <input value={reason} onChange={e => setReason(e.target.value)} placeholder="السبب" className="px-2 py-1 border border-primary/20 rounded text-[11px]" />
+            <input value={requirements} onChange={e => setRequirements(e.target.value)} placeholder="المتطلبات" className="px-2 py-1 border border-primary/20 rounded text-[11px]" />
+            <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} className="px-2 py-1 border border-primary/20 rounded text-[11px]" />
+            <button type="button" onClick={handleIncomplete} disabled={saving || !reason.trim() || !requirements.trim() || !deadline}
+              className="px-2 py-1 bg-amber-700 text-white rounded text-[11px] font-bold disabled:opacity-40">تسجيل I</button>
+          </div>
+        )}
         {err && <div className="text-[10px] text-red-500 mt-0.5">{err}</div>}
       </td>
     </tr>
@@ -316,8 +400,15 @@ function IndividualMode() {
   const [err,      setErr]      = useState('')
   const [loadRegs, setLoadRegs] = useState(false)
   const [loadGrade,setLoadGrade]= useState(false)
+  const [showIncomplete, setShowIncomplete] = useState(false)
+  const [reason, setReason] = useState('')
+  const [requirements, setRequirements] = useState('')
+  const [deadline, setDeadline] = useState('')
   const selectedRegistration = regs.find(r => String(r.student_course_registration_id) === String(regId))
   const canEdit = selectedRegistration?.grade_entry_allowed === true
+  const serverLetter = current?.letter_grade
+  const locked = Boolean(LOCKED_SYMBOLS[serverLetter])
+  const inputsDisabled = !canEdit || serverLetter === 'Z' || serverLetter === 'W'
 
   function handleSelect(student) {
     setSelected(student); setRegs([]); setRegId(''); setCurrent(null)
@@ -340,6 +431,10 @@ function IndividualMode() {
           setCurrent(json.data)
           setTheory(json.data.theoretical_mark ?? '')
           setPrac(json.data.practical_mark ?? '')
+          setReason(json.data.reason ?? '')
+          setRequirements(json.data.requirements ?? '')
+          setDeadline(json.data.deadline ?? '')
+          setShowIncomplete(false)
         }
       })
       .finally(() => setLoadGrade(false))
@@ -347,15 +442,44 @@ function IndividualMode() {
 
   const t   = parseFloat(theory) || 0
   const p   = parseFloat(prac)   || 0
-  const fin = theory !== '' && prac !== '' ? t + p : null
-  const { letter, color } = fin !== null ? calcLetter(t, p) : { letter: '—', color: 'text-text-light' }
+  const fin = !locked && theory !== '' && prac !== '' ? t + p : null
+  const local = fin !== null ? calcLetter(t, p) : { letter: '—', color: 'text-text-light' }
+  const shown = presentGrade(locked ? serverLetter : null, local)
+  const letter = shown.letter
+  const color = shown.color
 
   async function handleSave() {
-    if (!canEdit || !regId || theory === '' || prac === '') return
+    if (!canEdit || !regId || serverLetter === 'I' || theory === '' || prac === '') return
     setSaving(true); setErr(''); setSaved(false)
     try {
       const json = await saveGrade(regId, t, p)
-      if (json.success) setSaved(true)
+      if (json.success) { setSaved(true); setCurrent(json.data) }
+      else setErr(json.message || 'فشل الحفظ')
+    } catch { setErr('تعذّر الاتصال') }
+    finally { setSaving(false) }
+  }
+
+  async function handleIncomplete() {
+    if (!canEdit || !regId || !reason.trim() || !requirements.trim() || !deadline) return
+    setSaving(true); setErr(''); setSaved(false)
+    try {
+      const json = await postJson(`${API}/registrations/${regId}/incomplete`, {
+        reason: reason.trim(), requirements: requirements.trim(), deadline,
+      })
+      if (json.success) { setSaved(true); setCurrent(json.data); setShowIncomplete(false) }
+      else setErr(json.message || 'فشل الحفظ')
+    } catch { setErr('تعذّر الاتصال') }
+    finally { setSaving(false) }
+  }
+
+  async function handleResolve() {
+    if (!canEdit || !regId || theory === '' || prac === '') return
+    setSaving(true); setErr(''); setSaved(false)
+    try {
+      const json = await postJson(`${API}/registrations/${regId}/resolve-incomplete`, {
+        theoretical_mark: t, practical_mark: p,
+      })
+      if (json.success) { setSaved(true); setCurrent(json.data) }
       else setErr(json.message || 'فشل الحفظ')
     } catch { setErr('تعذّر الاتصال') }
     finally { setSaving(false) }
@@ -395,10 +519,18 @@ function IndividualMode() {
             <div className="flex items-center gap-2 mb-5 pb-3 border-b border-primary/10" dir="rtl">
               <span className="text-[13px] text-text-light">الدرجة الحالية:</span>
               <span className="font-bold text-text-dark">{current.final_mark ?? '—'} / 100</span>
-              <span className={`text-[15px] font-black mr-2 ${current.letter_grade?.startsWith('A') ? 'text-green-600' : current.letter_grade?.startsWith('B') ? 'text-blue-600' : 'text-red-600'}`}>
-                {current.letter_grade || '—'}
-              </span>
+              <span className={`text-[15px] font-black mr-2 ${color}`}>{current.letter_grade || '—'}</span>
+              {current.symbol_label && <span className="text-[12px] font-bold">{current.symbol_label}</span>}
+              {(current.letter_grade === 'F' || current.letter_grade === 'Z') && <span className="text-[12px] font-bold">0</span>}
             </div>
+          )}
+          {serverLetter === 'Z' && current?.notes && (
+            <p className="mb-4 text-[12.5px] font-bold text-red-700" dir="rtl">{current.notes}</p>
+          )}
+          {serverLetter === 'I' && (
+            <p className="mb-4 text-[12.5px] text-amber-800" dir="rtl">
+              {current.reason} — {current.requirements} — حتى {current.deadline}
+            </p>
           )}
 
           <div className="flex items-end gap-4 flex-wrap" dir="rtl">
@@ -407,7 +539,7 @@ function IndividualMode() {
               <input
                 type="number" min="0" max="60" step="0.5"
                 value={theory}
-                disabled={!canEdit}
+                disabled={inputsDisabled}
                 onChange={e => { setTheory(e.target.value); setSaved(false) }}
                 className={`w-[130px] px-3 py-2.5 border rounded-[10px] text-[14px] text-center outline-none focus:shadow-[0_0_0_3px_rgba(86,153,51,0.1)] ${theory !== '' && t < 15 ? 'border-red-400 bg-red-50' : 'border-primary/20 focus:border-primary'}`}
                 dir="ltr"
@@ -418,7 +550,7 @@ function IndividualMode() {
               <input
                 type="number" min="0" max="40" step="0.5"
                 value={prac}
-                disabled={!canEdit}
+                disabled={inputsDisabled}
                 onChange={e => { setPrac(e.target.value); setSaved(false) }}
                 className={`w-[130px] px-3 py-2.5 border rounded-[10px] text-[14px] text-center outline-none focus:shadow-[0_0_0_3px_rgba(86,153,51,0.1)] ${prac !== '' && p < 10 ? 'border-red-400 bg-red-50' : 'border-primary/20 focus:border-primary'}`}
                 dir="ltr"
@@ -434,7 +566,8 @@ function IndividualMode() {
               <div className="w-px h-10 bg-gray-200" />
               <div className="text-center">
                 <div className={`text-[28px] font-black leading-none ${color}`}>{letter}</div>
-                <div className="text-[10px] text-text-light mt-1">التقدير</div>
+                <div className="text-[10px] text-text-light mt-1">{shown.label || 'التقدير'}</div>
+                {(letter === 'F' || letter === 'Z') && <div className="text-[10px] font-bold">0</div>}
               </div>
             </div>
 
@@ -444,15 +577,37 @@ function IndividualMode() {
               </div>
             )}
 
-            <button
-              onClick={handleSave}
-              disabled={!canEdit || theory === '' || prac === '' || saving}
-              className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-[10px] text-[13.5px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-primary-dark transition-colors"
-            >
-              {saving ? <FaSpinner className="animate-spin" /> : saved ? <FaCheck /> : <FaSave />}
-              {saved ? 'تم الحفظ' : 'حفظ'}
-            </button>
+            {serverLetter === 'I' ? (
+              <button onClick={handleResolve} disabled={!canEdit || theory === '' || prac === '' || saving}
+                className="flex items-center gap-2 px-5 py-2.5 bg-amber-700 text-white rounded-[10px] text-[13.5px] font-bold disabled:opacity-40">
+                {saving ? <FaSpinner className="animate-spin" /> : <FaSave />}
+                حفظ النتيجة
+              </button>
+            ) : serverLetter !== 'Z' && serverLetter !== 'W' && (
+              <button onClick={handleSave} disabled={!canEdit || theory === '' || prac === '' || saving}
+                className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-[10px] text-[13.5px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-primary-dark transition-colors">
+                {saving ? <FaSpinner className="animate-spin" /> : saved ? <FaCheck /> : <FaSave />}
+                {saved ? 'تم الحفظ' : 'حفظ'}
+              </button>
+            )}
+            {canEdit && serverLetter !== 'I' && serverLetter !== 'Z' && serverLetter !== 'W' && (
+              <button type="button" onClick={() => setShowIncomplete(v => !v)}
+                className="px-4 py-2.5 border border-amber-300 text-amber-800 rounded-[10px] text-[13px] font-bold">
+                غير مكتمل
+              </button>
+            )}
           </div>
+          {showIncomplete && canEdit && serverLetter !== 'I' && serverLetter !== 'Z' && (
+            <div className="mt-4 grid gap-2 max-w-md" dir="rtl">
+              <input value={reason} onChange={e => setReason(e.target.value)} placeholder="سبب غير مكتمل" className="px-3 py-2 border border-primary/20 rounded-[10px] text-[13px]" />
+              <input value={requirements} onChange={e => setRequirements(e.target.value)} placeholder="المتطلبات الناقصة" className="px-3 py-2 border border-primary/20 rounded-[10px] text-[13px]" />
+              <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} className="px-3 py-2 border border-primary/20 rounded-[10px] text-[13px]" />
+              <button type="button" onClick={handleIncomplete} disabled={saving || !reason.trim() || !requirements.trim() || !deadline}
+                className="px-4 py-2 bg-amber-700 text-white rounded-[10px] text-[13px] font-bold disabled:opacity-40">
+                تسجيل غير مكتمل
+              </button>
+            </div>
+          )}
           {err && <p className="mt-3 text-[12.5px] text-red-600" dir="rtl">⚠ {err}</p>}
         </div>
       )}

@@ -428,16 +428,17 @@ POST /api/v1/attendance-sessions/{id}/record
 | B | 80–84.99 | 3.00 |
 | D | 50–54.99 | 1.50 |
 | F | Below 50 or failed component | 0.00 |
-| Z | Deprived | Excluded from GPA |
+| Z | Deprived | 0.00, included in GPA |
 | W | Withdrawn | Excluded from GPA |
-| I | Incomplete | Excluded from GPA |
+| I | Incomplete | Excluded from GPA while unresolved |
 
 ### GPA / CGPA
 
 - **GPA formula:** `sum(grade_points × credit_hours) / sum(credit_hours)`
 - **CGPA:** Same formula across all courses; repeated courses use **highest attempt only**.
 - **Included:** Passed and failed courses (F = 0.00 points).
-- **Excluded:** W (withdrawn), Z (deprived), I (incomplete), dropped/withdrawn registrations.
+- **Excluded:** W (withdrawn), unresolved I (incomplete), dropped/withdrawn registrations.
+- **Included:** Z (deprived) at 0.00 points, with its credit hours in the denominator.
 
 ### Attendance / Deprivation
 
@@ -446,7 +447,7 @@ POST /api/v1/attendance-sessions/{id}/record
 - `excused` absences are **not** counted.
 - `late` is treated as **present**.
 - Deprivation sets result status to **deprived (Z)** via `apply-deprivation` only.
-- Deprived courses are **excluded** from GPA/CGPA.
+- Deprived courses are grade **Z** and are **included** in GPA/CGPA at 0.00 points.
 - Read-only endpoints do **not** auto-apply deprivation.
 
 ---

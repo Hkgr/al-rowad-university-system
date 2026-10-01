@@ -295,6 +295,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::post('registrations/{id}/grades', [GradeController::class, 'store']);
     Route::put('registrations/{id}/grades', [GradeController::class, 'update']);
     Route::post('registrations/{id}/calculate-result', [GradeController::class, 'calculateResult']);
+    Route::post('registrations/{id}/incomplete', [GradeController::class, 'storeIncomplete']);
+    Route::post('registrations/{id}/resolve-incomplete', [GradeController::class, 'resolveIncomplete']);
 
     /*
     |--------------------------------------------------------------------------

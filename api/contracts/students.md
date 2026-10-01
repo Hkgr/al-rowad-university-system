@@ -366,7 +366,8 @@ Paginated `StudentResource` list in `data`.
 ### Business rules
 
 - GPA uses credit-hour weighted grade points.
-- **Excluded from GPA:** dropped/withdrawn registrations; results with status incomplete, deprived, or withdrawn; letter grades **W**, **Z**, **I**.
+- **Excluded from GPA:** dropped/withdrawn registrations; unresolved incomplete results; letter grades **W** and **I**.
+- **Z** is included at **0.00** grade points, with its credit hours in the denominator.
 - **F** counts as **0.00** grade points.
 
 ---
@@ -472,7 +473,7 @@ Array of offerings with `eligibility_status` and `eligibility_reasons` (e.g. pre
 ### Frontend notes
 
 - Show warning when `absence_percentage > 15` (deprivation threshold).
-- Deprived courses receive grade **Z** and are excluded from GPA/CGPA.
+- Deprived courses receive grade **Z** and are included in GPA/CGPA at 0.00 points.
 
 ---
 

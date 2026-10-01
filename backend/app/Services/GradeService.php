@@ -1,4 +1,4 @@
-    <?php
+<?php
 
     namespace App\Services;
 
@@ -23,7 +23,7 @@
 
     class GradeService
     {
-        private const EXCLUDED_RESULT_STATUSES = ['incomplete', 'deprived', 'withdrawn'];
+        private const EXCLUDED_RESULT_STATUSES = ['incomplete', 'withdrawn'];
 
         private ?GradingPolicy $defaultPolicy = null;
 
@@ -306,6 +306,10 @@
                     throw new GradeException('Deprived results cannot be recalculated automatically.');
                 }
 
+                if ($existingStatusCode === 'incomplete' && $result->incomplete_resolved_at === null) {
+                    throw new GradeException('Unresolved incomplete results cannot be recalculated automatically.');
+                }
+
                 $theoretical = $result->theoretical_total !== null ? (float) $result->theoretical_total : null;
                 $practical = $result->practical_total !== null ? (float) $result->practical_total : null;
                 $calculation = $this->buildCalculation($theoretical, $practical, $existingStatusCode, (bool) $result->is_deprived);
@@ -346,7 +350,13 @@
                         'courseOffering.semester',
                         'studentCourseResult.resultStatus',
                         'registrationStatus',
-                    ])->academicAttempts()->orderBy('student_course_registration_id');
+                    ])->where(function (Builder $registrations): void {
+                        $registrations->academicAttempts()
+                            ->orWhereHas(
+                                'registrationStatus',
+                                fn (Builder $status) => $status->where('status_code', 'withdrawn')
+                            );
+                    })->orderBy('student_course_registration_id');
                 },
             ]);
 
@@ -467,9 +477,21 @@
 
         private function persistGrades(StudentCourseRegistration $registration, array $data, ?int $userId, bool $isUpdate): StudentCourseResult
         {
+            $existing = $registration->studentCourseResult;
+            $existingStatus = $existing?->resultStatus?->status_code;
+            $isDeprived = (bool) ($existing?->is_deprived ?? false);
+
+            if ($existingStatus === 'deprived' || $isDeprived) {
+                throw new GradeException('Deprived results cannot be replaced by grade entry.');
+            }
+
+            if ($existingStatus === 'incomplete' && $existing?->incomplete_resolved_at === null) {
+                throw new GradeException('Unresolved incomplete results cannot be replaced by grade entry. Resolve the incomplete result instead.');
+            }
+
             $theoretical = round((float) $data['theoretical_mark'], 2);
             $practical = round((float) $data['practical_mark'], 2);
-            $calculation = $this->buildCalculation($theoretical, $practical);
+            $calculation = $this->buildCalculation($theoretical, $practical, $existingStatus, $isDeprived);
 
             $resultStatusId = $this->resultStatusId($calculation['result_status_code']);
 
@@ -614,7 +636,12 @@
                 'practical_mark' => $practical,
                 'final_mark' => $calculation['final_mark'],
                 'letter_grade' => $calculation['letter_grade'],
-                'grade_points' => $calculation['grade_points'],
+                'grade_points' => $this->displayGradePoints($calculation['letter_grade'], $calculation['grade_points']),
+                'symbol_label' => $this->symbolLabel($calculation['letter_grade']),
+                'reason' => $result?->incomplete_reason,
+                'requirements' => $result?->incomplete_requirements,
+                'granted_at' => $result?->incomplete_granted_at,
+                'deadline' => $this->displayDate($result?->incomplete_deadline),
                 'result_status' => $this->compactResultStatus($calculation['result_status_code']),
                 'notes' => $registration->notes,
             ];
@@ -634,6 +661,11 @@
                 'final_mark' => $grades['final_mark'],
                 'letter_grade' => $grades['letter_grade'],
                 'grade_points' => $grades['grade_points'],
+                'symbol_label' => $grades['symbol_label'],
+                'reason' => $grades['reason'],
+                'requirements' => $grades['requirements'],
+                'granted_at' => $grades['granted_at'],
+                'deadline' => $grades['deadline'],
                 'result_status' => $grades['result_status'],
                 'registration_status' => $grades['registration']['registration_status'],
                 'grade_entry_allowed' => $registration->allowsGradeEntry(),
@@ -657,6 +689,11 @@
                 'final_mark' => $grades['final_mark'],
                 'letter_grade' => $grades['letter_grade'],
                 'grade_points' => $grades['grade_points'],
+                'symbol_label' => $grades['symbol_label'],
+                'reason' => $grades['reason'],
+                'requirements' => $grades['requirements'],
+                'granted_at' => $grades['granted_at'],
+                'deadline' => $grades['deadline'],
                 'result_status' => $grades['result_status'],
             ];
         }
@@ -737,6 +774,127 @@
             return $response;
         }
 
+        public function grantIncomplete(int $registrationId, array $data, ?int $userId = null): array
+        {
+            return DB::transaction(function () use ($registrationId, $data, $userId): array {
+                $registration = $this->loadRegistration($registrationId, lock: true);
+                $this->assertRegistrationAllowsGrading($registration);
+
+                $existing = $registration->studentCourseResult;
+                if ($existing !== null) {
+                    $statusCode = $existing->resultStatus?->status_code;
+                    $unresolved = $statusCode === 'incomplete' && $existing->incomplete_resolved_at === null;
+                    if (! $unresolved) {
+                        throw new GradeException('Incomplete can only be granted before a final result is stored.');
+                    }
+                }
+
+                $statusId = $this->resultStatusId('incomplete');
+                StudentCourseResult::query()->updateOrCreate(
+                    ['student_course_registration_id' => $registration->student_course_registration_id],
+                    [
+                        'theoretical_total' => null,
+                        'practical_total' => null,
+                        'coursework_total' => 0,
+                        'final_mark' => null,
+                        'result_status_id' => $statusId,
+                        'is_deprived' => false,
+                        'incomplete_reason' => $data['reason'],
+                        'incomplete_requirements' => $data['requirements'],
+                        'incomplete_granted_at' => now(),
+                        'incomplete_deadline' => $data['deadline'],
+                        'incomplete_resolved_at' => null,
+                        'calculated_at' => now(),
+                        'calculated_by_user_id' => $userId,
+                    ]
+                );
+
+                $registration->update(['result_status_id' => $statusId]);
+
+                return $this->formatRegistrationGrades($registration->fresh()->load($this->registrationRelations()));
+            });
+        }
+
+        public function resolveIncomplete(int $registrationId, array $data, ?int $userId = null): array
+        {
+            return DB::transaction(function () use ($registrationId, $data, $userId): array {
+                $registration = $this->loadRegistration($registrationId, lock: true);
+                $this->assertRegistrationAllowsGrading($registration);
+                $result = $registration->studentCourseResult;
+
+                if ($result === null
+                    || $result->resultStatus?->status_code !== 'incomplete'
+                    || $result->incomplete_resolved_at !== null) {
+                    throw new GradeException('Only an unresolved incomplete result can be resolved.');
+                }
+
+                $theoretical = round((float) $data['theoretical_mark'], 2);
+                $practical = round((float) $data['practical_mark'], 2);
+                $calculation = $this->buildCalculation($theoretical, $practical);
+                $statusId = $this->resultStatusId($calculation['result_status_code']);
+
+                $result->update([
+                    'theoretical_total' => $theoretical,
+                    'practical_total' => $practical,
+                    'coursework_total' => 0,
+                    'final_mark' => $calculation['final_mark'],
+                    'result_status_id' => $statusId,
+                    'is_deprived' => false,
+                    'incomplete_resolved_at' => now(),
+                    'calculated_at' => now(),
+                    'calculated_by_user_id' => $userId,
+                ]);
+
+                $registration->update(['result_status_id' => $statusId]);
+                $this->syncGradeComponents($registration, $theoretical, $practical, $userId, isUpdate: true);
+
+                return $this->formatRegistrationGrades($registration->fresh()->load($this->registrationRelations()));
+            });
+        }
+
+        public function expireIncompleteResults(): int
+        {
+            $policy = GradingPolicy::query()
+                ->where('is_default', true)
+                ->where('is_active', true)
+                ->first()
+                ?? GradingPolicy::query()->where('is_active', true)->first();
+
+            if ($policy === null) {
+                throw new ModelNotFoundException('No active grading policy was found.');
+            }
+
+            $expiryStatus = $policy->incomplete_expiry_status_code;
+            if ($expiryStatus === null || $expiryStatus === '') {
+                return 0;
+            }
+
+            if (! in_array($expiryStatus, ['failed', 'deprived'], true)) {
+                throw new GradeException('incomplete_expiry_status_code must be failed or deprived.');
+            }
+
+            $statusId = $this->resultStatusId($expiryStatus);
+            $results = StudentCourseResult::query()
+                ->with('studentCourseRegistration')
+                ->whereNull('incomplete_resolved_at')
+                ->whereNotNull('incomplete_deadline')
+                ->whereDate('incomplete_deadline', '<', now()->toDateString())
+                ->whereHas('resultStatus', fn (Builder $status) => $status->where('status_code', 'incomplete'))
+                ->get();
+
+            foreach ($results as $result) {
+                $result->update([
+                    'result_status_id' => $statusId,
+                    'is_deprived' => $expiryStatus === 'deprived',
+                    'incomplete_resolved_at' => now(),
+                    'calculated_at' => now(),
+                ]);
+                $result->studentCourseRegistration?->update(['result_status_id' => $statusId]);
+            }
+
+            return $results->count();
+        }
+
         private function evaluateGpaCourse(StudentCourseRegistration $registration): array
         {
             $registrationStatus = $registration->registrationStatus?->status_code;
@@ -770,15 +928,6 @@
                 ];
             }
 
-            if ($result->theoretical_total === null || $result->practical_total === null) {
-                return [
-                    'included' => false,
-                    'course' => array_merge($base, ['exclusion_reason' => 'missing_marks']),
-                    'grade_points' => 0,
-                    'credit_hours' => $creditHours,
-                ];
-            }
-
             $statusCode = $this->resolveEffectiveResultStatusCode($registration);
 
             if (in_array($statusCode, self::EXCLUDED_RESULT_STATUSES, true)) {
@@ -790,9 +939,22 @@
                 ];
             }
 
+            $theoretical = $result->theoretical_total !== null ? (float) $result->theoretical_total : null;
+            $practical = $result->practical_total !== null ? (float) $result->practical_total : null;
+            $countsWithEmptyMarks = in_array($statusCode, ['failed', 'deprived'], true);
+
+            if (($theoretical === null || $practical === null) && ! $countsWithEmptyMarks) {
+                return [
+                    'included' => false,
+                    'course' => array_merge($base, ['exclusion_reason' => 'missing_marks']),
+                    'grade_points' => 0,
+                    'credit_hours' => $creditHours,
+                ];
+            }
+
             $calculation = $this->buildCalculation(
-                (float) $result->theoretical_total,
-                (float) $result->practical_total,
+                $theoretical,
+                $practical,
                 $statusCode,
                 (bool) $result->is_deprived
             );
@@ -888,6 +1050,39 @@
             }
         }
 
+        private function displayGradePoints(string $letterGrade, float $gradePoints): ?float
+        {
+            if (in_array($letterGrade, ['W', 'I'], true)) {
+                return null;
+            }
+
+            return $gradePoints;
+        }
+
+        private function displayDate(mixed $value): ?string
+        {
+            if ($value instanceof \DateTimeInterface) {
+                return $value->format('Y-m-d');
+            }
+
+            if (is_string($value) && $value !== '') {
+                return substr($value, 0, 10);
+            }
+
+            return null;
+        }
+
+        private function symbolLabel(string $letterGrade): ?string
+        {
+            return match ($letterGrade) {
+                'F' => 'راسب',
+                'Z' => 'محروم',
+                'W' => 'منسحب',
+                'I' => 'غير مكتمل',
+                default => null,
+            };
+        }
+
         private function resolveEffectiveResultStatusCode(StudentCourseRegistration $registration): ?string
         {
             if ($registration->registrationStatus?->status_code === 'withdrawn') {
@@ -908,6 +1103,18 @@
         ): string {
             if ($existingStatusCode === 'deprived' || $isDeprived) {
                 return 'deprived';
+            }
+
+            if ($existingStatusCode === 'withdrawn') {
+                return 'withdrawn';
+            }
+
+            if ($existingStatusCode === 'incomplete') {
+                return 'incomplete';
+            }
+
+            if ($existingStatusCode === 'failed' && ($theoretical === null || $practical === null)) {
+                return 'failed';
             }
 
             if ($theoretical === null || $practical === null) {
