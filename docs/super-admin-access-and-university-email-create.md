@@ -62,7 +62,7 @@ The dialog shows the actual student, canonical address preview and one create ac
 
 Existing mailbox management, independent reset, suspension/activation and linking remain explicit advanced operations. Technical operation detail is behind the advanced view. A prior prepared/failed operation can be explicitly cancelled through the existing pre-write-only cancellation boundary, after which the operator may correct the name and create a new operation. Downloading PDF does not acknowledge delivery or change `handover_status`.
 
-## Executed verification
+## Initial implementation verification
 
 All test identities and data were synthetic. No production database or live Mailcow was used.
 
@@ -101,6 +101,34 @@ The same ESLint failures were reproduced from base source: two `set-state-in-eff
 A full frontend ESLint scan was also executed and reported 90 errors and 16 warnings across the repository. It did not pass. The changed-file scan isolates the five errors and one warning above; no unrelated lint cleanup was attempted.
 
 The authorized in-app browser failed before connecting with `codex/sandbox-state-meta: missing field sandboxPolicy`. A separate isolated HTTP server launch was rejected by environment policy. Neither was bypassed. The opt-in `frontend/tests/browser/super-admin-email-create-http.mjs` was added but remains unexecuted here. React connected to a running Laravel server, desktop/mobile screenshots, clipboard behavior, actual downloaded PDF and visual acceptance remain unexecuted. PHPUnit HTTP middleware tests are real Laravel execution but are not a browser-to-server end-to-end substitute. No CI success is assumed.
+
+## Final acceptance review
+
+The 2026-10-01 follow-up starts from reviewed commit `ff87c62b9f397f6399f64117d65b7365e8b247e4`. Fetch confirmed that the same branch had no subsequent commits and PR 149 remained open. This round changes three frontend files, the existing administrator regression, its Node contract, and this document only. Backend application code, authorization policy, schema, dependencies, academic workflows and provisioning gates are unchanged.
+
+The basic creation path no longer calls the entered name a draft. Navigation uses «بيانات إنشاء غير مكتملة» and explains that leaving discards the entered name. After confirmed creation, the separate credentials warning explains loss of the temporary password rather than claiming an unexecuted creation. Schema-unavailable text does not imply that students have no mailbox. Previous attempts are described as attempts needing review; technical diagnostics remain in the advanced panel. The disabled-state notice explicitly says «إنشاء البريد غير مفعّل على الخادم بعد» and does not blame user permissions.
+
+The Node source regression failed before the text correction and passed afterward. It verifies the absence of the Arabic draft label in the two basic UI sources and checks the exact disabled-provisioning error presentation. These are static/pure-logic tests, not rendered browser acceptance.
+
+The strengthened real Laravel HTTP regression proves an active account with only `super_admin`, no effective assigned permissions and zero access-scope rows returns the actual synthetic student total. It checks omitted/empty/whitespace search, Arabic name, student number, distinct paginated rows, exact student detail, one-step fake-Mailcow creation, a single external write and nonpersisted credentials. No live Mailcow traffic is permitted by the fixture. Another HTTP regression independently disables each of provisioning-enabled, contract-verified and write-key configuration: each returns `enabled=false` and controlled 503 with zero email, operation or audit writes and no outgoing request.
+
+The identity audit reviewed all uses of `isAcademicAdvisor`, `isDean`, `isRegistrationOfficer`, `isExamOfficer`, `isScientificVicePresident` and `isAdministrativeVicePresident`. Their administrative capability does not alter factual `isStudent`/`isProfessor`, personal controllers or `ProfessorGradeAssignmentService`. The expanded HTTP regression rejects student email, student reports, self registration, transcript and academic record for the administrator without a student identity. Professor offerings remain empty with no faculty identity, and the canonical assignment service returns no assigned grade parts. Existing reviewer separation, locked reviews, official grade locks, submission state/version, consumed opening approval and deadline checks remain in their domain services; they were not weakened to satisfy authorization tests.
+
+| Follow-up check | Executed result |
+| --- | --- |
+| Targeted Laravel suites | 210 passed, 6757 assertions: `SuperAdminEmailCreateTest`, email Phases 1–3, technical account administration, President, Ministry, administrative governance, portal reports, teaching-assignment review, manual grade entry and semester offering governance |
+| Additional deadline checks | Two no-argument behavior tests passed: advisor decision windows and trusted materialization deadline revalidation. A third data-provider case failed before its body ran because the installed test runner supplied no arguments; it is not counted as successful boundary verification |
+| Frontend tests | 76 passed: administrator/email, technical portal, President/Ministry/report access and executive-report checks; static/pure logic only |
+| Dependency-free contracts | Four passed: administrator one-step contract and university email Phases 1–3 |
+| Build and changed-file lint | Production build passed with the existing large-chunk warning; ESLint passed for both modified JSX files, the message helper and the Node test |
+| PHP and Composer | Changed PHP test syntax passed; Composer validation and locked platform requirements passed |
+| Diff check | Passed |
+
+The additional deadline command selected `test_deadline_phases_use_inclusive_student_and_advisor_boundaries`, `test_advisor_decision_accepts_on_time_submission_during_both_open_phases_and_rejects_late_or_closed`, and `test_advisor_materialization_boundary_rechecks_submission_and_advisor_deadlines`. The first uses a historical docblock data provider and failed with “Too few arguments”; its test and production policy were left unchanged. Full repository lint and general PHPUnit discovery were not rerun as passing checks; the initial-round failures above remain disclosed.
+
+The authorized browser was retried and again failed before opening a tab with `codex/sandbox-state-meta: missing field sandboxPolicy`. No alternate browser-control mechanism or security workaround was used. Desktop 1440, mobile 390, rendered RTL/Cairo, overflow, clipboard, actual PDF download and visual verification therefore remain unexecuted. The real HTTP tests above use Laravel middleware and an isolated SQLite database, but do not establish React-to-Laravel end-to-end or visual acceptance. MariaDB concurrency evidence remains the initial round's 12 scenarios; it was not rerun because this round changes no backend production code.
+
+NO NEW MIGRATION. NO NEW SQL. NO PRODUCTION CHANGES. NO LIVE MAILCOW WRITES. Provisioning still requires `MAILCOW_PROVISIONING_ENABLED=true`, `MAILCOW_CONTRACT_VERIFIED=true`, a configured `MAILCOW_WRITE_API_KEY` and the existing canonical Mailcow URL. No real environment configuration was edited.
 
 ## Schema and deployment
 

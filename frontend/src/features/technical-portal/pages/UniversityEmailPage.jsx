@@ -101,7 +101,7 @@ function Workspace({ identity }) {
   const select = id => {
     if (pending) { setNotice('انتظر اكتمال الحفظ قبل تغيير الطالب.'); return }
     if (selected === id) return
-    if ((dirty || sensitive) && !window.confirm('الانتقال يلغي المسودة غير المحفوظة ويفقد بيانات الدخول المؤقتة. هل تريد المتابعة؟')) return
+    if ((dirty || sensitive) && !window.confirm('الانتقال يلغي الاسم المدخل ويفقد بيانات الدخول المؤقتة. هل تريد المتابعة؟')) return
     setDirty(false); setSnapshot(null); setSelected(id); setNotice(''); loadStudent(id)
   }
   const checkHealth = useCallback(async () => {
@@ -132,7 +132,7 @@ function Workspace({ identity }) {
       {health ? <InfoGrid items={[[ 'النطاق', health.domain ], ['حالة النطاق', health.active ? 'فعال' : 'غير فعال'], ['الصناديق الحالية', health.mailbox_count], ['الحد الحالي', health.mailbox_limit], ['المتاح حاليًا', health.remaining_mailboxes], ['وقت الفحص', health.checked_at]]} /> : !healthError && <p className="text-[12px] text-text-light">يُفحص الاتصال مرة عند فتح الصفحة، لا لكل طالب. هذا الفحص لا يغير إعدادات Mailcow.</p>}
     </Section>}
     <FilterBar search={{ value: search, onChange: changeSearch, placeholder: 'ابحث باسم الطالب بالعربية أو رقمه الجامعي…' }} />
-    {list?.email_schema_ready === false && <Notice tone="warning">تجهيز البريد غير جاهز؛ تعذر قراءة حالته المحلية. يلزم تطبيق migration المرحلة الأولى قبل التجهيز، ولا يعني ذلك أن الطلاب بلا مسودات.</Notice>}
+    {list?.email_schema_ready === false && <Notice tone="warning">تجهيز البريد غير جاهز؛ تعذر قراءة حالته المحلية. يلزم استكمال إعداد الخادم، ولا يعني ذلك أن الطلاب بلا بريد.</Notice>}
     {listError && <StatePanel state={[401,403].includes(listError.status) ? 'forbidden' : 'error'} message={listError.message} onRetry={() => { setLoading(true); setRetry(r => r + 1) }} />}
     {!listError && <DataTable columns={columns} rows={list?.data || []} rowKey={row => row.student_id} loading={loading} page={page} totalPages={list?.meta?.last_page || 1} onPageChange={value => { if (value === page) return; currentPage.current = value; listSequence.current.invalidate(); listAbort.current?.abort(); setLoading(true); setPage(value) }} emptyIcon={FaEnvelope} emptyTitle="لا توجد نتائج ضمن نطاقك" />}
     {selected && detailBusy && !snapshot && <StatePanel state="loading" />}
@@ -140,8 +140,9 @@ function Workspace({ identity }) {
     {snapshot?.id === selected && <UniversityEmailMailboxDialog key={selected} data={snapshot.data} externalPending={pending} isCurrent={isCurrent} onDirty={setDirty} onSensitive={setSensitive} onPending={setPending} onDenied={deny} onClose={() => { setSelected(null); setSnapshot(null); setDirty(false); setSensitive(false) }} onRefresh={async () => {
       if (await loadStudent(selected)) setRetry(r => r + 1)
     }} />}
-    {blocker.state === 'blocked' && <ManualGradeDialog title={pending ? 'عملية حفظ قيد التنفيذ' : 'مسودة غير محفوظة'} disabled={pending} onConfirm={() => { if (!pending) blocker.proceed() }} confirmLabel="إلغاء المسودة والمتابعة" confirmTone="discard" onCancel={() => blocker.reset()}>
-      <p>{pending ? 'انتظر نتيجة العملية قبل مغادرة الصفحة.' : 'المغادرة تلغي المسودة غير المحفوظة وتفقد بيانات الدخول المؤقتة. هل تريد المتابعة؟'}</p>
+    {blocker.state === 'blocked' && <ManualGradeDialog title={pending ? 'طلب قيد التنفيذ' : dirty ? 'بيانات إنشاء غير مكتملة' : 'بيانات الدخول مؤقتة'} disabled={pending} onConfirm={() => { if (!pending) blocker.proceed() }} confirmLabel="المغادرة والمتابعة" confirmTone="discard" onCancel={() => blocker.reset()}>
+      <p>{pending ? 'انتظر نتيجة الطلب قبل مغادرة الصفحة.' : dirty ? 'لديك بيانات إنشاء لم تُنفذ بعد. المغادرة ستلغي الاسم المدخل. هل تريد المتابعة؟' : 'هل تريد مغادرة الصفحة؟'}</p>
+      {sensitive && <p>المغادرة تفقد بيانات الدخول المؤقتة؛ لا يمكن استعادة كلمة المرور بعد إغلاق النافذة.</p>}
     </ManualGradeDialog>}
   </div>
 }

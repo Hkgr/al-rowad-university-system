@@ -21,15 +21,29 @@ class SuperAdminEmailCreateTest extends UniversityEmailPhase2Test
     public function test_active_admin_without_assigned_permissions_roles_or_scopes_can_search_show_and_create(): void
     {
         $admin = User::findOrFail(1); Sanctum::actingAs($admin);
+        $this->assertSame('active', $admin->accountStatus->status_code);
         $this->assertSame(['super_admin'], $admin->effectiveRoles()->all());
         $this->assertSame([], $admin->effectivePermissions()->all());
+        $this->assertSame(0, DB::table('user_access_scopes')->where('user_id', $admin->user_id)->count());
         $this->assertSame([], app(DataScopeService::class)->scopes($admin));
         $this->assertFalse(app(DataScopeService::class)->hasActualUniversityScope($admin));
-        foreach (['', '?q=', '?q=%20%20', '?q='.urlencode('أحمد'), '?q=R24011002'] as $query) {
-            $this->getJson('/api/v1/technical/university-email/students'.$query)->assertOk();
+        $total = Student::count();
+        $this->assertGreaterThan(1, $total);
+        foreach (['', '?q=', '?q=%20%20'] as $query) {
+            $this->getJson('/api/v1/technical/university-email/students'.$query)->assertOk()
+                ->assertJsonPath('meta.total', $total)->assertJsonCount($total, 'data');
         }
-        $this->getJson('/api/v1/technical/university-email/students?per_page=1&page=2')->assertOk()->assertJsonPath('meta.current_page', 2);
-        $this->getJson('/api/v1/technical/university-email/students/1')->assertOk();
+        foreach (['أحمد', 'R24011002'] as $query) {
+            $this->getJson('/api/v1/technical/university-email/students?q='.urlencode($query))->assertOk()
+                ->assertJsonPath('meta.total', 1)->assertJsonPath('data.0.student_id', 1)
+                ->assertJsonPath('data.0.student_number', 'R24011002');
+        }
+        $first = $this->getJson('/api/v1/technical/university-email/students?per_page=1&page=1')->assertOk()
+            ->assertJsonPath('meta.total', $total)->assertJsonCount(1, 'data')->json('data.0.student_id');
+        $second = $this->getJson('/api/v1/technical/university-email/students?per_page=1&page=2')->assertOk()
+            ->assertJsonPath('meta.current_page', 2)->assertJsonPath('meta.total', $total)->assertJsonCount(1, 'data')->json('data.0.student_id');
+        $this->assertNotSame($first, $second);
+        $this->getJson('/api/v1/technical/university-email/students/1')->assertOk()->assertJsonPath('data.student.student_id', 1);
         $result = $this->createMailbox()->assertOk()->assertHeader('Cache-Control', 'no-store, private')
             ->assertJsonPath('data.provisioning_status', 'created')->assertJsonPath('data.operations.0.status', 'confirmed')->json('data');
         $this->assertSame(24, strlen($result['credentials']['password']));
@@ -72,10 +86,31 @@ class SuperAdminEmailCreateTest extends UniversityEmailPhase2Test
         $this->assertTrue(app(DataScopeService::class)->canMutateFacultyMember($admin, $faculty));
         $this->assertTrue($admin->isDean()); $this->assertTrue($admin->isExamOfficer());
         $this->assertFalse($admin->hasRoleCode('dean'));
+        $this->assertNull($admin->student_id); $this->assertNull($admin->employee_id);
         $this->assertFalse($admin->isStudent()); $this->assertFalse($admin->isProfessor());
-        $this->getJson('/api/v1/student/university-email')->assertForbidden();
-        $this->getJson('/api/v1/portal-reports/student')->assertForbidden();
+        foreach (['/student/university-email', '/portal-reports/student', '/student/registration', '/student/transcript', '/student/academic-record'] as $selfPath) {
+            $this->getJson('/api/v1'.$selfPath)->assertForbidden();
+        }
+        $this->getJson('/api/v1/professor/course-offerings')->assertOk()
+            ->assertJsonPath('data.faculty_member', null)->assertJsonCount(0, 'data.offerings');
+        $this->assertSame([], app(\App\Services\ProfessorGradeAssignmentService::class)->assignedGradeParts($admin, 1));
         $this->assertDatabaseCount('user_roles', 8);
+    }
+
+    public function test_admin_authority_never_enables_disabled_mailcow_provisioning(): void
+    {
+        Sanctum::actingAs(User::findOrFail(1));
+        foreach (['mailcow.provisioning_enabled' => false, 'mailcow.contract_verified' => false, 'mailcow.write_api_key' => ''] as $key => $disabled) {
+            $configured = config($key); config([$key => $disabled]);
+            $this->getJson('/api/v1/technical/university-email/students/1/provisioning')->assertOk()->assertJsonPath('data.enabled', false);
+            $this->createMailbox()->assertStatus(503)->assertJsonPath('error_code', 'university_email_provisioning_disabled');
+            $this->assertDatabaseCount('student_university_emails', 0);
+            $this->assertDatabaseCount('university_email_operations', 0);
+            $this->assertDatabaseCount('user_activity_logs', 0);
+            config([$key => $configured]);
+        }
+        $this->assertSame(0, $this->writes);
+        Http::assertNothingSent();
     }
 
     public function test_ordinary_technical_permissions_and_actual_scopes_remain_required(): void

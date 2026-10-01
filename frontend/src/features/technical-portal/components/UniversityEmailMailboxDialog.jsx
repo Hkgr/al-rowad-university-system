@@ -87,7 +87,7 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
     <InfoGrid items={[[ 'الطالب', student.full_name ], ['الرقم الجامعي', student.student_number ], ['الكلية', student.college || 'غير محدد'], ['البرنامج', student.program || 'غير محدد']]} />
     {loading && <StatePanel state="loading" />}
     {error && <Notice tone="warning">{error}</Notice>}
-    {state?.enabled === false && <Notice tone="warning">الإنشاء معطّل في إعدادات الخادم؛ لا يمكن تنفيذ كتابة على البريد.</Notice>}
+    {state?.enabled === false && <Notice tone="warning">إنشاء البريد غير مفعّل على الخادم بعد.</Notice>}
     {!confirmed && <>
       <label htmlFor="english-first-name" className="block text-[13px] font-bold">الاسم الأول بالإنكليزي</label>
       <input id="english-first-name" value={name} onChange={e => { setName(e.target.value); onDirty(true) }} disabled={blocked || previousAttempt || reviewRequired || !mayCreate}
@@ -111,8 +111,8 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
       {reviewRequired && <Notice tone="warning">تعذر تأكيد نتيجة الإنشاء؛ راجع الحالة. لن يُرسل طلب إنشاء ثانٍ تلقائيًا.</Notice>}
       <button type="button" className={secondary} disabled={blocked} onClick={review}>مراجعة الحالة</button>
       {confirmed && <Notice>البريد مؤكد. كلمة المرور السابقة غير قابلة للاسترجاع؛ إعادة تعيينها إجراء مستقل.</Notice>}
-      {!confirmed && previousAttempt && <Notice tone="warning">توجد عملية سابقة. راجعها أو ألغِ عملية لم تبدأ الكتابة قبل تصحيح الاسم أو الإنشاء مجددًا.</Notice>}
-      <button type="button" className={secondary} disabled={blocked} onClick={() => setAdvanced(value => !value)}>{confirmed ? 'عرض إدارة البريد' : 'تفاصيل متقدمة ومراجعة العملية'}</button>
+      {!confirmed && previousAttempt && <Notice tone="warning">توجد محاولة إنشاء سابقة تحتاج مراجعة قبل تصحيح الاسم أو الإنشاء مجددًا.</Notice>}
+      <button type="button" className={secondary} disabled={blocked} onClick={() => setAdvanced(value => !value)}>{confirmed ? 'عرض إدارة البريد' : 'تفاصيل متقدمة'}</button>
     </>}
     {advanced && <UniversityEmailProvisioning studentId={student.student_id} studentName={student.full_name} revision={data.draft?.revision || 0}
       simple draftDirty={false} draftPending={false} isCurrent={current} onSensitive={onSensitive} onPending={onPending} onDenied={onDenied} onRefresh={() => { load(); onRefresh() }} />}

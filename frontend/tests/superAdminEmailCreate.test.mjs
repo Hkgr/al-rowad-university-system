@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { ACCESS, canAccess, hasAssignedPermission, hasActualUniversityScope, hasRole, isSuperAdmin, landingRoute } from '../src/features/auth/auth.js'
 import { reportAccess } from '../src/features/portal-reports/reports.js'
 import { canAccessExecutiveReports } from '../src/features/executive-reports/access.js'
-import { printableCredentials } from '../src/features/technical-portal/lib/emailProvisioning.js'
+import { printableCredentials, provisioningFailure } from '../src/features/technical-portal/lib/emailProvisioning.js'
 const admin = { roles: ['super_admin'], permissions: [], access_scopes: [], is_super_admin: true }
 const source = path => readFileSync(new URL('../src/'+path, import.meta.url), 'utf8')
 test('administrator reaches all administrative gates without fabricated assignments', () => {
@@ -57,4 +57,16 @@ test('one guarded create dialog reuses current UI and keeps advanced review and 
   const nav = source('features/auth/adminPortalNav.js')
   for (const path of ['/technical','/president','/ministry','/vp/scientific','/vp/administrative','/dean','/student-affairs','/exam-board','/hr','/academic-structure','/professor/reports']) assert.ok(nav.includes(`'${path}'`), path)
   assert.match(source('components/layout/DashboardLayout.jsx'), /isSuperAdmin/)
+})
+test('basic creation and navigation notices never describe internal drafts', () => {
+  const page = source('features/technical-portal/pages/UniversityEmailPage.jsx')
+  const dialog = source('features/technical-portal/components/UniversityEmailMailboxDialog.jsx')
+  assert.doesNotMatch(page + dialog, /مسود/)
+  assert.match(page, /بيانات إنشاء غير مكتملة/)
+  assert.match(page, /لديك بيانات إنشاء لم تُنفذ بعد\. المغادرة ستلغي الاسم المدخل\. هل تريد المتابعة؟/)
+  assert.match(dialog, /إنشاء البريد غير مفعّل على الخادم بعد/)
+  for (const error of [{}, { status: 422 }, { status: 503, errorCode: 'university_email_provisioning_disabled' }]) {
+    assert.doesNotMatch(provisioningFailure(error), /مسود|العملية|draft|operation|generation|write_started_at/)
+  }
+  assert.equal(provisioningFailure({ status: 503, errorCode: 'university_email_provisioning_disabled' }), 'إنشاء البريد غير مفعّل على الخادم بعد.')
 })
