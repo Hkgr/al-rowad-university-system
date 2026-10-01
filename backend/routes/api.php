@@ -848,6 +848,11 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
             Route::post('provisioning/execute', 'execute')->middleware('throttle:10,1');
             Route::post('provisioning/reconcile', 'reconcile')->middleware('throttle:10,1');
             Route::post('provisioning/cancel', 'cancel')->middleware('throttle:10,1');
+            Route::post('provisioning/refresh-account', 'refreshAccount')->middleware('throttle:20,1');
+            Route::post('provisioning/reset-password', 'resetPassword')->middleware('throttle:10,1');
+            Route::post('provisioning/preview-link', 'previewLink')->middleware('throttle:20,1');
+            Route::post('provisioning/prepare-account', 'prepareAccount')->middleware('throttle:10,1');
+            Route::post('provisioning/execute-account', 'executeAccount')->middleware('throttle:10,1');
             Route::post('provisioning/receipt', 'receipt')->middleware('throttle:10,1');
         });
     Route::get('student/university-email', [\App\Http\Controllers\Api\UniversityEmailProvisioningController::class, 'selfEmail']);

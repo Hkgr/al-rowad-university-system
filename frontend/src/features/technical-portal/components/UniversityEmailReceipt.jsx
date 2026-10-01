@@ -1,7 +1,7 @@
 export default function UniversityEmailReceipt({ receipt, password }) {
   return <article dir="rtl" data-email-receipt style={{ width: 730, minHeight: 1000, padding: 42, background: 'white', color: '#172c24', fontFamily: 'Cairo, sans-serif', boxSizing: 'border-box', overflowWrap: 'anywhere' }}>
     <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '3px solid #176648', paddingBottom: 18 }}>
-      <div><h1 style={{ fontSize: 22, margin: 0 }}>جامعة الروّاد للعلوم والتقانة</h1><p style={{ fontSize: 18 }}>إيصال تسليم البريد الجامعي</p></div>
+      <div><h1 style={{ fontSize: 22, margin: 0 }}>جامعة الروّاد للعلوم والتقانة</h1><p style={{ fontSize: 18 }}>{receipt.receipt_purpose === 'password_reset' ? 'إيصال إعادة تعيين كلمة مرور البريد الجامعي' : 'إيصال تسليم البريد الجامعي'}</p></div>
       <img src="/logo.png" alt="شعار الجامعة" style={{ width: 90, height: 90 }} />
     </header>
     <p style={{ fontSize: 12 }}>مرجع الإيصال: <span dir="ltr">{receipt.receipt_id}</span></p>

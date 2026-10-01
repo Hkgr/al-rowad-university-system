@@ -12,6 +12,21 @@ final class UniversityEmailAccess
     public const CREATE = 'university_email.provision';
     public const RECEIPT = 'university_email.issue_receipt';
     public const RECOVER = 'university_email.reissue_initial_password';
+    public const RESET = 'university_email.reset_password';
+    public const SUSPEND = 'university_email.suspend';
+    public const ACTIVATE = 'university_email.activate';
+    public const LINK = 'university_email.link_existing';
+    public const PHASE3_PERMISSIONS = [self::RESET => 'إعادة تعيين كلمة مرور بريد مرتبط', self::SUSPEND => 'إيقاف بريد جامعي مرتبط',
+        self::ACTIVATE => 'تفعيل بريد جامعي مرتبط', self::LINK => 'التحقق وربط بريد جامعي سابق'];
+
+    public static function operationPermission(string $kind): string
+    {
+        return match ($kind) {
+            'create' => self::CREATE, 'reset' => self::RECOVER, 'password_reset' => self::RESET,
+            'suspend' => self::SUSPEND, 'activate' => self::ACTIVATE, 'link' => self::LINK,
+            default => abort(403),
+        };
+    }
     public const PERMISSIONS = [self::VIEW => 'عرض البريد الجامعي', self::MANAGE => 'تجهيز مسودات البريد الجامعي', self::CHECK => 'فحص اتصال البريد الجامعي'];
     public const PHASE2_PERMISSIONS = [self::CREATE => 'إنشاء صندوق البريد الجامعي', self::RECEIPT => 'إصدار إيصال بيانات دخول البريد الجامعي',
         self::RECOVER => 'إعادة إصدار كلمة أولية لبريد جامعي غير مسلّم'];

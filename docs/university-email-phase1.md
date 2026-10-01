@@ -1,5 +1,7 @@
 # University email Phase 1 setup and verification
 
+For the current combined deployment/incident sequence, see the [Phases 1–3 operations runbook](university-email-operations.md). This guide retains Phase 1's original scope and verification evidence.
+
 This feature prepares local student email drafts in the Technical Office. It does not create Mailcow mailboxes, generate passwords, deliver credentials, or link pre-existing mailboxes. It does not change personal student email, student academic data, or university login accounts. GET requests never create drafts.
 
 ## Sources and authorization

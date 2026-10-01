@@ -9,5 +9,5 @@ class StudentUniversityEmail extends Model
     protected $table = 'student_university_emails';
     protected $primaryKey = 'university_email_id';
     protected $guarded = ['university_email_id'];
-    protected function casts(): array { return ['quota_mb' => 'integer', 'revision' => 'integer']; }
+    protected function casts(): array { return ['quota_mb' => 'integer', 'revision' => 'integer', 'remote_snapshot' => 'array', 'remote_checked_at' => 'datetime']; }
 }

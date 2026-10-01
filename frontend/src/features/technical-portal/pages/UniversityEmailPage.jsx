@@ -134,7 +134,7 @@ function Workspace({ identity }) {
     {selected && detailBusy && !snapshot && <StatePanel state="loading" />}
     {detailError && <StatePanel state={[401,403].includes(detailError.status) ? 'forbidden' : 'error'} message={detailError.message} onRetry={() => loadStudent(selected)} />}
     {snapshot?.id === selected && <DraftEditor key={selected} data={snapshot.data} externalPending={pending} canManage={canAccess(ACCESS.universityEmailManage)} isCurrent={isCurrent} onDirty={setDirty} onPending={setPending} onDenied={deny} onSaved={student => setList(current => updateStudentSummary(current, student))} onRefresh={() => loadStudent(selected)} refreshing={detailBusy} />}
-    {snapshot?.id === selected && <UniversityEmailProvisioning key={`provisioning-${selected}`} studentId={selected} revision={snapshot.data.draft?.revision || 0} draftDirty={dirty} draftPending={pending} isCurrent={isCurrent} onSensitive={setSensitive} onPending={setPending} onDenied={deny} onRefresh={async () => {
+    {snapshot?.id === selected && <UniversityEmailProvisioning key={`provisioning-${selected}`} studentId={selected} studentName={snapshot.data.student.full_name} revision={snapshot.data.draft?.revision || 0} draftDirty={dirty} draftPending={pending} isCurrent={isCurrent} onSensitive={setSensitive} onPending={setPending} onDenied={deny} onRefresh={async () => {
       if (await loadStudent(selected)) { setRetry(r => r + 1) }
     }} />}
     {blocker.state === 'blocked' && <ManualGradeDialog title={pending ? 'عملية حفظ قيد التنفيذ' : 'مسودة غير محفوظة'} disabled={pending} onConfirm={() => { if (!pending) blocker.proceed() }} confirmLabel="إلغاء المسودة والمتابعة" confirmTone="discard" onCancel={() => blocker.reset()}>
@@ -178,7 +178,7 @@ function DraftEditor({ data, externalPending, canManage, isCurrent, onDirty, onP
   }
   const reviewServer = async () => { setReviewed(false); if (await onRefresh()) setReviewed(true) }
   // A refresh never silently replaces/rebases the local proposal or its original revision.
-  return <Section title={`تجهيز بريد ${data.student.full_name}`} subtitle="المسودة مستقلة عن البريد الشخصي وحساب الدخول. حصة الطالب 50 MiB.">
+  return <Section title={`تجهيز بريد ${data.student.full_name}`} subtitle="المسودة مستقلة عن البريد الشخصي وحساب الدخول. حصة الصندوق الجديد 50 MiB؛ الصندوق السابق يحتفظ بحصته.">
     <InfoGrid items={[[ 'الرقم الجامعي', data.student.student_number ], ['الكلية', data.student.college || 'غير محدد'], ['التجهيز', stored ? (stored.provisioning_status === 'draft' ? 'مسودة — لم ينشأ الصندوق' : 'تم إنشاء الصندوق') : 'لم تُحفظ مسودة']]} />
     {success && stored?.provisioning_status !== 'created' && <div className="bg-green-50 border border-green-200 rounded-[12px] px-5 py-3 mt-3 text-[13px] text-green-700" role="status">{success}</div>}
     {error && <div className="bg-red-50 border border-red-200 rounded-[12px] px-5 py-3 mt-3 text-[13px] text-red-700" role="alert">{error}</div>}

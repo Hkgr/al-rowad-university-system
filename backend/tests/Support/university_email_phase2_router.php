@@ -26,8 +26,15 @@ Http::fake(function ($request) use ($directory) {
     if (! $reset && ! str_contains($request->url(), '/add/mailbox')) throw new RuntimeException('Unexpected synthetic Mailcow route');
     $address = $reset ? $request['items'][0] : $request['local_part'].'@'.$request['domain'];
     // Fake upstream persists identity/ownership only, NEVER a password or API key.
-    $boxes[$address] = ['username' => $address, 'domain' => 'alrowaduni.edu.sy', 'quota' => 50 * 1048576, 'active_int' => 1,
-        'attributes' => ['force_pw_update' => 1], 'tags' => $reset ? $request['attr']['tags'] : $request['tags']];
+    if (! $reset) $boxes[$address] = ['username' => $address, 'domain' => 'alrowaduni.edu.sy', 'quota' => 50 * 1048576, 'quota_used' => 1048576,
+        'active_int' => 1, 'attributes' => ['force_pw_update' => 1], 'tags' => $request['tags']];
+    else {
+        if (! isset($boxes[$address])) throw new RuntimeException('Synthetic target missing');
+        $attr = $request['attr'];
+        if (isset($attr['tags'])) $boxes[$address]['tags'] = $attr['tags'];
+        if (isset($attr['active'])) $boxes[$address]['active_int'] = (int) $attr['active'];
+        if (isset($attr['force_pw_update'])) $boxes[$address]['attributes']['force_pw_update'] = (int) $attr['force_pw_update'];
+    }
     file_put_contents($path, json_encode($boxes, JSON_THROW_ON_ERROR), LOCK_EX);
     return Http::response([['type' => 'success', 'msg' => [$reset ? 'mailbox_modified' : 'mailbox_added', $address]]]);
 });
