@@ -14,7 +14,7 @@ final class UniversityEmailController extends Controller
     {
         UniversityEmailAccess::authorize($request->user(), UniversityEmailAccess::VIEW);
         $this->keys($request->query(), ['q', 'page', 'per_page']);
-        $input = $request->validate(['q' => 'sometimes|string|max:120', 'page' => 'sometimes|integer|min:1', 'per_page' => 'sometimes|integer|min:1|max:100']);
+        $input = $request->validate(['q' => 'sometimes|nullable|string|max:120', 'page' => 'sometimes|integer|min:1', 'per_page' => 'sometimes|integer|min:1|max:100']);
         return response()->json($service->search($request->user(), $input));
     }
     public function show(Request $request, int $student, UniversityEmailService $service): JsonResponse

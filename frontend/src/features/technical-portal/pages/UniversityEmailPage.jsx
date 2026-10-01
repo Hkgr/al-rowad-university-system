@@ -7,7 +7,7 @@ import DataTable from '../../../components/table/DataTable'
 import FilterBar from '../../../components/table/FilterBar'
 import { PageHeader, Section, Notice, StatePanel, InfoGrid, Badge } from '../../ministry-portal/components/MinistryUi'
 import ManualGradeDialog from '../../exam-board/components/ManualGradeDialog'
-import { EMAIL_API, draftPayload, emailFailure, previewAddress, requestSequence, requiresReview } from '../lib/universityEmail'
+import { EMAIL_API, draftPayload, emailFailure, preparationLabels, previewAddress, requestSequence, requiresReview, studentSearchQuery, updateStudentSummary } from '../lib/universityEmail'
 
 const button = 'inline-flex items-center justify-center gap-2 py-2 px-4 rounded-[10px] bg-primary text-white text-[13px] font-bold disabled:opacity-50 hover:bg-primary-dark'
 const secondary = 'inline-flex items-center justify-center gap-2 py-2 px-4 rounded-[10px] border border-primary/20 bg-white text-primary-dark text-[13px] font-bold disabled:opacity-50'
@@ -74,7 +74,7 @@ function Workspace({ identity }) {
     listAbort.current = controller
     const load = async () => {
       try {
-        const json = await apiRequest(`${EMAIL_API}/students?${new URLSearchParams({ q: applied, page, per_page: 15 })}`, { signal: controller.signal })
+        const json = await apiRequest(`${EMAIL_API}/students?${studentSearchQuery(applied, page)}`, { signal: controller.signal })
         if (!Array.isArray(json?.data) || !json?.meta) throw new Error('استجابة البحث غير صالحة؛ أعد المحاولة.')
         if (sequence.accepts(seq) && isCurrent() && applied === currentIntent.current && page === currentPage.current) { setList(json); setLoading(false); setListError(null) }
       } catch (error) {
@@ -113,6 +113,8 @@ function Workspace({ identity }) {
     { key: 'student', header: 'الطالب', dir: 'rtl', render: row => <div><div className="font-semibold">{row.full_name}</div><div className="text-[12px] text-text-light" dir="ltr">{row.student_number}</div></div> },
     { key: 'college', header: 'الكلية', render: row => row.college || 'غير محدد' },
     { key: 'program', header: 'البرنامج', render: row => row.program || 'غير محدد' },
+    { key: 'preparation', header: 'تجهيز البريد — محلي', render: row => <div><Badge>{preparationLabels(row.email_preparation).preparation}</Badge>{row.email_preparation?.email_address && <div dir="ltr" className="mt-1 text-[12px] break-all">{row.email_preparation.email_address}</div>}</div> },
+    { key: 'handover', header: 'التسليم', render: row => preparationLabels(row.email_preparation).handover },
     { key: 'action', header: 'الإجراء', render: row => <button type="button" className={secondary} onClick={() => select(row.student_id)} disabled={pending}>تجهيز البريد</button> },
   ]
   if (denied) return <StatePanel state="forbidden" message="انتهى الوصول المصرح؛ أُخفيت بيانات الطلاب. أعد تسجيل الدخول بعد التحقق من صلاحياتك." />
@@ -125,18 +127,19 @@ function Workspace({ identity }) {
       {health ? <InfoGrid items={[[ 'النطاق', health.domain ], ['حالة النطاق', health.active ? 'فعال' : 'غير فعال'], ['الصناديق الحالية', health.mailbox_count], ['الحد الحالي', health.mailbox_limit], ['المتاح حاليًا', health.remaining_mailboxes], ['وقت الفحص', health.checked_at]]} /> : !healthError && <p className="text-[12px] text-text-light">لا يتم الاتصال تلقائيًا أو لكل طالب. هذا الفحص لا يغير إعدادات Mailcow.</p>}
     </Section>}
     <FilterBar search={{ value: search, onChange: changeSearch, placeholder: 'ابحث باسم الطالب بالعربية أو رقمه الجامعي…' }} />
+    {list?.email_schema_ready === false && <Notice tone="warning">تجهيز البريد غير جاهز؛ تعذر قراءة حالته المحلية. يلزم تطبيق migration المرحلة الأولى قبل التجهيز، ولا يعني ذلك أن الطلاب بلا مسودات.</Notice>}
     {listError && <StatePanel state={[401,403].includes(listError.status) ? 'forbidden' : 'error'} message={listError.message} onRetry={() => { setLoading(true); setRetry(r => r + 1) }} />}
     {!listError && <DataTable columns={columns} rows={list?.data || []} rowKey={row => row.student_id} loading={loading} page={page} totalPages={list?.meta?.last_page || 1} onPageChange={value => { if (value === page) return; currentPage.current = value; listSequence.current.invalidate(); listAbort.current?.abort(); setLoading(true); setPage(value) }} emptyIcon={FaEnvelope} emptyTitle="لا توجد نتائج ضمن نطاقك" />}
     {selected && detailBusy && !snapshot && <StatePanel state="loading" />}
     {detailError && <StatePanel state={[401,403].includes(detailError.status) ? 'forbidden' : 'error'} message={detailError.message} onRetry={() => loadStudent(selected)} />}
-    {snapshot?.id === selected && <DraftEditor key={selected} data={snapshot.data} canManage={canAccess(ACCESS.universityEmailManage)} isCurrent={isCurrent} onDirty={setDirty} onPending={setPending} onDenied={deny} onRefresh={() => loadStudent(selected)} refreshing={detailBusy} />}
+    {snapshot?.id === selected && <DraftEditor key={selected} data={snapshot.data} canManage={canAccess(ACCESS.universityEmailManage)} isCurrent={isCurrent} onDirty={setDirty} onPending={setPending} onDenied={deny} onSaved={student => setList(current => updateStudentSummary(current, student))} onRefresh={() => loadStudent(selected)} refreshing={detailBusy} />}
     {blocker.state === 'blocked' && <ManualGradeDialog title={pending ? 'عملية حفظ قيد التنفيذ' : 'مسودة غير محفوظة'} disabled={pending} onConfirm={() => { if (!pending) blocker.proceed() }} confirmLabel="إلغاء المسودة والمتابعة" confirmTone="discard" onCancel={() => blocker.reset()}>
       <p>{pending ? 'انتظر نتيجة الحفظ قبل مغادرة الصفحة.' : 'هل تريد إلغاء المسودة والانتقال إلى الصفحة المطلوبة؟'}</p>
     </ManualGradeDialog>}
   </div>
 }
 
-function DraftEditor({ data, canManage, isCurrent, onDirty, onPending, onDenied, onRefresh, refreshing }) {
+function DraftEditor({ data, canManage, isCurrent, onDirty, onPending, onDenied, onSaved, onRefresh, refreshing }) {
   const [baseline, setBaseline] = useState(data.draft), [name, setName] = useState(data.draft?.english_first_name || '')
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [success, setSuccess] = useState(''), [review, setReview] = useState(false)
   const [reviewed, setReviewed] = useState(false)
@@ -156,6 +159,7 @@ function DraftEditor({ data, canManage, isCurrent, onDirty, onPending, onDenied,
       const json = await apiRequest(`${EMAIL_API}/students/${data.student.student_id}/draft`, { method: 'PUT', body: JSON.stringify(draftPayload(proposed, baseline)) })
       if (!alive.current || !isCurrent()) return
       setBaseline(json.data.draft); setName(json.data.draft.english_first_name); setReview(false)
+      onSaved(json.data.student)
       setSuccess('حُفظت المسودة محليًا — لم يتم إنشاء الصندوق أو تسليمه.'); onRefresh()
     } catch (failure) {
       if (!alive.current || !isCurrent()) return

@@ -1,4 +1,23 @@
 export const EMAIL_API = '/v1/technical/university-email'
+export function studentSearchQuery(query, page) {
+  const params = new URLSearchParams({ page, per_page: 15 })
+  const normalized = query.trim()
+  if (normalized) params.set('q', normalized)
+  return params.toString()
+}
+export function preparationLabels(summary) {
+  if (summary?.available !== true) return { preparation: 'غير متاح — تعذر قراءة تجهيز البريد', handover: 'غير متاح' }
+  if (!summary.provisioning_status) return { preparation: 'لم تُجهّز', handover: 'لم يبدأ التسليم' }
+  return {
+    preparation: ({ draft: 'مسودة محفوظة', created: 'إنشاء مسجل محليًا' })[summary.provisioning_status] || 'حالة غير معروفة',
+    handover: ({ not_delivered: 'غير مسلّم', delivered: 'تم التسليم' })[summary.handover_status] || 'حالة غير معروفة',
+  }
+}
+export function updateStudentSummary(list, student) {
+  if (!list || !student) return list
+  return { ...list, data: list.data.map(row => Number(row.student_id) === Number(student.student_id)
+    ? { ...row, email_preparation: student.email_preparation } : row) }
+}
 export function normalizeEnglishName(value) { return value.trim().toLowerCase() }
 export function previewAddress(name, studentNumber, domain) {
   const normalized = normalizeEnglishName(name)

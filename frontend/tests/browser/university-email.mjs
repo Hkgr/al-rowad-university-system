@@ -14,7 +14,8 @@ let serial = 0, stored = null, forceConflict = false, loseResponse = false
 const pending = new Map(), errors = [], writes = []
 const actor = { user_id: 8, username: 'technical.synthetic', roles: ['technical_team'], permissions: ['technical_portal.access', 'user_accounts.view', 'university_email.view', 'university_email.manage', 'university_email.check_connection'], access_scopes: [{ type: 'university', id: 91 }] }
 const student = { student_id: 1, full_name: 'أحمد اختبار', student_number: 'R24011002', college: 'كلية تجريبية', program: 'برنامج تجريبي' }
-const detail = () => ({ data: { student, draft: stored, settings: { domain: 'alrowaduni.edu.sy', quota_mb: 50 } } })
+const summarizedStudent = () => ({ ...student, email_preparation: { available: true, email_address: stored?.email_address ?? null, provisioning_status: stored?.provisioning_status ?? null, handover_status: stored?.handover_status ?? null } })
+const detail = () => ({ data: { student: summarizedStudent(), draft: stored, settings: { domain: 'alrowaduni.edu.sy', quota_mb: 50 } } })
 function send(method, params = {}) {
   return new Promise((resolve, reject) => { const id = ++serial; const timer = setTimeout(() => { pending.delete(id); reject(Error(method+' timeout')) }, 12000); pending.set(id, { resolve, reject, timer }); ws.send(JSON.stringify({ id, method, params })) })
 }
@@ -37,7 +38,7 @@ ws.onmessage = async event => {
     if (url.pathname.endsWith('/user')) data = { success: true, data: actor }
     else if (url.pathname.endsWith('/technical/accounts/options')) data = { data: { roles: [], statuses: [], actor: { can_manage: false } } }
     else if (url.pathname.endsWith('/technical/accounts')) data = { data: { data: [{ user_id: 8, username: actor.username, email: 'synthetic@example.invalid', roles: [], status: { code: 'active' } }], meta: { total: 1, per_page: 15, last_page: 1 } } }
-    else if (url.pathname.endsWith('/university-email/students')) data = { data: [student], meta: { total: 1, per_page: 15, last_page: 1 } }
+    else if (url.pathname.endsWith('/university-email/students')) data = { data: [summarizedStudent()], email_schema_ready: true, meta: { total: 1, per_page: 15, last_page: 1 } }
     else if (url.pathname.endsWith('/university-email/students/1')) data = detail()
     else if (url.pathname.endsWith('/university-email/students/1/draft')) {
       assert.equal(request.method, 'PUT'); const payload = JSON.parse(request.postData); writes.push(payload)
@@ -77,6 +78,7 @@ try {
       }
       await click('حفظ المسودة'); await wait("document.querySelector('main')?.textContent.includes('حُفظت المسودة محليًا')")
       assert.equal(await evaluate("document.querySelector('#english-first-name').value"), 'ahmad')
+      await wait("document.querySelector('tbody tr')?.textContent.includes('مسودة محفوظة') && document.querySelector('tbody tr').textContent.includes('ahmad.r24011002@alrowaduni.edu.sy')")
       await screenshot('email-'+size)
       await evaluate("document.querySelector('#english-first-name').scrollIntoView({block:'center'})")
       await screenshot('editor-'+size)

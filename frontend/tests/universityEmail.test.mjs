@@ -2,9 +2,32 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { ACCESS, canAccess } from '../src/features/auth/auth.js'
-import { draftPayload, emailFailure, normalizeEnglishName, previewAddress, requestSequence, requiresReview } from '../src/features/technical-portal/lib/universityEmail.js'
+import { draftPayload, emailFailure, normalizeEnglishName, preparationLabels, previewAddress, requestSequence, requiresReview, studentSearchQuery, updateStudentSummary } from '../src/features/technical-portal/lib/universityEmail.js'
 const source = path => readFileSync(new URL('../src/'+path, import.meta.url), 'utf8')
 const technical = { roles: ['technical_team'], permissions: ['technical_portal.access', 'university_email.view', 'university_email.manage', 'university_email.check_connection'] }
+test('blank search is omitted and nonempty Arabic/number searches keep applied pagination', () => {
+  for (const q of ['', '   ']) assert.equal(new URLSearchParams(studentSearchQuery(q, 2)).has('q'), false)
+  for (const q of ['أحمد', 'R24011002']) {
+    const params = new URLSearchParams(studentSearchQuery(' '+q+' ', 3))
+    assert.equal(params.get('q'), q); assert.equal(params.get('page'), '3')
+  }
+})
+test('local draft and handover states stay separate and missing schema is not unprepared', () => {
+  assert.match(preparationLabels(null).preparation, /غير متاح/)
+  assert.match(preparationLabels({available:false}).preparation, /غير متاح/)
+  assert.equal(preparationLabels({available:true}).preparation, 'لم تُجهّز')
+  assert.deepEqual(preparationLabels({available:true, provisioning_status:'draft', handover_status:'not_delivered'}), {preparation:'مسودة محفوظة', handover:'غير مسلّم'})
+  assert.deepEqual(preparationLabels({available:true, provisioning_status:'created', handover_status:'delivered'}), {preparation:'إنشاء مسجل محليًا', handover:'تم التسليم'})
+  assert.equal(preparationLabels({available:true, provisioning_status:'unexpected'}).preparation, 'حالة غير معروفة')
+})
+test('confirmed save updates only its visible summary and leaves pagination and other rows intact', () => {
+  const list = {data:[{student_id:1},{student_id:2}],meta:{current_page:2,total:30}}, summary = {available:true,provisioning_status:'draft',email_address:'a@example.invalid'}
+  const updated = updateStudentSummary(list, {student_id:1,email_preparation:summary})
+  assert.deepEqual(updated.data[0].email_preparation, summary)
+  assert.equal(updated.data[1],list.data[1]); assert.equal(updated.meta,list.meta)
+  assert.equal(list.data[0].email_preparation,undefined)
+  assert.equal(updateStudentSummary(null,{student_id:1}),null)
+})
 test('dedicated view, manage and health permissions are assigned and do not imply account management', () => {
   for (const access of [ACCESS.universityEmail, ACCESS.universityEmailManage, ACCESS.universityEmailCheck]) assert.equal(canAccess(access, technical), true)
   assert.equal(canAccess(ACCESS.technicalAccountsManage, technical), false)

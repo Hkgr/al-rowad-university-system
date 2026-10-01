@@ -17,6 +17,14 @@ All four APIs require an active account, an effective `technical_team` role and 
 
 The student query reuses `DataScopeService::scopeManualGradeStudents`, which is an existing explicit-scope student projection: university/PRES, college, department, program or section. It supplies neither virtual super-admin scope nor faculty-assignment authority. No new scope is automatically assigned. Existing operators need a valid assigned scope using the current account-management process; without one, search returns no students and direct student access is denied. Student login accounts are not required for search.
 
+### Search regression repair in PR 146
+
+The remote branch was fetched and checked against reviewed HEAD `a2007db7d86d1b20519b3bcaf0cdf9d75e25861e`; there were no later commits or existing worktree edits. Before the fix, two separate HTTP regressions reproduced 422 for `q=` and `q=%20%20%20` through the actual Laravel middleware. `TrimStrings` and `ConvertEmptyStringsToNull` normalized blank search to null, but the controller required a string. The server now accepts `sometimes|nullable|string|max:120`; the client omits a blank query. Missing, empty and whitespace-only search list only the operator's scoped students. Arrays, overlong strings, unknown keys and invalid pagination remain rejected.
+
+Search adds `email_schema_ready` and a limited `email_preparation` object to each row: availability, saved address, provisioning state and handover state. One bounded local query loads email summaries for the paginated student IDs. No student-specific Mailcow requests occur. A ready table with no draft displays «لم تُجهّز»; a saved draft displays «مسودة محفوظة» with its saved address, separately from delivery. These are local records, not verification of a Mailcow mailbox. When the migration is absent, search still works but explicitly reports unavailable preparation data, not an invented unprepared state. Detail/save retain the controlled schema-not-ready 503.
+
+The confirmed save response contains the same summary and updates only that student's visible row, preserving other rows and pagination. A failed or uncertain save does not optimistically update the summary or retry. This repair adds no migration, permission, provisioning, password or printing functionality.
+
 The permission-provisioning command creates/maps only the three new permission codes to the existing active `technical_team` role in the active `users_permissions` module. It does not grant portal access, create roles/users/scopes, grant account-management permissions, or change any other mappings. Inactive/conflicting definitions fail without partial changes. Run it only as an explicit deployment step, not via a full seeder.
 
 ## Draft storage and conflicts
@@ -80,20 +88,31 @@ Changing application config does not modify Mailcow's domain/default/existing qu
 
 The page reuses the current Technical Office shell and navigation, `AccountsPermissionsPage` table/search/actions, `TechnicalHome` header styling, shared `DataTable`/`FilterBar`, the current `MinistryUi` header/sections/notices, and the current `ManualGradeDialog` for guarded navigation. Cairo, RTL, sizes, borders, colors and responsive behavior are retained; no global design file was changed. Reference and new-page desktop/mobile screenshots were compared using synthetic data.
 
-Verification results are recorded in the PR. PHPUnit uses isolated synthetic SQLite fixtures and `Http::fake` with stray requests forbidden, not a production database or a real Mailcow key. Node tests cover pure logic/static wiring; a separate built-React Chrome regression uses synthetic API responses. These are not live Laravel-browser/Mailcow integration or MariaDB multi-connection lock verification. A suitable local MariaDB server/client was not available; SQLite and stale-revision checks do not prove InnoDB lock behavior. No dependencies were installed and no production data or previously exposed key was used.
+PHPUnit uses isolated synthetic SQLite fixtures and `Http::fake` with stray requests forbidden, not production data or a real Mailcow key. Node tests cover pure logic/static wiring. Both browser checks below were executed with a production React build: the existing synthetic-response regression and a new **real React-to-Laravel** regression using an exported isolated synthetic SQLite fixture and real Sanctum tokens. The latter does not intercept application APIs. It covers first open, Arabic/name and number searches, whitespace edits, clear/search pagination, save and immediate row summary update, reopen, unauthorized API/UI access, and a stale-save 409, at desktop 1440 and mobile 390 widths. Screenshots were inspected against the named current-page references. The built-in browser connection was unavailable, so the existing installed Chrome and CDP were used; no dependencies were installed.
+
+The live local browser made exactly two explicit PUT saves. A read-only check of its isolated database found one draft at revision 2 and exactly two safe audit records (created revision 1, updated revision 2); the rejected stale/unauthorized operations left no additional audit or draft. This is sequential SQLite integration evidence, **not** concurrent-save/InnoDB evidence. No local MySQL/MariaDB client or listening service on port 3306 was available, so independent-connection concurrency remains unexecuted. Live Mailcow and production/Plesk verification also remain unexecuted.
 
 The full repository lint has existing errors outside the changed files; changed-file lint is reported separately. Two historical source contracts are not green: the calendar schema-repair contract still requires the now-existing Phase 3 policy service to be absent, and the supplementary hardening contract forbids **any** migration in the entire PR diff. The latter is incompatible with this task's explicitly requested additive email migration. Neither contract was weakened or changed.
 
+`php artisan test --filter=...` cannot complete repository-wide discovery because the existing `AcademicCalendarPhase5OccurrenceResponseTest::result()` overrides a final PHPUnit method. The relevant files were instead executed directly with `php vendor/bin/phpunit`; no historical test was changed or skipped inside those files.
+
 | Executed check | Result |
 | --- | --- |
-| Targeted PHPUnit: email behavior/contract, account administration, technical portal/activity SQL contracts | 56 passed, 879 assertions |
-| All independent frontend Node tests | 252 passed |
+| Targeted PHPUnit: email behavior/contract, account administration, technical portal/activity SQL contracts | 60 passed, 919 assertions; actual HTTP middleware included |
+| All independent frontend Node tests | 255 passed |
 | PHP source contracts | 31 of 33 passed; two historical/context limitations explained above |
-| Changed PHP files `php -l` | 15 passed |
+| PHP files changed by this repair `php -l` | 3 passed |
 | All changed JS/JSX/MJS files ESLint | Passed with no errors or warnings |
 | Full `npm run lint` | Failed: 90 errors, 16 warnings in unchanged files |
-| Vite production build | Passed; existing large-chunk warning remains |
+| Vite production build | Passed; the existing large application bundle remains |
 | Built React in clean headless Chrome with synthetic API, desktop 1440 and mobile 390 | Passed: view/save, cancelled sidebar navigation followed by save, conflict retains proposal, explicit server review, lost write response without retry, Mailcow unavailable while local save remains available; screenshots compared with reference |
+| Built React connected to real local Laravel with isolated synthetic SQLite, desktop 1440 and mobile 390 | Passed: search/clear/pagination/save/reopen/row-summary/unauthorized scenarios above; 66 real API responses, two explicit UI saves; no static API interception |
 | Composer validation and locked platform requirements | Passed |
 | `git diff --check` | Passed |
-| Live Mailcow, Laravel-connected browser, MariaDB multi-connection concurrency, Plesk deployment | Not executed |
+| Live Mailcow, MariaDB multi-connection concurrency, Plesk deployment | Not executed |
+
+### Reproduce the isolated Laravel browser check
+
+Use an existing local PHP/Node/Chrome installation and a newly created directory beneath the system temp directory. Set `UNIVERSITY_EMAIL_BROWSER_DIR` to that directory, then run the email PHPUnit file with filter `test_export_isolated_synthetic_browser_fixture_when_explicitly_requested`. The test requires the testing in-memory SQLite connection and exports synthetic `email.sqlite` and `identities.json` only beneath temp. The identity file contains local test tokens: keep it private and never commit it or use production credentials.
+
+Start Laravel on `127.0.0.1:8099` with explicit process-only `APP_ENV=testing`, `DB_CONNECTION=sqlite`, `DB_DATABASE=<temp>/email.sqlite`, empty `DB_URL`, array cache/session, a synthetic application key and **empty** `MAILCOW_API_KEY`. Build React with process-only `VITE_API_BASE_URL=http://127.0.0.1:8099/api`, serve its preview on `localhost:5173`, and start clean headless Chrome with its own temp profile and debug port 9244. Run `node tests/browser/university-email-live.mjs` from frontend with the same fixture-directory variable. The script blocks external HTTPS requests and uses real application HTTP requests. Restore the normal release API configuration when building deployment assets; never deploy this localhost test build. Stop the local helpers afterward.

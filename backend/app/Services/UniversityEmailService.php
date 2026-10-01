@@ -29,7 +29,14 @@ final class UniversityEmailService
             ->orWhereRaw("TRIM(CONCAT(first_name, ' ', last_name)) LIKE ?", ['%'.$q.'%']));
         // CONCAT works on MariaDB and the supported Laravel SQLite connection.
         $page = $query->orderBy('student_number')->orderBy('student_id')->paginate($input['per_page'] ?? 15, ['*'], 'page', $input['page'] ?? 1);
-        return ['data' => $page->getCollection()->map(fn (Student $s) => $this->studentData($s))->all(),
+        $schemaReady = Schema::hasTable('student_university_emails');
+        // One bounded local lookup per page, never a Mailcow call or per-student query.
+        $drafts = $schemaReady ? StudentUniversityEmail::query()
+            ->whereIn('student_id', $page->getCollection()->modelKeys())
+            ->get(['student_id', 'email_address', 'provisioning_status', 'handover_status'])->keyBy('student_id') : collect();
+        return ['data' => $page->getCollection()->map(fn (Student $s) => $this->studentData($s) +
+                ['email_preparation' => $this->emailSummary($drafts->get($s->student_id), $schemaReady)])->all(),
+            'email_schema_ready' => $schemaReady,
             'meta' => ['total' => $page->total(), 'current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'per_page' => $page->perPage()]];
     }
 
@@ -110,8 +117,13 @@ final class UniversityEmailService
     {
         $student->loadMissing('academicProgram.department.college');
         $draft = StudentUniversityEmail::query()->where('student_id', $student->student_id)->first();
-        return ['student' => $this->studentData($student), 'draft' => $draft ? $draft->only(['university_email_id', 'english_first_name', 'email_address', 'quota_mb', 'provisioning_status', 'handover_status', 'revision', 'created_at', 'updated_at']) : null,
+        return ['student' => $this->studentData($student) + ['email_preparation' => $this->emailSummary($draft, true)], 'draft' => $draft ? $draft->only(['university_email_id', 'english_first_name', 'email_address', 'quota_mb', 'provisioning_status', 'handover_status', 'revision', 'created_at', 'updated_at']) : null,
             'settings' => $this->settings()];
+    }
+    private function emailSummary(?StudentUniversityEmail $draft, bool $available): array
+    {
+        return ['available' => $available, 'email_address' => $draft?->email_address,
+            'provisioning_status' => $draft?->provisioning_status, 'handover_status' => $draft?->handover_status];
     }
     private function studentData(Student $student): array
     {

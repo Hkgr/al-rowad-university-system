@@ -41,6 +41,72 @@ class UniversityEmailPhase1Test extends TestCase
         return $this->putJson(self::ROOT.'/students/1/draft', $input ?: ['english_first_name' => ' Ahmad ', 'revision' => 0]);
     }
 
+    public function test_empty_search_through_real_normalizing_http_middleware(): void
+    {
+        $total = $this->getJson(self::ROOT.'/students')->assertOk()->json('meta.total');
+        foreach (['?q=', '?q=%20%20%20'] as $query) {
+            $this->getJson(self::ROOT.'/students'.$query)->assertOk()->assertJsonPath('meta.total', $total);
+        }
+        $this->getJson(self::ROOT.'/students?q='.urlencode('أحمد'))->assertOk()->assertJsonPath('meta.total', 1);
+        $this->getJson(self::ROOT.'/students?q=R24011002')->assertOk()->assertJsonPath('meta.total', 1);
+        foreach (['?q[]=invalid', '?q='.str_repeat('a', 121), '?page=invalid'] as $query) {
+            $this->getJson(self::ROOT.'/students'.$query)->assertUnprocessable();
+        }
+        $this->assertDatabaseCount('student_university_emails', 0);
+        Http::assertNothingSent();
+    }
+
+    public function test_whitespace_search_through_real_normalizing_http_middleware(): void
+    {
+        $this->getJson(self::ROOT.'/students?q=%20%20%20')->assertOk();
+    }
+
+    public function test_search_has_safe_local_preparation_and_separate_handover_summaries(): void
+    {
+        $url = self::ROOT.'/students?q=R24011002';
+        $this->getJson($url)->assertOk()->assertJsonPath('email_schema_ready', true)
+            ->assertJsonPath('data.0.email_preparation', ['available' => true, 'email_address' => null, 'provisioning_status' => null, 'handover_status' => null]);
+        $saved = $this->save()->assertOk();
+        $summary = $saved->json('data.student.email_preparation');
+        $this->assertSame(['available', 'email_address', 'provisioning_status', 'handover_status'], array_keys($summary));
+        $this->getJson($url)->assertOk()->assertJsonPath('data.0.email_preparation', $summary);
+        $this->assertSame('draft', $summary['provisioning_status']);
+        $this->assertSame('not_delivered', $summary['handover_status']);
+        DB::table('student_university_emails')->where('student_id', 1)->update(['provisioning_status' => 'created', 'handover_status' => 'delivered']);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.0.email_preparation.provisioning_status', 'created')
+            ->assertJsonPath('data.0.email_preparation.handover_status', 'delivered');
+        $this->assertDatabaseCount('user_activity_logs', 1); // search never writes or calls Mailcow
+        Http::assertNothingSent();
+    }
+
+    public function test_export_isolated_synthetic_browser_fixture_when_explicitly_requested(): void
+    {
+        // Opt-in fixture export for real React -> Laravel checks, never production data.
+        $this->getJson(self::ROOT.'/students')->assertOk();
+        if (! ($directory = getenv('UNIVERSITY_EMAIL_BROWSER_DIR'))) return;
+        $directory = realpath($directory);
+        $this->assertNotFalse($directory);
+        $this->assertStringStartsWith(strtolower(realpath(sys_get_temp_dir())).DIRECTORY_SEPARATOR, strtolower($directory).DIRECTORY_SEPARATOR);
+        $this->assertSame(':memory:', config('database.connections.sqlite.database'));
+        $student = (array) DB::table('students')->where('student_id', 1)->first();
+        for ($id = 100; $id < 130; $id++) {
+            DB::table('students')->insert(array_replace($student, ['student_id' => $id, 'student_number' => 'RTEST'.$id, 'first_name' => 'طالب', 'last_name' => 'تجريبي '.$id]));
+        }
+        Schema::create('personal_access_tokens', function (Blueprint $t): void {
+            $t->id(); $t->string('tokenable_type'); $t->unsignedBigInteger('tokenable_id');
+            $t->string('name'); $t->string('token', 64)->unique(); $t->text('abilities')->nullable();
+            $t->timestamp('last_used_at')->nullable(); $t->timestamp('expires_at')->nullable(); $t->timestamps();
+        });
+        $actors = [];
+        foreach (['technical' => 8, 'unauthorized' => 1] as $name => $id) {
+            $user = User::findOrFail($id);
+            $actors[$name] = ['identity' => app(\App\Services\UserIdentityService::class)->payload($user),
+                'token' => $user->createToken('isolated-email-browser')->plainTextToken];
+        }
+        file_put_contents($directory.'/identities.json', json_encode($actors, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+        DB::statement('VACUUM INTO ?', [$directory.'/email.sqlite']);
+    }
+
     public function test_search_and_read_are_scoped_paginated_and_write_nothing_without_login_account(): void
     {
         $this->getJson(self::ROOT.'/students?q='.urlencode('أحمد اختبار'))->assertOk()->assertJsonPath('meta.total', 1)->assertJsonPath('data.0.student_number', 'R24011002');
@@ -146,15 +212,24 @@ class UniversityEmailPhase1Test extends TestCase
     public function test_search_query_count_is_bounded_and_actual_college_scope_is_preserved(): void
     {
         DB::table('user_access_scopes')->where('user_id', 8)->update(['scope_type' => 'college', 'scope_id' => 1]);
+        $this->save()->assertOk();
         DB::enableQueryLog();
         $first = $this->getJson(self::ROOT.'/students?per_page=100')->assertOk();
         $queries = count(DB::getQueryLog());
         $student = (array) DB::table('students')->where('student_id', 1)->first();
-        for ($id = 100; $id < 130; $id++) DB::table('students')->insert(array_replace($student, ['student_id' => $id, 'student_number' => 'RTEST'.$id]));
+        $draft = StudentUniversityEmail::first()->getAttributes();
+        unset($draft['university_email_id']);
+        for ($id = 100; $id < 130; $id++) {
+            DB::table('students')->insert(array_replace($student, ['student_id' => $id, 'student_number' => 'RTEST'.$id]));
+            DB::table('student_university_emails')->insert(array_replace($draft, ['student_id' => $id, 'email_address' => 'test'.$id.'@alrowaduni.edu.sy']));
+        }
         DB::flushQueryLog();
         $many = $this->getJson(self::ROOT.'/students?per_page=100')->assertOk();
         $this->assertSame($first->json('meta.total') + 30, $many->json('meta.total'));
         $this->assertLessThanOrEqual($queries + 1, count(DB::getQueryLog()));
+        $emailQueries = array_filter(DB::getQueryLog(), fn ($q) => str_contains($q['query'], 'select') && str_contains($q['query'], 'from "student_university_emails"'));
+        $this->assertCount(1, $emailQueries);
+        $this->assertSame(31, collect($many->json('data'))->where('email_preparation.provisioning_status', 'draft')->count());
         DB::disableQueryLog();
         $outside = DB::table('students')->whereIn('academic_program_id', DB::table('academic_programs')->whereIn('department_id', DB::table('departments')->where('college_id', 2)->pluck('department_id'))->pluck('academic_program_id'))->value('student_id');
         $this->assertNotNull($outside);
@@ -244,7 +319,9 @@ class UniversityEmailPhase1Test extends TestCase
             $this->assertStringNotContainsString('synthetic-test-secret', $r->getContent());
         }
         Schema::drop('student_university_emails'); // Isolated testing SQLite only.
-        $this->getJson(self::ROOT.'/students?q=R24011002')->assertOk()->assertJsonPath('meta.total', 1);
+        $this->getJson(self::ROOT.'/students?q=R24011002')->assertOk()->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('email_schema_ready', false)->assertJsonPath('data.0.email_preparation.available', false)
+            ->assertJsonPath('data.0.email_preparation.provisioning_status', null);
         $this->getJson(self::ROOT.'/students/1')->assertStatus(503)->assertJsonPath('error_code', 'university_email_schema_not_ready');
         $this->save()->assertStatus(503)->assertJsonPath('error_code', 'university_email_schema_not_ready');
         Http::assertNothingSent();
