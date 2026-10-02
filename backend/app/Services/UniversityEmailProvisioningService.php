@@ -120,7 +120,7 @@ final class UniversityEmailProvisioningService
                     }
                     $email->revision++;
                     $email->lifecycle_revision = $email->revision;
-                    $email->fill(['provisioning_status' => 'draft', 'creation_operation_id' => null, 'credential_operation_id' => null,
+                    $email->fill(['provisioning_status' => 'draft', 'handover_status' => 'not_delivered', 'creation_operation_id' => null, 'credential_operation_id' => null,
                         'remote_snapshot' => null, 'remote_checked_at' => null, 'linkage_origin' => 'created',
                         'deleted_at' => null, 'deleted_by_user_id' => null]);
                     $email->save();
@@ -319,6 +319,7 @@ final class UniversityEmailProvisioningService
             return DB::transaction(function () use ($user, $student, $input, $kind) {
                 $email = $this->locked($student, $user); Access::authorize($user, Access::operationPermission($kind));
                 if ($email->revision !== (int) $input['revision']) $this->fail('university_email_stale');
+                if (! $this->handoverAllowsOperation($email, $kind)) $this->fail('university_email_already_delivered');
                 if ($kind === 'delete' && ($input['student_number_confirmation'] ?? '') !== Student::findOrFail($student)->student_number)
                     $this->fail('university_email_delete_confirmation_required', 422);
                 if (UniversityEmailOperation::where('university_email_id', $email->university_email_id)->where('active_slot', 1)->lockForUpdate()->exists()) $this->fail('university_email_operation_in_progress');
@@ -361,12 +362,14 @@ final class UniversityEmailProvisioningService
         Access::authorize($user, Access::RECEIPT);
         $this->remote->requireEnabled();
         if (strlen((string) config('app.key')) < 32) $this->fail('university_email_configuration_invalid', 503);
+        // Validate configuration and generate in RAM before committing any prepared operation.
+        $password = $this->generatePassword();
         $op = DB::transaction(function () use ($user, $student, $revision, $kind, $reason) {
             $email = $this->locked($student, $user);
             Access::authorize($user, Access::operationPermission($kind));
             Access::authorize($user, Access::RECEIPT);
             if ($email->revision !== $revision) $this->fail('university_email_stale');
-            if ($email->handover_status !== 'not_delivered') $this->fail('university_email_already_delivered');
+            if (! $this->handoverAllowsOperation($email, $kind)) $this->fail('university_email_already_delivered');
             $number = strtolower(trim(Student::findOrFail($student)->student_number));
             if ($kind !== 'password_reset' && ($email->email_address !== $email->english_first_name.'.'.$number.'@alrowaduni.edu.sy' || $email->quota_mb !== 50)) $this->fail('university_email_identity_invalid');
             if ($kind === 'create' && $email->provisioning_status !== 'draft') $this->fail('university_email_already_created');
@@ -388,9 +391,18 @@ final class UniversityEmailProvisioningService
             $this->audit($user, $email, $op, 'credentials_prepared');
             return $op;
         });
-        $password = $this->generatePassword();
         return ['operation_id' => $op->operation_id, 'generation' => $op->generation, 'kind' => $op->kind,
             'password' => $password, 'credential_proof' => $this->proof($op, $user, $password)];
+    }
+
+    /** Handover locks initial credentials/draft linking, not subsequent account maintenance. */
+    private function handoverAllowsOperation(StudentUniversityEmail $email, string $kind): bool
+    {
+        return match ($kind) {
+            'create', 'reset', 'link' => $email->handover_status === 'not_delivered',
+            'password_reset', 'suspend', 'activate', 'delete' => in_array($email->handover_status, ['not_delivered', 'delivered'], true),
+            default => false,
+        };
     }
 
     private function generatePassword(): string
@@ -431,7 +443,7 @@ final class UniversityEmailProvisioningService
             if ($op->status !== 'prepared' || $op->active_slot !== 1 || $op->generation !== (int) $input['generation']
                 || $op->draft_revision < ($email->lifecycle_revision ?? 1) || $email->provisioning_status === 'deleted'
                 || $op->issued_by_user_id !== $user->user_id || $email->revision !== $op->draft_revision
-                || $email->handover_status !== 'not_delivered'
+                || ! $this->handoverAllowsOperation($email, $op->kind)
                 || ($credentials && ! hash_equals($this->proof($op, $user, $input['password']), $input['credential_proof']))) $this->fail('university_email_operation_stale');
             $op->status = 'preflight'; $op->save();
             return $op;
@@ -454,7 +466,7 @@ final class UniversityEmailProvisioningService
                 $current = UniversityEmailOperation::whereKey($op->operation_id)->lockForUpdate()->firstOrFail();
                 if ($current->status !== 'preflight' || $current->generation !== $op->generation
                     || $current->issued_by_user_id !== $op->issued_by_user_id || $email->revision !== $op->draft_revision
-                    || $email->email_address !== $op->email_address || $email->handover_status !== 'not_delivered') $this->fail('university_email_operation_stale');
+                    || $email->email_address !== $op->email_address || ! $this->handoverAllowsOperation($email, $current->kind)) $this->fail('university_email_operation_stale');
                 if (in_array($current->kind, ['password_reset', 'suspend', 'activate', 'link', 'delete'], true)) {
                     $current->before_snapshot = ($current->before_snapshot ?? []) + $this->identitySnapshot($mailbox);
                     $email->credential_operation_id = null; $email->save();
@@ -561,7 +573,7 @@ final class UniversityEmailProvisioningService
             if ($current->draft_revision < ($email->lifecycle_revision ?? 1)) $this->fail('university_email_operation_stale');
             if ($current->status === 'confirmed') return $this->describe($email);
             if (! in_array($current->status, ['in_progress', 'uncertain'], true) || $current->generation !== $op->generation
-                || $email->revision !== $op->draft_revision || $email->handover_status !== 'not_delivered') $this->fail('university_email_operation_stale');
+                || $email->revision !== $op->draft_revision || ! $this->handoverAllowsOperation($email, $current->kind)) $this->fail('university_email_operation_stale');
             $current->status = 'confirmed'; $current->active_slot = null; $current->verified_at = now(); $current->failure_code = null; $current->save();
             if (in_array($op->kind, ['create', 'link'], true)) { $email->creation_operation_id = $op->operation_id; $email->provisioning_status = 'created'; }
             if ($op->kind === 'delete') {
@@ -600,7 +612,7 @@ final class UniversityEmailProvisioningService
             $op = UniversityEmailOperation::whereKey($id)->where('university_email_id', $email->university_email_id)->lockForUpdate()->first();
             if (! $op || $op->status !== 'confirmed' || $op->generation !== $generation || ! in_array($op->kind, ['create', 'reset', 'password_reset'], true)
                 || $op->draft_revision < ($email->lifecycle_revision ?? 1) || $email->provisioning_status !== 'created'
-                || $email->credential_operation_id !== $id || ! $email->creation_operation_id || $email->handover_status !== 'not_delivered'
+                || $email->credential_operation_id !== $id || ! $email->creation_operation_id || ! $this->handoverAllowsOperation($email, $op->kind)
                 || UniversityEmailOperation::where('university_email_id', $email->university_email_id)->where('active_slot', 1)->exists()) $this->fail('university_email_credentials_unavailable');
             $receipt = DB::table('university_email_receipts')->where('university_email_id', $email->university_email_id)
                 ->where('credential_operation_id', $id)->where('issued_by_user_id', $user->user_id)->first();

@@ -17,6 +17,11 @@ $check(str_contains($client, "\$this->success(\$this->request('POST', 'delete/ma
 $check(str_contains($service, '\$box === null') || str_contains($service, '$box === null'), 'Read-verified absence required');
 $check(str_contains($service, "'creation_operation_id' => null, 'credential_operation_id' => null") && str_contains($service, 'lifecycle_revision = $email->revision'), 'Current cycle references and monotonic authority boundary');
 $check(str_contains($service, "'provisioning_status' => 'deleted'") && str_contains($service, "'deleted_by_user_id' => \$op->issued_by_user_id"), 'Local lifecycle, historical deletion actor');
+$check(str_contains($service, 'private function handoverAllowsOperation(')
+    && str_contains($service, "'create', 'reset', 'link' => \$email->handover_status === 'not_delivered'")
+    && str_contains($service, "'password_reset', 'suspend', 'activate', 'delete' => in_array(\$email->handover_status, ['not_delivered', 'delivered'], true)")
+    && !str_contains($service, "\$email->handover_status !== 'not_delivered'"), 'Kind-specific handover policy at every lifecycle boundary');
+$check(str_contains($service, "'provisioning_status' => 'draft', 'handover_status' => 'not_delivered'"), 'Recreation explicitly starts a new undelivered cycle');
 $check(!preg_match('/->(?:delete|forceDelete)\(/', $service) && !str_contains($migration, 'Schema::drop'), 'No local history deletion');
 $check(str_contains($service, 'documentGenerator(User::findOrFail($op->issued_by_user_id))') && str_contains($service, "'issued_by_user_id' => \$user->user_id"), 'Credential issuer in document, downloader in audit');
 $check(str_contains($migration, "'deleted'") && str_contains($migration, "'delete'") && str_contains($migration, 'rollback refused'), 'Additive ENUM migration and explicit unsafe rollback refusal');

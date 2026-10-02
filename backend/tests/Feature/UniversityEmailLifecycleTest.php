@@ -13,6 +13,7 @@ class UniversityEmailLifecycleTest extends UniversityEmailPhase2Test
 {
     private const API = '/api/v1/technical/university-email/students/1';
     private int $deletes = 0;
+    private int $activeWrites = 0;
     private ?string $deleteFailure = null;
     private bool $cancelDuringPreflight = false;
     private bool $checkAfterDeletion = false;
@@ -51,6 +52,12 @@ class UniversityEmailLifecycleTest extends UniversityEmailPhase2Test
                 if ($this->deleteFailure === 'lost_reply') throw new \Illuminate\Http\Client\ConnectionException('Synthetic lost reply');
                 return Http::response([['type' => 'success', 'msg' => ['mailbox_removed', $address]]]);
             }
+            if (str_contains($request->url(), '/edit/mailbox') && array_key_exists('active', $request->data()['attr'] ?? [])) {
+                $this->activeWrites++;
+                $address = $request->data()['items'][0];
+                $this->boxes[$address]['active_int'] = (int) $request->data()['attr']['active'];
+                return Http::response([['type' => 'success', 'msg' => ['mailbox_modified', $address]]]);
+            }
             // Original fixture transport retains its zero-write guards and failure scenarios.
             return $callbacks->map(fn ($callback) => $callback($request, []))->filter()->first();
         });
@@ -65,6 +72,74 @@ class UniversityEmailLifecycleTest extends UniversityEmailPhase2Test
         return ['revision' => StudentUniversityEmail::firstOrFail()->revision, 'student_number_confirmation' => 'R24011002', 'confirmed' => true, 'reason' => 'Synthetic deletion request'];
     }
     private function removeMailbox(): \Illuminate\Testing\TestResponse { return $this->postJson(self::API.'/delete-mailbox', $this->deleteInput()); }
+
+    public function test_delivered_account_management_preserves_handover_and_has_no_orphan_operation(): void
+    {
+        $this->createMailbox();
+        StudentUniversityEmail::firstOrFail()->update(['handover_status' => 'delivered']);
+        foreach (['suspend' => false, 'activate' => true] as $kind => $active) {
+            $this->postJson(self::API.'/account-action', ['kind' => $kind, 'revision' => 1,
+                'reason' => 'Synthetic delivered management', 'confirmed' => true])->assertOk()
+                ->assertJsonPath('data.handover_status', 'delivered')->assertJsonPath('data.remote_snapshot.active', $active);
+            $this->assertSame(0, UniversityEmailOperation::where('active_slot', 1)->count());
+            $this->assertDatabaseHas('university_email_operations', ['kind' => $kind, 'status' => 'confirmed']);
+        }
+        $this->assertSame(2, $this->activeWrites);
+        $this->removeMailbox()->assertOk()->assertJsonPath('data.provisioning_status', 'deleted')
+            ->assertJsonPath('data.handover_status', 'delivered');
+        $this->assertSame(1, $this->deletes);
+        $this->assertSame(0, UniversityEmailOperation::where('active_slot', 1)->count());
+    }
+
+    public function test_delivered_general_reset_and_receipt_preserve_handover_and_historical_issuer(): void
+    {
+        $created = $this->createMailbox();
+        StudentUniversityEmail::firstOrFail()->update(['handover_status' => 'delivered']);
+        $c = $created['credentials'];
+        $this->postJson(self::API.'/provisioning/receipt', ['operation_id' => $c['operation_id'], 'generation' => $c['generation']])
+            ->assertConflict()->assertJsonPath('error_code', 'university_email_credentials_unavailable');
+        $reset = $this->postJson(self::API.'/reset-password-now', ['revision' => 1, 'reason' => 'Synthetic delivered reset', 'confirmed' => true])
+            ->assertOk()->assertJsonPath('data.handover_status', 'delivered')->json('data.credentials');
+        $this->assertSame(24, strlen($reset['password']));
+        $this->assertSame(2, $this->writes); // Initial create + exactly one password write.
+        $this->assertSame(0, UniversityEmailOperation::where('active_slot', 1)->count());
+        $execute = array_diff_key($reset, ['kind' => true]);
+        $execute['confirmed'] = true;
+        $execute['credential_proof'] = str_repeat('0', 64); // Completed UUID is stale before any proof/remote action.
+        $this->postJson(self::API.'/provisioning/execute', $execute)->assertConflict();
+        $this->assertSame(2, $this->writes);
+        Sanctum::actingAs(User::findOrFail(1));
+        $receipt = $this->postJson(self::API.'/provisioning/receipt', ['operation_id' => $reset['operation_id'], 'generation' => $reset['generation']])
+            ->assertOk()->assertJsonPath('data.receipt_purpose', 'password_reset')->json('data');
+        $this->assertSame(app(UserIdentityService::class)->documentGenerator(User::findOrFail(8))['display_name'], $receipt['employee']);
+        $this->assertArrayNotHasKey('password', $receipt);
+        $this->assertDatabaseHas('student_university_emails', ['handover_status' => 'delivered', 'credential_operation_id' => $reset['operation_id']]);
+    }
+
+    public function test_initial_credentials_and_deterministic_rejections_do_not_leave_prepared_operations(): void
+    {
+        $this->putJson(self::API.'/draft', ['english_first_name' => 'Ahmad', 'revision' => 0])->assertOk();
+        $email = StudentUniversityEmail::firstOrFail();
+        $email->update(['handover_status' => 'delivered']);
+        $service = app(UniversityEmailProvisioningService::class);
+        try { $service->password(User::findOrFail(8), 1, 1, 'create'); $this->fail('Initial credentials require undelivered state'); }
+        catch (\App\Exceptions\UniversityEmailException $e) { $this->assertSame('university_email_already_delivered', $e->errorCode); }
+        $this->assertDatabaseCount('university_email_operations', 0);
+        $email->update(['handover_status' => 'not_delivered']);
+        config(['mailcow.password_length' => 23]);
+        try { $service->password(User::findOrFail(8), 1, 1, 'create'); $this->fail('Invalid configuration must fail before preparation'); }
+        catch (\App\Exceptions\UniversityEmailException $e) { $this->assertSame('university_email_configuration_invalid', $e->errorCode); }
+        $this->assertDatabaseCount('university_email_operations', 0);
+        config(['mailcow.password_length' => 24]);
+        $created = $this->createMailbox();
+        $this->assertSame('not_delivered', $created['handover_status']);
+        $email->refresh()->update(['handover_status' => 'delivered']);
+        try { $service->password(User::findOrFail(8), 1, $email->revision, 'reset'); $this->fail('Legacy reset remains pre-handover'); }
+        catch (\App\Exceptions\UniversityEmailException $e) { $this->assertSame('university_email_already_delivered', $e->errorCode); }
+        $this->postJson(self::API.'/delete-mailbox', array_replace($this->deleteInput(), ['student_number_confirmation' => 'wrong']))->assertUnprocessable();
+        $this->assertDatabaseCount('university_email_operations', 1);
+        $this->assertSame(0, UniversityEmailOperation::where('active_slot', 1)->count());
+    }
 
     public function test_central_targeting_and_search_never_grant_generic_student_access(): void
     {
@@ -83,6 +158,7 @@ class UniversityEmailLifecycleTest extends UniversityEmailPhase2Test
     {
         $created = $this->createMailbox(); $c = $created['credentials'];
         $this->postJson(self::API.'/provisioning/receipt', ['operation_id' => $c['operation_id'], 'generation' => $c['generation']])->assertOk();
+        StudentUniversityEmail::firstOrFail()->update(['handover_status' => 'delivered']);
         $rootId = StudentUniversityEmail::firstOrFail()->getKey();
         $this->removeMailbox()->assertOk()->assertJsonPath('data.provisioning_status', 'deleted')->assertJsonPath('data.creation_operation_id', null)->assertJsonPath('data.credential_operation_id', null);
         $this->assertSame(1, $this->deletes);
@@ -91,6 +167,7 @@ class UniversityEmailLifecycleTest extends UniversityEmailPhase2Test
         $before = $delete->getAttributes();
         $deletedRoot = StudentUniversityEmail::firstOrFail();
         $this->assertSame('deleted', $deletedRoot->provisioning_status);
+        $this->assertSame('delivered', $deletedRoot->handover_status);
         $this->assertSame(['exists' => false], $deletedRoot->remote_snapshot);
         $this->assertNotNull($deletedRoot->deleted_at);
         $this->assertNull($deletedRoot->creation_operation_id);
@@ -100,11 +177,15 @@ class UniversityEmailLifecycleTest extends UniversityEmailPhase2Test
         $next = $response->json('data');
         $this->assertSame($rootId, StudentUniversityEmail::first()->getKey());
         $this->assertNotSame($c['operation_id'], $next['creation_operation_id']);
+        $this->assertGreaterThan($deletedRoot->lifecycle_revision, StudentUniversityEmail::first()->lifecycle_revision);
         $this->assertSame($next['creation_operation_id'], $next['credential_operation_id'], 'Recreation must publish only its own confirmed credential reference');
         $this->assertDatabaseCount('student_university_emails', 1); $this->assertDatabaseCount('university_email_operations', 3);
         $this->assertDatabaseCount('university_email_receipts', 1); $this->assertSame($before, $delete->fresh()->getAttributes());
         $this->postJson(self::API.'/provisioning/reconcile', ['operation_id' => $delete->operation_id])->assertConflict()->assertJsonPath('error_code', 'university_email_operation_stale');
         $this->postJson(self::API.'/provisioning/execute-account', ['operation_id' => $delete->operation_id, 'generation' => $delete->generation, 'confirmed' => true])->assertConflict();
+        $this->postJson(self::API.'/provisioning/execute', ['operation_id' => $c['operation_id'], 'generation' => $c['generation'],
+            'password' => $c['password'], 'credential_proof' => hash_hmac('sha256', $c['operation_id'].'|'.$c['generation'].'|8|'.$c['password'], (string) config('app.key')),
+            'confirmed' => true])->assertConflict()->assertJsonPath('error_code', 'university_email_operation_stale');
         $this->postJson(self::API.'/provisioning/receipt', ['operation_id' => $c['operation_id'], 'generation' => $c['generation']])->assertConflict();
         $this->assertSame(2, $this->writes); $this->assertSame(1, $this->deletes);
         $this->assertDatabaseHas('student_university_emails', ['handover_status' => 'not_delivered']);
@@ -151,6 +232,10 @@ class UniversityEmailLifecycleTest extends UniversityEmailPhase2Test
         $this->postJson(self::API.'/account-action', $input)->assertUnprocessable();
         $this->assertSame(0, $this->writes);
         $input['ownership_confirmed'] = true;
+        StudentUniversityEmail::firstOrFail()->update(['handover_status' => 'delivered']);
+        $this->postJson(self::API.'/account-action', $input)->assertConflict()->assertJsonPath('error_code', 'university_email_already_delivered');
+        $this->assertDatabaseCount('university_email_operations', 0);
+        StudentUniversityEmail::firstOrFail()->update(['handover_status' => 'not_delivered']);
         $this->postJson(self::API.'/account-action', $input)->assertOk()->assertJsonPath('data.linkage_origin', 'linked');
         $this->assertSame(1, $this->writes);
         $this->assertDatabaseHas('student_university_emails', ['email_address' => $address, 'creation_operation_id' => UniversityEmailOperation::first()->operation_id, 'credential_operation_id' => null]);
@@ -171,10 +256,13 @@ class UniversityEmailLifecycleTest extends UniversityEmailPhase2Test
     public function test_lost_delete_reply_is_confirmed_by_read_only_missing_mailbox(): void
     {
         $this->createMailbox(); $this->deleteFailure = 'lost_reply';
+        StudentUniversityEmail::firstOrFail()->update(['handover_status' => 'delivered']);
         $this->removeMailbox()->assertConflict(); $op = UniversityEmailOperation::where('kind', 'delete')->firstOrFail();
         $this->assertSame('uncertain', $op->status); $this->travel(2)->minutes();
         $this->postJson(self::API.'/provisioning/reconcile', ['operation_id' => $op->operation_id])->assertOk()->assertJsonPath('data.provisioning_status', 'deleted');
         $this->assertSame(1, $this->deletes);
+        $this->assertDatabaseHas('student_university_emails', ['handover_status' => 'delivered', 'provisioning_status' => 'deleted']);
+        $this->assertSame(0, UniversityEmailOperation::where('active_slot', 1)->count());
     }
 
     public function test_prewrite_timeout_and_cancelled_worker_send_no_delete(): void

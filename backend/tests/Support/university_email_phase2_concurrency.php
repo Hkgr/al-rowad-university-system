@@ -124,7 +124,9 @@ if ($worker) {
         elseif ($job['action'] === 'cancel') $service->cancel($user, $student, $job['id'], $job['generation']);
         elseif ($job['action'] === 'receipt') $service->receipt($user, $student, $job['id'], $job['generation']);
         elseif ($job['action'] === 'account') $service->executeAccount($user, $student, ['operation_id' => $job['id'], 'generation' => $job['generation']]);
-        elseif ($job['action'] === 'prepare-password') $service->password($user, $student, $job['revision'], 'reset');
+        elseif ($job['action'] === 'prepare-password') $service->password($user, $student, $job['revision'], $job['kind'] ?? 'reset', 'Synthetic reset race');
+        elseif ($job['action'] === 'prepare-account') $service->prepareAccount($user, $student,
+            ['kind' => $job['kind'], 'revision' => $job['revision'], 'reason' => 'Synthetic management race']);
         elseif ($job['action'] === 'recreate') $service->recreate($user, $student, $job['name'], $job['revision']);
         elseif ($job['action'] === 'prepare-link') {
             $preview = $service->previewLink($user, $student, $job['address']);
@@ -327,6 +329,8 @@ if (getenv('UNIVERSITY_EMAIL_LIFECYCLE_FIXTURE') === '1') {
     DB::table('user_access_scopes')->where('user_id', 8)->delete(); $user = User::findOrFail(8);
     $rootId = DB::table('student_university_emails')->where('student_id', 1)->value('university_email_id');
     $originalCreate = DB::table('student_university_emails')->where('student_id', 1)->value('creation_operation_id');
+    // Handover is historical credential delivery, not a management lock.
+    DB::table('student_university_emails')->where('student_id', 1)->update(['handover_status' => 'delivered']);
     $prepareDelete = function () use ($service, $user): array {
         $state = $service->prepareAccount($user, 1, ['kind' => 'delete', 'revision' => DB::table('student_university_emails')->where('student_id', 1)->value('revision'),
             'reason' => 'Synthetic lifecycle race', 'student_number_confirmation' => DB::table('students')->where('student_id', 1)->value('student_number')]);
@@ -340,11 +344,16 @@ if (getenv('UNIVERSITY_EMAIL_LIFECYCLE_FIXTURE') === '1') {
 
     $job = $prepareDelete(); $a = $start($job, 'delete-after'); $await('delete-after');
     $b = $finish($start($job)); $assert($b['result'] === 'university_email_operation_stale', 'Only one delete execution');
-    $b = $finish($start(['action' => 'prepare-password', 'revision' => 1])); $assert($b['result'] === 'university_email_operation_not_retryable', 'Reset cannot race started delete');
+    $b = $finish($start(['action' => 'prepare-password', 'kind' => 'password_reset', 'revision' => 1]));
+    $assert($b['result'] === 'university_email_operation_not_retryable', 'Delivered general reset cannot race started delete');
+    $b = $finish($start(['action' => 'prepare-account', 'kind' => 'suspend', 'revision' => 1]));
+    $assert($b['result'] === 'university_email_operation_in_progress', 'Delivered suspend cannot race started delete');
     $b = $finish($start(['action' => 'create', 'name' => 'Other'])); $assert($b['result'] === 'university_email_operation_requires_review', 'Create cannot race started delete');
     $b = $finish($start(['action' => 'cancel', 'id' => $job['id'], 'generation' => $job['generation']])); $assert($b['result'] === 'university_email_operation_not_cancellable', 'Started delete cannot be cancelled');
     $release('delete-after'); $assert($finish($a)['result'] === 'ok' && $posts() === $count + 1, 'One verified remote removal');
     $assert(DB::table('student_university_emails')->where('student_id', 1)->value('provisioning_status') === 'deleted', 'Local lifecycle is deleted');
+    $assert(DB::table('student_university_emails')->where('student_id', 1)->value('handover_status') === 'delivered', 'Delete preserves delivered history');
+    $assert(DB::table('university_email_operations')->where('university_email_id', $rootId)->where('active_slot', 1)->count() === 0, 'Delivered deletion leaves no active/prepared orphan');
     $revision = (int) DB::table('student_university_emails')->where('student_id', 1)->value('revision');
     $recreate = ['action' => 'recreate', 'name' => 'Newname', 'revision' => $revision];
     $a = $start($recreate, 'recreate-before'); $await('recreate-before');
@@ -352,6 +361,7 @@ if (getenv('UNIVERSITY_EMAIL_LIFECYCLE_FIXTURE') === '1') {
     $release('recreate-before'); $one = $finish($a);
     $assert($one['result'] === 'ok' && $one['connection'] !== $b['connection'] && $posts() === $count + 2, 'One recreation from two connections');
     $assert(DB::table('student_university_emails')->where('student_id', 1)->count() === 1 && DB::table('student_university_emails')->where('student_id', 1)->value('university_email_id') === $rootId, 'Same UNIQUE root reused');
+    $assert(DB::table('student_university_emails')->where('student_id', 1)->value('handover_status') === 'not_delivered', 'Recreation starts an undelivered credential cycle');
     $assert(DB::table('university_email_operations')->where('operation_id', $job['id'])->value('status') === 'confirmed', 'Delete history retained');
     $b = $finish($start(['action' => 'receipt', 'id' => $originalCreate, 'generation' => 1])); $assert($b['result'] === 'university_email_credentials_unavailable', 'Old-cycle receipt rejected');
     $b = $finish($start($job)); $assert($b['result'] === 'university_email_operation_stale' && $posts() === $count + 2, 'Old delete UUID/generation cannot act in new cycle');

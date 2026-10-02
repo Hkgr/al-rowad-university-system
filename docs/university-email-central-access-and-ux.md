@@ -2,6 +2,35 @@
 
 Base: `origin/develop` `3066cd1cce7c07e26ec47ec6163ac3f6da5c1593`, after merged PR149 and PR150. Branch: `codex/university-email-central-access-and-ux`. This increment supersedes older email-only DataScope restrictions and the no-delete UI; it does not change academic access or the central super-admin bypass.
 
+## PR151 P1 correction — handover lifecycle
+
+Reviewed parent: `4e60d109bcee8a95c98337f63fa3bb884df3b44a`. Existing [P1 review thread](https://github.com/Hkgr/al-rowad-university-system/pull/151#discussion_r4161686465) remains visible. No new PR or migration is introduced by this correction.
+
+**Reproduction before the fix:** four focused behavior tests failed. Delivered suspend/delete and general password reset returned 409; the management execute guard rejected the prepared operation before entering failure recording. Invalid password-length configuration also failed after committing a prepared operation. These were real Laravel HTTP/service tests with isolated synthetic SQLite and only upstream Mailcow faked, not source-only assertions.
+
+`handover_status` describes credential delivery, not a permanent account-management lock. One fail-closed `handoverAllowsOperation()` policy now governs preparation, both locked execution checkpoints, confirmation and receipts. Unknown kinds/status values are not allowed. Initial credential/draft-link restrictions remain; management never changes handover. Password generation/configuration validation runs in RAM before committing a prepared operation. Ownership, authorization, exact UUID/generation/revision, current-cycle references, single write and read-only reconciliation checks remain in place.
+
+| Kind / action | Required handover / effect |
+| --- | --- |
+| `create` | Requires `not_delivered`, including initial receipt. |
+| Legacy `reset` | Initial lost-credential reissue; requires `not_delivered`, including receipt. |
+| `password_reset` | Accepts `not_delivered` or `delivered`; preserves it. Current confirmed reset receipt is allowed on a delivered account; no stored secret recovery. |
+| `suspend`, `activate` | Accept either known handover state; preserve it. |
+| `delete` | Accepts either; one removal plus absence verification. Preserves handover on the historical tombstone. |
+| `link` | Existing explicit ownership-attested draft-only, undelivered contract; no expansion. |
+| `recreate` | Same root, new revision/lifecycle/UUID; explicitly sets `not_delivered` and clears current cycle/snapshot/deletion metadata. Prior history remains. |
+
+### Correction verification — executed 2026-10-02
+
+- All six targeted Laravel email files: **154 tests / 2819 assertions passed**. The final lifecycle file alone passed **36 tests / 833 assertions** after adding valid old-cycle proof, delivered read-only recovery and draft-link rejection assertions. Covers delivered suspend/activate/delete, one password-reset write and receipt requested by a different authorized downloader with the original issuer, initial/legacy credential restrictions, validation without an orphan, same-root recreation/new cycle/history, and stale prior proof/receipt.
+- Isolated **MariaDB 11.4.9**, `127.0.0.1:3397`, independent PHP processes/connections: **16 scenarios passed / 9 intentional fake remote writes**. The existing lifecycle race now uses a delivered root: a started delete blocks another execution, general `password_reset`, suspend and create; pre-write cancellation prevents the old worker writing. Confirmed deletion has no active orphan and retains `delivered`; two recreation workers yield one new creation, the same root and `not_delivered`. Existing populated migration/history and remote-success/local-audit-failure recovery checks also passed. The owned test server was shut down afterward; no production or live Mailcow connection.
+- **292 Node tests passed**, including the 45-test email subset: pure-logic/source verification only. Six dependency-free PHP contracts, four changed PHP syntax checks, Composer validate/platform checks and `git diff --check` passed.
+- Frontend production build passed; the existing >500kB bundle warning remains. No frontend file changed, so changed-file frontend lint is not applicable to this correction.
+
+Re-inspected the actual P1 path: delivered delete now passes preparation, preflight, write-authority and confirmation using the same kind policy; final HTTP and MariaDB assertions prove no active/prepared operation remains in that success scenario. No automatic cancellation/remote replay was added to disguise stale or uncertain work. The review is not deleted or automatically marked resolved.
+
+Correction files: `backend/app/Services/UniversityEmailProvisioningService.php`, `backend/tests/Feature/UniversityEmailLifecycleTest.php`, `backend/tests/Support/university_email_phase2_concurrency.php`, `backend/tests/Contracts/university_email_lifecycle_contract.php`, and this guide. No authority, frontend, schema or dependency changes. Visual/React-to-Laravel/PDF acceptance remains unexecuted for the previously documented browser initialization limitation; these tests do not claim that evidence or production certification. Whole-suite discovery has the pre-existing final-method override described below; the six explicit email files did execute.
+
 ## Authority, search and UI
 
 An active actual `technical_team` operator needs assigned `technical_portal.access`, `university_email.view` and each operation's own permission. Within email only, the operator can target all existing non-soft-deleted students, without creating academic DataScope. Other portals retain existing scope checks. Active actual super-admin retains the existing bypass without a manufactured technical role, email assignment or scope.
@@ -63,7 +92,7 @@ One additive migration: `backend/database/migrations/2026_10_02_000000_add_unive
 
 Maintenance order: back up; stop affected writes/workers; use normal Laravel migrations and verify old row counts/ENUMs/FKs; activate compatible code/restart workers; explicitly run `php artisan university-email:enable-permissions --phase3`; review legitimate assignments; verify email health, central email-only access, lifecycle and receipt rendering, and absence of secrets in logs/APM; resume. Deploy the frontend build including Cairo/logo assets. No manual production SQL is provided. Rollback refusal requires assessed forward recovery/backup, never history deletion.
 
-## Executed verification — 2026-10-02
+## Original implementation verification — 2026-10-02 (before the P1 correction above)
 
 | Check | Result |
 | --- | --- |
