@@ -1,3 +1,5 @@
+import { pendingCreationReconciliation } from './emailReconciliation.js'
+
 /** Presentation follows the server's persisted safety decision, never a guessed remote outcome. */
 export function creationMode(state, reviewRequired = false) {
   if (reviewRequired || !state) return 'verify'
@@ -16,9 +18,9 @@ export const unresolvedCreation = 'تعذر التأكد من نتيجة الم�
 export async function loadCreationState(api, request, isCurrent, canCheck) {
   const json = await request(`${api}/provisioning`, { cache: 'no-store' })
   if (!isCurrent()) return null
-  const earlyPositiveRead = json.data?.pending_operation?.kind === 'create'
-    && json.data.pending_operation.status === 'uncertain' && json.data.pending_operation.write_started_at
-  if (!canCheck || creationMode(json.data) !== 'verify' && !earlyPositiveRead) return json.data
+  // The bounded controller owns the immediate uncertain read as well as all later polls.
+  // Do not perform a second immediate check here or skip a live worker's grace.
+  if (!canCheck || pendingCreationReconciliation(json.data) || creationMode(json.data) !== 'verify') return json.data
   const checked = await request(`${api}/creation-check`, { method: 'POST', cache: 'no-store', body: '{}' })
   return isCurrent() ? checked.data : null
 }

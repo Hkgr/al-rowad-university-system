@@ -1,6 +1,6 @@
 # University Email: safe automatic creation reconciliation
 
-Base: fetched `origin/develop` **648f7f248ef02d88a9d2114f4fbfe49e4a574a46**, after merged PR152. Branch: `codex/university-email-safe-auto-reconciliation`. This is a separate corrective PR, not a rewrite of authorization, provisioning, deletion, or automatic receipts.
+Current corrective base: fetched `origin/develop` **cff1743e167d83b5d588910e9f768c38b05296e7**, after merged PR153. Branch: `codex/university-email-fast-read-reconciliation`. A new focused PR is used with the user's permission because PR153 is already merged. No merge/deployment is performed. Original PR153 base was `648f7f248ef02d88a9d2114f4fbfe49e4a574a46`; the historical verification below is retained and distinguished from this correction.
 
 ## Reproduced cause
 
@@ -16,6 +16,7 @@ The existing state response now adds:
 {
   "reconciliation": {
     "status": "waiting",
+    "mode": "worker_grace",
     "retry_after_seconds": 60,
     "ready_at": "2026-10-02T01:00:00Z",
     "operation_id": "the-current-operation-uuid"
@@ -23,7 +24,7 @@ The existing state response now adds:
 }
 ```
 
-`ready_at` is computed from the persisted operation's `updated_at + 60 seconds`; reading state does not update this timestamp. `waiting` means inside grace, `ready` means a check is due or no pending operation remains, and `unresolved` is returned after an unsuccessful post-grace creation check. Metadata does not grant write authority.
+For a live `preflight`/`in_progress` worker, `ready_at` is computed from persisted `updated_at + 60 seconds`; reading state does not update this timestamp. Its grace is unchanged. A started uncertain **create only** now returns `mode:fast_read_check`, `status:waiting`, `retry_after_seconds:2`, and `ready_at:null`: it is not a live worker, so the old minute-long presentation deadline does not apply. `waiting` is a presentation state, not evidence of remote failure or authority to write. After the client budget it shows a manual fallback without changing the durable operation. No-pending state returns `mode:none`. Other operation kinds retain their previous safety policy.
 
 Only an **uncertain create with a persisted write start** may be read early. Confirmation requires the existing operation marker plus exact address/domain, 50 MiB quota, active mailbox, and forced password change. A missing or mismatched mailbox is not proof of failed creation: the operation remains uncertain, active/creation slots remain reserved, and no failure/cancellation or credential issuance occurs. Confirmation uses the existing short locked transaction, rechecking generation/revision/cycle and authorization; the remote GET remains outside transactions. An active `in_progress` worker retains the existing grace policy. No early account-action/delete policy is added.
 
@@ -33,13 +34,13 @@ Automatic `creation-check` also refuses to abandon a pre-write `preflight`: duri
 
 ## Frontend flow
 
-The current `UniversityEmailPage`, `UniversityEmailMailboxDialog`, `UniversityEmailDialog`, `MinistryUi`, `UniversityEmailReceipt`, `emailReceiptPdf`, and PR152 orchestration are the design/behavior references. Existing Cairo, RTL, controls, spacing, colors, and document design are reused; the direct correction follows the current-design guidance, not a new Superdesign draft.
+The current `UniversityEmailPage`, `UniversityEmailMailboxDialog`, `UniversityEmailDialog`, `MinistryUi`, `StudentsPage`, `UniversityEmailReceipt`, `emailReceiptPdf`, and PR152 orchestration are the design/behavior references. Existing Cairo, RTL, controls, spacing, colors, and document design are reused; the direct text correction follows the current-design/Superdesign guidance, not a new design draft. No shared styles or components change.
 
-1. Opening/recovering an uncertain started create performs one immediate `POST creation-check` (only Mailcow GET internally) to allow positive early confirmation. Live preflight/in-progress workers wait for their server deadline instead.
-2. If still pending, the dialog shows a spinner and «تم إرسال طلب إنشاء البريد، ويجري التحقق من النتيجة…». It hides ordinary retry/cancel/technical-detail controls during waiting/checking; initial loading no longer flashes an unresolved notice.
-3. A controller bound to the student/current operation schedules a check after the server delay. It permits at most **four scheduled checks**, with subsequent minimum backoffs **3, 5 and 10 seconds**; a longer server delay takes precedence. This is separate from the initial one-shot check. Only the existing `creation-check` endpoint is called; no create/reset/cancel/delete/execute callback exists in the poller.
+1. Opening/recovering a started uncertain create delegates to the bounded controller, which owns its single immediate `POST creation-check` (only Mailcow GET internally). The state loader does not issue a duplicate immediate check. Live preflight/in-progress workers wait for their server deadline instead.
+2. If still pending, the dialog shows a spinner and «يجري التحقق من إنشاء البريد…». It hides ordinary retry/cancel/technical-detail controls during waiting/checking; initial loading does not flash an unresolved notice.
+3. The started-uncertain controller performs **five reads maximum**: immediate, then **2, 3, 5, 8 seconds**. Total deliberate waiting is **18 seconds plus request/processing time**, not a wall-clock timeout promise. Positive proof stops timers immediately. Transport errors consume the same bounded budget and never reuse stale server deadlines. Live-worker controllers retain the server grace and four-read budget with later 3/5/10-second backoffs. When the server transitions a worker to started-uncertain, the dialog cancels the previous policy controller and starts its fast policy bound to the same operation; ordinary response refreshes do not restart the budget. Only `creation-check` is called; no create/retry-create/reset/account-action/delete/cancel/execute callback exists in the poller.
 4. A confirmed response transitions to mailbox management, refreshes its verified read snapshot and the parent row. A different operation is not adopted by the old controller. Unmount/student/authorization-context changes cancel the timer; already-started late reads are ignored. Normal creation/reset success with RAM credentials still uses PR152 automatically.
-5. After the bounded unresolved budget, show «تعذر التأكد تلقائيًا من نتيجة العملية حتى الآن. لم يتم إرسال طلب إنشاء جديد حفاظًا على الحساب.» and «إعادة التحقق», with technical details collapsed. Manual checking can explicitly start a new bounded read cycle; it never retries a remote write.
+5. After the bounded unresolved budget, show «تعذر التأكد من نتيجة إنشاء البريد حتى الآن.» then «لم تتم إعادة محاولة الإنشاء لتجنب تكرار الحساب.» and «إعادة التحقق». Technical details are optional and collapsed, explaining «يتحقق النظام من خادم البريد دون إعادة إنشاء الحساب أو إجراء تعديل جديد عليه.» No user-facing extra-write jargon remains. Manual checking explicitly starts a new bounded read cycle; it never retries a remote write.
 
 ### Lost initial credentials
 
@@ -57,7 +58,7 @@ Local confirmation following a lost create response does **not** recover the pas
 - Six existing PHP email contracts, three changed PHP syntax checks, changed production frontend ESLint, frontend production build, Composer validation/platform checks and `git diff --check` passed. Build retains the existing >500kB chunk warning.
 - Existing receipt React SSR check passed initial/reset 24/64-character passwords with long synthetic Arabic/name/address variants. This verifies SSR output, not PDF layout, browser saving or timer interaction.
 
-## PR153 review corrections and current verification — 2026-10-02
+## Historical PR153 review corrections and verification — 2026-10-02
 
 Fetched the existing branch twice, including before delivery; the prior/reviewed head was `f5c35662ae64a20f52a4a56db442979cc61ca036`, with no concurrent remote commits. The same branch and PR153 are retained.
 
@@ -84,6 +85,16 @@ Reread `frontend/AGENTS.md` and retried the permitted in-app browser on this cor
 The delay and credential-evidence P2 threads are fixed and may be resolved after delivery review; the visual P1 thread receives the actual blocker/evidence and stays **unresolved**. No claim of complete visual acceptance or merge readiness is made.
 
 ## Limits and remaining acceptance
+
+### Fast-read correction — 2026-10-03
+
+Before changing production code, the new Node regression failed because the first check was delayed rather than immediate; the new real HTTP assertion failed because fast-read metadata was absent. The corrected policy is limited to `create + uncertain + write_started_at`: negative GET means not proven yet, not failed/cancelled/retryable. Five recovery GETs now have explicit assertions for reserved slots, unchanged operation timestamp and audit count, no receipt and no additional upstream write. The existing deadline regression now explicitly exercises a live `in_progress` worker, retaining its 60/50/0-second expectations. Both exact-second worker regressions freeze the test clock: an initial full-suite run found a wall-clock boundary of 59 instead of 60, not a production-policy change; no assertion was weakened.
+
+- All **345 dependency-free Node tests passed**, including **34 reconciliation tests**: immediate/2/3/5/8 policy, second-read confirmation, transport failures with old 60-second metadata, worker grace, 401/403 stop, no polling after normal success, and plain wording. Timer/transport helper behavior is executed; dialog wiring is static, not actual React interaction.
+- The full targeted seven Laravel email files passed on rerun: **187 tests / 3532 assertions**, with real HTTP middleware/services against isolated synthetic SQLite and only upstream Mailcow faked. The focused reconciliation class also passed separately (30 tests before the clock stabilization). This is not live application/browser acceptance or MariaDB lock evidence; whole-suite discovery's historical unrelated failure is not claimed resolved.
+- Changed production frontend ESLint, production build, six PHP source contracts, both changed PHP syntax checks, Composer validation/platform checks and receipt React SSR passed. Build still has the pre-existing >500kB chunk warning. SSR verifies long-name/address and 24/64-password output, not browser PDF geometry.
+- The permitted in-app browser was retried and again failed before execution with `codex/sandbox-state-meta: missing field sandboxPolicy`. Desktop/mobile rendered screenshots, React-to-isolated-Laravel interaction and downloaded-PDF inspection remain **unexecuted**. No unauthorized browser/CDP fallback, dependencies, production data, or live Mailcow were used. Existing design-source references were inspected; that does not substitute for rendered comparison.
+- MariaDB multi-connection concurrency is not verified in this correction; the SQL/schema/lock/write state machine is unchanged. Synthetic SQLite HTTP tests are not production concurrency evidence.
 
 The permitted in-app browser bootstrap failed before execution with `codex/sandbox-state-meta: missing field sandboxPolicy`; no independent browser/CDP bypass was used. Actual React timer interaction, desktop/mobile screenshots, React connected to live isolated Laravel, real receipt download/opening and visual PDF inspection are **unexecuted**. No MariaDB multi-connection test was run for this increment: deterministic SQLite generation interleaving is not production lock/concurrency proof. Whole PHPUnit discovery's previously recorded unrelated final-method override failure is not claimed resolved; only the seven named email files were run. No dependencies were installed.
 

@@ -32,7 +32,9 @@ class UniversityEmailReconciliationTest extends UniversityEmailPhase2Test
             ->assertJsonPath('data.credential_state.status', 'lost_after_reconciliation')
             ->assertJsonPath('data.credential_operation_id', null)->assertJsonMissingPath('data.credentials');
         $this->assertSame('waiting', $initial['reconciliation']['status']);
-        $this->assertSame(60, $initial['reconciliation']['retry_after_seconds']);
+        $this->assertSame('fast_read_check', $initial['reconciliation']['mode']);
+        $this->assertSame(2, $initial['reconciliation']['retry_after_seconds']);
+        $this->assertNull($initial['reconciliation']['ready_at']);
         $this->postJson(self::API.'/provisioning/receipt', ['operation_id' => $op->operation_id, 'generation' => $op->generation])->assertConflict();
         $this->assertSame(1, $this->writes);
         $this->assertDatabaseHas('university_email_operations', ['operation_id' => $op->operation_id, 'status' => 'confirmed']);
@@ -43,10 +45,11 @@ class UniversityEmailReconciliationTest extends UniversityEmailPhase2Test
     {
         $op = $this->lostCreate(); $box = $this->boxes; $this->boxes = [];
         $auditCount = DB::table('user_activity_logs')->count();
-        foreach ([0, 20] as $seconds) {
+        foreach ([0, 2, 3] as $seconds) {
             $this->travel($seconds)->seconds();
             $response = $this->postJson(self::API.'/creation-check')->assertOk()
-                ->assertJsonPath('data.reconciliation.status', 'waiting');
+                ->assertJsonPath('data.reconciliation.status', 'waiting')
+                ->assertJsonPath('data.reconciliation.mode', 'fast_read_check');
             $this->assertGreaterThan(0, $response->json('data.reconciliation.retry_after_seconds'));
             $this->assertDatabaseHas('university_email_operations', ['operation_id' => $op->operation_id,
                 'status' => 'uncertain', 'creation_slot' => 1, 'active_slot' => 1]);
@@ -79,7 +82,10 @@ class UniversityEmailReconciliationTest extends UniversityEmailPhase2Test
 
     public function test_waiting_deadline_is_stable_and_post_grace_failure_is_unresolved(): void
     {
+        $this->freezeTime();
         $op = $this->lostCreate(); $this->boxes = [];
+        // Live workers retain their original grace; started uncertain creates have a separate policy.
+        DB::table('university_email_operations')->where('operation_id', $op->operation_id)->update(['status' => 'in_progress']);
         $readyAt = $this->getJson(self::API.'/provisioning')->assertOk()->json('data.reconciliation.ready_at');
         $this->travel(10)->seconds();
         $this->postJson(self::API.'/creation-check')->assertOk()
@@ -93,18 +99,45 @@ class UniversityEmailReconciliationTest extends UniversityEmailPhase2Test
 
     public function test_active_worker_waits_without_remote_read_or_automatic_preflight_cancellation(): void
     {
+        $this->freezeTime();
         $this->putJson(self::API.'/draft', ['english_first_name' => 'Synthetic', 'revision' => 0])->assertOk();
         $c = $this->postJson(self::API.'/provisioning/password', ['revision' => 1])->assertOk()->json('data');
         foreach (['preflight', 'in_progress'] as $status) {
             DB::table('university_email_operations')->update(['status' => $status, 'updated_at' => now(), 'active_slot' => 1,
                 'write_started_at' => $status === 'in_progress' ? now() : null]);
-            $this->postJson(self::API.'/creation-check')->assertOk()->assertJsonPath('data.reconciliation.status', 'waiting');
+            $this->postJson(self::API.'/creation-check')->assertOk()->assertJsonPath('data.reconciliation.status', 'waiting')
+                ->assertJsonPath('data.reconciliation.mode', 'worker_grace')
+                ->assertJsonPath('data.reconciliation.retry_after_seconds', 60);
         }
         $this->travel(61)->seconds();
         DB::table('university_email_operations')->update(['status' => 'preflight', 'write_started_at' => null]);
         $this->postJson(self::API.'/creation-check')->assertOk()->assertJsonPath('data.reconciliation.status', 'unresolved');
         $this->assertDatabaseHas('university_email_operations', ['operation_id' => $c['operation_id'], 'status' => 'preflight', 'active_slot' => 1]);
         Http::assertNothingSent();
+    }
+
+    public function test_fast_negative_reads_keep_slots_clock_and_audit_unchanged_without_remote_writes(): void
+    {
+        $op = $this->lostCreate(); $this->boxes = [];
+        $audit = DB::table('user_activity_logs')->count();
+        $requestsBefore = Http::recorded()->count();
+        foreach ([0, 2, 3, 5, 8] as $seconds) {
+            $this->travel($seconds)->seconds();
+            $this->postJson(self::API.'/creation-check')->assertOk()
+                ->assertJsonPath('data.reconciliation.mode', 'fast_read_check')
+                ->assertJsonPath('data.reconciliation.retry_after_seconds', 2)
+                ->assertJsonPath('data.creation.status', 'verify')
+                ->assertJsonPath('data.credential_state.status', 'none');
+            $this->assertDatabaseHas('university_email_operations', ['operation_id' => $op->operation_id,
+                'status' => 'uncertain', 'active_slot' => 1, 'creation_slot' => 1]);
+            $this->assertSame($op->updated_at->toDateTimeString(), $op->fresh()->updated_at->toDateTimeString());
+            $this->assertSame($audit, DB::table('user_activity_logs')->count());
+        }
+        $recoveryRequests = Http::recorded()->slice($requestsBefore);
+        $this->assertCount(5, $recoveryRequests);
+        $this->assertTrue($recoveryRequests->every(fn ($pair) => $pair[0]->method() === 'GET'));
+        $this->assertSame(1, $this->writes); // Original create only; all recovery checks are upstream reads.
+        $this->assertDatabaseCount('university_email_receipts', 0);
     }
 
     public function test_explicit_reset_after_reconciliation_returns_new_credentials_and_receipt(): void

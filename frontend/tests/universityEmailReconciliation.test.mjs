@@ -2,15 +2,17 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { creationMode, loadCreationState, sendCreation } from '../src/features/technical-portal/lib/emailCreation.js'
-import { initialCredentialsLost, pendingCreationReconciliation, startCreationReconciliation } from '../src/features/technical-portal/lib/emailReconciliation.js'
+import { fastCreationRead, initialCredentialsLost, pendingCreationReconciliation, reconciliationNoDuplicate, reconciliationUnresolved, reconciliationWaiting, startCreationReconciliation } from '../src/features/technical-portal/lib/emailReconciliation.js'
 
 const api = '/v1/technical/university-email/students/1'
 const waiting = { provisioning_status: 'draft', creation: { status: 'verify' },
-  pending_operation: { operation_id: 'synthetic-op', kind: 'create', status: 'uncertain', write_started_at: 'synthetic' },
+  pending_operation: { operation_id: 'synthetic-op', kind: 'create', status: 'in_progress', write_started_at: 'synthetic' },
   reconciliation: { status: 'waiting', retry_after_seconds: 60, ready_at: 'synthetic' } }
 const confirmed = { provisioning_status: 'created', creation: { status: 'existing' }, pending_operation: null,
   reconciliation: { status: 'ready', retry_after_seconds: 0 }, credential_operation_id: null }
 const unresolved = { ...waiting, reconciliation: { status: 'unresolved', retry_after_seconds: 0 } }
+const fast = { ...waiting, pending_operation: { ...waiting.pending_operation, status: 'uncertain' },
+  reconciliation: { ...waiting.reconciliation, mode: 'fast_read_check', retry_after_seconds: 2 } }
 
 function polling(responses = [unresolved], initial = waiting) {
   const timers = new Map(), delays = [], calls = [], states = []
@@ -31,19 +33,74 @@ function polling(responses = [unresolved], initial = waiting) {
   }
 }
 
+test('started uncertain create checks immediately then 2/3/5/8 seconds, never waits a minute or writes', async () => {
+  const p = polling([fast], fast)
+  assert.deepEqual(p.delays, [0])
+  for (let i = 0; i < 5; i++) await p.tick()
+  assert.deepEqual(p.delays, [0, 2000, 3000, 5000, 8000])
+  assert.equal(p.calls.length, 5); assert.equal(p.exhausted(), true); assert.equal(p.timers.size, 0)
+  assert.ok(p.calls.every(c => c.url === `${api}/creation-check`))
+})
+
 test('inside grace is waiting rather than a retry/error; cannot create', () => {
   assert.equal(creationMode(waiting), 'waiting')
   assert.equal(pendingCreationReconciliation(waiting), true)
   assert.throws(() => sendCreation(api, waiting, 'Synthetic', () => assert.fail('No write')))
 })
 
-test('opening a recent uncertain create reads once immediately for positive proof; never writes', async () => {
+test('opening a recent uncertain create delegates its one immediate read to the bounded controller', async () => {
   const calls = []
   const state = await loadCreationState(api, async url => {
-    calls.push(url); return { data: url.endsWith('/creation-check') ? confirmed : waiting }
+    calls.push(url); return { data: fast }
   }, () => true, true)
-  assert.equal(state, confirmed)
-  assert.deepEqual(calls, [`${api}/provisioning`, `${api}/creation-check`])
+  assert.equal(state, fast)
+  assert.deepEqual(calls, [`${api}/provisioning`])
+  const p = polling([confirmed], state)
+  assert.deepEqual(p.delays, [0]); await p.tick()
+  assert.equal(p.calls.length, 1); assert.equal(p.timers.size, 0)
+})
+
+test('fast confirmation on the second read cancels all remaining timers', async () => {
+  const p = polling([fast, confirmed], fast)
+  await p.tick(); assert.deepEqual(p.delays, [0, 2000]); await p.tick()
+  assert.equal(p.states[1], confirmed); assert.equal(p.timers.size, 0); assert.equal(p.exhausted(), false)
+})
+
+test('fast transport errors use only 2/3/5/8, even with legacy 60-second metadata', async () => {
+  const p = polling([new Error('Synthetic offline')], { ...fast, reconciliation: waiting.reconciliation })
+  for (let i = 0; i < 5; i++) await p.tick()
+  assert.deepEqual(p.delays, [0, 2000, 3000, 5000, 8000]); assert.equal(p.exhausted(), true)
+  assert.ok(p.calls.every(c => c.url === `${api}/creation-check`))
+})
+
+for (const status of ['preflight', 'in_progress', 'uncertain']) test(`${status} without write start retains worker grace`, async () => {
+  const worker = { ...waiting, pending_operation: { ...waiting.pending_operation, status, write_started_at: null } }
+  assert.equal(fastCreationRead(worker), false)
+  const p = polling([confirmed], worker)
+  assert.deepEqual(p.delays, [60000]); await p.tick(); assert.equal(p.timers.size, 0)
+})
+
+for (const status of [401, 403]) test(`fast authorization ${status} stops on its immediate read`, async () => {
+  const error = new Error('Synthetic denied'); error.status = status
+  const p = polling([error], fast); await p.tick()
+  assert.equal(p.calls.length, 1); assert.equal(p.timers.size, 0); assert.equal(p.exhausted(), false)
+})
+
+test('normal creation success with RAM credentials does not enter recovery', async () => {
+  const state = { ...confirmed, credentials: { password: 'Synthetic RAM only' } }
+  const calls = []
+  assert.equal(await loadCreationState(api, async url => { calls.push(url); return { data: state } }, () => true, true), state)
+  assert.deepEqual(calls, [`${api}/provisioning`]); assert.equal(polling([], state).timers.size, 0)
+})
+
+test('user-facing recovery language is plain, with no extra-write jargon', () => {
+  assert.equal(reconciliationWaiting, 'يجري التحقق من إنشاء البريد…')
+  assert.equal(reconciliationUnresolved, 'تعذر التأكد من نتيجة إنشاء البريد حتى الآن.')
+  assert.equal(reconciliationNoDuplicate, 'لم تتم إعادة محاولة الإنشاء لتجنب تكرار الحساب.')
+  for (const file of ['components/UniversityEmailMailboxDialog.jsx', 'lib/emailReconciliation.js', 'lib/emailCreation.js']) {
+    const source = readFileSync(new URL(`../src/features/technical-portal/${file}`, import.meta.url), 'utf8')
+    assert.doesNotMatch(source, /كتابة إضافية|تعذر حسم حالة البريد/)
+  }
 })
 
 test('server deadline schedules one read-only automatic check, confirmation needs no click', async () => {
@@ -153,6 +210,9 @@ test('dialog waiting/explicit reset and existing auto receipt wiring remain sepa
   const dialog = readFileSync(new URL('../src/features/technical-portal/components/UniversityEmailMailboxDialog.jsx', import.meta.url), 'utf8')
   assert.match(dialog, /return stop/)
   assert.match(dialog, /requiresCheck && !waiting/)
+  assert.match(dialog, /!recoveryOperation \|\| exhausted/)
+  assert.match(dialog, /recoveryFast, recoveryEpoch/)
+  assert.match(dialog, /reconciliationNoDuplicate/)
   assert.match(dialog, /waiting && <div/)
   assert.match(dialog, /reconciliationWaiting/)
   assert.match(dialog, /lostInitialCredentials/)
