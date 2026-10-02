@@ -2,6 +2,12 @@ export const reconciliationWaiting = 'تم إرسال طلب إنشاء البر
 export const reconciliationUnresolved = 'تعذر التأكد تلقائيًا من نتيجة العملية حتى الآن. لم يتم إرسال طلب إنشاء جديد حفاظًا على الحساب.'
 export const lostInitialCredentials = 'تم إنشاء البريد وتأكيده، لكن تعذر استعادة كلمة المرور الأولية بسبب انقطاع الاستجابة.'
 
+/** Only the server's durable evidence identifies this recovery case. RAM still governs receipt use. */
+export function initialCredentialsLost(state, usable = false) {
+  return !usable && state?.provisioning_status === 'created'
+    && state.credential_state?.status === 'lost_after_reconciliation'
+}
+
 export function pendingCreationReconciliation(state) {
   const op = state?.pending_operation
   return !!op && op.kind === 'create' && ['preflight', 'in_progress', 'uncertain'].includes(op.status)
@@ -30,12 +36,13 @@ export function startCreationReconciliation({ api, initialState, request, isCurr
     timer = null
     if (!current()) { stop(); return }
     attempts++
-    let next = initialState
+    let next
     try {
       const json = await request(`${api}/creation-check`, { method: 'POST', cache: 'no-store', body: '{}' })
       if (!current()) return
-      next = json?.data
-      if (!next?.creation || !next?.reconciliation) throw new Error('استجابة التحقق غير صالحة.')
+      const received = json?.data
+      if (!received?.creation || !received?.reconciliation) throw new Error('استجابة التحقق غير صالحة.')
+      next = received // Only a fresh validated response may supply another server delay.
       if (next.pending_operation && next.pending_operation.operation_id !== operation) { stop(); onExhausted(); return }
       await onState(next)
       if (!current()) return
@@ -43,6 +50,7 @@ export function startCreationReconciliation({ api, initialState, request, isCurr
     } catch (failure) {
       if (!current()) return
       if (onError(failure) || [401, 403].includes(failure.status)) { stop(); return }
+      next = null // Expired initial/server deadlines cannot extend a transport-error backoff.
     }
     if (attempts >= 4) { stop(); onChecking(false); onExhausted(); return }
     queue(next, [3000, 5000, 10000][attempts - 1])

@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { creationMode, loadCreationState, sendCreation } from '../src/features/technical-portal/lib/emailCreation.js'
-import { pendingCreationReconciliation, startCreationReconciliation } from '../src/features/technical-portal/lib/emailReconciliation.js'
+import { initialCredentialsLost, pendingCreationReconciliation, startCreationReconciliation } from '../src/features/technical-portal/lib/emailReconciliation.js'
 
 const api = '/v1/technical/university-email/students/1'
 const waiting = { provisioning_status: 'draft', creation: { status: 'verify' },
@@ -83,8 +83,8 @@ test('authorization loss before timer fires suppresses the request', async () =>
   const p = polling(); p.revoke(); await p.tick(); assert.equal(p.calls.length, 0); assert.equal(p.timers.size, 0)
 })
 
-test('authorization denial on a read stops without further polling', async () => {
-  const error = new Error('Synthetic denied'); error.status = 403
+for (const status of [401, 403]) test(`authorization ${status} on a read stops without further polling`, async () => {
+  const error = new Error('Synthetic denied'); error.status = status
   const p = polling([error]); await p.tick(); assert.equal(p.calls.length, 1); assert.equal(p.timers.size, 0)
   assert.equal(p.exhausted(), false)
 })
@@ -100,6 +100,43 @@ test('transport failures consume the bounded budget rather than reissuing a writ
   const p = polling([new Error('Synthetic offline')], unresolved)
   for (let i = 0; i < 4; i++) await p.tick()
   assert.equal(p.errors(), 4); assert.equal(p.exhausted(), true); assert.equal(p.calls.length, 4)
+})
+
+test('expired initial 60-second deadline is never reused after transport failures', async () => {
+  const p = polling([new Error('Synthetic transport failure')], waiting)
+  assert.deepEqual(p.delays, [60000])
+  await p.tick(); assert.deepEqual(p.delays, [60000, 3000])
+  await p.tick(); assert.deepEqual(p.delays, [60000, 3000, 5000])
+  await p.tick(); assert.deepEqual(p.delays, [60000, 3000, 5000, 10000])
+  await p.tick()
+  assert.equal(p.exhausted(), true); assert.equal(p.timers.size, 0); assert.equal(p.calls.length, 4)
+  assert.ok(p.calls.every(c => c.url.endsWith('/creation-check')))
+})
+
+test('fresh server delay is still honoured after a prior transport error', async () => {
+  const fresh = { ...waiting, reconciliation: { ...waiting.reconciliation, retry_after_seconds: 12 } }
+  const p = polling([new Error('Synthetic offline'), fresh, confirmed], waiting)
+  await p.tick(); await p.tick()
+  assert.deepEqual(p.delays, [60000, 3000, 12000])
+  await p.tick(); assert.equal(p.timers.size, 0); assert.equal(p.exhausted(), false)
+})
+
+test('invalid response cannot reuse initial delay either', async () => {
+  const p = polling([{ malformed: true }], waiting)
+  await p.tick(); assert.deepEqual(p.delays, [60000, 3000])
+})
+
+test('lost-create wording requires explicit server evidence, never a null maintenance reference', () => {
+  for (const status of ['none', 'available', undefined]) {
+    const normal = { ...confirmed, linkage_origin: 'created', credential_state: { status } }
+    assert.equal(initialCredentialsLost(normal), false)
+  }
+  const lost = { ...confirmed, credential_state: { status: 'lost_after_reconciliation' } }
+  assert.equal(initialCredentialsLost(lost), true)
+  assert.equal(initialCredentialsLost(lost, true), false) // Visible confirmed RAM credentials take precedence.
+  assert.equal(initialCredentialsLost({ ...lost, provisioning_status: 'deleted' }), false)
+  assert.equal(initialCredentialsLost({ ...lost, provisioning_status: 'draft' }), false)
+  assert.equal(initialCredentialsLost({ ...lost, credential_state: { status: 'available' } }), false) // Explicit reset completed.
 })
 
 test('a different operation response is not followed or attached to the previous timer', async () => {
@@ -123,4 +160,6 @@ test('dialog waiting/explicit reset and existing auto receipt wiring remain sepa
   assert.match(dialog, /onClick=\{\(\) => startAction\('password_reset'\)\}/)
   assert.match(dialog, /downloadReceipt, onReceiptFailure: receiptFailure/)
   assert.match(dialog, /const usable = .*printableCredentials\(state, credentials\)/)
+  assert.match(dialog, /const lostCredentials = confirmed && initialCredentialsLost\(state, usable\)/)
+  assert.doesNotMatch(dialog, /const lostCredentials = .*credential_operation_id/)
 })

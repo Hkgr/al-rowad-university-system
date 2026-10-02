@@ -29,6 +29,7 @@ class UniversityEmailReconciliationTest extends UniversityEmailPhase2Test
             ->assertJsonPath('data.creation.status', 'existing')
             ->assertJsonPath('data.reconciliation.status', 'ready')
             ->assertJsonPath('data.pending_operation', null)
+            ->assertJsonPath('data.credential_state.status', 'lost_after_reconciliation')
             ->assertJsonPath('data.credential_operation_id', null)->assertJsonMissingPath('data.credentials');
         $this->assertSame('waiting', $initial['reconciliation']['status']);
         $this->assertSame(60, $initial['reconciliation']['retry_after_seconds']);
@@ -68,7 +69,8 @@ class UniversityEmailReconciliationTest extends UniversityEmailPhase2Test
             if ($wrong === 'quota') $this->boxes[$address]['quota'] = 25 * 1048576;
             if ($wrong === 'active') $this->boxes[$address]['active_int'] = 0;
             if ($wrong === 'force') $this->boxes[$address]['attributes']['force_pw_update'] = 0;
-            $this->postJson(self::API.'/creation-check')->assertOk()->assertJsonPath('data.creation.status', 'verify');
+            $this->postJson(self::API.'/creation-check')->assertOk()->assertJsonPath('data.creation.status', 'verify')
+                ->assertJsonPath('data.credential_state.status', 'none');
             $this->assertDatabaseHas('university_email_operations', ['operation_id' => $op->operation_id,
                 'status' => 'uncertain', 'creation_slot' => 1, 'active_slot' => 1]);
         }
@@ -133,5 +135,39 @@ class UniversityEmailReconciliationTest extends UniversityEmailPhase2Test
         $this->assertDatabaseHas('university_email_operations', ['operation_id' => $op->operation_id,
             'status' => 'uncertain', 'generation' => $op->generation + 1, 'creation_slot' => 1, 'active_slot' => 1]);
         $this->assertSame(1, $this->writes);
+    }
+
+    public function test_loss_semantic_requires_exact_persisted_audit_not_null_or_bounded_history(): void
+    {
+        (require database_path('migrations/2026_10_01_000003_add_university_email_account_management.php'))->up();
+        $op = $this->lostCreate();
+        $this->postJson(self::API.'/creation-check')->assertOk()->assertJsonPath('data.credential_state.status', 'lost_after_reconciliation');
+        $entry = DB::table('user_activity_logs')->where('action_code', 'university_email.creation_reconciled')->first();
+        $original = json_decode($entry->description, true, flags: JSON_THROW_ON_ERROR);
+        foreach (['operation_id', 'record_id', 'student_id', 'revision', 'generation'] as $wrong) {
+            $changed = $original; $changed[$wrong] = $wrong === 'operation_id' ? 'wrong-operation' : $original[$wrong] + 1;
+            DB::table('user_activity_logs')->where('activity_log_id', $entry->activity_log_id)->update(['description' => json_encode($changed, JSON_THROW_ON_ERROR)]);
+            $this->getJson(self::API.'/provisioning')->assertOk()->assertJsonPath('data.credential_state.status', 'none');
+        }
+        DB::table('user_activity_logs')->where('activity_log_id', $entry->activity_log_id)->update(['description' => 'Synthetic non-JSON historical entry']);
+        $this->getJson(self::API.'/provisioning')->assertOk()->assertJsonPath('data.credential_state.status', 'none');
+        DB::table('user_activity_logs')->where('activity_log_id', $entry->activity_log_id)->update(['description' => $entry->description]);
+        // Bounded UI operation history cannot be the evidence source.
+        for ($i = 0; $i < 55; $i++) {
+            DB::table('university_email_operations')->insert(['operation_id' => (string) \Illuminate\Support\Str::uuid(),
+                'university_email_id' => $op->university_email_id, 'kind' => 'suspend', 'status' => 'cancelled', 'generation' => 1,
+                'draft_revision' => $op->draft_revision, 'email_address' => $op->email_address, 'quota_mb' => 50,
+                'initiated_by_user_id' => 8, 'issued_by_user_id' => 8, 'reason' => 'Synthetic cancelled maintenance',
+                'cancelled_at' => now(), 'cancelled_by_user_id' => 8,
+                'created_at' => now()->addSeconds($i + 1), 'updated_at' => now()->addSeconds($i + 1)]);
+        }
+        $state = $this->getJson(self::API.'/provisioning')->assertOk()
+            ->assertJsonPath('data.credential_state.status', 'lost_after_reconciliation')->json('data');
+        $this->assertCount(50, $state['operations']);
+        $this->assertFalse(collect($state['operations'])->contains('operation_id', $op->operation_id));
+        $writes = $this->writes; $logs = DB::table('user_activity_logs')->count();
+        DB::table('user_activity_logs')->where('activity_log_id', $entry->activity_log_id)->delete();
+        $this->getJson(self::API.'/provisioning')->assertOk()->assertJsonPath('data.credential_state.status', 'none');
+        $this->assertSame($writes, $this->writes); $this->assertSame($logs - 1, DB::table('user_activity_logs')->count());
     }
 }

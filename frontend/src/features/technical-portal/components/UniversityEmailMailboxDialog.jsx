@@ -9,7 +9,7 @@ import { printableCredentials, provisioningFailure } from '../lib/emailProvision
 import { creationMode, loadCreationState, sendCreation, unresolvedCreation } from '../lib/emailCreation'
 import { accountPayload, deletionAllowed, deletionConfirmation, pendingAccountCheck } from '../lib/emailAccount'
 import { downloadCurrentCredentialReceipt, runMailboxAction } from '../lib/emailCredentialReceipt'
-import { lostInitialCredentials, pendingCreationReconciliation, reconciliationUnresolved, reconciliationWaiting, startCreationReconciliation } from '../lib/emailReconciliation'
+import { initialCredentialsLost, lostInitialCredentials, pendingCreationReconciliation, reconciliationUnresolved, reconciliationWaiting, startCreationReconciliation } from '../lib/emailReconciliation'
 import UniversityEmailDialog from './UniversityEmailDialog'
 import UniversityEmailReceipt from './UniversityEmailReceipt'
 
@@ -85,7 +85,7 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
   const blocked = busy || externalPending || loading
   const requiresCheck = ['verify', 'waiting'].includes(mode) || !!recoveryOperation || !!state?.pending_operation && confirmed
   const waiting = !exhausted && (!!recoveryOperation || autoChecking)
-  const lostCredentials = confirmed && !usable && !state?.credential_operation_id && state?.linkage_origin !== 'linked'
+  const lostCredentials = confirmed && initialCredentialsLost(state, usable)
   const accountVerified = confirmed && state.check?.owned && state.check.status === 'verified' && !state.pending_operation
   const mayDelete = deletionAllowed(state, canAccess(ACCESS.universityEmailDelete))
   const receiptFailure = (failure, credential) => {

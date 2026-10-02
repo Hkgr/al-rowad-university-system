@@ -175,7 +175,8 @@ final class UniversityEmailProvisioningService
         $reconciliation = ['status' => $retryAfter > 0 ? 'waiting' : 'ready',
             'retry_after_seconds' => $retryAfter, 'ready_at' => $readyAt?->toIso8601String(),
             'operation_id' => $pending?->operation_id];
-        return ['creation' => $creation, 'reconciliation' => $reconciliation, 'schema_ready' => true, 'enabled' => $this->remote->enabled(), 'draft_locked' => $remaining->isNotEmpty(),
+        return ['creation' => $creation, 'reconciliation' => $reconciliation, 'credential_state' => $this->credentialAvailabilityState($email),
+            'schema_ready' => true, 'enabled' => $this->remote->enabled(), 'draft_locked' => $remaining->isNotEmpty(),
             'revision' => $email?->revision ?? 0, 'deletion_schema_ready' => self::deletionSchemaReady(),
             'deleted_at' => $email?->deleted_at?->toIso8601String(),
             'deleted_by' => $email?->deleted_by_user_id ? app(UserIdentityService::class)->documentGenerator(User::findOrFail($email->deleted_by_user_id))['display_name'] : null,
@@ -188,6 +189,34 @@ final class UniversityEmailProvisioningService
             'remote_snapshot' => $email?->remote_snapshot, 'remote_checked_at' => $email?->remote_checked_at?->toIso8601String(),
             'operations' => $operations->map(fn ($op) => $op->only(['operation_id', 'kind', 'status', 'generation', 'draft_revision', 'failure_code', 'write_started_at', 'verified_at', 'cancelled_at']) +
                 ['can_cancel' => ! $op->write_started_at && in_array($op->status, ['prepared', 'failed', 'preflight', 'conflict'], true)])->all()];
+    }
+
+    /** Semantic provenance only, never a promise to recover a password from storage.
+     * A null credential reference alone says nothing about interrupted creation.
+     */
+    private function credentialAvailabilityState(?StudentUniversityEmail $email): array
+    {
+        $none = ['status' => 'none'];
+        if (! $email || $email->provisioning_status !== 'created' || ! $email->creation_operation_id) return $none;
+        if ($email->credential_operation_id) {
+            $available = self::cycleOperations($email)->whereKey($email->credential_operation_id)->where('status', 'confirmed')
+                ->whereIn('kind', ['create', 'reset', 'password_reset'])->exists();
+            return ['status' => $available ? 'available' : 'none'];
+        }
+        if ($email->linkage_origin === 'linked') return $none;
+        $creation = self::cycleOperations($email)->whereKey($email->creation_operation_id)->where('kind', 'create')
+            ->where('status', 'confirmed')->whereNotNull('write_started_at')->where('email_address', $email->email_address)->first();
+        if (! $creation) return $none;
+        // A completed credential reissue in this cycle permanently supersedes initial-loss wording,
+        // even if later suspend/activate clears its credential reference. Failed resets do not.
+        if (self::cycleOperations($email)->where('status', 'confirmed')->whereIn('kind', ['reset', 'password_reset'])->exists()) return $none;
+        // Exact durable audit provenance, not bounded UI history, null fields, or guessed timing.
+        $reconciled = UserActivityLog::where('module_code', 'users_permissions')->where('action_code', 'university_email.creation_reconciled')
+            ->whereRaw('JSON_VALID(description) = 1')
+            ->where('description->operation_id', $creation->operation_id)->where('description->record_id', $email->university_email_id)
+            ->where('description->student_id', $email->student_id)->where('description->revision', $creation->draft_revision)
+            ->where('description->generation', $creation->generation)->exists();
+        return ['status' => $reconciled ? 'lost_after_reconciliation' : 'none'];
     }
 
     /** Remote reads only; cannot revoke write authority or authorize a second remote creation. */
