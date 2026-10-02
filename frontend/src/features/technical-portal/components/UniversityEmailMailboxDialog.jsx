@@ -9,6 +9,7 @@ import { printableCredentials, provisioningFailure } from '../lib/emailProvision
 import { creationMode, loadCreationState, sendCreation, unresolvedCreation } from '../lib/emailCreation'
 import { accountPayload, deletionAllowed, deletionConfirmation, pendingAccountCheck } from '../lib/emailAccount'
 import { downloadCurrentCredentialReceipt, runMailboxAction } from '../lib/emailCredentialReceipt'
+import { lostInitialCredentials, pendingCreationReconciliation, reconciliationUnresolved, reconciliationWaiting, startCreationReconciliation } from '../lib/emailReconciliation'
 import UniversityEmailDialog from './UniversityEmailDialog'
 import UniversityEmailReceipt from './UniversityEmailReceipt'
 
@@ -25,12 +26,15 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
   const [state, setState] = useState(null), [credentials, setCredentials] = useState(null), [receipt, setReceipt] = useState(null)
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState('')
   const [receiptStatus, setReceiptStatus] = useState('idle'), [receiptError, setReceiptError] = useState('')
+  const [autoChecking, setAutoChecking] = useState(false), [exhausted, setExhausted] = useState(false), [recoveryEpoch, setRecoveryEpoch] = useState(0)
   const [reviewRequired, setReviewRequired] = useState(false), [technical, setTechnical] = useState(false)
   const [action, setAction] = useState(null), [reason, setReason] = useState(''), [confirmation, setConfirmation] = useState('')
   const [recreateForm, setRecreateForm] = useState(false)
   const [linkAddress, setLinkAddress] = useState(''), [linkPreview, setLinkPreview] = useState(null), [attested, setAttested] = useState(false)
   const alive = useRef(true), writing = useRef(false), sequence = useRef(0), receiptElement = useRef(null)
   const current = useCallback(() => alive.current && isCurrent(), [isCurrent])
+  const recoveryState = useRef(null)
+  const recoveryRefresh = useRef(onRefresh)
   const mayCreate = canAccess(ACCESS.universityEmailCreate) && canAccess(ACCESS.universityEmailManage) && canAccess(ACCESS.universityEmailReceipt)
   useEffect(() => { alive.current = true; const seq = sequence; return () => { alive.current = false; seq.current++ } }, [])
   useEffect(() => { onSensitive(!!credentials); return () => onSensitive(false) }, [credentials, onSensitive])
@@ -53,17 +57,35 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
       }
       if (!current() || sequence.current !== seq) return
       setState(result); setReviewRequired(false)
+      if (!pendingCreationReconciliation(result)) setAutoChecking(false)
+      if (pendingCreationReconciliation(result) || result.provisioning_status === 'created') setError('')
     } catch (failure) {
-      if (current() && sequence.current === seq && !onDenied(failure)) { setError(provisioningFailure(failure)); setReviewRequired(true) }
+      if (current() && sequence.current === seq && !onDenied(failure)) { setError(provisioningFailure(failure)); setReviewRequired(true); setAutoChecking(false) }
     } finally { if (current() && sequence.current === seq) setLoading(false) }
   }, [api, current, onDenied, mayCreate])
   useEffect(() => { const timer = setTimeout(load, 0); return () => clearTimeout(timer) }, [load])
+
+  useEffect(() => { recoveryState.current = state; recoveryRefresh.current = onRefresh }, [state, onRefresh])
+  const recoveryOperation = mayCreate && pendingCreationReconciliation(state) ? state.pending_operation.operation_id : null
+  useEffect(() => {
+    if (!recoveryOperation) return
+    const stop = startCreationReconciliation({ api, initialState: recoveryState.current, request: apiRequest, isCurrent: current,
+      onChecking: setAutoChecking, onExhausted: () => setExhausted(true), onError: onDenied,
+      onState: async next => {
+        setState(next); setReviewRequired(false); setError('')
+        if (next.provisioning_status === 'created') { setAutoChecking(false); await load(); if (current()) recoveryRefresh.current() }
+      },
+    })
+    return stop
+  }, [api, recoveryOperation, recoveryEpoch, current, load, onDenied])
 
   const mode = creationMode(state, reviewRequired), confirmed = mode === 'existing', deleted = mode === 'deleted'
   const usable = canAccess(ACCESS.universityEmailReceipt) && printableCredentials(state, credentials)
   const preview = previewAddress(name, student.student_number, data.settings.domain)
   const blocked = busy || externalPending || loading
-  const requiresCheck = mode === 'verify' || !!state?.pending_operation && confirmed
+  const requiresCheck = ['verify', 'waiting'].includes(mode) || !!recoveryOperation || !!state?.pending_operation && confirmed
+  const waiting = !exhausted && (!!recoveryOperation || autoChecking)
+  const lostCredentials = confirmed && !usable && !state?.credential_operation_id && state?.linkage_origin !== 'linked'
   const accountVerified = confirmed && state.check?.owned && state.check.status === 'verified' && !state.pending_operation
   const mayDelete = deletionAllowed(state, canAccess(ACCESS.universityEmailDelete))
   const receiptFailure = (failure, credential) => {
@@ -90,6 +112,7 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
     onStart: () => {
       setBusy(true); onPending(true); setError(''); setCredentials(null); setReceipt(null)
       setReceiptStatus('idle'); setReceiptError('')
+      setExhausted(false)
     },
     onConfirmed: async (confirmedState, credential) => {
       setState(confirmedState); setCredentials(credential)
@@ -99,7 +122,9 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
     downloadReceipt, onReceiptFailure: receiptFailure,
     onWriteFailure: async failure => {
       if (onDenied(failure)) return
-      setError(provisioningFailure(failure)); setReviewRequired(true)
+      if (returnsCredentials && !action && ![422, 503].includes(failure.status)) { setError(''); setAutoChecking(true) }
+      else setError(provisioningFailure(failure))
+      setReviewRequired(true)
       // A lost response is not rollback evidence. Only canonical read-only checking follows.
       await load(); onRefresh()
     },
@@ -138,7 +163,10 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
     if (!confirmed && !deleted && name !== (data.draft?.english_first_name || '') && !window.confirm('هل تريد إلغاء الاسم المقترح وإغلاق النافذة؟')) return
     setCredentials(null); setReceipt(null); onSensitive(false); onDirty(false); onClose()
   }
-  const review = async () => { if (blocked || writing.current) return; setError(''); await load(); onRefresh() }
+  const review = async () => {
+    if (blocked || writing.current) return
+    setError(''); setExhausted(false); setRecoveryEpoch(value => value + 1); await load(); onRefresh()
+  }
   const startAction = kind => { if (blocked || !accountVerified) return; setAction(kind); setReason(''); setConfirmation(''); setError('') }
   const previewLink = async () => {
     if (blocked || !current() || !canAccess(ACCESS.universityEmailLink)) return
@@ -154,18 +182,18 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
     if (!op || op.write_started_at || !['prepared', 'preflight', 'failed', 'conflict'].includes(op.status) || !canAccess(permission(op.kind))) return
     runWrite(() => apiRequest(`${api}/provisioning/cancel`, { method: 'POST', body: JSON.stringify({ operation_id: op.operation_id, generation: op.generation, confirmed: true }) }))
   }
-  const showForm = !action && !confirmed && !requiresCheck && (!deleted || recreateForm)
+  const showForm = !loading && !action && !confirmed && !requiresCheck && !waiting && (!deleted || recreateForm)
   return <UniversityEmailDialog title={action === 'delete' ? 'حذف البريد الجامعي' : confirmed ? 'إدارة البريد الجامعي' : 'إنشاء بريد جامعي'} subtitle={student.full_name} busy={busy || externalPending} onClose={close} footer={<>
     {action ? <><button type="button" className={action === 'delete' ? 'rounded-[10px] bg-red-600 px-5 py-2.5 text-[13px] font-bold text-white disabled:opacity-50' : primary} disabled={blocked || !reason.trim() || action === 'delete' && !deletionConfirmation(confirmation, student.student_number) || action === 'link' && (!attested || !linkPreview || linkPreview.email_address !== linkAddress)} onClick={executeAction}>{busy ? action === 'password_reset' ? 'جارٍ إعادة تعيين كلمة المرور…' : 'جارٍ التنفيذ…' : action === 'delete' ? 'حذف البريد نهائيًا' : action === 'password_reset' ? 'تأكيد إعادة التعيين' : 'تأكيد الإجراء'}</button><button type="button" className={secondary} disabled={blocked} onClick={() => setAction(null)}>إلغاء</button></>
       : <>{showForm && <button type="button" className={primary} disabled={blocked || !mayCreate || !preview || !state?.enabled || deleted && !state?.deletion_schema_ready} onClick={create}>{busy ? 'جارٍ إنشاء البريد…' : deleted ? 'إنشاء البريد الجديد' : mode === 'retry' ? 'إعادة المحاولة' : 'إنشاء البريد'}</button>}
         {deleted && !recreateForm && <button type="button" className={primary} disabled={blocked || !mayCreate || !!state.pending_operation} onClick={() => setRecreateForm(true)}>إنشاء بريد جديد</button>}
-        {requiresCheck && <button type="button" className={primary} disabled={blocked} onClick={review}><FaSyncAlt />التحقق مرة أخرى</button>}
-        <button type="button" className={secondary} disabled={busy || externalPending} onClick={close}>{usable || confirmed || deleted ? 'إنهاء' : 'إلغاء'}</button></>}
+        {requiresCheck && !waiting && !loading && <button type="button" className={primary} disabled={blocked} onClick={review}><FaSyncAlt />{exhausted ? 'إعادة التحقق' : 'التحقق مرة أخرى'}</button>}
+        {!waiting && <button type="button" className={secondary} disabled={busy || externalPending} onClick={close}>{usable || confirmed || deleted ? 'إنهاء' : 'إلغاء'}</button>}</>}
   </>}>
     <div className="grid grid-cols-1 gap-x-5 gap-y-2 rounded-[12px] border border-primary/10 bg-primary/[0.03] p-4 sm:grid-cols-2">
       {[[ 'الطالب', student.full_name ], ['الرقم الجامعي', student.student_number ], ['الكلية', student.college || 'غير محدد'], ['البرنامج', student.program || 'غير محدد']].map(([label, value]) => <div key={label}><span className="block text-[11px] text-text-light">{label}</span><span className="text-[13px] font-bold text-text-dark">{value}</span></div>)}
     </div>
-    {loading && <StatePanel state="loading" />}
+    {loading && !waiting && <StatePanel state="loading" />}
     {error && <Notice tone="warning">{error}</Notice>}
     {showForm && <section className="space-y-2">
       <h3 className="font-bold text-text-dark">بيانات البريد</h3><label htmlFor="english-first-name" className="block text-[12px] font-bold">الاسم الأول بالإنكليزي</label>
@@ -185,13 +213,15 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
       <div className="flex flex-wrap gap-2"><button type="button" className={secondary} disabled={blocked} onClick={() => copy(state.email_address)}><FaCopy />نسخ البريد</button><button type="button" className={secondary} disabled={blocked} onClick={() => copy(credentials.password)}><FaCopy />نسخ كلمة المرور</button>{['downloaded', 'failed'].includes(receiptStatus) && <button type="button" className={secondary} disabled={blocked} onClick={download}><FaDownload />إعادة تنزيل الإيصال</button>}</div>
     </section>}
     {deleted && !recreateForm && <section className="space-y-2"><p className="font-bold text-primary-dark">تم حذف البريد الجامعي</p><p dir="ltr" className="break-all font-mono text-text-light">{state.email_address}</p><p>وقت الحذف: <span dir="ltr">{state.deleted_at}</span></p><p>المسؤول: {state.deleted_by}</p></section>}
-    {requiresCheck && <><Notice tone="warning">{unresolvedCreation}</Notice><button type="button" className={secondary} disabled={blocked} onClick={() => setTechnical(value => !value)}>تفاصيل تقنية</button>{technical && <div className="space-y-2 text-[12px]"><p>تعذر حسم حالة البريد. لم تُرسل كتابة إضافية.</p>{state?.pending_operation && !state.pending_operation.write_started_at && canAccess(permission(state.pending_operation.kind)) && <button type="button" className={secondary} disabled={blocked} onClick={cancelSafe}>إلغاء المحاولة الآمنة</button>}</div>}</>}
+    {waiting && <div className="flex items-center gap-2 rounded-[12px] bg-primary/5 p-4 text-[13px] text-primary-dark" role="status"><FaSyncAlt className="animate-spin" aria-hidden="true" />{reconciliationWaiting}</div>}
+    {requiresCheck && !waiting && !loading && <><Notice tone="warning">{exhausted ? reconciliationUnresolved : unresolvedCreation}</Notice><button type="button" className={secondary} disabled={blocked} onClick={() => setTechnical(value => !value)}>تفاصيل تقنية</button>{technical && <div className="space-y-2 text-[12px]"><p>تعذر حسم حالة البريد. لم تُرسل كتابة إضافية.</p>{state?.pending_operation && !state.pending_operation.write_started_at && canAccess(permission(state.pending_operation.kind)) && <button type="button" className={secondary} disabled={blocked} onClick={cancelSafe}>إلغاء المحاولة الآمنة</button>}</div>}</>}
     {confirmed && !usable && !requiresCheck && !action && <section className="space-y-4">
+      {lostCredentials && <Notice>{lostInitialCredentials}</Notice>}
       <div className="flex flex-wrap items-center justify-between gap-2"><p dir="ltr" className="break-all font-mono font-bold text-primary-dark">{state.email_address}</p><Badge>{state.remote_snapshot?.exists ? state.remote_snapshot.active ? 'فعال' : 'موقوف' : 'يحتاج تحقق'}</Badge></div>
       <dl className="grid grid-cols-1 gap-2 text-[12px] sm:grid-cols-3"><div><dt className="text-text-light">الحصة</dt><dd>{state.remote_snapshot?.quota_bytes != null ? `${Math.round(state.remote_snapshot.quota_bytes / 1048576)} MiB` : 'غير متاح'}</dd></div><div><dt className="text-text-light">الاستخدام</dt><dd>{state.remote_snapshot?.used_bytes != null ? `${(state.remote_snapshot.used_bytes / 1048576).toFixed(1)} MiB` : 'غير متاح'}</dd></div><div><dt className="text-text-light">آخر تحقق</dt><dd dir="ltr">{state.remote_checked_at || 'غير متاح'}</dd></div></dl>
       <h3 className="font-bold text-text-dark">إجراءات الحساب</h3><div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <button type="button" className={secondary} disabled={blocked} onClick={review}><FaSyncAlt />تحديث معلومات البريد</button>
-        {canAccess(ACCESS.universityEmailReset) && canAccess(ACCESS.universityEmailReceipt) && <button type="button" className={secondary} disabled={blocked || !accountVerified} onClick={() => startAction('password_reset')}><FaKey />إعادة تعيين كلمة المرور</button>}
+        {canAccess(ACCESS.universityEmailReset) && canAccess(ACCESS.universityEmailReceipt) && <button type="button" className={secondary} disabled={blocked || !accountVerified} onClick={() => startAction('password_reset')}><FaKey />{lostCredentials ? 'إصدار كلمة مرور جديدة' : 'إعادة تعيين كلمة المرور'}</button>}
         {state.remote_snapshot?.active && canAccess(ACCESS.universityEmailSuspend) && <button type="button" className={secondary} disabled={blocked || !accountVerified} onClick={() => startAction('suspend')}><FaPause />إيقاف الحساب</button>}
         {state.remote_snapshot?.active === false && canAccess(ACCESS.universityEmailActivate) && <button type="button" className={secondary} disabled={blocked || !accountVerified} onClick={() => startAction('activate')}><FaPlay />تفعيل الحساب</button>}
       </div>

@@ -1,6 +1,7 @@
 /** Presentation follows the server's persisted safety decision, never a guessed remote outcome. */
 export function creationMode(state, reviewRequired = false) {
   if (reviewRequired || !state) return 'verify'
+  if (state.reconciliation?.status === 'waiting' && state.pending_operation?.kind === 'create') return 'waiting'
   if (state.provisioning_status === 'deleted') return 'deleted'
   if (state.provisioning_status === 'created') return 'existing'
   const status = state.creation?.status
@@ -15,7 +16,9 @@ export const unresolvedCreation = 'تعذر التأكد من نتيجة الم�
 export async function loadCreationState(api, request, isCurrent, canCheck) {
   const json = await request(`${api}/provisioning`, { cache: 'no-store' })
   if (!isCurrent()) return null
-  if (creationMode(json.data) !== 'verify' || !canCheck) return json.data
+  const earlyPositiveRead = json.data?.pending_operation?.kind === 'create'
+    && json.data.pending_operation.status === 'uncertain' && json.data.pending_operation.write_started_at
+  if (!canCheck || creationMode(json.data) !== 'verify' && !earlyPositiveRead) return json.data
   const checked = await request(`${api}/creation-check`, { method: 'POST', cache: 'no-store', body: '{}' })
   return isCurrent() ? checked.data : null
 }
