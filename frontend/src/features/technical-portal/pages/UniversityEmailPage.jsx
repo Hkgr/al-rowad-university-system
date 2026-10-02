@@ -8,7 +8,8 @@ import FilterBar from '../../../components/table/FilterBar'
 import { PageHeader, Section, Notice, StatePanel, InfoGrid, Badge } from '../../ministry-portal/components/MinistryUi'
 import ManualGradeDialog from '../../exam-board/components/ManualGradeDialog'
 import UniversityEmailMailboxDialog from '../components/UniversityEmailMailboxDialog'
-import { EMAIL_API, preparationLabels, requestSequence, studentSearchQuery } from '../lib/universityEmail'
+import { EMAIL_API, requestSequence, studentSearchQuery } from '../lib/universityEmail'
+import { accountStatusLabels } from '../lib/emailAccount'
 
 const secondary = 'inline-flex items-center justify-center gap-2 py-2 px-4 rounded-[10px] border border-primary/20 bg-white text-primary-dark text-[13px] font-bold disabled:opacity-50'
 const stamp = () => JSON.stringify(getIdentity())
@@ -26,6 +27,7 @@ export default function UniversityEmailPage() {
 
 function Workspace({ identity }) {
   const [search, setSearch] = useState(''), [applied, setApplied] = useState(''), [page, setPage] = useState(1)
+  const [status, setStatus] = useState('')
   const [list, setList] = useState(null), [listError, setListError] = useState(null), [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null), [snapshot, setSnapshot] = useState(null), [detailError, setDetailError] = useState(null), [detailBusy, setDetailBusy] = useState(false)
   const [dirty, setDirty] = useState(false), [pending, setPending] = useState(false), [notice, setNotice] = useState('')
@@ -76,7 +78,7 @@ function Workspace({ identity }) {
     listAbort.current = controller
     const load = async () => {
       try {
-        const json = await apiRequest(`${EMAIL_API}/students?${studentSearchQuery(applied, page)}`, { signal: controller.signal })
+        const json = await apiRequest(`${EMAIL_API}/students?${studentSearchQuery(applied, page, status)}`, { signal: controller.signal })
         if (!Array.isArray(json?.data) || !json?.meta) throw new Error('استجابة البحث غير صالحة؛ أعد المحاولة.')
         if (sequence.accepts(seq) && isCurrent() && applied === currentIntent.current && page === currentPage.current) { setList(json); setLoading(false); setListError(null) }
       } catch (error) {
@@ -85,7 +87,7 @@ function Workspace({ identity }) {
     }
     load()
     return () => { sequence.invalidate(); controller.abort() }
-  }, [applied, page, retry, isCurrent, deny])
+  }, [applied, page, status, retry, isCurrent, deny])
 
   const loadStudent = useCallback(async id => {
     detailAbort.current?.abort(); const controller = new AbortController(); detailAbort.current = controller
@@ -114,24 +116,29 @@ function Workspace({ identity }) {
   }, [isCurrent, deny])
   useEffect(() => { const timer = setTimeout(checkHealth, 0); return () => clearTimeout(timer) }, [checkHealth])
   const columns = [
-    { key: 'student', header: 'الطالب', dir: 'rtl', render: row => <span className="font-semibold">{row.full_name}</span> },
-    { key: 'number', header: 'الرقم الجامعي', render: row => <span dir="ltr">{row.student_number}</span> },
-    { key: 'college', header: 'الكلية', render: row => row.college || 'غير محدد' },
-    { key: 'program', header: 'البرنامج', render: row => row.program || 'غير محدد' },
-    { key: 'email', header: 'البريد الجامعي', render: row => <span dir="ltr" className="break-all">{row.email_preparation?.email_address || '—'}</span> },
-    { key: 'preparation', header: 'الحالة', render: row => <Badge>{row.email_preparation?.provisioning_status === 'created' ? 'بريد مؤكد' : row.email_preparation?.available === true ? 'لم يُنشأ صندوق مؤكد' : preparationLabels(row.email_preparation).preparation}</Badge> },
-    { key: 'action', header: 'الإجراء', render: row => <button type="button" className={secondary} onClick={() => select(row.student_id)} disabled={pending}>{row.email_preparation?.provisioning_status === 'created' ? 'إدارة البريد' : 'إنشاء بريد'}</button> },
+    { key: 'index', header: '#', render: (_, index) => (page - 1) * (list?.meta?.per_page || 15) + index + 1 },
+    { key: 'number', header: 'الرقم الجامعي', render: row => <span dir="ltr" className="inline-block rounded-[8px] border border-primary/15 bg-primary/8 px-2.5 py-[3px] text-center font-mono text-[12px] font-bold text-primary-dark">{row.student_number}</span> },
+    { key: 'student', header: 'الطالب', dir: 'rtl', render: row => <span className="font-bold text-text-dark">{row.full_name}</span> },
+    { key: 'college', header: 'الكلية', render: row => <span className="text-[12px] text-text-light">{row.college || 'غير محدد'}</span> },
+    { key: 'program', header: 'البرنامج', render: row => <span className="text-[12px] text-text-light">{row.program || 'غير محدد'}</span> },
+    { key: 'email', header: 'البريد الجامعي', render: row => <span dir="ltr" className="break-all font-mono text-[12px] text-text-light">{row.email_preparation?.email_address || '—'}</span> },
+    { key: 'preparation', header: 'الحالة', render: row => <Badge>{accountStatusLabels[row.email_preparation?.account_status] || 'غير متاح'}</Badge> },
+    { key: 'action', header: 'الإجراء', render: row => <button type="button" className="inline-flex items-center gap-1.5 rounded-[8px] border border-primary/15 bg-primary/5 px-2 py-1.5 text-[12px] font-bold text-primary-dark disabled:opacity-50" title={row.email_preparation?.account_status === 'deleted' ? 'إنشاء بريد جديد' : row.email_preparation?.provisioning_status === 'created' ? 'إدارة البريد' : 'إنشاء بريد'} onClick={() => select(row.student_id)} disabled={pending}><FaEnvelope />{row.email_preparation?.account_status === 'deleted' ? 'إنشاء بريد جديد' : row.email_preparation?.provisioning_status === 'created' ? 'إدارة' : 'إنشاء'}</button> },
   ]
   if (denied) return <StatePanel state="forbidden" message="انتهى الوصول المصرح؛ أُخفيت بيانات الطلاب. أعد تسجيل الدخول بعد التحقق من صلاحياتك." />
   return <div dir="rtl" className="space-y-4">
     <PageHeader title="البريد الجامعي" en="University email" subtitle="إنشاء بريد فردي للطالب وإدارة الحسابات المؤكدة" />
     <Notice>اختر الطالب ثم «إنشاء بريد». بيانات الدخول مؤقتة، وتنزيل PDF لا يسجل استلامًا أو تسليمًا.</Notice>
+    <p className="text-[12px] text-text-light">حالة البريد هي آخر حالة محفوظة محليًا؛ تُحدّث معلومات الصندوق عند فتح إدارته.</p>
     {notice && <Notice>{notice}</Notice>}
     {canAccess(ACCESS.universityEmailCheck) && <Section title="اتصال خادم البريد — قراءة فقط" action={<button type="button" className={secondary} disabled={healthBusy} onClick={checkHealth}><FaSyncAlt />{healthBusy ? 'جاري الفحص…' : 'فحص اتصال Mailcow'}</button>}>
       {healthError && <Notice tone="warning">{healthError} البحث والحفظ المحلي مستقلان عن هذا الفحص.</Notice>}
       {health ? <InfoGrid items={[[ 'النطاق', health.domain ], ['حالة النطاق', health.active ? 'فعال' : 'غير فعال'], ['الصناديق الحالية', health.mailbox_count], ['الحد الحالي', health.mailbox_limit], ['المتاح حاليًا', health.remaining_mailboxes], ['وقت الفحص', health.checked_at]]} /> : !healthError && <p className="text-[12px] text-text-light">يُفحص الاتصال مرة عند فتح الصفحة، لا لكل طالب. هذا الفحص لا يغير إعدادات Mailcow.</p>}
     </Section>}
-    <FilterBar search={{ value: search, onChange: changeSearch, placeholder: 'ابحث باسم الطالب بالعربية أو رقمه الجامعي…' }} />
+    <FilterBar search={{ value: search, onChange: changeSearch, placeholder: 'ابحث باسم الطالب أو الرقم الجامعي…' }} filters={[{ key: 'status', value: status, placeholder: 'جميع الحالات', options: Object.entries(accountStatusLabels).filter(([key]) => key !== 'unavailable').map(([value, label]) => ({ value, label })), onChange: value => {
+      if (value === status) return
+      listSequence.current.invalidate(); listAbort.current?.abort(); currentPage.current = 1; setPage(1); setStatus(value); setList(null); setListError(null); setLoading(true)
+    } }]} />
     {list?.email_schema_ready === false && <Notice tone="warning">تجهيز البريد غير جاهز؛ تعذر قراءة حالته المحلية. يلزم استكمال إعداد الخادم، ولا يعني ذلك أن الطلاب بلا بريد.</Notice>}
     {listError && <StatePanel state={[401,403].includes(listError.status) ? 'forbidden' : 'error'} message={listError.message} onRetry={() => { setLoading(true); setRetry(r => r + 1) }} />}
     {!listError && <DataTable columns={columns} rows={list?.data || []} rowKey={row => row.student_id} loading={loading} page={page} totalPages={list?.meta?.last_page || 1} onPageChange={value => { if (value === page) return; currentPage.current = value; listSequence.current.invalidate(); listAbort.current?.abort(); setLoading(true); setPage(value) }} emptyIcon={FaEnvelope} emptyTitle="لا توجد نتائج ضمن نطاقك" />}

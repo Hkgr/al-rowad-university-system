@@ -35,6 +35,30 @@ final class UniversityEmailProvisioningController extends Controller
         $i = $this->input($r, ['revision' => 'required|integer|min:1'], Access::CREATE);
         return $this->response($s->password($r->user(), $student, (int) $i['revision'], 'create'));
     }
+    public function recreate(Request $r, int $student, Service $s): JsonResponse
+    {
+        $i = $this->input($r, ['english_first_name' => 'required|string|max:64', 'revision' => 'required|integer|min:1', 'confirmed' => 'required|accepted'], Access::CREATE);
+        return $this->response($s->recreate($r->user(), $student, $i['english_first_name'], (int) $i['revision']));
+    }
+    public function resetNow(Request $r, int $student, Service $s): JsonResponse
+    {
+        $i = $this->input($r, ['revision' => 'required|integer|min:1', 'reason' => 'required|string|max:500', 'confirmed' => 'required|accepted'], Access::RESET);
+        return $this->response($s->resetNow($r->user(), $student, (int) $i['revision'], $i['reason']));
+    }
+    public function accountAction(Request $r, int $student, Service $s): JsonResponse
+    {
+        $i = $this->input($r, ['revision' => 'required|integer|min:1', 'kind' => 'required|in:suspend,activate,link', 'reason' => 'required|string|max:500', 'confirmed' => 'required|accepted',
+            'email_address' => ['required_if:kind,link', 'prohibited_unless:kind,link', 'string', 'email', 'max:254', 'regex:/\A[^A-Z@\s]+@alrowaduni\.edu\.sy\z/D'],
+            'preview_proof' => 'required_if:kind,link|prohibited_unless:kind,link|string|size:64',
+            'ownership_confirmed' => 'required_if:kind,link|prohibited_unless:kind,link|accepted_if:kind,link'], Access::VIEW);
+        return $this->response($s->accountAction($r->user(), $student, $i));
+    }
+    public function deleteMailbox(Request $r, int $student, Service $s): JsonResponse
+    {
+        $i = $this->input($r, ['revision' => 'required|integer|min:1', 'student_number_confirmation' => 'required|string|max:64',
+            'reason' => 'required|string|max:500', 'confirmed' => 'required|accepted'], Access::DELETE);
+        return $this->response($s->accountAction($r->user(), $student, $i + ['kind' => 'delete']));
+    }
     public function retryCreate(Request $r, int $student, Service $s): JsonResponse
     {
         $i = $this->input($r, ['english_first_name' => 'required|string|max:64', 'confirmed' => 'required|accepted',

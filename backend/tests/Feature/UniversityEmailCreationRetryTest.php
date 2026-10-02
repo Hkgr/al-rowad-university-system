@@ -143,7 +143,7 @@ class UniversityEmailCreationRetryTest extends UniversityEmailPhase2Test
         $this->assertSame(1, $this->writes);
     }
 
-    public function test_retry_and_check_keep_ordinary_technical_permission_and_scope_restrictions(): void
+    public function test_retry_and_check_keep_technical_permissions_without_academic_scope_requirement(): void
     {
         $old = $this->prepareAttempt();
         foreach (['university_email.provision', 'university_email.view'] as $permission) {
@@ -153,12 +153,15 @@ class UniversityEmailCreationRetryTest extends UniversityEmailPhase2Test
             DB::table('permissions')->where('permission_code', $permission)->update(['is_active' => true]);
         }
         DB::table('user_access_scopes')->where('user_id', 8)->delete();
-        $this->postJson(self::API.'/retry-create', $this->retryPayload($old))->assertForbidden();
-        $this->postJson(self::API.'/creation-check')->assertForbidden();
+        $this->postJson(self::API.'/creation-check')->assertOk();
+        $this->postJson(self::API.'/retry-create', $this->retryPayload($old))->assertOk();
+        $requests = count(Http::recorded());
+        $this->getJson('/api/v1/students')->assertForbidden();
         Sanctum::actingAs(User::findOrFail(2));
         $this->postJson(self::API.'/retry-create', $this->retryPayload($old))->assertForbidden();
         $this->postJson(self::API.'/creation-check')->assertForbidden();
-        Http::assertNothingSent();
+        $this->assertSame($requests, count(Http::recorded()));
+        $this->assertSame(1, $this->writes);
     }
 
     public function test_strict_input_and_get_state_are_read_only(): void

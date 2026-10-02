@@ -214,7 +214,7 @@ class UniversityEmailPhase2Test extends TestCase
         $this->assertStringNotContainsString('password', json_encode($a));
     }
 
-    public function test_separate_permissions_actual_scope_and_unauthorized_identities(): void
+    public function test_separate_permissions_central_email_targeting_and_unauthorized_identities(): void
     {
         $this->putJson(self::ROOT.'/draft', ['english_first_name' => 'Ahmad', 'revision' => 0])->assertOk();
         $id = DB::table('permissions')->where('permission_code', Access::CREATE)->value('permission_id');
@@ -224,7 +224,8 @@ class UniversityEmailPhase2Test extends TestCase
         $this->postJson(self::ROOT.'/provisioning/password', ['revision' => 1])->assertOk();
         Sanctum::actingAs(User::findOrFail(8));
         DB::table('user_access_scopes')->where('user_id', 8)->delete();
-        $this->getJson(self::ROOT.'/provisioning')->assertForbidden();
+        $this->getJson(self::ROOT.'/provisioning')->assertOk();
+        $this->getJson('/api/v1/students')->assertForbidden();
         Http::assertNothingSent();
     }
 
@@ -369,6 +370,10 @@ class UniversityEmailPhase2Test extends TestCase
         if (getenv('UNIVERSITY_EMAIL_PHASE3_FIXTURE') === '1') {
             (require database_path('migrations/2026_10_01_000003_add_university_email_account_management.php'))->up();
             $this->artisan('university-email:enable-permissions --phase3')->assertExitCode(0);
+        }
+        if (getenv('UNIVERSITY_EMAIL_LIFECYCLE_FIXTURE') === '1') {
+            (require database_path('migrations/2026_10_02_000000_add_university_email_deletion_lifecycle.php'))->up();
+            DB::table('user_access_scopes')->where('user_id', 8)->delete();
         }
         // Long synthetic identity/address fixtures; never production student data.
         DB::table('students')->where('student_id', 1)->update(['first_name' => 'عبد الرحمن محمد أحمد الاختبار الاصطناعي الطويل', 'last_name' => 'الطالب ذو الاسم العربي الطويل لاختبار الإيصال']);

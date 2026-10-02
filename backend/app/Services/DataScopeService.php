@@ -79,12 +79,11 @@ class DataScopeService
         return $user->isSuperAdmin() || $this->hasActualUniversityScope($user);
     }
 
-    /** Email has no self-student or instructor entitlement: technical actual scopes or administrator. */
+    /** Central email targeting only; this does NOT grant academic DataScope. */
     public function scopeUniversityEmailStudents(Builder $query, User $user): Builder
     {
-        if ($user->isSuperAdmin()) return $query;
-        if (! $user->hasRoleCode('technical_team')) return $query->whereRaw('1 = 0');
-        return $this->scopeActualAcademicStudents($query, $user);
+        return \App\Support\UniversityEmailAccess::allows($user, \App\Support\UniversityEmailAccess::VIEW)
+            ? $query : $query->whereRaw('1 = 0');
     }
 
     public function canMutateStudent(User $user, Student $student): bool

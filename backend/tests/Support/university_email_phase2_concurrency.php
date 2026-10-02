@@ -77,8 +77,8 @@ Http::fake(function ($request) use ($directory, $worker, $argv) {
     if (DB::transactionLevel() !== 0) throw new RuntimeException('Remote call under transaction');
     $stage = $worker ? ($argv[2] ?? '') : '';
     if ($request->method() === 'GET' && str_contains($request->url(), '/get/mailbox/')) {
-        if (in_array($stage, ['before-write', 'control-before'], true) && ! is_file($directory.'/'.$stage.'.ready')) checkpoint($directory, $stage);
-        if (in_array($stage, ['after-remote', 'control-after'], true) && is_file($directory.'/'.$stage.'.sent') && ! is_file($directory.'/'.$stage.'.ready')) checkpoint($directory, $stage);
+        if (in_array($stage, ['before-write', 'control-before', 'delete-before', 'recreate-before'], true) && ! is_file($directory.'/'.$stage.'.ready')) checkpoint($directory, $stage);
+        if (in_array($stage, ['after-remote', 'control-after', 'delete-after'], true) && is_file($directory.'/'.$stage.'.sent') && ! is_file($directory.'/'.$stage.'.ready')) checkpoint($directory, $stage);
     }
     $file = fopen($directory.'/fake-mailcow.json', 'c+'); flock($file, LOCK_EX);
     $contents = stream_get_contents($file);
@@ -86,6 +86,14 @@ Http::fake(function ($request) use ($directory, $worker, $argv) {
     try {
         if (str_contains($request->url(), '/get/alias/all')) return Http::response([]);
         if (str_contains($request->url(), '/get/mailbox/')) return Http::response(array_values($data['boxes']));
+        if (str_contains($request->url(), '/delete/mailbox')) {
+            $address = $request->data()[0];
+            $data['posts'][] = ['address' => $address, 'kind' => 'delete'];
+            unset($data['boxes'][$address]);
+            rewind($file); ftruncate($file, 0); fwrite($file, json_encode($data, JSON_THROW_ON_ERROR)); fflush($file);
+            if ($stage === 'delete-after') file_put_contents($directory.'/'.$stage.'.sent', 'sent');
+            return Http::response([['type' => 'success', 'msg' => ['mailbox_removed', $address]]]);
+        }
         $reset = str_contains($request->url(), '/edit/mailbox');
         $address = $reset ? $request['items'][0] : $request['local_part'].'@'.$request['domain'];
         $data['posts'][] = ['address' => $address, 'reset' => $reset]; // Never store request/password.
@@ -116,7 +124,10 @@ if ($worker) {
         elseif ($job['action'] === 'cancel') $service->cancel($user, $student, $job['id'], $job['generation']);
         elseif ($job['action'] === 'receipt') $service->receipt($user, $student, $job['id'], $job['generation']);
         elseif ($job['action'] === 'account') $service->executeAccount($user, $student, ['operation_id' => $job['id'], 'generation' => $job['generation']]);
-        elseif ($job['action'] === 'prepare-password') $service->password($user, $student, $job['revision'], 'reset');
+        elseif ($job['action'] === 'prepare-password') $service->password($user, $student, $job['revision'], $job['kind'] ?? 'reset', 'Synthetic reset race');
+        elseif ($job['action'] === 'prepare-account') $service->prepareAccount($user, $student,
+            ['kind' => $job['kind'], 'revision' => $job['revision'], 'reason' => 'Synthetic management race']);
+        elseif ($job['action'] === 'recreate') $service->recreate($user, $student, $job['name'], $job['revision']);
         elseif ($job['action'] === 'prepare-link') {
             $preview = $service->previewLink($user, $student, $job['address']);
             checkpoint($directory, $argv[2]);
@@ -282,5 +293,87 @@ if (getenv('UNIVERSITY_EMAIL_ONE_STEP_FIXTURE') === '1') {
     $assert($posts() === $count + 2 && DB::table('student_university_emails')->where('email_address', 'shared.syntheticshared@alrowaduni.edu.sy')->count() === 1, 'Same address makes only one remote POST');
 }
 
+if (getenv('UNIVERSITY_EMAIL_LIFECYCLE_FIXTURE') === '1') {
+    $assert($phase3, 'Lifecycle exercise requires Phase 3 synthetic schema');
+    // Populate every PREVIOUS kind/status and both previous account states before ALTER.
+    $migrationStudent = (array) DB::table('students')->where('student_id', 1)->first();
+    DB::table('students')->insert(array_replace($migrationStudent, ['student_id' => 901, 'student_number' => 'MIGRATION901']));
+    app(\App\Services\UniversityEmailService::class)->save($user, 901, ['english_first_name' => 'Synthetic', 'revision' => 0]);
+    $migrationRoot = DB::table('student_university_emails')->where('student_id', 901)->value('university_email_id');
+    foreach (['create', 'reset', 'password_reset', 'suspend', 'activate', 'link'] as $kind) {
+        foreach (['prepared', 'preflight', 'in_progress', 'uncertain', 'confirmed', 'conflict', 'failed', 'cancelled'] as $status) {
+            DB::table('university_email_operations')->insert(['operation_id' => (string) \Illuminate\Support\Str::uuid(),
+                'university_email_id' => $migrationRoot, 'kind' => $kind, 'status' => $status, 'draft_revision' => 1,
+                'email_address' => 'synthetic.migration901@alrowaduni.edu.sy', 'quota_mb' => 50, 'generation' => 1,
+                'initiated_by_user_id' => 8, 'issued_by_user_id' => 8, 'created_at' => now(), 'updated_at' => now(),
+                'cancelled_at' => $status === 'cancelled' ? now() : null, 'cancelled_by_user_id' => $status === 'cancelled' ? 8 : null]);
+        }
+    }
+    $tables = ['student_university_emails', 'university_email_operations', 'university_email_receipts', 'user_activity_logs'];
+    $snapshots = [];
+    foreach ($tables as $table) $snapshots[$table] = DB::table($table)->get()->map(fn ($row) => (array) $row)->all();
+    // Apply to POPULATED MariaDB, preserving every historical enum value and record.
+    (require dirname(__DIR__, 2).'/database/migrations/2026_10_02_000000_add_university_email_deletion_lifecycle.php')->up();
+    foreach ($tables as $table) {
+        $columns = array_keys($snapshots[$table][0] ?? []);
+        $after = $columns ? DB::table($table)->get($columns)->map(fn ($row) => (array) $row)->all() : [];
+        $assert($snapshots[$table] === $after, 'Migration preserves populated '.$table);
+    }
+    $service->state($user, 1); // A populated MariaDB read also exercises the new JSON/state projection.
+    $listed = app(\App\Services\UniversityEmailService::class)->search($user, ['status' => 'active']);
+    $assert($listed['meta']['total'] >= 1, 'MariaDB current-state status filter');
+    $kind = DB::selectOne("SELECT COLUMN_TYPE AS kind FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'university_email_operations' AND COLUMN_NAME = 'kind'", [$database])->kind;
+    foreach (['create', 'reset', 'password_reset', 'suspend', 'activate', 'link', 'delete'] as $value) $assert(str_contains($kind, "'".$value."'"), 'Retained ENUM '.$value);
+    try { (require dirname(__DIR__, 2).'/database/migrations/2026_10_02_000000_add_university_email_deletion_lifecycle.php')->down(); throw new RuntimeException('Unsafe rollback permitted'); }
+    catch (RuntimeException $failure) { $assert(str_contains($failure->getMessage(), 'rollback refused'), 'Rollback explicitly refused'); }
+    DB::table('user_access_scopes')->where('user_id', 8)->delete(); $user = User::findOrFail(8);
+    $rootId = DB::table('student_university_emails')->where('student_id', 1)->value('university_email_id');
+    $originalCreate = DB::table('student_university_emails')->where('student_id', 1)->value('creation_operation_id');
+    // Handover is historical credential delivery, not a management lock.
+    DB::table('student_university_emails')->where('student_id', 1)->update(['handover_status' => 'delivered']);
+    $prepareDelete = function () use ($service, $user): array {
+        $state = $service->prepareAccount($user, 1, ['kind' => 'delete', 'revision' => DB::table('student_university_emails')->where('student_id', 1)->value('revision'),
+            'reason' => 'Synthetic lifecycle race', 'student_number_confirmation' => DB::table('students')->where('student_id', 1)->value('student_number')]);
+        return ['action' => 'account', 'id' => $state['pending_operation']['operation_id'], 'generation' => $state['pending_operation']['generation']];
+    };
+    $count = $posts(); $job = $prepareDelete(); $a = $start($job, 'delete-before'); $await('delete-before');
+    $b = $finish($start(['action' => 'cancel', 'id' => $job['id'], 'generation' => $job['generation']]));
+    $assert($b['result'] === 'ok', 'Delete cancellation wins before write');
+    $release('delete-before'); $one = $finish($a);
+    $assert($one['connection'] !== $b['connection'] && $one['result'] === 'university_email_operation_stale' && $posts() === $count, 'Cancelled delete worker never writes');
+
+    $job = $prepareDelete(); $a = $start($job, 'delete-after'); $await('delete-after');
+    $b = $finish($start($job)); $assert($b['result'] === 'university_email_operation_stale', 'Only one delete execution');
+    $b = $finish($start(['action' => 'prepare-password', 'kind' => 'password_reset', 'revision' => 1]));
+    $assert($b['result'] === 'university_email_operation_not_retryable', 'Delivered general reset cannot race started delete');
+    $b = $finish($start(['action' => 'prepare-account', 'kind' => 'suspend', 'revision' => 1]));
+    $assert($b['result'] === 'university_email_operation_in_progress', 'Delivered suspend cannot race started delete');
+    $b = $finish($start(['action' => 'create', 'name' => 'Other'])); $assert($b['result'] === 'university_email_operation_requires_review', 'Create cannot race started delete');
+    $b = $finish($start(['action' => 'cancel', 'id' => $job['id'], 'generation' => $job['generation']])); $assert($b['result'] === 'university_email_operation_not_cancellable', 'Started delete cannot be cancelled');
+    $release('delete-after'); $assert($finish($a)['result'] === 'ok' && $posts() === $count + 1, 'One verified remote removal');
+    $assert(DB::table('student_university_emails')->where('student_id', 1)->value('provisioning_status') === 'deleted', 'Local lifecycle is deleted');
+    $assert(DB::table('student_university_emails')->where('student_id', 1)->value('handover_status') === 'delivered', 'Delete preserves delivered history');
+    $assert(DB::table('university_email_operations')->where('university_email_id', $rootId)->where('active_slot', 1)->count() === 0, 'Delivered deletion leaves no active/prepared orphan');
+    $revision = (int) DB::table('student_university_emails')->where('student_id', 1)->value('revision');
+    $recreate = ['action' => 'recreate', 'name' => 'Newname', 'revision' => $revision];
+    $a = $start($recreate, 'recreate-before'); $await('recreate-before');
+    $b = $finish($start($recreate)); $assert($b['result'] === 'university_email_operation_stale', 'Second recreation loses old deleted revision');
+    $release('recreate-before'); $one = $finish($a);
+    $assert($one['result'] === 'ok' && $one['connection'] !== $b['connection'] && $posts() === $count + 2, 'One recreation from two connections');
+    $assert(DB::table('student_university_emails')->where('student_id', 1)->count() === 1 && DB::table('student_university_emails')->where('student_id', 1)->value('university_email_id') === $rootId, 'Same UNIQUE root reused');
+    $assert(DB::table('student_university_emails')->where('student_id', 1)->value('handover_status') === 'not_delivered', 'Recreation starts an undelivered credential cycle');
+    $assert(DB::table('university_email_operations')->where('operation_id', $job['id'])->value('status') === 'confirmed', 'Delete history retained');
+    $b = $finish($start(['action' => 'receipt', 'id' => $originalCreate, 'generation' => 1])); $assert($b['result'] === 'university_email_credentials_unavailable', 'Old-cycle receipt rejected');
+    $b = $finish($start($job)); $assert($b['result'] === 'university_email_operation_stale' && $posts() === $count + 2, 'Old delete UUID/generation cannot act in new cycle');
+    $job = $prepareDelete();
+    DB::unprepared("CREATE TRIGGER synthetic_delete_confirmation_failure BEFORE INSERT ON user_activity_logs FOR EACH ROW BEGIN IF NEW.action_code = 'university_email.delete_confirmed' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'synthetic failure'; END IF; END");
+    $b = $finish($start($job)); $assert($b['result'] === 'university_email_local_confirmation_failed' && $posts() === $count + 3, 'Remote removal/local failure remains recoverable');
+    $b = $finish($start($job)); $assert($b['result'] === 'university_email_operation_stale' && $posts() === $count + 3, 'Uncertain deletion never repeats POST');
+    DB::unprepared('DROP TRIGGER synthetic_delete_confirmation_failure');
+    DB::table('university_email_operations')->where('operation_id', $job['id'])->update(['updated_at' => now()->subMinutes(2)]);
+    $service->reconcile($user, 1, $job['id']);
+    $assert($posts() === $count + 3 && DB::table('student_university_emails')->where('student_id', 1)->value('provisioning_status') === 'deleted', 'Read-only deletion recovery');
+}
+
 echo json_encode(['passed' => true, 'server' => DB::selectOne('SELECT VERSION() AS version')->version,
-    'scenarios' => ($phase3 ? 9 : 4) + (getenv('UNIVERSITY_EMAIL_ONE_STEP_FIXTURE') === '1' ? 3 : 0), 'remote_posts' => $posts(), 'verification' => 'independent PHP processes and MariaDB connections, isolated synthetic data; no production'], JSON_THROW_ON_ERROR).PHP_EOL;
+    'scenarios' => ($phase3 ? 9 : 4) + (getenv('UNIVERSITY_EMAIL_ONE_STEP_FIXTURE') === '1' ? 3 : 0) + (getenv('UNIVERSITY_EMAIL_LIFECYCLE_FIXTURE') === '1' ? 7 : 0), 'remote_posts' => $posts(), 'verification' => 'independent PHP processes and MariaDB connections, isolated synthetic data; no production'], JSON_THROW_ON_ERROR).PHP_EOL;

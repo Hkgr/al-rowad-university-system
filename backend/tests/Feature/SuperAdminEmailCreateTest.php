@@ -113,15 +113,15 @@ class SuperAdminEmailCreateTest extends UniversityEmailPhase2Test
         Http::assertNothingSent();
     }
 
-    public function test_ordinary_technical_permissions_and_actual_scopes_remain_required(): void
+    public function test_ordinary_technical_permissions_remain_required_with_central_email_targeting(): void
     {
         $technical = User::findOrFail(8); $this->assertFalse($technical->isSuperAdmin());
         DB::table('user_access_scopes')->where('user_id', 8)->delete();
-        $this->getJson('/api/v1/technical/university-email/students')->assertOk()->assertJsonPath('meta.total', 0);
-        $this->createMailbox()->assertForbidden();
+        $this->getJson('/api/v1/technical/university-email/students')->assertOk()->assertJsonPath('meta.total', Student::count());
+        $this->getJson('/api/v1/students')->assertForbidden();
         DB::table('user_access_scopes')->insert(['user_id' => 8, 'scope_type' => 'college', 'scope_id' => 1, 'is_active' => true]);
         $outside = Student::whereHas('academicProgram.department', fn ($q) => $q->where('college_id', 2))->firstOrFail();
-        $this->getJson('/api/v1/technical/university-email/students/'.$outside->student_id)->assertForbidden();
+        $this->getJson('/api/v1/technical/university-email/students/'.$outside->student_id)->assertOk();
         foreach (['university_email.manage', 'university_email.provision', 'university_email.issue_receipt'] as $code) {
             $id = DB::table('permissions')->where('permission_code', $code)->value('permission_id');
             DB::table('permissions')->where('permission_id', $id)->update(['is_active' => false]);

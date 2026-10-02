@@ -1,5 +1,7 @@
 # University email: unified operations runbook (Phases 1–3)
 
+Current increment: follow [central access, lifecycle migration and verification](university-email-central-access-and-ux.md) for central technical email targeting, deletion/recreation, issuer-based receipts, deployment order and actual verification limitations. It supersedes earlier email-only DataScope/no-deletion rules; academic DataScope is unchanged.
+
 This guide is not authorization to deploy or write production. Feature/verification evidence: [Phase 1](university-email-phase1.md), [Phase 2](university-email-phase2.md), [Phase 3](university-email-phase3.md). Host/domain remain `https://mail.alrowaduni.edu.sy` / `alrowaduni.edu.sy`; new mailboxes are 50 MiB. Linked accounts retain existing quota. No bulk provisioning, delivery confirmation or personal-email/university-login mutation exists.
 
 ## Maintenance deployment order
