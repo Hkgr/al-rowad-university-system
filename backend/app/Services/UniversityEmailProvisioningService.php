@@ -173,8 +173,15 @@ final class UniversityEmailProvisioningService
             ? $pending->updated_at->copy()->addSeconds(60) : null;
         $retryAfter = $readyAt ? max(0, (int) ceil(now()->diffInSeconds($readyAt, false))) : 0;
         $reconciliation = ['status' => $retryAfter > 0 ? 'waiting' : 'ready',
+            'mode' => $readyAt ? 'worker_grace' : 'none',
             'retry_after_seconds' => $retryAfter, 'ready_at' => $readyAt?->toIso8601String(),
             'operation_id' => $pending?->operation_id];
+        // A completed/lost write attempt is not a live worker. Positive GET proof is already
+        // allowed early by reconcile(); absence still cannot release either reserved slot.
+        if ($pending?->kind === 'create' && $pending->status === 'uncertain' && $pending->write_started_at) {
+            $reconciliation = ['status' => 'waiting', 'mode' => 'fast_read_check',
+                'retry_after_seconds' => 2, 'ready_at' => null, 'operation_id' => $pending->operation_id];
+        }
         return ['creation' => $creation, 'reconciliation' => $reconciliation, 'credential_state' => $this->credentialAvailabilityState($email),
             'schema_ready' => true, 'enabled' => $this->remote->enabled(), 'draft_locked' => $remaining->isNotEmpty(),
             'revision' => $email?->revision ?? 0, 'deletion_schema_ready' => self::deletionSchemaReady(),

@@ -1,5 +1,6 @@
-export const reconciliationWaiting = 'تم إرسال طلب إنشاء البريد، ويجري التحقق من النتيجة…'
-export const reconciliationUnresolved = 'تعذر التأكد تلقائيًا من نتيجة العملية حتى الآن. لم يتم إرسال طلب إنشاء جديد حفاظًا على الحساب.'
+export const reconciliationWaiting = 'يجري التحقق من إنشاء البريد…'
+export const reconciliationUnresolved = 'تعذر التأكد من نتيجة إنشاء البريد حتى الآن.'
+export const reconciliationNoDuplicate = 'لم تتم إعادة محاولة الإنشاء لتجنب تكرار الحساب.'
 export const lostInitialCredentials = 'تم إنشاء البريد وتأكيده، لكن تعذر استعادة كلمة المرور الأولية بسبب انقطاع الاستجابة.'
 
 /** Only the server's durable evidence identifies this recovery case. RAM still governs receipt use. */
@@ -14,6 +15,11 @@ export function pendingCreationReconciliation(state) {
     && ['waiting', 'ready', 'unresolved'].includes(state.reconciliation?.status)
 }
 
+export function fastCreationRead(state) {
+  const op = state?.pending_operation
+  return op?.kind === 'create' && op.status === 'uncertain' && !!op.write_started_at
+}
+
 /** Bounded read-only polling. No write/cancel/reset callbacks or automatic replays.
  * One controller per student/operation; it is cancelled on unmount/authorization loss.
  */
@@ -23,7 +29,11 @@ export function startCreationReconciliation({ api, initialState, request, isCurr
   const current = () => active && isCurrent()
   const stop = () => { active = false; if (timer !== null) clear(timer); timer = null }
   const operation = initialState?.pending_operation?.operation_id
+  const fast = fastCreationRead(initialState)
+  const backoffs = fast ? [2000, 3000, 5000, 8000] : [3000, 5000, 10000]
   const delay = (state, fallback) => {
+    // Only a started uncertain create can skip the live-worker safety grace.
+    if (state && fastCreationRead(state)) return fallback
     const seconds = Number(state?.reconciliation?.retry_after_seconds)
     return Math.max(fallback, Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 0)
   }
@@ -52,8 +62,8 @@ export function startCreationReconciliation({ api, initialState, request, isCurr
       if (onError(failure) || [401, 403].includes(failure.status)) { stop(); return }
       next = null // Expired initial/server deadlines cannot extend a transport-error backoff.
     }
-    if (attempts >= 4) { stop(); onChecking(false); onExhausted(); return }
-    queue(next, [3000, 5000, 10000][attempts - 1])
+    if (attempts >= backoffs.length + 1) { stop(); onChecking(false); onExhausted(); return }
+    queue(next, backoffs[attempts - 1])
   }
   if (pendingCreationReconciliation(initialState) && current()) queue(initialState, 0)
   return stop

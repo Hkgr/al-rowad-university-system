@@ -9,7 +9,7 @@ import { printableCredentials, provisioningFailure } from '../lib/emailProvision
 import { creationMode, loadCreationState, sendCreation, unresolvedCreation } from '../lib/emailCreation'
 import { accountPayload, deletionAllowed, deletionConfirmation, pendingAccountCheck } from '../lib/emailAccount'
 import { downloadCurrentCredentialReceipt, runMailboxAction } from '../lib/emailCredentialReceipt'
-import { initialCredentialsLost, lostInitialCredentials, pendingCreationReconciliation, reconciliationUnresolved, reconciliationWaiting, startCreationReconciliation } from '../lib/emailReconciliation'
+import { fastCreationRead, initialCredentialsLost, lostInitialCredentials, pendingCreationReconciliation, reconciliationNoDuplicate, reconciliationUnresolved, reconciliationWaiting, startCreationReconciliation } from '../lib/emailReconciliation'
 import UniversityEmailDialog from './UniversityEmailDialog'
 import UniversityEmailReceipt from './UniversityEmailReceipt'
 
@@ -67,6 +67,7 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
 
   useEffect(() => { recoveryState.current = state; recoveryRefresh.current = onRefresh }, [state, onRefresh])
   const recoveryOperation = mayCreate && pendingCreationReconciliation(state) ? state.pending_operation.operation_id : null
+  const recoveryFast = fastCreationRead(state)
   useEffect(() => {
     if (!recoveryOperation) return
     const stop = startCreationReconciliation({ api, initialState: recoveryState.current, request: apiRequest, isCurrent: current,
@@ -77,7 +78,7 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
       },
     })
     return stop
-  }, [api, recoveryOperation, recoveryEpoch, current, load, onDenied])
+  }, [api, recoveryOperation, recoveryFast, recoveryEpoch, current, load, onDenied])
 
   const mode = creationMode(state, reviewRequired), confirmed = mode === 'existing', deleted = mode === 'deleted'
   const usable = canAccess(ACCESS.universityEmailReceipt) && printableCredentials(state, credentials)
@@ -214,7 +215,7 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
     </section>}
     {deleted && !recreateForm && <section className="space-y-2"><p className="font-bold text-primary-dark">تم حذف البريد الجامعي</p><p dir="ltr" className="break-all font-mono text-text-light">{state.email_address}</p><p>وقت الحذف: <span dir="ltr">{state.deleted_at}</span></p><p>المسؤول: {state.deleted_by}</p></section>}
     {waiting && <div className="flex items-center gap-2 rounded-[12px] bg-primary/5 p-4 text-[13px] text-primary-dark" role="status"><FaSyncAlt className="animate-spin" aria-hidden="true" />{reconciliationWaiting}</div>}
-    {requiresCheck && !waiting && !loading && <><Notice tone="warning">{exhausted ? reconciliationUnresolved : unresolvedCreation}</Notice><button type="button" className={secondary} disabled={blocked} onClick={() => setTechnical(value => !value)}>تفاصيل تقنية</button>{technical && <div className="space-y-2 text-[12px]"><p>تعذر حسم حالة البريد. لم تُرسل كتابة إضافية.</p>{state?.pending_operation && !state.pending_operation.write_started_at && canAccess(permission(state.pending_operation.kind)) && <button type="button" className={secondary} disabled={blocked} onClick={cancelSafe}>إلغاء المحاولة الآمنة</button>}</div>}</>}
+    {requiresCheck && !waiting && !loading && <><Notice tone="warning">{exhausted ? <><p>{reconciliationUnresolved}</p><p>{reconciliationNoDuplicate}</p></> : unresolvedCreation}</Notice>{(!recoveryOperation || exhausted) && <><button type="button" className={secondary} disabled={blocked} onClick={() => setTechnical(value => !value)}>تفاصيل تقنية</button>{technical && <div className="space-y-2 text-[12px]"><p>يتحقق النظام من خادم البريد دون إعادة إنشاء الحساب أو إجراء تعديل جديد عليه.</p>{state?.pending_operation && !state.pending_operation.write_started_at && canAccess(permission(state.pending_operation.kind)) && <button type="button" className={secondary} disabled={blocked} onClick={cancelSafe}>إلغاء المحاولة الآمنة</button>}</div>}</>}</>}
     {confirmed && !usable && !requiresCheck && !action && <section className="space-y-4">
       {lostCredentials && <Notice>{lostInitialCredentials}</Notice>}
       <div className="flex flex-wrap items-center justify-between gap-2"><p dir="ltr" className="break-all font-mono font-bold text-primary-dark">{state.email_address}</p><Badge>{state.remote_snapshot?.exists ? state.remote_snapshot.active ? 'فعال' : 'موقوف' : 'يحتاج تحقق'}</Badge></div>
