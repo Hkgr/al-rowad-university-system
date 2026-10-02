@@ -1,7 +1,7 @@
 import html2canvas from 'html2canvas-pro'
 import { jsPDF } from 'jspdf'
 
-// Explicit browser download only; no upload, public URL, server file or automatic printing.
+// Client-side download following explicit credential action/re-download; never automatic printing.
 export async function downloadEmailReceipt(element, isCurrent) {
   const documentElement = element?.querySelector('[data-email-receipt]')
   if (!documentElement) throw new Error('مستند الإيصال غير جاهز.')
@@ -20,7 +20,7 @@ export async function downloadEmailReceipt(element, isCurrent) {
     if (height > 277) throw new Error('محتوى الإيصال يتجاوز A4.')
     pdf.addImage(canvas.toDataURL('image/png'), 'PNG', (210 - width) / 2, 10, width, height)
     if (!isCurrent()) return false
-    pdf.save('university-email-receipt.pdf')
+    await pdf.save('university-email-receipt.pdf', { returnPromise: true })
     return true
   } finally { canvas.width = 0; canvas.height = 0 }
 }

@@ -64,7 +64,7 @@ test('deleted credentials and previous-cycle operation cannot produce a receipt'
 test('normal modal hides operation history and isolates destructive confirmation', () => {
   const dialog = source('features/technical-portal/components/UniversityEmailMailboxDialog.jsx')
   assert.doesNotMatch(dialog, /<UniversityEmailProvisioning|operations\.map|تفاصيل متقدمة|localStorage|sessionStorage|indexedDB/)
-  for (const text of ['إجراءات الحساب', 'إجراءات حساسة', 'حذف البريد نهائيًا', 'سبب الإجراء', 'تنزيل الإيصال PDF']) assert.ok(dialog.includes(text))
+  for (const text of ['إجراءات الحساب', 'إجراءات حساسة', 'حذف البريد نهائيًا', 'سبب الإجراء', 'إعادة تنزيل الإيصال']) assert.ok(dialog.includes(text))
   assert.match(dialog, /deletionConfirmation\(confirmation, student.student_number\)/)
   assert.match(dialog, /writing.current \|\| blocked/)
   const shell = source('features/technical-portal/components/UniversityEmailDialog.jsx')

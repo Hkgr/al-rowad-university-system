@@ -8,6 +8,7 @@ import { EMAIL_API, previewAddress } from '../lib/universityEmail'
 import { printableCredentials, provisioningFailure } from '../lib/emailProvisioning'
 import { creationMode, loadCreationState, sendCreation, unresolvedCreation } from '../lib/emailCreation'
 import { accountPayload, deletionAllowed, deletionConfirmation, pendingAccountCheck } from '../lib/emailAccount'
+import { downloadCurrentCredentialReceipt, runMailboxAction } from '../lib/emailCredentialReceipt'
 import UniversityEmailDialog from './UniversityEmailDialog'
 import UniversityEmailReceipt from './UniversityEmailReceipt'
 
@@ -23,6 +24,7 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
   const [name, setName] = useState(data.draft?.english_first_name || '')
   const [state, setState] = useState(null), [credentials, setCredentials] = useState(null), [receipt, setReceipt] = useState(null)
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState('')
+  const [receiptStatus, setReceiptStatus] = useState('idle'), [receiptError, setReceiptError] = useState('')
   const [reviewRequired, setReviewRequired] = useState(false), [technical, setTechnical] = useState(false)
   const [action, setAction] = useState(null), [reason, setReason] = useState(''), [confirmation, setConfirmation] = useState('')
   const [recreateForm, setRecreateForm] = useState(false)
@@ -64,23 +66,45 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
   const requiresCheck = mode === 'verify' || !!state?.pending_operation && confirmed
   const accountVerified = confirmed && state.check?.owned && state.check.status === 'verified' && !state.pending_operation
   const mayDelete = deletionAllowed(state, canAccess(ACCESS.universityEmailDelete))
-  const runWrite = async (task, returnsCredentials = false) => {
-    if (writing.current || blocked || !current()) return
-    writing.current = true; setBusy(true); onPending(true); setError(''); setCredentials(null); setReceipt(null)
-    try {
-      const json = await task()
-      if (!current()) return
-      if (returnsCredentials && !printableCredentials(json.data, json.data.credentials)) throw new Error('لم يصل تأكيد صالح لبيانات الدخول.')
-      setState(json.data); setCredentials(returnsCredentials ? json.data.credentials : null)
+  const receiptFailure = (failure, credential) => {
+    if (!current() || onDenied(failure)) return
+    setReceiptStatus('failed')
+    setReceiptError(credential.kind === 'password_reset' ? 'تمت إعادة تعيين كلمة المرور بنجاح، لكن تعذر تنزيل الإيصال.' : 'تم إنشاء البريد بنجاح، لكن تعذر تنزيل الإيصال.')
+  }
+  const downloadReceipt = async (confirmedState, credential) => {
+    if (!current()) return false
+    setReceiptStatus('preparing'); setReceiptError('')
+    const downloaded = await downloadCurrentCredentialReceipt({ api, studentId: student.student_id,
+      state: confirmedState, credentials: credential, request: apiRequest, isCurrent: current,
+      render: metadata => flushSync(() => setReceipt(metadata)),
+      download: async isStillCurrent => {
+        const { downloadEmailReceipt } = await import('../lib/emailReceiptPdf')
+        return downloadEmailReceipt(receiptElement.current, isStillCurrent)
+      },
+    })
+    if (downloaded && current()) setReceiptStatus('downloaded')
+    return downloaded
+  }
+  const runWrite = (task, returnsCredentials = false) => runMailboxAction({
+    task, returnsCredentials, inFlight: writing, blocked, isCurrent: current,
+    onStart: () => {
+      setBusy(true); onPending(true); setError(''); setCredentials(null); setReceipt(null)
+      setReceiptStatus('idle'); setReceiptError('')
+    },
+    onConfirmed: async (confirmedState, credential) => {
+      setState(confirmedState); setCredentials(credential)
       setAction(null); setReason(''); setConfirmation(''); setRecreateForm(false); setTechnical(false); onDirty(false); onRefresh()
-      if (json.data.provisioning_status === 'created' && !returnsCredentials) await load()
-    } catch (failure) {
-      if (!current() || onDenied(failure)) return
+      if (confirmedState.provisioning_status === 'created' && !returnsCredentials) await load()
+    },
+    downloadReceipt, onReceiptFailure: receiptFailure,
+    onWriteFailure: async failure => {
+      if (onDenied(failure)) return
       setError(provisioningFailure(failure)); setReviewRequired(true)
       // A lost response is not rollback evidence. Only canonical read-only checking follows.
       await load(); onRefresh()
-    } finally { writing.current = false; if (current()) { setBusy(false); onPending(false) } }
-  }
+    },
+    onFinish: () => { setBusy(false); onPending(false) },
+  })
   const create = () => {
     if (!mayCreate || !preview || !['ready', 'retry', 'deleted'].includes(mode) || mode !== 'retry' && state?.pending_operation) return
     runWrite(() => sendCreation(api, state, name, apiRequest), true)
@@ -102,14 +126,10 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
   }
   const download = async () => {
     if (writing.current || blocked || !usable || !current()) return
-    writing.current = true; setBusy(true); onPending(true); setError('')
+    writing.current = true; setBusy(true); onPending(true)
     try {
-      const json = await apiRequest(`${api}/provisioning/receipt`, { method: 'POST', cache: 'no-store', body: JSON.stringify({ operation_id: credentials.operation_id, generation: credentials.generation }) })
-      if (!current()) return
-      flushSync(() => setReceipt(json.data))
-      const { downloadEmailReceipt } = await import('../lib/emailReceiptPdf')
-      await downloadEmailReceipt(receiptElement.current, current)
-    } catch (failure) { if (current() && !onDenied(failure)) setError('تعذر تنزيل PDF؛ بيانات الدخول باقية في النافذة. أعد محاولة التنزيل فقط.') }
+      await downloadReceipt(state, credentials)
+    } catch (failure) { receiptFailure(failure, credentials) }
     finally { writing.current = false; if (current()) { setBusy(false); onPending(false) } }
   }
   const copy = async value => { try { if (!blocked && usable && current()) await navigator.clipboard.writeText(value) } catch { if (current()) setError('تعذر النسخ؛ يمكنك تحديد النص ونسخه يدويًا.') } }
@@ -136,7 +156,7 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
   }
   const showForm = !action && !confirmed && !requiresCheck && (!deleted || recreateForm)
   return <UniversityEmailDialog title={action === 'delete' ? 'حذف البريد الجامعي' : confirmed ? 'إدارة البريد الجامعي' : 'إنشاء بريد جامعي'} subtitle={student.full_name} busy={busy || externalPending} onClose={close} footer={<>
-    {action ? <><button type="button" className={action === 'delete' ? 'rounded-[10px] bg-red-600 px-5 py-2.5 text-[13px] font-bold text-white disabled:opacity-50' : primary} disabled={blocked || !reason.trim() || action === 'delete' && !deletionConfirmation(confirmation, student.student_number) || action === 'link' && (!attested || !linkPreview || linkPreview.email_address !== linkAddress)} onClick={executeAction}>{busy ? 'جارٍ التنفيذ…' : action === 'delete' ? 'حذف البريد نهائيًا' : 'تأكيد الإجراء'}</button><button type="button" className={secondary} disabled={blocked} onClick={() => setAction(null)}>إلغاء</button></>
+    {action ? <><button type="button" className={action === 'delete' ? 'rounded-[10px] bg-red-600 px-5 py-2.5 text-[13px] font-bold text-white disabled:opacity-50' : primary} disabled={blocked || !reason.trim() || action === 'delete' && !deletionConfirmation(confirmation, student.student_number) || action === 'link' && (!attested || !linkPreview || linkPreview.email_address !== linkAddress)} onClick={executeAction}>{busy ? action === 'password_reset' ? 'جارٍ إعادة تعيين كلمة المرور…' : 'جارٍ التنفيذ…' : action === 'delete' ? 'حذف البريد نهائيًا' : action === 'password_reset' ? 'تأكيد إعادة التعيين' : 'تأكيد الإجراء'}</button><button type="button" className={secondary} disabled={blocked} onClick={() => setAction(null)}>إلغاء</button></>
       : <>{showForm && <button type="button" className={primary} disabled={blocked || !mayCreate || !preview || !state?.enabled || deleted && !state?.deletion_schema_ready} onClick={create}>{busy ? 'جارٍ إنشاء البريد…' : deleted ? 'إنشاء البريد الجديد' : mode === 'retry' ? 'إعادة المحاولة' : 'إنشاء البريد'}</button>}
         {deleted && !recreateForm && <button type="button" className={primary} disabled={blocked || !mayCreate || !!state.pending_operation} onClick={() => setRecreateForm(true)}>إنشاء بريد جديد</button>}
         {requiresCheck && <button type="button" className={primary} disabled={blocked} onClick={review}><FaSyncAlt />التحقق مرة أخرى</button>}
@@ -159,7 +179,10 @@ export default function UniversityEmailMailboxDialog({ data, externalPending, is
       <p className="font-bold text-primary-dark" role="status">{credentials.kind === 'password_reset' ? 'تمت إعادة تعيين كلمة المرور بنجاح' : 'تم إنشاء البريد الجامعي بنجاح'}</p>
       <div className="space-y-2 rounded-[12px] bg-primary/5 p-4"><p>البريد الجامعي</p><p dir="ltr" className="break-all font-mono font-bold">{state.email_address}</p><p>{credentials.kind === 'password_reset' ? 'كلمة المرور الجديدة' : 'كلمة المرور الأولية'}</p><p dir="ltr" className="break-all font-mono text-[18px]">{credentials.password}</p></div>
       <p className="text-[12px] text-text-light">بيانات الدخول مؤقتة؛ لا يمكن استعادة كلمة المرور بعد إغلاق النافذة. حافظ على سريتها.</p>
-      <div className="flex flex-wrap gap-2"><button type="button" className={secondary} disabled={blocked} onClick={() => copy(state.email_address)}><FaCopy />نسخ البريد</button><button type="button" className={secondary} disabled={blocked} onClick={() => copy(credentials.password)}><FaCopy />نسخ كلمة المرور</button><button type="button" className={primary} disabled={blocked} onClick={download}><FaDownload />تنزيل الإيصال PDF</button></div>
+      {receiptStatus === 'preparing' && <p className="text-[12px] text-text-light" role="status">جارٍ تجهيز الإيصال…</p>}
+      {receiptStatus === 'downloaded' && <p className="text-[12px] text-primary-dark" role="status">تم تنزيل الإيصال</p>}
+      {receiptError && <Notice tone="warning">{receiptError} بيانات الدخول باقية في النافذة؛ أعد التنزيل فقط.</Notice>}
+      <div className="flex flex-wrap gap-2"><button type="button" className={secondary} disabled={blocked} onClick={() => copy(state.email_address)}><FaCopy />نسخ البريد</button><button type="button" className={secondary} disabled={blocked} onClick={() => copy(credentials.password)}><FaCopy />نسخ كلمة المرور</button>{['downloaded', 'failed'].includes(receiptStatus) && <button type="button" className={secondary} disabled={blocked} onClick={download}><FaDownload />إعادة تنزيل الإيصال</button>}</div>
     </section>}
     {deleted && !recreateForm && <section className="space-y-2"><p className="font-bold text-primary-dark">تم حذف البريد الجامعي</p><p dir="ltr" className="break-all font-mono text-text-light">{state.email_address}</p><p>وقت الحذف: <span dir="ltr">{state.deleted_at}</span></p><p>المسؤول: {state.deleted_by}</p></section>}
     {requiresCheck && <><Notice tone="warning">{unresolvedCreation}</Notice><button type="button" className={secondary} disabled={blocked} onClick={() => setTechnical(value => !value)}>تفاصيل تقنية</button>{technical && <div className="space-y-2 text-[12px]"><p>تعذر حسم حالة البريد. لم تُرسل كتابة إضافية.</p>{state?.pending_operation && !state.pending_operation.write_started_at && canAccess(permission(state.pending_operation.kind)) && <button type="button" className={secondary} disabled={blocked} onClick={cancelSafe}>إلغاء المحاولة الآمنة</button>}</div>}</>}
