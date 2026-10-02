@@ -168,7 +168,15 @@ final class UniversityEmailProvisioningService
         }
         if ($email?->provisioning_status === 'deleted') $creation = ['status' => 'deleted'];
         $pending = $email ? self::cycleOperations($email)->whereNotIn('status', ['confirmed', 'cancelled'])->orderBy('created_at')->orderBy('operation_id')->first() : null;
-        return ['creation' => $creation, 'schema_ready' => true, 'enabled' => $this->remote->enabled(), 'draft_locked' => $remaining->isNotEmpty(),
+        // Presentation deadline only. Reading state never updates the clock or releases write slots.
+        $readyAt = $pending && in_array($pending->status, ['preflight', 'in_progress', 'uncertain'], true)
+            ? $pending->updated_at->copy()->addSeconds(60) : null;
+        $retryAfter = $readyAt ? max(0, (int) ceil(now()->diffInSeconds($readyAt, false))) : 0;
+        $reconciliation = ['status' => $retryAfter > 0 ? 'waiting' : 'ready',
+            'retry_after_seconds' => $retryAfter, 'ready_at' => $readyAt?->toIso8601String(),
+            'operation_id' => $pending?->operation_id];
+        return ['creation' => $creation, 'reconciliation' => $reconciliation, 'credential_state' => $this->credentialAvailabilityState($email),
+            'schema_ready' => true, 'enabled' => $this->remote->enabled(), 'draft_locked' => $remaining->isNotEmpty(),
             'revision' => $email?->revision ?? 0, 'deletion_schema_ready' => self::deletionSchemaReady(),
             'deleted_at' => $email?->deleted_at?->toIso8601String(),
             'deleted_by' => $email?->deleted_by_user_id ? app(UserIdentityService::class)->documentGenerator(User::findOrFail($email->deleted_by_user_id))['display_name'] : null,
@@ -183,22 +191,57 @@ final class UniversityEmailProvisioningService
                 ['can_cancel' => ! $op->write_started_at && in_array($op->status, ['prepared', 'failed', 'preflight', 'conflict'], true)])->all()];
     }
 
+    /** Semantic provenance only, never a promise to recover a password from storage.
+     * A null credential reference alone says nothing about interrupted creation.
+     */
+    private function credentialAvailabilityState(?StudentUniversityEmail $email): array
+    {
+        $none = ['status' => 'none'];
+        if (! $email || $email->provisioning_status !== 'created' || ! $email->creation_operation_id) return $none;
+        if ($email->credential_operation_id) {
+            $available = self::cycleOperations($email)->whereKey($email->credential_operation_id)->where('status', 'confirmed')
+                ->whereIn('kind', ['create', 'reset', 'password_reset'])->exists();
+            return ['status' => $available ? 'available' : 'none'];
+        }
+        if ($email->linkage_origin === 'linked') return $none;
+        $creation = self::cycleOperations($email)->whereKey($email->creation_operation_id)->where('kind', 'create')
+            ->where('status', 'confirmed')->whereNotNull('write_started_at')->where('email_address', $email->email_address)->first();
+        if (! $creation) return $none;
+        // A completed credential reissue in this cycle permanently supersedes initial-loss wording,
+        // even if later suspend/activate clears its credential reference. Failed resets do not.
+        if (self::cycleOperations($email)->where('status', 'confirmed')->whereIn('kind', ['reset', 'password_reset'])->exists()) return $none;
+        // Exact durable audit provenance, not bounded UI history, null fields, or guessed timing.
+        $reconciled = UserActivityLog::where('module_code', 'users_permissions')->where('action_code', 'university_email.creation_reconciled')
+            ->whereRaw('JSON_VALID(description) = 1')
+            ->where('description->operation_id', $creation->operation_id)->where('description->record_id', $email->university_email_id)
+            ->where('description->student_id', $email->student_id)->where('description->revision', $creation->draft_revision)
+            ->where('description->generation', $creation->generation)->exists();
+        return ['status' => $reconciled ? 'lost_after_reconciliation' : 'none'];
+    }
+
     /** Remote reads only; cannot revoke write authority or authorize a second remote creation. */
     public function checkCreation(User $user, int $student): array
     {
         $this->authorize($user, $student, Access::CREATE);
         $state = $this->state($user, $student);
+        // Live preflight belongs to its worker. The automatic check must never abandon/cancel it.
+        if (($state['pending_operation']['status'] ?? null) === 'preflight' && ! $state['pending_operation']['write_started_at']) {
+            if ($state['reconciliation']['status'] !== 'waiting') $state['reconciliation']['status'] = 'unresolved';
+            return $state;
+        }
         if ($state['creation']['status'] !== 'verify' || ! isset($state['creation']['operation_id'])) return $state;
         try {
             return $this->reconcile($user, $student, $state['creation']['operation_id']);
         } catch (UniversityEmailException $failure) {
-            // Grace periods, uncertain outcomes and unavailable remote reads stay unresolved.
+            // Grace is waiting, not evidence of a failed/unknown remote outcome.
             // Authorization/schema failures must retain their real HTTP status.
             if (! in_array($failure->errorCode, ['university_email_operation_in_progress',
                 'university_email_operation_stale', 'university_email_manual_review_required',
                 'university_email_remote_uncertain', 'university_email_remote_auth_failed',
                 'university_email_remote_rate_limited', 'university_email_remote_invalid'], true)) throw $failure;
-            return $this->state($user, $student);
+            $state = $this->state($user, $student);
+            if ($state['pending_operation'] && $state['reconciliation']['status'] !== 'waiting') $state['reconciliation']['status'] = 'unresolved';
+            return $state;
         }
     }
 
@@ -519,7 +562,12 @@ final class UniversityEmailProvisioningService
         Access::authorize($user, in_array($op->kind, ['create', 'reset'], true) ? Access::CREATE : Access::operationPermission($op->kind));
         if ($op->draft_revision < ($email->lifecycle_revision ?? 1)) $this->fail('university_email_operation_stale');
         if ($op->status === 'confirmed') return $this->describe($email);
-        if (! in_array($op->status, ['preflight', 'in_progress', 'uncertain'], true) || $op->updated_at->greaterThan(now()->subSeconds(60))) $this->fail('university_email_operation_in_progress');
+        if (! in_array($op->status, ['preflight', 'in_progress', 'uncertain'], true)) $this->fail('university_email_operation_in_progress');
+        $insideGrace = $op->updated_at->greaterThan(now()->subSeconds(60));
+        // Only a failed create worker's positive, fully matching read may confirm early.
+        // Absence/mismatch keeps uncertainty and all reservations; no cancellation or retry.
+        $earlyCreateRead = $op->status === 'uncertain' && $op->kind === 'create' && $op->write_started_at;
+        if ($insideGrace && ! $earlyCreateRead) $this->fail('university_email_operation_in_progress');
         if ($op->status === 'preflight' && ! $op->write_started_at) {
             // Cancel an abandoned read-only preflight under the same lock. The old
             // worker must recheck this status before obtaining its write authority.
@@ -536,7 +584,7 @@ final class UniversityEmailProvisioningService
         $mailbox = $this->remote->mailbox($op->email_address);
         // Tags prove module ownership, not what password won an uncertain reset.
         if (! $op->write_started_at || (in_array($op->kind, ['create', 'reset'], true)
-            ? $op->kind !== 'create' || ! $this->verified($mailbox, $op->operation_id)
+            ? $op->kind !== 'create' || ! $this->verified($mailbox, $op->operation_id) || $mailbox['address'] !== $op->email_address
             : ! $this->accountOutcome($op, $mailbox))) $this->fail('university_email_manual_review_required');
         // Reset tags prove ownership/intent, never the unknown password. Confirm without credentials.
         return $this->confirm($user, $student, $op, false, $mailbox);

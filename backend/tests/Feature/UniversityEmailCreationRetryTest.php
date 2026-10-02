@@ -131,15 +131,17 @@ class UniversityEmailCreationRetryTest extends UniversityEmailPhase2Test
         $this->assertNotNull(UniversityEmailOperation::firstOrFail()->write_started_at);
     }
 
-    public function test_recent_worker_grace_and_remote_failure_remain_controlled_unresolved(): void
+    public function test_recent_worker_grace_and_remote_failure_remain_controlled_waiting_then_unresolved(): void
     {
         $this->uncertainAttempt();
-        DB::table('university_email_operations')->update(['updated_at' => now()]);
+        DB::table('university_email_operations')->update(['updated_at' => now(), 'status' => 'in_progress']);
         $before = count(Http::recorded());
-        $this->postJson(self::API.'/creation-check')->assertOk()->assertJsonPath('data.creation.status', 'verify');
+        $this->postJson(self::API.'/creation-check')->assertOk()->assertJsonPath('data.creation.status', 'verify')
+            ->assertJsonPath('data.reconciliation.status', 'waiting');
         $this->assertSame($before, count(Http::recorded()));
         $this->travel(2)->minutes(); $this->failure = 'preflight_timeout';
-        $this->postJson(self::API.'/creation-check')->assertOk()->assertJsonPath('data.creation.status', 'verify');
+        $this->postJson(self::API.'/creation-check')->assertOk()->assertJsonPath('data.creation.status', 'verify')
+            ->assertJsonPath('data.reconciliation.status', 'unresolved');
         $this->assertSame(1, $this->writes);
     }
 

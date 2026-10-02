@@ -76,11 +76,14 @@ class UniversityEmailLifecycleTest extends UniversityEmailPhase2Test
     public function test_delivered_account_management_preserves_handover_and_has_no_orphan_operation(): void
     {
         $this->createMailbox();
+        $this->getJson(self::API.'/provisioning')->assertOk()->assertJsonPath('data.credential_state.status', 'available');
         StudentUniversityEmail::firstOrFail()->update(['handover_status' => 'delivered']);
         foreach (['suspend' => false, 'activate' => true] as $kind => $active) {
             $this->postJson(self::API.'/account-action', ['kind' => $kind, 'revision' => 1,
                 'reason' => 'Synthetic delivered management', 'confirmed' => true])->assertOk()
-                ->assertJsonPath('data.handover_status', 'delivered')->assertJsonPath('data.remote_snapshot.active', $active);
+                ->assertJsonPath('data.handover_status', 'delivered')->assertJsonPath('data.remote_snapshot.active', $active)
+                ->assertJsonPath('data.credential_operation_id', null)->assertJsonPath('data.credential_state.status', 'none');
+            $this->getJson(self::API.'/provisioning')->assertOk()->assertJsonPath('data.credential_state.status', 'none');
             $this->assertSame(0, UniversityEmailOperation::where('active_slot', 1)->count());
             $this->assertDatabaseHas('university_email_operations', ['kind' => $kind, 'status' => 'confirmed']);
         }
@@ -236,9 +239,64 @@ class UniversityEmailLifecycleTest extends UniversityEmailPhase2Test
         $this->postJson(self::API.'/account-action', $input)->assertConflict()->assertJsonPath('error_code', 'university_email_already_delivered');
         $this->assertDatabaseCount('university_email_operations', 0);
         StudentUniversityEmail::firstOrFail()->update(['handover_status' => 'not_delivered']);
-        $this->postJson(self::API.'/account-action', $input)->assertOk()->assertJsonPath('data.linkage_origin', 'linked');
+        $this->postJson(self::API.'/account-action', $input)->assertOk()->assertJsonPath('data.linkage_origin', 'linked')
+            ->assertJsonPath('data.credential_state.status', 'none');
         $this->assertSame(1, $this->writes);
         $this->assertDatabaseHas('student_university_emails', ['email_address' => $address, 'creation_operation_id' => UniversityEmailOperation::first()->operation_id, 'credential_operation_id' => null]);
+    }
+
+    public function test_reconciled_initial_credentials_stop_being_lost_after_confirmed_reset_and_maintenance(): void
+    {
+        $this->failure = 'lost_response';
+        $this->postJson(self::API.'/create', ['english_first_name' => 'Synthetic', 'confirmed' => true])->assertConflict();
+        $this->failure = null;
+        $state = $this->postJson(self::API.'/creation-check')->assertOk()
+            ->assertJsonPath('data.credential_state.status', 'lost_after_reconciliation')->json('data');
+        $this->getJson(self::API.'/provisioning')->assertOk()->assertJsonPath('data.credential_state.status', 'lost_after_reconciliation');
+        $this->postJson(self::API.'/reset-password-now', ['revision' => $state['revision'],
+            'reason' => 'Synthetic explicit recovery', 'confirmed' => true])->assertOk()
+            ->assertJsonPath('data.credential_state.status', 'available');
+        foreach (['suspend', 'activate'] as $kind) {
+            $this->postJson(self::API.'/account-action', ['kind' => $kind, 'revision' => $state['revision'],
+                'reason' => 'Synthetic maintenance after recovery', 'confirmed' => true])->assertOk()
+                ->assertJsonPath('data.credential_operation_id', null)->assertJsonPath('data.credential_state.status', 'none');
+            $this->getJson(self::API.'/provisioning')->assertOk()->assertJsonPath('data.credential_state.status', 'none');
+        }
+    }
+
+    public function test_failed_prewrite_reset_does_not_supersede_initial_loss_evidence(): void
+    {
+        $this->failure = 'lost_response';
+        $this->postJson(self::API.'/create', ['english_first_name' => 'Synthetic', 'confirmed' => true])->assertConflict();
+        $this->failure = null;
+        $state = $this->postJson(self::API.'/creation-check')->assertOk()
+            ->assertJsonPath('data.credential_state.status', 'lost_after_reconciliation')->json('data');
+        $this->failure = 'preflight_timeout';
+        $this->postJson(self::API.'/reset-password-now', ['revision' => $state['revision'],
+            'reason' => 'Synthetic failed explicit recovery', 'confirmed' => true])->assertConflict();
+        $this->assertDatabaseHas('university_email_operations', ['kind' => 'password_reset', 'status' => 'failed', 'write_started_at' => null]);
+        $this->getJson(self::API.'/provisioning')->assertOk()->assertJsonPath('data.credential_state.status', 'lost_after_reconciliation');
+        $this->assertSame(1, $this->writes);
+        $this->assertDatabaseCount('university_email_receipts', 0);
+    }
+
+    public function test_previous_reconciled_cycle_does_not_leak_through_delete_recreate_and_maintenance(): void
+    {
+        $this->failure = 'lost_response';
+        $this->postJson(self::API.'/create', ['english_first_name' => 'Synthetic', 'confirmed' => true])->assertConflict();
+        $this->failure = null;
+        $old = $this->postJson(self::API.'/creation-check')->assertOk()
+            ->assertJsonPath('data.credential_state.status', 'lost_after_reconciliation')->json('data.creation_operation_id');
+        $this->removeMailbox()->assertOk()->assertJsonPath('data.credential_state.status', 'none');
+        $next = $this->postJson(self::API.'/recreate', ['english_first_name' => 'Corrected',
+            'revision' => StudentUniversityEmail::firstOrFail()->revision, 'confirmed' => true])->assertOk()
+            ->assertJsonPath('data.credential_state.status', 'available')->json('data');
+        $this->assertNotSame($old, $next['creation_operation_id']);
+        $this->assertDatabaseHas('user_activity_logs', ['action_code' => 'university_email.creation_reconciled']);
+        $this->postJson(self::API.'/account-action', ['kind' => 'suspend', 'revision' => $next['revision'],
+            'reason' => 'Synthetic new-cycle maintenance', 'confirmed' => true])->assertOk()->assertJsonPath('data.credential_state.status', 'none');
+        $this->getJson(self::API.'/provisioning')->assertOk()->assertJsonPath('data.credential_state.status', 'none');
+        $this->assertDatabaseCount('student_university_emails', 1);
     }
 
     public function test_read_verification_is_required_and_uncertain_delete_never_reposts(): void
