@@ -65,11 +65,11 @@ class UniversityEmailPhase1Test extends TestCase
     {
         $url = self::ROOT.'/students?q=R24011002';
         $this->getJson($url)->assertOk()->assertJsonPath('email_schema_ready', true)
-            ->assertJsonPath('data.0.email_preparation', ['available' => true, 'email_address' => null, 'provisioning_status' => null, 'handover_status' => null]);
+            ->assertJsonPath('data.0.email_preparation.available', true)->assertJsonPath('data.0.email_preparation.account_status', 'not_created');
         $saved = $this->save()->assertOk();
         $summary = $saved->json('data.student.email_preparation');
-        $this->assertSame(['available', 'email_address', 'provisioning_status', 'handover_status'], array_keys($summary));
-        $this->getJson($url)->assertOk()->assertJsonPath('data.0.email_preparation', $summary);
+        $this->assertSame(['available', 'email_address', 'remote_checked_at', 'provisioning_status', 'handover_status'], array_keys($summary));
+        $this->getJson($url)->assertOk()->assertJsonPath('data.0.email_preparation', $summary + ['account_status' => 'not_created']);
         $this->assertSame('draft', $summary['provisioning_status']);
         $this->assertSame('not_delivered', $summary['handover_status']);
         DB::table('student_university_emails')->where('student_id', 1)->update(['provisioning_status' => 'created', 'handover_status' => 'delivered']);
@@ -117,9 +117,10 @@ class UniversityEmailPhase1Test extends TestCase
         $this->assertDatabaseCount('user_activity_logs', 0);
         Http::assertNothingSent();
         DB::table('user_access_scopes')->where('user_id', 8)->delete();
-        $this->getJson(self::ROOT.'/students')->assertOk()->assertJsonPath('meta.total', 0);
-        $this->getJson(self::ROOT.'/students/1')->assertForbidden();
-        $this->save()->assertForbidden();
+        $this->getJson(self::ROOT.'/students')->assertOk()->assertJsonPath('meta.total', \App\Models\Student::count());
+        $this->getJson(self::ROOT.'/students/1')->assertOk();
+        $this->save()->assertOk(); // Email targeting intentionally does not require academic DataScope.
+        $this->getJson('/api/v1/students')->assertForbidden();
     }
 
     public function test_local_draft_normalization_revision_audit_noop_aba_and_independent_identity(): void
@@ -209,7 +210,7 @@ class UniversityEmailPhase1Test extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_search_query_count_is_bounded_and_actual_college_scope_is_preserved(): void
+    public function test_search_query_count_is_bounded_and_email_targeting_is_central_only(): void
     {
         DB::table('user_access_scopes')->where('user_id', 8)->update(['scope_type' => 'college', 'scope_id' => 1]);
         $this->save()->assertOk();
@@ -233,8 +234,10 @@ class UniversityEmailPhase1Test extends TestCase
         DB::disableQueryLog();
         $outside = DB::table('students')->whereIn('academic_program_id', DB::table('academic_programs')->whereIn('department_id', DB::table('departments')->where('college_id', 2)->pluck('department_id'))->pluck('academic_program_id'))->value('student_id');
         $this->assertNotNull($outside);
-        $this->getJson(self::ROOT.'/students/'.$outside)->assertForbidden();
-        $this->putJson(self::ROOT.'/students/'.$outside.'/draft', ['revision' => 0, 'english_first_name' => 'ali'])->assertForbidden();
+        $this->getJson(self::ROOT.'/students/'.$outside)->assertOk();
+        DB::table('students')->where('student_id', $outside)->update(['student_number' => 'SYNTHETICOUTSIDE']);
+        $this->putJson(self::ROOT.'/students/'.$outside.'/draft', ['revision' => 0, 'english_first_name' => 'ali'])->assertOk();
+        $this->getJson('/api/v1/students')->assertForbidden();
     }
 
     public function test_created_or_delivered_records_cannot_be_edited_as_drafts(): void

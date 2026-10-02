@@ -22,6 +22,11 @@ Http::fake(function ($request) use ($directory) {
     if (str_contains($request->url(), '/get/alias/all')) return Http::response([]);
     if (str_contains($request->url(), '/get/mailbox/')) return Http::response(str_contains($request->url(), '/all/') ? array_values($boxes) : ($boxes[rawurldecode(basename($request->url()))] ?? []));
     if (str_contains($request->url(), '/get/domain/')) return Http::response(['domain_name' => 'alrowaduni.edu.sy', 'active' => 1, 'mailboxes' => 200, 'mailboxes_in_domain' => count($boxes)]);
+    if (str_contains($request->url(), '/delete/mailbox')) {
+        $address = $request->data()[0]; unset($boxes[$address]);
+        file_put_contents($path, json_encode($boxes, JSON_THROW_ON_ERROR), LOCK_EX);
+        return Http::response([['type' => 'success', 'msg' => ['mailbox_removed', $address]]]);
+    }
     $reset = str_contains($request->url(), '/edit/mailbox');
     if (! $reset && ! str_contains($request->url(), '/add/mailbox')) throw new RuntimeException('Unexpected synthetic Mailcow route');
     $address = $reset ? $request['items'][0] : $request['local_part'].'@'.$request['domain'];

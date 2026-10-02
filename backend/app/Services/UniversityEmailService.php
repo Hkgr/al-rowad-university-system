@@ -23,18 +23,43 @@ final class UniversityEmailService
     {
         UniversityEmailAccess::authorize($user, UniversityEmailAccess::VIEW);
         $q = trim($input['q'] ?? '');
-        $query = $this->students($user)->with('academicProgram.department.college');
-        if ($q !== '') $query->where(fn (Builder $query) => $query->where('student_number', 'like', '%'.$q.'%')
-            ->orWhereRaw("TRIM(CONCAT(first_name, ' ', last_name)) LIKE ?", ['%'.$q.'%']));
-        // CONCAT works on MariaDB and the supported Laravel SQLite connection.
-        $page = $query->orderBy('student_number')->orderBy('student_id')->paginate($input['per_page'] ?? 15, ['*'], 'page', $input['page'] ?? 1);
+        $query = $this->students($user)->with('academicProgram.department.college')->select('students.*');
+        foreach (preg_split('/\s+/u', $q, -1, PREG_SPLIT_NO_EMPTY) as $token) {
+            // Every token may match an independent name field, in any order. Values remain bound.
+            $query->where(fn (Builder $query) => $query->where('student_number', 'like', '%'.$token.'%')
+                ->orWhere('first_name', 'like', '%'.$token.'%')->orWhere('last_name', 'like', '%'.$token.'%')
+                ->orWhere('father_name', 'like', '%'.$token.'%'));
+        }
         $schemaReady = Schema::hasTable('student_university_emails');
+        $accountReady = $schemaReady && Schema::hasColumns('student_university_emails', ['remote_snapshot', 'remote_checked_at']);
+        $operationsReady = $schemaReady && Schema::hasTable('university_email_operations');
+        $cycleReady = $schemaReady && Schema::hasColumn('student_university_emails', 'lifecycle_revision');
+        $stateSql = "'unavailable'";
+        if ($schemaReady) {
+            $query->leftJoin('student_university_emails as email', 'email.student_id', '=', 'students.student_id');
+            $pendingSql = $operationsReady ? "EXISTS (SELECT 1 FROM university_email_operations op WHERE op.university_email_id = email.university_email_id AND op.status NOT IN ('confirmed','cancelled')".
+                ($cycleReady ? ' AND op.draft_revision >= email.lifecycle_revision' : '').')' : '0 = 1';
+            // Fixed fragments only. JSON paths compile through the connection's own grammar.
+            $grammar = DB::connection()->getQueryGrammar();
+            $exists = $accountReady ? $grammar->wrap('email.remote_snapshot->exists') : 'NULL';
+            $active = $accountReady ? $grammar->wrap('email.remote_snapshot->active') : 'NULL';
+            $stateSql = "CASE WHEN $pendingSql THEN 'needs_check' WHEN email.provisioning_status = 'deleted' THEN 'deleted' ".
+                "WHEN email.university_email_id IS NULL OR email.provisioning_status = 'draft' THEN 'not_created' ".
+                "WHEN CAST($exists AS CHAR) IN ('1','true') AND CAST($active AS CHAR) IN ('1','true') THEN 'active' ".
+                "WHEN CAST($exists AS CHAR) IN ('1','true') AND CAST($active AS CHAR) IN ('0','false') THEN 'suspended' ELSE 'needs_check' END";
+        }
+        if (isset($input['status'])) {
+            if (! $schemaReady) throw new UniversityEmailException('university_email_schema_not_ready', 'حالة البريد غير متاحة؛ تعذر تطبيق المرشح.', 503);
+            $query->whereRaw("($stateSql) = ?", [$input['status']]);
+        }
+        $query->selectRaw("$stateSql AS mailbox_status");
+        $page = $query->orderBy('student_number')->orderBy('student_id')->paginate($input['per_page'] ?? 15, ['*'], 'page', $input['page'] ?? 1);
         // One bounded local lookup per page, never a Mailcow call or per-student query.
         $drafts = $schemaReady ? StudentUniversityEmail::query()
             ->whereIn('student_id', $page->getCollection()->modelKeys())
-            ->get(['student_id', 'email_address', 'provisioning_status', 'handover_status'])->keyBy('student_id') : collect();
+            ->get(array_merge(['student_id', 'email_address', 'provisioning_status', 'handover_status'], $accountReady ? ['remote_snapshot', 'remote_checked_at'] : []))->keyBy('student_id') : collect();
         return ['data' => $page->getCollection()->map(fn (Student $s) => $this->studentData($s) +
-                ['email_preparation' => $this->emailSummary($drafts->get($s->student_id), $schemaReady)])->all(),
+                ['email_preparation' => $this->emailSummary($drafts->get($s->student_id), $schemaReady) + ['account_status' => $s->mailbox_status]])->all(),
             'email_schema_ready' => $schemaReady,
             'meta' => ['total' => $page->total(), 'current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'per_page' => $page->perPage()]];
     }
@@ -67,7 +92,7 @@ final class UniversityEmailService
                 }
                 $name = strtolower(preg_replace('/\A\s+|\s+\z/u', '', $input['english_first_name']));
                 if ($draft && Schema::hasTable('university_email_operations')
-                    && \App\Models\UniversityEmailOperation::where('university_email_id', $draft->university_email_id)->where('status', '!=', 'cancelled')->exists()) {
+                    && UniversityEmailProvisioningService::cycleOperations($draft)->where('status', '!=', 'cancelled')->exists()) {
                     throw new UniversityEmailException('university_email_identity_frozen', 'بدأت عملية إنشاء مرتبطة بهذه المسودة؛ لا يمكن تغيير عنوانها.');
                 }
                 $number = strtolower(trim($student->student_number));
@@ -122,11 +147,12 @@ final class UniversityEmailService
         $draft = StudentUniversityEmail::query()->where('student_id', $student->student_id)->first();
         return ['student' => $this->studentData($student) + ['email_preparation' => $this->emailSummary($draft, true)], 'draft' => $draft ? $draft->only(['university_email_id', 'english_first_name', 'email_address', 'quota_mb', 'provisioning_status', 'handover_status', 'revision', 'created_at', 'updated_at']) : null,
             'settings' => $this->settings(), 'draft_locked' => $draft && Schema::hasTable('university_email_operations')
-                && \App\Models\UniversityEmailOperation::where('university_email_id', $draft->university_email_id)->where('status', '!=', 'cancelled')->exists()];
+                && UniversityEmailProvisioningService::cycleOperations($draft)->where('status', '!=', 'cancelled')->exists()];
     }
     private function emailSummary(?StudentUniversityEmail $draft, bool $available): array
     {
         return ['available' => $available, 'email_address' => $draft?->email_address,
+            'remote_checked_at' => $draft?->remote_checked_at?->toIso8601String(),
             'provisioning_status' => $draft?->provisioning_status, 'handover_status' => $draft?->handover_status];
     }
     private function studentData(Student $student): array

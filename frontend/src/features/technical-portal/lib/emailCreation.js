@@ -1,6 +1,7 @@
 /** Presentation follows the server's persisted safety decision, never a guessed remote outcome. */
 export function creationMode(state, reviewRequired = false) {
   if (reviewRequired || !state) return 'verify'
+  if (state.provisioning_status === 'deleted') return 'deleted'
   if (state.provisioning_status === 'created') return 'existing'
   const status = state.creation?.status
   if (status === 'ready') return 'ready'
@@ -22,9 +23,10 @@ export async function loadCreationState(api, request, isCurrent, canCheck) {
 /** Called once by an explicit user action; the server cancels/reprepares atomically. */
 export function sendCreation(api, state, name, request) {
   const mode = creationMode(state)
-  if (!['ready', 'retry'].includes(mode)) throw new Error('يلزم التحقق من حالة البريد أولًا.')
-  return request(`${api}/${mode === 'retry' ? 'retry-create' : 'create'}`, {
+  if (!['ready', 'retry', 'deleted'].includes(mode) || (mode === 'deleted' && state.pending_operation)) throw new Error('يلزم التحقق من حالة البريد أولًا.')
+  return request(`${api}/${mode === 'retry' ? 'retry-create' : mode === 'deleted' ? 'recreate' : 'create'}`, {
     method: 'POST', cache: 'no-store', body: JSON.stringify({ english_first_name: name, confirmed: true,
-      ...(mode === 'retry' ? { operation_id: state.creation.operation_id, generation: state.creation.generation } : {}) }),
+      ...(mode === 'retry' ? { operation_id: state.creation.operation_id, generation: state.creation.generation } : {}),
+      ...(mode === 'deleted' ? { revision: state.revision } : {}) }),
   })
 }

@@ -1,5 +1,7 @@
 # University email Phase 3: linked-account management
 
+> Historical Phase 3 contract. Current email-only central targeting, unchanged super-admin bypass, safe delete/recreation and receipt issuer rules are documented in [central access and lifecycle guide](university-email-central-access-and-ux.md). Older DataScope/no-delete statements below describe this phase's original behavior, not the current increment.
+
 Base: develop `077ce64ab334f2e8a8c86898cbc960b881a336e6`, containing merged PR147. Phase 3 extends the existing Technical Office screen and durable operations. No production database, live Mailcow, real student data or deployment was used. Deployment and incident handling: [unified operations runbook](university-email-operations.md).
 
 ## Authority and API

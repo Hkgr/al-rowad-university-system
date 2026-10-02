@@ -105,6 +105,7 @@ export const ACCESS = Object.freeze({
   universityEmailSuspend: { allRoles: [ROLES.technicalTeam], assignedPermissions: [PERMISSIONS.technicalPortalAccess, 'university_email.view', 'university_email.suspend'] },
   universityEmailActivate: { allRoles: [ROLES.technicalTeam], assignedPermissions: [PERMISSIONS.technicalPortalAccess, 'university_email.view', 'university_email.activate'] },
   universityEmailLink: { allRoles: [ROLES.technicalTeam], assignedPermissions: [PERMISSIONS.technicalPortalAccess, 'university_email.view', 'university_email.link_existing'] },
+  universityEmailDelete: { allRoles: [ROLES.technicalTeam], assignedPermissions: [PERMISSIONS.technicalPortalAccess, 'university_email.view', 'university_email.delete'] },
   ministryPortal: { allRoles: [ROLES.ministryObserver], assignedPermissions: [PERMISSIONS.ministryPortalAccess] },
   ministryDashboard: ministry(PERMISSIONS.ministryDashboardView),
   ministryDeans: ministry(PERMISSIONS.ministryDeansView),

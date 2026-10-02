@@ -843,6 +843,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::prefix('technical/university-email/students/{student}')->whereNumber('student')
         ->controller(\App\Http\Controllers\Api\UniversityEmailProvisioningController::class)->group(function (): void {
             Route::post('create', 'create')->middleware('throttle:10,1');
+            Route::post('recreate', 'recreate')->middleware('throttle:10,1');
+            Route::post('reset-password-now', 'resetNow')->middleware('throttle:10,1');
+            Route::post('account-action', 'accountAction')->middleware('throttle:10,1');
+            Route::post('delete-mailbox', 'deleteMailbox')->middleware('throttle:10,1');
             Route::post('retry-create', 'retryCreate')->middleware('throttle:10,1');
             Route::post('creation-check', 'checkCreation')->middleware('throttle:10,1');
             Route::get('provisioning', 'state');

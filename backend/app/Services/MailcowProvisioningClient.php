@@ -104,6 +104,12 @@ final class MailcowProvisioningClient
         $this->success($this->request('POST', 'edit/mailbox', ['items' => [$address], 'attr' => ['tags' => array_values(array_unique($tags))]]), 'mailbox_modified', $address);
     }
 
+    public function deleteMailbox(string $address): void
+    {
+        // Mailcow removal uses POST. One address, one attempt, no transport retries.
+        $this->success($this->request('POST', 'delete/mailbox', [$address]), 'mailbox_removed', $address);
+    }
+
     private function success(array $data, string $code, string $address): void
     {
         if (! array_is_list($data) || count($data) !== 1 || ($data[0]['type'] ?? null) !== 'success'

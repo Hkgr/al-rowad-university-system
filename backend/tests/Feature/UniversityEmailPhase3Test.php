@@ -160,7 +160,8 @@ class UniversityEmailPhase3Test extends TestCase
         $this->postJson(self::ROOT.'/provisioning/preview-link', ['email_address' => 'bad@evil.invalid'])->assertUnprocessable();
         $this->postJson(self::ROOT.'/provisioning/prepare-account', ['kind' => 'activate', 'revision' => 1, 'reason' => 'test', 'confirmed' => true, 'password' => 'injected'])->assertUnprocessable();
         DB::table('user_access_scopes')->where('user_id', 8)->update(['is_active' => false]); Sanctum::actingAs(User::find(8));
-        $this->postJson(self::ROOT.'/provisioning/refresh-account')->assertForbidden();
+        $this->postJson(self::ROOT.'/provisioning/refresh-account')->assertOk();
+        $this->getJson('/api/v1/students')->assertForbidden();
     }
     public function test_unowned_box_cannot_be_managed(): void
     {

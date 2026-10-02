@@ -11,7 +11,7 @@ $check(str_contains($user, "status_code === 'active' && \$this->hasRoleCode('sup
 $check(str_contains($user, '$this->isSuperAdmin() || $this->effectivePermissions()->contains($permission)'), 'Central permissions');
 $check(str_contains($user, "\$this->student_id !== null && \$this->hasRoleCode('student')") && str_contains($user, "\$this->employee_id !== null && \$this->hasRoleCode('doctor_instructor')"), 'No invented self identities');
 foreach (['PresidentPortal','MinistryPortal','ExecutiveReportAccess','UniversityEmailAccess','AdministrativeGovernance','ScientificCourseAccess','ScientificProgramAccess','ExamManualGradeEntryAccess','PortalReportRegistry'] as $helper) $check(str_contains($read('app/Support/'.$helper.'.php'), 'isSuperAdmin()'), 'Administrative authority missing: '.$helper);
-$check(str_contains($scope, 'scopeUniversityEmailStudents') && str_contains($scope, 'scopeActualAcademicStudents') && str_contains($scope, "hasRoleCode('technical_team')"), 'Dedicated email actual scopes');
+$check(str_contains($scope, 'scopeUniversityEmailStudents') && str_contains($scope, 'scopeActualAcademicStudents') && str_contains($scope, 'UniversityEmailAccess::allows'), 'Central email-only access retains separate academic scope');
 $routes = $read('routes/api.php');
 $check(str_contains($routes, "prefix('technical/university-email/students/{student}')") && str_contains($routes, "Route::post('create', 'create')") && str_contains($email, 'public function create(User $user, int $student, string $name)'), 'Explicit one-step endpoint');
 $create = substr($email, strpos($email, 'public function create('), strpos($email, 'private function describe(') - strpos($email, 'public function create('));

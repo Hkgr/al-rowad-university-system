@@ -49,6 +49,6 @@ test('receipt states password-reset purpose without adding handover controls', (
   const source = readFileSync(new URL('../src/features/technical-portal/components/UniversityEmailReceipt.jsx', import.meta.url), 'utf8')
   assert.match(source, /receipt_purpose === 'password_reset'/)
   assert.match(source, /إيصال إعادة تعيين كلمة مرور/)
-  assert.match(source, /تنزيل هذا المستند لا يثبت استلام/)
+  assert.match(source, /تنزيل الإيصال لا يعني تسجيل الاستلام إلكترونيًا/)
   assert.doesNotMatch(source, /onClick|apiRequest|window.print|QR/)
 })

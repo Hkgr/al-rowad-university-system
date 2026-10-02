@@ -14,7 +14,7 @@ $check(str_contains($service, "\$this->cancel(\$user, \$student, \$op->operation
 $check(str_contains($service, "\$op->generation !== \$generation || \$op->write_started_at"), 'Write authority and generation remain authoritative');
 $check(str_contains($service, '$op->generation++;') && str_contains($service, "'operation_cancelled'"), 'Invalidation and audit preserved');
 $start = strpos($service, 'public function checkCreation(');
-$end = strpos($service, 'public function cancel(', $start);
+$end = strpos($service, 'public function resetNow(', $start);
 $read = substr($service, $start, $end - $start);
 $check(str_contains($read, '$this->reconcile(') && ! preg_match('/->(execute|create|cancel|password|delete)\(/', $read), 'Automatic check reuses only remote-read reconciliation');
 $start = strpos($service, 'private function createWithPreparation(');

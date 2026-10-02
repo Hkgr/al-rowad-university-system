@@ -1,8 +1,9 @@
 export const EMAIL_API = '/v1/technical/university-email'
-export function studentSearchQuery(query, page) {
+export function studentSearchQuery(query, page, status = '') {
   const params = new URLSearchParams({ page, per_page: 15 })
   const normalized = query.trim()
   if (normalized) params.set('q', normalized)
+  if (status) params.set('status', status)
   return params.toString()
 }
 export function preparationLabels(summary) {

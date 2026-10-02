@@ -13,8 +13,8 @@ final class UniversityEmailController extends Controller
     public function index(Request $request, UniversityEmailService $service): JsonResponse
     {
         UniversityEmailAccess::authorize($request->user(), UniversityEmailAccess::VIEW);
-        $this->keys($request->query(), ['q', 'page', 'per_page']);
-        $input = $request->validate(['q' => 'sometimes|nullable|string|max:120', 'page' => 'sometimes|integer|min:1', 'per_page' => 'sometimes|integer|min:1|max:100']);
+        $this->keys($request->query(), ['q', 'status', 'page', 'per_page']);
+        $input = $request->validate(['q' => 'sometimes|nullable|string|max:120', 'status' => 'sometimes|in:not_created,active,suspended,deleted,needs_check', 'page' => 'sometimes|integer|min:1', 'per_page' => 'sometimes|integer|min:1|max:100']);
         return response()->json($service->search($request->user(), $input));
     }
     public function show(Request $request, int $student, UniversityEmailService $service): JsonResponse
