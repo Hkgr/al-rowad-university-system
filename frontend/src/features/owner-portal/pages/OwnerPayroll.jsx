@@ -5,6 +5,7 @@ import ManualGradeDialog from '../../exam-board/components/ManualGradeDialog'
 import { Notice, StatePanel } from '../../ministry-portal/components/MinistryUi'
 import { canAccess, PERMISSIONS, ROLES } from '../../auth/auth'
 import PayrollGrid from '../components/PayrollGrid'
+import PayrollLegend from '../components/PayrollLegend'
 import EmployeeDialog from '../components/EmployeeDialog'
 import BodiesDialog from '../components/BodiesDialog'
 import ColumnsDialog from '../components/ColumnsDialog'
@@ -379,6 +380,7 @@ export default function OwnerPayroll() {
               </div>
             ) : (
               <>
+                <PayrollLegend columns={columns} canEdit={canEdit} />
                 <PayrollGrid
                   snapshot={snapshot} columns={columns} totals={totals} sort={gridSort} canEdit={canEdit} controller={controller} invalid={invalid} announce={announce}
                   onSort={setSort} onEditMeta={row => canEmployees && setDialog({ type: 'employee', employee: row })} onFocusCell={selectCell}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RevoGrid } from '@revolist/react-datagrid'
-import { GROUP_LABELS, GROUP_ORDER } from '../lib/payrollView'
+import { GROUP_LABELS, GROUP_ORDER, TOTAL_KEY } from '../lib/payrollView'
 import { INPUT_ERRORS, editText, formatValue, parseInput, pctText } from '../lib/payrollMoney'
 import { parseDec } from '../lib/payrollDecimal'
 import { matrixToClipboardText, parseClipboardText, planPaste } from '../lib/payrollClipboard'
@@ -87,15 +87,27 @@ export default function PayrollGrid({ snapshot, columns: columnDefs, totals, sor
   }, [totals, columnDefs])
 
   const columns = useMemo(() => {
-    const leaf = column => {
+    const leaf = (column, index) => {
       const editable = Boolean(canEdit && column.editable)
       const numeric = NUMERIC.has(column.type)
+      const net = column.prop === TOTAL_KEY // identified by the stable key, never by the label
+      // Source inputs look editable only for a user who may edit them; for everyone else they stay recognisable but read-only.
+      const kind = column.identity ? 'identity' : column.computed ? 'computed' : editable ? 'input' : 'source'
+      const headClass = { 'pg-h-input': kind === 'input', 'pg-h-source': kind === 'source', 'pg-h-computed': kind === 'computed', 'pg-h-net': net, 'pg-h-gstart': index === 0 }
+      const hint = kind === 'computed' ? `عمود محسوب تلقائيًا: ${column.definition.formula_display ?? ''}` : kind === 'input' ? 'قابل للتعديل' : kind === 'source' ? 'قيمة مدخلة — للعرض فقط' : ''
       const base = {
-        prop: column.prop, name: column.title, size: widths[column.prop] ?? (compactScreen && column.prop === 'full_name' ? 150 : compactScreen && column.prop === 'employee_number' ? 96 : column.size), minSize: 80, resizable: true, readonly: !editable,
+        prop: column.prop, name: column.title, size: widths[column.prop] ?? (compactScreen && column.prop === 'full_name' ? 150 : compactScreen && column.prop === 'employee_number' ? 96 : net ? Math.max(column.size, 165) : column.size), minSize: 80, resizable: true, readonly: !editable,
         ...(layout.pinned.includes(column) ? { pin: 'colPinStart' } : {}),
-        columnTemplate: h => h('span', { class: 'pg-head', 'data-sort': column.sort, title: column.computed ? `عمود محسوب: ${column.definition.formula_display ?? ''} — اضغط للترتيب` : 'اضغط للترتيب' }, (column.computed ? 'ƒ ' : '') + column.title + sortMark(sort, column)),
+        columnProperties: () => ({ class: headClass }),
+        columnTemplate: h => h('span', { class: 'pg-head', 'data-sort': column.sort, title: `${hint ? `${hint} — ` : ''}اضغط للترتيب` }, [
+          kind === 'computed' ? h('span', { class: 'pg-mark pg-mark-calc', 'aria-hidden': 'true' }, 'ƒ') : kind === 'input' ? h('span', { class: 'pg-mark pg-mark-input', 'aria-hidden': 'true' }, '✎') : null,
+          column.title + sortMark(sort, column),
+        ]),
         cellProperties: ({ model }) => {
-          if (model._footer) return { class: { 'pg-footer': true, 'pg-money': numeric, 'pg-readonly': true }, 'data-f': column.prop }
+          if (model._footer) {
+            const negative = typeof model._totals?.[column.prop]?.sum === 'string' && model._totals[column.prop].sum.startsWith('-')
+            return { class: { 'pg-footer': true, 'pg-money': numeric, 'pg-readonly': true, 'pg-net': net, 'pg-gstart': index === 0, 'pg-negative': negative }, 'data-f': column.prop }
+          }
           const state = model._states?.[column.prop]
           const cell = model._cells?.[column.prop]
           const negative = column.type === 'amount' && typeof cell?.v === 'string' && cell.v.startsWith('-')
@@ -103,7 +115,8 @@ export default function PayrollGrid({ snapshot, columns: columnDefs, totals, sor
           return {
             'data-id': model.id, 'data-f': column.prop, ...(state ? { 'data-state': state } : {}), ...(cell?.st ? { 'data-calc': cell.st } : {}),
             class: {
-              'pg-money': numeric, 'pg-computed': Boolean(column.computed), 'pg-input': Boolean(column.editable) && !column.computed, 'pg-readonly': !editable, 'pg-negative': negative, 'pg-invalid': Boolean(bad),
+              'pg-money': numeric, 'pg-computed': Boolean(column.computed), 'pg-input': kind === 'input', 'pg-source': kind === 'source', 'pg-blank': kind === 'input' && (cell?.v == null || cell.v === ''), 'pg-readonly': !editable,
+              'pg-net': net, 'pg-gstart': index === 0, 'pg-negative': negative, 'pg-invalid': Boolean(bad),
               'pg-saving': state === 'saving' || state === 'queued', 'pg-failed': state === 'failed', 'pg-conflict': state === 'conflict' || state === 'config_conflict',
               'pg-unavailable-cell': cell?.st === 'missing' && Boolean(column.computed), 'pg-error-cell': cell?.st === 'error', 'pg-warning-cell': cell?.st === 'warning',
             },
@@ -142,7 +155,7 @@ export default function PayrollGrid({ snapshot, columns: columnDefs, totals, sor
       const members = columnDefs.filter(column => column.group === key)
       if (members.length) groups.push({ key, members })
     }
-    return groups.map(({ key, members }) => ({ name: GROUP_LABELS[key], children: members.map(leaf), _group: key }))
+    return groups.map(({ key, members }) => ({ name: GROUP_LABELS[key], children: members.map((column, index) => leaf(column, index)), _group: key }))
   }, [canEdit, sort, invalid, layout, columnDefs, compactScreen, widths])
 
   // Latest values for the long-lived DOM listeners.

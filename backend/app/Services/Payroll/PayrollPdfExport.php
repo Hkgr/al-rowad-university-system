@@ -106,6 +106,55 @@ final class PayrollPdfExport
         }, $bands);
     }
 
+    // Palette (RGB). Hierarchy: dark group band > light column headings; entered data warm, calculated neutral, final net green.
+    private const GROUP_FILL = [31, 61, 18];
+
+    private const HEAD_FILL = [238, 244, 231];
+
+    private const HEAD_INPUT_FILL = [250, 243, 226];
+
+    private const HEAD_CALC_FILL = [231, 235, 227];
+
+    private const HEAD_TEXT = [26, 46, 16];
+
+    private const NET_HEAD_FILL = [59, 122, 34];
+
+    private const INPUT_FILL = [255, 251, 242];
+
+    private const CALC_FILL = [243, 244, 240];
+
+    private const NET_FILL = [227, 240, 216];
+
+    private const UNAVAILABLE_FILL = [236, 234, 231];
+
+    private const GRID = [196, 206, 190];
+
+    private const BOUNDARY = [96, 130, 78];
+
+    private const NET_LINE = [47, 106, 28];
+
+    private const INPUT_RULE = [180, 83, 9];
+
+    private const LEGEND_HEIGHT = 5.5;
+
+    private const GROUP_HEIGHT = 8.0;
+
+    private function side(float $width, array $color): array
+    {
+        return ['width' => $width, 'color' => $color, 'cap' => 'butt', 'join' => 'miter', 'dash' => 0];
+    }
+
+    /** Cell border: thin grid lines, a firmer rule on the first column of every group, and a strong rule either side of the final net column. */
+    private function border(array $columns, int $i, ?array $bottom = null): array
+    {
+        $c = $columns[$i];
+        $groupStart = $i === 0 || $columns[$i - 1]['group'] !== $c['group'];
+        $thin = $this->side(0.15, self::GRID);
+        $edge = $c['net'] ? $this->side(0.6, self::NET_LINE) : $thin;
+
+        return ['T' => $thin, 'B' => $bottom ?? $thin, 'L' => $edge, 'R' => $c['net'] ? $edge : ($groupStart ? $this->side(0.45, self::BOUNDARY) : $thin)];
+    }
+
     private function drawBand(PayrollPdfDocument $pdf, array $band, array $snapshot): void
     {
         $columns = $band['columns'];
@@ -128,6 +177,7 @@ final class PayrollPdfExport
             $this->tableHeader($pdf, $columns, $widths);
         }
         $pdf->setFont('cairo', 'B', self::FONT_SIZE);
+        $pdf->setTextColor(...self::HEAD_TEXT);
         $pdf->setFillColor(232, 241, 223);
         // The label spans the leading columns that carry no total; each summed column shows its total.
         $labelSpan = 0;
@@ -138,11 +188,26 @@ final class PayrollPdfExport
             $labelSpan++;
         }
         $labelSpan = max(1, $labelSpan);
-        $pdf->MultiCell(array_sum(array_slice($widths, 0, $labelSpan)), 9, 'الإجمالي ('.$snapshot['totals']['employees'].' موظفًا)', 1, 'R', true, 0, '', '', true, 0, false, true, 9, 'M');
+        $top = $this->side(0.5, self::BOUNDARY);
+        $pdf->MultiCell(array_sum(array_slice($widths, 0, $labelSpan)), 9, 'الإجمالي ('.$snapshot['totals']['employees'].' موظفًا)', ['T' => $top, 'B' => $this->side(0.15, self::GRID), 'L' => $this->side(0.15, self::GRID), 'R' => $this->side(0.45, self::BOUNDARY)], 'R', true, 0, '', '', true, 0, false, true, 9, 'M');
         foreach (array_slice($columns, $labelSpan, null, true) as $i => $c) {
             $total = $c['aggregation'] === 'sum' ? PayrollColumns::formatValue($snapshot['totals']['columns'][$c['key']]['sum'] ?? '0', $c['type']) : '';
-            $pdf->MultiCell($widths[$i], 9, $total, 1, 'C', true, 0, '', '', true, 0, false, true, 9, 'M');
+            $negative = str_starts_with($total, '-');
+            $border = $this->border($columns, $i);
+            $border['T'] = $top;
+            if ($c['net']) {
+                // The final total is the emphasised figure of the report: larger bold type on the darker green, heavy top rule.
+                $pdf->setFillColor(207, 229, 191);
+                $pdf->setFont('cairo', 'B', 11.5);
+                $border['T'] = $this->side(0.9, self::NET_LINE);
+            } else {
+                $pdf->setFillColor(232, 241, 223);
+                $pdf->setFont('cairo', 'B', self::FONT_SIZE);
+            }
+            $negative ? $pdf->setTextColor(185, 28, 28) : $pdf->setTextColor(...self::HEAD_TEXT);
+            $pdf->MultiCell($widths[$i], 9, $total, $border, 'C', true, 0, '', '', true, 0, false, true, 9, 'M');
         }
+        $pdf->setTextColor(0, 0, 0);
         $pdf->Ln(9);
         $note = PayrollColumns::exclusionNote($columns, $snapshot);
         if ($note !== null) {
@@ -151,12 +216,18 @@ final class PayrollPdfExport
         }
     }
 
+    /**
+     * Three stacked rows, all repeated on every page and every horizontal part: the key to the column styles, the dark group band
+     * (consecutive columns of a group share one merged cell, so spans are right for each part), and the light column headings.
+     */
     private function tableHeader(PayrollPdfDocument $pdf, array $columns, array $widths): void
     {
-        // Group band: consecutive columns of one group share a merged cell.
-        $pdf->setFont('cairo', 'B', 9);
-        $pdf->setFillColor(220, 232, 207);
-        $pdf->setTextColor(36, 61, 22);
+        $this->legend($pdf, $columns);
+
+        $pdf->setFont('cairo', 'B', 10.5);
+        $pdf->setFillColor(...self::GROUP_FILL);
+        $pdf->setTextColor(255, 255, 255);
+        $white = $this->side(0.6, [255, 255, 255]);
         for ($i = 0, $n = count($columns); $i < $n;) {
             $j = $i;
             $span = 0.0;
@@ -164,27 +235,60 @@ final class PayrollPdfExport
                 $span += $widths[$j];
                 $j++;
             }
-            $pdf->MultiCell($span, 7, $columns[$i]['group_label'], 1, 'C', true, 0, '', '', true, 0, false, true, 7, 'M');
+            $pdf->MultiCell($span, self::GROUP_HEIGHT, $columns[$i]['group_label'], ['T' => $this->side(0.15, self::GROUP_FILL), 'B' => $this->side(0.15, self::GROUP_FILL), 'L' => $white, 'R' => $white], 'C', true, 0, '', '', true, 0, false, true, self::GROUP_HEIGHT, 'M');
             $i = $j;
         }
-        $pdf->Ln(7);
+        $pdf->Ln(self::GROUP_HEIGHT);
+
         $pdf->setFont('cairo', 'B', self::FONT_SIZE);
-        $pdf->setFillColor(36, 61, 22);
-        $pdf->setTextColor(255, 255, 255);
+        $headings = array_map(fn ($c) => $c['kind'] === 'formula' ? 'ƒ '.$c['heading'] : $c['heading'], $columns);
         $height = 10;
         foreach ($columns as $i => $c) {
-            $height = max($height, $pdf->getNumLines($c['heading'], $widths[$i]) * 4.6 + 2.4);
+            $height = max($height, $pdf->getNumLines($headings[$i], $widths[$i]) * 4.6 + 2.4);
         }
         foreach ($columns as $i => $c) {
-            $pdf->MultiCell($widths[$i], $height, $c['heading'], 1, 'C', true, 0, '', '', true, 0, false, true, $height, 'M');
+            $border = $this->border($columns, $i);
+            if ($c['net']) {
+                $pdf->setFillColor(...self::NET_HEAD_FILL);
+                $pdf->setTextColor(255, 255, 255);
+                $border['B'] = $this->side(0.9, self::GROUP_FILL);
+            } else {
+                $pdf->setFillColor(...match ($c['kind']) {
+                    'input' => self::HEAD_INPUT_FILL, 'formula' => self::HEAD_CALC_FILL, default => self::HEAD_FILL,
+                });
+                $pdf->setTextColor(...self::HEAD_TEXT);
+                // Entered columns carry a firm rule under the heading, so the difference survives a black-and-white print.
+                $border['B'] = $c['kind'] === 'input' ? $this->side(0.9, self::INPUT_RULE) : $this->side(0.3, self::BOUNDARY);
+            }
+            $pdf->MultiCell($widths[$i], $height, $headings[$i], $border, 'C', true, 0, '', '', true, 0, false, true, $height, 'M');
         }
         $pdf->Ln($height);
         $pdf->setTextColor(0, 0, 0);
     }
 
+    /** One compact line naming the column styles that are present in this part (swatch + words; the words carry the meaning). */
+    private function legend(PayrollPdfDocument $pdf, array $columns): void
+    {
+        $kinds = array_unique(array_map(fn ($c) => $c['net'] ? 'net' : $c['kind'], $columns));
+        $items = array_values(array_filter([
+            in_array('input', $kinds, true) ? ['بيانات مدخلة', self::INPUT_FILL, $this->side(0.9, self::INPUT_RULE)] : null,
+            in_array('formula', $kinds, true) ? ['قيم محسوبة (ƒ)', self::CALC_FILL, $this->side(0.3, self::BOUNDARY)] : null,
+            in_array('net', $kinds, true) ? ['الصافي النهائي', self::NET_HEAD_FILL, $this->side(0.9, self::GROUP_FILL)] : null,
+        ]));
+        $pdf->setFont('cairo', '', 8.5);
+        $pdf->setTextColor(...self::HEAD_TEXT);
+        $thin = $this->side(0.15, self::GRID);
+        foreach ($items as [$label, $fill, $rule]) {
+            $pdf->setFillColor(...$fill);
+            $pdf->MultiCell(7, self::LEGEND_HEIGHT, '', ['T' => $thin, 'L' => $thin, 'R' => $thin, 'B' => $rule], 'C', true, 0, '', '', true, 0, false, true, self::LEGEND_HEIGHT, 'M');
+            $pdf->MultiCell(36, self::LEGEND_HEIGHT, $label, 0, 'R', false, 0, '', '', true, 0, false, true, self::LEGEND_HEIGHT, 'M');
+        }
+        $pdf->Ln(self::LEGEND_HEIGHT);
+    }
+
     private function rowHeight(PayrollPdfDocument $pdf, array $cells, array $widths): float
     {
-        $pdf->setFont('cairo', '', self::FONT_SIZE);
+        $pdf->setFont('cairo', 'B', self::FONT_SIZE); // the final net column is bold, the widest case
         $lines = 1;
         foreach ($widths as $i => $width) {
             $lines = max($lines, $pdf->getNumLines((string) $cells[$i], $width));
@@ -195,16 +299,29 @@ final class PayrollPdfExport
 
     private function row(PayrollPdfDocument $pdf, array $columns, array $cells, array $widths, float $height, array $sheetRow): void
     {
-        $pdf->setFont('cairo', '', self::FONT_SIZE);
         foreach ($columns as $i => $c) {
             $cell = $c['identity'] ? null : $sheetRow['cells'][$c['key']];
             $numeric = ! $c['identity'] && $c['type'] !== 'text';
+            $unavailable = $cell !== null && in_array($cell['st'], ['missing', 'error'], true);
+            // An unavailable result never wears the "valid payable" green: calculated/net cells go neutral grey with a plain "ناقص"/"خطأ".
+            $fill = match (true) {
+                $c['identity'] => null,
+                $unavailable && ($c['kind'] === 'formula' || $c['net']) => self::UNAVAILABLE_FILL,
+                $c['net'] => self::NET_FILL,
+                $c['kind'] === 'formula' => self::CALC_FILL,
+                default => self::INPUT_FILL,
+            };
+            $bold = $c['net'] && ! $unavailable;
+            $pdf->setFont('cairo', $bold ? 'B' : '', self::FONT_SIZE);
             if ($cell !== null && ($cell['st'] === 'error' || ($cell['v'] !== null && str_starts_with($cell['v'], '-') && $c['type'] === 'amount'))) {
                 $pdf->setTextColor(185, 28, 28);
             } elseif ($cell !== null && $cell['st'] === 'missing') {
                 $pdf->setTextColor(120, 113, 108);
             }
-            $pdf->MultiCell($widths[$i], $height, (string) $cells[$i], 1, $numeric ? 'C' : 'R', false, 0, '', '', true, 0, false, true, $height, 'M');
+            if ($fill !== null) {
+                $pdf->setFillColor(...$fill);
+            }
+            $pdf->MultiCell($widths[$i], $height, (string) $cells[$i], $this->border($columns, $i), $numeric ? 'C' : 'R', $fill !== null, 0, '', '', true, 0, false, true, $height, 'M');
             $pdf->setTextColor(0, 0, 0);
         }
         $pdf->Ln($height);

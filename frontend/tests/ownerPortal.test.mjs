@@ -128,3 +128,13 @@ test('the final formula is editable through the manager with a restore action; t
   const page = await source('features/owner-portal/pages/OwnerPayroll.jsx')
   assert.match(page, /canManage=\{canConfig\}/)
 })
+
+test('the legend is fed the very column list the grid renders (no separate visibility model)', async () => {
+  const page = await readFile(new URL('../src/features/owner-portal/pages/OwnerPayroll.jsx', import.meta.url), 'utf8')
+  const legend = await readFile(new URL('../src/features/owner-portal/components/PayrollLegend.jsx', import.meta.url), 'utf8')
+  assert.match(page, /<PayrollLegend columns=\{columns\} canEdit=\{canEdit\} \/>/)
+  assert.match(page, /<PayrollGrid\s+snapshot=\{snapshot\} columns=\{columns\}/)
+  assert.match(page, /const columns = useMemo\(\(\) => \(config \? buildColumns\(config, \{ compact \}\) : \[\]\)/)
+  assert.match(legend, /legendEntries\(columns, canEdit\)/)
+  assert.doesNotMatch(legend, /visible_grid|compact/, 'visibility is decided once, in buildColumns')
+})

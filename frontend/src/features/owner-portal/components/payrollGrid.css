@@ -1,26 +1,41 @@
 /* Payroll grid theme: RevoGrid variables mapped onto the existing portal palette (see src/styles/global.css). */
 /* The variables are set on revo-grid itself: its own theme rules would otherwise override values set on an ancestor. */
+.payroll-grid {
+  /* Visual hierarchy: dark group band > light column row; final net payable is the darkest/greenest column. */
+  --pg-group-bg: #1f3d12;
+  --pg-group-line: rgba(255, 255, 255, 0.5);
+  --pg-colhead-bg: #eef4e7;
+  --pg-colhead-text: #1a2e10;
+  --pg-colhead-line: rgba(65, 115, 39, 0.2);
+  --pg-input-bg: #fffaf0;
+  --pg-input-cue: rgba(217, 119, 6, 0.55);
+  --pg-calc-bg: #f4f5f1;
+  --pg-net-head-bg: #3b7a22;
+  --pg-net-bg: #e3f0d8;
+  --pg-net-line: #3b7a22;
+  --pg-boundary: rgba(65, 115, 39, 0.38);
+}
 .payroll-grid revo-grid[theme] {
-  --revo-grid-font-family: inherit;
+  --revo-grid-font-family: var(--font-sans, 'Cairo', 'Segoe UI', sans-serif); /* a bare `inherit` resolves to RevoGrid's own Nunito stack */
   --revo-grid-font-size: 13px;
   --revo-grid-background: #fff;
   --revo-grid-foreground: var(--color-text-dark, #1a2e10);
   --revo-grid-text: var(--color-text-dark, #1a2e10);
-  --revo-grid-header-bg: var(--color-text-dark, #1a2e10);
-  --revo-grid-header-color: rgba(255, 255, 255, 0.92);
-  --revo-grid-header-font-size: 12px;
+  --revo-grid-header-bg: var(--pg-colhead-bg);
+  --revo-grid-header-color: var(--pg-colhead-text);
+  --revo-grid-header-font-size: 11.5px;
   --revo-grid-header-font-weight: 700;
-  --revo-grid-header-border: rgba(255, 255, 255, 0.12);
-  --revo-grid-header-hover-bg: #243d16;
-  --revo-grid-header-focused-bg: #243d16;
+  --revo-grid-header-border: var(--pg-colhead-line);
+  --revo-grid-header-hover-bg: #e2edd8;
+  --revo-grid-header-focused-bg: #e2edd8;
   --revo-grid-header-resize-hover: #7ab356;
   --revo-grid-cell-border: rgba(86, 153, 51, 0.12);
   --revo-grid-cell-vertical-border: rgba(86, 153, 51, 0.1);
   --revo-grid-border: rgba(86, 153, 51, 0.12);
   --revo-grid-divider: rgba(86, 153, 51, 0.35);
   --revo-grid-row-hover: rgba(86, 153, 51, 0.045);
-  --revo-grid-selection-bg: rgba(86, 153, 51, 0.12);
-  --revo-grid-selection-border: #569933;
+  --revo-grid-selection-bg: rgba(59, 122, 34, 0.2);
+  --revo-grid-selection-border: #2b6016;
   --revo-grid-focused-bg: rgba(86, 153, 51, 0.1);
   --revo-grid-primary: #569933;
   --revo-grid-cell-disabled-bg: #fff;
@@ -37,19 +52,32 @@
 .payroll-grid .pg-head { cursor: pointer; user-select: none; white-space: nowrap; }
 .payroll-grid .rgCell { font-size: 13px; }
 .payroll-grid .rgCell.pg-readonly { background: #fff; }
-.payroll-grid .rgCell.pg-computed { background: rgba(86, 153, 51, 0.045); color: #2c4a1a; }
-.payroll-grid .rgCell.pg-input { box-shadow: inset 0 -1px 0 rgba(86, 153, 51, 0.22); }
+/* Calculated: light neutral and clearly read-only (still selectable and copyable). */
+.payroll-grid .rgCell.pg-computed { background: var(--pg-calc-bg); color: #2c4a1a; }
+/* Manual input (only for a user who may edit): very light warm fill, an underline cue, and a dashed rule when still blank. */
+.payroll-grid .rgCell.pg-input { background: var(--pg-input-bg); box-shadow: inset 0 -1px 0 var(--pg-input-cue); }
+.payroll-grid .rgCell.pg-input.pg-blank::after { content: ''; position: absolute; inset-inline: 24%; bottom: 11px; border-bottom: 1.5px dashed var(--pg-input-cue); pointer-events: none; }
+/* Source inputs seen by a read-only user keep a neutral look. */
+.payroll-grid .rgCell.pg-source { background: #fff; }
+/* Group boundaries: a thin rule on the first column of each group (the grid always starts at the right). */
+.payroll-grid .rgCell.pg-gstart { border-right: 1px solid var(--pg-boundary); }
+/* Final net payable (stable key): soft green fill, bold figures, stronger vertical rules. */
+.payroll-grid .rgCell.pg-net { background: var(--pg-net-bg); font-weight: 800; border-right: 2px solid var(--pg-net-line); border-left: 2px solid var(--pg-net-line); }
 .payroll-grid .rgCell.pg-unavailable-cell { color: #78716c; background: rgba(120, 113, 108, 0.06); }
 .payroll-grid .rgCell.pg-error-cell { background: rgba(239, 68, 68, 0.08); color: #b91c1c; font-weight: 700; }
 .payroll-grid .rgCell.pg-warning-cell { background: rgba(245, 158, 11, 0.1); }
+.payroll-grid .rgCell.pg-net.pg-unavailable-cell { background: #efedea; font-weight: 400; }
+.payroll-grid .rgCell.pg-net.pg-error-cell { background: rgba(239, 68, 68, 0.1); }
+.payroll-grid .rgCell.pg-net.pg-warning-cell { background: #fdf0cf; }
 .payroll-grid .pg-unavailable { color: #78716c; }
-.payroll-grid .rgCell.pg-footer { background: #e8f1df; font-weight: 800; color: #1a2e10; }
+.payroll-grid .rgCell.pg-footer { background: #e8f1df; font-weight: 800; color: #1a2e10; box-shadow: inset 0 2px 0 var(--pg-boundary); }
+.payroll-grid .rgCell.pg-footer.pg-net { background: #cfe5bf; font-size: 14px; font-weight: 900; box-shadow: inset 0 3px 0 var(--pg-net-line); }
 .payroll-grid .pg-excluded { color: #b45309; margin-inline-start: 2px; }
 .payroll-grid .pg-footer-label { font-weight: 800; }
 .payroll-grid .pg-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .payroll-grid .rgCell.pg-money { text-align: right; direction: ltr; font-variant-numeric: tabular-nums; }
 .payroll-grid .rgCell.pg-negative .pg-amount { color: #b91c1c; font-weight: 800; }
-.payroll-grid .rgCell.pg-saving { background: rgba(245, 158, 11, 0.12); }
+.payroll-grid .rgCell.pg-saving { background: #e3eefb; box-shadow: inset 0 0 0 1.5px rgba(37, 99, 235, 0.55); font-style: italic; } /* distinct from the warm input fill and from the amber conflict ring */
 .payroll-grid .rgCell.pg-failed { background: rgba(239, 68, 68, 0.14); box-shadow: inset 0 0 0 2px #ef4444; }
 .payroll-grid .rgCell.pg-conflict { background: rgba(245, 158, 11, 0.22); box-shadow: inset 0 0 0 2px #d97706; }
 .payroll-grid .rgCell.pg-invalid { background: rgba(239, 68, 68, 0.2); box-shadow: inset 0 0 0 2px #dc2626; }
@@ -66,8 +94,35 @@
   .payroll-grid { height: clamp(380px, calc(100dvh - 330px), 760px); border-radius: 12px; }
 }
 
-/* Header: same dark band and white bold labels as the shared DataTable header (specificity beats RevoGrid's own theme rules). */
-.payroll-grid revo-grid[theme][theme=compact] revogr-header { background-color: var(--color-text-dark, #1a2e10); color: rgba(255, 255, 255, 0.92); font-size: 12px; font-weight: 700; }
-.payroll-grid revo-grid[theme][theme=compact] revogr-header .rgHeaderCell { color: inherit; }
+/* Keyboard focus stays obvious on every fill (input, calculated, final payable): a 2px dark-green ring. */
+.payroll-grid revogr-focus.focused-cell { box-shadow: inset 0 0 0 2px #2b6016; }
+
+/* Header rows. Group row (dark green, white bold, a little taller) above the column row (light, dark compact text).
+   Specificity beats RevoGrid's own theme rules. */
+.payroll-grid revo-grid[theme][theme=compact] revogr-header { background-color: var(--pg-colhead-bg); color: var(--pg-colhead-text); font-size: 11.5px; font-weight: 700; }
+.payroll-grid revo-grid[theme][theme=compact] revogr-header .group-rgRow { height: 38px; }
+.payroll-grid revo-grid[theme][theme=compact] revogr-header .group-rgRow .rgHeaderCell {
+  background: var(--pg-group-bg); color: #fff; font-size: 13px; font-weight: 800; padding: 0 12px; line-height: 38px; text-align: center; box-shadow: none; border-left: 2px solid var(--pg-group-line);
+}
+.payroll-grid revo-grid[theme][theme=compact] revogr-header .actual-rgRow { height: 34px; box-shadow: none; }
+.payroll-grid revo-grid[theme][theme=compact] revogr-header .actual-rgRow .rgHeaderCell {
+  background: var(--pg-colhead-bg); color: var(--pg-colhead-text); font-size: 11.5px; padding: 0 8px; line-height: 34px; box-shadow: inset 0 -1px 0 var(--pg-colhead-line); border-left: 1px solid var(--pg-colhead-line);
+}
+/* Accent rule under the column title: warm = typed in, neutral = calculated, dark green = final net payable (markers carry the meaning too). */
+.payroll-grid revo-grid[theme][theme=compact] revogr-header .actual-rgRow .rgHeaderCell.pg-h-input { box-shadow: inset 0 -3px 0 var(--pg-input-cue); }
+.payroll-grid revo-grid[theme][theme=compact] revogr-header .actual-rgRow .rgHeaderCell.pg-h-computed { box-shadow: inset 0 -3px 0 #a3aaa0; }
+.payroll-grid revo-grid[theme][theme=compact] revogr-header .actual-rgRow .rgHeaderCell.pg-h-gstart { border-right: 2px solid var(--pg-boundary); }
+.payroll-grid revo-grid[theme][theme=compact] revogr-header .actual-rgRow .rgHeaderCell.pg-h-net {
+  background: var(--pg-net-head-bg); color: #fff; font-size: 12.5px; font-weight: 800; box-shadow: inset 0 -3px 0 #1f3d12; border-left: 2px solid var(--pg-net-line); border-right: 2px solid var(--pg-net-line);
+}
+.payroll-grid revo-grid[theme][theme=compact] revogr-header .actual-rgRow .rgHeaderCell.pg-h-source { box-shadow: inset 0 -3px 0 #e2dccf; }
+.payroll-grid .pg-mark { display: inline-block; margin-inline-end: 4px; font-size: 11px; font-weight: 800; line-height: 1; }
+.payroll-grid .pg-mark-input { color: #b45309; }
+.payroll-grid .pg-mark-calc { color: #4b5d3f; font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-size: 13px; }
+.payroll-grid .pg-h-net .pg-mark-calc { color: #fff; }
 /* Filtering is done in the page filter bar (so grid, totals and exports share one query): hide the unused column filter button. */
 .payroll-grid revogr-header .header-controls { display: none; }
+@media (max-width: 640px) {
+  .payroll-grid revo-grid[theme][theme=compact] revogr-header .group-rgRow .rgHeaderCell { padding: 0 5px; font-size: 12px; }
+  .payroll-grid revo-grid[theme][theme=compact] revogr-header .actual-rgRow .rgHeaderCell { padding: 0 5px; }
+}
