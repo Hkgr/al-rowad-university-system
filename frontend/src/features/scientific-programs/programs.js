@@ -7,10 +7,9 @@ export const PROGRAM_API = '/v1/vice-presidency/scientific/program-management'
 export const SETUP_LABELS = { legacy: 'النظام السابق', preparing: 'تهيئة الخطط — القبول الجديد موقوف', ready: 'جاهز للطلاب الجدد' }
 export const VERSION_LABELS = { draft: 'مسودة للتعديل', approved: 'خطة معتمدة', transitional: 'مرجع انتقالي — ليس اعتمادًا تاريخيًا' }
 export function programPlanLink(membership) {
-  const query = new URLSearchParams({ tab: 'membership' })
+  const query = new URLSearchParams()
   if (membership.academic_plan_version_id != null) query.set('version', String(membership.academic_plan_version_id))
-  query.set('program', String(membership.academic_program_id))
-  return `/vp/scientific/programs-courses?${query}`
+  return `/vp/scientific/programs-courses/programs/${membership.academic_program_id}${query.size ? `?${query}` : ''}`
 }
 /** Display actual definitions, never invent saved groups. */
 export function requirementDisplayGroups(data) {

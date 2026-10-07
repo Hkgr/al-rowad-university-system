@@ -27,7 +27,7 @@ try {
     foreach ($arguments in @(@('catalog.php','init'), @('catalog.php','01_apply.sql'), @('catalog.php','02_verify.sql'),
         @('academic-plans.php','fixture'), @('academic-plans.php','complete-runtime-fixture'), @('academic-plans.php','complete-decision-fixture'),
         @('academic-plans.php','01_apply.sql'), @('academic-plans.php','02_verify.sql'),
-        @('workspace.php','prepare'), @('workspace.php','test'))) {
+        @('workspace.php','prepare'), @('workspace.php','test'), @('academic-entities.php','test'))) {
         & php (Join-Path $PSScriptRoot $arguments[0]) $arguments[1]
         if ($LASTEXITCODE -ne 0) { throw ('Guarded step failed: ' + ($arguments -join ' ')) }
     }

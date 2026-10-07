@@ -106,7 +106,7 @@ import ExceptionalOpeningQueue from '../features/vice-presidency/pages/Exception
 import ExceptionalOpeningDetail from '../features/vice-presidency/pages/ExceptionalOpeningDetail'
 import SupplementaryExamPeriodsPage from '../features/vice-presidency/pages/SupplementaryExamPeriods'
 import SemesterOfferingQueue from '../features/vice-presidency/pages/SemesterOfferingQueue'
-import UnifiedProgramsPage from '../features/scientific-programs/UnifiedProgramsPage'
+import AcademicEntitiesPage, { LegacyAcademicEntityRoute } from '../features/scientific-programs/AcademicEntitiesPage'
 import { WORKSPACE_ACCESS } from '../features/scientific-programs/workspace'
 import { CATALOG_ACCESS } from '../features/scientific-courses/catalog'
 import { PROGRAM_ACCESS } from '../features/scientific-programs/programs'
@@ -385,10 +385,18 @@ const router = createBrowserRouter(createRoutesFromElements(
           }
         >
           <Route path="/vp/scientific" element={<VicePresidentShell office="scientific" />} />
-          <Route path="/vp/scientific/programs-courses" element={protect(<UnifiedProgramsPage />, WORKSPACE_ACCESS)} />
-          <Route path="/vp/scientific/courses" element={protect(<UnifiedProgramsPage catalogOnly />, CATALOG_ACCESS)} />
-          <Route path="/vp/scientific/programs" element={protect(<UnifiedProgramsPage />, PROGRAM_ACCESS)} />
-          <Route path="/vp/scientific/programs/:programId" element={protect(<UnifiedProgramsPage />, PROGRAM_ACCESS)} />
+          <Route path="/vp/scientific/programs-courses" element={protect(<AcademicEntitiesPage />, WORKSPACE_ACCESS)} />
+          <Route path="/vp/scientific/programs-courses/colleges" element={protect(<AcademicEntitiesPage kind="colleges" />, PROGRAM_ACCESS)} />
+          <Route path="/vp/scientific/programs-courses/colleges/:entityId" element={protect(<AcademicEntitiesPage kind="colleges" />, PROGRAM_ACCESS)} />
+          <Route path="/vp/scientific/programs-courses/departments" element={protect(<AcademicEntitiesPage kind="departments" />, PROGRAM_ACCESS)} />
+          <Route path="/vp/scientific/programs-courses/departments/:entityId" element={protect(<AcademicEntitiesPage kind="departments" />, PROGRAM_ACCESS)} />
+          <Route path="/vp/scientific/programs-courses/programs" element={protect(<AcademicEntitiesPage kind="programs" />, PROGRAM_ACCESS)} />
+          <Route path="/vp/scientific/programs-courses/programs/:entityId" element={protect(<AcademicEntitiesPage kind="programs" />, PROGRAM_ACCESS)} />
+          <Route path="/vp/scientific/programs-courses/courses" element={protect(<AcademicEntitiesPage kind="courses" />, CATALOG_ACCESS)} />
+          <Route path="/vp/scientific/programs-courses/courses/:entityId" element={protect(<AcademicEntitiesPage kind="courses" />, CATALOG_ACCESS)} />
+          <Route path="/vp/scientific/courses" element={protect(<LegacyAcademicEntityRoute kind="courses" />, CATALOG_ACCESS)} />
+          <Route path="/vp/scientific/programs" element={protect(<LegacyAcademicEntityRoute kind="programs" />, PROGRAM_ACCESS)} />
+          <Route path="/vp/scientific/programs/:programId" element={protect(<LegacyAcademicEntityRoute kind="programs" />, PROGRAM_ACCESS)} />
           <Route path="/vp/scientific/reports" element={protect(<ExecutiveReportsPage office="scientific" />, reportAccessForOffice('scientific'))} />
           <Route path="/vp/scientific/teaching-assignments" element={<TeachingAssignmentQueue office="scientific" />} />
           <Route path="/vp/scientific/semester-offerings" element={protect(<SemesterOfferingQueue />, { allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView], actualUniversityScope: true })} />

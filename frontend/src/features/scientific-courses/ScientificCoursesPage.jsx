@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useBlocker } from 'react-router-dom'
+import { Link, useBlocker, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { FaBookOpen, FaEdit, FaEye, FaPlus, FaTrash } from 'react-icons/fa'
 import DataTable from '../../components/table/DataTable'
 import FilterBar from '../../components/table/FilterBar'
@@ -12,6 +12,7 @@ import CourseDetails from './CourseDetails'
 import { MembershipEditor, RequirementGroupEditor } from './ProgramEditors'
 import CourseAssociations from './CourseAssociations'
 import { courseAssociations } from './associations'
+import { entityFilterSearch, entityLink, entityListFilters } from '../scientific-programs/entities'
 
 function EditorLoader({ context, onEdit, onMembership, ...props }) {
   const isCourse = ['course', 'view', 'delete'].includes(context.kind)
@@ -39,10 +40,13 @@ function ProgramCourseChoice({ program, onExisting, onNew, canCreate }) {
 }
 
 const titles = { course: 'بيانات المادة', view: 'استعراض المادة', delete: 'حذف المادة', groups: 'متطلبات التخرج', membership: 'تصنيف المادة في البرنامج', choose: 'إضافة مادة للبرنامج', created: 'تم حفظ المادة', associations: 'تفاصيل ارتباطات المادة' }
-export default function ScientificCoursesPage() {
+export default function ScientificCoursesPage({ entityPages = false }) {
+  const location = useLocation(), navigate = useNavigate(), [params, setParams] = useSearchParams()
   const [identity, setIdentity] = useState(() => JSON.stringify(getIdentity())), [denied, setDenied] = useState(false)
   const authorized = !denied && canViewCatalog(JSON.parse(identity))
-  const [filters, setFilters] = useState({ q: '', college: null, department: null, program: null, requirement_scope: '', course_type: '', is_active: '', sort: 'course_code', direction: 'asc', page: 1 })
+  const [localFilters, setLocalFilters] = useState({ q: '', college: null, department: null, program: null, requirement_scope: '', course_type: '', is_active: '', sort: 'course_code', direction: 'asc', page: 1 })
+  const filters = entityPages ? { ...entityListFilters(params.toString()), sort: params.get('sort') || 'course_code' } : localFilters
+  const setFilters = update => { const next = typeof update === 'function' ? update(filters) : update; if (entityPages) setParams(entityFilterSearch(next)); else setLocalFilters(next) }
   const [refresh, setRefresh] = useState(0), [editor, setEditor] = useState(null), [editorEpoch, setEditorEpoch] = useState(0)
   const [dirty, setDirty] = useState(false), [busy, setBusy] = useState(false), [blocked, setBlocked] = useState(false), [notice, setNotice] = useState(''), [transition, setTransition] = useState(null)
   const controls = useRef({ dirty: false, busy: false, blocked: false })
@@ -78,12 +82,13 @@ export default function ScientificCoursesPage() {
     const next = editor?.forProgram && result?.data?.course_id && !result.data.program_courses?.length ? { kind: 'created', course: result.data, program: editor.forProgram } : null
     reset(); setRefresh(n => n + 1); setNotice(next ? 'تم حفظ المادة. لم تُضف للبرنامج بعد.' : 'تم الحفظ بنجاح.')
     if (next) { setEditor(next); setEditorEpoch(n => n + 1) }
+    if (entityPages && result.data?.course_id) navigate(entityLink('courses', result.data.course_id, { returnTo: location.pathname + location.search }))
   }
   function restart(current) { go(() => { markDirty(false); markBlocked(false); setEditorEpoch(x => x + 1); setEditor(e => ({ ...e, baseline: e.kind === 'membership' ? null : e.kind === 'course' && !e.id ? { revision: current.revision, data: {} } : current })) }) }
   const rowAction = 'inline-flex items-center gap-1 rounded-[7px] border px-2.5 py-1.5 text-[11px] font-bold transition-colors'
   const columns = [
     { key: 'code', header: 'الرمز', dir: 'ltr', render: c => <span className="text-[12px] font-mono">{c.course_code}</span> },
-    { key: 'name', header: 'اسم المادة', render: c => <span className="text-[13px] font-semibold">{c.course_name}</span> },
+    { key: 'name', header: 'اسم المادة', render: c => entityPages ? <Link className="text-[13px] font-semibold text-primary" to={entityLink('courses', c.course_id, { returnTo: location.pathname + location.search })}>{c.course_name}</Link> : <span className="text-[13px] font-semibold">{c.course_name}</span> },
     { key: 'colleges', header: 'الكليات', align: 'center', render: c => <button type="button" className={`${rowAction} border-primary/25 text-primary`} aria-label={`الكليات المرتبطة بالمادة ${c.course_code}`} onClick={() => edit({ kind: 'associations', course: c, associationKind: 'colleges' })}>{courseAssociations(c).colleges.length}</button> },
     { key: 'departments', header: 'الأقسام', align: 'center', render: c => <button type="button" className={`${rowAction} border-primary/25 text-primary`} aria-label={`الأقسام المرتبطة بالمادة ${c.course_code}`} onClick={() => edit({ kind: 'associations', course: c, associationKind: 'departments' })}>{courseAssociations(c).departments.length}</button> },
     { key: 'instructors', header: 'المدرّسون', align: 'center', render: c => <button type="button" className={`${rowAction} border-primary/25 text-primary`} aria-label={`المدرّسون المرتبطة بالمادة ${c.course_code}`} onClick={() => edit({ kind: 'associations', course: c, associationKind: 'instructors' })}>{courseAssociations(c).instructors.length}</button> },
@@ -92,7 +97,7 @@ export default function ScientificCoursesPage() {
     ...(filters.program ? [{ key: 'classification', header: 'التصنيف في البرنامج', render: c => { const pc = c.program_courses?.find(p => String(p.academic_program_id) === String(filters.program.id)); return <div className="text-[12px]"><p>{SCOPES[pc?.requirement_classification?.requirement_scope] || 'غير مصنف'} / {TYPES[pc?.course_type] || 'غير محدد'}</p><p className="text-[11px] text-text-light">{pc?.academic_level?.level_name || 'المستوى غير محدد'} · {pc?.recommended_semester?.semester_name || 'الفصل غير محدد'} (إرشادي)</p></div> } }] : []),
     { key: 'active', header: 'الحالة', align: 'center', render: c => <span className={`inline-block rounded-full px-2 py-0.5 text-[10.5px] font-bold ${c.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-text-light'}`}>{c.is_active ? 'فعّالة' : 'غير فعّالة'}</span> },
     { key: 'actions', header: 'الإجراءات', align: 'center', render: c => <div className="flex flex-wrap justify-center gap-2">
-      <button type="button" aria-label={`استعراض ${c.course_code}`} className={`${rowAction} border-primary/25 text-primary hover:bg-primary/[0.05]`} onClick={() => edit({ kind: 'view', id: c.course_id })}><FaEye /> استعراض</button>
+      <button type="button" aria-label={`استعراض ${c.course_code}`} className={`${rowAction} border-primary/25 text-primary hover:bg-primary/[0.05]`} onClick={() => entityPages ? go(() => navigate(entityLink('courses', c.course_id, { returnTo: location.pathname + location.search }))) : edit({ kind: 'view', id: c.course_id })}><FaEye /> استعراض</button>
       {read.data?.can_manage && <><button type="button" aria-label={`تعديل ${c.course_code}`} className={`${rowAction} border-primary/25 text-primary hover:bg-primary/[0.05]`} onClick={() => edit({ kind: 'course', id: c.course_id })}><FaEdit /> تعديل</button><button type="button" aria-label={`حذف ${c.course_code}`} className={`${rowAction} border-red-300 text-red-600 hover:bg-red-50`} onClick={() => edit({ kind: 'delete', id: c.course_id })}><FaTrash /> حذف</button></>}
     </div> },
   ]

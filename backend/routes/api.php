@@ -700,6 +700,14 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('vice-presidency/scientific/supplementary-exam-periods', [ScientificVicePresidentSupplementaryExamPeriodController::class, 'index']);
     Route::get('vice-presidency/scientific/supplementary-exam-periods/{period}', [ScientificVicePresidentSupplementaryExamPeriodController::class, 'show']);
     Route::post('vice-presidency/scientific/supplementary-exam-periods', [ScientificVicePresidentSupplementaryExamPeriodController::class, 'store']);
+    Route::prefix('vice-presidency/scientific/program-management/entities')->controller(\App\Http\Controllers\Api\ScientificAcademicEntityController::class)->group(function () {
+        Route::get('organizational-units', 'units');
+        Route::get('{kind}', 'index')->whereIn('kind', ['colleges', 'departments']);
+        Route::post('{kind}', 'store')->whereIn('kind', ['colleges', 'departments']);
+        Route::get('{kind}/{entity}', 'show')->whereIn('kind', ['colleges', 'departments'])->whereNumber('entity');
+        Route::patch('{kind}/{entity}', 'update')->whereIn('kind', ['colleges', 'departments'])->whereNumber('entity');
+        Route::delete('{kind}/{entity}', 'destroy')->whereIn('kind', ['colleges', 'departments'])->whereNumber('entity');
+    });
     Route::prefix('vice-presidency/scientific/program-management')->controller(\App\Http\Controllers\Api\ScientificProgramManagementController::class)->group(function () {
         Route::get('workspace', 'workspace');
         Route::post('plan-changes', 'saveChanges');
