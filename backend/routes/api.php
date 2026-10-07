@@ -933,6 +933,37 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
         Route::get('leadership/units/{unit}', 'unit')->whereNumber('unit')->middleware($guard(\App\Support\MinistryPortal::LEADERSHIP));
     });
 
+    /*
+    | University-owner portal (Home + Payroll). Each route carries its own owner_* permission, checked
+    | server-side by RequireOwnerPortal. Payroll data lives in isolated payroll_* tables only.
+    */
+    Route::prefix('owner')->controller(\App\Http\Controllers\Api\OwnerPayrollController::class)->group(function (): void {
+        $guard = fn (string $permission) => \App\Http\Middleware\RequireOwnerPortal::class.':'.$permission;
+        Route::get('home', 'home')->middleware($guard(\App\Support\OwnerPortal::HOME_VIEW));
+        Route::prefix('payroll')->group(function () use ($guard): void {
+            Route::get('options', 'options')->middleware($guard(\App\Support\OwnerPortal::PAYROLL_VIEW));
+            Route::get('sheet', 'sheet')->middleware($guard(\App\Support\OwnerPortal::PAYROLL_VIEW));
+            Route::get('bodies', 'bodies')->middleware($guard(\App\Support\OwnerPortal::PAYROLL_VIEW));
+            Route::post('bodies', 'storeBody')->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
+            Route::patch('bodies/{body}', 'updateBody')->whereNumber('body')->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
+            Route::post('bodies/{body}/{state}', 'setBodyActive')->whereNumber('body')->whereIn('state', ['activate', 'deactivate'])->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
+            Route::delete('bodies/{body}', 'destroyBody')->whereNumber('body')->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
+            Route::post('employees', 'storeEmployee')->middleware($guard(\App\Support\OwnerPortal::EMPLOYEES_MANAGE));
+            Route::patch('employees/{employee}', 'updateEmployee')->whereNumber('employee')->middleware($guard(\App\Support\OwnerPortal::EMPLOYEES_MANAGE));
+            Route::patch('values', 'values')->middleware($guard(\App\Support\OwnerPortal::AMOUNTS_EDIT));
+            Route::get('config', 'config')->middleware($guard(\App\Support\OwnerPortal::PAYROLL_VIEW));
+            Route::post('config/preview', 'previewConfig')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::post('config/columns', 'storeColumn')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::patch('config/columns/{column}', 'updateColumn')->where('column', '[a-z][a-z0-9_]{1,40}')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::post('config/columns/{column}/restore-formula', 'restoreColumnFormula')->where('column', '[a-z][a-z0-9_]{1,40}')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::delete('config/columns/{column}', 'destroyColumn')->where('column', '[a-z][a-z0-9_]{1,40}')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::put('config/layout', 'saveLayout')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::patch('config/settings', 'updateSettings')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::get('export/xlsx', 'exportXlsx')->middleware($guard(\App\Support\OwnerPortal::EXPORT));
+            Route::get('export/pdf', 'exportPdf')->middleware($guard(\App\Support\OwnerPortal::EXPORT));
+        });
+    });
+
     Route::prefix('technical/activity')->controller(\App\Http\Controllers\Api\SystemActivityController::class)
         ->middleware(\App\Http\Middleware\RequirePermission::class.':system_activity.view')
         ->group(function (): void {

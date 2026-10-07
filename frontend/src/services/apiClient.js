@@ -31,3 +31,22 @@ export async function apiRequest(path, options = {}) {
 
   return data;
 }
+
+// Authenticated binary download (exports). Same base URL, token and error contract as apiRequest.
+export async function apiDownload(path) {
+  const token = localStorage.getItem('token') || localStorage.getItem('auth_token');
+  const response = await fetch(`${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`, {
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    const error = new Error(data?.message || 'تعذّر إنشاء الملف');
+    error.status = response.status;
+    error.errorCode = data?.error_code;
+    error.details = data?.errors ?? data?.data ?? {};
+    throw error;
+  }
+  const disposition = response.headers.get('Content-Disposition') || '';
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
+  return { blob: await response.blob(), filename: match ? decodeURIComponent(match[1]) : null };
+}

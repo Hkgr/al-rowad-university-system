@@ -308,7 +308,7 @@ test('guide UI uses the shared components and sends nothing to external services
   assert.match(flow, /dir="rtl"/)
   assert.match(flow, /NODE_KINDS\[node\.kind\]/)
   const pkg = JSON.parse(await read('frontend/package.json'))
-  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ['@tailwindcss/vite', 'framer-motion', 'html2canvas-pro', 'jspdf', 'react', 'react-dom', 'react-icons', 'react-router-dom', 'tailwindcss', 'xlsx'])
+  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ['@revolist/react-datagrid', '@tailwindcss/vite', 'framer-motion', 'html2canvas-pro', 'jspdf', 'react', 'react-dom', 'react-icons', 'react-router-dom', 'tailwindcss', 'xlsx'])
 })
 
 test('ministry placements: view-only users get a review task, never the operational workflow', () => {

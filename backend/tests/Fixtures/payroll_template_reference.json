@@ -1,0 +1,2994 @@
+{
+    "config": {
+        "revision": 1,
+        "settings": [
+            {
+                "id": 1,
+                "key": "insurance_rate",
+                "label": "نسبة التأمينات",
+                "value_type": "percent",
+                "value": "0.07"
+            },
+            {
+                "id": 2,
+                "key": "income_tax_rate",
+                "label": "نسبة ضريبة الدخل",
+                "value_type": "percent",
+                "value": "0.15"
+            },
+            {
+                "id": 3,
+                "key": "tax_exemption",
+                "label": "الحد الأدنى المعفى من الضريبة",
+                "value_type": "amount",
+                "value": "12560"
+            }
+        ],
+        "columns": [
+            {
+                "id": 1,
+                "key": "fixed_salary",
+                "label": "الأجر المقطوع",
+                "group": "salary",
+                "kind": "input",
+                "value_type": "amount",
+                "formula": null,
+                "blank_as_zero": false,
+                "allow_negative": false,
+                "warn_negative": false,
+                "aggregation": "sum",
+                "visible_grid": true,
+                "visible_export": true,
+                "compact": true,
+                "is_system": true,
+                "sort_order": 10,
+                "formula_editable": false,
+                "template_formula_display": null,
+                "is_template_default": null,
+                "formula_display": null,
+                "ast": null,
+                "references": [],
+                "dependents": [
+                    {
+                        "key": "salary_entitlement",
+                        "label": "الراتب المستحق"
+                    },
+                    {
+                        "key": "insurance",
+                        "label": "التأمينات الاجتماعية"
+                    }
+                ],
+                "group_label": "الراتب"
+            },
+            {
+                "id": 2,
+                "key": "salary_adjustment",
+                "label": "فروقات الراتب",
+                "group": "salary",
+                "kind": "input",
+                "value_type": "amount",
+                "formula": null,
+                "blank_as_zero": true,
+                "allow_negative": true,
+                "warn_negative": false,
+                "aggregation": "sum",
+                "visible_grid": true,
+                "visible_export": true,
+                "compact": false,
+                "is_system": true,
+                "sort_order": 20,
+                "formula_editable": false,
+                "template_formula_display": null,
+                "is_template_default": null,
+                "formula_display": null,
+                "ast": null,
+                "references": [],
+                "dependents": [
+                    {
+                        "key": "salary_entitlement",
+                        "label": "الراتب المستحق"
+                    }
+                ],
+                "group_label": "الراتب"
+            },
+            {
+                "id": 3,
+                "key": "salary_entitlement",
+                "label": "الراتب المستحق",
+                "group": "salary",
+                "kind": "formula",
+                "value_type": "amount",
+                "formula": "{fixed_salary} + {salary_adjustment}",
+                "blank_as_zero": false,
+                "allow_negative": false,
+                "warn_negative": false,
+                "aggregation": "sum",
+                "visible_grid": true,
+                "visible_export": true,
+                "compact": false,
+                "is_system": true,
+                "sort_order": 30,
+                "formula_editable": false,
+                "template_formula_display": null,
+                "is_template_default": null,
+                "formula_display": "[الأجر المقطوع] + [فروقات الراتب]",
+                "ast": {
+                    "t": "bin",
+                    "op": "+",
+                    "l": {
+                        "t": "ref",
+                        "k": "fixed_salary",
+                        "src": "column"
+                    },
+                    "r": {
+                        "t": "ref",
+                        "k": "salary_adjustment",
+                        "src": "column"
+                    }
+                },
+                "references": [
+                    "fixed_salary",
+                    "salary_adjustment"
+                ],
+                "dependents": [
+                    {
+                        "key": "salary_taxable_base",
+                        "label": "الوعاء الضريبي للراتب"
+                    },
+                    {
+                        "key": "combined_taxable_base",
+                        "label": "الوعاء الضريبي المجمّع"
+                    },
+                    {
+                        "key": "gross_entitlement",
+                        "label": "إجمالي المستحقات (قبل الاقتطاع)"
+                    },
+                    {
+                        "key": "net_salary",
+                        "label": "صافي الراتب"
+                    }
+                ],
+                "group_label": "الراتب"
+            },
+            {
+                "id": 4,
+                "key": "salary_taxable_base",
+                "label": "الوعاء الضريبي للراتب",
+                "group": "salary",
+                "kind": "formula",
+                "value_type": "amount",
+                "formula": "{salary_entitlement} - {insurance} - {tax_exemption}",
+                "blank_as_zero": false,
+                "allow_negative": false,
+                "warn_negative": true,
+                "aggregation": "sum",
+                "visible_grid": true,
+                "visible_export": true,
+                "compact": false,
+                "is_system": true,
+                "sort_order": 40,
+                "formula_editable": false,
+                "template_formula_display": null,
+                "is_template_default": null,
+                "formula_display": "[الراتب المستحق] - [التأمينات الاجتماعية] - [الحد الأدنى المعفى من الضريبة]",
+                "ast": {
+                    "t": "bin",
+                    "op": "-",
+                    "l": {
+                        "t": "bin",
+                        "op": "-",
+                        "l": {
+                            "t": "ref",
+                            "k": "salary_entitlement",
+                            "src": "column"
+                        },
+                        "r": {
+                            "t": "ref",
+                            "k": "insurance",
+                            "src": "column"
+                        }
+                    },
+                    "r": {
+                        "t": "ref",
+                        "k": "tax_exemption",
+                        "src": "setting"
+                    }
+                },
+                "references": [
+                    "salary_entitlement",
+                    "insurance",
+                    "tax_exemption"
+                ],
+                "dependents": [
+                    {
+                        "key": "salary_tax",
+                        "label": "ضريبة دخل الراتب"
+                    }
+                ],
+                "group_label": "الراتب"
+            },
+            {
+                "id": 5,
+                "key": "compensation",
+                "label": "التعويض",
+                "group": "compensation",
+                "kind": "input",
+                "value_type": "amount",
+                "formula": null,
+                "blank_as_zero": true,
+                "allow_negative": false,
+                "warn_negative": false,
+                "aggregation": "sum",
+                "visible_grid": true,
+                "visible_export": true,
+                "compact": true,
+                "is_system": true,
+                "sort_order": 50,
+                "formula_editable": false,
+                "template_formula_display": null,
+                "is_template_default": null,
+                "formula_display": null,
+                "ast": null,
+                "references": [],
+                "dependents": [
+                    {
+                        "key": "compensation_entitlement",
+                        "label": "التعويض المستحق"
+                    }
+                ],
+                "group_label": "التعويض"
+            },
+            {
+                "id": 6,
+                "key": "compensation_adjustment",
+                "label": "فروقات التعويض",
+                "group": "compensation",
+                "kind": "input",
+                "value_type": "amount",
+                "formula": null,
+                "blank_as_zero": true,
+                "allow_negative": true,
+                "warn_negative": false,
+                "aggregation": "sum",
+                "visible_grid": true,
+                "visible_export": true,
+                "compact": false,
+                "is_system": true,
+                "sort_order": 60,
+                "formula_editable": false,
+                "template_formula_display": null,
+                "is_template_default": null,
+                "formula_display": null,
+                "ast": null,
+                "references": [],
+                "dependents": [
+                    {
+                        "key": "compensation_entitlement",
+                        "label": "التعويض المستحق"
+                    }
+                ],
+                "group_label": "التعويض"
+            },
+            {
+                "id": 7,
+                "key": "compensation_entitlement",
+                "label": "التعويض المستحق",
+                "group": "compensation",
+                "kind": "formula",
+                "value_type": "amount",
+                "formula": "{compensation} + {compensation_adjustment}",
+                "blank_as_zero": false,
+                "allow_negative": false,
+                "warn_negative": false,
+                "aggregation": "sum",
+                "visible_grid": true,
+                "visible_export": true,
+                "compact": false,
+                "is_system": true,
+                "sort_order": 70,
+                "formula_editable": false,
+                "template_formula_display": null,
+                "is_template_default": null,
+                "formula_display": "[التعويض] + [فروقات التعويض]",
+                "ast": {
+                    "t": "bin",
+                    "op": "+",
+                    "l": {
+                        "t": "ref",
+                        "k": "compensation",
+                        "src": "column"
+                    },
+                    "r": {
+                        "t": "ref",
+                        "k": "compensation_adjustment",
+                        "src": "column"
+                    }
+                },
+                "references": [
+                    "compensation",
+                    "compensation_adjustment"
+                ],
+                "dependents": [
+                    {
+                        "key": "combined_taxable_base",
+                        "label": "الوعاء الضريبي المجمّع"
+                    },
+                    {
+                        "key": "gross_entitlement",
+                        "label": "إجمالي المستحقات (قبل الاقتطاع)"
+                    },
+                    {
+                        "key": "net_compensation",
+                        "label": "صافي التعويض"
+                    }
+                ],
+                "group_label": "التعويض"
+            },
+            {
+                "id": 8,
+                "key": "combined_taxable_base",
+                "label": "الوعاء الضريبي المجمّع",
+                "group": "compensation",
+                "kind": "formula",
+                "value_type": "amount",
+                "formula": "{salary_entitlement} + {compensation_entitlement} - {insurance} - {tax_exemption}",
+                "blank_as_zero": false,
+                "allow_negative": false,
+                "warn_negative": true,
+                "aggregation": "sum",
+                "visible_grid": true,
+                "visible_export": true,
+                "compact": false,
+                "is_system": true,
+                "sort_order": 80,
+                "formula_editable": false,
+                "template_formula_display": null,
+                "is_template_default": null,
+                "formula_display": "[الراتب المستحق] + [التعويض المستحق] - [التأمينات الاجتماعية] - [الحد الأدنى المعفى من الضريبة]",
+                "ast": {
+                    "t": "bin",
+                    "op": "-",
+                    "l": {
+                        "t": "bin",
+                        "op": "-",
+                        "l": {
+                            "t": "bin",
+                            "op": "+",
+                            "l": {
+                                "t": "ref",
+                                "k": "salary_entitlement",
+                                "src": "column"
+                            },
+                            "r": {
+                                "t": "ref",
+                                "k": "compensation_entitlement",
+                                "src": "column"
+                            }
+                        },
+                        "r": {
+                            "t": "ref",
+                            "k": "insurance",
+                            "src": "column"
+                        }
+                    },
+                    "r": {
+                        "t": "ref",
+                        "k": "tax_exemption",
+                        "src": "setting"
+                    }
+                },
+                "references": [
+                    "salary_entitlement",
+                    "compensation_entitlement",
+                    "insurance",
+                    "tax_exemption"
+                ],
+                "dependents": [
+                    {
+                        "key": "compensation_tax",
+                        "label": "ضريبة دخل التعويض"
+                    }
+                ],
+                "group_label": "التعويض"
+            },
+            {
+                "id": 9,
+                "key": "insurance",
+                "label": "التأمينات الاجتماعية",
+                "group": "deductions",
+                "kind": "formula",
+                "value_type": "amount",
+                "formula": "{fixed_salary} * {insurance_rate}",
+                "blank_as_zero": false,
+                "allow_negative": false,
+                "warn_negative": false,
+                "aggregation": "sum",
+                "visible_grid": true,
+                "visible_export": true,
+                "compact": false,
+                "is_system": true,
+                "sort_order": 90,
+                "formula_editable": false,
+                "template_formula_display": null,
+                "is_template_default": null,
+                "formula_display": "[الأجر المقطوع] * [نسبة التأمينات]",
+                "ast": {
+                    "t": "bin",
+                    "op": "*",
+                    "l": {
+                        "t": "ref",
+                        "k": "fixed_salary",
+                        "src": "column"
+                    },
+                    "r": {
+                        "t": "ref",
+                        "k": "insurance_rate",
+                        "src": "setting"
+                    }
+                },
+                "references": [
+                    "fixed_salary",
+                    "insurance_rate"
+                ],
+                "dependents": [
+                    {
+                        "key": "salary_taxable_base",
+                        "label": "الوعاء الضريبي للراتب"
+                    },
+                    {
+                        "key": "combined_taxable_base",
+                        "label": "الوعاء الضريبي المجمّع"
+                    },
+                    {
+                        "key": "total_deductions",
+                        "label": "إجمالي الاقتطاعات"
+                    },
+                    {
+                        "key": "net_salary",
+                        "label": "صافي الراتب"
+                    }
+                ],
+                "group_label": "الاقتطاعات"
+            },
+            {
+                "id": 10,
+                "key": "salary_tax",
+                "label": "ضريبة دخل الراتب",
+                "group": "deductions",
+                "kind": "formula",
+                "value_type": "amount",
+                "formula": "{salary_taxable_base} * {income_tax_rate}",
+                "blank_as_zero": false,
+                "allow_negative": false,
+                "warn_negative": true,
+                "aggregation": "sum",
+                "visible_grid": true,
+                "visible_export": true,
+                "compact": false,
+                "is_system": true,
+                "sort_order": 100,
+                "formula_editable": false,
+                "template_formula_display": null,
+                "is_template_default": null,
+                "formula_display": "[الوعاء الضريبي للراتب] * [نسبة ضريبة الدخل]",
+                "ast": {
+                    "t": "bin",
+                    "op": "*",
+                    "l": {
+                        "t": "ref",
+                        "k": "salary_taxable_base",
+                        "src": "column"
+                    },
+                    "r": {
+                        "t": "ref",
+                        "k": "income_tax_rate",
+                        "src": "setting"
+                    }
+                },
+                "references": [
+                    "salary_taxable_base",
+                    "income_tax_rate"
+                ],
+                "dependents": [
+                    {
+                        "key": "compensation_tax",
+                        "label": "ضريبة دخل التعويض"
+                    },
+                    {
+                        "key": "total_deductions",
+                        "label": "إجمالي الاقتطاعات"
+                    },
+                    {
+                        "key": "net_salary",
+                        "label": "صافي الراتب"
+                    }
+                ],
+                "group_label": "الاقتطاعات"
+            },
+            {
+                "id": 11,
+                "key": "compensation_tax",
+                "label": "ضريبة دخل التعويض",
+                "group": "deductions",
+                "kind": "formula",
+                "value_type": "amount",
+                "formula": "{combined_taxable_base} * {income_tax_rate} - {salary_tax}",
+                "blank_as_zero": false,
+                "allow_negative": false,
+                "warn_negative": true,
+                "aggregation": "sum",
+                "visible_grid": true,
+                "visible_export": true,
+                "compact": false,
+                "is_system": true,
+                "sort_order": 110,
+                "formula_editable": false,
+                "template_formula_display": null,
+                "is_template_default": null,
+                "formula_display": "[الوعاء الضريبي المجمّع] * [نسبة ضريبة الدخل] - [ضريبة دخل الراتب]",
+                "ast": {
+                    "t": "bin",
+                    "op": "-",
+                    "l": {
+                        "t": "bin",
+                        "op": "*",
+                        "l": {
+                            "t": "ref",
+                            "k": "combined_taxable_base",
+                            "src": "column"
+                        },
+                        "r": {
+                            "t": "ref",
+                            "k": "income_tax_rate",
+                            "src": "setting"
+                        }
+                    },
+                    "r": {
+                        "t": "ref",
+                        "k": "salary_tax",
+                        "src": "column"
+                    }
+                },
+                "references": [
+                    "combined_taxable_base",
+                    "income_tax_rate",
+                    "salary_tax"
+                ],
+                "dependents": [
+                    {
+                        "key": "total_deductions",
+                        "label": "إجمالي الاقتطاعات"
+                    },
+                    {
+                        "key": "net_compensation",
+                        "label": "صافي التعويض"
+                    }
+                ],
+                "group_label": "الاقتطاعات"
+            },
+            {
+                "id": 12,
+                "key": "other_deductions",
+                "label": "حسميات أخرى",
+                "group": "deductions",
+                "kind": "input",
+                "value_type": "amount",
+                "formula": null,
+                "blank_as_zero": true,
+                "allow_negative": false,
+                "warn_negative": false,
+                "aggregation": "sum",
+                "visible_grid": true,
+                "visible_export": true,
+                "compact": true,
+                "is_system": true,
+                "sort_order": 120,
+                "formula_editable": false,
+                "template_formula_display": null,
+                "is_template_default": null,
+                "formula_display": null,
+                "ast": null,
+                "references": [],
+                "dependents": [
+                    {
+                        "key": "total_deductions",
+                        "label": "إجمالي الاقتطاعات"
+                    },
+                    {
+                        "key": "total_net_payable",
+                        "label": "إجمالي الصافي المستحق"
+                    }
+                ],
+                "group_label": "الاقتطاعات"
+            },
+            {
+                "id": 13,
+                "key": "total_deductions",
+                "label": "إجمالي الاقتطاعات",
+                "group": "deductions",
+                "kind": "formula",
+                "value_type": "amount",
+                "formula": "{insurance} + {salary_tax} + {compensation_tax} + {other_deductions}",
+                "blank_as_zero": false,
+                "allow_negative": false,
+                "warn_negative": false,
+                "aggregation": "sum",
+                "visible_grid": true,
+                "visible_export": true,
+                "compact": true,
+                "is_system": true,
+                "sort_order": 130,
+                "formula_editable": false,
+                "template_formula_display": null,
+                "is_template_default": null,
+                "formula_display": "[التأمينات الاجتماعية] + [ضريبة دخل الراتب] + [ضريبة دخل التعويض] + [حسميات أخرى]",
+                "ast": {
+                    "t": "bin",
+                    "op": "+",
+                    "l": {
+                        "t": "bin",
+                        "op": "+",
+                        "l": {
+                            "t": "bin",
+                            "op": "+",
+                            "l": {
+                                "t": "ref",
+                                "k": "insurance",
+                                "src": "column"
+                            },
+                            "r": {
+                                "t": "ref",
+                                "k": "salary_tax",
+                                "src": "column"
+                            }
+                        },
+                        "r": {
+                            "t": "ref",
+                            "k": "compensation_tax",
+                            "src": "column"
+                        }
+                    },
+                    "r": {
+                        "t": "ref",
+                        "k": "other_deductions",
+                        "src": "column"
+                    }
+                },
+                "references": [
+                    "insurance",
+                    "salary_tax",
+                    "compensation_tax",
+                    "other_deductions"
+                ],
+                "dependents": [],
+                "group_label": "الاقتطاعات"
+            },
+            {
+                "id": 14,
+                "key": "gross_entitlement",
+                "label": "إجمالي المستحقات (قبل الاقتطاع)",
+                "group": "net",
+                "kind": "formula",
+                "value_type": "amount",
+                "formula": "{salary_entitlement} + {compensation_entitlement}",
+                "blank_as_zero": false,
+                "allow_negative": false,
+                "warn_negative": false,
+                "aggregation": "sum",
+                "visible_grid": true,
+                "visible_export": true,
+                "compact": false,
+                "is_system": true,
+                "sort_order": 140,
+                "formula_editable": false,
+                "template_formula_display": null,
+                "is_template_default": null,
+                "formula_display": "[الراتب المستحق] + [التعويض المستحق]",
+                "ast": {
+                    "t": "bin",
+                    "op": "+",
+                    "l": {
+                        "t": "ref",
+                        "k": "salary_entitlement",
+                        "src": "column"
+                    },
+                    "r": {
+                        "t": "ref",
+                        "k": "compensation_entitlement",
+                        "src": "column"
+                    }
+                },
+                "references": [
+                    "salary_entitlement",
+                    "compensation_entitlement"
+                ],
+                "dependents": [],
+                "group_label": "الصافي"
+            },
+            {
+                "id": 15,
+                "key": "net_salary",
+                "label": "صافي الراتب",
+                "group": "net",
+                "kind": "formula",
+                "value_type": "amount",
+                "formula": "{salary_entitlement} - {insurance} - {salary_tax}",
+                "blank_as_zero": false,
+                "allow_negative": false,
+                "warn_negative": false,
+                "aggregation": "sum",
+                "visible_grid": true,
+                "visible_export": true,
+                "compact": false,
+                "is_system": true,
+                "sort_order": 150,
+                "formula_editable": false,
+                "template_formula_display": null,
+                "is_template_default": null,
+                "formula_display": "[الراتب المستحق] - [التأمينات الاجتماعية] - [ضريبة دخل الراتب]",
+                "ast": {
+                    "t": "bin",
+                    "op": "-",
+                    "l": {
+                        "t": "bin",
+                        "op": "-",
+                        "l": {
+                            "t": "ref",
+                            "k": "salary_entitlement",
+                            "src": "column"
+                        },
+                        "r": {
+                            "t": "ref",
+                            "k": "insurance",
+                            "src": "column"
+                        }
+                    },
+                    "r": {
+                        "t": "ref",
+                        "k": "salary_tax",
+                        "src": "column"
+                    }
+                },
+                "references": [
+                    "salary_entitlement",
+                    "insurance",
+                    "salary_tax"
+                ],
+                "dependents": [
+                    {
+                        "key": "total_net_payable",
+                        "label": "إجمالي الصافي المستحق"
+                    }
+                ],
+                "group_label": "الصافي"
+            },
+            {
+                "id": 16,
+                "key": "net_compensation",
+                "label": "صافي التعويض",
+                "group": "net",
+                "kind": "formula",
+                "value_type": "amount",
+                "formula": "{compensation_entitlement} - {compensation_tax}",
+                "blank_as_zero": false,
+                "allow_negative": false,
+                "warn_negative": false,
+                "aggregation": "sum",
+                "visible_grid": true,
+                "visible_export": true,
+                "compact": false,
+                "is_system": true,
+                "sort_order": 160,
+                "formula_editable": false,
+                "template_formula_display": null,
+                "is_template_default": null,
+                "formula_display": "[التعويض المستحق] - [ضريبة دخل التعويض]",
+                "ast": {
+                    "t": "bin",
+                    "op": "-",
+                    "l": {
+                        "t": "ref",
+                        "k": "compensation_entitlement",
+                        "src": "column"
+                    },
+                    "r": {
+                        "t": "ref",
+                        "k": "compensation_tax",
+                        "src": "column"
+                    }
+                },
+                "references": [
+                    "compensation_entitlement",
+                    "compensation_tax"
+                ],
+                "dependents": [
+                    {
+                        "key": "total_net_payable",
+                        "label": "إجمالي الصافي المستحق"
+                    }
+                ],
+                "group_label": "الصافي"
+            },
+            {
+                "id": 17,
+                "key": "total_net_payable",
+                "label": "إجمالي الصافي المستحق",
+                "group": "net",
+                "kind": "formula",
+                "value_type": "amount",
+                "formula": "{net_salary} + {net_compensation} - {other_deductions}",
+                "blank_as_zero": false,
+                "allow_negative": false,
+                "warn_negative": false,
+                "aggregation": "sum",
+                "visible_grid": true,
+                "visible_export": true,
+                "compact": true,
+                "is_system": true,
+                "sort_order": 170,
+                "formula_editable": true,
+                "template_formula_display": "[صافي الراتب] + [صافي التعويض] - [حسميات أخرى]",
+                "is_template_default": true,
+                "formula_display": "[صافي الراتب] + [صافي التعويض] - [حسميات أخرى]",
+                "ast": {
+                    "t": "bin",
+                    "op": "-",
+                    "l": {
+                        "t": "bin",
+                        "op": "+",
+                        "l": {
+                            "t": "ref",
+                            "k": "net_salary",
+                            "src": "column"
+                        },
+                        "r": {
+                            "t": "ref",
+                            "k": "net_compensation",
+                            "src": "column"
+                        }
+                    },
+                    "r": {
+                        "t": "ref",
+                        "k": "other_deductions",
+                        "src": "column"
+                    }
+                },
+                "references": [
+                    "net_salary",
+                    "net_compensation",
+                    "other_deductions"
+                ],
+                "dependents": [],
+                "group_label": "الصافي"
+            }
+        ],
+        "groups": [
+            {
+                "key": "employee",
+                "label": "بيانات الموظف"
+            },
+            {
+                "key": "salary",
+                "label": "الراتب"
+            },
+            {
+                "key": "compensation",
+                "label": "التعويض"
+            },
+            {
+                "key": "deductions",
+                "label": "الاقتطاعات"
+            },
+            {
+                "key": "net",
+                "label": "الصافي"
+            }
+        ],
+        "types": [
+            {
+                "key": "text",
+                "label": "نص"
+            },
+            {
+                "key": "number",
+                "label": "رقم"
+            },
+            {
+                "key": "amount",
+                "label": "مبلغ (ل.س)"
+            },
+            {
+                "key": "percent",
+                "label": "نسبة مئوية"
+            }
+        ],
+        "limits": {
+            "max_formula_length": 600,
+            "max_nodes": 120,
+            "max_custom_columns": 60,
+            "functions": [
+                "SUM",
+                "IF",
+                "MAX",
+                "MIN",
+                "ROUND"
+            ]
+        }
+    },
+    "cases": [
+        {
+            "name": "reference",
+            "inputs": {
+                "fixed_salary": "96600",
+                "salary_adjustment": "0",
+                "compensation": "55200",
+                "compensation_adjustment": "0",
+                "other_deductions": "0"
+            },
+            "cells": {
+                "fixed_salary": {
+                    "v": "96600.00",
+                    "st": null,
+                    "m": null
+                },
+                "salary_adjustment": {
+                    "v": "0.00",
+                    "st": null,
+                    "m": null
+                },
+                "salary_entitlement": {
+                    "v": "96600.00",
+                    "st": null,
+                    "m": null
+                },
+                "salary_taxable_base": {
+                    "v": "77278.00",
+                    "st": null,
+                    "m": null
+                },
+                "compensation": {
+                    "v": "55200.00",
+                    "st": null,
+                    "m": null
+                },
+                "compensation_adjustment": {
+                    "v": "0.00",
+                    "st": null,
+                    "m": null
+                },
+                "compensation_entitlement": {
+                    "v": "55200.00",
+                    "st": null,
+                    "m": null
+                },
+                "combined_taxable_base": {
+                    "v": "132478.00",
+                    "st": null,
+                    "m": null
+                },
+                "insurance": {
+                    "v": "6762.00",
+                    "st": null,
+                    "m": null
+                },
+                "salary_tax": {
+                    "v": "11591.70",
+                    "st": null,
+                    "m": null
+                },
+                "compensation_tax": {
+                    "v": "8280.00",
+                    "st": null,
+                    "m": null
+                },
+                "other_deductions": {
+                    "v": "0.00",
+                    "st": null,
+                    "m": null
+                },
+                "total_deductions": {
+                    "v": "26633.70",
+                    "st": null,
+                    "m": null
+                },
+                "gross_entitlement": {
+                    "v": "151800.00",
+                    "st": null,
+                    "m": null
+                },
+                "net_salary": {
+                    "v": "78246.30",
+                    "st": null,
+                    "m": null
+                },
+                "net_compensation": {
+                    "v": "46920.00",
+                    "st": null,
+                    "m": null
+                },
+                "total_net_payable": {
+                    "v": "125166.30",
+                    "st": null,
+                    "m": null
+                }
+            }
+        },
+        {
+            "name": "blank optional inputs",
+            "inputs": {
+                "fixed_salary": "20000"
+            },
+            "cells": {
+                "fixed_salary": {
+                    "v": "20000.00",
+                    "st": null,
+                    "m": null
+                },
+                "salary_adjustment": {
+                    "v": null,
+                    "st": null,
+                    "m": null
+                },
+                "salary_entitlement": {
+                    "v": "20000.00",
+                    "st": null,
+                    "m": null
+                },
+                "salary_taxable_base": {
+                    "v": "6040.00",
+                    "st": null,
+                    "m": null
+                },
+                "compensation": {
+                    "v": null,
+                    "st": null,
+                    "m": null
+                },
+                "compensation_adjustment": {
+                    "v": null,
+                    "st": null,
+                    "m": null
+                },
+                "compensation_entitlement": {
+                    "v": "0.00",
+                    "st": null,
+                    "m": null
+                },
+                "combined_taxable_base": {
+                    "v": "6040.00",
+                    "st": null,
+                    "m": null
+                },
+                "insurance": {
+                    "v": "1400.00",
+                    "st": null,
+                    "m": null
+                },
+                "salary_tax": {
+                    "v": "906.00",
+                    "st": null,
+                    "m": null
+                },
+                "compensation_tax": {
+                    "v": "0.00",
+                    "st": null,
+                    "m": null
+                },
+                "other_deductions": {
+                    "v": null,
+                    "st": null,
+                    "m": null
+                },
+                "total_deductions": {
+                    "v": "2306.00",
+                    "st": null,
+                    "m": null
+                },
+                "gross_entitlement": {
+                    "v": "20000.00",
+                    "st": null,
+                    "m": null
+                },
+                "net_salary": {
+                    "v": "17694.00",
+                    "st": null,
+                    "m": null
+                },
+                "net_compensation": {
+                    "v": "0.00",
+                    "st": null,
+                    "m": null
+                },
+                "total_net_payable": {
+                    "v": "17694.00",
+                    "st": null,
+                    "m": null
+                }
+            }
+        },
+        {
+            "name": "signed adjustments",
+            "inputs": {
+                "fixed_salary": "100000",
+                "salary_adjustment": "-5000.50",
+                "compensation": "1000",
+                "compensation_adjustment": "-100"
+            },
+            "cells": {
+                "fixed_salary": {
+                    "v": "100000.00",
+                    "st": null,
+                    "m": null
+                },
+                "salary_adjustment": {
+                    "v": "-5000.50",
+                    "st": null,
+                    "m": null
+                },
+                "salary_entitlement": {
+                    "v": "94999.50",
+                    "st": null,
+                    "m": null
+                },
+                "salary_taxable_base": {
+                    "v": "75439.50",
+                    "st": null,
+                    "m": null
+                },
+                "compensation": {
+                    "v": "1000.00",
+                    "st": null,
+                    "m": null
+                },
+                "compensation_adjustment": {
+                    "v": "-100.00",
+                    "st": null,
+                    "m": null
+                },
+                "compensation_entitlement": {
+                    "v": "900.00",
+                    "st": null,
+                    "m": null
+                },
+                "combined_taxable_base": {
+                    "v": "76339.50",
+                    "st": null,
+                    "m": null
+                },
+                "insurance": {
+                    "v": "7000.00",
+                    "st": null,
+                    "m": null
+                },
+                "salary_tax": {
+                    "v": "11315.93",
+                    "st": null,
+                    "m": null
+                },
+                "compensation_tax": {
+                    "v": "135.00",
+                    "st": null,
+                    "m": null
+                },
+                "other_deductions": {
+                    "v": null,
+                    "st": null,
+                    "m": null
+                },
+                "total_deductions": {
+                    "v": "18450.93",
+                    "st": null,
+                    "m": null
+                },
+                "gross_entitlement": {
+                    "v": "95899.50",
+                    "st": null,
+                    "m": null
+                },
+                "net_salary": {
+                    "v": "76683.57",
+                    "st": null,
+                    "m": null
+                },
+                "net_compensation": {
+                    "v": "765.00",
+                    "st": null,
+                    "m": null
+                },
+                "total_net_payable": {
+                    "v": "77448.57",
+                    "st": null,
+                    "m": null
+                }
+            }
+        },
+        {
+            "name": "negative taxable base",
+            "inputs": {
+                "fixed_salary": "10000"
+            },
+            "cells": {
+                "fixed_salary": {
+                    "v": "10000.00",
+                    "st": null,
+                    "m": null
+                },
+                "salary_adjustment": {
+                    "v": null,
+                    "st": null,
+                    "m": null
+                },
+                "salary_entitlement": {
+                    "v": "10000.00",
+                    "st": null,
+                    "m": null
+                },
+                "salary_taxable_base": {
+                    "v": "-3260.00",
+                    "st": "warning",
+                    "m": "قيمة سالبة: لا يوجد حدّ أدنى صفري في المعادلة (تحذير حسابي)."
+                },
+                "compensation": {
+                    "v": null,
+                    "st": null,
+                    "m": null
+                },
+                "compensation_adjustment": {
+                    "v": null,
+                    "st": null,
+                    "m": null
+                },
+                "compensation_entitlement": {
+                    "v": "0.00",
+                    "st": null,
+                    "m": null
+                },
+                "combined_taxable_base": {
+                    "v": "-3260.00",
+                    "st": "warning",
+                    "m": "قيمة سالبة: لا يوجد حدّ أدنى صفري في المعادلة (تحذير حسابي)."
+                },
+                "insurance": {
+                    "v": "700.00",
+                    "st": null,
+                    "m": null
+                },
+                "salary_tax": {
+                    "v": "-489.00",
+                    "st": "warning",
+                    "m": "قيمة سالبة: لا يوجد حدّ أدنى صفري في المعادلة (تحذير حسابي)."
+                },
+                "compensation_tax": {
+                    "v": "0.00",
+                    "st": null,
+                    "m": null
+                },
+                "other_deductions": {
+                    "v": null,
+                    "st": null,
+                    "m": null
+                },
+                "total_deductions": {
+                    "v": "211.00",
+                    "st": null,
+                    "m": null
+                },
+                "gross_entitlement": {
+                    "v": "10000.00",
+                    "st": null,
+                    "m": null
+                },
+                "net_salary": {
+                    "v": "9789.00",
+                    "st": null,
+                    "m": null
+                },
+                "net_compensation": {
+                    "v": "0.00",
+                    "st": null,
+                    "m": null
+                },
+                "total_net_payable": {
+                    "v": "9789.00",
+                    "st": null,
+                    "m": null
+                }
+            }
+        },
+        {
+            "name": "rounding tie",
+            "inputs": {
+                "fixed_salary": "20000",
+                "salary_adjustment": "-1500.50",
+                "other_deductions": "250"
+            },
+            "cells": {
+                "fixed_salary": {
+                    "v": "20000.00",
+                    "st": null,
+                    "m": null
+                },
+                "salary_adjustment": {
+                    "v": "-1500.50",
+                    "st": null,
+                    "m": null
+                },
+                "salary_entitlement": {
+                    "v": "18499.50",
+                    "st": null,
+                    "m": null
+                },
+                "salary_taxable_base": {
+                    "v": "4539.50",
+                    "st": null,
+                    "m": null
+                },
+                "compensation": {
+                    "v": null,
+                    "st": null,
+                    "m": null
+                },
+                "compensation_adjustment": {
+                    "v": null,
+                    "st": null,
+                    "m": null
+                },
+                "compensation_entitlement": {
+                    "v": "0.00",
+                    "st": null,
+                    "m": null
+                },
+                "combined_taxable_base": {
+                    "v": "4539.50",
+                    "st": null,
+                    "m": null
+                },
+                "insurance": {
+                    "v": "1400.00",
+                    "st": null,
+                    "m": null
+                },
+                "salary_tax": {
+                    "v": "680.93",
+                    "st": null,
+                    "m": null
+                },
+                "compensation_tax": {
+                    "v": "-0.01",
+                    "st": "warning",
+                    "m": "قيمة سالبة: لا يوجد حدّ أدنى صفري في المعادلة (تحذير حسابي)."
+                },
+                "other_deductions": {
+                    "v": "250.00",
+                    "st": null,
+                    "m": null
+                },
+                "total_deductions": {
+                    "v": "2330.92",
+                    "st": null,
+                    "m": null
+                },
+                "gross_entitlement": {
+                    "v": "18499.50",
+                    "st": null,
+                    "m": null
+                },
+                "net_salary": {
+                    "v": "16418.57",
+                    "st": null,
+                    "m": null
+                },
+                "net_compensation": {
+                    "v": "0.01",
+                    "st": null,
+                    "m": null
+                },
+                "total_net_payable": {
+                    "v": "16168.58",
+                    "st": null,
+                    "m": null
+                }
+            }
+        },
+        {
+            "name": "missing fixed salary",
+            "inputs": {
+                "compensation": "500",
+                "other_deductions": "10"
+            },
+            "cells": {
+                "fixed_salary": {
+                    "v": null,
+                    "st": "missing",
+                    "m": "مدخل ناقص: الأجر المقطوع"
+                },
+                "salary_adjustment": {
+                    "v": null,
+                    "st": null,
+                    "m": null
+                },
+                "salary_entitlement": {
+                    "v": null,
+                    "st": "missing",
+                    "m": "مدخل ناقص: الأجر المقطوع"
+                },
+                "salary_taxable_base": {
+                    "v": null,
+                    "st": "missing",
+                    "m": "مدخل ناقص: الأجر المقطوع"
+                },
+                "compensation": {
+                    "v": "500.00",
+                    "st": null,
+                    "m": null
+                },
+                "compensation_adjustment": {
+                    "v": null,
+                    "st": null,
+                    "m": null
+                },
+                "compensation_entitlement": {
+                    "v": "500.00",
+                    "st": null,
+                    "m": null
+                },
+                "combined_taxable_base": {
+                    "v": null,
+                    "st": "missing",
+                    "m": "مدخل ناقص: الأجر المقطوع"
+                },
+                "insurance": {
+                    "v": null,
+                    "st": "missing",
+                    "m": "مدخل ناقص: الأجر المقطوع"
+                },
+                "salary_tax": {
+                    "v": null,
+                    "st": "missing",
+                    "m": "مدخل ناقص: الأجر المقطوع"
+                },
+                "compensation_tax": {
+                    "v": null,
+                    "st": "missing",
+                    "m": "مدخل ناقص: الأجر المقطوع"
+                },
+                "other_deductions": {
+                    "v": "10.00",
+                    "st": null,
+                    "m": null
+                },
+                "total_deductions": {
+                    "v": null,
+                    "st": "missing",
+                    "m": "مدخل ناقص: الأجر المقطوع"
+                },
+                "gross_entitlement": {
+                    "v": null,
+                    "st": "missing",
+                    "m": "مدخل ناقص: الأجر المقطوع"
+                },
+                "net_salary": {
+                    "v": null,
+                    "st": "missing",
+                    "m": "مدخل ناقص: الأجر المقطوع"
+                },
+                "net_compensation": {
+                    "v": null,
+                    "st": "missing",
+                    "m": "مدخل ناقص: الأجر المقطوع"
+                },
+                "total_net_payable": {
+                    "v": null,
+                    "st": "missing",
+                    "m": "مدخل ناقص: الأجر المقطوع"
+                }
+            }
+        },
+        {
+            "name": "large values",
+            "inputs": {
+                "fixed_salary": "999999999.99",
+                "compensation": "999999999.99",
+                "salary_adjustment": "123456.78"
+            },
+            "cells": {
+                "fixed_salary": {
+                    "v": "999999999.99",
+                    "st": null,
+                    "m": null
+                },
+                "salary_adjustment": {
+                    "v": "123456.78",
+                    "st": null,
+                    "m": null
+                },
+                "salary_entitlement": {
+                    "v": "1000123456.77",
+                    "st": null,
+                    "m": null
+                },
+                "salary_taxable_base": {
+                    "v": "930110896.77",
+                    "st": null,
+                    "m": null
+                },
+                "compensation": {
+                    "v": "999999999.99",
+                    "st": null,
+                    "m": null
+                },
+                "compensation_adjustment": {
+                    "v": null,
+                    "st": null,
+                    "m": null
+                },
+                "compensation_entitlement": {
+                    "v": "999999999.99",
+                    "st": null,
+                    "m": null
+                },
+                "combined_taxable_base": {
+                    "v": "1930110896.76",
+                    "st": null,
+                    "m": null
+                },
+                "insurance": {
+                    "v": "70000000.00",
+                    "st": null,
+                    "m": null
+                },
+                "salary_tax": {
+                    "v": "139516634.52",
+                    "st": null,
+                    "m": null
+                },
+                "compensation_tax": {
+                    "v": "149999999.99",
+                    "st": null,
+                    "m": null
+                },
+                "other_deductions": {
+                    "v": null,
+                    "st": null,
+                    "m": null
+                },
+                "total_deductions": {
+                    "v": "359516634.51",
+                    "st": null,
+                    "m": null
+                },
+                "gross_entitlement": {
+                    "v": "2000123456.76",
+                    "st": null,
+                    "m": null
+                },
+                "net_salary": {
+                    "v": "790606822.25",
+                    "st": null,
+                    "m": null
+                },
+                "net_compensation": {
+                    "v": "850000000.00",
+                    "st": null,
+                    "m": null
+                },
+                "total_net_payable": {
+                    "v": "1640606822.25",
+                    "st": null,
+                    "m": null
+                }
+            }
+        },
+        {
+            "name": "all zero",
+            "inputs": {
+                "fixed_salary": "0",
+                "compensation": "0",
+                "other_deductions": "0"
+            },
+            "cells": {
+                "fixed_salary": {
+                    "v": "0.00",
+                    "st": null,
+                    "m": null
+                },
+                "salary_adjustment": {
+                    "v": null,
+                    "st": null,
+                    "m": null
+                },
+                "salary_entitlement": {
+                    "v": "0.00",
+                    "st": null,
+                    "m": null
+                },
+                "salary_taxable_base": {
+                    "v": "-12560.00",
+                    "st": "warning",
+                    "m": "قيمة سالبة: لا يوجد حدّ أدنى صفري في المعادلة (تحذير حسابي)."
+                },
+                "compensation": {
+                    "v": "0.00",
+                    "st": null,
+                    "m": null
+                },
+                "compensation_adjustment": {
+                    "v": null,
+                    "st": null,
+                    "m": null
+                },
+                "compensation_entitlement": {
+                    "v": "0.00",
+                    "st": null,
+                    "m": null
+                },
+                "combined_taxable_base": {
+                    "v": "-12560.00",
+                    "st": "warning",
+                    "m": "قيمة سالبة: لا يوجد حدّ أدنى صفري في المعادلة (تحذير حسابي)."
+                },
+                "insurance": {
+                    "v": "0.00",
+                    "st": null,
+                    "m": null
+                },
+                "salary_tax": {
+                    "v": "-1884.00",
+                    "st": "warning",
+                    "m": "قيمة سالبة: لا يوجد حدّ أدنى صفري في المعادلة (تحذير حسابي)."
+                },
+                "compensation_tax": {
+                    "v": "0.00",
+                    "st": null,
+                    "m": null
+                },
+                "other_deductions": {
+                    "v": "0.00",
+                    "st": null,
+                    "m": null
+                },
+                "total_deductions": {
+                    "v": "-1884.00",
+                    "st": null,
+                    "m": null
+                },
+                "gross_entitlement": {
+                    "v": "0.00",
+                    "st": null,
+                    "m": null
+                },
+                "net_salary": {
+                    "v": "1884.00",
+                    "st": null,
+                    "m": null
+                },
+                "net_compensation": {
+                    "v": "0.00",
+                    "st": null,
+                    "m": null
+                },
+                "total_net_payable": {
+                    "v": "1884.00",
+                    "st": null,
+                    "m": null
+                }
+            }
+        }
+    ],
+    "edited_net_formula": {
+        "config": {
+            "revision": 4,
+            "settings": [
+                {
+                    "id": 1,
+                    "key": "insurance_rate",
+                    "label": "نسبة التأمينات",
+                    "value_type": "percent",
+                    "value": "0.07"
+                },
+                {
+                    "id": 2,
+                    "key": "income_tax_rate",
+                    "label": "نسبة ضريبة الدخل",
+                    "value_type": "percent",
+                    "value": "0.15"
+                },
+                {
+                    "id": 3,
+                    "key": "tax_exemption",
+                    "label": "الحد الأدنى المعفى من الضريبة",
+                    "value_type": "amount",
+                    "value": "12560"
+                }
+            ],
+            "columns": [
+                {
+                    "id": 1,
+                    "key": "fixed_salary",
+                    "label": "الأجر المقطوع",
+                    "group": "salary",
+                    "kind": "input",
+                    "value_type": "amount",
+                    "formula": null,
+                    "blank_as_zero": false,
+                    "allow_negative": false,
+                    "warn_negative": false,
+                    "aggregation": "sum",
+                    "visible_grid": true,
+                    "visible_export": true,
+                    "compact": true,
+                    "is_system": true,
+                    "sort_order": 10,
+                    "formula_editable": false,
+                    "template_formula_display": null,
+                    "is_template_default": null,
+                    "formula_display": null,
+                    "ast": null,
+                    "references": [],
+                    "dependents": [
+                        {
+                            "key": "salary_entitlement",
+                            "label": "الراتب المستحق"
+                        },
+                        {
+                            "key": "insurance",
+                            "label": "التأمينات الاجتماعية"
+                        }
+                    ],
+                    "group_label": "الراتب"
+                },
+                {
+                    "id": 2,
+                    "key": "salary_adjustment",
+                    "label": "فروقات الراتب",
+                    "group": "salary",
+                    "kind": "input",
+                    "value_type": "amount",
+                    "formula": null,
+                    "blank_as_zero": true,
+                    "allow_negative": true,
+                    "warn_negative": false,
+                    "aggregation": "sum",
+                    "visible_grid": true,
+                    "visible_export": true,
+                    "compact": false,
+                    "is_system": true,
+                    "sort_order": 20,
+                    "formula_editable": false,
+                    "template_formula_display": null,
+                    "is_template_default": null,
+                    "formula_display": null,
+                    "ast": null,
+                    "references": [],
+                    "dependents": [
+                        {
+                            "key": "salary_entitlement",
+                            "label": "الراتب المستحق"
+                        }
+                    ],
+                    "group_label": "الراتب"
+                },
+                {
+                    "id": 3,
+                    "key": "salary_entitlement",
+                    "label": "الراتب المستحق",
+                    "group": "salary",
+                    "kind": "formula",
+                    "value_type": "amount",
+                    "formula": "{fixed_salary} + {salary_adjustment}",
+                    "blank_as_zero": false,
+                    "allow_negative": false,
+                    "warn_negative": false,
+                    "aggregation": "sum",
+                    "visible_grid": true,
+                    "visible_export": true,
+                    "compact": false,
+                    "is_system": true,
+                    "sort_order": 30,
+                    "formula_editable": false,
+                    "template_formula_display": null,
+                    "is_template_default": null,
+                    "formula_display": "[الأجر المقطوع] + [فروقات الراتب]",
+                    "ast": {
+                        "t": "bin",
+                        "op": "+",
+                        "l": {
+                            "t": "ref",
+                            "k": "fixed_salary",
+                            "src": "column"
+                        },
+                        "r": {
+                            "t": "ref",
+                            "k": "salary_adjustment",
+                            "src": "column"
+                        }
+                    },
+                    "references": [
+                        "fixed_salary",
+                        "salary_adjustment"
+                    ],
+                    "dependents": [
+                        {
+                            "key": "salary_taxable_base",
+                            "label": "الوعاء الضريبي للراتب"
+                        },
+                        {
+                            "key": "combined_taxable_base",
+                            "label": "الوعاء الضريبي المجمّع"
+                        },
+                        {
+                            "key": "gross_entitlement",
+                            "label": "إجمالي المستحقات (قبل الاقتطاع)"
+                        },
+                        {
+                            "key": "net_salary",
+                            "label": "صافي الراتب"
+                        }
+                    ],
+                    "group_label": "الراتب"
+                },
+                {
+                    "id": 4,
+                    "key": "salary_taxable_base",
+                    "label": "الوعاء الضريبي للراتب",
+                    "group": "salary",
+                    "kind": "formula",
+                    "value_type": "amount",
+                    "formula": "{salary_entitlement} - {insurance} - {tax_exemption}",
+                    "blank_as_zero": false,
+                    "allow_negative": false,
+                    "warn_negative": true,
+                    "aggregation": "sum",
+                    "visible_grid": true,
+                    "visible_export": true,
+                    "compact": false,
+                    "is_system": true,
+                    "sort_order": 40,
+                    "formula_editable": false,
+                    "template_formula_display": null,
+                    "is_template_default": null,
+                    "formula_display": "[الراتب المستحق] - [التأمينات الاجتماعية] - [الحد الأدنى المعفى من الضريبة]",
+                    "ast": {
+                        "t": "bin",
+                        "op": "-",
+                        "l": {
+                            "t": "bin",
+                            "op": "-",
+                            "l": {
+                                "t": "ref",
+                                "k": "salary_entitlement",
+                                "src": "column"
+                            },
+                            "r": {
+                                "t": "ref",
+                                "k": "insurance",
+                                "src": "column"
+                            }
+                        },
+                        "r": {
+                            "t": "ref",
+                            "k": "tax_exemption",
+                            "src": "setting"
+                        }
+                    },
+                    "references": [
+                        "salary_entitlement",
+                        "insurance",
+                        "tax_exemption"
+                    ],
+                    "dependents": [
+                        {
+                            "key": "salary_tax",
+                            "label": "ضريبة دخل الراتب"
+                        }
+                    ],
+                    "group_label": "الراتب"
+                },
+                {
+                    "id": 5,
+                    "key": "compensation",
+                    "label": "التعويض",
+                    "group": "compensation",
+                    "kind": "input",
+                    "value_type": "amount",
+                    "formula": null,
+                    "blank_as_zero": true,
+                    "allow_negative": false,
+                    "warn_negative": false,
+                    "aggregation": "sum",
+                    "visible_grid": true,
+                    "visible_export": true,
+                    "compact": true,
+                    "is_system": true,
+                    "sort_order": 50,
+                    "formula_editable": false,
+                    "template_formula_display": null,
+                    "is_template_default": null,
+                    "formula_display": null,
+                    "ast": null,
+                    "references": [],
+                    "dependents": [
+                        {
+                            "key": "compensation_entitlement",
+                            "label": "التعويض المستحق"
+                        }
+                    ],
+                    "group_label": "التعويض"
+                },
+                {
+                    "id": 6,
+                    "key": "compensation_adjustment",
+                    "label": "فروقات التعويض",
+                    "group": "compensation",
+                    "kind": "input",
+                    "value_type": "amount",
+                    "formula": null,
+                    "blank_as_zero": true,
+                    "allow_negative": true,
+                    "warn_negative": false,
+                    "aggregation": "sum",
+                    "visible_grid": true,
+                    "visible_export": true,
+                    "compact": false,
+                    "is_system": true,
+                    "sort_order": 60,
+                    "formula_editable": false,
+                    "template_formula_display": null,
+                    "is_template_default": null,
+                    "formula_display": null,
+                    "ast": null,
+                    "references": [],
+                    "dependents": [
+                        {
+                            "key": "compensation_entitlement",
+                            "label": "التعويض المستحق"
+                        }
+                    ],
+                    "group_label": "التعويض"
+                },
+                {
+                    "id": 7,
+                    "key": "compensation_entitlement",
+                    "label": "التعويض المستحق",
+                    "group": "compensation",
+                    "kind": "formula",
+                    "value_type": "amount",
+                    "formula": "{compensation} + {compensation_adjustment}",
+                    "blank_as_zero": false,
+                    "allow_negative": false,
+                    "warn_negative": false,
+                    "aggregation": "sum",
+                    "visible_grid": true,
+                    "visible_export": true,
+                    "compact": false,
+                    "is_system": true,
+                    "sort_order": 70,
+                    "formula_editable": false,
+                    "template_formula_display": null,
+                    "is_template_default": null,
+                    "formula_display": "[التعويض] + [فروقات التعويض]",
+                    "ast": {
+                        "t": "bin",
+                        "op": "+",
+                        "l": {
+                            "t": "ref",
+                            "k": "compensation",
+                            "src": "column"
+                        },
+                        "r": {
+                            "t": "ref",
+                            "k": "compensation_adjustment",
+                            "src": "column"
+                        }
+                    },
+                    "references": [
+                        "compensation",
+                        "compensation_adjustment"
+                    ],
+                    "dependents": [
+                        {
+                            "key": "combined_taxable_base",
+                            "label": "الوعاء الضريبي المجمّع"
+                        },
+                        {
+                            "key": "gross_entitlement",
+                            "label": "إجمالي المستحقات (قبل الاقتطاع)"
+                        },
+                        {
+                            "key": "net_compensation",
+                            "label": "صافي التعويض"
+                        }
+                    ],
+                    "group_label": "التعويض"
+                },
+                {
+                    "id": 8,
+                    "key": "combined_taxable_base",
+                    "label": "الوعاء الضريبي المجمّع",
+                    "group": "compensation",
+                    "kind": "formula",
+                    "value_type": "amount",
+                    "formula": "{salary_entitlement} + {compensation_entitlement} - {insurance} - {tax_exemption}",
+                    "blank_as_zero": false,
+                    "allow_negative": false,
+                    "warn_negative": true,
+                    "aggregation": "sum",
+                    "visible_grid": true,
+                    "visible_export": true,
+                    "compact": false,
+                    "is_system": true,
+                    "sort_order": 80,
+                    "formula_editable": false,
+                    "template_formula_display": null,
+                    "is_template_default": null,
+                    "formula_display": "[الراتب المستحق] + [التعويض المستحق] - [التأمينات الاجتماعية] - [الحد الأدنى المعفى من الضريبة]",
+                    "ast": {
+                        "t": "bin",
+                        "op": "-",
+                        "l": {
+                            "t": "bin",
+                            "op": "-",
+                            "l": {
+                                "t": "bin",
+                                "op": "+",
+                                "l": {
+                                    "t": "ref",
+                                    "k": "salary_entitlement",
+                                    "src": "column"
+                                },
+                                "r": {
+                                    "t": "ref",
+                                    "k": "compensation_entitlement",
+                                    "src": "column"
+                                }
+                            },
+                            "r": {
+                                "t": "ref",
+                                "k": "insurance",
+                                "src": "column"
+                            }
+                        },
+                        "r": {
+                            "t": "ref",
+                            "k": "tax_exemption",
+                            "src": "setting"
+                        }
+                    },
+                    "references": [
+                        "salary_entitlement",
+                        "compensation_entitlement",
+                        "insurance",
+                        "tax_exemption"
+                    ],
+                    "dependents": [
+                        {
+                            "key": "compensation_tax",
+                            "label": "ضريبة دخل التعويض"
+                        }
+                    ],
+                    "group_label": "التعويض"
+                },
+                {
+                    "id": 9,
+                    "key": "insurance",
+                    "label": "التأمينات الاجتماعية",
+                    "group": "deductions",
+                    "kind": "formula",
+                    "value_type": "amount",
+                    "formula": "{fixed_salary} * {insurance_rate}",
+                    "blank_as_zero": false,
+                    "allow_negative": false,
+                    "warn_negative": false,
+                    "aggregation": "sum",
+                    "visible_grid": true,
+                    "visible_export": true,
+                    "compact": false,
+                    "is_system": true,
+                    "sort_order": 90,
+                    "formula_editable": false,
+                    "template_formula_display": null,
+                    "is_template_default": null,
+                    "formula_display": "[الأجر المقطوع] * [نسبة التأمينات]",
+                    "ast": {
+                        "t": "bin",
+                        "op": "*",
+                        "l": {
+                            "t": "ref",
+                            "k": "fixed_salary",
+                            "src": "column"
+                        },
+                        "r": {
+                            "t": "ref",
+                            "k": "insurance_rate",
+                            "src": "setting"
+                        }
+                    },
+                    "references": [
+                        "fixed_salary",
+                        "insurance_rate"
+                    ],
+                    "dependents": [
+                        {
+                            "key": "salary_taxable_base",
+                            "label": "الوعاء الضريبي للراتب"
+                        },
+                        {
+                            "key": "combined_taxable_base",
+                            "label": "الوعاء الضريبي المجمّع"
+                        },
+                        {
+                            "key": "total_deductions",
+                            "label": "إجمالي الاقتطاعات"
+                        },
+                        {
+                            "key": "net_salary",
+                            "label": "صافي الراتب"
+                        }
+                    ],
+                    "group_label": "الاقتطاعات"
+                },
+                {
+                    "id": 10,
+                    "key": "salary_tax",
+                    "label": "ضريبة دخل الراتب",
+                    "group": "deductions",
+                    "kind": "formula",
+                    "value_type": "amount",
+                    "formula": "{salary_taxable_base} * {income_tax_rate}",
+                    "blank_as_zero": false,
+                    "allow_negative": false,
+                    "warn_negative": true,
+                    "aggregation": "sum",
+                    "visible_grid": true,
+                    "visible_export": true,
+                    "compact": false,
+                    "is_system": true,
+                    "sort_order": 100,
+                    "formula_editable": false,
+                    "template_formula_display": null,
+                    "is_template_default": null,
+                    "formula_display": "[الوعاء الضريبي للراتب] * [نسبة ضريبة الدخل]",
+                    "ast": {
+                        "t": "bin",
+                        "op": "*",
+                        "l": {
+                            "t": "ref",
+                            "k": "salary_taxable_base",
+                            "src": "column"
+                        },
+                        "r": {
+                            "t": "ref",
+                            "k": "income_tax_rate",
+                            "src": "setting"
+                        }
+                    },
+                    "references": [
+                        "salary_taxable_base",
+                        "income_tax_rate"
+                    ],
+                    "dependents": [
+                        {
+                            "key": "compensation_tax",
+                            "label": "ضريبة دخل التعويض"
+                        },
+                        {
+                            "key": "total_deductions",
+                            "label": "إجمالي الاقتطاعات"
+                        },
+                        {
+                            "key": "net_salary",
+                            "label": "صافي الراتب"
+                        }
+                    ],
+                    "group_label": "الاقتطاعات"
+                },
+                {
+                    "id": 11,
+                    "key": "compensation_tax",
+                    "label": "ضريبة دخل التعويض",
+                    "group": "deductions",
+                    "kind": "formula",
+                    "value_type": "amount",
+                    "formula": "{combined_taxable_base} * {income_tax_rate} - {salary_tax}",
+                    "blank_as_zero": false,
+                    "allow_negative": false,
+                    "warn_negative": true,
+                    "aggregation": "sum",
+                    "visible_grid": true,
+                    "visible_export": true,
+                    "compact": false,
+                    "is_system": true,
+                    "sort_order": 110,
+                    "formula_editable": false,
+                    "template_formula_display": null,
+                    "is_template_default": null,
+                    "formula_display": "[الوعاء الضريبي المجمّع] * [نسبة ضريبة الدخل] - [ضريبة دخل الراتب]",
+                    "ast": {
+                        "t": "bin",
+                        "op": "-",
+                        "l": {
+                            "t": "bin",
+                            "op": "*",
+                            "l": {
+                                "t": "ref",
+                                "k": "combined_taxable_base",
+                                "src": "column"
+                            },
+                            "r": {
+                                "t": "ref",
+                                "k": "income_tax_rate",
+                                "src": "setting"
+                            }
+                        },
+                        "r": {
+                            "t": "ref",
+                            "k": "salary_tax",
+                            "src": "column"
+                        }
+                    },
+                    "references": [
+                        "combined_taxable_base",
+                        "income_tax_rate",
+                        "salary_tax"
+                    ],
+                    "dependents": [
+                        {
+                            "key": "total_deductions",
+                            "label": "إجمالي الاقتطاعات"
+                        },
+                        {
+                            "key": "net_compensation",
+                            "label": "صافي التعويض"
+                        }
+                    ],
+                    "group_label": "الاقتطاعات"
+                },
+                {
+                    "id": 12,
+                    "key": "other_deductions",
+                    "label": "حسميات أخرى",
+                    "group": "deductions",
+                    "kind": "input",
+                    "value_type": "amount",
+                    "formula": null,
+                    "blank_as_zero": true,
+                    "allow_negative": false,
+                    "warn_negative": false,
+                    "aggregation": "sum",
+                    "visible_grid": true,
+                    "visible_export": true,
+                    "compact": true,
+                    "is_system": true,
+                    "sort_order": 120,
+                    "formula_editable": false,
+                    "template_formula_display": null,
+                    "is_template_default": null,
+                    "formula_display": null,
+                    "ast": null,
+                    "references": [],
+                    "dependents": [
+                        {
+                            "key": "total_deductions",
+                            "label": "إجمالي الاقتطاعات"
+                        },
+                        {
+                            "key": "total_net_payable",
+                            "label": "إجمالي الصافي المستحق"
+                        }
+                    ],
+                    "group_label": "الاقتطاعات"
+                },
+                {
+                    "id": 13,
+                    "key": "total_deductions",
+                    "label": "إجمالي الاقتطاعات",
+                    "group": "deductions",
+                    "kind": "formula",
+                    "value_type": "amount",
+                    "formula": "{insurance} + {salary_tax} + {compensation_tax} + {other_deductions}",
+                    "blank_as_zero": false,
+                    "allow_negative": false,
+                    "warn_negative": false,
+                    "aggregation": "sum",
+                    "visible_grid": true,
+                    "visible_export": true,
+                    "compact": true,
+                    "is_system": true,
+                    "sort_order": 130,
+                    "formula_editable": false,
+                    "template_formula_display": null,
+                    "is_template_default": null,
+                    "formula_display": "[التأمينات الاجتماعية] + [ضريبة دخل الراتب] + [ضريبة دخل التعويض] + [حسميات أخرى]",
+                    "ast": {
+                        "t": "bin",
+                        "op": "+",
+                        "l": {
+                            "t": "bin",
+                            "op": "+",
+                            "l": {
+                                "t": "bin",
+                                "op": "+",
+                                "l": {
+                                    "t": "ref",
+                                    "k": "insurance",
+                                    "src": "column"
+                                },
+                                "r": {
+                                    "t": "ref",
+                                    "k": "salary_tax",
+                                    "src": "column"
+                                }
+                            },
+                            "r": {
+                                "t": "ref",
+                                "k": "compensation_tax",
+                                "src": "column"
+                            }
+                        },
+                        "r": {
+                            "t": "ref",
+                            "k": "other_deductions",
+                            "src": "column"
+                        }
+                    },
+                    "references": [
+                        "insurance",
+                        "salary_tax",
+                        "compensation_tax",
+                        "other_deductions"
+                    ],
+                    "dependents": [],
+                    "group_label": "الاقتطاعات"
+                },
+                {
+                    "id": 14,
+                    "key": "gross_entitlement",
+                    "label": "إجمالي المستحقات (قبل الاقتطاع)",
+                    "group": "net",
+                    "kind": "formula",
+                    "value_type": "amount",
+                    "formula": "{salary_entitlement} + {compensation_entitlement}",
+                    "blank_as_zero": false,
+                    "allow_negative": false,
+                    "warn_negative": false,
+                    "aggregation": "sum",
+                    "visible_grid": true,
+                    "visible_export": true,
+                    "compact": false,
+                    "is_system": true,
+                    "sort_order": 140,
+                    "formula_editable": false,
+                    "template_formula_display": null,
+                    "is_template_default": null,
+                    "formula_display": "[الراتب المستحق] + [التعويض المستحق]",
+                    "ast": {
+                        "t": "bin",
+                        "op": "+",
+                        "l": {
+                            "t": "ref",
+                            "k": "salary_entitlement",
+                            "src": "column"
+                        },
+                        "r": {
+                            "t": "ref",
+                            "k": "compensation_entitlement",
+                            "src": "column"
+                        }
+                    },
+                    "references": [
+                        "salary_entitlement",
+                        "compensation_entitlement"
+                    ],
+                    "dependents": [],
+                    "group_label": "الصافي"
+                },
+                {
+                    "id": 15,
+                    "key": "net_salary",
+                    "label": "صافي الراتب",
+                    "group": "net",
+                    "kind": "formula",
+                    "value_type": "amount",
+                    "formula": "{salary_entitlement} - {insurance} - {salary_tax}",
+                    "blank_as_zero": false,
+                    "allow_negative": false,
+                    "warn_negative": false,
+                    "aggregation": "sum",
+                    "visible_grid": true,
+                    "visible_export": true,
+                    "compact": false,
+                    "is_system": true,
+                    "sort_order": 150,
+                    "formula_editable": false,
+                    "template_formula_display": null,
+                    "is_template_default": null,
+                    "formula_display": "[الراتب المستحق] - [التأمينات الاجتماعية] - [ضريبة دخل الراتب]",
+                    "ast": {
+                        "t": "bin",
+                        "op": "-",
+                        "l": {
+                            "t": "bin",
+                            "op": "-",
+                            "l": {
+                                "t": "ref",
+                                "k": "salary_entitlement",
+                                "src": "column"
+                            },
+                            "r": {
+                                "t": "ref",
+                                "k": "insurance",
+                                "src": "column"
+                            }
+                        },
+                        "r": {
+                            "t": "ref",
+                            "k": "salary_tax",
+                            "src": "column"
+                        }
+                    },
+                    "references": [
+                        "salary_entitlement",
+                        "insurance",
+                        "salary_tax"
+                    ],
+                    "dependents": [
+                        {
+                            "key": "total_net_payable",
+                            "label": "إجمالي الصافي المستحق"
+                        }
+                    ],
+                    "group_label": "الصافي"
+                },
+                {
+                    "id": 16,
+                    "key": "net_compensation",
+                    "label": "صافي التعويض",
+                    "group": "net",
+                    "kind": "formula",
+                    "value_type": "amount",
+                    "formula": "{compensation_entitlement} - {compensation_tax}",
+                    "blank_as_zero": false,
+                    "allow_negative": false,
+                    "warn_negative": false,
+                    "aggregation": "sum",
+                    "visible_grid": true,
+                    "visible_export": true,
+                    "compact": false,
+                    "is_system": true,
+                    "sort_order": 160,
+                    "formula_editable": false,
+                    "template_formula_display": null,
+                    "is_template_default": null,
+                    "formula_display": "[التعويض المستحق] - [ضريبة دخل التعويض]",
+                    "ast": {
+                        "t": "bin",
+                        "op": "-",
+                        "l": {
+                            "t": "ref",
+                            "k": "compensation_entitlement",
+                            "src": "column"
+                        },
+                        "r": {
+                            "t": "ref",
+                            "k": "compensation_tax",
+                            "src": "column"
+                        }
+                    },
+                    "references": [
+                        "compensation_entitlement",
+                        "compensation_tax"
+                    ],
+                    "dependents": [
+                        {
+                            "key": "total_net_payable",
+                            "label": "إجمالي الصافي المستحق"
+                        }
+                    ],
+                    "group_label": "الصافي"
+                },
+                {
+                    "id": 17,
+                    "key": "total_net_payable",
+                    "label": "إجمالي الصافي المستحق",
+                    "group": "net",
+                    "kind": "formula",
+                    "value_type": "amount",
+                    "formula": "{net_salary} + {net_compensation} - {other_deductions} + {c_bonus_fixture} - {c_extra_fixture}",
+                    "blank_as_zero": false,
+                    "allow_negative": false,
+                    "warn_negative": false,
+                    "aggregation": "sum",
+                    "visible_grid": true,
+                    "visible_export": true,
+                    "compact": true,
+                    "is_system": true,
+                    "sort_order": 170,
+                    "formula_editable": true,
+                    "template_formula_display": "[صافي الراتب] + [صافي التعويض] - [حسميات أخرى]",
+                    "is_template_default": false,
+                    "formula_display": "[صافي الراتب] + [صافي التعويض] - [حسميات أخرى] + [مكافأة إضافية] - [حسم إضافي]",
+                    "ast": {
+                        "t": "bin",
+                        "op": "-",
+                        "l": {
+                            "t": "bin",
+                            "op": "+",
+                            "l": {
+                                "t": "bin",
+                                "op": "-",
+                                "l": {
+                                    "t": "bin",
+                                    "op": "+",
+                                    "l": {
+                                        "t": "ref",
+                                        "k": "net_salary",
+                                        "src": "column"
+                                    },
+                                    "r": {
+                                        "t": "ref",
+                                        "k": "net_compensation",
+                                        "src": "column"
+                                    }
+                                },
+                                "r": {
+                                    "t": "ref",
+                                    "k": "other_deductions",
+                                    "src": "column"
+                                }
+                            },
+                            "r": {
+                                "t": "ref",
+                                "k": "c_bonus_fixture",
+                                "src": "column"
+                            }
+                        },
+                        "r": {
+                            "t": "ref",
+                            "k": "c_extra_fixture",
+                            "src": "column"
+                        }
+                    },
+                    "references": [
+                        "net_salary",
+                        "net_compensation",
+                        "other_deductions",
+                        "c_bonus_fixture",
+                        "c_extra_fixture"
+                    ],
+                    "dependents": [],
+                    "group_label": "الصافي"
+                },
+                {
+                    "id": 18,
+                    "key": "c_bonus_fixture",
+                    "label": "مكافأة إضافية",
+                    "group": "net",
+                    "kind": "input",
+                    "value_type": "amount",
+                    "formula": null,
+                    "blank_as_zero": true,
+                    "allow_negative": false,
+                    "warn_negative": false,
+                    "aggregation": "sum",
+                    "visible_grid": true,
+                    "visible_export": true,
+                    "compact": false,
+                    "is_system": false,
+                    "sort_order": 180,
+                    "formula_editable": false,
+                    "template_formula_display": null,
+                    "is_template_default": null,
+                    "formula_display": null,
+                    "ast": null,
+                    "references": [],
+                    "dependents": [
+                        {
+                            "key": "total_net_payable",
+                            "label": "إجمالي الصافي المستحق"
+                        }
+                    ],
+                    "group_label": "الصافي"
+                },
+                {
+                    "id": 19,
+                    "key": "c_extra_fixture",
+                    "label": "حسم إضافي",
+                    "group": "net",
+                    "kind": "input",
+                    "value_type": "amount",
+                    "formula": null,
+                    "blank_as_zero": true,
+                    "allow_negative": false,
+                    "warn_negative": false,
+                    "aggregation": "sum",
+                    "visible_grid": true,
+                    "visible_export": true,
+                    "compact": false,
+                    "is_system": false,
+                    "sort_order": 190,
+                    "formula_editable": false,
+                    "template_formula_display": null,
+                    "is_template_default": null,
+                    "formula_display": null,
+                    "ast": null,
+                    "references": [],
+                    "dependents": [
+                        {
+                            "key": "total_net_payable",
+                            "label": "إجمالي الصافي المستحق"
+                        }
+                    ],
+                    "group_label": "الصافي"
+                }
+            ],
+            "groups": [
+                {
+                    "key": "employee",
+                    "label": "بيانات الموظف"
+                },
+                {
+                    "key": "salary",
+                    "label": "الراتب"
+                },
+                {
+                    "key": "compensation",
+                    "label": "التعويض"
+                },
+                {
+                    "key": "deductions",
+                    "label": "الاقتطاعات"
+                },
+                {
+                    "key": "net",
+                    "label": "الصافي"
+                }
+            ],
+            "types": [
+                {
+                    "key": "text",
+                    "label": "نص"
+                },
+                {
+                    "key": "number",
+                    "label": "رقم"
+                },
+                {
+                    "key": "amount",
+                    "label": "مبلغ (ل.س)"
+                },
+                {
+                    "key": "percent",
+                    "label": "نسبة مئوية"
+                }
+            ],
+            "limits": {
+                "max_formula_length": 600,
+                "max_nodes": 120,
+                "max_custom_columns": 60,
+                "functions": [
+                    "SUM",
+                    "IF",
+                    "MAX",
+                    "MIN",
+                    "ROUND"
+                ]
+            }
+        },
+        "cases": [
+            {
+                "name": "reference with bonus 1,000 and extra deduction 250",
+                "inputs": {
+                    "fixed_salary": "96600",
+                    "compensation": "55200",
+                    "c_bonus_fixture": "1000",
+                    "c_extra_fixture": "250"
+                },
+                "cells": {
+                    "fixed_salary": {
+                        "v": "96600.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "salary_adjustment": {
+                        "v": null,
+                        "st": null,
+                        "m": null
+                    },
+                    "salary_entitlement": {
+                        "v": "96600.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "salary_taxable_base": {
+                        "v": "77278.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "compensation": {
+                        "v": "55200.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "compensation_adjustment": {
+                        "v": null,
+                        "st": null,
+                        "m": null
+                    },
+                    "compensation_entitlement": {
+                        "v": "55200.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "combined_taxable_base": {
+                        "v": "132478.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "insurance": {
+                        "v": "6762.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "salary_tax": {
+                        "v": "11591.70",
+                        "st": null,
+                        "m": null
+                    },
+                    "compensation_tax": {
+                        "v": "8280.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "other_deductions": {
+                        "v": null,
+                        "st": null,
+                        "m": null
+                    },
+                    "total_deductions": {
+                        "v": "26633.70",
+                        "st": null,
+                        "m": null
+                    },
+                    "gross_entitlement": {
+                        "v": "151800.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "net_salary": {
+                        "v": "78246.30",
+                        "st": null,
+                        "m": null
+                    },
+                    "net_compensation": {
+                        "v": "46920.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "total_net_payable": {
+                        "v": "125916.30",
+                        "st": null,
+                        "m": null
+                    },
+                    "c_bonus_fixture": {
+                        "v": "1000.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "c_extra_fixture": {
+                        "v": "250.00",
+                        "st": null,
+                        "m": null
+                    }
+                }
+            },
+            {
+                "name": "only the bonus",
+                "inputs": {
+                    "fixed_salary": "20000",
+                    "c_bonus_fixture": "12.50"
+                },
+                "cells": {
+                    "fixed_salary": {
+                        "v": "20000.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "salary_adjustment": {
+                        "v": null,
+                        "st": null,
+                        "m": null
+                    },
+                    "salary_entitlement": {
+                        "v": "20000.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "salary_taxable_base": {
+                        "v": "6040.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "compensation": {
+                        "v": null,
+                        "st": null,
+                        "m": null
+                    },
+                    "compensation_adjustment": {
+                        "v": null,
+                        "st": null,
+                        "m": null
+                    },
+                    "compensation_entitlement": {
+                        "v": "0.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "combined_taxable_base": {
+                        "v": "6040.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "insurance": {
+                        "v": "1400.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "salary_tax": {
+                        "v": "906.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "compensation_tax": {
+                        "v": "0.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "other_deductions": {
+                        "v": null,
+                        "st": null,
+                        "m": null
+                    },
+                    "total_deductions": {
+                        "v": "2306.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "gross_entitlement": {
+                        "v": "20000.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "net_salary": {
+                        "v": "17694.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "net_compensation": {
+                        "v": "0.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "total_net_payable": {
+                        "v": "17706.50",
+                        "st": null,
+                        "m": null
+                    },
+                    "c_bonus_fixture": {
+                        "v": "12.50",
+                        "st": null,
+                        "m": null
+                    },
+                    "c_extra_fixture": {
+                        "v": null,
+                        "st": null,
+                        "m": null
+                    }
+                }
+            },
+            {
+                "name": "custom amounts without a fixed salary",
+                "inputs": {
+                    "c_bonus_fixture": "5",
+                    "c_extra_fixture": "1"
+                },
+                "cells": {
+                    "fixed_salary": {
+                        "v": null,
+                        "st": "missing",
+                        "m": "مدخل ناقص: الأجر المقطوع"
+                    },
+                    "salary_adjustment": {
+                        "v": null,
+                        "st": null,
+                        "m": null
+                    },
+                    "salary_entitlement": {
+                        "v": null,
+                        "st": "missing",
+                        "m": "مدخل ناقص: الأجر المقطوع"
+                    },
+                    "salary_taxable_base": {
+                        "v": null,
+                        "st": "missing",
+                        "m": "مدخل ناقص: الأجر المقطوع"
+                    },
+                    "compensation": {
+                        "v": null,
+                        "st": null,
+                        "m": null
+                    },
+                    "compensation_adjustment": {
+                        "v": null,
+                        "st": null,
+                        "m": null
+                    },
+                    "compensation_entitlement": {
+                        "v": "0.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "combined_taxable_base": {
+                        "v": null,
+                        "st": "missing",
+                        "m": "مدخل ناقص: الأجر المقطوع"
+                    },
+                    "insurance": {
+                        "v": null,
+                        "st": "missing",
+                        "m": "مدخل ناقص: الأجر المقطوع"
+                    },
+                    "salary_tax": {
+                        "v": null,
+                        "st": "missing",
+                        "m": "مدخل ناقص: الأجر المقطوع"
+                    },
+                    "compensation_tax": {
+                        "v": null,
+                        "st": "missing",
+                        "m": "مدخل ناقص: الأجر المقطوع"
+                    },
+                    "other_deductions": {
+                        "v": null,
+                        "st": null,
+                        "m": null
+                    },
+                    "total_deductions": {
+                        "v": null,
+                        "st": "missing",
+                        "m": "مدخل ناقص: الأجر المقطوع"
+                    },
+                    "gross_entitlement": {
+                        "v": null,
+                        "st": "missing",
+                        "m": "مدخل ناقص: الأجر المقطوع"
+                    },
+                    "net_salary": {
+                        "v": null,
+                        "st": "missing",
+                        "m": "مدخل ناقص: الأجر المقطوع"
+                    },
+                    "net_compensation": {
+                        "v": null,
+                        "st": "missing",
+                        "m": "مدخل ناقص: الأجر المقطوع"
+                    },
+                    "total_net_payable": {
+                        "v": null,
+                        "st": "missing",
+                        "m": "مدخل ناقص: الأجر المقطوع"
+                    },
+                    "c_bonus_fixture": {
+                        "v": "5.00",
+                        "st": null,
+                        "m": null
+                    },
+                    "c_extra_fixture": {
+                        "v": "1.00",
+                        "st": null,
+                        "m": null
+                    }
+                }
+            }
+        ]
+    }
+}
