@@ -70,11 +70,13 @@ const patches = []
 let blockPatches = false // fail before the request leaves the browser
 let loseResponse = false // the request reaches the server but the answer is lost (uncertain failure)
 let delayPatches = 0 // ms to hold a save before it is sent
-async function openBrowser({ width, height, mobile = false, role = 'owner' }) {
+async function openBrowser({ width, height, mobile = false, role = 'owner', dropPermissions = [] }) {
   const browser = await chromium.launch({ executablePath: process.env.CHROME ?? '/opt/pw-browsers/chromium', args: ['--no-sandbox'] })
   const context = await browser.newContext({ viewport: { width, height }, permissions: ['clipboard-read', 'clipboard-write'], acceptDownloads: true, isMobile: mobile, hasTouch: mobile })
   const me = await api(tokens[role], 'GET', '/user')
-  await context.addInitScript(([token, user]) => { localStorage.setItem('token', token); localStorage.setItem('user', JSON.stringify(user)) }, [tokens[role], me.json.data])
+  // A view-only account is simulated by removing a permission from the user profile the SPA reads (the server still enforces its own).
+  const user = { ...me.json.data, permissions: (me.json.data.permissions ?? []).filter(code => !dropPermissions.includes(code)) }
+  await context.addInitScript(([token, signedIn]) => { localStorage.setItem('token', token); localStorage.setItem('user', JSON.stringify(signedIn)) }, [tokens[role], user])
   await context.route(`${API}/**`, async route => {
     const request = route.request()
     const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*', 'access-control-expose-headers': 'content-disposition' }
@@ -87,7 +89,8 @@ async function openBrowser({ width, height, mobile = false, role = 'owner' }) {
     const headers = { ...request.headers() }
     delete headers.host; delete headers['content-length']
     const upstream = await fetch(request.url(), { method: request.method(), headers, body: ['GET', 'HEAD'].includes(request.method()) ? undefined : request.postData() })
-    const body = Buffer.from(await upstream.arrayBuffer())
+    let body = Buffer.from(await upstream.arrayBuffer())
+    if (dropPermissions.length && /\/api\/user$/.test(request.url())) { const doc = JSON.parse(body.toString()); doc.data.permissions = (doc.data.permissions ?? []).filter(code => !dropPermissions.includes(code)); body = Buffer.from(JSON.stringify(doc)) }
     if (loseResponse && request.method() === 'PATCH' && request.url().endsWith('/payroll/values')) { loseResponse = false; return route.abort('failed') }
     const out = {}
     upstream.headers.forEach((value, key) => { if (!['content-encoding', 'transfer-encoding', 'content-length', 'connection'].includes(key)) out[key] = value })
@@ -696,6 +699,81 @@ check('exports match the server for the saved snapshot', serverAfter.meta.totals
   equal('the custom amounts are still there', val(await serverRow(id(31)), cfg.columns.find(c => c.label === 'مكافأة إضافية').key), '1000.00')
   await manager.locator('button:has-text("إغلاق")').click(); await page.waitForTimeout(900)
   equal('the grid shows the template result again', await text(page, id(31), 'total_net_payable'), '125,166.30')
+}
+
+// ── visual hierarchy: what the rendered grid actually looks like ───────────
+{
+  const luminance = rgb => { const [r, g, b] = rgb.match(/\d+/g).map(Number); return 0.2126 * r + 0.7152 * g + 0.0722 * b }
+  const cfg = await configOf()
+  const netLabel = cfg.columns.find(c => c.key === 'total_net_payable').label
+  const renamed = 'المستحق النهائي (اسم جديد)'
+  const rename = async label => api(owner, 'PATCH', '/v1/owner/payroll/config/columns/total_net_payable', { label, config_revision: (await configOf()).revision })
+  equal('renaming the net payable column is accepted', (await rename(renamed)).status, 200)
+  const editor = await openBrowser({ width: 1900, height: 1000 })
+  const view = editor.page
+  await view.goto(`${APP}/owner/payroll`); await view.waitForSelector('.payroll-grid .rgCell'); await view.waitForTimeout(900)
+  // The grid renders only the columns in view, so the net payable column is measured after scrolling to it.
+  const measure = () => view.evaluate(() => {
+    const bg = el => (el ? getComputedStyle(el).backgroundColor : null)
+    const group = [...document.querySelectorAll('.payroll-grid .group-rgRow .rgHeaderCell')].map(el => bg(el))
+    const heads = [...document.querySelectorAll('.payroll-grid .actual-rgRow .rgHeaderCell')]
+    const byClass = name => heads.filter(el => el.classList.contains(name))
+    const net = byClass('pg-h-net')
+    const cell = (cls, extra = '') => document.querySelector(`.payroll-grid .rgCell.${cls}${extra}`)
+    const plainNet = cell('pg-net', ':not(.pg-footer):not(.pg-unavailable-cell):not(.pg-error-cell)')
+    return {
+      group: group[0], groupColors: new Set(group).size, head: bg(heads.find(el => el.classList.contains('pg-h-gstart') && !el.classList.contains('pg-h-net'))),
+      netCount: net.length, netText: net[0]?.innerText.trim(), netBg: bg(net[0]), netColor: net[0] ? getComputedStyle(net[0]).color : null,
+      inputMarks: document.querySelectorAll('.payroll-grid .rgHeaderCell .pg-mark-input').length, inputHeads: byClass('pg-h-input').length,
+      calcMarks: document.querySelectorAll('.payroll-grid .rgHeaderCell .pg-mark-calc').length, calcHeads: byClass('pg-h-computed').length,
+      identityMarks: heads.filter(el => el.classList.contains('pg-h-gstart') && !el.classList.contains('pg-h-computed') && !el.classList.contains('pg-h-input') && el.querySelector('.pg-mark')).length,
+      input: bg(cell('pg-input')), calc: bg(cell('pg-computed:not(.pg-net)')), netCell: bg(plainNet), netWeight: plainNet ? Number(getComputedStyle(plainNet).fontWeight) : 0,
+      unavailableNet: bg(cell('pg-net', '.pg-unavailable-cell')), blank: document.querySelectorAll('.payroll-grid .rgCell.pg-input.pg-blank').length,
+      footerNet: document.querySelector('.payroll-grid .rgCell.pg-footer.pg-net')?.innerText.trim(),
+      legend: document.querySelector('[data-testid="payroll-legend"]')?.innerText.replace(/\s+/g, ' '),
+    }
+  })
+  const first = await measure()
+  await view.evaluate(() => document.querySelector('revo-grid').scrollToColumnProp('total_net_payable', 'rgCol')); await view.waitForTimeout(500)
+  const atNet = await measure()
+  const looks = { ...first, netCount: atNet.netCount, netText: atNet.netText, netBg: atNet.netBg, netColor: atNet.netColor, netCell: atNet.netCell, netWeight: atNet.netWeight, unavailableNet: atNet.unavailableNet, footerNet: atNet.footerNet }
+  check('the group row and the column row have different fills, the group row being the dark one', looks.group !== looks.head && luminance(looks.group) < 90 && luminance(looks.head) > 215, `${looks.group} / ${looks.head}`)
+  check('every group band shares one dark fill (separated by rules, not by colour)', looks.groupColors === 1)
+  equal('the final net payable header is found by its stable key even though it was renamed', [looks.netCount >= 1, looks.netText?.includes('اسم جديد')], [true, true])
+  check('the net payable header is a darker green than the group-neutral column headers, with white text', luminance(looks.netBg) < luminance(looks.head) - 80 && luminance(looks.netColor) > 240, `${looks.netBg} ${looks.netColor}`)
+  check('input and calculated headers carry markers (pencil / ƒ) and identity headers none', looks.inputMarks === looks.inputHeads && looks.inputHeads > 0 && looks.calcMarks === looks.calcHeads && looks.calcHeads > 0 && looks.identityMarks === 0, JSON.stringify([looks.inputMarks, looks.inputHeads, looks.calcMarks, looks.calcHeads, looks.identityMarks]))
+  check('input, calculated and final-payable cells have three different fills', new Set([looks.input, looks.calc, looks.netCell]).size === 3, `${looks.input} | ${looks.calc} | ${looks.netCell}`)
+  check('final-payable figures are bold and an unavailable one is not dressed as a valid payable', looks.netWeight >= 700 && looks.unavailableNet !== looks.netCell, `${looks.netWeight} ${looks.unavailableNet}`)
+  check('blank editable cells are identifiable without placeholder data', looks.blank > 0 && (await view.locator('.payroll-grid .rgCell.pg-input.pg-blank').first().innerText()).trim() === '')
+  check('the pinned footer total of the net payable is emphasised', Boolean(looks.footerNet) && looks.footerNet.length > 3)
+  check('the legend names the three styles', ['قابل للتعديل', 'محسوب تلقائيًا', 'الصافي النهائي'].every(text => looks.legend?.includes(text)), looks.legend)
+  // Pending / failed / conflict states win over the ordinary input fill.
+  const failedFill = await view.evaluate(() => { const el = document.querySelector('.payroll-grid .rgCell.pg-failed'); return el ? getComputedStyle(el).backgroundColor : null })
+  check('no cell is stuck in a failed state at this point', failedFill === null)
+  await shot(view, '19-visual-hierarchy-net-column')
+  await view.evaluate(() => document.querySelector('revo-grid').scrollToColumnProp('fixed_salary', 'rgCol')); await view.waitForTimeout(400)
+  await shot(view, '18-visual-hierarchy-editor')
+  check('visual hierarchy: no uncaught page errors', editor.errors.length === 0, editor.errors.join(' | '))
+  await editor.browser.close()
+
+  // A user who may only view: inputs stay recognisable but are not presented as editable.
+  const viewer = await openBrowser({ width: 1900, height: 1000, dropPermissions: ['owner_payroll.amounts.edit'] })
+  const ro = viewer.page
+  await ro.goto(`${APP}/owner/payroll`); await ro.waitForSelector('.payroll-grid .rgCell'); await ro.waitForTimeout(900)
+  await ro.evaluate(() => document.querySelector('revo-grid').scrollToColumnProp('total_net_payable', 'rgCol')); await ro.waitForTimeout(500)
+  const roLooks = await ro.evaluate(() => ({
+    inputMarks: document.querySelectorAll('.payroll-grid .pg-mark-input').length, editableCells: document.querySelectorAll('.payroll-grid .rgCell.pg-input').length,
+    sourceCells: document.querySelectorAll('.payroll-grid .rgCell.pg-source').length, calcMarks: document.querySelectorAll('.payroll-grid .pg-mark-calc').length,
+    netHeads: document.querySelectorAll('.payroll-grid .rgHeaderCell.pg-h-net').length, legend: document.querySelector('[data-testid="payroll-legend"]')?.innerText.replace(/\s+/g, ' '),
+  }))
+  check('view-only user: no pencil markers, no editable-looking cells, but source inputs stay recognisable', roLooks.inputMarks === 0 && roLooks.editableCells === 0 && roLooks.sourceCells > 0, JSON.stringify(roLooks))
+  check('view-only user: calculated and final-payable styling is unchanged', roLooks.calcMarks > 0 && roLooks.netHeads >= 1)
+  check('view-only user: the legend does not promise editing', roLooks.legend?.includes('للعرض فقط') && !roLooks.legend.includes('قابل للتعديل'), roLooks.legend)
+  await shot(ro, '20-visual-hierarchy-view-only')
+  await ro.evaluate(() => document.querySelector('revo-grid').scrollToColumnProp('fixed_salary', 'rgCol')); await ro.waitForTimeout(400)
+  check('view-only user: source input cells are present in view', (await ro.locator('.payroll-grid .rgCell.pg-source').count()) > 0)
+  await viewer.browser.close()
+  equal('the net payable column is restored to its previous name', (await rename(netLabel)).status, 200)
 }
 
 // ── employee and body management dialogs ───────────────────────────────

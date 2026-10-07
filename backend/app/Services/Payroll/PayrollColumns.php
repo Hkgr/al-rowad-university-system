@@ -30,20 +30,22 @@ final class PayrollColumns
     /**
      * Columns of the file in display order. Identity columns first, then every configured column with visible_export.
      *
-     * @return list<array{key:string, heading:string, group:string, group_label:string, type:string, aggregation:string, identity:bool}>
+     * `kind` is identity|input|formula (entered data vs calculated values); `net` marks the final net payable by its stable key.
+     *
+     * @return list<array{key:string, heading:string, group:string, group_label:string, type:string, aggregation:string, identity:bool, kind:string, net:bool}>
      */
     public static function exportColumns(array $config): array
     {
         $out = [];
         foreach (self::IDENTITY as $key => $heading) {
-            $out[] = ['key' => $key, 'heading' => $heading, 'group' => 'employee', 'group_label' => PayrollConfigService::GROUPS['employee'], 'type' => 'text', 'aggregation' => 'none', 'identity' => true];
+            $out[] = ['key' => $key, 'heading' => $heading, 'group' => 'employee', 'group_label' => PayrollConfigService::GROUPS['employee'], 'type' => 'text', 'aggregation' => 'none', 'identity' => true, 'kind' => 'identity', 'net' => false];
         }
         foreach ($config['columns'] as $column) {
             if ($column['visible_export']) {
                 $out[] = [
                     'key' => $column['key'], 'heading' => $column['label'].($column['value_type'] === 'amount' ? ' ('.self::SYMBOL.')' : ''), 'group' => $column['group'],
                     'group_label' => PayrollConfigService::GROUPS[$column['group']] ?? $column['group'], 'type' => $column['value_type'],
-                    'aggregation' => $column['aggregation'], 'identity' => false,
+                    'aggregation' => $column['aggregation'], 'identity' => false, 'kind' => $column['kind'] === 'formula' ? 'formula' : 'input', 'net' => $column['key'] === PayrollTemplate::TOTAL_NET_PAYABLE,
                 ];
             }
         }

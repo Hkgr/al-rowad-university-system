@@ -15,6 +15,9 @@ export const IDENTITY_COLUMNS = [
   { prop: 'academic_level', title: 'المستوى الأكاديمي', sort: 'academic_level', size: 140, group: 'employee' },
 ]
 
+/** Stable key of the final net payable column. Emphasis never follows the (renameable, reorderable) label. */
+export const TOTAL_KEY = 'total_net_payable'
+
 export const GROUP_LABELS = { employee: 'بيانات الموظف', salary: 'الراتب', compensation: 'التعويض', deductions: 'الاقتطاعات', net: 'الصافي' }
 export const GROUP_ORDER = ['employee', 'salary', 'compensation', 'deductions', 'net']
 
@@ -70,7 +73,7 @@ export const errorText = error => error?.message || 'تعذّر الاتصال �
 export const fieldErrors = details => Object.fromEntries(Object.entries(details && !Array.isArray(details) ? details : {}).map(([key, messages]) => [key, Array.isArray(messages) ? messages[0] : String(messages)]))
 
 /** Completeness of a row from its total net payable cell (same rule as the server). */
-export function rowStatus(row, totalKey = 'total_net_payable') {
+export function rowStatus(row, totalKey = TOTAL_KEY) {
   const cell = row.cells[totalKey]
   if (!cell) return 'complete'
   if (cell.st === 'missing' || cell.st === 'error') return 'incomplete'

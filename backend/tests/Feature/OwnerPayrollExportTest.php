@@ -209,6 +209,76 @@ final class OwnerPayrollExportTest extends OwnerPayrollTestCase
         }
     }
 
+    /** Pixel colour of a rendered page, as [r, g, b]. */
+    private function pixel($image, int $x, int $y): array
+    {
+        $rgb = imagecolorat($image, $x, $y);
+
+        return [($rgb >> 16) & 255, ($rgb >> 8) & 255, $rgb & 255];
+    }
+
+    private function near(array $a, array $b, int $tolerance = 14): bool
+    {
+        return abs($a[0] - $b[0]) <= $tolerance && abs($a[1] - $b[1]) <= $tolerance && abs($a[2] - $b[2]) <= $tolerance;
+    }
+
+    public function test_pdf_repeats_a_dark_group_row_over_a_light_heading_row_on_every_page_and_part_and_marks_the_net_column(): void
+    {
+        if (trim((string) shell_exec('command -v pdftoppm')) === '' || ! function_exists('imagecreatefrompng')) {
+            $this->markTestSkipped('pdftoppm and GD are needed to inspect the rendered pages.');
+        }
+        $this->actingAsUser(self::OWNER);
+        $body = $this->body('هيئة التدريس');
+        $changes = [];
+        for ($i = 1; $i <= 45; $i++) {
+            $row = $this->employee(['employee_number' => sprintf('%04d', $i), 'full_name' => "موظف {$i}"], $body);
+            $changes[] = $this->change($row, ['fixed_salary' => (string) (96600 + $i), 'compensation' => '55200']);
+        }
+        $this->values($changes)->assertOk();
+        // Renaming the net column must not change its emphasis: it is recognised by its stable key.
+        $this->patchJson(self::CFG.'/columns/total_net_payable', ['label' => 'المستحق النهائي للموظف', 'config_revision' => $this->configRevision()])->assertOk();
+
+        $dir = sys_get_temp_dir().'/payroll_pdf_pages_'.bin2hex(random_bytes(4));
+        mkdir($dir);
+        file_put_contents("{$dir}/report.pdf", $this->get(self::API.'/payroll/export/pdf')->assertOk()->getContent());
+        shell_exec('pdftoppm -r 50 -png '.escapeshellarg("{$dir}/report.pdf").' '.escapeshellarg("{$dir}/page").' 2>/dev/null');
+        $pages = glob("{$dir}/page-*.png");
+        sort($pages);
+        $this->assertGreaterThan(3, count($pages), 'several parts and several pages per part');
+
+        $group = [31, 61, 18];
+        $netHeader = [59, 122, 34];
+        $pagesWithNet = 0;
+        foreach ($pages as $file) {
+            $image = imagecreatefrompng($file);
+            $x = imagesx($image) - 34; // the first (rightmost) column of every part is the employee number
+            $bandTop = null;
+            for ($y = 60; $y < 330; $y++) {
+                if ($this->near($this->pixel($image, $x, $y), $group, 12)) {
+                    $bandTop = $y;
+                    break;
+                }
+            }
+            $this->assertNotNull($bandTop, basename($file).' starts its table with the dark group row');
+            $heading = $this->pixel($image, $x, $bandTop + 22); // 8 mm band + into the heading row
+            $this->assertGreaterThan(215, min($heading), basename($file).' has a light heading row directly under the band');
+            $this->assertGreaterThan($heading[0], $heading[1], 'tinted green, not white or grey');
+
+            $netPixels = 0;
+            for ($y = $bandTop; $y < $bandTop + 60; $y += 2) {
+                for ($xx = 0; $xx < imagesx($image); $xx += 2) {
+                    $netPixels += $this->near($this->pixel($image, $xx, $y), $netHeader, 8) ? 1 : 0;
+                }
+            }
+            $pagesWithNet += $netPixels > 150 ? 1 : 0;
+            imagedestroy($image);
+        }
+        $this->assertGreaterThan(0, $pagesWithNet, 'the final net payable column has its dark-green heading');
+        $this->assertLessThan(count($pages), $pagesWithNet, 'only the part that contains the net column carries it');
+        array_map('unlink', glob("{$dir}/*"));
+        rmdir($dir);
+    }
+
     public function test_pdf_only_prints_columns_marked_for_export(): void
     {
         $this->seedPayroll();
