@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { canAccess } from '../src/features/auth/auth.js'
 import { advisoryYears, entityFilterSearch, entityLink, entityListFilters, membershipEntityLink, safeEntityReturn } from '../src/features/scientific-programs/entities.js'
 import { PROGRAM_ACCESS, canViewPrograms } from '../src/features/scientific-programs/programs.js'
 import { CATALOG_ACCESS, canViewCatalog } from '../src/features/scientific-courses/catalog.js'
@@ -54,6 +55,11 @@ test('new route, guide and directory read policies agree without expanding roles
     assert.ok(routes.includes(`path="/vp/scientific/programs-courses/${kind}/:entityId" element={protect(<AcademicEntitiesPage kind="${kind}" />, ${access})}`))
     assert.deepEqual(ROUTE_ACCESS[`/vp/scientific/programs-courses/${kind}`][1], kind === 'courses' ? CATALOG_ACCESS : PROGRAM_ACCESS)
   }
+  // Only redirect aliases accept the union; actual program pages stay protected.
+  assert.ok(routes.includes('protect(<LegacyAcademicEntityRoute kind="programs" />, WORKSPACE_ACCESS)'))
+  const catalogOnly = { ...scientific, permissions: CATALOG_ACCESS.assignedPermissions }
+  assert.equal(canViewPrograms(catalogOnly), false); assert.equal(canViewCatalog(catalogOnly), true)
+  assert.equal(canAccess(ROUTE_ACCESS['/vp/scientific/programs'][1], catalogOnly), true)
 })
 test('active screens have no academic-structure egress or advanced fallback; all entity names use local links (static)', () => {
   const files = ['AcademicEntitiesPage.jsx', 'UnifiedProgramsPage.jsx', 'CourseEntityPage.jsx', 'ProgramEntityActions.jsx']

@@ -114,7 +114,7 @@ export const ROUTE_ACCESS = Object.freeze({
   '/academic-structure/programs': [G.academicStructure],
 
   '/vp/scientific/courses': [G.vpScientific, CATALOG_ACCESS],
-  '/vp/scientific/programs': [G.vpScientific, PROGRAM_ACCESS],
+  '/vp/scientific/programs': [G.vpScientific, WORKSPACE_ACCESS],
   '/vp/scientific/programs-courses': [G.vpScientific, WORKSPACE_ACCESS],
   '/vp/scientific/programs-courses/colleges': [G.vpScientific, PROGRAM_ACCESS],
   '/vp/scientific/programs-courses/departments': [G.vpScientific, PROGRAM_ACCESS],

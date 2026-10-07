@@ -4,7 +4,7 @@ import { FaUniversity, FaPlus } from 'react-icons/fa'
 import DataTable from '../../components/table/DataTable'
 import FilterBar from '../../components/table/FilterBar'
 import { canAccess, getIdentity } from '../auth/auth'
-import { CATALOG_ACCESS, canViewCatalog, catalogError, queryString } from '../scientific-courses/catalog'
+import { canViewCatalog, catalogError, queryString } from '../scientific-courses/catalog'
 import { Button, CatalogDialog, CatalogLookup, Field, Notice, Select } from '../scientific-courses/CatalogControls'
 import useCatalogRead from '../scientific-courses/useCatalogRead'
 import ScientificCoursesPage from '../scientific-courses/ScientificCoursesPage'
@@ -32,11 +32,16 @@ export default function AcademicEntitiesPage({ kind = 'colleges' }) {
     return () => { clearInterval(timer); window.removeEventListener('storage', check); window.removeEventListener('focus', check); window.removeEventListener('scientific-program-denied', reject); window.removeEventListener('scientific-catalog-denied', reject) }
   }, [identity])
   const user = JSON.parse(identity), query = new URLSearchParams(location.search)
+  // Authorize before interpreting old links. Catalog-only readers must never
+  // be redirected to a program they cannot read; an authorized explicit plan
+  // still takes precedence over the old catalog hint.
+  const programsAllowed = canViewPrograms(user), catalogAllowed = canViewCatalog(user)
+  if (denied || !canAccess(WORKSPACE_ACCESS, user)) return <Notice error>انتهت الصلاحية؛ أُخفيت البيانات والنماذج.</Notice>
+  if (!programsAllowed && catalogAllowed && kind !== 'courses') return <Navigate replace to={entityLink('courses')} />
   const legacyProgram = query.get('program')
-  if (legacyProgram && /^[1-9]\d*$/.test(legacyProgram)) return <Navigate replace to={entityLink('programs', legacyProgram, { version: query.get('version'), tab: query.get('tab') })} />
-  const courseOnly = !canViewPrograms(user) && canViewCatalog(user)
-  if (denied || !canAccess(WORKSPACE_ACCESS, user) || (kind === 'courses' ? !canAccess(CATALOG_ACCESS, user) : !courseOnly && !canViewPrograms(user))) return <Notice error>انتهت الصلاحية؛ أُخفيت البيانات والنماذج.</Notice>
-  if (query.get('catalog') === '1' || (courseOnly && kind !== 'courses')) return <Navigate replace to={entityLink('courses')} />
+  if (programsAllowed && legacyProgram && /^[1-9]\d*$/.test(legacyProgram)) return <Navigate replace to={entityLink('programs', legacyProgram, { version: query.get('version'), tab: query.get('tab') })} />
+  if (query.get('catalog') === '1' && catalogAllowed && kind !== 'courses') return <Navigate replace to={entityLink('courses')} />
+  if (kind === 'courses' ? !catalogAllowed : !programsAllowed) return <Notice error>انتهت الصلاحية؛ أُخفيت البيانات والنماذج.</Notice>
   const props = { kind, id: entityId, onUnauthorized: () => setDenied(true) }
   // Search/filter changes do not remount a draft. A real entity/identity change does.
   return <div key={`${identity}:${kind}:${entityId || ''}`} className="min-w-0 space-y-4">
@@ -46,6 +51,9 @@ export default function AcademicEntitiesPage({ kind = 'colleges' }) {
 
 export function LegacyAcademicEntityRoute({ kind }) {
   const location = useLocation(), { programId } = useParams(), query = new URLSearchParams(location.search)
+  const user = getIdentity()
+  if (kind === 'programs' && !canViewPrograms(user)) return canViewCatalog(user)
+    ? <Navigate replace to={entityLink('courses')} /> : <Notice error>انتهت الصلاحية؛ أُخفيت البيانات والنماذج.</Notice>
   query.delete('advanced')
   return <Navigate replace to={entityLink(kind, programId) + (query.size ? `?${query}` : '')} />
 }

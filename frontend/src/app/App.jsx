@@ -395,8 +395,8 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/vp/scientific/programs-courses/courses" element={protect(<AcademicEntitiesPage kind="courses" />, CATALOG_ACCESS)} />
           <Route path="/vp/scientific/programs-courses/courses/:entityId" element={protect(<AcademicEntitiesPage kind="courses" />, CATALOG_ACCESS)} />
           <Route path="/vp/scientific/courses" element={protect(<LegacyAcademicEntityRoute kind="courses" />, CATALOG_ACCESS)} />
-          <Route path="/vp/scientific/programs" element={protect(<LegacyAcademicEntityRoute kind="programs" />, PROGRAM_ACCESS)} />
-          <Route path="/vp/scientific/programs/:programId" element={protect(<LegacyAcademicEntityRoute kind="programs" />, PROGRAM_ACCESS)} />
+          <Route path="/vp/scientific/programs" element={protect(<LegacyAcademicEntityRoute kind="programs" />, WORKSPACE_ACCESS)} />
+          <Route path="/vp/scientific/programs/:programId" element={protect(<LegacyAcademicEntityRoute kind="programs" />, WORKSPACE_ACCESS)} />
           <Route path="/vp/scientific/reports" element={protect(<ExecutiveReportsPage office="scientific" />, reportAccessForOffice('scientific'))} />
           <Route path="/vp/scientific/teaching-assignments" element={<TeachingAssignmentQueue office="scientific" />} />
           <Route path="/vp/scientific/semester-offerings" element={protect(<SemesterOfferingQueue />, { allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView], actualUniversityScope: true })} />
