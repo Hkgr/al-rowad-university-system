@@ -14,6 +14,11 @@ try {
   const markup = renderToStaticMarkup(createElement(Curriculum, { rows: [row], source: [{ course_id: 1, academic_level_id: 1, recommended_semester_id: 2, academic_level: { level_name: 'الأولى' }, recommended_semester: { semester_name: 'الثاني' }, course: { credit_hours: 3 } }], origins: [], canEdit: true }))
   for (const label of ['مادة اصطناعية', 'SYN-1', 'الأولى', 'الثاني', 'اختياري', 'إزالة من البرنامج']) assert.ok(markup.includes(label), label)
   assert.ok(renderToStaticMarkup(createElement(Curriculum, { rows: [], source: [], origins: [] })).includes('لا توجد مواد'))
+  const sibling = { ...row, course_id: 2, label: 'مادة ثانية (SYN-2)', recommended_semester_id: 1 }
+  const grouped = renderToStaticMarkup(createElement(Curriculum, { rows: [row, sibling], source: [{ ...row, academic_level: { level_name: 'الأولى' }, recommended_semester: { semester_name: 'الثاني' }, course: { credit_hours: 3 } }, { ...sibling, academic_level: { level_name: 'الأولى' }, recommended_semester: { semester_name: 'الأول' }, course: { credit_hours: 3 } }], canEdit: true }))
+  assert.equal((grouped.match(/السنة الدراسية — الأولى/g) || []).length, 1)
+  assert.equal((grouped.match(/الفصل الإرشادي — /g) || []).length, 2)
+  assert.ok(grouped.includes('<details') && grouped.includes('تعديل التوزيع'))
   const before = { total_credit_hours: null, groups: [], courses: [] }, after = { total_credit_hours: 3, groups: [{ requirement_scope: 'college', requirement_type: 'elective', required_credit_hours: 3 }], courses: [row] }
   const read = { data: { data: [{ id: 'plan:1', actor: 'موظف اصطناعي', created_at: '2026-10-07', action: 'workspace_saved', before, after, details_available: true, course_labels: { 1: { course_name: 'مادة اصطناعية', course_code: 'SYN-1' } }, selected_program_ids: [1], selected_program_labels: { 1: 'برنامج اصطناعي' } },
     { id: 'catalog:1', actor: 'موظف اصطناعي', created_at: '2026-10-07', action: 'scientific_catalog.course.create', before: null, after: { course_name: 'أصل جديد', course_code: 'NEW-1' }, details_available: true },
@@ -32,5 +37,5 @@ try {
   assert.ok(stateMarkup.includes('غير فعالة') && stateMarkup.includes('فعالة') && stateMarkup.includes('الحالة'))
   assert.ok(stateMarkup.includes('حفظ إعداد الخطة لا يعني اعتمادها'))
   assert.ok(!stateMarkup.includes('نطاق التطبيق: الطلاب الجدد فقط.'))
-  console.log('PASS React SSR: curriculum/empty state, six-group/history snapshots, catalogue creation history, staged editor. No browser or live integration assertion.')
+  console.log('PASS React SSR: nested year/terms and native action-menu markup, curriculum/empty state, six-group/history snapshots, catalogue creation history, staged editor. No browser or live integration assertion.')
 } finally { await server.close() }

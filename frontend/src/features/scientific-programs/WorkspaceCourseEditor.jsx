@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { Button, CatalogLookup, Field, Input, Notice, Select } from '../scientific-courses/CatalogControls'
 import { programRead, SCOPES, TYPES } from './programs'
 
-export default function WorkspaceCourseEditor({ existing, onApply, onClose, canCreate, onDirty, departmentId, preparedCourses = [] }) {
+export default function WorkspaceCourseEditor({ existing, initialChoice, onApply, onClose, canCreate, onDirty, departmentId, preparedCourses = [] }) {
   const preparedOrigin = preparedCourses.find(c => c.key === existing?.membership?.new_course_key)
-  const [create, setCreate] = useState(!!preparedOrigin), [selected, setSelected] = useState(existing?.choice || null), [preparedKey, setPreparedKey] = useState('')
+  const [create, setCreate] = useState(!!preparedOrigin), [selected, setSelected] = useState(existing?.choice || initialChoice || null), [preparedKey, setPreparedKey] = useState('')
   const [row, setRow] = useState(existing?.membership || { course_id: null, requirement_scope: 'department', course_type: 'mandatory', academic_level_id: null, recommended_semester_id: null, is_active: true })
   const [origin, setOrigin] = useState(preparedOrigin || { course_code: '', course_name: '', credit_hours: '', theoretical_hours: '', practical_hours: '', is_active: true })
   const update = (field, value) => { setRow(r => ({ ...r, [field]: value })); onDirty() }

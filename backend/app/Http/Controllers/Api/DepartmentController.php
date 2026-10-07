@@ -14,6 +14,24 @@ use Illuminate\Http\Request;
 
 class DepartmentController extends ApiController
 {
+    public function store(): JsonResponse
+    {
+        $entity = app(\App\Services\AcademicStructureEntityService::class)->save(request()->user(), 'departments', null, request()->all());
+        return $this->successResponse((new DepartmentResource($entity))->resolve(request()), status: 201);
+    }
+
+    public function update($id): JsonResponse
+    {
+        $entity = app(\App\Services\AcademicStructureEntityService::class)->save(request()->user(), 'departments', (int) $id, request()->all());
+        return $this->successResponse((new DepartmentResource($entity))->resolve(request()));
+    }
+
+    public function destroy($id): JsonResponse
+    {
+        app(\App\Services\AcademicStructureEntityService::class)->delete(request()->user(), 'departments', (int) $id);
+        return $this->successResponse();
+    }
+
     protected function modelClass(): string
     {
         return Department::class;

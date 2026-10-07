@@ -32,7 +32,8 @@ final class ScientificProgramManagementService
             $versions = AcademicPlanVersion::whereIn('academic_program_id', collect($page->items())->pluck('academic_program_id'))->orderBy('version_number')->get()->groupBy('academic_program_id');
             return ['data' => collect($page->items())->map(fn ($p) => $this->projection($p, $versions->get($p->getKey(), collect()))),
                 'meta' => ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'per_page' => $page->perPage(), 'total' => $page->total()],
-                'capabilities' => $this->access->capabilities($actor), 'revision' => $this->transaction->revision()];
+                'capabilities' => $this->access->capabilities($actor) + ['create' => $actor->hasPermission(ScientificProgramAccess::MANAGE)
+                    && app(ScientificCourseAccess::class)->canCreateOrigin($actor)], 'revision' => $this->transaction->revision()];
         });
     }
 

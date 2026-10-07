@@ -15,6 +15,10 @@ final class CatalogFixture
         $extra['course_instructors'] = ['course_instructor_id', 'faculty_member_id', 'is_primary'];
         $extra['faculty_members'] = ['faculty_member_id', 'employee_id'];
         $extra['employees'] = ['employee_id', 'first_name', 'last_name'];
+        $extra['organizational_units'] = ['unit_name'];
+        $extra['colleges'] = ['college_code', 'description', 'organizational_unit_id'];
+        $extra['departments'] = ['department_code', 'description', 'organizational_unit_id'];
+        $extra['user_activity_logs'] = ['ip_address'];
         $primary += ['faculty_members' => 'faculty_member_id', 'employees' => 'employee_id'];
         foreach ($extra as $table=>$fields) foreach ($fields as $field) $tables[$table][$field]=true;
         foreach ($tables as $table=>$fields) {
