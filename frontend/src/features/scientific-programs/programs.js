@@ -9,7 +9,8 @@ export const VERSION_LABELS = { draft: 'مسودة للتعديل', approved: '�
 export function programPlanLink(membership) {
   const query = new URLSearchParams({ tab: 'membership' })
   if (membership.academic_plan_version_id != null) query.set('version', String(membership.academic_plan_version_id))
-  return `/vp/scientific/programs/${membership.academic_program_id}?${query}`
+  query.set('program', String(membership.academic_program_id))
+  return `/vp/scientific/programs-courses?${query}`
 }
 /** Display actual definitions, never invent saved groups. */
 export function requirementDisplayGroups(data) {

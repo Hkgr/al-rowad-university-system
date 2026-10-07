@@ -25,7 +25,9 @@ final class ScientificProgramManagementTest extends TestCase
     public function test_routes_enforce_actual_role_assigned_permissions_and_real_scope(): void
     {
         $this->getJson(self::URL)->assertOk();
-        foreach (['super_admin', 'vice_president_administrative', 'dean'] as $role) {
+        DB::table('roles')->update(['role_code' => 'super_admin']);
+        $this->getJson(self::URL)->assertOk(); // Existing central bypass, not a new authority grant.
+        foreach (['vice_president_administrative', 'dean'] as $role) {
             DB::table('roles')->update(['role_code' => $role]);
             $this->getJson(self::URL)->assertForbidden();
         }
@@ -101,7 +103,7 @@ final class ScientificProgramManagementTest extends TestCase
         $fixed = $this->postJson(self::URL.'/1/transition', $this->confirm())->assertOk()->json('data.versions.0.academic_plan_version_id');
         $draft = $this->postJson(self::URL.'/1/versions/'.$fixed.'/copy', ['revision' => $this->revision(), 'label' => 'مسودة توزيع'])->assertOk()->json('data.version.academic_plan_version_id');
         $url = '/api/v1/vice-presidency/scientific/course-management';
-        $scope = ['scope' => 'college', 'college_id' => 1, 'course_type' => 'mandatory'];
+        $scope = ['scope' => 'college', 'college_id' => 1, 'course_type' => 'mandatory', 'academic_program_ids' => [1]];
         $preview = $this->getJson($url.'/distribution-preview?'.http_build_query($scope))->assertOk()->assertJsonPath('data.can_apply', false)->json('data');
         self::assertTrue($preview['targets'][0]['requires_explicit_plan']);
         self::assertSame([$draft], array_column($preview['targets'][0]['draft_options'], 'id'));

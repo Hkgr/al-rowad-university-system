@@ -16,8 +16,8 @@ test('legacy group display preserves stored zero/null/inactive definitions and e
   assert.equal(JSON.stringify(data), before)
 })
 test('course links preserve the named plan, without guessing a draft for legacy membership', () => {
-  assert.equal(programPlanLink({ academic_program_id: 2, academic_plan_version_id: null }), '/vp/scientific/programs/2?tab=membership')
-  assert.equal(programPlanLink({ academic_program_id: 2, academic_plan_version_id: 17 }), '/vp/scientific/programs/2?tab=membership&version=17')
+  assert.equal(programPlanLink({ academic_program_id: 2, academic_plan_version_id: null }), '/vp/scientific/programs-courses?tab=membership&program=2')
+  assert.equal(programPlanLink({ academic_program_id: 2, academic_plan_version_id: 17 }), '/vp/scientific/programs-courses?tab=membership&version=17&program=2')
 })
 test('program authority requires actual Scientific role, assigned permission and actual academic scope', () => {
   const valid = { roles: ['vice_president_scientific'], permissions: PROGRAM_ACCESS.assignedPermissions, access_scopes: [{ type: 'college', id: 1 }] }
@@ -44,8 +44,8 @@ test('whole-scope distribution names explicit drafts without changing the select
 })
 test('static route/nav parity, independent defaults and transfer, shared design and uncertainty protection', async () => {
   const page = await read('features/scientific-programs/ScientificProgramsPage.jsx')
-  assert.match(await read('app/App.jsx'), /ScientificProgramsPage \/>, PROGRAM_ACCESS/)
-  assert.match(await read('features/vice-presidency/nav.js'), /to: '\/vp\/scientific\/programs'.*PROGRAM_ACCESS/)
+  assert.match(await read('app/App.jsx'), /UnifiedProgramsPage \/>, PROGRAM_ACCESS/)
+  assert.match(await read('features/vice-presidency/nav.js'), /to: '\/vp\/scientific\/programs-courses'.*WORKSPACE_ACCESS/)
   assert.match(page, /useBlocker/); assert.match(page, /beforeunload/); assert.match(page, /controls\.current\.busy/)
   assert.match(page, /loadAction\.current\+\+/); assert.match(page, /retained/)
   assert.match(page, /caps\.assign && plan\.data\.version\.status === 'approved'/)

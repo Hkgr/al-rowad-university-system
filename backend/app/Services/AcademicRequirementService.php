@@ -793,7 +793,9 @@ class AcademicRequirementService
             ];
         }
 
-        if (AcademicPlanContext::installed() && $group->academic_plan_version_id !== $programCourse->academic_plan_version_id) {
+        // Equal references cannot be mismatched; avoid a schema probe per curriculum row.
+        // For unequal references retain the exact existing installed-schema guard/semantics.
+        if ($group->academic_plan_version_id !== $programCourse->academic_plan_version_id && AcademicPlanContext::installed()) {
             return ['classification' => self::CLASSIFICATION_REQUIREMENT_CONFIGURATION_INVALID,
                 'reason' => 'requirement_group_plan_mismatch', 'program_course' => $programCourse, 'requirement_group' => $group];
         }

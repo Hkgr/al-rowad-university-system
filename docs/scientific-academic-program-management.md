@@ -58,7 +58,7 @@ Existing `academic_structure.manage` handles program identity. Five missing perm
 
 Prefix: `/api/v1/vice-presidency/scientific/program-management`. Routes cover paginated list/options/detail, create/update, deletion preview/delete, archive/restore, initialization/transition preview/fix, version read/copy, requirements and membership edits, approval/default, and transfer preview/confirm. Unknown fields are rejected. Searches/sorts are allowlisted. Revision is an opaque decimal string. No write takes place in GET.
 
-Whole-scope Course Management distribution still covers **all** programs in the selected university/college/department. Once versioning is active it requires one explicit editable draft per versioned target, with the plan-management permission. Missing/locked/unconfigured targets block the entire operation; no silent subset or fixed-plan mutation occurs.
+Course Management distribution now requires explicit `academic_program_ids` within the selected university/college/department context; the classification never expands the program list automatically. Once versioning is active the compatibility endpoint requires one explicit editable draft per selected versioned target, with the plan-management permission. Missing/locked/unconfigured targets block the entire operation; no silent subset or fixed-plan mutation occurs. The normal interface uses the atomic preparation workspace described in [Scientific Programs and Courses](scientific-programs-courses-unified.md).
 
 ## Manual deployment — maintenance is mandatory
 

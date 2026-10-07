@@ -279,6 +279,14 @@ final class AcademicPlanWorkflow
         return $this->planProjection($actor, $program, null);
     }
 
+    /** Projection for a caller that already owns a scoped read snapshot or writer transaction. */
+    public function versionProjection(User $actor, AcademicProgram $program, AcademicPlanVersion $version): array
+    {
+        $this->access->authorize($actor); AcademicPlanContext::assertReady();
+        abort_unless((int) $version->academic_program_id === (int) $program->getKey(), 404);
+        return $this->planProjection($actor, $program, $version);
+    }
+
     public function version(User $actor, int $programId, int $versionId): array
     {
         $this->access->authorize($actor); AcademicPlanContext::assertReady();

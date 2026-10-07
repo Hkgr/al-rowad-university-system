@@ -145,7 +145,7 @@ final class ScientificCourseManagementService
             'departments.*.department_id' => 'required|integer|min:1|distinct', 'departments.*.is_primary' => 'required|boolean',
             'prerequisites' => 'sometimes|array|max:100', 'prerequisites.*' => 'array:prerequisite_course_id,minimum_result_status_id',
             'prerequisites.*.prerequisite_course_id' => 'required|integer|min:1|distinct', 'prerequisites.*.minimum_result_status_id' => 'nullable|integer|exists:result_statuses,result_status_id',
-            ...($id ? [] : ['distribution' => 'sometimes|array:scope,college_id,department_id,course_type,draft_version_ids',
+            ...($id ? [] : ['distribution' => 'sometimes|array:scope,college_id,department_id,course_type,draft_version_ids,academic_program_ids',
                 'distribution_confirmed' => 'exclude_without:distribution|required|accepted',
                 'academic_level_id' => 'required_with:distribution|integer|exists:academic_levels,academic_level_id',
                 'recommended_semester_id' => 'required_with:distribution|integer|exists:semesters,semester_id']),
@@ -156,6 +156,7 @@ final class ScientificCourseManagementService
             $plan = isset($v['distribution']) ? app(ScientificCourseDistribution::class)->plan($actor, $v['distribution'], true) : null;
             if ($plan && !$plan['can_apply']) $this->invalid('distribution', 'تعذر ربط جميع البرامج؛ راجع معاينة النطاق. لم يُحفظ أي تغيير.');
             $course = $id ? $this->access->courses($actor)->lockForUpdate()->findOrFail($id) : new Course;
+            $before = $id ? $course->only(['course_code', 'course_name', 'credit_hours', 'theoretical_hours', 'practical_hours', 'description', 'is_active']) : null;
             if ($id) abort_unless($this->access->canEditOrigin($actor, $course), 403);
             if ($id && $course->programCourses()->count() > 1 && !($v['impact_confirmed'] ?? false)) $this->invalid('impact_confirmed', 'أكد أثر التصحيح على أصل المادة المشترك قبل الحفظ.');
             $attributes = array_diff_key($v, array_flip(['revision', 'impact_confirmed', 'departments', 'prerequisites', 'distribution', 'distribution_confirmed', 'academic_level_id', 'recommended_semester_id']));
@@ -185,7 +186,8 @@ final class ScientificCourseManagementService
                 $this->transaction->assertAcyclic();
             }
             abort_unless($this->access->canEditOrigin($actor, $course), 403);
-            if ($changed) $this->audit($actor, $id ? 'course.update' : 'course.create', ['course_id' => $course->getKey(), 'fields' => array_keys($attributes)]);
+            if ($changed) $this->audit($actor, $id ? 'course.update' : 'course.create', ['course_id' => $course->getKey(), 'fields' => array_keys($attributes),
+                'before' => $before, 'after' => $course->only(['course_code', 'course_name', 'credit_hours', 'theoretical_hours', 'practical_hours', 'description', 'is_active'])]);
             if ($plan) app(ScientificCourseDistribution::class)->apply($actor, $course, $plan, collect($v)->only(['academic_level_id', 'recommended_semester_id'])->all());
             return $this->course($actor, (int) $course->getKey());
         }, $v['revision']);
@@ -231,7 +233,7 @@ final class ScientificCourseManagementService
                 'available_minus_required_hours' => (int) ($pools[$g->getKey()]->available_credit_hours ?? 0) - (int) $g->required_credit_hours,
                 'course_count' => (int) ($pools[$g->getKey()]->course_count ?? 0)]),
                 'configuration' => $configuration, 'revision' => $this->transaction->revision(),
-                'versioned_plans' => $versioned, 'academic_plan_version_id' => $context->versionId,
+                'versioned_plans' => $versioned, 'workspace_available' => AcademicPlanContext::installed(), 'academic_plan_version_id' => $context->versionId,
                 'capabilities' => ['edit_curriculum' => !$locked && $actor->hasPermission(ScientificCourseAccess::MANAGE),
                     'lock_reason' => $versioned ? 'اختر نسخة للتعديل من إدارة البرامج الأكاديمية؛ الخطط الثابتة لا تعدّل من الدليل.' : ($locked ? 'لا يمكن تغيير مواد هذا البرنامج أو متطلبات تخرجه لارتباطه بسجلات أكاديمية قائمة.' : null)]];
         });
@@ -378,7 +380,9 @@ final class ScientificCourseManagementService
     private function meta($p): array { return ['current_page' => $p->currentPage(), 'last_page' => $p->lastPage(), 'per_page' => $p->perPage(), 'total' => $p->total()]; }
     private function audit(User $actor, string $action, array $ids): void
     {
+        $description = json_encode(['context' => $ids, 'revision' => $this->transaction->revision()], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+        if (strlen($description) > 65535) $this->invalid('description', 'تفاصيل التغيير تتجاوز حجم سجل التدقيق؛ اختصر الوصف قبل الحفظ. لم يُحفظ أي تغيير.');
         UserActivityLog::create(['user_id' => $actor->getKey(), 'module_code' => 'courses', 'action_code' => 'scientific_catalog.'.$action,
-            'description' => json_encode(['context' => $ids, 'revision' => $this->transaction->revision()], JSON_THROW_ON_ERROR)]);
+            'description' => $description]);
     }
 }

@@ -26,26 +26,37 @@ final class ScientificCourseDistributionTest extends TestCase
     private function revision(): string { return app(AcademicCatalogTransaction::class)->revision(); }
     private function body(array $scope): array
     {
+        $scope += ['academic_program_ids' => $scope['scope'] === 'university' ? [1, 2, 3] : ($scope['scope'] === 'college' ? [1, 3] : [3])];
         return ['revision' => $this->revision(), 'course_code' => 'NEW', 'course_name' => 'جديدة', 'credit_hours' => 3, 'is_active' => true,
             'departments' => [['department_id' => 1, 'is_primary' => true]], 'distribution' => $scope, 'distribution_confirmed' => true,
             'academic_level_id' => 1, 'recommended_semester_id' => 1];
     }
+    private function previewUrl(array $scope): string { return self::URL.'/distribution-preview?'.http_build_query($this->body($scope)['distribution']); }
     private function state(): array
     {
         return collect(['courses', 'program_courses', 'program_course_requirement_groups', 'academic_requirement_groups', 'user_activity_logs', 'academic_catalog_control'])
             ->mapWithKeys(fn ($t) => [$t => DB::table($t)->get()->toJson()])->all();
     }
-    public function test_university_college_and_department_select_all_existing_programs_not_a_client_subset(): void
+    public function test_classification_without_explicit_program_ids_cannot_expand_distribution(): void
+    {
+        $before = $this->state();
+        $this->getJson(self::URL.'/distribution-preview?scope=university&course_type=mandatory')->assertUnprocessable();
+        $body = $this->body(['scope' => 'university', 'course_type' => 'mandatory']); unset($body['distribution']['academic_program_ids']);
+        $this->postJson(self::URL.'/courses', $body)->assertUnprocessable();
+        self::assertSame($before, $this->state());
+    }
+    public function test_university_college_and_department_affect_only_explicitly_selected_programs(): void
     {
         foreach ([['scope' => 'university'], ['scope' => 'college', 'college_id' => 1], ['scope' => 'department', 'college_id' => 1, 'department_id' => 3]] as $i => $scope) {
             $scope['course_type'] = $i === 1 ? 'elective' : 'mandatory';
+            $scope['academic_program_ids'] = [[1, 2], [3], [3]][$i];
             $before = $this->state();
-            $preview = $this->getJson(self::URL.'/distribution-preview?'.http_build_query($scope))->assertOk()->assertJsonPath('data.can_apply', true)->json('data');
+            $preview = $this->getJson($this->previewUrl($scope))->assertOk()->assertJsonPath('data.can_apply', true)->json('data');
             self::assertSame($before, $this->state(), 'Preview writes nothing');
-            self::assertSame([[1, 2, 3], [1, 3], [3]][$i], array_column($preview['targets'], 'academic_program_id'));
+            self::assertSame([[1, 2], [3], [3]][$i], array_column($preview['targets'], 'academic_program_id'));
             $body = $this->body($scope); $body['course_code'] .= $i;
             $id = $this->postJson(self::URL.'/courses', $body)->assertOk()->json('data.data.course_id');
-            self::assertSame([[1, 2, 3], [1, 3], [3]][$i], DB::table('program_courses')->where('course_id', $id)->orderBy('academic_program_id')->pluck('academic_program_id')->all());
+            self::assertSame([[1, 2], [3], [3]][$i], DB::table('program_courses')->where('course_id', $id)->orderBy('academic_program_id')->pluck('academic_program_id')->all());
             self::assertSame([$scope['course_type']], DB::table('program_courses')->where('course_id', $id)->distinct()->pluck('course_type')->all());
             self::assertSame($before['academic_requirement_groups'], $this->state()['academic_requirement_groups']);
         }
@@ -58,7 +69,7 @@ final class ScientificCourseDistributionTest extends TestCase
             if ($case === 'history') DB::table('students')->insert(['academic_program_id' => 2]);
             else { DB::table('students')->delete(); DB::table('academic_requirement_groups')->where('academic_program_id', 2)->delete(); }
             $before = $this->state();
-            $this->getJson(self::URL.'/distribution-preview?'.http_build_query($scope))->assertOk()->assertJsonPath('data.can_apply', false);
+            $this->getJson($this->previewUrl($scope))->assertOk()->assertJsonPath('data.can_apply', false);
             $this->postJson(self::URL.'/courses', $this->body($scope))->assertUnprocessable()->assertJsonValidationErrors('distribution');
             self::assertSame($before, $this->state());
         }
@@ -74,12 +85,12 @@ final class ScientificCourseDistributionTest extends TestCase
     public function test_scope_pairing_explicit_confirmation_and_no_partial_scope_authority(): void
     {
         $scope = ['scope' => 'department', 'college_id' => 1, 'department_id' => 2, 'course_type' => 'mandatory'];
-        $this->getJson(self::URL.'/distribution-preview?'.http_build_query($scope))->assertUnprocessable();
+        $this->getJson($this->previewUrl($scope))->assertUnprocessable();
         $body = $this->body(['scope' => 'university', 'course_type' => 'mandatory']); unset($body['distribution_confirmed']);
         $this->postJson(self::URL.'/courses', $body)->assertUnprocessable();
         DB::table('user_access_scopes')->update(['scope_type' => 'program', 'scope_id' => 1]);
-        $this->getJson(self::URL.'/distribution-preview?scope=university&course_type=mandatory')->assertForbidden();
-        $this->getJson(self::URL.'/distribution-preview?scope=college&college_id=1&course_type=mandatory')->assertForbidden();
+        $this->getJson($this->previewUrl(['scope' => 'university', 'course_type' => 'mandatory', 'academic_program_ids' => DB::table('academic_programs')->pluck('academic_program_id')->all()]))->assertForbidden();
+        $this->getJson($this->previewUrl(['scope' => 'college', 'college_id' => 1, 'course_type' => 'mandatory']))->assertForbidden();
         self::assertSame(0, DB::table('user_activity_logs')->count());
     }
     public function test_audit_failure_rolls_back_the_course_and_every_membership(): void
@@ -91,7 +102,7 @@ final class ScientificCourseDistributionTest extends TestCase
     }
     public function test_preview_queries_are_bounded_as_program_count_increases(): void
     {
-        $count = function () { DB::enableQueryLog(); DB::flushQueryLog(); $this->getJson(self::URL.'/distribution-preview?scope=university&course_type=mandatory')->assertOk(); $n = count(DB::getQueryLog()); DB::disableQueryLog(); return $n; };
+        $count = function () { DB::enableQueryLog(); DB::flushQueryLog(); $this->getJson($this->previewUrl(['scope' => 'university', 'course_type' => 'mandatory', 'academic_program_ids' => DB::table('academic_programs')->pluck('academic_program_id')->all()]))->assertOk(); $n = count(DB::getQueryLog()); DB::disableQueryLog(); return $n; };
         $count(); // Warm framework/schema metadata, not dependent on target count.
         $before = $count();
         foreach (range(4, 25) as $id) DB::table('academic_programs')->insert(['academic_program_id' => $id, 'department_id' => 1, 'program_name' => "P$id"]);
@@ -119,7 +130,7 @@ final class ScientificCourseDistributionTest extends TestCase
     {
         DB::table('departments')->where('department_id', 3)->update(['is_active' => false]);
         $scope = ['scope' => 'college', 'college_id' => 1, 'course_type' => 'mandatory'];
-        $this->getJson(self::URL.'/distribution-preview?'.http_build_query($scope))->assertOk()->assertJsonPath('data.program_count', 2)->assertJsonPath('data.can_apply', false);
+        $this->getJson($this->previewUrl($scope))->assertOk()->assertJsonPath('data.program_count', 2)->assertJsonPath('data.can_apply', false);
         $before = $this->state();
         $this->postJson(self::URL.'/courses', $this->body($scope))->assertUnprocessable();
         $this->postJson(self::URL.'/courses', $this->body($scope + ['program_ids' => [1]]))->assertUnprocessable();

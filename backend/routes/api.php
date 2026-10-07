@@ -701,6 +701,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('vice-presidency/scientific/supplementary-exam-periods/{period}', [ScientificVicePresidentSupplementaryExamPeriodController::class, 'show']);
     Route::post('vice-presidency/scientific/supplementary-exam-periods', [ScientificVicePresidentSupplementaryExamPeriodController::class, 'store']);
     Route::prefix('vice-presidency/scientific/program-management')->controller(\App\Http\Controllers\Api\ScientificProgramManagementController::class)->group(function () {
+        Route::get('workspace', 'workspace');
+        Route::post('plan-changes', 'saveChanges');
+        Route::get('plan-changes/{requestId}', 'changeResult')->whereUuid('requestId');
+        Route::get('{program}/history', 'history')->whereNumber('program');
         Route::get('/', 'index');
         Route::post('/', 'createProgram');
         Route::get('options', 'options');
