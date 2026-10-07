@@ -159,6 +159,13 @@ class OwnerPayrollController extends Controller
         return response()->json(['data' => $this->configs->updateColumn($column, $request->only(self::COLUMN_FIELDS), (int) $request->input('config_revision'), $this->userId($request))]);
     }
 
+    public function restoreColumnFormula(Request $request, string $column): JsonResponse
+    {
+        $request->validate(['config_revision' => self::REVISION]);
+
+        return response()->json(['data' => $this->configs->restoreTemplateFormula($column, (int) $request->input('config_revision'), $this->userId($request))]);
+    }
+
     public function destroyColumn(Request $request, string $column): JsonResponse
     {
         $request->validate(['config_revision' => self::REVISION, 'confirm_values' => ['nullable', 'boolean']]);

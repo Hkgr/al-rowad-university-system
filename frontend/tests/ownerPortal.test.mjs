@@ -118,3 +118,13 @@ test('the formula manager has the required controls and a separate permission', 
   const page = await source('features/owner-portal/pages/OwnerPayroll.jsx')
   assert.match(page, /canManage=\{canConfig\}/)
 })
+
+test('the final formula is editable through the manager with a restore action; the default is never duplicated in the UI', async () => {
+  const dialog = await source('features/owner-portal/components/ColumnsDialog.jsx')
+  const api = await source('features/owner-portal/lib/ownerApi.js')
+  for (const text of ['استعادة معادلة القالب', 'formula_editable', 'template_formula_display', 'معادلة معدّلة', 'الصافي المستحق المعتمد']) assert.ok(dialog.includes(text), text)
+  assert.match(api, /restore-formula/)
+  assert.doesNotMatch(dialog, /صافي الراتب\]|net_salary|\{net_compensation\}/, 'the default formula text comes from the server')
+  const page = await source('features/owner-portal/pages/OwnerPayroll.jsx')
+  assert.match(page, /canManage=\{canConfig\}/)
+})

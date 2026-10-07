@@ -3,7 +3,7 @@ import { FaArrowUp, FaArrowDown, FaPen, FaTrash, FaPlus } from 'react-icons/fa'
 import PayrollDialog from './PayrollDialog'
 import FormulaInput from './FormulaInput'
 import {
-  createPayrollColumn, deletePayrollColumn, previewPayrollConfig, savePayrollLayout, savePayrollSettings, updatePayrollColumn,
+  createPayrollColumn, deletePayrollColumn, previewPayrollConfig, restorePayrollColumnFormula, savePayrollLayout, savePayrollSettings, updatePayrollColumn,
 } from '../lib/ownerApi'
 import { errorText, fieldErrors, GROUP_LABELS, GROUP_ORDER } from '../lib/payrollView'
 import { formatAmount, formatSyp, INPUT_ERRORS, parseInput, pctText, SYMBOL } from '../lib/payrollMoney'
@@ -194,7 +194,7 @@ export default function ColumnsDialog({ config, employees, canManage, ensureSave
                       const c = byKey.get(item.key)
                       return (
                         <tr key={item.key} className="border-b border-primary/10" data-column={item.key}>
-                          <td className="px-2 py-1.5 font-bold text-text-dark">{c.label}{c.is_system && <span className="mr-1.5 rounded bg-primary/10 px-1.5 text-[10px] font-semibold text-primary-dark">قالب</span>}</td>
+                          <td className="px-2 py-1.5 font-bold text-text-dark">{c.label}{c.is_system && <span className="mr-1.5 rounded bg-primary/10 px-1.5 text-[10px] font-semibold text-primary-dark">قالب</span>}{c.formula_editable && c.is_template_default === false && <span className="mr-1.5 rounded bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-900" data-testid="formula-modified">معادلة معدّلة</span>}</td>
                           <td className="px-2 py-1.5">{TYPE_LABEL[c.value_type]}</td>
                           <td className="px-2 py-1.5">{c.kind === 'formula' ? <span title={c.formula_display}>معادلة</span> : 'إدخال يدوي'}</td>
                           <td className="px-2 py-1.5 text-center"><input type="checkbox" aria-label={`إظهار ${c.label} في الجدول`} disabled={!canManage} checked={item.visible_grid} onChange={event => toggle(item.key, 'visible_grid', event.target.checked)} className="size-4 accent-[#569933]" /></td>
@@ -251,6 +251,11 @@ export default function ColumnsDialog({ config, employees, canManage, ensureSave
             await onChanged(result.data.config)
           })}
           reportError={fail}
+          onRestore={() => guard(async () => {
+            const result = await restorePayrollColumnFormula(editing.key, config.revision)
+            setEditing(null); setTab('columns'); setMessage({ tone: 'info', text: 'تمت استعادة معادلة القالب. لم تتغير الإعدادات ولا القيم المدخلة ولا الأعمدة المخصصة.' })
+            await onChanged(result.data.config)
+          })}
         />
       )}
 
@@ -270,7 +275,11 @@ export default function ColumnsDialog({ config, employees, canManage, ensureSave
 
 /** Fields the API accepts for a column (system columns: only presentation fields). */
 function columnPayload(draft, existing) {
-  if (existing?.is_system) return { label: draft.label, visible_grid: draft.visible_grid, visible_export: draft.visible_export, compact: draft.compact }
+  if (existing?.is_system) {
+    // Template columns: presentation only — plus the formula of the one template column whose formula the owner may edit (the net payable).
+    const presentation = { label: draft.label, visible_grid: draft.visible_grid, visible_export: draft.visible_export, compact: draft.compact }
+    return existing.formula_editable ? { ...presentation, formula: draft.formula, key: existing.key } : presentation
+  }
   const payload = {
     label: draft.label, group: draft.group, kind: draft.kind, value_type: draft.value_type, blank_as_zero: draft.blank_as_zero, allow_negative: draft.allow_negative,
     warn_negative: draft.warn_negative, aggregation: draft.aggregation, visible_grid: draft.visible_grid, visible_export: draft.visible_export, compact: draft.compact,
@@ -280,8 +289,10 @@ function columnPayload(draft, existing) {
   return payload
 }
 
-function ColumnEditor({ editing, config, references, employees, canManage, busy, onSave, onCancel, reportError }) {
-  const system = editing.key ? config.columns.find(c => c.key === editing.key)?.is_system : false
+function ColumnEditor({ editing, config, references, employees, canManage, busy, onSave, onCancel, onRestore, reportError }) {
+  const existing = editing.key ? config.columns.find(c => c.key === editing.key) : null
+  const system = Boolean(existing?.is_system)
+  const formulaEditable = Boolean(existing?.formula_editable) // the net payable: its formula (only) can be changed and restored
   const [draft, setDraft] = useState(editing.draft)
   const [errors, setErrors] = useState({})
   const [impact, setImpact] = useState(null)
@@ -294,7 +305,7 @@ function ColumnEditor({ editing, config, references, employees, canManage, busy,
   const lockedType = Boolean(editing.key) && !system
 
   // Live preview against the selected employee (and the effect on totals) before anything is saved.
-  const previewable = !system && canManage && draft.label.trim() !== '' && !(isFormula && draft.formula.trim() === '')
+  const previewable = (!system || formulaEditable) && canManage && draft.label.trim() !== '' && !(isFormula && draft.formula.trim() === '')
   useEffect(() => {
     if (!previewable) return undefined
     const run = ++seq.current
@@ -350,17 +361,23 @@ function ColumnEditor({ editing, config, references, employees, canManage, busy,
       {isFormula && (
         <div>
           <p className="mb-1 text-[11.5px] font-bold text-text-dark">المعادلة</p>
-          {system ? (
+          {system && !formulaEditable ? (
             <p className="rounded-[9px] bg-primary/[0.05] px-3 py-2 font-mono text-[13px] text-text-dark" dir="rtl" data-testid="system-formula">{draft.formula}</p>
           ) : (
             <FormulaInput value={draft.formula} onChange={value => set('formula', value)} references={references.filter(r => r.key !== editing.key)} disabled={!canManage} invalid={Boolean(errors.formula || shownPreviewError)} describedBy="formula-help" />
           )}
+          {formulaEditable && (
+            <div className="mt-2 flex flex-wrap items-center gap-3 rounded-[10px] bg-amber-50 px-3 py-2 text-[12px] text-amber-950" data-testid="net-formula-note">
+              <span>هذه هي معادلة <b>الصافي المستحق المعتمد</b> التي تعتمد عليها الرئيسية والإجماليات والتصدير. أي عمود مخصص لا يدخل فيها إلا إذا ذكرتَه هنا. المعادلة الافتراضية: <span className="font-mono" dir="rtl" data-testid="template-formula">{existing.template_formula_display}</span></span>
+              {canManage && <button type="button" className={SECONDARY} disabled={busy || existing.is_template_default} onClick={onRestore}>استعادة معادلة القالب</button>}
+            </div>
+          )}
           <p id="formula-help" className="mt-1 text-[11px] leading-5 text-text-light">
             العمليات: + − * / وأقواس ونسبة (10%) ومقارنات (= &lt;&gt; &lt; &lt;= &gt; &gt;=) والدوال SUM وIF وMAX وMIN وROUND. اكتب [ لاختيار عمود أو إعداد بالاسم.
-            {system && ' معادلات القالب محمية ولا تُعدَّل؛ يمكنك استبدال أثرها بعمود محسوب جديد.'}
+            {system && !formulaEditable && ' معادلات القالب محمية ولا تُعدَّل؛ يمكنك استبدال أثرها بعمود محسوب جديد.'}
           </p>
           {(errors.formula || shownPreviewError) && <p role="alert" className="mt-1 text-[12px] font-semibold text-red-600" data-testid="formula-error">{errors.formula || shownPreviewError}</p>}
-          {!system && <div className="mt-2 flex flex-wrap gap-1.5" aria-label="أعمدة وإعدادات متاحة">
+          {(!system || formulaEditable) && <div className="mt-2 flex flex-wrap gap-1.5" aria-label="أعمدة وإعدادات متاحة">
             {references.filter(r => r.key !== editing.key && r.type !== 'text').slice(0, 30).map(r => (
               <button key={r.key} type="button" disabled={!canManage} onClick={() => set('formula', `${draft.formula}${draft.formula && !/\s$/.test(draft.formula) ? ' ' : ''}[${r.label}]`)} className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${r.kind === 'setting' ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-primary/20 bg-primary/[0.05] text-primary-dark'} hover:bg-primary/10`}>{r.label}</button>
             ))}
@@ -394,7 +411,7 @@ function ColumnEditor({ editing, config, references, employees, canManage, busy,
         <Check checked={draft.compact} disabled={!canManage} onChange={v => set('compact', v)}>في العرض المختصر</Check>
       </fieldset>
 
-      {!system && canManage && (
+      {(!system || formulaEditable) && canManage && (
         <div className="grid gap-2">
           <div className="flex flex-wrap items-center gap-3">
             <label htmlFor="preview-employee" className="text-[11.5px] font-bold text-text-dark">معاينة على الموظف:</label>

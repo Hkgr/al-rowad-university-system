@@ -152,4 +152,15 @@ final class PayrollColumns
 
         return $parts === [] ? null : 'تستثني المجاميع الخلايا غير المتاحة (ناقصة أو بها خطأ): '.implode('، ', $parts).'.';
     }
+
+    /** Honest statement for the Excel file about cells beyond Excel's 15 significant digits (never silent). */
+    public static function precisionNote(array $cells): ?string
+    {
+        if ($cells === []) {
+            return null;
+        }
+        $shown = implode('، ', array_slice($cells, 0, 12)).(count($cells) > 12 ? '…' : '');
+
+        return 'تنبيه دقة Excel: '.count($cells).' خلية (ملوّنة بالبرتقالي) قد تختلف عن التطبيق بمقدار آخر خانة، لأن Excel يحمل 15 رقمًا معنويًا فقط؛ المرجع هو التطبيق. الخلايا: '.$shown.'.';
+    }
 }

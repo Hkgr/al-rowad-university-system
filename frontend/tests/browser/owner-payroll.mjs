@@ -601,6 +601,55 @@ await dlg1.locator('#setting-insurance_rate').fill('7')
 check('reverting to the saved value leaves nothing to save', await dlg1.getByRole('button', { name: 'حفظ الإعدادات' }).isDisabled())
 await dlg1.locator('button:has-text("إغلاق")').click()
 
+// ── the final (net payable) formula is editable and restorable ─────────────
+{
+  const mk = async label => (await api(owner, 'POST', '/v1/owner/payroll/config/columns', { label, kind: 'input', value_type: 'amount', group: 'net', aggregation: 'sum', config_revision: (await configOf()).revision })).json.data.key
+  const bonusKey = await mk('مكافأة إضافية')
+  const extraKey = await mk('حسم إضافي')
+  const target = await serverRow(id(31))
+  const saved = await api(owner, 'PATCH', '/v1/owner/payroll/values', { changes: [{ employee_id: id(31), expected_revision: target.entry_revision, values: { [bonusKey]: '1000', [extraKey]: '250' } }], config_revision: (await configOf()).revision })
+  assert.equal(saved.status, 200)
+  equal('custom amounts alone leave the authoritative net payable unchanged', val(await serverRow(id(31)), 'total_net_payable'), '125166.30')
+  await page.goto(`${APP}/owner/payroll`); await page.waitForSelector('.payroll-grid .rgCell'); await page.waitForTimeout(700)
+  await page.getByRole('button', { name: 'إدارة الأعمدة والمعادلات' }).click()
+  const manager = page.locator('dialog[open]')
+  check('only the net-payable template column shows an editable formula', (await manager.getByRole('button', { name: 'تعديل إجمالي الصافي المستحق' }).count()) === 1)
+  await manager.getByRole('button', { name: 'تعديل إجمالي الصافي المستحق' }).click()
+  check('the default formula shown beside the restore action comes from the server', (await manager.locator('[data-testid="template-formula"]').innerText()) === '[صافي الراتب] + [صافي التعويض] - [حسميات أخرى]')
+  check('restore is disabled while the formula is still the template default', await manager.getByRole('button', { name: 'استعادة معادلة القالب' }).isDisabled())
+  check('type, group and aggregation stay locked for the net payable', await manager.locator('#col-type').isDisabled() && await manager.locator('#col-group').isDisabled() && await manager.locator('#col-kind').isDisabled())
+  await manager.locator('#preview-employee').selectOption(String(id(31)))
+  const finalFormula = '[صافي الراتب] + [صافي التعويض] - [حسميات أخرى] + [مكافأة إضافية] - [حسم إضافي]'
+  await manager.getByLabel('المعادلة').fill(finalFormula)
+  await manager.locator('[data-testid="impact-cell"]').waitFor({ timeout: 5000 })
+  await page.waitForFunction(() => document.querySelector('dialog[open] [data-testid="impact-cell"]')?.innerText.includes('125,916.30'), null, { timeout: 8000 })
+  check('the preview shows 125,916.30 for the reference employee before anything is saved', (await manager.locator('[data-testid="impact-cell"]').innerText()).includes('125,916.30') && val(await serverRow(id(31)), 'total_net_payable') === '125166.30')
+  await shot(page, '17-net-formula-editor')
+  for (const bad of ['[إجمالي الصافي المستحق] + 1', '[غير موجود] + 1']) {
+    await manager.getByLabel('المعادلة').fill(bad); await manager.locator('[data-testid="formula-error"]').waitFor({ timeout: 5000 })
+    check(`an invalid final formula is rejected with a reason (${bad})`, (await manager.locator('[data-testid="formula-error"]').innerText()).length > 5 && await manager.getByRole('button', { name: 'حفظ التعديل' }).isDisabled())
+  }
+  await manager.getByLabel('المعادلة').fill(finalFormula)
+  await manager.locator('[data-testid="formula-error"]').waitFor({ state: 'detached', timeout: 5000 })
+  await page.waitForFunction(() => document.querySelector('dialog[open] [data-testid="impact-cell"]')?.innerText.includes('125,916.30'), null, { timeout: 8000 })
+  await manager.getByRole('button', { name: 'حفظ التعديل' }).click()
+  await manager.getByText('تم حفظ التعديل').waitFor()
+  equal('the server calculates the edited authoritative net payable', val(await serverRow(id(31)), 'total_net_payable'), '125916.30')
+  check('the manager marks the formula as modified', (await manager.locator('[data-testid="formula-modified"]').count()) === 1)
+  await manager.locator('button:has-text("إغلاق")').click(); await page.waitForTimeout(900)
+  equal('the grid recalculated the edited net payable', await text(page, id(31), 'total_net_payable'), '125,916.30')
+  await select(page, id(31), bonusKey); await page.keyboard.type('2000'); await page.keyboard.press('Enter')
+  await page.waitForTimeout(150)
+  equal('a pending edit of the custom column moves the net payable immediately (before the save returns)', await text(page, id(31), 'total_net_payable'), '126,916.30')
+  await savedStable(page)
+  equal('...and the saved value agrees', val(await serverRow(id(31)), 'total_net_payable'), '126916.30')
+  await select(page, id(31), bonusKey); await page.keyboard.type('1000'); await page.keyboard.press('Enter'); await savedStable(page)
+  const homeAfter = (await api(owner, 'GET', '/v1/owner/home')).json.data
+  await page.goto(`${APP}/owner`); await page.waitForSelector('[data-testid="home-net"]')
+  equal('Home shows the edited authoritative net payable', await page.locator('[data-testid="home-net"]').innerText(), syp(homeAfter.totals.net_payable))
+  await page.goto(`${APP}/owner/payroll`); await page.waitForSelector('.payroll-grid .rgCell'); await page.waitForTimeout(700)
+}
+
 // ── exports through the real buttons ───────────────────────────────────
 await page.goto(`${APP}/owner/payroll`); await page.waitForSelector('.payroll-grid .rgCell'); await page.waitForTimeout(700)
 const gridNet = await page.locator('[data-testid="total-net"]').innerText()
@@ -631,6 +680,23 @@ const pdfText = execFileSync('pdftotext', ['-layout', pdfPath, '-']).toString()
 check('PDF shows the same net-payable total (thousands separators, two decimals)', pdfText.includes(gridNet.replace(' ل.س', '')), gridNet)
 check('PDF has no dollar sign', !pdfText.includes('$'))
 check('exports match the server for the saved snapshot', serverAfter.meta.totals.columns.total_net_payable.sum === (await sheet()).meta.totals.columns.total_net_payable.sum)
+
+// ── restore the template net-payable formula ──────────────────────────
+{
+  const before = { values: (await sheet()).data.length, columns: (await configOf()).columns.filter(c => !c.is_system).length, rate: (await configOf()).settings.find(s => s.key === 'insurance_rate').value }
+  await page.getByRole('button', { name: 'إدارة الأعمدة والمعادلات' }).click()
+  const manager = page.locator('dialog[open]')
+  await manager.getByRole('button', { name: 'تعديل إجمالي الصافي المستحق' }).click()
+  await manager.getByRole('button', { name: 'استعادة معادلة القالب' }).click()
+  await manager.getByText('تمت استعادة معادلة القالب').waitFor()
+  const cfg = await configOf()
+  equal('the template formula is restored', cfg.columns.find(c => c.key === 'total_net_payable').formula_display, '[صافي الراتب] + [صافي التعويض] - [حسميات أخرى]')
+  equal('settings, employees and custom columns were not reset', { values: (await sheet()).data.length, columns: cfg.columns.filter(c => !c.is_system).length, rate: cfg.settings.find(s => s.key === 'insurance_rate').value }, before)
+  equal('the reference employee is back to the template result', val(await serverRow(id(31)), 'total_net_payable'), '125166.30')
+  equal('the custom amounts are still there', val(await serverRow(id(31)), cfg.columns.find(c => c.label === 'مكافأة إضافية').key), '1000.00')
+  await manager.locator('button:has-text("إغلاق")').click(); await page.waitForTimeout(900)
+  equal('the grid shows the template result again', await text(page, id(31), 'total_net_payable'), '125,166.30')
+}
 
 // ── employee and body management dialogs ───────────────────────────────
 await page.getByRole('button', { name: 'إدارة الهيئات' }).click()

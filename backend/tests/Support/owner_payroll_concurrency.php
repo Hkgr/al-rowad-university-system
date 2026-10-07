@@ -48,6 +48,8 @@ if (($argv[1] ?? '') === 'worker') {
             ), 'ok'][1],
             // 8 writers saving settings from the same configuration revision: exactly one may win.
             'same-config' => [$configs->updateSettings(['insurance_rate' => '0.0'.($index + 1)], $payload['revision'], 1), 'ok'][1],
+            // 8 writers editing the final net-payable formula from the same configuration revision: exactly one may win.
+            'net-formula' => [$configs->updateColumn('total_net_payable', ['formula' => '[صافي الراتب] + [صافي التعويض] - [حسميات أخرى] + '.($index + 1)], $payload['revision'], 1), 'ok'][1],
             // A values save that raced with a settings change must be refused as a config conflict, never half-applied.
             'values-vs-config' => $index === 0
                 ? [$configs->updateSettings(['income_tax_rate' => '0.20'], $payload['revision'], 1), 'ok'][1]
@@ -153,6 +155,14 @@ $results = race('same-config', ['revision' => $rev]);
 $counts = array_count_values($results);
 assertThat('same configuration revision, 8 settings writers: exactly one wins', ($counts['ok'] ?? 0) === 1 && ($counts['payroll_config_conflict'] ?? 0) === 7, $counts);
 assertThat('the configuration revision advanced exactly once', $revision() === $rev + 1, [$rev, $revision()]);
+
+$rev = $revision();
+$results = race('net-formula', ['revision' => $rev]);
+$counts = array_count_values($results);
+assertThat('same configuration revision, 8 writers of the net-payable formula: exactly one wins', ($counts['ok'] ?? 0) === 1 && ($counts['payroll_config_conflict'] ?? 0) === 7, $counts);
+assertThat('the configuration revision advanced exactly once and the stored formula is one complete formula', $revision() === $rev + 1 && preg_match('/^\{net_salary\} \+ \{net_compensation\} - \{other_deductions\} \+ [1-8]$/', (string) DB::table('payroll_columns')->where('key', 'total_net_payable')->value('formula')) === 1, DB::table('payroll_columns')->where('key', 'total_net_payable')->value('formula'));
+$configs->restoreTemplateFormula('total_net_payable', $revision(), 1);
+assertThat('restoring the template formula leaves the default', DB::table('payroll_columns')->where('key', 'total_net_payable')->value('formula') === \App\Services\Payroll\PayrollTemplate::NET_PAYABLE_FORMULA);
 
 // A values save racing with a settings change: only the config writer (or the first values writer) can win per revision.
 $e = $service->createEmployee(['employee_number' => "C-E-{$suffix}", 'full_name' => 'E', 'job_title' => 'x', 'body_id' => $body['id'], 'workplace' => 'afrin'], 1);

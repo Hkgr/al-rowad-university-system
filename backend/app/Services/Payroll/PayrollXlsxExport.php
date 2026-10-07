@@ -3,7 +3,10 @@
 namespace App\Services\Payroll;
 
 use App\Services\Payroll\Formula\ExcelFormula;
+use App\Services\Payroll\Formula\FormulaValue;
 use App\Services\Payroll\Formula\PayrollFormula;
+use App\Services\Payroll\Formula\PayrollPrecision;
+use Brick\Math\BigDecimal;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -121,6 +124,17 @@ final class PayrollXlsxExport
             return $c !== null && $c['value_type'] !== 'text' && ($c['kind'] === 'formula' || ! $c['blank_as_zero']);
         };
 
+        // Declared decimal scale of every referenced value (what the application stores and validates), used to snap Excel's binary noise.
+        $typeScale = fn (string $type) => match ($type) {
+            'amount' => 2, 'text' => 0, default => 6,
+        };
+        $settingTypes = collect($config['settings'])->pluck('value_type', 'key');
+        $scaleOf = fn (string $key) => isset($settingTypes[$key]) ? $typeScale($settingTypes[$key]) : $typeScale($byKey[$key]['value_type'] ?? 'number');
+
+        $atRisk = []; // cells where Excel's 15-digit doubles cannot be guaranteed equal to the application (see PayrollPrecision)
+        $riskColumns = [];
+        $settingValues = collect($config['settings'])->mapWithKeys(fn ($setting) => [$setting['key'] => FormulaValue::number(BigDecimal::of($setting['value']))]);
+
         $row = self::FIRST_DATA_ROW;
         foreach ($snapshot['rows'] as $r) {
             foreach ($columns as $column) {
@@ -139,8 +153,23 @@ final class PayrollXlsxExport
                         $ast, $def['value_type'],
                         fn (string $k) => $settingCells[$k] ?? $letters[$k].$row,
                         array_values(array_filter($refs, fn ($k) => ! isset($settingCells[$k]) && $keyIsStrict($k))),
+                        $scaleOf,
                     );
                     $sheet->setCellValue($coordinate, $formula);
+                    if ($cell['v'] !== null) {
+                        $resolve = function (string $k) use ($settingValues, $r, $byKey): FormulaValue {
+                            if (isset($settingValues[$k])) {
+                                return $settingValues[$k];
+                            }
+                            $c = $r['cells'][$k];
+
+                            return $byKey[$k]['value_type'] === 'text' ? FormulaValue::text((string) ($c['v'] ?? '')) : FormulaValue::number(BigDecimal::of($c['v'] ?? '0'));
+                        };
+                        if (PayrollPrecision::atRisk($ast, $resolve, $def['value_type'] === 'amount' ? 2 : 6)) {
+                            $atRisk[] = $coordinate;
+                            $riskColumns[$column['key']] = true;
+                        }
+                    }
 
                     continue;
                 }
@@ -167,15 +196,26 @@ final class PayrollXlsxExport
             $letter = $letters[$column['key']];
             // SUMIF over "any number" skips blank, "" and error cells, as the application's totals leave out unavailable cells
             // (results are bounded below 1e15 by the formula engine, so the criterion matches every real number).
-            $sheet->setCellValue("{$letter}{$totalRow}", $last >= self::FIRST_DATA_ROW ? "=SUMIF({$letter}".self::FIRST_DATA_ROW.":{$letter}{$last},\">-1E+16\")" : 0);
+            // The sum of values that each have `scale` decimals has `scale` decimals: snapping removes the binary noise of the additions.
+            $scale = $typeScale($column['type']);
+            $sheet->setCellValue("{$letter}{$totalRow}", $last >= self::FIRST_DATA_ROW ? "=ROUND(SUMIF({$letter}".self::FIRST_DATA_ROW.":{$letter}{$last},\">-1E+16\"),{$scale})" : 0);
         }
         $footer = $sheet->getStyle("A{$totalRow}:{$visibleLast}{$totalRow}");
         $footer->getFont()->setBold(true);
         $footer->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('E8F1DF');
-        $note = PayrollColumns::exclusionNote($exported, $snapshot);
-        if ($note !== null) {
-            $this->text($sheet, 'A'.($totalRow + 1), $note);
-            $sheet->mergeCells('A'.($totalRow + 1).":{$visibleLast}".($totalRow + 1));
+        $noteRow = $totalRow;
+        $notes = array_filter([PayrollColumns::exclusionNote($exported, $snapshot), PayrollColumns::precisionNote($atRisk)]);
+        foreach ($notes as $note) {
+            $noteRow++;
+            $this->text($sheet, "A{$noteRow}", $note);
+            $sheet->mergeCells("A{$noteRow}:{$visibleLast}{$noteRow}");
+        }
+        // Cells (and the totals of their columns) that Excel's 15-digit doubles cannot guarantee equal to the application.
+        foreach (array_keys($riskColumns) as $key) {
+            $atRisk[] = $letters[$key].$totalRow;
+        }
+        foreach ($atRisk as $coordinate) {
+            $sheet->getStyle($coordinate)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('FFE0B2');
         }
 
         // Number formats, alignment, widths, hidden helpers.

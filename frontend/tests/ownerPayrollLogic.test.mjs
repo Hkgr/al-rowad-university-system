@@ -132,6 +132,44 @@ test('a negative taxable base is flagged, never floored; unavailable results are
   assert.equal(rowStatus({ cells: calculator.evaluateRow({ fixed_salary: '96600' }) }), 'complete')
 })
 
+test('the owner-edited final formula evaluates exactly like the server, including custom columns (125,916.30)', () => {
+  const { config: edited, cases } = template.edited_net_formula
+  const calculator = createCalculator(edited)
+  const inputKeys = edited.columns.filter(c => c.kind === 'input').map(c => c.key)
+  for (const c of cases) {
+    const cells = calculator.evaluateRow(Object.fromEntries(inputKeys.map(key => [key, c.inputs[key] ?? null])))
+    for (const [key, expected] of Object.entries(c.cells)) assert.deepEqual(cells[key], expected, `${c.name} / ${key}`)
+  }
+  assert.equal(cases[0].cells.total_net_payable.v, '125916.30')
+  assert.equal(cases[0].cells.total_deductions.v, '26633.70', 'other figures keep their own definitions')
+  assert.equal(cases[2].cells.total_net_payable.st, 'missing', 'a missing fixed salary still makes it unavailable, not zero')
+  const net = edited.columns.find(c => c.key === 'total_net_payable')
+  assert.equal(net.formula_editable, true)
+  assert.equal(net.is_template_default, false)
+  assert.equal(net.template_formula_display, '[صافي الراتب] + [صافي التعويض] - [حسميات أخرى]', 'the default comes from the server, not from the UI')
+})
+
+test('pending edits of a custom column move the edited net payable and the totals locally before the save is confirmed', async () => {
+  const { config: edited } = template.edited_net_formula
+  const calc = createCalculator(edited)
+  const keys = edited.columns.filter(c => c.kind === 'input').map(c => c.key)
+  const rowOf = (id, inputs) => ({
+    id, employee_number: String(id), full_name: `م ${id}`, job_title: 'x', body_id: 1, body_name: 'هيئة', body_is_active: true, workplace: 'afrin', workplace_other: null,
+    workplace_label: 'عفرين', academic_level: null, employee_revision: 1, cells: calc.evaluateRow(Object.fromEntries(keys.map(k => [k, inputs[k] ?? null]))), entry_revision: 1,
+  })
+  let release
+  const controller = new PayrollSheetController({ saveValues: () => new Promise(resolve => { release = resolve }), reload: async () => ({ rows: [], config: edited }) })
+  controller.load([rowOf(1, { fixed_salary: '96600', compensation: '55200' })], edited)
+  assert.equal(controller.getSnapshot().rows[0].cells.total_net_payable.v, '125166.30', 'a custom column alone changes nothing')
+  controller.edit([{ id: 1, key: 'c_bonus_fixture', value: '1000.00' }])
+  const during = controller.getSnapshot()
+  assert.equal(during.rows[0].cells.total_net_payable.v, '126166.30')
+  assert.equal(during.totals.columns.total_net_payable.sum, '126166.30')
+  assert.equal(during.rows[0].states.c_bonus_fixture, 'saving')
+  release([rowOf(1, { fixed_salary: '96600', compensation: '55200', c_bonus_fixture: '1000.00' })])
+  assert.deepEqual(await controller.flush(), { ok: true })
+})
+
 // ── view state ──────────────────────────────────────────────────────────────
 
 test('the academic-level blank filter is a flag of its own and never a magic string', () => {

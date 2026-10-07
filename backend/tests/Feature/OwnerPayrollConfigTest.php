@@ -161,8 +161,8 @@ final class OwnerPayrollConfigTest extends OwnerPayrollTestCase
         $this->assertSame('125166.30', $this->sheetRow('0001')['cells']['total_net_payable']['v']);
 
         // Template columns keep their meaning: only label/visibility/order change.
-        $this->patchJson(self::CFG.'/columns/insurance', ['formula' => '1', 'config_revision' => $this->configRevision()])->assertOk();
-        $this->assertSame('6762.00', $this->sheetRow('0001')['cells']['insurance']['v'], 'a template formula cannot be replaced');
+        $this->patchJson(self::CFG.'/columns/insurance', ['formula' => '1', 'config_revision' => $this->configRevision()])->assertUnprocessable()->assertJsonStructure(['errors' => ['formula']]);
+        $this->assertSame('6762.00', $this->sheetRow('0001')['cells']['insurance']['v'], 'only the net-payable template formula is editable; every other one is protected');
         $this->patchJson(self::CFG.'/columns/fixed_salary', ['value_type' => 'text', 'config_revision' => $this->configRevision()])->assertUnprocessable();
         $this->patchJson(self::CFG.'/columns/insurance', ['visible_grid' => false, 'visible_export' => false, 'config_revision' => $this->configRevision()])->assertOk();
         $this->assertFalse(collect($this->getJson(self::CFG)->json('data.columns'))->firstWhere('key', 'insurance')['visible_grid']);

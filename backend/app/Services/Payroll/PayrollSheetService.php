@@ -28,7 +28,7 @@ class PayrollSheetService
 
     public const COMPLETENESS = ['complete', 'incomplete', 'warning'];
 
-    public const TOTAL_KEY = 'total_net_payable';
+    public const TOTAL_KEY = PayrollTemplate::TOTAL_NET_PAYABLE;
 
     public function __construct(private readonly PayrollConfigService $configs) {}
 

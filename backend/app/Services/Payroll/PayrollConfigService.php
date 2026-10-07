@@ -78,7 +78,13 @@ class PayrollConfigService
             $ast = $calculator->ast($c['key']);
             $dependents = array_values(array_map(fn ($d) => ['key' => $d['key'], 'label' => $d['label']], array_filter($config['columns'], fn ($d) => $d['kind'] === 'formula' && in_array($c['key'], PayrollFormula::references($calculator->ast($d['key'])), true))));
 
+            $default = PayrollTemplate::defaultFormula($c['key']);
+            $defaultDisplay = $default === null ? null : PayrollFormula::display(PayrollFormula::parse($default, $scope), $scope);
+
             return $c + [
+                'formula_editable' => $default !== null,
+                'template_formula_display' => $defaultDisplay,
+                'is_template_default' => $default === null ? null : $c['formula'] === $default,
                 'formula_display' => $ast === null ? null : PayrollFormula::display($ast, $scope),
                 'ast' => $ast,
                 'references' => $ast === null ? [] : PayrollFormula::references($ast),
@@ -121,6 +127,11 @@ class PayrollConfigService
             'visible_export' => true, 'compact' => false, 'is_system' => false, 'sort_order' => 0,
         ];
         $systemLocked = $existing !== null && $existing['is_system'];
+        // A protected template column whose FORMULA (only) the owner may change: the net payable.
+        $formulaEditable = $systemLocked && PayrollTemplate::isFormulaEditable($existing['key']);
+        if ($systemLocked && ! $formulaEditable && (array_key_exists('formula', $input) || array_key_exists('formula_display', $input))) {
+            $errors['formula'][] = 'معادلة هذا العمود من القالب محمية؛ المعادلة القابلة للتعديل هي معادلة «إجمالي الصافي المستحق» فقط.';
+        }
         foreach ($input as $field => $value) {
             if (! array_key_exists($field, $column) || in_array($field, ['id', 'key', 'is_system', 'formula'], true)) {
                 continue;
@@ -188,7 +199,7 @@ class PayrollConfigService
 
         $config['columns'] = array_values(array_filter($config['columns'], fn ($c) => $c['key'] !== $column['key']));
         $column['formula'] = $existing['formula'] ?? null;
-        if ($column['kind'] === 'formula' && ! $systemLocked) {
+        if ($column['kind'] === 'formula' && (! $systemLocked || $formulaEditable)) {
             $text = $input['formula'] ?? $input['formula_display'] ?? null;
             if ($existing !== null && ! array_key_exists('formula', $input) && ! array_key_exists('formula_display', $input)) {
                 $column['formula'] = $existing['formula'];
@@ -307,6 +318,25 @@ class PayrollConfigService
         $this->guarded($expectedRevision, $userId, function (array $config) use ($key, $input, $userId): void {
             $applied = $this->applyColumn($config, $key, $input);
             $this->persistColumn($applied['config'], $key, $userId, false);
+        });
+
+        return ['key' => $key, 'config' => $this->present($this->load())];
+    }
+
+    /**
+     * Restore a template column's default formula (only columns in PayrollTemplate::EDITABLE_FORMULAS). Settings, employee values and custom
+     * columns are not touched; same revision check, atomic transaction and attribution as every other configuration change.
+     */
+    public function restoreTemplateFormula(string $key, int $expectedRevision, int $userId): array
+    {
+        $default = PayrollTemplate::defaultFormula($key);
+        if ($default === null) {
+            throw new PayrollException('هذا العمود لا يملك معادلة قابلة للاستعادة.', 'payroll_validation', 422, ['formula' => ['هذا العمود لا يملك معادلة قابلة للاستعادة.']]);
+        }
+        $this->guarded($expectedRevision, $userId, function (array $config) use ($key, $default, $userId): void {
+            $config['columns'] = array_map(fn ($c) => $c['key'] === $key ? ['formula' => $default] + $c : $c, $config['columns']);
+            $this->assertConsistent($config);
+            DB::table('payroll_columns')->where('key', $key)->update(['formula' => $default, 'updated_by_user_id' => $userId, 'updated_at' => now()]);
         });
 
         return ['key' => $key, 'config' => $this->present($this->load())];

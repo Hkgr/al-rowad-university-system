@@ -24,8 +24,11 @@ final class FormulaEvaluator
 
     public const LIMIT = '1000000000000000';
 
-    /** @param callable(string):FormulaValue $resolve value of a referenced column or setting */
-    public static function evaluate(array $ast, callable $resolve): FormulaValue
+    /**
+     * @param  callable(string):FormulaValue  $resolve  value of a referenced column or setting
+     * @param  (callable(BigDecimal):void)|null  $trace  receives the exact value of every numeric node (used to judge Excel's precision limit)
+     */
+    public static function evaluate(array $ast, callable $resolve, ?callable $trace = null): FormulaValue
     {
         $cache = [];
         $get = function (string $key) use (&$cache, $resolve): FormulaValue {
@@ -49,7 +52,7 @@ final class FormulaEvaluator
         }
 
         try {
-            $result = self::run($ast, $get);
+            $result = self::run($ast, $get, $trace);
         } catch (MathException) {
             return FormulaValue::error('overflow', 'تعذّر حساب القيمة.');
         }
@@ -60,7 +63,17 @@ final class FormulaEvaluator
         return $result;
     }
 
-    private static function run(array $n, callable $get): FormulaValue
+    private static function run(array $n, callable $get, ?callable $trace = null): FormulaValue
+    {
+        $result = self::node($n, $get, $trace);
+        if ($trace !== null && $result->isNumber()) {
+            $trace($result->value);
+        }
+
+        return $result;
+    }
+
+    private static function node(array $n, callable $get, ?callable $trace): FormulaValue
     {
         switch ($n['t']) {
             case 'num':
@@ -70,19 +83,19 @@ final class FormulaEvaluator
             case 'ref':
                 return $get($n['k']);
             case 'neg':
-                $a = self::run($n['a'], $get);
+                $a = self::run($n['a'], $get, $trace);
 
                 return $a->ok() ? FormulaValue::number($a->value->negated()) : $a;
             case 'pct':
-                $a = self::run($n['a'], $get);
+                $a = self::run($n['a'], $get, $trace);
 
                 return $a->ok() ? FormulaValue::number($a->value->withPointMovedLeft(2)) : $a;
             case 'bin':
-                $l = self::run($n['l'], $get);
+                $l = self::run($n['l'], $get, $trace);
                 if (! $l->ok()) {
                     return $l;
                 }
-                $r = self::run($n['r'], $get);
+                $r = self::run($n['r'], $get, $trace);
                 if (! $r->ok()) {
                     return $r;
                 }
@@ -96,11 +109,11 @@ final class FormulaEvaluator
                         : FormulaValue::number($l->value->dividedBy($r->value, self::DIVISION_SCALE, RoundingMode::HALF_UP)),
                 };
             case 'cmp':
-                $l = self::run($n['l'], $get);
+                $l = self::run($n['l'], $get, $trace);
                 if (! $l->ok()) {
                     return $l;
                 }
-                $r = self::run($n['r'], $get);
+                $r = self::run($n['r'], $get, $trace);
                 if (! $r->ok()) {
                     return $r;
                 }
@@ -110,25 +123,25 @@ final class FormulaEvaluator
                     '=' => $c === 0, '<>' => $c !== 0, '<' => $c < 0, '<=' => $c <= 0, '>' => $c > 0, '>=' => $c >= 0,
                 });
             case 'call':
-                return self::call($n, $get);
+                return self::call($n, $get, $trace);
         }
 
         return FormulaValue::error('syntax', 'عنصر غير معروف.');
     }
 
-    private static function call(array $n, callable $get): FormulaValue
+    private static function call(array $n, callable $get, ?callable $trace): FormulaValue
     {
         if ($n['f'] === 'IF') {
-            $cond = self::run($n['args'][0], $get);
+            $cond = self::run($n['args'][0], $get, $trace);
             if (! $cond->ok()) {
                 return $cond;
             }
 
-            return self::run($n['args'][$cond->value ? 1 : 2], $get);
+            return self::run($n['args'][$cond->value ? 1 : 2], $get, $trace);
         }
         $values = [];
         foreach ($n['args'] as $a) {
-            $v = self::run($a, $get);
+            $v = self::run($a, $get, $trace);
             if (! $v->ok()) {
                 return $v;
             }

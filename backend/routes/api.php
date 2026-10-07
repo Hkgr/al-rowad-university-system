@@ -951,6 +951,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
             Route::post('config/preview', 'previewConfig')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
             Route::post('config/columns', 'storeColumn')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
             Route::patch('config/columns/{column}', 'updateColumn')->where('column', '[a-z][a-z0-9_]{1,40}')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::post('config/columns/{column}/restore-formula', 'restoreColumnFormula')->where('column', '[a-z][a-z0-9_]{1,40}')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
             Route::delete('config/columns/{column}', 'destroyColumn')->where('column', '[a-z][a-z0-9_]{1,40}')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
             Route::put('config/layout', 'saveLayout')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
             Route::patch('config/settings', 'updateSettings')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));

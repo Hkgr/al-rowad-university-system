@@ -144,12 +144,29 @@ final class OwnerPayrollCalculationTest extends OwnerPayrollTestCase
             $saved = $this->values([$this->change($row, $values)])->assertOk()->json('data.0');
             $fixture['cases'][] = ['name' => $name, 'inputs' => (object) $values, 'cells' => $saved['cells']];
         }
-        $json = json_encode($fixture, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
+        // The owner-edited final formula (custom amounts included), as the browser engine receives it.
+        $bonus = $this->postJson(self::API.'/payroll/config/columns', ['label' => 'مكافأة إضافية', 'kind' => 'input', 'value_type' => 'amount', 'group' => 'net', 'aggregation' => 'sum', 'config_revision' => $this->configRevision()])->assertCreated()->json('data.key');
+        $extra = $this->postJson(self::API.'/payroll/config/columns', ['label' => 'حسم إضافي', 'kind' => 'input', 'value_type' => 'amount', 'group' => 'net', 'aggregation' => 'sum', 'config_revision' => $this->configRevision()])->assertCreated()->json('data.key');
+        $this->patchJson(self::API.'/payroll/config/columns/total_net_payable', ['formula' => '[صافي الراتب] + [صافي التعويض] - [حسميات أخرى] + [مكافأة إضافية] - [حسم إضافي]', 'config_revision' => $this->configRevision()])->assertOk();
+        $edited = ['config' => $this->getJson(self::API.'/payroll/config')->assertOk()->json('data'), 'cases' => []];
+        foreach ([
+            'reference with bonus 1,000 and extra deduction 250' => ['fixed_salary' => '96600', 'compensation' => '55200', $bonus => '1000', $extra => '250'],
+            'only the bonus' => ['fixed_salary' => '20000', $bonus => '12.50'],
+            'custom amounts without a fixed salary' => [$bonus => '5', $extra => '1'],
+        ] as $name => $values) {
+            $row = $this->employee(['employee_number' => 'T'.(++$i)]);
+            $saved = $this->values([$this->change($row, $values)])->assertOk()->json('data.0');
+            $edited['cases'][] = ['name' => $name, 'inputs' => (object) $values, 'cells' => $saved['cells']];
+        }
+        $fixture['edited_net_formula'] = $edited;
+        // Custom column keys are random; the fixture uses fixed names so it is reproducible.
+        $json = str_replace([$bonus, $extra], ['c_bonus_fixture', 'c_extra_fixture'], json_encode($fixture, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
         $file = __DIR__.'/../Fixtures/payroll_template_reference.json';
         if (getenv('UPDATE_PAYROLL_VECTORS') === '1') {
             file_put_contents($file, $json);
         }
         $this->assertSame(file_get_contents($file), $json, 'fixture out of date: run with UPDATE_PAYROLL_VECTORS=1');
         $this->assertSame('125166.30', $fixture['cases'][0]['cells']['total_net_payable']['v']);
+        $this->assertSame('125916.30', $edited['cases'][0]['cells']['total_net_payable']['v']);
     }
 }

@@ -123,7 +123,7 @@ final class OwnerPayrollExportTest extends OwnerPayrollTestCase
         $totalRow = 10;
         $net = $this->letter($sheet, 'إجمالي الصافي المستحق');
         $this->assertStringContainsString('الإجمالي (2 موظفًا)', $sheet->getCell("A{$totalRow}")->getValue());
-        $this->assertStringStartsWith('=SUMIF(', (string) $sheet->getCell("{$net}{$totalRow}")->getValue());
+        $this->assertStringStartsWith('=ROUND(SUMIF(', (string) $sheet->getCell("{$net}{$totalRow}")->getValue());
         $this->assertEqualsWithDelta((float) $totals['total_net_payable']['sum'], (float) $sheet->getCell("{$net}{$totalRow}")->getCalculatedValue(), 0.0001);
         $this->assertStringContainsString('تستثني المجاميع', (string) $sheet->getCell('A11')->getValue());
         $this->assertStringNotContainsString('$"', $sheet->getStyle("{$net}8")->getNumberFormat()->getFormatCode(), 'no USD format anywhere');
