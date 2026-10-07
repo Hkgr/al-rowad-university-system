@@ -96,11 +96,12 @@ final class AcademicPlanWorkflow
     public function saveRequirements(User $actor, int $programId, int $versionId, array $input): array
     {
         $v = $this->validate($input, ['revision' => 'required|string|regex:/^[0-9]+$/', 'total_credit_hours' => 'present|nullable|integer|min:1|max:2147483647',
-            'groups' => 'required|array|size:6', 'groups.*' => 'array:requirement_scope,requirement_type,required_credit_hours',
+            'groups' => 'required|array|size:6', 'groups.*' => 'array:requirement_scope,requirement_type,required_credit_hours,is_active',
             'groups.*.requirement_scope' => 'required|in:university,college,department', 'groups.*.requirement_type' => 'required|in:mandatory,elective',
-            'groups.*.required_credit_hours' => 'present|nullable|integer|min:0|max:2147483647']);
+            'groups.*.required_credit_hours' => 'present|nullable|integer|min:0|max:2147483647', 'groups.*.is_active' => 'sometimes|boolean']);
         return $this->write($actor, $programId, ScientificProgramAccess::PLANS, $v['revision'], function ($program) use ($actor, $versionId, $v) {
             $version = $this->editable($program, $versionId);
+            $before = $this->requirementValues($version);
             $seen = [];
             foreach ($v['groups'] as $row) {
                 $key = $row['requirement_scope'].':'.$row['requirement_type'];
@@ -111,12 +112,21 @@ final class AcademicPlanWorkflow
                 if ($groups->count() > 1) $this->fail('academic_plan_group_ambiguous', 'يوجد أكثر من تعريف لهذا التصنيف؛ راجع الخطة.');
                 $group = $groups->first() ?? new AcademicRequirementGroup(['academic_program_id' => $program->getKey(),
                     'group_code' => 'PLAN-'.$versionId.'-'.$row['requirement_scope'].'-'.$row['requirement_type'], 'group_name' => $this->groupName($row)]);
-                $group->forceFill($row + ['academic_plan_version_id' => $versionId, 'is_active' => true])->save();
+                // Existing activity is immutable to omission: completing hours or an
+                // unrelated course must never implicitly reactivate a copied group.
+                $group->forceFill($row + ['academic_plan_version_id' => $versionId, 'is_active' => $group->exists ? (bool) $group->is_active : true])->save();
             }
             $version->update(['total_credit_hours' => $v['total_credit_hours']]);
-            $this->event($actor, $program, $version, 'requirements_saved', []);
+            $this->event($actor, $program, $version, 'requirements_saved', ['before' => $before, 'after' => $this->requirementValues($version)]);
             return $this->version($actor, (int) $program->getKey(), $versionId);
         });
+    }
+
+    private function requirementValues(AcademicPlanVersion $version): array
+    {
+        return ['total_credit_hours' => $version->total_credit_hours,
+            'groups' => AcademicRequirementGroup::where('academic_plan_version_id', $version->getKey())->orderBy('requirement_scope')->orderBy('requirement_type')
+                ->get(['requirement_scope', 'requirement_type', 'required_credit_hours', 'is_active'])->toArray()];
     }
 
     public function approve(User $actor, int $programId, int $versionId, array $input): array

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { actualChanges, changePayload, courseChanges, courseIdentity, legacyWorkspaceLink, preparation, upsertPreparedCourse, WORKSPACE_ACCESS } from '../src/features/scientific-programs/workspace.js'
+import { actualChanges, changePayload, courseChanges, courseIdentity, groupActivityLabel, legacyWorkspaceLink, preparation, requirementGroupChanges, upsertPreparedCourse, WORKSPACE_ACCESS } from '../src/features/scientific-programs/workspace.js'
 import { CATALOG_ACCESS } from '../src/features/scientific-courses/catalog.js'
 import { PROGRAM_ACCESS } from '../src/features/scientific-programs/programs.js'
 
@@ -44,7 +44,7 @@ test('navigation/pending-write and uncertain-outcome wiring is guarded (static)'
   assert.doesNotMatch(source, /إعادة.*تلقائي.*POST/)
 })
 test('confirmation differences exclude presentation hints and preserve real before/after values', () => {
-  const original = { courses: [{ course_id: 1, requirement_scope: 'college', course_type: 'mandatory', is_active: true }], requirements: {} }
+  const original = { courses: [{ course_id: 1, requirement_scope: 'college', course_type: 'mandatory', is_active: true }], requirements: preparation(snapshot).requirements }
   const same = { ...original, courses: [{ ...original.courses[0], display_credit_hours: 3 }] }
   assert.deepEqual(courseChanges(original, same), []); assert.equal(actualChanges(original, same).updated, 0)
   const next = { ...same, courses: [{ ...same.courses[0], course_type: 'elective' }, { course_id: 2 }] }
@@ -52,4 +52,26 @@ test('confirmation differences exclude presentation hints and preserve real befo
   assert.equal(changes.length, 2); assert.equal(changes[0].before.course_type, 'mandatory'); assert.equal(changes[0].after.course_type, 'elective')
   const payload = changePayload('id', '1', [{ ...next, program: { academic_program_id: 1 }, source_version_id: 3 }], [])
   assert.equal('display_credit_hours' in payload.targets[0].courses[0], false)
+})
+test('inactive requirement activity is retained and explicit state-only edits are an actual confirmed delta', () => {
+  const source = { ...snapshot, values: { ...snapshot.values, groups: [{ requirement_scope: 'university', requirement_type: 'mandatory', required_credit_hours: 0, is_active: false }] } }
+  const original = preparation(source), staged = structuredClone(original)
+  assert.equal(staged.requirements.groups[0].is_active, false)
+  staged.requirements.groups[0].is_active = true
+  assert.deepEqual(actualChanges(original, staged), { added: 0, removed: 0, updated: 0, requirements: true })
+  const changes = requirementGroupChanges(original.requirements, staged.requirements)
+  assert.equal(changes.length, 1); assert.equal(changes[0].before.required_credit_hours, changes[0].after.required_credit_hours)
+  assert.equal(groupActivityLabel(changes[0].before.is_active), 'غير فعالة'); assert.equal(groupActivityLabel(changes[0].after.is_active), 'فعالة')
+  assert.equal(groupActivityLabel(undefined), 'غير مسجلة')
+  const payload = changePayload('id', '1', [staged], [])
+  assert.equal(payload.targets[0].requirements.groups[0].is_active, true)
+  assert.equal('group_exists' in payload.targets[0].requirements.groups[0], false)
+  assert.equal(source.values.groups[0].is_active, false)
+})
+test('confirmation/history share activity diff semantics and do not hide equal-hour state changes (static)', () => {
+  const read = name => readFileSync(new URL(`../src/features/scientific-programs/${name}`, import.meta.url), 'utf8')
+  assert.match(read('UnifiedProgramsPage.jsx'), /requirementGroupChanges\(originals\[i\]\.requirements, d\.requirements\)/)
+  assert.match(read('WorkspaceHistory.jsx'), /requirementGroupChanges\(e.before, e.after\)/)
+  assert.match(read('WorkspaceRequirements.jsx'), /'is_active', e.target.value === '1'/)
+  assert.match(read('WorkspaceRequirements.jsx'), /تفعيلها اختيار صريح/)
 })

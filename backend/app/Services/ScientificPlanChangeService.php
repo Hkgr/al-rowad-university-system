@@ -35,16 +35,12 @@ final class ScientificPlanChangeService
                 $program = $this->access->programs($actor)->lockForUpdate()->findOrFail($target['academic_program_id']);
                 $base = $this->source($actor, $program, $target['source_version_id']);
                 $before = $this->values($base);
-                $proposed = $this->targetValues($target);
+                $proposed = $this->targetValues($target, $before);
                 // The UI always presents six inputs. An unchanged missing group's NULL input
                 // is a placeholder, not an instruction to create or repair the legacy group.
                 $existingGroups = array_column(array_map(fn ($g) => $g + ['identity' => $g['requirement_scope'].':'.$g['requirement_type']], $before['groups']), null, 'identity');
                 $proposed['groups'] = array_values(array_filter($proposed['groups'], fn ($g) => $g['required_credit_hours'] !== null
                     || isset($existingGroups[$g['requirement_scope'].':'.$g['requirement_type']])));
-                foreach ($proposed['groups'] as &$group) {
-                    $identity = $group['requirement_scope'].':'.$group['requirement_type'];
-                    if (isset($existingGroups[$identity])) $group['is_active'] = $existingGroups[$identity]['is_active'];
-                } unset($group);
                 if ($before !== $proposed) $bases[] = compact('program', 'base', 'before', 'target');
             }
             $outcomes = [];
@@ -171,10 +167,13 @@ final class ScientificPlanChangeService
                 'academic_level_id' => $c->academic_level_id, 'recommended_semester_id' => $c->recommended_semester_id, 'is_active' => (bool) $c->is_active])->all()]);
     }
 
-    private function targetValues(array $target): array
+    private function targetValues(array $target, array $before): array
     {
+        $existing = collect($before['groups'])->keyBy(fn ($g) => $g['requirement_scope'].':'.$g['requirement_type']);
         return $this->normalizeValues(['total_credit_hours' => $target['requirements']['total_credit_hours'],
-            'groups' => array_map(fn ($g) => $g + ['is_active' => true], $target['requirements']['groups']),
+            // Omitted activity inherits the locked source. Explicit activity is part of
+            // the academic delta and must not be masked out of comparison/history.
+            'groups' => array_map(fn ($g) => $g + ['is_active' => $existing->get($g['requirement_scope'].':'.$g['requirement_type'])['is_active'] ?? true], $target['requirements']['groups']),
             'courses' => array_map(function ($c) { if (!$c['course_id']) $c['course_id'] = 'new:'.$c['new_course_key']; unset($c['new_course_key']); return $c; }, $target['courses'])]);
     }
 
@@ -227,10 +226,11 @@ final class ScientificPlanChangeService
             'targets.*.courses.*.academic_level_id' => 'present|nullable|integer|min:1', 'targets.*.courses.*.recommended_semester_id' => 'present|nullable|integer|min:1',
             'targets.*.courses.*.is_active' => 'required|boolean', 'targets.*.requirements' => 'required|array:total_credit_hours,groups',
             'targets.*.requirements.total_credit_hours' => 'present|nullable|integer|min:1', 'targets.*.requirements.groups' => 'required|array|size:6',
-            'targets.*.requirements.groups.*' => 'array:requirement_scope,requirement_type,required_credit_hours',
+            'targets.*.requirements.groups.*' => 'array:requirement_scope,requirement_type,required_credit_hours,is_active',
             'targets.*.requirements.groups.*.requirement_scope' => 'required|in:university,college,department',
             'targets.*.requirements.groups.*.requirement_type' => 'required|in:mandatory,elective',
             'targets.*.requirements.groups.*.required_credit_hours' => 'present|nullable|integer|min:0',
+            'targets.*.requirements.groups.*.is_active' => 'sometimes|boolean',
         ])->validate();
         $v['request_id'] = strtolower($v['request_id']);
         $usedKeys = [];

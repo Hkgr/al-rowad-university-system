@@ -20,6 +20,8 @@ if ($command === 'prepare') {
         if (!$id) $id = \Illuminate\Support\Facades\DB::table('permissions')->insertGetId(['module_id' => 1, 'permission_code' => $code, 'is_active' => 1], 'permission_id');
         \Illuminate\Support\Facades\DB::table('role_permissions')->updateOrInsert(['role_id' => 1, 'permission_id' => $id]);
     }
+    // Seed this pre-existing state BEFORE introducing student history; keep all production triggers enabled.
+    $p->exec("UPDATE academic_requirement_groups SET is_active=0 WHERE requirement_scope='department' AND requirement_type='elective' AND academic_program_id=1");
     $p->exec("INSERT INTO students(student_id,academic_program_id) VALUES(2,1)");
     echo "Synthetic permissions/runtime prepared on guarded disposable server only\n"; exit;
 }
@@ -56,6 +58,18 @@ $payload = ['request_id' => (string) \Illuminate\Support\Str::uuid(), 'revision'
     'targets' => [$snapshot(1)]];
 $payload['targets'][0]['courses'][] = ['course_id' => null, 'new_course_key' => 'new', 'requirement_scope' => 'university', 'course_type' => 'elective',
     'academic_level_id' => 1, 'recommended_semester_id' => 1, 'is_active' => true];
+
+// The same bug regression on real MariaDB: an unrelated course cannot reactivate group 6.
+$payload['revision'] = $revision();
+try { $service->save($actor, $payload); $check(false, 'Missing activity choice silently reactivated a group'); }
+catch (\Illuminate\Validation\ValidationException $error) { $check(isset($error->errors()['plan']), 'Must fail canonical complete-plan approval'); }
+$check((int) $p->query('SELECT COUNT(*) FROM academic_plan_versions')->fetchColumn() === 0, 'Failed approval leaked plan fixation');
+$check((int) $p->query('SELECT COUNT(*) FROM student_academic_plan_assignments')->fetchColumn() === 0, 'Failed approval leaked assignments');
+$check((int) $p->query("SELECT COUNT(*) FROM courses WHERE course_code='SYN-WORKSPACE'")->fetchColumn() === 0, 'Failed approval leaked material origin');
+$check((int) $p->query("SELECT is_active FROM academic_requirement_groups WHERE academic_program_id=1 AND requirement_scope='department' AND requirement_type='elective'")->fetchColumn() === 0, 'Old group changed on failed approval');
+foreach ($payload['targets'][0]['requirements']['groups'] as &$group) if ($group['requirement_scope'] === 'department' && $group['requirement_type'] === 'elective') $group['is_active'] = true;
+unset($group);
+
 $writePayload = function (string $name, array $value) use ($env): void {
     if (!preg_match('/^[a-z]+\.json$/', $name)) throw new RuntimeException('Payload artifact name');
     file_put_contents($env->config['directory'].'/'.$name, json_encode($value, JSON_THROW_ON_ERROR));
@@ -108,6 +122,9 @@ $check((int) $p->query('SELECT COUNT(*) FROM academic_plan_versions WHERE academ
 $check((int) $p->query("SELECT COUNT(*) FROM user_activity_logs WHERE action_code='academic_plan.workspace_result'")->fetchColumn() === 1, 'Duplicate outcome receipt');
 $oldVersion = (int) $p->query('SELECT academic_plan_version_id FROM student_academic_plan_assignments WHERE student_id=2 AND current_slot=1')->fetchColumn();
 $check($oldVersion > 0 && (int) $p->query("SELECT version_number FROM academic_plan_versions WHERE academic_plan_version_id=$oldVersion")->fetchColumn() === 1, 'Old student not pinned before publish');
+$check((int) $p->query("SELECT is_active FROM academic_requirement_groups WHERE academic_plan_version_id=$oldVersion AND requirement_scope='department' AND requirement_type='elective'")->fetchColumn() === 0, 'Explicit activation rewrote old reference');
+$published = (int) $p->query('SELECT default_academic_plan_version_id FROM academic_programs WHERE academic_program_id=1')->fetchColumn();
+$check((int) $p->query("SELECT is_active FROM academic_requirement_groups WHERE academic_plan_version_id=$published AND requirement_scope='department' AND requirement_type='elective'")->fetchColumn() === 1, 'Explicit activation not saved to new plan');
 
 // Different requests competing on the same preview: one commit, one controlled stale outcome.
 $left = ['request_id' => (string) \Illuminate\Support\Str::uuid(), 'revision' => $revision(), 'confirmed' => true, 'new_courses' => [], 'targets' => [$snapshot(1)]];
@@ -149,3 +166,4 @@ $failed = $finish($job);
 $check(!$failed['ok'] && $failed['code'] === 'academic_catalog_stale', 'Concurrent edit must invalidate revision');
 $check((int) $p->query('SELECT COUNT(*) FROM academic_plan_versions')->fetchColumn() === $versions, 'Stale save wrote plan');
 echo "PASS real MariaDB independent-connection saves/replay, one origin/plan/receipt, old-source pinning, atomic admission after publish, catalog edit vs stale save\n";
+echo "PASS real MariaDB omitted group activity fails approval atomically; explicit activation affects only new plan\n";

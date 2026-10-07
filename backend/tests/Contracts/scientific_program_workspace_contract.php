@@ -14,6 +14,10 @@ $check(strpos($save, "if (\$receipt = \$this->receipt") < strpos($save, "if (!ha
 foreach (['fixTransition(', 'copy(', 'saveRequirements(', 'saveMembership(', 'approve(', 'setDefault(', 'academic_plan.workspace_result', 'workspace_saved', "'before'", "'after'", "'new_students_only'"] as $token) $check(str_contains($save, $token), 'Canonical coordinated operation '.$token);
 $check(strpos($save, 'fixTransition(') < strpos($save, 'saveCourse('), 'Pin old references before creating/completing origins');
 $check(str_contains($save, 'if ($bases !== [])') && str_contains($save, "'changed' => \$outcomes !== []"), 'No-op has no plan/origin/change event');
+$check(str_contains($save, 'targetValues($target, $before)') && str_contains($save, "requirements.groups.*.is_active' => 'sometimes|boolean'"), 'Explicit activity participates in target values and validation');
+$workflow = $read('backend/app/Services/AcademicPlanWorkflow.php');
+$check(str_contains($workflow, "'is_active' => \$group->exists ? (bool) \$group->is_active : true"), 'Canonical requirements save preserves omitted existing activity');
+$check(str_contains($workflow, "'requirements_saved', ['before' => \$before, 'after' => \$this->requirementValues(\$version)]"), 'Canonical activity choices carry actual requirement snapshots');
 $check(!preg_match('/(?:->(?:insert|update|delete|save|create)\(|lockForUpdate)/', $workspace), 'Workspace/history are nonlocking reads');
 $check(!str_contains($controller, 'DB::') && !str_contains($save, 'calculateGpa'), 'No controller queries or parallel academic formulas');
 $distribution = $read('backend/app/Services/ScientificCourseDistribution.php');

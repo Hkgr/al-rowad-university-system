@@ -42,6 +42,14 @@ test('whole-scope distribution names explicit drafts without changing the select
   const query = new URLSearchParams(distributionPath(value).split('?')[1])
   assert.deepEqual(query.getAll('draft_version_ids[]'), ['5', '9']); assert.equal(query.has('program_ids'), false)
 })
+test('existing requirement form preserves inactive definition hours and explicitly encodes activity', () => {
+  const groups = sixGroups([{ requirement_scope: 'university', requirement_type: 'mandatory', required_credit_hours: 0, is_active: false }])
+  assert.equal(groups[0].is_active, false); assert.equal(groups[0].required_credit_hours, 0)
+  const payload = requirementsPayload({ total_credit_hours: 3, groups }, '1')
+  assert.equal(payload.groups[0].is_active, false)
+  groups[0].is_active = true
+  assert.equal(requirementsPayload({ total_credit_hours: 3, groups }, '1').groups[0].is_active, true)
+})
 test('static route/nav parity, independent defaults and transfer, shared design and uncertainty protection', async () => {
   const page = await read('features/scientific-programs/ScientificProgramsPage.jsx')
   assert.match(await read('app/App.jsx'), /UnifiedProgramsPage \/>, PROGRAM_ACCESS/)

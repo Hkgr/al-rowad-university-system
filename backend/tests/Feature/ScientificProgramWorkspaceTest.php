@@ -280,4 +280,68 @@ final class ScientificProgramWorkspaceTest extends TestCase
         self::assertSame(1, AcademicPlanVersion::where('academic_program_id', 2)->count()); self::assertSame('approved', $draft->fresh()->status);
         self::assertSame($draft->getKey(), (int) DB::table('academic_programs')->where('academic_program_id', 2)->value('default_academic_plan_version_id'));
     }
+
+    public function test_unrelated_course_change_cannot_silently_activate_a_requirement_group_and_failed_approval_rolls_back(): void
+    {
+        // Department elective group is unrelated to both university courses and has unchanged zero hours.
+        DB::table('academic_requirement_groups')->where('requirement_group_id', 6)->update(['is_active' => false]);
+        $before = collect(['academic_requirement_groups', 'program_courses', 'program_course_requirement_groups', 'academic_programs', 'courses'])
+            ->mapWithKeys(fn ($table) => [$table => DB::table($table)->get()->toArray()])->all();
+        $p = $this->additional($this->payload());
+        $p['targets'][0]['courses'][0]['academic_level_id'] = 1; $p['targets'][0]['courses'][0]['recommended_semester_id'] = 1;
+        // Existing clients omit is_active. Omission must preserve the locked source, never infer activation.
+        $this->postJson(self::API.'/plan-changes', $p)->assertUnprocessable()->assertJsonValidationErrors('plan');
+        foreach ($before as $table => $rows) self::assertEquals($rows, DB::table($table)->get()->toArray(), $table.' must roll back');
+        self::assertSame(0, AcademicPlanVersion::count()); self::assertSame(0, DB::table('student_academic_plan_assignments')->count());
+        self::assertSame(0, DB::table('academic_plan_events')->count());
+        self::assertSame(0, DB::table('user_activity_logs')->where('action_code', 'academic_plan.workspace_result')->count());
+        $this->getJson(self::API.'/plan-changes/'.$p['request_id'])->assertOk()->assertJsonPath('data.status', 'not_found');
+    }
+
+    public function test_explicit_state_only_activation_with_identical_hours_is_saved_audited_and_does_not_change_old_students(): void
+    {
+        DB::table('academic_requirement_groups')->where('requirement_group_id', 6)->update(['is_active' => false]);
+        $p = $this->payload();
+        foreach ($p['targets'][0]['requirements']['groups'] as &$g) if ($g['requirement_scope'] === 'department' && $g['requirement_type'] === 'elective') $g['is_active'] = true; unset($g);
+        $this->postJson(self::API.'/plan-changes', $p)->assertOk()->assertJsonPath('data.changed', true);
+        $source = AcademicPlanVersion::where('status', 'transitional')->sole(); $approved = AcademicPlanVersion::where('status', 'approved')->sole();
+        $oldGroup = DB::table('academic_requirement_groups')->where('requirement_group_id', 6)->sole();
+        self::assertSame($source->getKey(), (int) $oldGroup->academic_plan_version_id); self::assertSame(0, (int) $oldGroup->required_credit_hours); self::assertFalse((bool) $oldGroup->is_active);
+        self::assertSame($source->getKey(), AcademicPlanContext::forStudent(Student::findOrFail(1))->versionId);
+        $newGroup = DB::table('academic_requirement_groups')->where('academic_plan_version_id', $approved->getKey())->where('requirement_scope', 'department')->where('requirement_type', 'elective')->sole();
+        self::assertSame(0, (int) $newGroup->required_credit_hours); self::assertTrue((bool) $newGroup->is_active);
+        $event = collect($this->getJson(self::API.'/1/history')->assertOk()->json('data.data'))->firstWhere('action', 'workspace_saved');
+        $key = fn ($g) => $g['requirement_scope'] === 'department' && $g['requirement_type'] === 'elective';
+        $before = collect($event['before']['groups'])->first($key); $after = collect($event['after']['groups'])->first($key);
+        self::assertFalse($before['is_active']); self::assertTrue($after['is_active']); self::assertSame($before['required_credit_hours'], $after['required_credit_hours']);
+        self::assertSame($event['before']['courses'], $event['after']['courses']);
+        // Explicitly preserved false is also authoritative, not a hidden activation directive.
+        $snapshot = $this->getJson(self::API.'/workspace?academic_program_id=1')->assertOk()->json('data');
+        $next = $p; $next['request_id'] = (string) Str::uuid(); $next['revision'] = $snapshot['revision']; $next['targets'][0]['source_version_id'] = $approved->getKey();
+        foreach ($next['targets'][0]['requirements']['groups'] as &$g) if ($key($g)) $g['is_active'] = false; unset($g);
+        $this->postJson(self::API.'/plan-changes', $next)->assertUnprocessable();
+        self::assertSame(2, AcademicPlanVersion::count()); self::assertTrue((bool) DB::table('academic_requirement_groups')->where('requirement_group_id', $newGroup->requirement_group_id)->value('is_active'));
+    }
+
+    public function test_existing_requirements_endpoint_preserves_omitted_activity_and_records_explicit_choice(): void
+    {
+        DB::table('academic_requirement_groups')->where('requirement_group_id', 6)->update(['is_active' => false]);
+        $workflow = app(\App\Services\AcademicPlanWorkflow::class); $actor = User::findOrFail(1);
+        $fixed = $workflow->fixTransition($actor, 1, ['revision' => app(AcademicCatalogTransaction::class)->revision(), 'confirmed' => true]);
+        $draft = $workflow->copy($actor, 1, $fixed['current_version_id'], ['revision' => app(AcademicCatalogTransaction::class)->revision(), 'label' => 'مسودة اختبار صريحة']);
+        $version = $draft['version']->getKey();
+        $body = ['revision' => app(AcademicCatalogTransaction::class)->revision(), 'total_credit_hours' => 3,
+            'groups' => collect($draft['groups'])->map(fn ($g) => ['requirement_scope' => $g->requirement_scope, 'requirement_type' => $g->requirement_type, 'required_credit_hours' => $g->required_credit_hours])->all()];
+        $url = self::API.'/1/versions/'.$version;
+        $this->putJson($url.'/requirements', $body)->assertOk();
+        self::assertFalse((bool) DB::table('academic_requirement_groups')->where('academic_plan_version_id', $version)->where('requirement_scope', 'department')->where('requirement_type', 'elective')->value('is_active'));
+        $this->postJson($url.'/approve', ['revision' => app(AcademicCatalogTransaction::class)->revision(), 'confirmed' => true])->assertUnprocessable();
+        foreach ($body['groups'] as &$g) if ($g['requirement_scope'] === 'department' && $g['requirement_type'] === 'elective') $g['is_active'] = true; unset($g);
+        $body['revision'] = app(AcademicCatalogTransaction::class)->revision(); $this->putJson($url.'/requirements', $body)->assertOk();
+        $this->postJson($url.'/approve', ['revision' => app(AcademicCatalogTransaction::class)->revision(), 'confirmed' => true])->assertOk();
+        $events = collect($this->getJson(self::API.'/1/history')->assertOk()->json('data.data'))->where('action', 'requirements_saved');
+        self::assertTrue($events->contains(fn ($e) => $e['details_available'] && collect($e['before']['groups'])->contains(fn ($g) => $g['is_active'] === false)
+            && !collect($e['after']['groups'])->contains(fn ($g) => $g['is_active'] === false)));
+        self::assertFalse((bool) DB::table('academic_requirement_groups')->where('requirement_group_id', 6)->value('is_active'));
+    }
 }
