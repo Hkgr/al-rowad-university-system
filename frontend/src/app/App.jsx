@@ -141,6 +141,11 @@ import presidentNav from '../features/president-portal/nav'
 import { presidentAccess, RESOURCES as presidentResources } from '../features/president-portal/president'
 import { PresidentHome, PresidentList, PresidentDetail, PresidentFollowup } from '../features/president-portal/PresidentPages'
 
+// ── بوابة مالك الجامعة (الرئيسية + الرواتب) ─────────────────────────────────
+import ownerNav from '../features/owner-portal/nav'
+import OwnerHome from '../features/owner-portal/pages/OwnerHome'
+import OwnerPayroll from '../features/owner-portal/pages/OwnerPayroll'
+
 // ── دليل الاستخدام (per-portal user guides) ─────────────────────────────────
 import UserGuidePage from '../features/user-guide/UserGuidePage'
 import GuideLayout from '../features/user-guide/GuideLayout'
@@ -467,6 +472,12 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/ministry/leadership" element={protect(<MinistryLeadership />, ACCESS.ministryLeadership)} />
           <Route path="/ministry/leadership/units/:id" element={protect(<MinistryUnitDetail />, ACCESS.ministryLeadership)} />
           <Route path="/ministry/guide" element={<UserGuidePage guideId="ministry" />} />
+        </Route>
+
+        {/* ── مالك الجامعة: الرئيسية والرواتب فقط؛ الخادم يفرض الصلاحيات على كل واجهة ── */}
+        <Route element={<ProtectedRoute {...ACCESS.ownerPortal}><DashboardLayout nav={ownerNav} appTitle="مالك الجامعة" /></ProtectedRoute>}>
+          <Route path="/owner" element={protect(<OwnerHome />, ACCESS.ownerHome)} />
+          <Route path="/owner/payroll" element={protect(<OwnerPayroll />, ACCESS.ownerPayroll)} />
         </Route>
 
         {/* Default redirect */}

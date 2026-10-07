@@ -5,7 +5,7 @@ export const adminPortalNav = {
   label: 'بوابات إدارة النظام',
   items: [
     ['/technical', 'المكتب التقني', FaBuilding], ['/president', 'رئاسة الجامعة', FaUniversity],
-    ['/ministry', 'بوابة الوزارة', FaUniversity], ['/vp/scientific', 'النيابة العلمية', FaUserTie],
+    ['/ministry', 'بوابة الوزارة', FaUniversity], ['/owner', 'بوابة مالك الجامعة', FaUniversity], ['/vp/scientific', 'النيابة العلمية', FaUserTie],
     ['/vp/administrative', 'النيابة الإدارية', FaUserTie], ['/dean', 'بوابة العميد', FaBuilding],
     ['/student-affairs', 'شؤون الطلاب والقبول', FaUsers], ['/exam-board', 'هيئة الامتحانات', FaClipboardList],
     ['/hr', 'الموارد البشرية', FaUsers], ['/academic-structure', 'الهيكل الأكاديمي', FaBook],

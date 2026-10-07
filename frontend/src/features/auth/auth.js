@@ -9,6 +9,7 @@ export const ROLES = Object.freeze({
   vicePresidentLegacy: 'vice_president',
   technicalTeam: 'technical_team',
   ministryObserver: 'ministry_observer',
+  universityOwner: 'university_owner',
 })
 
 export const PERMISSIONS = Object.freeze({
@@ -71,10 +72,21 @@ export const PERMISSIONS = Object.freeze({
   ministryCoursesView: 'ministry_portal.courses.view',
   ministryFacultyView: 'ministry_portal.faculty.view',
   ministryLeadershipView: 'ministry_portal.leadership.view',
+  // بوابة مالك الجامعة: الرئيسية والرواتب (صلاحيات مخصّصة، لا تُمنح لأي مكتب آخر افتراضيًا)
+  ownerPortalAccess: 'owner_portal.access',
+  ownerHomeView: 'owner_portal.home.view',
+  ownerPayrollView: 'owner_payroll.view',
+  ownerPayrollEmployeesManage: 'owner_payroll.employees.manage',
+  ownerPayrollBodiesManage: 'owner_payroll.bodies.manage',
+  ownerPayrollAmountsEdit: 'owner_payroll.amounts.edit',
+  ownerPayrollExport: 'owner_payroll.export',
 })
 
 // Ministry portal: assigned role and permission for ordinary accounts; administrative authority is centralized below.
 // mirroring App\Support\MinistryPortal on the server.
+// Owner portal: the dedicated role AND assigned permissions (the central administrator keeps its existing authority).
+const owner = permission => Object.freeze({ allRoles: [ROLES.universityOwner], assignedPermissions: [PERMISSIONS.ownerPortalAccess, permission] })
+
 const ministry = permission => Object.freeze({ allRoles: [ROLES.ministryObserver], assignedPermissions: [PERMISSIONS.ministryPortalAccess, permission] })
 
 export const ACCESS = Object.freeze({
@@ -114,6 +126,9 @@ export const ACCESS = Object.freeze({
   ministryCourses: ministry(PERMISSIONS.ministryCoursesView),
   ministryFaculty: ministry(PERMISSIONS.ministryFacultyView),
   ministryLeadership: ministry(PERMISSIONS.ministryLeadershipView),
+  ownerPortal: { allRoles: [ROLES.universityOwner], assignedPermissions: [PERMISSIONS.ownerPortalAccess] },
+  ownerHome: owner(PERMISSIONS.ownerHomeView),
+  ownerPayroll: owner(PERMISSIONS.ownerPayrollView),
 })
 
 export function getIdentity() {
@@ -169,6 +184,9 @@ export function landingRoute(user) {
   // The ministry account is confined to its read-only portal on the server; it lands there first.
   // No existing account holds this role, so the precedence of existing roles is unchanged.
   if (hasRole(ROLES.ministryObserver, user)) return canAccess(ACCESS.ministryPortal, user) ? '/ministry' : '/forbidden'
+
+  // The university owner lands on the owner portal. Only an account holding this dedicated role is affected.
+  if (hasRole(ROLES.universityOwner, user)) return canAccess(ACCESS.ownerPortal, user) ? '/owner' : '/forbidden'
 
   // President portal is independent of VP/dean permissions and super-admin virtual grants.
   // Ministry confinement remains first for mixed ministry identities.
