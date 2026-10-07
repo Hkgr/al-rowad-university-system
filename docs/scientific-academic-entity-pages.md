@@ -74,6 +74,8 @@ Only pre-existing dependencies and MariaDB binaries were used.
 | Diff | `git diff --check` passed |
 | Browser, live React integration and screenshots | Unexecuted due to the browser bootstrap restriction above. MariaDB domain-service evidence is not browser or full HTTP integration evidence |
 
+The seven targeted Laravel files were executed separately after rebase and all passed. A broader discovery invocation with `--filter` could not reach them because the unchanged `AcademicCalendarPhase5OccurrenceResponseTest::result()` overrides PHPUnit's final `TestCase::result()` method. This unrelated discovery failure was not repaired or hidden; the full Laravel suite is not claimed to pass.
+
 The MariaDB runner creates a new random temporary datadir, validates engine/host/port/datadir/database/marker, applies the **existing** catalog/plan packages only to that isolated synthetic fixture, and stops only its verified instance. Production `.env`, services, SQL dumps and university data are never used. Fixture columns were expanded to match the production paths exercised, including `ip_address` required by the existing generic audit; an initial fixture deficiency was corrected and the complete check rerun, without weakening the audit assertion.
 
 Reproduction: from `backend`, run the seven named targeted feature suites and the entity source contract. With an already available compatible MariaDB binary, run `tests/mariadb/start-workspace.ps1 -BinaryDirectory <existing-binary-directory>`; never point it at an existing datadir. From `frontend`, run `node --test tests/*.test.mjs`, `node tests/browser/scientific-workspace-render.mjs`, `npm run build`, and ESLint over the changed paths.
