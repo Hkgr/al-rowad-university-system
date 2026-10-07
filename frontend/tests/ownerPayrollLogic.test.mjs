@@ -6,7 +6,7 @@ import { formatAmount, formatSyp, formatValue, parseInput, editText, pctText } f
 import { createCalculator } from '../src/features/owner-portal/lib/payrollFormula.js'
 import { matrixToClipboardText, parseClipboardText, planPaste } from '../src/features/owner-portal/lib/payrollClipboard.js'
 import { PayrollSheetController } from '../src/features/owner-portal/lib/payrollSheetController.js'
-import { buildColumns, buildSheetQuery, emptyFilters, filtersFromParams, rowStatus } from '../src/features/owner-portal/lib/payrollView.js'
+import { buildColumns, buildSheetQuery, emptyFilters, filtersFromParams, legendEntries, rowStatus } from '../src/features/owner-portal/lib/payrollView.js'
 
 const fixture = name => JSON.parse(readFileSync(new URL(`../../backend/tests/Fixtures/${name}`, import.meta.url), 'utf8'))
 const vectors = fixture('payroll_formula_vectors.json')
@@ -192,6 +192,36 @@ test('columns follow the saved configuration: groups, visibility, compact view',
   assert.equal(full.find(c => c.key === 'fixed_salary').editable, true)
   const hidden = { ...template.config, columns: template.config.columns.map(c => (c.key === 'insurance' ? { ...c, visible_grid: false } : c)) }
   assert.equal(buildColumns(hidden).some(c => c.key === 'insurance'), false)
+})
+
+test('the legend lists only the column styles of the columns actually displayed', () => {
+  const NET = 'total_net_payable'
+  const withConfig = (change, options = {}) => buildColumns({ ...template.config, columns: template.config.columns.map(c => change(c) ?? c) }, options)
+  const legend = (columns, canEdit = true) => legendEntries(columns, canEdit)
+  const isInput = c => c.kind === 'input'
+  const isOrdinaryFormula = c => c.kind === 'formula' && c.key !== NET
+
+  // every kind visible: editor wording vs view-only wording
+  const all = buildColumns(template.config)
+  assert.deepEqual(legend(all, true), ['input', 'computed', 'net'])
+  assert.deepEqual(legend(all, false), ['source', 'computed', 'net'], 'a view-only user gets the read-only wording, never "editable"')
+  // hidden inputs, hidden ordinary formulas, hidden final net
+  assert.deepEqual(legend(withConfig(c => (isInput(c) ? { ...c, visible_grid: false } : null))), ['computed', 'net'])
+  assert.deepEqual(legend(withConfig(c => (isOrdinaryFormula(c) ? { ...c, visible_grid: false } : null))), ['input', 'net'])
+  assert.deepEqual(legend(withConfig(c => (c.key === NET ? { ...c, visible_grid: false } : null))), ['input', 'computed'])
+  // the final net is a calculated column but must not switch the ordinary "computed" entry on by itself
+  assert.deepEqual(legend(withConfig(c => (c.key !== NET ? { ...c, visible_grid: false } : null))), ['net'])
+  assert.deepEqual(legend(withConfig(c => ({ ...c, visible_grid: false }))), [], 'nothing configurable shown: no legend')
+  // compact view exclusions come from the same list the grid renders
+  assert.deepEqual(legend(buildColumns(template.config, { compact: true })), ['input', 'computed', 'net'])
+  assert.deepEqual(legend(withConfig(c => (isOrdinaryFormula(c) ? { ...c, compact: false } : null), { compact: true })), ['input', 'net'])
+  assert.deepEqual(legend(withConfig(c => (c.key === NET ? { ...c, compact: false } : null), { compact: true })), ['input', 'computed'])
+  assert.deepEqual(legend(withConfig(c => (isInput(c) ? { ...c, compact: false } : null), { compact: true })), ['computed', 'net'])
+  assert.equal(legend(withConfig(c => (isInput(c) ? { ...c, compact: false } : null), { compact: true }), false).includes('source'), false)
+  // identified by the stable key: renaming keeps it, and another column with the net's old label does not stand in for it
+  const oldLabel = template.config.columns.find(c => c.key === NET).label
+  assert.deepEqual(legend(withConfig(c => (c.key === NET ? { ...c, label: 'اسم جديد تمامًا' } : null))), ['input', 'computed', 'net'])
+  assert.deepEqual(legend(withConfig(c => (c.key === NET ? { ...c, visible_grid: false } : c.key === 'salary_tax' ? { ...c, label: oldLabel } : null))), ['input', 'computed'])
 })
 
 // ── clipboard ───────────────────────────────────────────────────────────────

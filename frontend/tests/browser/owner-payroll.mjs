@@ -776,6 +776,84 @@ check('exports match the server for the saved snapshot', serverAfter.meta.totals
   equal('the net payable column is restored to its previous name', (await rename(netLabel)).status, 200)
 }
 
+// ── the legend follows the displayed columns (layout, compact view, permissions, renamed final net) ──
+{
+  const NET = 'total_net_payable'
+  const original = (await configOf()).columns.map(c => ({ key: c.key, kind: c.kind, visible_grid: c.visible_grid, compact: c.compact, label: c.label }))
+  const patch = async (key, fields) => { const r = await api(owner, 'PATCH', `/v1/owner/payroll/config/columns/${key}`, { ...fields, config_revision: (await configOf()).revision }); assert.equal(r.status, 200, `${key} ${JSON.stringify(fields)}`) }
+  const restore = async () => { for (const c of original) { const now = (await configOf()).columns.find(x => x.key === c.key); if (now.visible_grid !== c.visible_grid || now.compact !== c.compact || now.label !== c.label) await patch(c.key, { visible_grid: c.visible_grid, compact: c.compact, label: c.label }) } }
+  const inputs = original.filter(c => c.kind === 'input').map(c => c.key)
+  const ordinary = original.filter(c => c.kind === 'formula' && c.key !== NET).map(c => c.key)
+  const kinds = page => page.$$eval('[data-testid="payroll-legend"] li', els => els.map(el => el.dataset.legend))
+  const open = async (page, query = '') => { await page.goto(`${APP}/owner/payroll${query}`); await page.waitForSelector('.payroll-grid .rgCell'); await page.waitForTimeout(700) }
+  const rig = await openBrowser({ width: 1900, height: 1000 })
+  const view = rig.page
+  await open(view)
+  equal('legend: every column kind displayed lists all three styles', await kinds(view), ['input', 'computed', 'net'])
+  for (const key of inputs) await patch(key, { visible_grid: false })
+  await open(view)
+  equal('legend: hidden inputs remove the input entry', await kinds(view), ['computed', 'net'])
+  await restore()
+  for (const key of ordinary) await patch(key, { visible_grid: false })
+  await open(view)
+  equal('legend: hidden ordinary formulas remove the calculated entry (the final net alone does not bring it back)', await kinds(view), ['input', 'net'])
+  await restore()
+  await patch(NET, { visible_grid: false })
+  await open(view)
+  equal('legend: a hidden final net removes its entry', await kinds(view), ['input', 'computed'])
+  await restore()
+  // compact view exclusions, and a view-mode switch without reloading
+  for (const key of ordinary) await patch(key, { compact: false })
+  await open(view)
+  equal('legend: detailed view still lists every displayed style', await kinds(view), ['input', 'computed', 'net'])
+  await view.getByRole('radio', { name: 'عرض مختصر' }).click(); await view.waitForTimeout(700)
+  equal('legend: compact view drops the calculated entry when no calculated column is in it (no reload)', await kinds(view), ['input', 'net'])
+  await view.getByRole('radio', { name: 'عرض تفصيلي' }).click(); await view.waitForTimeout(700)
+  equal('legend: switching back to the detailed view restores it (no reload)', await kinds(view), ['input', 'computed', 'net'])
+  await restore()
+  await patch(NET, { compact: false })
+  await open(view)
+  await view.getByRole('radio', { name: 'عرض مختصر' }).click(); await view.waitForTimeout(700)
+  equal('legend: a final net left out of the compact view has no entry there', await kinds(view), ['input', 'computed'])
+  await view.getByRole('radio', { name: 'عرض تفصيلي' }).click(); await view.waitForTimeout(700)
+  await restore()
+  // a layout change made in the column manager is reflected at once
+  await open(view)
+  const netLabel = (await configOf()).columns.find(c => c.key === NET).label
+  await view.getByRole('button', { name: 'إدارة الأعمدة والمعادلات' }).click()
+  const manager = view.locator('dialog[open]')
+  await manager.getByLabel(`إظهار ${netLabel} في الجدول`).uncheck()
+  await manager.getByRole('button', { name: 'حفظ الترتيب والظهور' }).click()
+  await manager.getByText('تم حفظ الترتيب والظهور').waitFor()
+  await view.waitForTimeout(500)
+  equal('legend: hiding the final net in the column manager updates the legend without a reload', await kinds(view), ['input', 'computed'])
+  await manager.getByLabel(`إظهار ${netLabel} في الجدول`).check()
+  await manager.getByRole('button', { name: 'حفظ الترتيب والظهور' }).click()
+  await manager.getByText('تم حفظ الترتيب والظهور').waitFor()
+  await manager.locator('button:has-text("إغلاق")').click(); await view.waitForTimeout(600)
+  equal('legend: showing it again brings the entry back', await kinds(view), ['input', 'computed', 'net'])
+  // the final net is identified by its key, not its label
+  await patch(NET, { label: 'اسم آخر للصافي' })
+  await open(view)
+  equal('legend: a renamed final net keeps its entry', await kinds(view), ['input', 'computed', 'net'])
+  await view.evaluate(() => document.querySelector('revo-grid').scrollToColumnProp('total_net_payable', 'rgCol')); await view.waitForTimeout(500)
+  check('legend: ...and the renamed column is still the emphasised one', (await view.locator('.payroll-grid .rgHeaderCell.pg-h-net').first().innerText()).includes('اسم آخر للصافي'))
+  await restore()
+  check('legend: no uncaught page errors', rig.errors.length === 0, rig.errors.join(' | '))
+  await rig.browser.close()
+
+  // view-only wording and the same filtering
+  const viewer = await openBrowser({ width: 1900, height: 1000, dropPermissions: ['owner_payroll.amounts.edit'] })
+  await open(viewer.page)
+  equal('legend: a view-only user gets the read-only wording', await kinds(viewer.page), ['source', 'computed', 'net'])
+  for (const key of inputs) await patch(key, { visible_grid: false })
+  await open(viewer.page)
+  equal('legend: a view-only user with no input columns displayed sees no input entry at all', await kinds(viewer.page), ['computed', 'net'])
+  await restore()
+  await viewer.browser.close()
+  equal('layout is back to what it was before the legend checks', (await configOf()).columns.map(c => [c.key, c.visible_grid, c.compact, c.label]), original.map(c => [c.key, c.visible_grid, c.compact, c.label]))
+}
+
 // ── employee and body management dialogs ───────────────────────────────
 await page.getByRole('button', { name: 'إدارة الهيئات' }).click()
 const bodiesDialog = page.locator('dialog[open]')

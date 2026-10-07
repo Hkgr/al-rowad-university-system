@@ -380,7 +380,7 @@ export default function OwnerPayroll() {
               </div>
             ) : (
               <>
-                <PayrollLegend canEdit={canEdit} />
+                <PayrollLegend columns={columns} canEdit={canEdit} />
                 <PayrollGrid
                   snapshot={snapshot} columns={columns} totals={totals} sort={gridSort} canEdit={canEdit} controller={controller} invalid={invalid} announce={announce}
                   onSort={setSort} onEditMeta={row => canEmployees && setDialog({ type: 'employee', employee: row })} onFocusCell={selectCell}

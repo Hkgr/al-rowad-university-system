@@ -43,6 +43,20 @@ export function buildColumns(config, { compact = false } = {}) {
   return [...identity, ...configured.map(column => (compact ? { ...column, size: Math.min(column.size, 125) } : column))]
 }
 
+/**
+ * Entries of the grid legend, derived from the columns actually displayed (the list `buildColumns` returns, i.e. after the
+ * visible_grid and compact-view filters). `input` is the editor wording, `source` the view-only one; `computed` is the ordinary
+ * calculated styling (the final net payable has its own entry and is recognised by its stable key, never its label).
+ */
+export function legendEntries(columns, canEdit) {
+  const shown = columns.filter(column => !column.identity)
+  const entries = []
+  if (shown.some(column => column.editable)) entries.push(canEdit ? 'input' : 'source')
+  if (shown.some(column => column.computed && column.prop !== TOTAL_KEY)) entries.push('computed')
+  if (shown.some(column => column.prop === TOTAL_KEY)) entries.push('net')
+  return entries
+}
+
 export const emptyFilters = () => ({ search: '', body_id: '', workplace: '', academic_level: '', academic_level_blank: false, completeness: '', sort: 'employee_number', direction: 'asc' })
 
 export const hasActiveFilters = f => Boolean(f.search || f.body_id || f.workplace || f.academic_level || f.academic_level_blank || f.completeness)

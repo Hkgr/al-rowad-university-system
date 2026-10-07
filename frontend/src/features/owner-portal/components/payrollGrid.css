@@ -16,7 +16,7 @@
   --pg-boundary: rgba(65, 115, 39, 0.38);
 }
 .payroll-grid revo-grid[theme] {
-  --revo-grid-font-family: inherit;
+  --revo-grid-font-family: var(--font-sans, 'Cairo', 'Segoe UI', sans-serif); /* a bare `inherit` resolves to RevoGrid's own Nunito stack */
   --revo-grid-font-size: 13px;
   --revo-grid-background: #fff;
   --revo-grid-foreground: var(--color-text-dark, #1a2e10);
