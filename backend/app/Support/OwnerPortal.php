@@ -37,6 +37,8 @@ final class OwnerPortal
 
     public const EXPORT = 'owner_payroll.export';
 
+    public const CONFIG_MANAGE = 'owner_payroll.config.manage';
+
     /** @var array<string, string> code => Arabic label */
     public const PERMISSIONS = [
         self::ACCESS => 'الدخول إلى بوابة مالك الجامعة',
@@ -45,6 +47,7 @@ final class OwnerPortal
         self::EMPLOYEES_MANAGE => 'إضافة موظفي الرواتب وتعديل بياناتهم',
         self::BODIES_MANAGE => 'إدارة هيئات الرواتب',
         self::AMOUNTS_EDIT => 'تعديل مبالغ الرواتب',
+        self::CONFIG_MANAGE => 'إدارة أعمدة الرواتب والمعادلات والإعدادات العامة',
         self::EXPORT => 'تصدير ورقة الرواتب (Excel وPDF)',
     ];
 

@@ -946,7 +946,14 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
             Route::delete('bodies/{body}', 'destroyBody')->whereNumber('body')->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
             Route::post('employees', 'storeEmployee')->middleware($guard(\App\Support\OwnerPortal::EMPLOYEES_MANAGE));
             Route::patch('employees/{employee}', 'updateEmployee')->whereNumber('employee')->middleware($guard(\App\Support\OwnerPortal::EMPLOYEES_MANAGE));
-            Route::patch('amounts', 'amounts')->middleware($guard(\App\Support\OwnerPortal::AMOUNTS_EDIT));
+            Route::patch('values', 'values')->middleware($guard(\App\Support\OwnerPortal::AMOUNTS_EDIT));
+            Route::get('config', 'config')->middleware($guard(\App\Support\OwnerPortal::PAYROLL_VIEW));
+            Route::post('config/preview', 'previewConfig')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::post('config/columns', 'storeColumn')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::patch('config/columns/{column}', 'updateColumn')->where('column', '[a-z][a-z0-9_]{1,40}')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::delete('config/columns/{column}', 'destroyColumn')->where('column', '[a-z][a-z0-9_]{1,40}')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::put('config/layout', 'saveLayout')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::patch('config/settings', 'updateSettings')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
             Route::get('export/xlsx', 'exportXlsx')->middleware($guard(\App\Support\OwnerPortal::EXPORT));
             Route::get('export/pdf', 'exportPdf')->middleware($guard(\App\Support\OwnerPortal::EXPORT));
         });

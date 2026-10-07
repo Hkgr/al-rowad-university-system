@@ -2,130 +2,19 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
 use App\Support\OwnerPortal;
-use App\Support\PayrollMoney;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
-use Laravel\Sanctum\Sanctum;
-use PhpOffice\PhpSpreadsheet\Cell\DataType;
-use PhpOffice\PhpSpreadsheet\IOFactory;
-use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
-use Tests\TestCase;
 
 /**
- * University-owner portal: access, isolated payroll data, calculation rules, concurrency and exports.
+ * University-owner portal: access, isolated payroll data, employees, bodies, sheet queries and Home.
  * Real HTTP against an isolated in-memory SQLite database with synthetic data only.
  */
-final class OwnerPayrollTest extends TestCase
+final class OwnerPayrollTest extends OwnerPayrollTestCase
 {
-    private const API = '/api/v1/owner';
-
-    private const ADMIN = 1;
-
-    private const OWNER = 2;
-
-    private const PRESIDENT = 3;
-
-    private const HR = 4;
-
-    private const TECH = 5;
-
-    private const VP_SCIENTIFIC = 6;
-
-    private const VP_ADMIN = 7;
-
-    private const OWNER_DISABLED = 8;
-
-    private const PLAIN = 9;
-
-    private const ROGUE = 10;
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-        foreach (['account_statuses' => fn (Blueprint $t) => [$t->integer('account_status_id')->primary(), $t->string('status_code'), $t->string('status_name')->nullable(), $t->boolean('is_active')->default(true), $t->timestamps()],
-            'users' => fn (Blueprint $t) => [$t->integer('user_id')->primary(), $t->string('username'), $t->string('email'), $t->string('password_hash'), $t->integer('account_status_id'), $t->integer('student_id')->nullable(), $t->integer('employee_id')->nullable(), $t->integer('board_member_id')->nullable(), $t->dateTime('last_login_at')->nullable(), $t->dateTime('email_verified_at')->nullable(), $t->integer('failed_login_attempts')->default(0), $t->integer('created_by_user_id')->nullable(), $t->timestamps()],
-            'system_modules' => fn (Blueprint $t) => [$t->increments('module_id'), $t->string('module_code')->unique(), $t->string('module_name'), $t->string('description')->nullable(), $t->boolean('is_active')->default(true), $t->timestamps()],
-            'roles' => fn (Blueprint $t) => [$t->increments('role_id'), $t->string('role_code')->unique(), $t->string('role_name'), $t->string('description')->nullable(), $t->boolean('is_system_role')->default(false), $t->boolean('is_active')->default(true), $t->timestamps()],
-            'permissions' => fn (Blueprint $t) => [$t->increments('permission_id'), $t->integer('module_id'), $t->string('permission_code')->unique(), $t->string('permission_name'), $t->string('description')->nullable(), $t->boolean('is_active')->default(true), $t->timestamps()],
-            'role_permissions' => fn (Blueprint $t) => [$t->increments('role_permission_id'), $t->integer('role_id'), $t->integer('permission_id'), $t->dateTime('granted_at')->nullable()],
-            'user_roles' => fn (Blueprint $t) => [$t->increments('user_role_id'), $t->integer('user_id'), $t->integer('role_id'), $t->integer('assigned_by_user_id')->nullable(), $t->dateTime('assigned_at')->nullable(), $t->boolean('is_active')->default(true)],
-            // Existing personnel-like tables: payroll must never write to them.
-            'employees' => fn (Blueprint $t) => [$t->increments('employee_id'), $t->string('employee_number'), $t->string('first_name')],
-            'faculty_members' => fn (Blueprint $t) => [$t->increments('faculty_member_id'), $t->integer('employee_id')],
-            'students' => fn (Blueprint $t) => [$t->increments('student_id'), $t->string('student_number')],
-            'employee_positions' => fn (Blueprint $t) => [$t->increments('employee_position_id'), $t->integer('employee_id')],
-            'user_activity_logs' => fn (Blueprint $t) => [$t->increments('id'), $t->integer('user_id')->nullable()],
-        ] as $table => $definition) {
-            Schema::create($table, $definition);
-        }
-        (require base_path('database/migrations/2026_10_08_000000_create_owner_payroll_tables.php'))->up();
-
-        DB::table('account_statuses')->insert([['account_status_id' => 1, 'status_code' => 'active'], ['account_status_id' => 2, 'status_code' => 'disabled']]);
-        foreach (['super_admin', 'university_owner', 'university_president', 'hr_officer', 'technical_team', 'vice_president_scientific', 'vice_president_administrative', 'rogue_role'] as $i => $code) {
-            DB::table('roles')->insert(['role_id' => $i + 1, 'role_code' => $code, 'role_name' => $code, 'is_system_role' => 1]);
-        }
-        $users = [self::ADMIN => [1, 1], self::OWNER => [1, 2], self::PRESIDENT => [1, 3], self::HR => [1, 4], self::TECH => [1, 5], self::VP_SCIENTIFIC => [1, 6],
-            self::VP_ADMIN => [1, 7], self::OWNER_DISABLED => [2, 2], self::PLAIN => [1, null], self::ROGUE => [1, 8]];
-        foreach ($users as $id => [$status, $role]) {
-            DB::table('users')->insert(['user_id' => $id, 'username' => "synthetic{$id}", 'email' => "synthetic{$id}@example.invalid", 'password_hash' => 'x', 'account_status_id' => $status]);
-            if ($role !== null) {
-                DB::table('user_roles')->insert(['user_id' => $id, 'role_id' => $role, 'is_active' => 1]);
-            }
-        }
-        $this->assertSame(0, Artisan::call('owner-portal:provision-access'));
-        // Rogue: another role carrying every owner permission by (mis)configuration.
-        foreach (DB::table('permissions')->pluck('permission_id') as $permissionId) {
-            DB::table('role_permissions')->insert(['role_id' => 8, 'permission_id' => $permissionId]);
-        }
-    }
-
-    protected function tearDown(): void
-    {
-        // The fixture creates its own tables; a persistent engine (MariaDB runs) must start every test clean.
-        if (DB::connection()->getDriverName() !== 'sqlite') {
-            Schema::disableForeignKeyConstraints();
-            Schema::dropAllTables();
-        }
-        parent::tearDown();
-    }
-
-    private function actingAsUser(int $id): void
-    {
-        $this->app['auth']->forgetGuards();
-        Sanctum::actingAs(User::findOrFail($id));
-    }
-
-    private function body(string $name = 'هيئة اختبار أ'): array
-    {
-        return $this->postJson(self::API.'/payroll/bodies', ['name' => $name])->assertCreated()->json('data');
-    }
-
-    private function employee(array $overrides = [], ?array $body = null): array
-    {
-        $body ??= DB::table('payroll_bodies')->first() ? (array) DB::table('payroll_bodies')->first() : $this->body();
-
-        return $this->postJson(self::API.'/payroll/employees', $overrides + [
-            'employee_number' => '00123', 'full_name' => 'موظف تجريبي', 'job_title' => 'محاسب', 'body_id' => $body['id'],
-            'workplace' => 'afrin', 'academic_level' => null,
-        ])->assertCreated()->json('data');
-    }
-
-    private function amounts(array $changes)
-    {
-        return $this->patchJson(self::API.'/payroll/amounts', ['changes' => $changes]);
-    }
-
-    private function change(array $row, array $values): array
-    {
-        return ['employee_id' => $row['id'], 'expected_revision' => $row['entry_revision']] + $values;
-    }
-
     // ── access ────────────────────────────────────────────────────────────
 
     private function endpoints(): array
@@ -133,7 +22,7 @@ final class OwnerPayrollTest extends TestCase
         return [
             ['GET', 'home'], ['GET', 'payroll/options'], ['GET', 'payroll/sheet'], ['GET', 'payroll/bodies'], ['POST', 'payroll/bodies'], ['PATCH', 'payroll/bodies/1'],
             ['POST', 'payroll/bodies/1/deactivate'], ['DELETE', 'payroll/bodies/1'], ['POST', 'payroll/employees'], ['PATCH', 'payroll/employees/1'],
-            ['PATCH', 'payroll/amounts'], ['GET', 'payroll/export/xlsx'], ['GET', 'payroll/export/pdf'],
+            ['PATCH', 'payroll/values'], ['GET', 'payroll/config'], ['POST', 'payroll/config/preview'], ['POST', 'payroll/config/columns'], ['PATCH', 'payroll/config/columns/fixed_salary'], ['DELETE', 'payroll/config/columns/fixed_salary'], ['PUT', 'payroll/config/layout'], ['PATCH', 'payroll/config/settings'], ['GET', 'payroll/export/xlsx'], ['GET', 'payroll/export/pdf'],
         ];
     }
 
@@ -157,6 +46,7 @@ final class OwnerPayrollTest extends TestCase
             $this->getJson(self::API.'/payroll/sheet')->assertOk();
             $this->getJson(self::API.'/payroll/export/xlsx')->assertOk();
             $this->getJson(self::API.'/payroll/export/pdf')->assertOk();
+            $this->getJson(self::API.'/payroll/config')->assertOk();
         }
     }
 
@@ -210,10 +100,11 @@ final class OwnerPayrollTest extends TestCase
         $row = $this->employee(['employee_number' => '  0007A-12  '], $body);
         $this->assertSame('0007A-12', $row['employee_number']);
         $this->assertSame('0007A-12', DB::table('payroll_employees')->value('employee_number'));
-        $this->assertNull($row['fixed_salary']);
-        $this->assertNull($row['deduction']);
-        $this->assertNull($row['compensation']);
-        $this->assertNull($row['payable']);
+        $this->assertNull($row['cells']['fixed_salary']['v']);
+        $this->assertNull($row['cells']['other_deductions']['v']);
+        $this->assertNull($row['cells']['compensation']['v']);
+        $this->assertSame('missing', $row['cells']['total_net_payable']['st']);
+        $this->assertSame(0, DB::table('payroll_entry_values')->count(), 'a new employee stores no value at all: blank, never prefilled with zero');
         $this->assertSame(1, $row['employee_revision']);
 
         $this->postJson(self::API.'/payroll/employees', ['full_name' => 'بلا رقم', 'job_title' => 'x', 'body_id' => $body['id'], 'workplace' => 'afrin'])
@@ -297,11 +188,11 @@ final class OwnerPayrollTest extends TestCase
         $snapshot = fn () => collect($tables)->mapWithKeys(fn ($t) => [$t => DB::table($t)->count()])->all();
         $before = $snapshot();
         $row = $this->employee(['employee_number' => 'ISO-1'], $body);
-        $this->amounts([$this->change($row, ['fixed_salary' => '100'])])->assertOk();
+        $this->values([$this->change($row, ['fixed_salary' => '100'])])->assertOk();
         $this->assertSame($before, $snapshot());
 
         // Schema isolation: payroll tables reference only each other; audit user ids are plain integers.
-        foreach (['payroll_bodies', 'payroll_employees', 'payroll_entries'] as $table) {
+        foreach (['payroll_bodies', 'payroll_employees', 'payroll_entries', 'payroll_config', 'payroll_settings', 'payroll_columns', 'payroll_entry_values'] as $table) {
             foreach (Schema::getForeignKeys($table) as $foreignKey) {
                 $this->assertStringStartsWith('payroll_', $foreignKey['foreign_table'], "{$table} must not reference personnel/user tables");
             }
@@ -311,12 +202,12 @@ final class OwnerPayrollTest extends TestCase
     public function test_no_existing_application_code_reads_or_writes_the_payroll_tables(): void
     {
         // Workforce statistics, reports and workflows can never include payroll people because only payroll code names these tables.
-        $allowed = ['Services/Payroll/', 'Models/Payroll/', 'Http/Controllers/Api/OwnerPayrollController.php', 'Support/PayrollMoney.php', 'Support/PayrollWorkplace.php', 'Support/OwnerPortal.php'];
+        $allowed = ['Services/Payroll/', 'Models/Payroll/', 'Http/Controllers/Api/OwnerPayrollController.php', 'Support/PayrollWorkplace.php', 'Support/OwnerPortal.php'];
         $offenders = [];
         foreach (File::allFiles(app_path()) as $file) {
             $relative = str_replace('\\', '/', $file->getRelativePathname());
             $isAllowed = collect($allowed)->contains(fn ($prefix) => str_starts_with($relative, $prefix));
-            if (! $isAllowed && preg_match('/payroll_(employees|entries|bodies)|Models[\\\\]Payroll/', $file->getContents())) {
+            if (! $isAllowed && preg_match('/payroll_(employees|entries|bodies|columns|settings|config|entry_values)|Models[\\\\]Payroll/', $file->getContents())) {
                 $offenders[] = $relative;
             }
         }
@@ -362,104 +253,6 @@ final class OwnerPayrollTest extends TestCase
         $this->assertSame(1, DB::table('payroll_bodies')->count());
     }
 
-    // ── amounts ───────────────────────────────────────────────────────────
-
-    public function test_blank_versus_zero_exact_cents_and_negative_payable(): void
-    {
-        $this->actingAsUser(self::OWNER);
-        $row = $this->employee();
-        $this->assertNull($row['payable']);
-
-        // Blank salary: payable stays blank even with deduction/compensation entered.
-        $r = $this->amounts([$this->change($row, ['deduction' => '10', 'compensation' => '5.5'])])->assertOk()->json('data.0');
-        $this->assertNull($r['fixed_salary']);
-        $this->assertNull($r['payable']);
-        $this->assertSame('10.00', $r['deduction']);
-        $this->assertSame('5.50', $r['compensation']);
-
-        // Salary only: blank deduction/compensation count as zero but stay blank (null).
-        $other = $this->employee(['employee_number' => 'Z-2']);
-        $r = $this->amounts([$this->change($other, ['fixed_salary' => '100.10'])])->assertOk()->json('data.0');
-        $this->assertSame('100.10', $r['payable']);
-        $this->assertNull($r['deduction']);
-        $this->assertNull(DB::table('payroll_entries')->where('payroll_employee_id', $other['id'])->value('deduction_cents'));
-
-        // Explicit zero is stored as 0 and stays distinguishable from blank.
-        $r = $this->amounts([$this->change($r, ['deduction' => '0', 'compensation' => '0.00'] + ['employee_id' => $other['id']])])->assertOk()->json('data.0');
-        $this->assertSame('0.00', $r['deduction']);
-        $this->assertSame(0, (int) DB::table('payroll_entries')->where('payroll_employee_id', $other['id'])->value('deduction_cents'));
-        $this->assertNotNull(DB::table('payroll_entries')->where('payroll_employee_id', $other['id'])->value('compensation_cents'));
-
-        // Exact cents: 0.10 + 0.20 - 0.30 has no binary-float drift.
-        $r = $this->amounts([$this->change($r, ['fixed_salary' => '0.10', 'deduction' => '0.30', 'compensation' => '0.20'] + ['employee_id' => $other['id']])])->assertOk()->json('data.0');
-        $this->assertSame('0.00', $r['payable']);
-        $this->assertSame(10, (int) DB::table('payroll_entries')->where('payroll_employee_id', $other['id'])->value('fixed_salary_cents'));
-        $this->assertSame('0.00', PayrollMoney::format(PayrollMoney::payable(10, 30, 20)));
-
-        // Negative net payable is shown with its sign, never clamped.
-        $r = $this->amounts([$this->change($r, ['fixed_salary' => '100', 'deduction' => '250.75', 'compensation' => '0.25'] + ['employee_id' => $other['id']])])->assertOk()->json('data.0');
-        $this->assertSame('-150.50', $r['payable']);
-
-        // Clearing a cell returns it to blank.
-        $r = $this->amounts([$this->change($r, ['deduction' => null] + ['employee_id' => $other['id']])])->assertOk()->json('data.0');
-        $this->assertNull($r['deduction']);
-        $this->assertSame('100.25', $r['payable']);
-    }
-
-    public function test_invalid_amounts_are_rejected_without_writing_anything(): void
-    {
-        $this->actingAsUser(self::OWNER);
-        $a = $this->employee(['employee_number' => 'V-1']);
-        $b = $this->employee(['employee_number' => 'V-2']);
-        foreach (['-1', '-0.01', '1e3', '12.345', 'abc', '1,000', '٣٠', '1000000000', '+5', '1.', '.5', true, 1.5, ['x']] as $bad) {
-            $response = $this->amounts([$this->change($a, ['fixed_salary' => '5']), $this->change($b, ['deduction' => $bad])])->assertUnprocessable();
-            $response->assertJsonStructure(['errors' => ['changes.1.deduction']]);
-        }
-        $this->assertSame(0, DB::table('payroll_entries')->whereNotNull('fixed_salary_cents')->count(), 'the valid half of an invalid batch is not committed');
-        $this->amounts([])->assertUnprocessable();
-        $this->amounts([['employee_id' => $a['id'], 'expected_revision' => 1]])->assertUnprocessable();
-        $this->amounts([$this->change($a, ['fixed_salary' => '1']), $this->change($a, ['deduction' => '1'])])->assertUnprocessable();
-
-        // The payable is never accepted from the client.
-        $r = $this->amounts([$this->change($a, ['fixed_salary' => '10', 'payable' => '9999'])])->assertOk()->json('data.0');
-        $this->assertSame('10.00', $r['payable']);
-    }
-
-    public function test_stale_revision_produces_conflict_and_batch_is_all_or_nothing(): void
-    {
-        $this->actingAsUser(self::OWNER);
-        $a = $this->employee(['employee_number' => 'C-1']);
-        $b = $this->employee(['employee_number' => 'C-2']);
-        $this->amounts([$this->change($a, ['fixed_salary' => '100'])])->assertOk();
-
-        $response = $this->amounts([$this->change($a, ['fixed_salary' => '999']), $this->change($b, ['fixed_salary' => '50'])])->assertStatus(409);
-        $response->assertJsonPath('error_code', 'payroll_conflict')->assertJsonPath('data.conflicts.0.employee_id', $a['id'])
-            ->assertJsonPath('data.conflicts.0.current.fixed_salary', '100.00');
-        $this->assertNull(DB::table('payroll_entries')->where('payroll_employee_id', $b['id'])->value('fixed_salary_cents'), 'the non-stale half is not committed');
-        $this->assertSame(10000, (int) DB::table('payroll_entries')->where('payroll_employee_id', $a['id'])->value('fixed_salary_cents'));
-        $this->amounts([['employee_id' => 9999, 'expected_revision' => 1, 'fixed_salary' => '1']])->assertNotFound();
-    }
-
-    public function test_multi_cell_batch_is_atomic_and_uses_stable_ids_after_sorting_and_filtering(): void
-    {
-        $this->actingAsUser(self::OWNER);
-        $one = $this->body('الهيئة ألف');
-        $two = $this->body('الهيئة باء');
-        $x = $this->employee(['employee_number' => '010', 'full_name' => 'جيم'], $one);
-        $y = $this->employee(['employee_number' => '002', 'full_name' => 'ألف', 'workplace' => 'jarablus'], $two);
-        $z = $this->employee(['employee_number' => '003', 'full_name' => 'باء'], $two);
-
-        $rows = $this->getJson(self::API.'/payroll/sheet?sort=full_name&direction=desc&body_id='.$two['id'])->assertOk()->json('data');
-        $this->assertSame([$z['id'], $y['id']], array_column($rows, 'id'));
-        // Edit using the id of the *visible second* row; the first-created employee must remain untouched.
-        $this->amounts([$this->change($rows[1], ['fixed_salary' => '700', 'deduction' => '20'])])->assertOk();
-        $this->assertSame(70000, (int) DB::table('payroll_entries')->where('payroll_employee_id', $y['id'])->value('fixed_salary_cents'));
-        $this->assertNull(DB::table('payroll_entries')->where('payroll_employee_id', $x['id'])->value('fixed_salary_cents'));
-
-        $this->amounts([$this->change($x, ['fixed_salary' => '1']), $this->change(array_merge($y, ['entry_revision' => 2]), ['fixed_salary' => '2']), $this->change($z, ['compensation' => '3'])])->assertOk()->assertJsonCount(3, 'data');
-        $this->assertSame([100, 200, null], [(int) DB::table('payroll_entries')->where('payroll_employee_id', $x['id'])->value('fixed_salary_cents'), (int) DB::table('payroll_entries')->where('payroll_employee_id', $y['id'])->value('fixed_salary_cents'), DB::table('payroll_entries')->where('payroll_employee_id', $z['id'])->value('fixed_salary_cents')]);
-    }
-
     // ── sheet, filters, totals, home ──────────────────────────────────────
 
     private function seedSheet(): array
@@ -470,13 +263,18 @@ final class OwnerPayrollTest extends TestCase
         $b = $this->employee(['employee_number' => '002', 'full_name' => 'ليلى', 'job_title' => 'مدير', 'workplace' => 'jarablus', 'academic_level' => 'ماجستير'], $two);
         $c = $this->employee(['employee_number' => '010', 'full_name' => 'نور', 'job_title' => 'محاسب', 'workplace' => 'other', 'workplace_other' => 'حلب'], $two);
         $d = $this->employee(['employee_number' => '011', 'full_name' => 'رامي', 'job_title' => 'سائق', 'workplace' => 'afrin_jarablus'], $two);
-        $this->amounts([
-            $this->change($a, ['fixed_salary' => '1000.50', 'deduction' => '100.25', 'compensation' => '50']),
-            $this->change($b, ['fixed_salary' => '800', 'deduction' => '0']),
-            $this->change($c, ['deduction' => '30', 'compensation' => '10']),   // blank salary => blank payable
+        $this->values([
+            $this->change($a, ['fixed_salary' => '96600', 'compensation' => '55200']),
+            $this->change($b, ['fixed_salary' => '20000', 'other_deductions' => '0']),
+            $this->change($c, ['other_deductions' => '30', 'compensation' => '10']),   // blank fixed salary => net payable unavailable
         ])->assertOk();
 
         return [$one, $two, $a, $b, $c, $d];
+    }
+
+    private function numbers(string $query): array
+    {
+        return array_column($this->getJson(self::API.'/payroll/sheet'.$query)->assertOk()->json('data'), 'employee_number');
     }
 
     public function test_sheet_filters_sorting_and_totals_follow_all_matching_rows(): void
@@ -486,141 +284,106 @@ final class OwnerPayrollTest extends TestCase
 
         $all = $this->getJson(self::API.'/payroll/sheet')->assertOk();
         $this->assertSame(['001', '002', '010', '011'], array_column($all->json('data'), 'employee_number'));
-        $this->assertSame(['employees' => 4, 'fixed_salary' => '1800.50', 'deduction' => '130.25', 'compensation' => '60.00', 'payable' => '1750.25'], $all->json('meta.totals'));
+        $net = $all->json('meta.totals.columns.total_net_payable');
+        $this->assertSame(['sum' => '142860.30', 'excluded' => 2], $net, 'the unavailable rows are excluded and counted, never zero-filled');
+        $this->assertSame(4, $all->json('meta.totals.employees'));
+        $this->assertSame(2, $all->json('meta.totals.complete'));
+        $this->assertSame(2, $all->json('meta.totals.incomplete'));
         $this->assertSame([], $all->json('meta.scope_labels'));
+        $this->assertSame($this->configRevision(), $all->json('meta.config_revision'));
 
         $filtered = $this->getJson(self::API.'/payroll/sheet?body_id='.$two['id'])->json();
-        $this->assertSame(['employees' => 3, 'fixed_salary' => '800.00', 'deduction' => '30.00', 'compensation' => '10.00', 'payable' => '800.00'], $filtered['meta']['totals']);
+        $this->assertSame(['sum' => '17694.00', 'excluded' => 2], $filtered['meta']['totals']['columns']['total_net_payable']);
         $this->assertSame(['الهيئة: هيئة الإدارة'], $filtered['meta']['scope_labels']);
 
-        $this->assertSame(['010'], array_column($this->getJson(self::API.'/payroll/sheet?workplace=other')->json('data'), 'employee_number'));
-        $this->assertSame(['001'], array_column($this->getJson(self::API.'/payroll/sheet?academic_level=دكتوراه')->json('data'), 'employee_number'));
-        $this->assertSame(['010', '011'], array_column($this->getJson(self::API.'/payroll/sheet?academic_level=__blank__')->json('data'), 'employee_number'));
-        $this->assertSame(['001', '011'], array_column($this->getJson(self::API.'/payroll/sheet?search='.urlencode('عفرين'))->json('data'), 'employee_number'), 'search matches the workplace label');
-        $this->assertSame(['010'], array_column($this->getJson(self::API.'/payroll/sheet?search='.urlencode('حلب'))->json('data'), 'employee_number'));
-        $this->assertSame(['010'], array_column($this->getJson(self::API.'/payroll/sheet?search=010')->json('data'), 'employee_number'));
-        $this->assertSame([], $this->getJson(self::API.'/payroll/sheet?search='.urlencode('%'))->json('data'), 'LIKE wildcards are literal');
+        $this->assertSame(['010'], $this->numbers('?workplace=other'));
+        $this->assertSame(['001'], $this->numbers('?academic_level='.urlencode('دكتوراه')));
+        $this->assertSame(['001', '011'], $this->numbers('?search='.urlencode('عفرين')), 'search matches the workplace label');
+        $this->assertSame(['010'], $this->numbers('?search='.urlencode('حلب')));
+        $this->assertSame([], $this->numbers('?search='.urlencode('%')), 'LIKE wildcards are literal');
+        $this->assertSame(['010', '011'], $this->numbers('?completeness=incomplete'));
+        $this->assertSame(['001', '002'], $this->numbers('?completeness=complete'));
+        $this->assertSame([], $this->numbers('?completeness=warning'));
 
-        // Sorting: blanks always last; ties break on employee number.
-        $this->assertSame(['001', '002', '010', '011'], array_column($this->getJson(self::API.'/payroll/sheet?sort=payable&direction=desc')->json('data'), 'employee_number'));
-        $this->assertSame(['002', '001', '010', '011'], array_column($this->getJson(self::API.'/payroll/sheet?sort=payable&direction=asc')->json('data'), 'employee_number'));
-        $this->assertSame(['011', '010', '002', '001'], array_column($this->getJson(self::API.'/payroll/sheet?sort=employee_number&direction=desc')->json('data'), 'employee_number'));
+        // Sorting by identity columns and by any configured column; blanks/unavailable always last; ties break on the number.
+        $this->assertSame(['001', '002', '010', '011'], $this->numbers('?sort=total_net_payable&direction=desc'));
+        $this->assertSame(['002', '001', '010', '011'], $this->numbers('?sort=total_net_payable&direction=asc'));
+        $this->assertSame(['011', '010', '002', '001'], $this->numbers('?sort=employee_number&direction=desc'));
+        $this->assertSame(['001', '002', '010', '011'], $this->numbers('?sort=fixed_salary&direction=desc'));
         $this->getJson(self::API.'/payroll/sheet?sort=password')->assertUnprocessable();
         $this->getJson(self::API.'/payroll/sheet?workplace=nowhere')->assertUnprocessable();
     }
 
-    public function test_home_grid_and_export_totals_match(): void
+    public function test_blank_academic_level_filter_cannot_collide_with_user_text(): void
+    {
+        // Review finding: the "no level" filter used a sentinel string that a real level could equal.
+        $this->actingAsUser(self::OWNER);
+        $body = $this->body();
+        $this->employee(['employee_number' => 'B1', 'academic_level' => '__blank__'], $body);
+        $this->employee(['employee_number' => 'B2', 'academic_level' => null], $body);
+        $this->employee(['employee_number' => 'B3', 'academic_level' => 'ماجستير'], $body);
+
+        $this->assertSame(['B1'], $this->numbers('?academic_level=__blank__'), 'a level that happens to read __blank__ is an ordinary value');
+        $this->assertSame(['B2'], $this->numbers('?academic_level_blank=1'));
+        $this->getJson(self::API.'/payroll/sheet?academic_level_blank=1&academic_level='.urlencode('ماجستير'))->assertUnprocessable();
+        $labels = $this->getJson(self::API.'/payroll/sheet?academic_level_blank=1')->json('meta.scope_labels');
+        $this->assertSame(['المستوى الأكاديمي: غير محدد'], $labels);
+    }
+
+    public function test_employee_save_locks_the_body_inside_the_transaction_so_deactivation_cannot_slip_between_check_and_write(): void
+    {
+        // Review finding: body active state was validated outside the writing transaction. The body is now read FOR UPDATE
+        // within the same transaction as the insert/update (verified here by the order of statements on the connection).
+        $this->actingAsUser(self::OWNER);
+        $body = $this->body();
+        $log = [];
+        DB::listen(function ($query) use (&$log) {
+            $log[] = [strtolower(str_replace('`', '"', preg_replace('/\s+/', ' ', $query->sql))), DB::transactionLevel()];
+        });
+        $this->employee(['employee_number' => 'LOCK-1'], $body);
+        $reads = array_keys(array_filter($log, fn ($q) => str_contains($q[0], 'from "payroll_bodies"') && str_contains($q[0], '"id" = ?')));
+        $insert = array_keys(array_filter($log, fn ($q) => str_contains($q[0], 'insert into "payroll_employees"')));
+        $this->assertNotEmpty($reads);
+        $this->assertCount(1, $insert);
+        $this->assertLessThan($insert[0], $reads[0], 'the body is read before the employee insert');
+        $this->assertGreaterThanOrEqual(1, $log[$reads[0]][1], 'and inside the writing transaction (FOR UPDATE on MariaDB; see the concurrency script)');
+        $this->assertTrue(DB::table('payroll_employees')->where('employee_number', 'LOCK-1')->exists());
+
+        // The result of a validation that happens after a concurrent deactivation is a clean refusal.
+        $this->postJson(self::API."/payroll/bodies/{$body['id']}/deactivate", ['expected_revision' => 1])->assertOk();
+        $this->postJson(self::API.'/payroll/employees', ['employee_number' => 'LOCK-2', 'full_name' => 'x', 'job_title' => 'x', 'body_id' => $body['id'], 'workplace' => 'afrin'])->assertUnprocessable();
+        $this->assertFalse(DB::table('payroll_employees')->where('employee_number', 'LOCK-2')->exists());
+    }
+
+    public function test_home_is_a_summary_of_the_same_numbers_as_the_grid_and_never_shows_incomplete_as_zero(): void
     {
         $this->actingAsUser(self::OWNER);
-        $this->assertSame(['employees' => 0, 'fixed_salary' => '0.00', 'deduction' => '0.00', 'compensation' => '0.00', 'payable' => '0.00'],
-            collect($this->getJson(self::API.'/home')->json('data'))->only(['employees', 'fixed_salary', 'deduction', 'compensation', 'payable'])->all());
-        $this->seedSheet();
+        $empty = $this->getJson(self::API.'/home')->assertOk()->json('data');
+        $this->assertSame(0, $empty['employees']);
+        $this->assertSame('0.00', $empty['totals']['net_payable']);
+        $this->assertSame('SYP', $empty['currency']['code']);
+        $this->assertSame('ل.س', $empty['currency']['symbol']);
+
+        [$one, $two, , , $c, $d] = $this->seedSheet();
         $grid = $this->getJson(self::API.'/payroll/sheet')->json('meta.totals');
         $home = $this->getJson(self::API.'/home')->assertOk()->json('data');
-        $this->assertSame($grid, collect($home)->only(['employees', 'fixed_salary', 'deduction', 'compensation', 'payable'])->all());
-        $this->assertSame(2, $home['bodies']);
+        $this->assertSame($grid['columns']['total_net_payable']['sum'], $home['totals']['net_payable']);
+        $this->assertSame($grid['columns']['total_deductions']['sum'], $home['totals']['total_deductions']);
+        $this->assertSame($grid['columns']['gross_entitlement']['sum'], $home['totals']['gross_entitlement']);
+        $this->assertSame($grid['columns']['insurance']['sum'], $home['totals']['insurance']);
+        $this->assertSame(['employees' => 4, 'complete' => 2, 'incomplete' => 2], ['employees' => $home['employees'], 'complete' => $home['complete'], 'incomplete' => $home['incomplete']]);
+        $this->assertSame(2, $home['excluded']['net_payable'], 'the headline says how many records it leaves out');
 
-        $sheet = $this->loadXlsx($this->getJson(self::API.'/payroll/export/xlsx'));
-        $last = $sheet->getHighestRow();
-        // Totals row: formulas whose computed values equal the grid totals.
-        $this->assertSame((float) $grid['fixed_salary'], (float) $sheet->getCell("G{$last}")->getCalculatedValue());
-        $this->assertSame((float) $grid['deduction'], (float) $sheet->getCell("H{$last}")->getCalculatedValue());
-        $this->assertSame((float) $grid['compensation'], (float) $sheet->getCell("I{$last}")->getCalculatedValue());
-        $this->assertSame((float) $grid['payable'], (float) $sheet->getCell("J{$last}")->getCalculatedValue());
-    }
+        $byBody = collect($home['by_body'])->keyBy('value');
+        $this->assertEquals(['employees' => 3, 'incomplete' => 2, 'net_payable' => '17694.00', 'filter' => 'body_id'], collect($byBody[(string) $two['id']])->only(['employees', 'incomplete', 'net_payable', 'filter'])->all());
+        $this->assertSame('125166.30', $byBody[(string) $one['id']]['net_payable']);
+        $this->assertSame(['afrin', 'jarablus', 'other', 'afrin_jarablus'], collect($home['by_workplace'])->pluck('value')->sortBy(fn ($v) => array_search($v, ['afrin', 'jarablus', 'other', 'afrin_jarablus']))->values()->all());
 
-    // ── exports ───────────────────────────────────────────────────────────
-
-    private function loadXlsx($response): Worksheet
-    {
-        $response->assertOk();
-        $file = $response->baseResponse->getFile()->getPathname();
-        $copy = tempnam(sys_get_temp_dir(), 'payroll_test_').'.xlsx';
-        copy($file, $copy);
-        $this->assertSame('PK', substr(file_get_contents($copy), 0, 2), 'a real zip-based .xlsx');
-
-        return IOFactory::load($copy)->getActiveSheet();
-    }
-
-    public function test_excel_export_has_rtl_text_numbers_formulas_and_literal_user_text(): void
-    {
-        $this->actingAsUser(self::OWNER);
-        $body = $this->body('=HYPERLINK("http://x","هيئة")');
-        $a = $this->employee(['employee_number' => '00007', 'full_name' => '=1+1', 'job_title' => '+SUM(A1)', 'academic_level' => '@cmd'], $body);
-        $b = $this->employee(['employee_number' => '00123', 'full_name' => 'ثاني'], $body);
-        $this->amounts([$this->change($a, ['fixed_salary' => '1000.5', 'deduction' => '0', 'compensation' => '25']), $this->change($b, ['deduction' => '5'])])->assertOk();
-
-        $response = $this->getJson(self::API.'/payroll/export/xlsx');
-        $response->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        $sheet = $this->loadXlsx($response);
-
-        $this->assertTrue($sheet->getRightToLeft());
-        $this->assertSame('رقم الموظف', $sheet->getCell('A5')->getValue());
-        $this->assertSame('المستحق $', $sheet->getCell('J5')->getValue());
-        $this->assertSame('الراتب المقطوع $', $sheet->getCell('G5')->getValue());
-        $this->assertStringContainsString('كل الصفوف دون مرشحات', $sheet->getCell('A2')->getValue());
-
-        // Employee numbers are text with leading zeros preserved.
-        $this->assertSame('00007', $sheet->getCell('A6')->getValue());
-        $this->assertSame('00123', $sheet->getCell('A7')->getValue());
-        $this->assertSame(DataType::TYPE_STRING, $sheet->getCell('A6')->getDataType());
-        // User text that looks like a formula stays literal text.
-        foreach (['B6' => '=1+1', 'C6' => '+SUM(A1)', 'F6' => '@cmd', 'D6' => '=HYPERLINK("http://x","هيئة")'] as $cell => $text) {
-            $this->assertSame($text, $sheet->getCell($cell)->getValue());
-            $this->assertSame(DataType::TYPE_STRING, $sheet->getCell($cell)->getDataType(), $cell);
-        }
-        // Money: numeric cells, USD format; blank stays an empty cell; explicit zero is a real 0.
-        $this->assertSame(DataType::TYPE_NUMERIC, $sheet->getCell('G6')->getDataType());
-        $this->assertSame(1000.5, (float) $sheet->getCell('G6')->getValue());
-        $this->assertSame(0.0, (float) $sheet->getCell('H6')->getValue());
-        $this->assertNotNull($sheet->getCell('H6')->getValue());
-        $this->assertNull($sheet->getCell('G7')->getValue());
-        $this->assertNull($sheet->getCell('I7')->getValue());
-        $this->assertStringContainsString('$', $sheet->getStyle('G6')->getNumberFormat()->getFormatCode());
-        // Formulas preserve the blank-salary rule; computed values agree with the server.
-        $this->assertSame('=IF(G6="","",G6-H6+I6)', $sheet->getCell('J6')->getValue());
-        $this->assertSame(1025.5, (float) $sheet->getCell('J6')->getCalculatedValue());
-        $this->assertSame('', (string) $sheet->getCell('J7')->getCalculatedValue(), 'blank salary => blank payable, even with a deduction');
-        $this->assertSame('=SUM(G6:G7)', $sheet->getCell('G8')->getValue());
-        $this->assertSame('=SUM(J6:J7)', $sheet->getCell('J8')->getValue());
-        $this->assertSame(1025.5, (float) $sheet->getCell('J8')->getCalculatedValue());
-    }
-
-    public function test_exports_use_the_current_filters_order_and_label_the_scope(): void
-    {
-        $this->actingAsUser(self::OWNER);
-        [, $two] = $this->seedSheet();
-        $sheet = $this->loadXlsx($this->getJson(self::API.'/payroll/export/xlsx?body_id='.$two['id'].'&sort=full_name&direction=desc'));
-        $this->assertStringContainsString('الصفوف المطابقة للمرشحات فقط (3 موظفًا)', $sheet->getCell('A2')->getValue());
-        $this->assertStringContainsString('الهيئة: هيئة الإدارة', $sheet->getCell('A2')->getValue());
-        $this->assertStringContainsString('الاسم الكامل (تنازلي)', $sheet->getCell('A4')->getValue());
-        $this->assertSame(['010', '002', '011'], [$sheet->getCell('A6')->getValue(), $sheet->getCell('A7')->getValue(), $sheet->getCell('A8')->getValue()]);
-        $this->assertSame('حلب', $sheet->getCell('E6')->getValue());
-        $this->getJson(self::API.'/payroll/export/xlsx?sort=nope')->assertUnprocessable();
-
-        // Empty result: still a valid workbook with zero totals.
-        $empty = $this->loadXlsx($this->getJson(self::API.'/payroll/export/xlsx?search=zzzz'));
-        $this->assertSame('الإجمالي (0 موظفًا)', $empty->getCell('A6')->getValue());
-    }
-
-    public function test_pdf_export_is_a_landscape_a3_multi_page_document_with_embedded_font(): void
-    {
-        $this->actingAsUser(self::OWNER);
-        $body = $this->body('هيئة التدريس');
-        $changes = [];
-        for ($i = 1; $i <= 60; $i++) {
-            $row = $this->employee(['employee_number' => sprintf('%04d', $i), 'full_name' => "موظف تجريبي رقم {$i} بن عبد الله الطويل الاسم جدًا لاختبار التفاف الأسطر", 'job_title' => 'صفة وظيفية طويلة للاختبار'], $body);
-            $changes[] = $this->change($row, ['fixed_salary' => (string) (1000 + $i), 'deduction' => $i % 2 ? '10' : null]);
-        }
-        $this->amounts($changes)->assertOk();
-
-        $response = $this->get(self::API.'/payroll/export/pdf');
-        $response->assertOk()->assertHeader('content-type', 'application/pdf');
-        $pdf = $response->getContent();
-        $this->assertStringStartsWith('%PDF-', $pdf);
-        $this->assertGreaterThan(1, preg_match_all('#/Type\s*/Page[^s]#', $pdf), 'rows spill to several pages');
-        $this->assertMatchesRegularExpression('#/MediaBox\s*\[0(\.0+)?\s+0(\.0+)?\s+(1190|1191)\.\d+\s+(841|842)\.\d+\]#', $pdf, 'A3 landscape');
-        $this->assertStringContainsString('/FontFile2', $pdf, 'TrueType font program embedded');
-        $this->assertStringContainsString('Cairo', $pdf);
+        $this->assertSame(2, $home['attention']['total']);
+        $ids = array_column($home['attention']['items'], 'employee_id');
+        $this->assertEqualsCanonicalizing([$c['id'], $d['id']], $ids);
+        $first = collect($home['attention']['items'])->firstWhere('employee_id', $d['id']);
+        $this->assertSame('incomplete', $first['status']);
+        $this->assertStringContainsString('الأجر المقطوع', $first['issues'][0]['message']);
     }
 }

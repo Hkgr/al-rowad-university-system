@@ -31,10 +31,11 @@ $defs = [
 ];
 Schema::disableForeignKeyConstraints();
 foreach (array_reverse(array_keys($defs)) as $t) Schema::dropIfExists($t);
-foreach (['payroll_entries','payroll_employees','payroll_bodies','personal_access_tokens'] as $t) Schema::dropIfExists($t);
+foreach (['payroll_entry_values','payroll_columns','payroll_settings','payroll_config','payroll_entries','payroll_employees','payroll_bodies','personal_access_tokens'] as $t) Schema::dropIfExists($t);
 foreach ($defs as $name => $def) Schema::create($name, $def);
 (require base_path('database/migrations/2026_06_13_131705_create_personal_access_tokens_table.php'))->up();
 (require base_path('database/migrations/2026_10_08_000000_create_owner_payroll_tables.php'))->up();
+(require base_path('database/migrations/2026_10_09_000000_add_payroll_columns_settings_and_syp_template.php'))->up();
 DB::table('account_statuses')->insert([['account_status_id'=>1,'status_code'=>'active'],['account_status_id'=>2,'status_code'=>'disabled']]);
 foreach (['super_admin','university_president','hr_officer','technical_team'] as $i=>$c) DB::table('roles')->insert(['role_id'=>$i+1,'role_code'=>$c,'role_name'=>$c,'is_system_role'=>1]);
 Artisan::call('owner-portal:provision-access'); // creates role university_owner (id 5)

@@ -6,46 +6,60 @@ use App\Exceptions\PayrollException;
 use App\Models\Payroll\PayrollBody;
 use App\Models\Payroll\PayrollEmployee;
 use App\Models\Payroll\PayrollEntry;
-use App\Support\PayrollMoney;
 use App\Support\PayrollWorkplace;
+use Brick\Math\BigDecimal;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
 /**
- * Owner payroll working sheet (phase 1): one current sheet, no periods.
+ * Owner payroll working sheet (one current sheet, no periods).
  *
- * Everything here operates on the three isolated payroll tables only. Money is integer cents; the net
- * payable is always computed here from stored values and is never accepted from a client.
+ * Employee identity/classification live in payroll_employees, every input amount in payroll_entry_values, and every calculated
+ * cell is produced by PayrollCalculator from the saved configuration. Nothing here is shared with operational personnel data.
  */
 class PayrollSheetService
 {
-    public const AMOUNT_FIELDS = ['fixed_salary', 'deduction', 'compensation'];
-
     public const MAX_BATCH = 1000;
 
-    public const SORTS = ['employee_number', 'full_name', 'job_title', 'body', 'workplace', 'academic_level', 'fixed_salary', 'deduction', 'compensation', 'payable'];
+    public const META_SORTS = ['employee_number', 'full_name', 'job_title', 'body', 'workplace', 'academic_level'];
 
-    public const BLANK_LEVEL = '__blank__';
+    public const COMPLETENESS = ['complete', 'incomplete', 'warning'];
 
-    private const PAYABLE_SQL = 'CASE WHEN n.fixed_salary_cents IS NULL THEN NULL ELSE n.fixed_salary_cents - COALESCE(n.deduction_cents, 0) + COALESCE(n.compensation_cents, 0) END';
+    public const TOTAL_KEY = 'total_net_payable';
 
-    // ── filters and reads ─────────────────────────────────────────────────
+    public function __construct(private readonly PayrollConfigService $configs) {}
 
-    /** Normalise the sheet query string (also used by exports, so grid and files agree). */
-    public function filters(array $input): array
+    // ── filters ───────────────────────────────────────────────────────────
+
+    /**
+     * Normalise the sheet query (also used by exports, so grid, Home links and files agree).
+     * The blank academic-level filter is its own flag: it can never collide with a real level typed by a user.
+     */
+    public function filters(array $input, ?array $config = null): array
     {
-        $sort = in_array($input['sort'] ?? null, self::SORTS, true) ? $input['sort'] : 'employee_number';
+        $config ??= $this->configs->load();
+        $sort = $input['sort'] ?? 'employee_number';
+        $known = array_merge(self::META_SORTS, array_column($config['columns'], 'key'));
+        if (! is_string($sort) || ! in_array($sort, $known, true)) {
+            throw new PayrollException('عمود الترتيب غير معروف.', 'payroll_validation', 422, ['sort' => ['عمود الترتيب غير معروف.']]);
+        }
+        $level = isset($input['academic_level']) && $input['academic_level'] !== '' ? (string) $input['academic_level'] : null;
+        $blank = filter_var($input['academic_level_blank'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        if ($blank && $level !== null) {
+            throw new PayrollException('اختر مستوى أكاديميًا محددًا أو «غير محدد» وليس الاثنين معًا.', 'payroll_validation', 422, ['academic_level' => ['مرشحان متعارضان.']]);
+        }
         $search = PayrollText::clean($input['search'] ?? null);
 
         return [
             'search' => $search === null ? null : mb_substr($search, 0, 100),
             'body_id' => isset($input['body_id']) && $input['body_id'] !== '' ? (int) $input['body_id'] : null,
             'workplace' => in_array($input['workplace'] ?? null, PayrollWorkplace::codes(), true) ? $input['workplace'] : null,
-            'academic_level' => isset($input['academic_level']) && $input['academic_level'] !== '' ? (string) $input['academic_level'] : null,
+            'academic_level' => $level,
+            'academic_level_blank' => $blank,
+            'completeness' => in_array($input['completeness'] ?? null, self::COMPLETENESS, true) ? $input['completeness'] : null,
             'sort' => $sort,
             'direction' => ($input['direction'] ?? 'asc') === 'desc' ? 'desc' : 'asc',
         ];
@@ -58,7 +72,9 @@ class PayrollSheetService
             'body_id' => ['nullable', 'integer', 'min:1'],
             'workplace' => ['nullable', 'string', 'in:'.implode(',', PayrollWorkplace::codes())],
             'academic_level' => ['nullable', 'string', 'max:255'],
-            'sort' => ['nullable', 'string', 'in:'.implode(',', self::SORTS)],
+            'academic_level_blank' => ['nullable', 'boolean'],
+            'completeness' => ['nullable', 'string', 'in:'.implode(',', self::COMPLETENESS)],
+            'sort' => ['nullable', 'string', 'max:40'],
             'direction' => ['nullable', 'string', 'in:asc,desc'],
         ];
     }
@@ -78,10 +94,10 @@ class PayrollSheetService
         if ($filters['workplace'] !== null) {
             $query->where('e.workplace', $filters['workplace']);
         }
-        if ($filters['academic_level'] !== null) {
-            $filters['academic_level'] === self::BLANK_LEVEL
-                ? $query->whereNull('e.academic_level')
-                : $query->where('e.academic_level', $filters['academic_level']);
+        if ($filters['academic_level_blank']) {
+            $query->whereNull('e.academic_level');
+        } elseif ($filters['academic_level'] !== null) {
+            $query->where('e.academic_level', $filters['academic_level']);
         }
         if ($filters['search'] !== null) {
             $like = '%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $filters['search']).'%';
@@ -99,29 +115,25 @@ class PayrollSheetService
         return $query;
     }
 
-    private function applySort(Builder $query, array $filters): Builder
+    /** SQL ordering for identity columns; value/calculated columns are ordered in PHP after calculation. */
+    private function applyMetaSort(Builder $query, array $filters): Builder
     {
-        $direction = $filters['direction'] === 'desc' ? 'DESC' : 'ASC';
-        $workplace = 'CASE e.workplace '.collect(PayrollWorkplace::LABELS)
-            ->except(PayrollWorkplace::OTHER)
+        // Calculated/value columns are ordered in PHP afterwards; ties must then fall back to ascending employee number.
+        $meta = in_array($filters['sort'], self::META_SORTS, true);
+        $direction = $meta && $filters['direction'] === 'desc' ? 'DESC' : 'ASC';
+        $workplace = 'CASE e.workplace '.collect(PayrollWorkplace::LABELS)->except(PayrollWorkplace::OTHER)
             ->map(fn ($label, $code) => "WHEN '{$code}' THEN '{$label}'")->implode(' ')
             ." ELSE COALESCE(e.workplace_other, '".PayrollWorkplace::LABELS[PayrollWorkplace::OTHER]."') END";
         $expression = match ($filters['sort']) {
-            'employee_number' => 'e.employee_number',
             'full_name' => 'e.full_name',
             'job_title' => 'e.job_title',
             'body' => 'b.name',
             'workplace' => $workplace,
             'academic_level' => 'e.academic_level',
-            'fixed_salary' => 'n.fixed_salary_cents',
-            'deduction' => 'n.deduction_cents',
-            'compensation' => 'n.compensation_cents',
-            'payable' => self::PAYABLE_SQL,
+            default => 'e.employee_number',
         };
-        // Blanks always sort last, whatever the direction; ties break on the employee number, then id.
-        $query->orderByRaw("({$expression}) IS NULL ASC")
-            ->orderByRaw("({$expression}) {$direction}");
-        if ($filters['sort'] !== 'employee_number') {
+        $query->orderByRaw("({$expression}) IS NULL ASC")->orderByRaw("({$expression}) {$direction}");
+        if ($expression !== 'e.employee_number') {
             $query->orderBy('e.employee_number');
         }
 
@@ -131,16 +143,34 @@ class PayrollSheetService
     private const COLUMNS = [
         'e.id', 'e.employee_number', 'e.full_name', 'e.job_title', 'e.payroll_body_id', 'b.name as body_name', 'b.is_active as body_is_active',
         'e.workplace', 'e.workplace_other', 'e.academic_level', 'e.revision as employee_revision', 'e.updated_at as employee_updated_at',
-        'n.fixed_salary_cents', 'n.deduction_cents', 'n.compensation_cents', 'n.revision as entry_revision', 'n.updated_at as entry_updated_at',
+        'n.revision as entry_revision', 'n.updated_at as entry_updated_at',
     ];
 
-    /** API projection of a joined row. Money is a signed two-decimal string or null (blank). */
-    public function present(object $row): array
-    {
-        $salary = $row->fixed_salary_cents === null ? null : (int) $row->fixed_salary_cents;
-        $deduction = $row->deduction_cents === null ? null : (int) $row->deduction_cents;
-        $compensation = $row->compensation_cents === null ? null : (int) $row->compensation_cents;
+    // ── rows ──────────────────────────────────────────────────────────────
 
+    /** @return array<int, array<string, BigDecimal|string>> input values by employee id then column key */
+    private function inputsFor(array $employeeIds, array $config): array
+    {
+        $byId = collect($config['columns'])->where('kind', 'input')->keyBy('id');
+        $inputs = [];
+        foreach (array_chunk($employeeIds, 500) as $chunk) {
+            foreach (DB::table('payroll_entry_values')->whereIn('payroll_employee_id', $chunk)->get() as $v) {
+                $column = $byId->get((int) $v->payroll_column_id);
+                if ($column === null) {
+                    continue;
+                }
+                $inputs[(int) $v->payroll_employee_id][$column['key']] = $column['value_type'] === 'text'
+                    ? $v->value_text
+                    : PayrollCalculator::fromStored((int) $v->value_scaled);
+            }
+        }
+
+        return $inputs;
+    }
+
+    /** Joined identity row + calculated cells, in the shape the API and exports share. */
+    private function present(object $row, array $inputs, PayrollCalculator $calculator): array
+    {
         return [
             'id' => (int) $row->id,
             'employee_number' => (string) $row->employee_number,
@@ -153,70 +183,183 @@ class PayrollSheetService
             'workplace_other' => $row->workplace_other,
             'workplace_label' => PayrollWorkplace::display($row->workplace, $row->workplace_other),
             'academic_level' => $row->academic_level,
-            'fixed_salary' => PayrollMoney::format($salary),
-            'deduction' => PayrollMoney::format($deduction),
-            'compensation' => PayrollMoney::format($compensation),
-            'payable' => PayrollMoney::format(PayrollMoney::payable($salary, $deduction, $compensation)),
+            'cells' => $calculator->evaluateRow($inputs),
             'employee_revision' => (int) $row->employee_revision,
             'entry_revision' => (int) $row->entry_revision,
             'updated_at' => max((string) $row->employee_updated_at, (string) $row->entry_updated_at) ?: null,
         ];
     }
 
-    /** One row by employee id (same projection as the grid), or null. */
-    public function row(int $employeeId): ?array
+    /** @return list<array> */
+    private function computeRows(Collection $joined, array $config): array
     {
+        $calculator = $this->configs->calculator($config);
+        $inputs = $this->inputsFor($joined->pluck('id')->map(fn ($id) => (int) $id)->all(), $config);
+
+        return $joined->map(fn ($row) => $this->present($row, $inputs[(int) $row->id] ?? [], $calculator))->values()->all();
+    }
+
+    /** One employee in the grid shape, or null. */
+    public function row(int $employeeId, ?array $config = null): ?array
+    {
+        $config ??= $this->configs->load();
         $row = $this->base()->where('e.id', $employeeId)->first(self::COLUMNS);
 
-        return $row === null ? null : $this->present($row);
+        return $row === null ? null : $this->computeRows(collect([$row]), $config)[0];
+    }
+
+    public static function status(array $row): string
+    {
+        $cell = $row['cells'][self::TOTAL_KEY] ?? null;
+        if ($cell === null) {
+            return 'complete';
+        }
+
+        return match ($cell['st']) {
+            'missing', 'error' => 'incomplete',
+            default => collect($row['cells'])->contains(fn ($c) => $c['st'] === 'warning') ? 'warning' : 'complete',
+        };
     }
 
     /**
-     * Consistent read of everything matching the filters, in the requested order: rows and totals come from the
-     * same transaction and the totals are summed from those very rows (the grid, Home and exports can never disagree).
+     * Consistent read of everything matching the filters in the requested order. Rows, configuration and totals come from one
+     * transaction and the totals are summed from those very rows: the grid, Home and both exports can never disagree.
      */
     public function snapshot(array $filters): array
     {
         return DB::transaction(function () use ($filters): array {
-            $rows = $this->applySort($this->applyFilters($this->base(), $filters), $filters)->get(self::COLUMNS)
-                ->map(fn ($row) => $this->present($row))->values();
+            $config = $this->configs->load();
+            $joined = $this->applyMetaSort($this->applyFilters($this->base(), $filters), $filters)->get(self::COLUMNS);
+            $rows = $this->computeRows($joined, $config);
+            if ($filters['completeness'] !== null) {
+                $rows = array_values(array_filter($rows, fn ($r) => match ($filters['completeness']) {
+                    'complete' => self::status($r) !== 'incomplete',
+                    'incomplete' => self::status($r) === 'incomplete',
+                    'warning' => self::status($r) === 'warning',
+                }));
+            }
+            if (! in_array($filters['sort'], self::META_SORTS, true)) {
+                $rows = $this->sortByColumn($rows, $filters['sort'], $filters['direction']);
+            }
 
-            return ['rows' => $rows, 'totals' => $this->totals($rows), 'generated_at' => now()->toIso8601String(), 'filters' => $filters];
+            return ['rows' => $rows, 'totals' => $this->totals($rows, $config), 'config' => $config, 'generated_at' => now()->toIso8601String(), 'filters' => $filters];
         });
     }
 
-    /** Sum of the displayed rows. Payable sums only rows that have a fixed salary (blank salary => blank payable). */
-    public function totals(Collection $rows): array
+    /** Stable sort; blank, unavailable and error cells always last. */
+    private function sortByColumn(array $rows, string $key, string $direction): array
     {
-        $sum = fn (string $key) => $rows->reduce(fn (int $carry, array $row) => $carry + ($row[$key] === null ? 0 : (int) round((float) $row[$key] * 100)), 0);
+        $factor = $direction === 'desc' ? -1 : 1;
+        $indexed = array_map(null, array_keys($rows), $rows);
+        usort($indexed, function ($a, $b) use ($key, $factor) {
+            $x = $a[1]['cells'][$key]['v'] ?? null;
+            $y = $b[1]['cells'][$key]['v'] ?? null;
+            if ($x === null || $y === null) {
+                return $x === $y ? $a[0] <=> $b[0] : ($x === null ? 1 : -1);
+            }
+            $c = is_numeric($x) && is_numeric($y) ? BigDecimal::of($x)->compareTo(BigDecimal::of($y)) : strcmp(mb_strtolower((string) $x), mb_strtolower((string) $y));
+
+            return $c === 0 ? $a[0] <=> $b[0] : $c * $factor;
+        });
+
+        return array_column($indexed, 1);
+    }
+
+    /**
+     * Column totals over the given rows. A total sums the cells that exist; unavailable (missing/error) cells are excluded
+     * and counted, so an incomplete record is never shown as a healthy zero.
+     */
+    public function totals(array $rows, array $config): array
+    {
+        $columns = [];
+        foreach ($config['columns'] as $column) {
+            if ($column['aggregation'] !== 'sum') {
+                continue;
+            }
+            $sum = BigDecimal::zero();
+            $excluded = 0;
+            foreach ($rows as $row) {
+                $cell = $row['cells'][$column['key']];
+                if (in_array($cell['st'], ['missing', 'error'], true)) {
+                    $excluded++;
+                } elseif ($cell['v'] !== null) {
+                    $sum = $sum->plus($cell['v']);
+                }
+            }
+            $columns[$column['key']] = ['sum' => PayrollCalculator::format($sum, $column['value_type']), 'excluded' => $excluded];
+        }
+        $statuses = array_map(fn ($r) => self::status($r), $rows);
 
         return [
-            'employees' => $rows->count(),
-            'fixed_salary' => PayrollMoney::format($sum('fixed_salary')),
-            'deduction' => PayrollMoney::format($sum('deduction')),
-            'compensation' => PayrollMoney::format($sum('compensation')),
-            'payable' => PayrollMoney::format($sum('payable')),
+            'employees' => count($rows),
+            'complete' => count(array_filter($statuses, fn ($s) => $s !== 'incomplete')),
+            'incomplete' => count(array_filter($statuses, fn ($s) => $s === 'incomplete')),
+            'warnings' => count(array_filter($statuses, fn ($s) => $s === 'warning')),
+            'columns' => $columns,
         ];
     }
 
-    /** Home summary: the same totals computed by the database over the whole sheet. */
+    // ── Home ──────────────────────────────────────────────────────────────
+
+    /** Owner overview over the whole sheet, computed by the same calculator and totals as the grid and exports. */
     public function home(): array
     {
         return DB::transaction(function (): array {
-            $row = $this->base()->selectRaw(
-                'COUNT(*) AS employees, SUM(n.fixed_salary_cents) AS fixed, SUM(n.deduction_cents) AS deduction, SUM(n.compensation_cents) AS compensation, SUM('.self::PAYABLE_SQL.') AS payable'
-            )->first();
+            $config = $this->configs->load();
+            $joined = $this->base()->orderBy('e.employee_number')->orderBy('e.id')->get(self::COLUMNS);
+            $rows = $this->computeRows($joined, $config);
+            $totals = $this->totals($rows, $config);
+            $sum = fn (string $key) => $totals['columns'][$key]['sum'] ?? '0.00';
+            $groups = fn (callable $keyOf, callable $labelOf, string $param) => collect($rows)->groupBy($keyOf)->map(function ($group, $value) use ($labelOf, $param) {
+                $first = $group->first();
+                $statuses = $group->map(fn ($r) => self::status($r));
+
+                return [
+                    'value' => (string) $value, 'label' => $labelOf($first), 'filter' => $param,
+                    'employees' => $group->count(), 'incomplete' => $statuses->filter(fn ($s) => $s === 'incomplete')->count(),
+                    'net_payable' => $this->netOf($group->all()),
+                ];
+            })->sortByDesc('employees')->values()->all();
+
+            $attention = collect($rows)->map(fn ($r) => [$r, self::status($r)])->filter(fn ($p) => $p[1] !== 'complete')
+                ->sortBy(fn ($p) => ['incomplete' => 0, 'warning' => 1][$p[1]])->values();
 
             return [
-                'employees' => (int) $row->employees,
-                'fixed_salary' => PayrollMoney::format((int) $row->fixed),
-                'deduction' => PayrollMoney::format((int) $row->deduction),
-                'compensation' => PayrollMoney::format((int) $row->compensation),
-                'payable' => PayrollMoney::format((int) $row->payable),
-                'bodies' => (int) DB::table('payroll_bodies')->count(),
+                'currency' => ['code' => 'SYP', 'symbol' => 'ل.س'],
+                'employees' => $totals['employees'], 'complete' => $totals['complete'], 'incomplete' => $totals['incomplete'], 'warnings' => $totals['warnings'],
+                'totals' => [
+                    'gross_entitlement' => $sum('gross_entitlement'), 'insurance' => $sum('insurance'),
+                    'income_tax' => PayrollCalculator::format(BigDecimal::of($sum('salary_tax'))->plus($sum('compensation_tax')), 'amount'),
+                    'other_deductions' => $sum('other_deductions'), 'total_deductions' => $sum('total_deductions'), 'net_payable' => $sum(self::TOTAL_KEY),
+                ],
+                'excluded' => ['net_payable' => $totals['columns'][self::TOTAL_KEY]['excluded'] ?? 0],
+                'by_body' => $groups(fn ($r) => $r['body_id'], fn ($r) => $r['body_name'], 'body_id'),
+                'by_workplace' => $groups(fn ($r) => $r['workplace'], fn ($r) => PayrollWorkplace::LABELS[$r['workplace']] ?? $r['workplace'], 'workplace'),
+                'attention' => [
+                    'total' => $attention->count(),
+                    'items' => $attention->take(50)->map(fn ($p) => [
+                        'employee_id' => $p[0]['id'], 'employee_number' => $p[0]['employee_number'], 'full_name' => $p[0]['full_name'], 'status' => $p[1],
+                        'issues' => collect($p[0]['cells'])->filter(fn ($c, $k) => $p[1] === 'incomplete' ? $k === self::TOTAL_KEY : $c['st'] === 'warning')
+                            ->map(fn ($c, $k) => ['key' => $k, 'label' => collect($config['columns'])->firstWhere('key', $k)['label'], 'message' => $c['m']])->values()->all(),
+                    ])->all(),
+                ],
                 'generated_at' => now()->toIso8601String(),
             ];
         });
+    }
+
+    /** Net payable of a group of rows: unavailable cells are excluded (never counted as zero). */
+    private function netOf(array $rows): string
+    {
+        $sum = BigDecimal::zero();
+        foreach ($rows as $r) {
+            $v = $r['cells'][self::TOTAL_KEY]['v'] ?? null;
+            if ($v !== null) {
+                $sum = $sum->plus($v);
+            }
+        }
+
+        return PayrollCalculator::format($sum, 'amount');
     }
 
     public function options(): array
@@ -225,6 +368,7 @@ class PayrollSheetService
             'bodies' => $this->bodies(),
             'workplaces' => collect(PayrollWorkplace::LABELS)->map(fn ($label, $code) => ['value' => $code, 'label' => $label])->values(),
             'academic_levels' => DB::table('payroll_employees')->whereNotNull('academic_level')->distinct()->orderBy('academic_level')->pluck('academic_level')->values(),
+            'completeness' => [['value' => 'incomplete', 'label' => 'ناقصة أو بها خطأ'], ['value' => 'warning', 'label' => 'بها تحذير حسابي'], ['value' => 'complete', 'label' => 'مكتملة']],
         ];
     }
 
@@ -241,8 +385,13 @@ class PayrollSheetService
         if ($filters['workplace'] !== null) {
             $labels[] = 'مكان العمل: '.PayrollWorkplace::LABELS[$filters['workplace']];
         }
-        if ($filters['academic_level'] !== null) {
-            $labels[] = 'المستوى الأكاديمي: '.($filters['academic_level'] === self::BLANK_LEVEL ? 'غير محدد' : $filters['academic_level']);
+        if ($filters['academic_level_blank']) {
+            $labels[] = 'المستوى الأكاديمي: غير محدد';
+        } elseif ($filters['academic_level'] !== null) {
+            $labels[] = 'المستوى الأكاديمي: '.$filters['academic_level'];
+        }
+        if ($filters['completeness'] !== null) {
+            $labels[] = 'الحالة: '.['complete' => 'مكتملة', 'incomplete' => 'ناقصة أو بها خطأ', 'warning' => 'بها تحذير حسابي'][$filters['completeness']];
         }
 
         return $labels;
@@ -359,11 +508,13 @@ class PayrollSheetService
 
     public function createEmployee(array $input, int $userId): array
     {
-        $data = $this->validatedEmployee($input, null);
         try {
-            $id = DB::transaction(function () use ($data, $userId): int {
+            $id = DB::transaction(function () use ($input, $userId): int {
+                // The target body is read FOR UPDATE inside this transaction: a concurrent deactivation can no longer slip in
+                // between the "is it active" check and the insert.
+                $data = $this->validatedEmployee($input, null);
                 $employee = PayrollEmployee::create($data + ['revision' => 1, 'created_by_user_id' => $userId, 'updated_by_user_id' => $userId]);
-                // Blank financial inputs: all NULL, never prefilled with zero.
+                // Blank inputs: no stored values at all, never prefilled with zero.
                 PayrollEntry::create(['payroll_employee_id' => $employee->id, 'revision' => 1, 'updated_by_user_id' => $userId]);
 
                 return $employee->id;
@@ -404,7 +555,11 @@ class PayrollSheetService
         return new PayrollException('رقم الموظف مستخدم لموظف آخر.', 'payroll_validation', 422, ['employee_number' => ['رقم الموظف مستخدم لموظف آخر.']]);
     }
 
-    /** @return array{employee_number:string, full_name:string, job_title:string, payroll_body_id:int, workplace:string, workplace_other:?string, academic_level:?string} */
+    /**
+     * Must run inside the writing transaction: the selected body is locked here.
+     *
+     * @return array{employee_number:string, full_name:string, job_title:string, payroll_body_id:int, workplace:string, workplace_other:?string, academic_level:?string}
+     */
     private function validatedEmployee(array $input, ?PayrollEmployee $existing): array
     {
         $number = PayrollText::clean($input['employee_number'] ?? null);
@@ -443,11 +598,11 @@ class PayrollSheetService
         } else {
             $other = null; // obsolete custom-location text never survives a switch away from "other"
         }
-        $body = is_numeric($bodyId) ? PayrollBody::find((int) $bodyId) : null;
+        $body = is_numeric($bodyId) ? PayrollBody::query()->lockForUpdate()->find((int) $bodyId) : null;
         if ($body === null) {
             $errors['body_id'][] = 'الهيئة مطلوبة ويجب أن تكون من قائمة الهيئات.';
         } elseif (! $body->is_active && (int) $existing?->payroll_body_id !== $body->id) {
-            $errors['body_id'][] = 'الهيئة المختارة معطّلة ولا يمكن إسناد موظف جديد إليها.';
+            $errors['body_id'][] = 'الهيئة المختارة معطّلة ولا يمكن إسناد موظف إليها.';
         }
         if ($errors !== []) {
             throw new PayrollException('تعذّر حفظ بيانات الموظف؛ راجع الحقول المحددة.', 'payroll_validation', 422, $errors);
@@ -459,68 +614,76 @@ class PayrollSheetService
         ];
     }
 
-    // ── amounts (financial inputs), atomic per request ────────────────────
+    // ── input values, atomic per request ──────────────────────────────────
 
     /**
-     * Apply a batch of cell changes all-or-nothing. Each change: employee_id, expected_revision (of that employee's
-     * entry) and any of fixed_salary / deduction / compensation (a present key with null/'' clears the cell).
+     * Apply a batch of cell changes all-or-nothing. Each change: employee_id, expected_revision (of that employee's value row) and
+     * values = { column key => value | null }. A null/"" clears the cell (blank), which is different from an entered zero.
      *
-     * Invalid values => 422 and nothing is written. Any stale revision => 409 and nothing is written.
+     * Invalid values => 422 and nothing is written. A stale row revision => 409 and nothing is written. A stale configuration
+     * (columns/settings changed meanwhile) => 409 `payroll_config_conflict` and nothing is written.
      *
-     * @return array{rows: list<array>}
+     * @return array{rows: list<array>, config_revision: int}
      */
-    public function updateAmounts(array $changes, int $userId): array
+    public function updateValues(array $changes, int $configRevision, int $userId): array
     {
         if ($changes === [] || count($changes) > self::MAX_BATCH) {
-            throw new PayrollException('عدد الخلايا المرسلة غير مقبول (1 إلى '.self::MAX_BATCH.' صفًا).', 'payroll_validation', 422, ['changes' => ['عدد الصفوف يجب أن يكون بين 1 و '.self::MAX_BATCH.'.']]);
+            throw new PayrollException('عدد الصفوف المرسلة غير مقبول (1 إلى '.self::MAX_BATCH.' صفًا).', 'payroll_validation', 422, ['changes' => ['عدد الصفوف يجب أن يكون بين 1 و '.self::MAX_BATCH.'.']]);
         }
 
-        $errors = [];
-        $parsed = [];
-        $seen = [];
-        foreach (array_values($changes) as $i => $change) {
-            $id = is_array($change) ? ($change['employee_id'] ?? null) : null;
-            $revision = is_array($change) ? ($change['expected_revision'] ?? null) : null;
-            if (! is_int($id) || $id < 1) {
-                $errors["changes.{$i}.employee_id"][] = 'معرّف الموظف غير صالح.';
+        return DB::transaction(function () use ($changes, $configRevision, $userId): array {
+            // The configuration is read under a shared lock: a column/setting change cannot interleave with this save.
+            $current = (int) DB::table('payroll_config')->where('id', 1)->sharedLock()->value('revision');
+            if ($current !== $configRevision) {
+                throw new PayrollException('تغيّرت إعدادات الأعمدة أو المعادلات منذ تحميل الصفحة؛ لم يُحفظ شيء، وبقيت قيمك المعلّقة.', 'payroll_config_conflict', 409, [], ['config' => $this->configs->present($this->configs->load())]);
+            }
+            $config = $this->configs->load();
+            $columns = collect($config['columns'])->keyBy('key');
 
-                continue;
-            }
-            if (! is_int($revision) || $revision < 1) {
-                $errors["changes.{$i}.expected_revision"][] = 'رقم نسخة الصف مطلوب.';
-            }
-            if (isset($seen[$id])) {
-                $errors["changes.{$i}.employee_id"][] = 'الموظف مكرر في الطلب نفسه.';
-            }
-            $seen[$id] = true;
-            $values = [];
-            foreach (self::AMOUNT_FIELDS as $field) {
-                if (! array_key_exists($field, $change)) {
+            $errors = [];
+            $parsed = [];
+            $seen = [];
+            foreach (array_values($changes) as $i => $change) {
+                $id = is_array($change) ? ($change['employee_id'] ?? null) : null;
+                $revision = is_array($change) ? ($change['expected_revision'] ?? null) : null;
+                if (! is_int($id) || $id < 1) {
+                    $errors["changes.{$i}.employee_id"][] = 'معرّف الموظف غير صالح.';
+
                     continue;
                 }
-                try {
-                    $values[$field] = PayrollMoney::parse($change[$field]);
-                } catch (InvalidArgumentException $e) {
-                    $errors["changes.{$i}.{$field}"][] = match ($e->getMessage()) {
-                        'negative' => 'القيمة لا يمكن أن تكون سالبة.',
-                        'out_of_range' => 'القيمة أكبر من الحد المسموح (999999999.99).',
-                        default => 'قيمة غير صالحة؛ أدخل رقمًا بحد أقصى منزلتين عشريتين.',
-                    };
+                if (! is_int($revision) || $revision < 1) {
+                    $errors["changes.{$i}.expected_revision"][] = 'رقم نسخة الصف مطلوب.';
                 }
-            }
-            if ($values === []) {
-                $errors["changes.{$i}.employee_id"][] = 'لا توجد قيمة للتعديل.';
-            }
-            $parsed[$i] = ['employee_id' => $id, 'expected_revision' => $revision, 'values' => $values];
-        }
-        if ($errors !== []) {
-            throw new PayrollException('قيم غير صالحة؛ لم يُحفظ شيء من هذه العملية.', 'payroll_validation', 422, $errors);
-        }
+                if (isset($seen[$id])) {
+                    $errors["changes.{$i}.employee_id"][] = 'الموظف مكرر في الطلب نفسه.';
+                }
+                $seen[$id] = true;
+                $values = [];
+                $submitted = is_array($change['values'] ?? null) ? $change['values'] : [];
+                foreach ($submitted as $key => $raw) {
+                    $column = $columns->get((string) $key);
+                    if ($column === null || $column['kind'] !== 'input') {
+                        $errors["changes.{$i}.values.{$key}"][] = $column === null ? 'عمود غير معروف.' : 'عمود محسوب: يُحسب تلقائيًا ولا يقبل التعديل.';
 
-        return DB::transaction(function () use ($parsed, $userId): array {
+                        continue;
+                    }
+                    try {
+                        $values[$column['key']] = PayrollInput::parse($column, $raw);
+                    } catch (InvalidArgumentException $e) {
+                        $errors["changes.{$i}.values.{$key}"][] = $e->getMessage();
+                    }
+                }
+                if ($values === [] && ! isset($errors["changes.{$i}.values"]) && $submitted === []) {
+                    $errors["changes.{$i}.values"][] = 'لا توجد قيمة للتعديل.';
+                }
+                $parsed[$i] = ['employee_id' => $id, 'expected_revision' => $revision, 'values' => $values];
+            }
+            if ($errors !== []) {
+                throw new PayrollException('قيم غير صالحة؛ لم يُحفظ شيء من هذه العملية.', 'payroll_validation', 422, $errors);
+            }
+
             $ids = collect($parsed)->pluck('employee_id')->sort()->values()->all();
             $entries = PayrollEntry::query()->whereIn('payroll_employee_id', $ids)->orderBy('payroll_employee_id')->lockForUpdate()->get()->keyBy('payroll_employee_id');
-
             $missing = [];
             $conflicts = [];
             foreach ($parsed as $i => $change) {
@@ -538,29 +701,106 @@ class PayrollSheetService
                 throw new PayrollException(
                     'عُدّلت بعض هذه الخلايا من جهة أخرى؛ لم يُحفظ شيء، وبقيت قيمك المعلّقة كما هي.',
                     'payroll_conflict', 409, [],
-                    ['conflicts' => collect($conflicts)->map(fn ($id) => ['employee_id' => $id, 'current' => $this->row($id)])->all()],
+                    ['conflicts' => collect($conflicts)->map(fn ($id) => ['employee_id' => $id, 'current' => $this->row($id, $config)])->all()],
                 );
             }
 
-            foreach ($parsed as $change) {
-                $entry = $entries->get($change['employee_id']);
-                $attributes = [];
-                foreach ($change['values'] as $field => $cents) {
-                    $attributes["{$field}_cents"] = $cents;
+            $existing = [];
+            foreach (array_chunk($ids, 500) as $chunk) {
+                foreach (DB::table('payroll_entry_values')->whereIn('payroll_employee_id', $chunk)->get() as $v) {
+                    $existing[(int) $v->payroll_employee_id][(int) $v->payroll_column_id] = $v;
                 }
-                $entry->fill($attributes);
-                if ($entry->isDirty()) {
+            }
+            foreach ($parsed as $change) {
+                $dirty = false;
+                foreach ($change['values'] as $key => $value) {
+                    $column = $columns[$key];
+                    $stored = $value === null ? null : ($column['value_type'] === 'text' ? $value : PayrollCalculator::toStored($value));
+                    $row = $existing[$change['employee_id']][$column['id']] ?? null;
+                    $before = $row === null ? null : ($column['value_type'] === 'text' ? $row->value_text : ($row->value_scaled === null ? null : (int) $row->value_scaled));
+                    if ($before === $stored) {
+                        continue;
+                    }
+                    $dirty = true;
+                    $where = ['payroll_employee_id' => $change['employee_id'], 'payroll_column_id' => $column['id']];
+                    if ($stored === null) {
+                        DB::table('payroll_entry_values')->where($where)->delete();
+                    } elseif ($row === null) {
+                        DB::table('payroll_entry_values')->insert($where + [
+                            'value_scaled' => $column['value_type'] === 'text' ? null : $stored, 'value_text' => $column['value_type'] === 'text' ? $stored : null,
+                            'created_at' => now(), 'updated_at' => now(),
+                        ]);
+                    } else {
+                        DB::table('payroll_entry_values')->where($where)->update([
+                            'value_scaled' => $column['value_type'] === 'text' ? null : $stored, 'value_text' => $column['value_type'] === 'text' ? $stored : null, 'updated_at' => now(),
+                        ]);
+                    }
+                }
+                if ($dirty) {
+                    $entry = $entries->get($change['employee_id']);
                     $entry->fill(['revision' => $entry->revision + 1, 'updated_by_user_id' => $userId])->save();
                 }
             }
 
-            return ['rows' => collect($parsed)->map(fn ($change) => $this->row($change['employee_id']))->values()->all()];
+            $rows = $this->base()->whereIn('e.id', $ids)->get(self::COLUMNS);
+            $byId = collect($this->computeRows($rows, $config))->keyBy('id');
+
+            return ['rows' => collect($parsed)->map(fn ($c) => $byId[$c['employee_id']])->values()->all(), 'config_revision' => $configRevision];
         });
     }
 
-    /** Employee/validation exception helper for controllers that validate request shape themselves. */
-    public static function validationFailure(ValidationException $e): PayrollException
+    // ── what-if (nothing is saved) ────────────────────────────────────────
+
+    /**
+     * Evaluate a proposed configuration against saved values: validation errors, the effect on one employee's cells, and the effect
+     * on every employee's total net payable. Used by the column dialog and the settings tab before anything is saved.
+     */
+    public function impact(array $proposedConfig, ?int $employeeId, ?string $focusKey): array
     {
-        return new PayrollException('بيانات الطلب غير صالحة.', 'payroll_validation', 422, $e->errors());
+        $current = $this->configs->load();
+        $before = $this->allCells($current);
+        $after = $this->allCells($proposedConfig);
+        $changed = 0;
+        $errorsIntroduced = 0;
+        foreach ($after as $id => $cells) {
+            $a = $cells[self::TOTAL_KEY]['v'] ?? null;
+            $b = $before[$id][self::TOTAL_KEY]['v'] ?? null;
+            $changed += $a !== $b ? 1 : 0;
+            $errorsIntroduced += in_array($cells[self::TOTAL_KEY]['st'] ?? null, ['missing', 'error'], true) && ! in_array($before[$id][self::TOTAL_KEY]['st'] ?? null, ['missing', 'error'], true) ? 1 : 0;
+        }
+        $sum = function (array $cellsById) {
+            $s = BigDecimal::zero();
+            $excluded = 0;
+            foreach ($cellsById as $cells) {
+                $c = $cells[self::TOTAL_KEY] ?? ['v' => null, 'st' => null];
+                $c['v'] !== null ? $s = $s->plus($c['v']) : $excluded += in_array($c['st'], ['missing', 'error'], true) ? 1 : 0;
+            }
+
+            return ['sum' => PayrollCalculator::format($s, 'amount'), 'excluded' => $excluded];
+        };
+        $preview = null;
+        if ($employeeId !== null && isset($after[$employeeId])) {
+            $keys = $focusKey !== null ? [$focusKey] : array_column($proposedConfig['columns'], 'key');
+            $preview = ['employee_id' => $employeeId, 'cells' => array_intersect_key($after[$employeeId], array_flip($keys)), 'before' => array_intersect_key($before[$employeeId] ?? [], array_flip($keys))];
+        }
+
+        return [
+            'net_payable' => ['before' => $sum($before), 'after' => $sum($after)],
+            'employees_changed' => $changed, 'errors_introduced' => $errorsIntroduced, 'employees' => count($after), 'preview' => $preview,
+        ];
+    }
+
+    /** @return array<int, array<string, array>> cells of every employee under a configuration */
+    private function allCells(array $config): array
+    {
+        $calculator = $this->configs->calculator($config);
+        $employees = DB::table('payroll_employees')->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $inputs = $this->inputsFor($employees, $config);
+        $out = [];
+        foreach ($employees as $id) {
+            $out[$id] = $calculator->evaluateRow($inputs[$id] ?? []);
+        }
+
+        return $out;
     }
 }

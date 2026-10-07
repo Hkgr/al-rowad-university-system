@@ -6,9 +6,10 @@ use RuntimeException;
 use TCPDF_FONTS;
 
 /**
- * PDF export of one persisted snapshot. TCPDF (LGPL) performs Arabic shaping and bidi; the SIL-OFL Cairo font
- * (the UI font) is embedded as a subset. A3 landscape keeps all ten columns readable at 9 pt; the column
- * headings repeat on every page, every page has "page X of Y", and the totals close the table.
+ * PDF export of one consistent snapshot: the selected export columns only, figures in Syrian pounds, headings (group band and
+ * column names) repeated on every page, "page X of Y", and the totals closing each table. TCPDF (LGPL) performs Arabic shaping
+ * and bidi; the SIL-OFL Cairo font (the UI font) is embedded as a subset. A3 landscape; a wide report is split into page groups
+ * that repeat the employee number and name instead of shrinking the type.
  */
 final class PayrollPdfExport
 {
@@ -18,11 +19,9 @@ final class PayrollPdfExport
 
     private const FONT_SIZE = 9.5;
 
-    /** mm, in display order (right to left). Sum = 396 = A3 landscape width minus margins. */
-    private const WIDTHS = [
-        'employee_number' => 28, 'full_name' => 62, 'job_title' => 55, 'body' => 44, 'workplace' => 36,
-        'academic_level' => 41, 'fixed_salary' => 32, 'deduction' => 30, 'compensation' => 30, 'payable' => 38,
-    ];
+    private const USABLE = 396; // A3 landscape width minus both margins (mm)
+
+    private const IDENTITY_WIDTHS = ['employee_number' => 26, 'full_name' => 52, 'job_title' => 44, 'body' => 36, 'workplace' => 30, 'academic_level' => 34];
 
     /** Returns the PDF bytes. */
     public function build(array $snapshot, array $scopeLabels): string
@@ -31,6 +30,8 @@ final class PayrollPdfExport
         if (! defined('K_PATH_FONTS')) {
             define('K_PATH_FONTS', $fontDir.'/');
         }
+        $config = $snapshot['config'];
+        $columns = PayrollColumns::exportColumns($config);
 
         $pdf = new PayrollPdfDocument('L', 'mm', self::PAGE_FORMAT, true, 'UTF-8', false);
         $pdf->setCreator('Alrowad University');
@@ -38,7 +39,7 @@ final class PayrollPdfExport
         $pdf->setRTL(true);
         $pdf->setPrintHeader(true);
         $pdf->setPrintFooter(true);
-        $pdf->setMargins(self::MARGIN, 34, self::MARGIN);
+        $pdf->setMargins(self::MARGIN, 38, self::MARGIN);
         $pdf->setHeaderMargin(8);
         $pdf->setFooterMargin(10);
         $pdf->setAutoPageBreak(false);
@@ -48,89 +49,162 @@ final class PayrollPdfExport
         $pdf->headerLines = [
             PayrollColumns::TITLE,
             PayrollColumns::scopeLine($snapshot, $scopeLabels),
-            PayrollColumns::sortLine($snapshot['filters']).' — تاريخ التوليد: '.now()->format('Y-m-d H:i').' — '.PayrollColumns::CURRENT_SHEET_NOTE,
+            PayrollColumns::sortLine($snapshot['filters'], $config).' — تاريخ التوليد: '.now()->format('Y-m-d H:i'),
+            PayrollColumns::CURRENCY_NOTE.' '.PayrollColumns::CURRENT_SHEET_NOTE,
         ];
 
-        $pdf->AddPage();
-        $this->tableHeader($pdf);
-        $limit = $pdf->getPageHeight() - 22;
-
-        foreach ($snapshot['rows'] as $r) {
-            $cells = [
-                $r['employee_number'], $r['full_name'], $r['job_title'], $r['body_name'], $r['workplace_label'], $r['academic_level'] ?? '',
-                $this->money($r['fixed_salary']), $this->money($r['deduction']), $this->money($r['compensation']), $this->money($r['payable']),
-            ];
-            $height = $this->rowHeight($pdf, $cells);
-            if ($pdf->GetY() + $height > $limit) {
-                $pdf->AddPage();
-                $this->tableHeader($pdf);
-            }
-            $this->row($pdf, $cells, $height, false, $r['payable'] !== null && str_starts_with($r['payable'], '-'));
+        $bands = $this->bands($columns);
+        foreach ($bands as $index => $band) {
+            $pdf->AddPage(); // closes the previous page (its footer still carries the previous label)
+            $pdf->bandLabel = count($bands) > 1 ? 'الجزء '.($index + 1).' من '.count($bands) : '';
+            $this->drawBand($pdf, $band, $snapshot);
         }
-
-        $totals = $snapshot['totals'];
-        if ($pdf->GetY() + 9 > $limit) {
-            $pdf->AddPage();
-            $this->tableHeader($pdf);
-        }
-        $pdf->setFont('cairo', 'B', self::FONT_SIZE);
-        $pdf->setFillColor(232, 241, 223);
-        $labelWidth = array_sum(array_slice(self::WIDTHS, 0, 6));
-        $pdf->MultiCell($labelWidth, 9, 'الإجمالي ('.$totals['employees'].' موظفًا)', 1, 'R', true, 0, '', '', true, 0, false, true, 9, 'M');
-        foreach (['fixed_salary', 'deduction', 'compensation', 'payable'] as $key) {
-            $pdf->MultiCell(self::WIDTHS[$key], 9, $this->money($totals[$key]), 1, 'C', true, 0, '', '', true, 0, false, true, 9, 'M');
-        }
-        $pdf->Ln(9);
-        $pdf->setFont('cairo', '', 8.5);
-        $pdf->MultiCell(0, 6, 'إجمالي المستحق يجمع الصفوف التي لها راتب مقطوع فقط (المستحق الفارغ لا يدخل في المجموع).', 0, 'R', false, 1);
 
         return $pdf->Output('payroll.pdf', 'S');
     }
 
-    private function money(?string $value): string
+    private function width(array $column): float
     {
-        if ($value === null) {
-            return '';
-        }
-        $negative = str_starts_with($value, '-');
-        [$whole, $fraction] = explode('.', ltrim($value, '-'));
-
-        return ($negative ? '-' : '').'$'.number_format((int) $whole).'.'.$fraction;
+        return self::IDENTITY_WIDTHS[$column['key']] ?? match ($column['type']) {
+            'text' => 36, 'percent' => 22, 'number' => 24, default => 31,
+        };
     }
 
-    private function tableHeader(PayrollPdfDocument $pdf): void
+    /**
+     * Split the columns over as many page groups as needed to stay readable at 9.5 pt. The first group keeps every identity column;
+     * later groups repeat the employee number and name so each row stays identifiable on its own.
+     *
+     * @return list<array{columns: list<array>, widths: list<float>}>
+     */
+    private function bands(array $columns): array
     {
+        $identity = array_values(array_filter($columns, fn ($c) => $c['identity']));
+        $metrics = array_values(array_filter($columns, fn ($c) => ! $c['identity']));
+        $anchorWide = $identity;
+        $anchorNarrow = array_slice($identity, 0, 2);
+        $bands = [];
+        $current = $anchorWide;
+        $used = array_sum(array_map(fn ($c) => $this->width($c), $current));
+        foreach ($metrics as $metric) {
+            $w = $this->width($metric);
+            if ($used + $w > self::USABLE && count($current) > count($bands === [] ? $anchorWide : $anchorNarrow)) {
+                $bands[] = $current;
+                $current = $anchorNarrow;
+                $used = array_sum(array_map(fn ($c) => $this->width($c), $current));
+            }
+            $current[] = $metric;
+            $used += $w;
+        }
+        $bands[] = $current;
+
+        return array_map(function (array $cols) {
+            $widths = array_map(fn ($c) => $this->width($c), $cols);
+            $extra = (self::USABLE - array_sum($widths)) / max(1, count($cols));
+            $stretch = $extra > 0 && $extra < 12 ? $extra : 0; // spread slack so the table spans the page, but never balloon a short table
+
+            return ['columns' => $cols, 'widths' => array_map(fn ($w) => $w + $stretch, $widths)];
+        }, $bands);
+    }
+
+    private function drawBand(PayrollPdfDocument $pdf, array $band, array $snapshot): void
+    {
+        $columns = $band['columns'];
+        $widths = $band['widths'];
+        $limit = $pdf->getPageHeight() - 22;
+        $this->tableHeader($pdf, $columns, $widths);
+
+        foreach ($snapshot['rows'] as $r) {
+            $cells = array_map(fn ($c) => PayrollColumns::display($c, $r), $columns);
+            $height = $this->rowHeight($pdf, $cells, $widths);
+            if ($pdf->GetY() + $height > $limit) {
+                $pdf->AddPage();
+                $this->tableHeader($pdf, $columns, $widths);
+            }
+            $this->row($pdf, $columns, $cells, $widths, $height, $r);
+        }
+
+        if ($pdf->GetY() + 9 > $limit) {
+            $pdf->AddPage();
+            $this->tableHeader($pdf, $columns, $widths);
+        }
+        $pdf->setFont('cairo', 'B', self::FONT_SIZE);
+        $pdf->setFillColor(232, 241, 223);
+        // The label spans the leading columns that carry no total; each summed column shows its total.
+        $labelSpan = 0;
+        foreach ($columns as $c) {
+            if ($c['aggregation'] === 'sum') {
+                break;
+            }
+            $labelSpan++;
+        }
+        $labelSpan = max(1, $labelSpan);
+        $pdf->MultiCell(array_sum(array_slice($widths, 0, $labelSpan)), 9, 'الإجمالي ('.$snapshot['totals']['employees'].' موظفًا)', 1, 'R', true, 0, '', '', true, 0, false, true, 9, 'M');
+        foreach (array_slice($columns, $labelSpan, null, true) as $i => $c) {
+            $total = $c['aggregation'] === 'sum' ? PayrollColumns::formatValue($snapshot['totals']['columns'][$c['key']]['sum'] ?? '0', $c['type']) : '';
+            $pdf->MultiCell($widths[$i], 9, $total, 1, 'C', true, 0, '', '', true, 0, false, true, 9, 'M');
+        }
+        $pdf->Ln(9);
+        $note = PayrollColumns::exclusionNote($columns, $snapshot);
+        if ($note !== null) {
+            $pdf->setFont('cairo', '', 8.5);
+            $pdf->MultiCell(0, 6, $note, 0, 'R', false, 1);
+        }
+    }
+
+    private function tableHeader(PayrollPdfDocument $pdf, array $columns, array $widths): void
+    {
+        // Group band: consecutive columns of one group share a merged cell.
+        $pdf->setFont('cairo', 'B', 9);
+        $pdf->setFillColor(220, 232, 207);
+        $pdf->setTextColor(36, 61, 22);
+        for ($i = 0, $n = count($columns); $i < $n;) {
+            $j = $i;
+            $span = 0.0;
+            while ($j < $n && $columns[$j]['group'] === $columns[$i]['group']) {
+                $span += $widths[$j];
+                $j++;
+            }
+            $pdf->MultiCell($span, 7, $columns[$i]['group_label'], 1, 'C', true, 0, '', '', true, 0, false, true, 7, 'M');
+            $i = $j;
+        }
+        $pdf->Ln(7);
         $pdf->setFont('cairo', 'B', self::FONT_SIZE);
         $pdf->setFillColor(36, 61, 22);
         $pdf->setTextColor(255, 255, 255);
-        foreach (PayrollColumns::HEADINGS as $key => $title) {
-            $pdf->MultiCell(self::WIDTHS[$key], 10, $title, 1, 'C', true, 0, '', '', true, 0, false, true, 10, 'M');
+        $height = 10;
+        foreach ($columns as $i => $c) {
+            $height = max($height, $pdf->getNumLines($c['heading'], $widths[$i]) * 4.6 + 2.4);
         }
-        $pdf->Ln(10);
+        foreach ($columns as $i => $c) {
+            $pdf->MultiCell($widths[$i], $height, $c['heading'], 1, 'C', true, 0, '', '', true, 0, false, true, $height, 'M');
+        }
+        $pdf->Ln($height);
         $pdf->setTextColor(0, 0, 0);
     }
 
-    private function rowHeight(PayrollPdfDocument $pdf, array $cells): float
+    private function rowHeight(PayrollPdfDocument $pdf, array $cells, array $widths): float
     {
         $pdf->setFont('cairo', '', self::FONT_SIZE);
         $lines = 1;
-        foreach (array_values(self::WIDTHS) as $i => $width) {
+        foreach ($widths as $i => $width) {
             $lines = max($lines, $pdf->getNumLines((string) $cells[$i], $width));
         }
 
         return max(8.0, $lines * 4.6 + 2.4);
     }
 
-    private function row(PayrollPdfDocument $pdf, array $cells, float $height, bool $fill, bool $negativePayable): void
+    private function row(PayrollPdfDocument $pdf, array $columns, array $cells, array $widths, float $height, array $sheetRow): void
     {
         $pdf->setFont('cairo', '', self::FONT_SIZE);
-        $pdf->setFillColor(246, 249, 243);
-        foreach (array_keys(self::WIDTHS) as $i => $key) {
-            $numeric = $i >= 6;
-            if ($key === 'payable' && $negativePayable) {
+        foreach ($columns as $i => $c) {
+            $cell = $c['identity'] ? null : $sheetRow['cells'][$c['key']];
+            $numeric = ! $c['identity'] && $c['type'] !== 'text';
+            if ($cell !== null && ($cell['st'] === 'error' || ($cell['v'] !== null && str_starts_with($cell['v'], '-') && $c['type'] === 'amount'))) {
                 $pdf->setTextColor(185, 28, 28);
+            } elseif ($cell !== null && $cell['st'] === 'missing') {
+                $pdf->setTextColor(120, 113, 108);
             }
-            $pdf->MultiCell(self::WIDTHS[$key], $height, (string) $cells[$i], 1, $numeric ? 'C' : 'R', $fill, 0, '', '', true, 0, false, true, $height, 'M');
+            $pdf->MultiCell($widths[$i], $height, (string) $cells[$i], 1, $numeric ? 'C' : 'R', false, 0, '', '', true, 0, false, true, $height, 'M');
             $pdf->setTextColor(0, 0, 0);
         }
         $pdf->Ln($height);

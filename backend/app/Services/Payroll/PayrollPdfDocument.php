@@ -10,6 +10,9 @@ class PayrollPdfDocument extends TCPDF
     /** @var list<string> */
     public array $headerLines = [];
 
+    /** "Part 2 of 3" when a wide report is split into column groups. */
+    public string $bandLabel = '';
+
     public function Header(): void
     {
         $this->setFont('cairo', 'B', 15);
@@ -26,6 +29,6 @@ class PayrollPdfDocument extends TCPDF
     {
         $this->setY(-14);
         $this->setFont('cairo', '', 9);
-        $this->Cell(0, 6, 'صفحة '.$this->getAliasNumPage().' من '.$this->getAliasNbPages(), 0, 0, 'C');
+        $this->Cell(0, 6, 'صفحة '.$this->getAliasNumPage().' من '.$this->getAliasNbPages().($this->bandLabel !== '' ? ' — '.$this->bandLabel : ''), 0, 0, 'C');
     }
 }
