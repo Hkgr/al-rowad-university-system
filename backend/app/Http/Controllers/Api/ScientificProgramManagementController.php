@@ -2,12 +2,17 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Services\{AcademicPlanWorkflow, ScientificProgramManagementService};
+use App\Services\{AcademicPlanWorkflow, ScientificProgramManagementService, ScientificProgramWorkspaceService, ScientificPlanChangeService};
 use Illuminate\Http\Request;
 
 final class ScientificProgramManagementController extends \App\Http\Controllers\Controller
 {
-    public function __construct(private ScientificProgramManagementService $programs, private AcademicPlanWorkflow $plans) {}
+    public function __construct(private ScientificProgramManagementService $programs, private AcademicPlanWorkflow $plans,
+        private ScientificProgramWorkspaceService $workspace, private ScientificPlanChangeService $changes) {}
+    public function workspace(Request $r) { return $this->response($this->workspace->read($r->user(), $r->query())); }
+    public function saveChanges(Request $r) { return $this->response($this->changes->save($r->user(), $r->all())); }
+    public function changeResult(Request $r, string $requestId) { return $this->response($this->changes->result($r->user(), $requestId)); }
+    public function history(Request $r, int $program) { return $this->response($this->workspace->history($r->user(), $program, $r->query())); }
     private function response(array $data) { return response()->json(['success' => true, 'data' => $data]); }
     public function index(Request $r) { return $this->response($this->programs->listing($r->user(), $r->query())); }
     public function options(Request $r) { return $this->response($this->programs->options($r->user(), $r->query())); }

@@ -6,6 +6,7 @@ import { ACCESS, PERMISSIONS, ROLES } from '../auth/auth.js'
 import { reportAccess } from '../portal-reports/reports.js'
 import { CATALOG_ACCESS } from '../scientific-courses/catalog.js'
 import { PROGRAM_ACCESS } from '../scientific-programs/programs.js'
+import { WORKSPACE_ACCESS } from '../scientific-programs/workspace.js'
 import { reportAccessForOffice } from '../executive-reports/access.js'
 import { ADMINISTRATIVE_ACCESS } from '../vice-presidency/utils/administrativeAccess.js'
 
@@ -114,6 +115,7 @@ export const ROUTE_ACCESS = Object.freeze({
 
   '/vp/scientific/courses': [G.vpScientific, CATALOG_ACCESS],
   '/vp/scientific/programs': [G.vpScientific, PROGRAM_ACCESS],
+  '/vp/scientific/programs-courses': [G.vpScientific, WORKSPACE_ACCESS],
   '/vp/scientific/reports': [G.vpScientific, reportAccessForOffice('scientific')],
   '/vp/scientific/teaching-assignments': [G.vpScientific],
   '/vp/scientific/semester-offerings': [G.vpScientific, semesterGovernanceVp],

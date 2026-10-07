@@ -23,9 +23,10 @@ final class ScientificCourseDistribution
     {
         $this->access->authorize($actor, true);
         $rules = ['scope' => 'required|in:university,college,department', 'college_id' => 'sometimes|integer|min:1',
+            'academic_program_ids' => 'required|array|min:1|max:50', 'academic_program_ids.*' => 'required|integer|min:1|distinct',
             'department_id' => 'sometimes|integer|min:1', 'course_type' => 'required|in:mandatory,elective',
             'draft_version_ids' => 'sometimes|array|max:200', 'draft_version_ids.*' => 'integer|min:1|distinct'];
-        if (array_diff(array_keys($input), array_keys($rules))) $this->invalid('حقول نطاق غير مسموحة.');
+        if (array_diff(array_keys($input), array_filter(array_keys($rules), fn ($key) => !str_contains($key, '.')))) $this->invalid('حقول نطاق غير مسموحة.');
         $v = Validator::make($input, $rules)->validate();
         if ($v['scope'] === 'university') {
             abort_unless($this->access->university($actor), 403);
@@ -40,11 +41,13 @@ final class ScientificCourseDistribution
             } elseif (isset($v['department_id'])) $this->invalid('نطاق الكلية يشمل جميع أقسامها.');
         }
         $query = AcademicProgram::query()
+            ->whereIn('academic_program_id', $v['academic_program_ids'])
             ->when(isset($v['college_id']), fn ($q) => $q->whereHas('department', fn ($d) => $d->where('college_id', $v['college_id'])))
             ->when(isset($v['department_id']), fn ($q) => $q->where('department_id', $v['department_id']));
         // A partial DataScope must never masquerade as ALL programs in the chosen scope.
         abort_if((clone $query)->whereNotIn('academic_program_id', $this->access->programs($actor)->select('academic_program_id'))->exists(), 403);
         $programs = $query->with('department.college')->orderBy('academic_program_id')->when($lock, fn ($q) => $q->lockForUpdate())->get();
+        if ($programs->count() !== count($v['academic_program_ids'])) $this->invalid('البرامج المختارة لا تتبع السياق المحدد.');
         $ids = $programs->modelKeys();
         $drafts = collect();
         $availableDrafts = collect();

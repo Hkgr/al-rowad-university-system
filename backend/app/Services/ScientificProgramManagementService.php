@@ -54,14 +54,17 @@ final class ScientificProgramManagementService
     public function options(User $actor, array $input): array
     {
         $this->access->authorize($actor); AcademicPlanContext::assertReady();
-        $v = $this->validate($input, ['resource' => 'required|in:colleges,departments,courses,levels,semesters,students',
-            'q' => 'sometimes|nullable|string|max:150', 'college_id' => 'sometimes|integer|min:1', 'academic_program_id' => 'sometimes|integer|min:1',
+        $v = $this->validate($input, ['resource' => 'required|in:colleges,departments,programs,courses,levels,semesters,students',
+            'q' => 'sometimes|nullable|string|max:150', 'college_id' => 'sometimes|integer|min:1', 'department_id' => 'sometimes|integer|min:1', 'academic_program_id' => 'sometimes|integer|min:1',
             'page' => 'sometimes|integer|min:1', 'per_page' => 'sometimes|integer|min:1|max:100']);
         return $this->transaction->snapshot(function () use ($actor, $v) {
             $scope = app(ScientificCourseAccess::class);
             [$query, $key, $name] = match ($v['resource']) {
-                'colleges' => [\App\Models\College::whereIn('college_id', $scope->departments($actor)->select('college_id')), 'college_id', 'college_name'],
+                'colleges' => [app(DataScopeService::class)->scopeColleges(\App\Models\College::query(), $actor), 'college_id', 'college_name'],
                 'departments' => [$scope->departments($actor)->when(isset($v['college_id']), fn ($q) => $q->where('college_id', $v['college_id'])), 'department_id', 'department_name'],
+                'programs' => [$this->access->programs($actor)->with('department.college')
+                    ->when(isset($v['college_id']), fn ($q) => $q->whereHas('department', fn ($d) => $d->where('college_id', $v['college_id'])))
+                    ->when(isset($v['department_id']), fn ($q) => $q->where('department_id', $v['department_id'])), 'academic_program_id', 'program_name'],
                 'courses' => [$scope->courses($actor), 'course_id', 'course_name'],
                 'levels' => [\App\Models\AcademicLevel::query(), 'academic_level_id', 'level_name'],
                 'semesters' => [\App\Models\Semester::query(), 'semester_id', 'semester_name'],
@@ -79,7 +82,15 @@ final class ScientificProgramManagementService
             });
             $page = $query->orderBy($name)->orderBy($key)->paginate($v['per_page'] ?? 20, ['*'], 'page', $v['page'] ?? 1);
             return ['data' => collect($page->items())->map(fn ($r) => ['id' => (int) $r->$key, 'label' => $r->$name
-                .($v['resource'] === 'courses' ? ' ('.$r->course_code.')' : '')]),
+                .($v['resource'] === 'courses' ? ' ('.$r->course_code.')' : '')]
+                + ($v['resource'] === 'courses' ? ['credit_hours' => $r->credit_hours, 'theoretical_hours' => $r->theoretical_hours, 'practical_hours' => $r->practical_hours] : [])
+                + ($v['resource'] === 'departments' ? ['code' => $r->department_code] : [])
+                + ($v['resource'] === 'programs' ? ['department_id' => $r->department_id, 'college_id' => $r->department?->college_id] : [])),
+                'unambiguous' => match ($v['resource']) {
+                    'departments' => isset($v['college_id']) && Department::where('college_id', $v['college_id'])->count() === 1,
+                    'programs' => isset($v['department_id']) && AcademicProgram::where('department_id', $v['department_id'])->count() === 1,
+                    default => false,
+                },
                 'meta' => ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'per_page' => $page->perPage(), 'total' => $page->total()]];
         });
     }

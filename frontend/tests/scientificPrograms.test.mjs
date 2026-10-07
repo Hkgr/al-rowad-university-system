@@ -16,8 +16,8 @@ test('legacy group display preserves stored zero/null/inactive definitions and e
   assert.equal(JSON.stringify(data), before)
 })
 test('course links preserve the named plan, without guessing a draft for legacy membership', () => {
-  assert.equal(programPlanLink({ academic_program_id: 2, academic_plan_version_id: null }), '/vp/scientific/programs/2?tab=membership')
-  assert.equal(programPlanLink({ academic_program_id: 2, academic_plan_version_id: 17 }), '/vp/scientific/programs/2?tab=membership&version=17')
+  assert.equal(programPlanLink({ academic_program_id: 2, academic_plan_version_id: null }), '/vp/scientific/programs-courses?tab=membership&program=2')
+  assert.equal(programPlanLink({ academic_program_id: 2, academic_plan_version_id: 17 }), '/vp/scientific/programs-courses?tab=membership&version=17&program=2')
 })
 test('program authority requires actual Scientific role, assigned permission and actual academic scope', () => {
   const valid = { roles: ['vice_president_scientific'], permissions: PROGRAM_ACCESS.assignedPermissions, access_scopes: [{ type: 'college', id: 1 }] }
@@ -42,10 +42,18 @@ test('whole-scope distribution names explicit drafts without changing the select
   const query = new URLSearchParams(distributionPath(value).split('?')[1])
   assert.deepEqual(query.getAll('draft_version_ids[]'), ['5', '9']); assert.equal(query.has('program_ids'), false)
 })
+test('existing requirement form preserves inactive definition hours and explicitly encodes activity', () => {
+  const groups = sixGroups([{ requirement_scope: 'university', requirement_type: 'mandatory', required_credit_hours: 0, is_active: false }])
+  assert.equal(groups[0].is_active, false); assert.equal(groups[0].required_credit_hours, 0)
+  const payload = requirementsPayload({ total_credit_hours: 3, groups }, '1')
+  assert.equal(payload.groups[0].is_active, false)
+  groups[0].is_active = true
+  assert.equal(requirementsPayload({ total_credit_hours: 3, groups }, '1').groups[0].is_active, true)
+})
 test('static route/nav parity, independent defaults and transfer, shared design and uncertainty protection', async () => {
   const page = await read('features/scientific-programs/ScientificProgramsPage.jsx')
-  assert.match(await read('app/App.jsx'), /ScientificProgramsPage \/>, PROGRAM_ACCESS/)
-  assert.match(await read('features/vice-presidency/nav.js'), /to: '\/vp\/scientific\/programs'.*PROGRAM_ACCESS/)
+  assert.match(await read('app/App.jsx'), /UnifiedProgramsPage \/>, PROGRAM_ACCESS/)
+  assert.match(await read('features/vice-presidency/nav.js'), /to: '\/vp\/scientific\/programs-courses'.*WORKSPACE_ACCESS/)
   assert.match(page, /useBlocker/); assert.match(page, /beforeunload/); assert.match(page, /controls\.current\.busy/)
   assert.match(page, /loadAction\.current\+\+/); assert.match(page, /retained/)
   assert.match(page, /caps\.assign && plan\.data\.version\.status === 'approved'/)

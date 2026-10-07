@@ -21,9 +21,9 @@ function EditorLoader({ context, onEdit, onMembership, ...props }) {
   const courseRead = useCatalogRead(context.kind === 'membership' ? `/courses/${context.course.course_id}` : null, { refresh: retry })
   const baseline = context.baseline || read.data
   if (!baseline) return <div aria-busy={read.loading}><Notice>{read.loading && 'جاري تحميل البيانات…'}</Notice><Notice error>{read.error && catalogError(read.error)}</Notice>{read.error && <Button onClick={() => setRetry(x => x + 1)}>إعادة تحميل التفاصيل</Button>}</div>
-  if (context.kind === 'course') return <><Notice>{context.forProgram && 'احفظ بيانات المادة أولًا، ثم اختر إضافتها للبرنامج في خطوة مستقلة.'}</Notice><CourseEditor baseline={baseline} {...props} /></>
+  if (context.kind === 'course') return <><Notice>هذا تعديل لدليل المواد فقط. لإعداد عدة مواد وربطها ببرامج محددة استخدم «البرامج والمواد»؛ لا تُوزّع المواد تلقائيًا.</Notice><CourseEditor allowDistribution={false} baseline={baseline} {...props} /></>
   if (isCourse) return <CourseDetails baseline={baseline} onEdit={onEdit} onMembership={onMembership} deleting={context.kind === 'delete'} {...props} />
-  if (baseline.versioned_plans) return <Notice>تُدار مواد هذا البرنامج ومتطلباته ضمن إصدار محدد. <Link className="font-bold text-primary" to={`/vp/scientific/programs/${context.program.id}`}>فتح خطط البرنامج</Link></Notice>
+  if (baseline.workspace_available || baseline.versioned_plans) return <Notice>تُدار المواد ومتطلبات التخرج في عملية إعداد موحدة للطلاب الجدد فقط. <Link className="font-bold text-primary" to={`/vp/scientific/programs-courses?program=${context.program.id}`}>فتح البرنامج والإعداد</Link></Notice>
   if (context.kind === 'groups') return <RequirementGroupEditor baseline={baseline} {...props} />
   if (!courseRead.data || courseRead.data.revision !== baseline.revision) return <div className="space-y-2"><Notice>{courseRead.loading ? 'تحميل بيانات المادة…' : 'تغيرت البيانات أثناء التحميل؛ أعد تحميلها قبل المتابعة.'}</Notice><Notice error>{courseRead.error && catalogError(courseRead.error)}</Notice>{!courseRead.loading && <Button onClick={() => setRetry(x => x + 1)}>إعادة تحميل البيانات</Button>}</div>
   return <MembershipEditor baseline={baseline} course={courseRead.data.data} {...props} />

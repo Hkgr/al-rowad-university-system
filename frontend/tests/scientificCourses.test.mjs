@@ -53,9 +53,12 @@ test('read hooks bind data to request key, invalidate debounce responses and do 
 
 test('route, navigation and home entry share the same actual Scientific authorization', async () => {
   const read = p => readFile(new URL(p, import.meta.url), 'utf8')
-  assert.match(await read('../src/app/App.jsx'), /path="\/vp\/scientific\/courses" element=\{protect\(<ScientificCoursesPage \/>, CATALOG_ACCESS\)\}/)
-  assert.match(await read('../src/features/vice-presidency/nav.js'), /to: '\/vp\/scientific\/courses'.*\.\.\.CATALOG_ACCESS/)
-  assert.match(await read('../src/features/vice-presidency/pages/VicePresidentShell.jsx'), /office === 'scientific' && canViewCatalog\(identity\)/)
+  assert.match(await read('../src/app/App.jsx'), /path="\/vp\/scientific\/courses" element=\{protect\(<UnifiedProgramsPage catalogOnly \/>, CATALOG_ACCESS\)\}/)
+  assert.match(await read('../src/features/vice-presidency/nav.js'), /to: '\/vp\/scientific\/programs-courses'.*\.\.\.WORKSPACE_ACCESS/)
+  const { WORKSPACE_ACCESS } = await import('../src/features/scientific-programs/workspace.js')
+  const { CATALOG_ACCESS } = await import('../src/features/scientific-courses/catalog.js')
+  assert.ok(WORKSPACE_ACCESS.anyAccess.includes(CATALOG_ACCESS))
+  assert.match(await read('../src/features/vice-presidency/pages/VicePresidentShell.jsx'), /office === 'scientific' && \(canViewPrograms\(identity\) \|\| canViewCatalog\(identity\)\).*programs-courses/)
 })
 
 test('forms retain baseline on conflict, inspect before explicit discard and separate budgets', async () => {

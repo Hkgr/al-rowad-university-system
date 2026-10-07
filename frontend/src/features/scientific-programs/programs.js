@@ -9,7 +9,8 @@ export const VERSION_LABELS = { draft: 'مسودة للتعديل', approved: '�
 export function programPlanLink(membership) {
   const query = new URLSearchParams({ tab: 'membership' })
   if (membership.academic_plan_version_id != null) query.set('version', String(membership.academic_plan_version_id))
-  return `/vp/scientific/programs/${membership.academic_program_id}?${query}`
+  query.set('program', String(membership.academic_program_id))
+  return `/vp/scientific/programs-courses?${query}`
 }
 /** Display actual definitions, never invent saved groups. */
 export function requirementDisplayGroups(data) {
@@ -39,9 +40,9 @@ export async function programWrite(path, method, payload) {
 }
 export function sixGroups(groups = []) {
   return Object.keys(SCOPES).flatMap(scope => Object.keys(TYPES).map(type => {
-    const matching = groups.filter(g => g.requirement_scope === scope && g.requirement_type === type && g.is_active)
+    const matching = groups.filter(g => g.requirement_scope === scope && g.requirement_type === type)
     const group = matching.length === 1 ? matching[0] : null
-    return { requirement_scope: scope, requirement_type: type, required_credit_hours: group?.required_credit_hours ?? '', ambiguous: matching.length > 1 }
+    return { requirement_scope: scope, requirement_type: type, required_credit_hours: group?.required_credit_hours ?? '', is_active: group?.is_active ?? true, ambiguous: matching.length > 1 }
   }))
 }
 export const nullableHours = value => value === '' ? null : Number(value)
@@ -54,5 +55,5 @@ export function budgetDraftSummary(draft) {
   return { sum, total, difference: sum === null || total === null ? null : total - sum }
 }
 export function requirementsPayload(draft, revision) {
-  return { revision, total_credit_hours: nullableHours(draft.total_credit_hours), groups: draft.groups.map(({ requirement_scope, requirement_type, required_credit_hours }) => ({ requirement_scope, requirement_type, required_credit_hours: nullableHours(required_credit_hours) })) }
+  return { revision, total_credit_hours: nullableHours(draft.total_credit_hours), groups: draft.groups.map(({ requirement_scope, requirement_type, required_credit_hours, is_active }) => ({ requirement_scope, requirement_type, required_credit_hours: nullableHours(required_credit_hours), ...(typeof is_active === 'boolean' ? { is_active } : {}) })) }
 }

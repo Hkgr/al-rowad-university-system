@@ -25,7 +25,9 @@ final class ScientificCourseManagementTest extends TestCase
     public function test_authentication_actual_role_assigned_permissions_and_scope_are_required(): void
     {
         $this->getJson(self::URL.'/courses')->assertOk();
-        foreach (['super_admin', 'vice_president_administrative', 'dean'] as $role) {
+        DB::table('roles')->update(['role_code' => 'super_admin']);
+        $this->getJson(self::URL.'/courses')->assertOk(); // Preserve the existing central bypass.
+        foreach (['vice_president_administrative', 'dean'] as $role) {
             DB::table('roles')->update(['role_code' => $role]);
             $this->getJson(self::URL.'/courses')->assertForbidden();
         }

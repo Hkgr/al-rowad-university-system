@@ -156,25 +156,25 @@ export const scientific = {
         {
           id: 'course-catalog',
           title: 'إدارة دليل المواد',
-          summary: 'إضافة المواد وتعديلها وتصنيفها ضمن البرامج مباشرة دون مرحلة اعتماد. إذا عدّل غيرك المادة في الوقت نفسه تظهر رسالة تعارض (409).',
+          summary: 'دليل المواد مستقل عن ربطها بالخطة. التعديل الأكاديمي في «البرامج والمواد» يحفظ ويعتمد خطة مكتملة للطلاب الجدد فقط؛ عند التعارض لا تعاد الكتابة تلقائيًا.',
           access: CATALOG_MANAGE,
           link: { to: '/vp/scientific/courses' },
           steps: [
-            step('افتح «إدارة المواد» وابحث عن المادة أو اضغط «إضافة مادة».'),
-            step('عدّل البيانات أو التصنيف ثم احفظ. عند ظهور تعارض حدّث الصفحة وراجع التعديلات قبل إعادة الحفظ.'),
+            step('افتح «البرامج والمواد» ثم «دليل المواد» للبحث أو التصحيح النصي المسموح.'),
+            step('صحّح اسم المادة ووصفها والحقول المسموحة بحسب سبب القفل. ربط المواد وتصنيفها في الخطة من «البرامج والمواد». عند التعارض احتفظ بمدخلاتك وراجع النتيجة قبل أي إعادة حفظ.'),
           ],
           sources: [source('frontend/src/features/scientific-courses/ScientificCoursesPage.jsx', 'إضافة مادة')],
         },
         {
           id: 'programs',
-          title: 'البرامج والخطط الأكاديمية',
-          summary: 'تظهر أزرار الخطة بحسب صلاحياتك: إنشاء نسخة للتعديل، اعتمادها، ثم تعيينها للطلاب الجدد.',
+          title: 'البرامج والمواد',
+          summary: 'اختر الكلية والقسم، ثم أعد عدة مواد ومتطلبات في عملية واحدة. الحفظ النهائي يحمي مرجع الطلاب الحاليين ويعتمد التغييرات للطلاب الجدد فقط.',
           access: PROGRAM_ACCESS,
-          link: { to: '/vp/scientific/programs' },
+          link: { to: '/vp/scientific/programs-courses' },
           steps: [
-            step('افتح البرنامج ثم «إنشاء نسخة للتعديل» من خطة معتمدة أو انتقالية.', { access: { assignedPermissions: ['vice_presidency.scientific.programs.plans.manage'] } }),
-            step('عدّل المسودة ثم «اعتماد الخطة»؛ بعد الاعتماد تُثبّت ولا تُعدّل.', { access: { assignedPermissions: ['vice_presidency.scientific.programs.plans.approve'] } }),
-            step('«تعيين للطلاب الجدد» أو نقل الطلاب إجراء مستقل على خطة معتمدة.', { access: { assignedPermissions: ['vice_presidency.scientific.programs.plans.assign'] } }),
+            step('اختر الكلية والقسم؛ يفتح البرنامج الوحيد تلقائيًا. النقص في الإعداد يظهر دون إنشاء بيانات افتراضية.'),
+            step('«إعداد التغييرات» يتيح عدة مواد والمتطلبات الستة قبل حفظ واحد؛ الفراغ ليس صفرًا.'),
+            step('راجع البرامج والتغييرات ثم «حفظ وتطبيق للطلاب الجدد». يتطلب الحفظ صلاحيات الإدارة والاعتماد والتعيين معًا؛ لا يُنقل أي طالب قائم.'),
             step('بدون هذه الصلاحيات تعرض الصفحة البرامج وخططها للقراءة فقط.'),
           ],
           flows: [{
@@ -187,7 +187,7 @@ export const scientific = {
             ],
           }],
           sources: [
-            source('frontend/src/features/scientific-programs/ScientificProgramsPage.jsx', 'إنشاء نسخة للتعديل', 'اعتماد الخطة', 'تعيين للطلاب الجدد'),
+            source('frontend/src/features/scientific-programs/UnifiedProgramsPage.jsx', 'إعداد التغييرات', 'حفظ وتطبيق للطلاب الجدد'),
             source('frontend/src/features/scientific-programs/programs.js', 'مسودة للتعديل', 'خطة معتمدة'),
           ],
         },
