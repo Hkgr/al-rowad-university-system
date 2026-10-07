@@ -4,7 +4,7 @@ import test from 'node:test'
 import { ACCESS, canAccess, landingRoute } from '../src/features/auth/auth.js'
 
 const source = path => readFile(new URL(`../src/${path}`, import.meta.url), 'utf8')
-const OWNER_PERMISSIONS = ['owner_portal.access', 'owner_portal.home.view', 'owner_payroll.view', 'owner_payroll.employees.manage', 'owner_payroll.bodies.manage', 'owner_payroll.amounts.edit', 'owner_payroll.export']
+const OWNER_PERMISSIONS = ['owner_portal.access', 'owner_portal.home.view', 'owner_payroll.view', 'owner_payroll.employees.manage', 'owner_payroll.bodies.manage', 'owner_payroll.amounts.edit', 'owner_payroll.export', 'owner_payroll.config.manage']
 const owner = { roles: ['university_owner'], permissions: OWNER_PERMISSIONS, access_scopes: [] }
 
 test('the owner lands on the owner portal; every other landing is unchanged', () => {
@@ -67,12 +67,54 @@ test('the grid keeps RevoGrid clipboard/autofill/range-edit disabled so nothing 
   assert.doesNotMatch(grid, /dangerouslySetInnerHTML|innerHTML\s*=/)
 })
 
-test('the exports, grid and totals scope are labelled, and exports wait for pending saves', async () => {
+test('the exports describe the dataset on screen, wait for pending saves, and the page labels its scope', async () => {
   const page = await source('features/owner-portal/pages/OwnerPayroll.jsx')
   assert.match(page, /await controller\.flush\(\)/)
   assert.match(page, /if \(!ok\)[\s\S]{0,200}لا يمكن التصدير/)
-  assert.match(page, /الصفوف المطابقة للمرشحات الحالية/)
+  assert.match(page, /downloadPayrollExport\(kind, shown\.query\)/, 'the export uses the applied (on-screen) query, never the not-yet-applied controls')
+  assert.match(page, /disabled=\{Boolean\(exporting\) \|\| load\.state !== 'ready' \|\| pendingQuery\}/, 'export is disabled while the controls are ahead of the grid')
+  assert.match(page, /الصفوف المطابقة للمرشحات/)
   assert.match(page, /كل الصفوف/)
-  for (const label of ['إضافة موظف', 'إدارة الهيئات', 'تصدير Excel', 'تصدير PDF']) assert.ok(page.includes(label), label)
-  assert.doesNotMatch(page, /فترة الرواتب|اختيار الشهر|إقفال|اعتماد الرواتب|صرف الرواتب|تنفيذ الدفع/, 'no monthly-cycle, approval, closing or payment features in phase 1')
+  for (const label of ['إضافة موظف', 'إدارة الهيئات', 'إدارة الأعمدة والمعادلات', 'عرض مختصر', 'عرض تفصيلي']) assert.ok(page.includes(label), label)
+  assert.doesNotMatch(page, /فترة الرواتب|اختيار الشهر|إقفال|اعتماد الرواتب|صرف الرواتب|تنفيذ الدفع/, 'no monthly-cycle, approval, closing or payment features yet')
+})
+
+test('review: filter/sort changes made while a save is unresolved are applied after resolution, not dropped or half-applied', async () => {
+  const page = await source('features/owner-portal/pages/OwnerPayroll.jsx')
+  assert.match(page, /const \[desired, setDesired\]/)
+  assert.match(page, /const \[shown, setShown\]/)
+  assert.match(page, /\[desiredQuery, reloadKey, controller, blockedByError\]/, 'the dataset effect re-runs when the save problem is resolved')
+  assert.match(page, /sort=\{gridSort\}/, 'the grid describes what is shown')
+  assert.match(page, /gridSort = useMemo\(\(\) => \(\{ key: shownFilters\.sort/)
+  assert.match(page, /data-testid="pending-query"/)
+})
+
+test('review: discarding unsaved values reloads the authoritative rows first', async () => {
+  const controller = await source('features/owner-portal/lib/payrollSheetController.js')
+  const useServer = controller.slice(controller.indexOf('async useServer()'))
+  assert.ok(useServer.indexOf('await this.#reload()') < useServer.indexOf('this.#dropPending(op)'), 'reload happens before anything is discarded')
+})
+
+test('Home is an overview: one principal figure, deep links into the filtered payroll, no new sidebar items or invented metrics', async () => {
+  const home = await source('features/owner-portal/pages/OwnerHome.jsx')
+  for (const text of ['نظرة عامة', 'فتح كشف الرواتب', 'إجمالي الصافي المستحق', 'حسب الهيئة', 'حسب مكان العمل', 'ما يحتاج إلى معالجة']) assert.ok(home.includes(text), text)
+  assert.match(home, /\/owner\/payroll\?\$\{param\}=/)
+  assert.match(home, /completeness=incomplete/)
+  assert.doesNotMatch(home, /Chart|recharts|trend|اتجاه|الشهر الماضي|<select/)
+})
+
+test('Syrian pounds only: no dollar sign or USD anywhere in the owner feature', async () => {
+  for (const file of ['lib/payrollMoney.js', 'lib/payrollView.js', 'lib/payrollSheetController.js', 'pages/OwnerPayroll.jsx', 'pages/OwnerHome.jsx', 'components/PayrollGrid.jsx', 'components/ColumnsDialog.jsx']) {
+    const text = await source(`features/owner-portal/${file}`)
+    assert.doesNotMatch(text, /USD|دولار|['"]\$['"]|\$\$\{|\bformatMoney\b|\bcents\b/i, `${file} must not mention dollars or the old cents model`)
+  }
+})
+
+test('the formula manager has the required controls and a separate permission', async () => {
+  const dialog = await source('features/owner-portal/components/ColumnsDialog.jsx')
+  for (const text of ['إدارة الأعمدة والمعادلات', 'الإعدادات العامة', 'أثر التغيير قبل الحفظ', 'حفظ الإعدادات', 'معاينة على الموظف', 'تعتمد عليه المعادلات']) assert.ok(dialog.includes(text), text)
+  const auth = await source('features/auth/auth.js')
+  assert.match(auth, /ownerPayrollConfigManage: 'owner_payroll\.config\.manage'/)
+  const page = await source('features/owner-portal/pages/OwnerPayroll.jsx')
+  assert.match(page, /canManage=\{canConfig\}/)
 })

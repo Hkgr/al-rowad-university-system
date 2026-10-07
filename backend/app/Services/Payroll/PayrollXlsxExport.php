@@ -4,8 +4,8 @@ namespace App\Services\Payroll;
 
 use App\Services\Payroll\Formula\ExcelFormula;
 use App\Services\Payroll\Formula\PayrollFormula;
-use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
@@ -103,11 +103,11 @@ final class PayrollXlsxExport
             }
             $this->text($sheet, $letters[$column['key']].self::HEADER_ROW, $column['heading']);
         }
-        $band = $sheet->getStyle("A".self::GROUP_ROW.":{$lastLetter}".self::GROUP_ROW);
+        $band = $sheet->getStyle('A'.self::GROUP_ROW.":{$lastLetter}".self::GROUP_ROW);
         $band->getFont()->setBold(true)->getColor()->setRGB('243D16');
         $band->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('DCE8CF');
         $band->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-        $head = $sheet->getStyle("A".self::HEADER_ROW.":{$lastLetter}".self::HEADER_ROW);
+        $head = $sheet->getStyle('A'.self::HEADER_ROW.":{$lastLetter}".self::HEADER_ROW);
         $head->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
         $head->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('243D16');
         $head->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER)->setWrapText(true);
@@ -197,7 +197,7 @@ final class PayrollXlsxExport
                 $sheet->getColumnDimension($letter)->setVisible(false);
             }
         }
-        $sheet->getStyle("A".self::HEADER_ROW.":{$visibleLast}{$totalRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('B9CBA8');
+        $sheet->getStyle('A'.self::HEADER_ROW.":{$visibleLast}{$totalRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('B9CBA8');
         $sheet->freezePane('C'.self::FIRST_DATA_ROW);
 
         $setup = $sheet->getPageSetup();

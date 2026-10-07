@@ -117,4 +117,39 @@ final class OwnerPayrollCalculationTest extends OwnerPayrollTestCase
         $this->values([$this->change($fresh, ['fixed_salary' => '1'])], $revision)->assertStatus(409)->assertJsonPath('error_code', 'payroll_config_conflict');
         $this->assertSame('96600.00', $this->sheetRow('0001')['cells']['fixed_salary']['v']);
     }
+
+    /**
+     * The template configuration (with parsed formulas) and the server's results for a spread of inputs. The browser engine is tested
+     * against this same file (frontend/tests/ownerPayrollLogic.test.mjs), so the workbook calculation cannot differ between the two.
+     * Regenerate with UPDATE_PAYROLL_VECTORS=1 after an intentional change.
+     */
+    public function test_template_fixture_for_the_browser_engine_matches_the_server(): void
+    {
+        $this->actingAsUser(self::OWNER);
+        $config = $this->getJson(self::API.'/payroll/config')->assertOk()->json('data');
+        $cases = [
+            'reference' => ['fixed_salary' => '96600', 'salary_adjustment' => '0', 'compensation' => '55200', 'compensation_adjustment' => '0', 'other_deductions' => '0'],
+            'blank optional inputs' => ['fixed_salary' => '20000'],
+            'signed adjustments' => ['fixed_salary' => '100000', 'salary_adjustment' => '-5000.50', 'compensation' => '1000', 'compensation_adjustment' => '-100'],
+            'negative taxable base' => ['fixed_salary' => '10000'],
+            'rounding tie' => ['fixed_salary' => '20000', 'salary_adjustment' => '-1500.50', 'other_deductions' => '250'],
+            'missing fixed salary' => ['compensation' => '500', 'other_deductions' => '10'],
+            'large values' => ['fixed_salary' => '999999999.99', 'compensation' => '999999999.99', 'salary_adjustment' => '123456.78'],
+            'all zero' => ['fixed_salary' => '0', 'compensation' => '0', 'other_deductions' => '0'],
+        ];
+        $fixture = ['config' => $config, 'cases' => []];
+        $i = 0;
+        foreach ($cases as $name => $values) {
+            $row = $this->employee(['employee_number' => 'T'.(++$i)]);
+            $saved = $this->values([$this->change($row, $values)])->assertOk()->json('data.0');
+            $fixture['cases'][] = ['name' => $name, 'inputs' => (object) $values, 'cells' => $saved['cells']];
+        }
+        $json = json_encode($fixture, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
+        $file = __DIR__.'/../Fixtures/payroll_template_reference.json';
+        if (getenv('UPDATE_PAYROLL_VECTORS') === '1') {
+            file_put_contents($file, $json);
+        }
+        $this->assertSame(file_get_contents($file), $json, 'fixture out of date: run with UPDATE_PAYROLL_VECTORS=1');
+        $this->assertSame('125166.30', $fixture['cases'][0]['cells']['total_net_payable']['v']);
+    }
 }

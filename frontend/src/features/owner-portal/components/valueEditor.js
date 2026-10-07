@@ -1,14 +1,15 @@
-import { AMOUNT_ERRORS, parseAmount } from '../lib/payrollMoney'
+import { INPUT_ERRORS, parseInput } from '../lib/payrollMoney'
 
 /**
- * In-cell editor for the three financial columns. It replaces RevoGrid's plain text editor so that an invalid amount is
- * refused where it is typed (the cell keeps editing and is marked invalid) instead of being committed and reverted, and
- * so Enter/Tab can move in the Arabic reading order. `getHooks()` returns the object owned by PayrollGrid:
+ * In-cell editor for every manual input column (amounts, numbers, percentages, text). It replaces RevoGrid's plain text editor so
+ * that an invalid value is refused where it is typed (the cell keeps editing and is marked invalid) instead of being committed and
+ * reverted, and so Enter/Tab can move in the Arabic reading order. `getHooks()` returns the object owned by PayrollGrid:
  *   moveAfterSave  - { row, col } offset to apply once the value has been committed
  *   onInvalid({ title, message }) - report a refused value (the editor stays open on it)
+ * The column's `meta` ({ value_type, allow_negative }) decides what is valid.
  */
-export function createMoneyEditor(getHooks) {
-  return class MoneyEditor {
+export function createValueEditor(getHooks) {
+  return class ValueEditor {
     constructor(column, save, close) {
       this.column = column
       this.save = save
@@ -36,6 +37,8 @@ export function createMoneyEditor(getHooks) {
 
     beforeDisconnect() { this.input?.blur() }
 
+    meta() { return this.column?.column?.meta ?? { value_type: 'amount', allow_negative: false } }
+
     mark(message) {
       if (!this.input) return
       this.input.setAttribute('aria-invalid', message ? 'true' : 'false')
@@ -51,10 +54,10 @@ export function createMoneyEditor(getHooks) {
       // Own the key completely: RevoGrid's document-level handler must not also act on it.
       event.preventDefault()
       event.stopPropagation()
-      const parsed = parseAmount(this.input.value)
+      const parsed = parseInput(this.meta(), this.input.value)
       if (!parsed.ok) {
-        this.mark(AMOUNT_ERRORS[parsed.error])
-        getHooks().onInvalid?.({ title: this.column?.column?.name, message: AMOUNT_ERRORS[parsed.error] })
+        this.mark(INPUT_ERRORS[parsed.error])
+        getHooks().onInvalid?.({ title: this.column?.column?.name, message: INPUT_ERRORS[parsed.error] })
         return
       }
       getHooks().moveAfterSave = { row: enter ? (event.shiftKey ? -1 : 1) : 0, col: tab ? (event.shiftKey ? -1 : 1) : 0 }
@@ -63,13 +66,14 @@ export function createMoneyEditor(getHooks) {
     }
 
     render(h) {
+      const numeric = this.meta().value_type !== 'text'
       return h('input', {
         type: 'text',
-        inputMode: 'decimal',
+        inputMode: numeric ? 'decimal' : 'text',
         enterKeyHint: 'enter',
         autocomplete: 'off',
-        dir: 'ltr',
-        'aria-label': this.column?.column?.name ? `تعديل ${this.column.column.name}` : 'تعديل المبلغ',
+        dir: numeric ? 'ltr' : 'rtl',
+        'aria-label': this.column?.column?.name ? `تعديل ${this.column.column.name}` : 'تعديل القيمة',
         value: this.editCell?.val ?? '',
         ref: el => { this.input = el },
         onInput: () => this.mark(''),

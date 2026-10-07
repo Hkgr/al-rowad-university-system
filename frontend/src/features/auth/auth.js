@@ -80,6 +80,7 @@ export const PERMISSIONS = Object.freeze({
   ownerPayrollBodiesManage: 'owner_payroll.bodies.manage',
   ownerPayrollAmountsEdit: 'owner_payroll.amounts.edit',
   ownerPayrollExport: 'owner_payroll.export',
+  ownerPayrollConfigManage: 'owner_payroll.config.manage',
 })
 
 // Ministry portal: assigned role and permission for ordinary accounts; administrative authority is centralized below.

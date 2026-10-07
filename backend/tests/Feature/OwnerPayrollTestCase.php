@@ -3,17 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\User;
-use App\Support\OwnerPortal;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
-use PhpOffice\PhpSpreadsheet\Cell\DataType;
-use PhpOffice\PhpSpreadsheet\IOFactory;
-use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use Tests\TestCase;
 
 /**

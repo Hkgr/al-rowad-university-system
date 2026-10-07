@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Services\Payroll\Formula\FormulaScope;
 use App\Services\Payroll\Formula\PayrollFormula;
 use App\Services\Payroll\PayrollCalculator;
+use Brick\Math\BigDecimal;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -66,6 +67,7 @@ final class OwnerPayrollFormulaVectorsTest extends TestCase
         ['large value', '[أ] * 1000', 'amount', ['a' => '999999999.99', 'b' => '0'], 'ok', '999999999990.00'],
         ['overflow is an error', '[أ] * 10000000', 'amount', ['a' => '999999999.99', 'b' => '0'], 'error', null],
         ['arabic digits in formula', '[أ] * ٢ + ١٫٥', 'amount', ['a' => '10', 'b' => '0'], 'ok', '21.50'],
+        ['semicolon argument separators', 'MAX([أ]؛ [ب]) + SUM(1; 2)', 'amount', ['a' => '3', 'b' => '10'], 'ok', '13.00'],
         ['nested functions', 'ROUND(MAX([أ] * [النسبة], 100), 1)', 'amount', ['a' => '96600', 'b' => '0'], 'ok', '6762.00'],
         ['comparison result used in arithmetic via IF', '[أ] + IF([أ] > [ب], [ب], 0)', 'amount', ['a' => '9', 'b' => '4'], 'ok', '13.00'],
     ];
@@ -80,7 +82,7 @@ final class OwnerPayrollFormulaVectorsTest extends TestCase
         $ast = PayrollFormula::parse($formula, new FormulaScope($entries));
         $columns = array_map(fn ($c) => $c + ['label' => $c['label'], 'kind' => 'input', 'formula' => null, 'warn_negative' => false], self::COLUMNS);
         $columns[] = ['key' => 'out', 'label' => 'ناتج', 'kind' => 'formula', 'value_type' => $type, 'formula' => PayrollFormula::canonical($ast), 'blank_as_zero' => false, 'warn_negative' => false];
-        $stored = array_map(fn ($v) => $v === null ? null : (is_numeric($v) ? \Brick\Math\BigDecimal::of($v) : $v), $inputs);
+        $stored = array_map(fn ($v) => $v === null ? null : (is_numeric($v) ? BigDecimal::of($v) : $v), $inputs);
         $cell = (new PayrollCalculator($columns, self::SETTINGS))->evaluateRow($stored)['out'];
 
         return ['ast' => $ast, 'state' => $cell['st'] ?? 'ok', 'value' => $cell['v']];

@@ -1123,6 +1123,51 @@
             "value": "21.50"
         },
         {
+            "name": "semicolon argument separators",
+            "formula": "MAX([أ]؛ [ب]) + SUM(1; 2)",
+            "value_type": "amount",
+            "inputs": {
+                "a": "3",
+                "b": "10"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "+",
+                "l": {
+                    "t": "call",
+                    "f": "MAX",
+                    "args": [
+                        {
+                            "t": "ref",
+                            "k": "a",
+                            "src": "column"
+                        },
+                        {
+                            "t": "ref",
+                            "k": "b",
+                            "src": "column"
+                        }
+                    ]
+                },
+                "r": {
+                    "t": "call",
+                    "f": "SUM",
+                    "args": [
+                        {
+                            "t": "num",
+                            "v": "1"
+                        },
+                        {
+                            "t": "num",
+                            "v": "2"
+                        }
+                    ]
+                }
+            },
+            "state": "ok",
+            "value": "13.00"
+        },
+        {
             "name": "nested functions",
             "formula": "ROUND(MAX([أ] * [النسبة], 100), 1)",
             "value_type": "amount",

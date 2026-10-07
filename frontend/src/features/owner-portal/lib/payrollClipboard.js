@@ -1,5 +1,5 @@
 // Clipboard text <-> cell matrices for the payroll grid, and the all-or-nothing paste plan.
-import { AMOUNT_ERRORS, parseAmount } from './payrollMoney.js'
+import { INPUT_ERRORS, parseInput } from './payrollMoney.js'
 
 /** Parse tab/newline text (Excel, Google Sheets, LibreOffice) including quoted cells. Trailing empty line dropped. */
 export function parseClipboardText(text) {
@@ -30,7 +30,7 @@ export function matrixToClipboardText(matrix) {
 }
 
 /**
- * Plan a paste. `columns` is the logical (reading-order) column list [{ prop, editable, parse? }]; `rowIds` the
+ * Plan a paste. `columns` is the logical (reading-order) column list [{ prop, title, editable, meta: { value_type, allow_negative } }]; `rowIds` the
  * ids of the rows in display order. `anchor` = { row, col } (indexes into those lists) of the top-left target.
  * With a single clipboard cell and a larger selection, the value fills the whole selection (Excel behaviour).
  *
@@ -55,9 +55,9 @@ export function planPaste({ matrix, anchor, selection = null, columns, rowIds, c
     if (row >= rowIds.length) return errors.push({ row, col, prop: column?.prop, kind: 'rows', message: 'اللصق يتجاوز آخر صف في الجدول.' })
     if (!column) return errors.push({ row, col, kind: 'columns', message: 'اللصق يتجاوز آخر عمود في الجدول.' })
     if (!column.editable) return errors.push({ row, col, prop: column.prop, id: rowIds[row], kind: 'protected', message: `العمود «${column.title}» محمي ولا يقبل اللصق.` })
-    const parsed = parseAmount(raw)
-    if (!parsed.ok) return errors.push({ row, col, prop: column.prop, id: rowIds[row], kind: 'invalid', message: AMOUNT_ERRORS[parsed.error] })
-    changes.push({ id: rowIds[row], field: column.prop, cents: parsed.cents, row, col })
+    const parsed = parseInput(column.meta ?? { value_type: 'amount', allow_negative: false }, raw)
+    if (!parsed.ok) return errors.push({ row, col, prop: column.prop, id: rowIds[row], kind: 'invalid', message: INPUT_ERRORS[parsed.error] })
+    changes.push({ id: rowIds[row], key: column.prop, value: parsed.value, row, col })
   }))
-  return errors.length ? { changes: [], errors } : { changes: changes.filter(change => currentValue(change.id, change.field) !== change.cents), errors: [] }
+  return errors.length ? { changes: [], errors } : { changes: changes.filter(change => currentValue(change.id, change.key) !== change.value), errors: [] }
 }

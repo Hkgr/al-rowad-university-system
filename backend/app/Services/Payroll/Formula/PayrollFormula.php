@@ -2,6 +2,7 @@
 
 namespace App\Services\Payroll\Formula;
 
+use App\Services\Payroll\PayrollCalculator;
 use Brick\Math\BigDecimal;
 
 /**
@@ -65,7 +66,7 @@ final class PayrollFormula
         $source = strtr($source, [
             '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4', '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
             '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4', '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
-            '٫' => '.', '٪' => '%', '،' => ',', "\u{00A0}" => ' ', '×' => '*', '÷' => '/', '−' => '-',
+            '٫' => '.', '٪' => '%', '،' => ',', '؛' => ',', ';' => ',', "\u{00A0}" => ' ', '×' => '*', '÷' => '/', '−' => '-',
         ]);
         $source = trim($source);
 
@@ -253,7 +254,7 @@ final class PayrollFormula
         $this->index++;
         switch ($t['t']) {
             case 'num':
-                return $this->node(['t' => 'num', 'v' => \App\Services\Payroll\PayrollCalculator::plain(BigDecimal::of($t['v']))], $depth);
+                return $this->node(['t' => 'num', 'v' => PayrollCalculator::plain(BigDecimal::of($t['v']))], $depth);
             case 'str':
                 return $this->node(['t' => 'str', 'v' => $t['v']], $depth);
             case 'label':

@@ -1,29 +1,35 @@
-// Framework-free state machine of the payroll working sheet: pending edits, an ordered save queue,
-// undo/redo, optimistic-concurrency conflicts and failed saves. React reads it through subscribe/getSnapshot.
+// Framework-free state machine of the payroll working sheet: pending edits, an ordered save queue, undo/redo,
+// optimistic-concurrency conflicts (row and configuration) and failed saves. React reads it through subscribe/getSnapshot.
 //
 // Rules it enforces (see docs/owner-payroll.md):
 //  - every user operation (typed edit, multi-cell paste, clear, undo, redo) is ONE atomic request;
-//  - edited values show immediately (and totals/payable recalculate) while the request is pending;
+//  - edited values show immediately (calculated columns and totals recalculate locally) while the request is pending;
 //  - a failed or conflicting operation halts the queue and KEEPS the user's pending values on screen;
 //  - nothing is shown as saved until the server confirmed it;
-//  - saves are keyed by the stable employee id and the last-known entry revision, never by visible row index.
-import { centsFromString, centsToString, payableCents, sumTotals } from './payrollMoney.js'
+//  - "use the server's values" first RELOADS the authoritative rows; the pending values are discarded only once that succeeded
+//    (an uncertain failure may in fact have been saved, so the screen must never fall back to stale local values);
+//  - saves are keyed by the stable employee id and the last-known entry revision, never by visible row index, and carry the
+//    configuration revision they were calculated under.
+import { createCalculator, sumColumn } from './payrollFormula.js'
+import { rowStatus } from './payrollView.js'
 
-export const AMOUNT_FIELDS = ['fixed_salary', 'deduction', 'compensation']
+const TOTAL_KEY = 'total_net_payable'
 
 const metaOf = row => ({
   id: row.id, employee_number: row.employee_number, full_name: row.full_name, job_title: row.job_title, body_id: row.body_id, body_name: row.body_name,
   body_is_active: row.body_is_active, workplace: row.workplace, workplace_other: row.workplace_other, workplace_label: row.workplace_label,
   academic_level: row.academic_level, employee_revision: row.employee_revision,
 })
-const valuesOf = row => Object.fromEntries(AMOUNT_FIELDS.map(field => [field, centsFromString(row[field])]))
 
 export class PayrollSheetController {
-  #saveAmounts
-  #rows = new Map() // id -> { meta, values, revision }
+  #saveValues
+  #reload
+  #config = null
+  #calculator = null
+  #rows = new Map() // id -> { meta, cells (server), inputs (server), revision }
   #order = []
-  #pending = new Map() // id -> Map(field -> { cents, opId })
-  #ops = [] // unresolved operations in order: queued | saving | failed | conflict
+  #pending = new Map() // id -> Map(key -> { value, opId })
+  #ops = [] // unresolved operations in order: queued | saving | failed | conflict | config_conflict
   #undo = []
   #redo = []
   #listeners = new Set()
@@ -33,9 +39,14 @@ export class PayrollSheetController {
   #draining = false
   #nextOp = 1
   #savedAt = null
-  #lastMessage = ''
+  #resolving = false
+  #resolveError = ''
 
-  constructor({ saveAmounts }) { this.#saveAmounts = saveAmounts }
+  /**
+   * saveValues(changes, configRevision) → Promise<rows>  one atomic request.
+   * reload() → Promise<{ rows, config }>  the authoritative sheet for the dataset currently on screen.
+   */
+  constructor({ saveValues, reload }) { this.#saveValues = saveValues; this.#reload = reload }
 
   // ── subscription ────────────────────────────────────────────────────────
   subscribe = listener => { this.#listeners.add(listener); return () => this.#listeners.delete(listener) }
@@ -47,8 +58,11 @@ export class PayrollSheetController {
     if (!this.#busy()) { const waiters = this.#waiters.splice(0); waiters.forEach(resolve => resolve({ ok: !this.#halted() })) }
   }
 
-  #halted() { return this.#ops.find(op => op.state === 'failed' || op.state === 'conflict') ?? null }
+  #halted() { return this.#ops.find(op => ['failed', 'conflict', 'config_conflict'].includes(op.state)) ?? null }
   #busy() { return !this.#halted() && this.#ops.some(op => op.state === 'queued' || op.state === 'saving') }
+
+  get config() { return this.#config }
+  get configRevision() { return this.#config?.revision ?? 0 }
 
   getSnapshot = () => {
     if (this.#cache) return this.#cache
@@ -56,10 +70,11 @@ export class PayrollSheetController {
     const halted = this.#halted()
     const phase = halted ? halted.state : this.#busy() ? 'saving' : 'idle'
     this.#cache = {
-      version: this.#version, rows, totals: sumTotals(rows),
+      version: this.#version, rows, config: this.#config, totals: this.#totals(rows),
       status: {
-        phase, pendingCount: this.#ops.length, savedAt: this.#savedAt, message: this.#lastMessage,
+        phase, pendingCount: this.#ops.length, savedAt: this.#savedAt, resolving: this.#resolving, resolveError: this.#resolveError,
         conflict: halted?.state === 'conflict' ? { opId: halted.id, rows: halted.conflictRows } : null,
+        configConflict: halted?.state === 'config_conflict' ? { opId: halted.id, message: halted.error } : null,
         failure: halted?.state === 'failed' ? { opId: halted.id, message: halted.error, retryable: halted.retryable } : null,
       },
       canUndo: this.#undo.length > 0 && !halted, canRedo: this.#redo.length > 0 && !halted,
@@ -67,37 +82,82 @@ export class PayrollSheetController {
     return this.#cache
   }
 
+  #totals(rows) {
+    const columns = {}
+    for (const column of this.#config?.columns ?? []) {
+      if (column.aggregation === 'sum') columns[column.key] = sumColumn(rows, column.key, column.value_type)
+    }
+    const statuses = rows.map(row => rowStatus(row, TOTAL_KEY))
+    return {
+      employees: rows.length, complete: statuses.filter(s => s !== 'incomplete').length, incomplete: statuses.filter(s => s === 'incomplete').length,
+      warnings: statuses.filter(s => s === 'warning').length, columns,
+    }
+  }
+
+  #inputsOf(entry, id) {
+    const inputs = { ...entry.inputs }
+    const pending = this.#pending.get(id)
+    if (pending) for (const [key, p] of pending) inputs[key] = p.value
+    return inputs
+  }
+
   #display(id) {
     const entry = this.#rows.get(id)
     if (!entry) return null
     const pending = this.#pending.get(id)
-    const values = {}
     const states = {}
-    for (const field of AMOUNT_FIELDS) {
-      const p = pending?.get(field)
-      values[field] = p ? p.cents : entry.values[field]
-      if (p) states[field] = this.#ops.find(op => op.id === p.opId)?.state ?? 'queued'
+    let cells = entry.cells
+    if (pending?.size) {
+      cells = this.#calculator.evaluateRow(this.#inputsOf(entry, id))
+      for (const [key, p] of pending) states[key] = this.#ops.find(op => op.id === p.opId)?.state ?? 'queued'
     }
-    return { ...entry.meta, ...values, payable: payableCents(values.fixed_salary, values.deduction, values.compensation), revision: entry.revision, states }
+    return { ...entry.meta, cells, revision: entry.revision, states }
   }
 
-  /** Current displayed value (pending overlay included) of one cell, in cents. */
-  valueOf(id, field) {
-    const p = this.#pending.get(id)?.get(field)
-    return p ? p.cents : (this.#rows.get(id)?.values[field] ?? null)
+  /** Current displayed wire value of one input cell (pending overlay included). */
+  valueOf(id, key) {
+    const p = this.#pending.get(id)?.get(key)
+    if (p) return p.value
+    return this.#rows.get(id)?.inputs[key] ?? null
   }
 
   // ── loading ─────────────────────────────────────────────────────────────
-  load(apiRows) {
+  #entryOf(row) {
+    const inputs = {}
+    for (const column of this.#config.columns) if (column.kind === 'input') inputs[column.key] = row.cells[column.key]?.v ?? null
+    return { meta: metaOf(row), cells: row.cells, inputs, revision: row.entry_revision }
+  }
+
+  /**
+   * Replace the dataset with an authoritative server response. Pending (unsaved) values stay; for rows that carry pending values the
+   * revision they were EDITED FROM is kept, so a change made by someone else meanwhile is still detected as a conflict at save time.
+   */
+  load(apiRows, config = this.#config) {
+    this.#applyConfig(config)
     this.#order = apiRows.map(row => row.id)
-    for (const row of apiRows) this.#rows.set(row.id, { meta: metaOf(row), values: valuesOf(row), revision: row.entry_revision })
+    const next = new Map()
+    for (const row of apiRows) {
+      const entry = this.#entryOf(row)
+      const previous = this.#rows.get(row.id)
+      if (previous && this.#pending.get(row.id)?.size) entry.revision = previous.revision
+      next.set(row.id, entry)
+    }
+    this.#rows = next
+    for (const id of [...this.#pending.keys()]) if (!next.has(id)) this.#pending.delete(id)
     this.#changed()
   }
 
-  /** Replace one row from an API response (metadata edit). Unsaved amounts are untouched. */
+  #applyConfig(config) {
+    if (!config) return
+    this.#config = config
+    this.#calculator = createCalculator(config)
+  }
+
+  /** Replace one row from an API response (metadata edit). Unsaved values are untouched. */
   upsertRow(apiRow) {
-    const entry = this.#rows.get(apiRow.id)
-    this.#rows.set(apiRow.id, { meta: metaOf(apiRow), values: entry?.values ?? valuesOf(apiRow), revision: entry?.revision ?? apiRow.entry_revision })
+    const entry = this.#entryOf(apiRow)
+    const previous = this.#rows.get(apiRow.id)
+    this.#rows.set(apiRow.id, previous ? { ...previous, meta: entry.meta } : entry)
     if (!this.#order.includes(apiRow.id)) this.#order.push(apiRow.id)
     this.#changed()
   }
@@ -105,19 +165,21 @@ export class PayrollSheetController {
   get busy() { return this.#busy() || this.#ops.some(op => op.state === 'saving') }
   get hasUnresolved() { return this.#halted() !== null }
   get idle() { return this.#ops.length === 0 }
+  get unsavedCount() { return this.#ops.length }
 
   // ── editing ─────────────────────────────────────────────────────────────
-  /** Apply one atomic operation: changes = [{ id, field, cents }] (cents already validated). */
+  /** Apply one atomic operation: changes = [{ id, key, value }] (value already validated: wire string or null = blank). */
   edit(changes, { history = false } = {}) {
     const real = []
     const seen = new Set()
-    for (const { id, field, cents } of changes) {
-      if (!this.#rows.has(id) || !AMOUNT_FIELDS.includes(field)) continue
-      const key = `${id}:${field}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      const before = this.valueOf(id, field)
-      if (before !== cents) real.push({ id, field, before, after: cents })
+    for (const { id, key, value } of changes) {
+      const column = this.#config?.columns.find(c => c.key === key)
+      if (!this.#rows.has(id) || column?.kind !== 'input') continue
+      const mark = `${id}:${key}`
+      if (seen.has(mark)) continue
+      seen.add(mark)
+      const before = this.valueOf(id, key)
+      if (before !== value) real.push({ id, key, before, after: value })
     }
     if (!real.length) return null
     const op = { id: this.#nextOp++, changes: real, state: 'queued', history }
@@ -129,29 +191,28 @@ export class PayrollSheetController {
 
   #apply(op) {
     this.#ops.push(op)
-    for (const { id, field, after } of op.changes) {
+    for (const { id, key, after } of op.changes) {
       if (!this.#pending.has(id)) this.#pending.set(id, new Map())
-      this.#pending.get(id).set(field, { cents: after, opId: op.id })
+      this.#pending.get(id).set(key, { value: after, opId: op.id })
     }
-    this.#lastMessage = ''
     this.#changed()
   }
 
   undo() {
-    if (!this.canActOnHistory(this.#undo)) return null
+    if (!this.#canActOnHistory(this.#undo)) return null
     const record = this.#undo.pop()
     this.#redo.push(record)
-    return this.edit(record.map(({ id, field, before }) => ({ id, field, cents: before })), { history: true })
+    return this.edit(record.map(({ id, key, before }) => ({ id, key, value: before })), { history: true })
   }
 
   redo() {
-    if (!this.canActOnHistory(this.#redo)) return null
+    if (!this.#canActOnHistory(this.#redo)) return null
     const record = this.#redo.pop()
     this.#undo.push(record)
-    return this.edit(record.map(({ id, field, after }) => ({ id, field, cents: after })), { history: true })
+    return this.edit(record.map(({ id, key, after }) => ({ id, key, value: after })), { history: true })
   }
 
-  canActOnHistory(stack) { return stack.length > 0 && !this.#halted() }
+  #canActOnHistory(stack) { return stack.length > 0 && !this.#halted() }
 
   // ── queue ───────────────────────────────────────────────────────────────
   async #drain() {
@@ -165,7 +226,7 @@ export class PayrollSheetController {
         op.state = 'saving'
         this.#changed()
         try {
-          const rows = await this.#saveAmounts(this.#payload(op))
+          const rows = await this.#saveValues(this.#payload(op), this.configRevision)
           this.#confirm(op, rows)
         } catch (error) {
           this.#fail(op, error)
@@ -180,33 +241,43 @@ export class PayrollSheetController {
 
   #payload(op) {
     const byId = new Map()
-    for (const { id, field, after } of op.changes) {
-      if (!byId.has(id)) byId.set(id, { employee_id: id, expected_revision: this.#rows.get(id).revision })
-      byId.get(id)[field] = centsToString(after)
+    for (const { id, key, after } of op.changes) {
+      if (!byId.has(id)) byId.set(id, { employee_id: id, expected_revision: this.#rows.get(id).revision, values: {} })
+      byId.get(id).values[key] = after
     }
     return [...byId.values()]
   }
 
   #confirm(op, apiRows) {
     for (const row of apiRows) {
-      const entry = this.#rows.get(row.id)
-      if (entry) { entry.values = valuesOf(row); entry.revision = row.entry_revision }
+      if (this.#rows.has(row.id)) this.#rows.set(row.id, { ...this.#entryOf(row), meta: this.#rows.get(row.id).meta })
     }
-    for (const { id, field } of op.changes) {
-      const p = this.#pending.get(id)?.get(field)
-      if (p && p.opId === op.id) this.#pending.get(id).delete(field)
-    }
+    this.#dropPending(op)
     this.#ops = this.#ops.filter(item => item !== op)
     this.#savedAt = Date.now()
     this.#changed()
   }
 
+  #dropPending(op) {
+    for (const { id, key } of op.changes) {
+      const p = this.#pending.get(id)?.get(key)
+      if (p && p.opId === op.id) this.#pending.get(id).delete(key)
+    }
+  }
+
   #fail(op, error) {
+    if (error?.status === 409 && error.errorCode === 'payroll_config_conflict') {
+      op.state = 'config_conflict'
+      op.error = error.message
+      op.newConfig = error.details?.config ?? null
+      this.#changed()
+      return
+    }
     const conflicts = error?.status === 409 && error.errorCode === 'payroll_conflict' ? (error.details?.conflicts ?? []) : null
     if (conflicts) {
       // A retried request whose first attempt actually succeeded: the server already holds exactly our values.
-      const identical = conflicts.length > 0 && conflicts.every(({ current }) => current && op.changes.filter(c => c.id === current.id).every(c => centsFromString(current[c.field]) === c.after))
-      if (identical && conflicts.length === new Set(op.changes.map(c => c.id)).size) {
+      const same = conflicts.length > 0 && conflicts.every(({ current }) => current && op.changes.filter(c => c.id === current.id).every(c => (current.cells[c.key]?.v ?? null) === c.after))
+      if (same && conflicts.length === new Set(op.changes.map(c => c.id)).size) {
         this.#confirm(op, conflicts.map(c => c.current))
         return
       }
@@ -226,6 +297,7 @@ export class PayrollSheetController {
     const op = this.#halted()
     if (op?.state !== 'failed') return
     op.state = 'queued'
+    this.#resolveError = ''
     this.#changed()
     this.#drain()
   }
@@ -235,8 +307,7 @@ export class PayrollSheetController {
     const op = this.#halted()
     if (op?.state !== 'conflict') return
     for (const row of op.conflictRows ?? []) {
-      const entry = this.#rows.get(row.id)
-      if (entry) { entry.values = valuesOf(row); entry.revision = row.entry_revision }
+      if (this.#rows.has(row.id)) this.#rows.set(row.id, { ...this.#entryOf(row), meta: this.#rows.get(row.id).meta })
     }
     // Server values changed under us: a stale undo history could silently resurrect old values, so drop it.
     this.#undo = []
@@ -247,23 +318,77 @@ export class PayrollSheetController {
     this.#drain()
   }
 
-  /** Conflict or failure: drop my unsaved values and show what the server holds. */
-  useServer() {
+  /**
+   * Configuration changed on the server while I was editing: adopt the new configuration, reload the rows under it and re-apply my
+   * pending values that still make sense (a column that was deleted or turned into a formula can no longer take a value).
+   * Returns { dropped } — the labels of values that could not be re-applied.
+   */
+  async adoptConfigAndRetry() {
     const op = this.#halted()
-    if (!op) return
-    for (const row of op.conflictRows ?? []) {
-      const entry = this.#rows.get(row.id)
-      if (entry) { entry.values = valuesOf(row); entry.revision = row.entry_revision }
+    if (op?.state !== 'config_conflict' || this.#resolving) return { dropped: [] }
+    this.#resolving = true
+    this.#resolveError = ''
+    this.#changed()
+    try {
+      const fresh = await this.#reload()
+      this.#applyConfig(fresh.config)
+      const usable = new Set(fresh.config.columns.filter(c => c.kind === 'input').map(c => c.key))
+      const dropped = []
+      for (const o of this.#ops) {
+        o.changes = o.changes.filter(c => {
+          if (usable.has(c.key)) return true
+          dropped.push(c.key)
+          const p = this.#pending.get(c.id)?.get(c.key)
+          if (p && p.opId === o.id) this.#pending.get(c.id).delete(c.key)
+          return false
+        })
+      }
+      this.#ops = this.#ops.filter(o => o.changes.length > 0)
+      this.load(fresh.rows, fresh.config)
+      this.#undo = []
+      this.#redo = []
+      const again = this.#ops.find(o => o.state === 'config_conflict')
+      if (again) again.state = 'queued'
+      this.#resolving = false
+      this.#changed()
+      this.#drain()
+      return { dropped }
+    } catch (error) {
+      this.#resolving = false
+      this.#resolveError = `تعذّر تحميل الإعدادات الحالية من الخادم: ${error?.message || 'تحقق من الاتصال'}. لم يتغيّر شيء.`
+      this.#changed()
+      return { dropped: [], failed: true }
     }
-    for (const { id, field } of op.changes) {
-      const p = this.#pending.get(id)?.get(field)
-      if (p && p.opId === op.id) this.#pending.get(id).delete(field)
+  }
+
+  /**
+   * Conflict, config conflict or failure: drop my unsaved values and show what the server holds. The authoritative rows are fetched
+   * FIRST. An uncertain failure (timeout, dropped connection) may have been saved after all, so falling back to the values this browser
+   * last saw would show stale data as if it were current. If the reload fails nothing is discarded and the problem stays visible.
+   */
+  async useServer() {
+    const op = this.#halted()
+    if (!op || this.#resolving) return { ok: false }
+    this.#resolving = true
+    this.#resolveError = ''
+    this.#changed()
+    let fresh
+    try {
+      fresh = await this.#reload()
+    } catch (error) {
+      this.#resolving = false
+      this.#resolveError = `تعذّر تحميل القيم الحالية من الخادم: ${error?.message || 'تحقق من الاتصال'}. لم تُتجاهل تعديلاتك؛ أعد المحاولة.`
+      this.#changed()
+      return { ok: false }
     }
+    this.#dropPending(op)
     this.#ops = this.#ops.filter(item => item !== op)
     this.#undo = []
     this.#redo = []
-    this.#changed()
+    this.#resolving = false
+    this.load(fresh.rows, fresh.config)
     this.#drain()
+    return { ok: true }
   }
 
   /** Resolves when every queued operation has been confirmed (ok) or the queue halted on an error (not ok). */
@@ -271,7 +396,4 @@ export class PayrollSheetController {
     if (!this.#busy()) return Promise.resolve({ ok: !this.#halted() })
     return new Promise(resolve => this.#waiters.push(resolve))
   }
-
-  /** Unsaved values grouped for the page-leave warning. */
-  get unsavedCount() { return this.#ops.length }
 }

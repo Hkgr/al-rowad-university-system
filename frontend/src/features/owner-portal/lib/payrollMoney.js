@@ -1,71 +1,104 @@
-// Exact USD arithmetic on the client: integer cents only, never binary floating point for stored values.
-// Mirrors App\Support\PayrollMoney on the server (which stays authoritative).
+// Syrian-pound amounts on the client: exact decimals, "ل.س" display, strict parsing of typed/pasted text.
+// All amounts in the payroll sheet are Syrian pounds (SYP). There is no exchange rate and no other currency.
+import { makeDec, parseDec, toFixed, toPlain, round, compare, isNegative } from './payrollDecimal.js'
 
-export const MAX_CENTS = 99_999_999_999 // 999,999,999.99
+export const SYMBOL = 'ل.س'
+export const CURRENCY_CODE = 'SYP'
+export const MAX_AMOUNT = parseDec('999999999.99')
 
 const ARABIC_DIGITS = { '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4', '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9', '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4', '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9' }
 
-export const AMOUNT_ERRORS = {
-  negative: 'لا يُقبل مبلغ سالب.',
+export const INPUT_ERRORS = {
+  negative: 'لا يُقبل مبلغ سالب في هذا العمود.',
   invalid: 'قيمة غير صالحة؛ أدخل رقمًا بحد أقصى منزلتين عشريتين.',
+  invalidNumber: 'قيمة غير صالحة؛ أدخل رقمًا بحد أقصى 6 منازل عشرية.',
+  invalidPercent: 'نسبة غير صالحة؛ أدخل رقمًا بين 0 و 100 (مثل 7 أو 7%).',
   range: 'القيمة أكبر من الحد المسموح (999,999,999.99).',
+  text: 'نص طويل جدًا أو يحتوي على محارف غير مسموحة (الحد 255 حرفًا).',
 }
+
+/** Digits, separators and spacing the way spreadsheets and Arabic keyboards produce them. */
+export const normalizeNumeric = input => String(input ?? '')
+  .replace(/[\u00A0\u200B-\u200F\uFEFF\u202A-\u202E]/g, ' ').trim()
+  .replace(/[٠-٩۰-۹]/g, digit => ARABIC_DIGITS[digit]).replace(/٫/g, '.').replace(/٬/g, ',').replace(/،/g, ',')
 
 /**
- * Parse what a user typed or pasted. Returns { ok: true, cents } (cents === null means a blank cell) or
- * { ok: false, error }. Accepts Arabic-Indic digits, the Arabic decimal separator, a leading "$" and
- * Excel-style thousands commas; everything else strict (no exponent, no sign, two decimals at most).
+ * Parse one typed/pasted value for a column. Returns { ok: true, value } where value is a plain decimal string ("1234.50"; a
+ * percentage as a FRACTION: "0.07"), a text string, or null for a blank cell — or { ok: false, error }.
+ * `column` = { value_type, allow_negative }.
  */
-export function parseAmount(input) {
-  if (input === null || input === undefined) return { ok: true, cents: null }
-  let text = String(input).replace(/[\u00A0\u200B-\u200F\uFEFF]/g, ' ').trim()
-  if (text === '') return { ok: true, cents: null }
-  text = text.replace(/[٠-٩۰-۹]/g, digit => ARABIC_DIGITS[digit]).replace(/٫/g, '.').replace(/٬/g, ',')
-  if (/^-\s*\$?\s*\d/.test(text) || /^\$\s*-/.test(text) || /^\(.*\)$/.test(text)) return { ok: false, error: 'negative' }
-  text = text.replace(/^\$\s*/, '')
-  if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(text)) text = text.replace(/,/g, '')
-  if (!/^\d{1,9}(\.\d{1,2})?$/.test(text)) return { ok: false, error: /^\d+(\.\d+)?$/.test(text) && text.split('.')[0].length > 9 ? 'range' : 'invalid' }
-  const [whole, fraction = ''] = text.split('.')
-  const cents = Number(whole) * 100 + Number(fraction.padEnd(2, '0'))
-  return cents > MAX_CENTS ? { ok: false, error: 'range' } : { ok: true, cents }
-}
-
-/** Server string ("1234.50" | null) → cents. */
-export function centsFromString(value) {
-  if (value === null || value === undefined || value === '') return null
-  const [whole, fraction = '0'] = String(value).replace('-', '').split('.')
-  const cents = Number(whole) * 100 + Number(fraction.padEnd(2, '0').slice(0, 2))
-  return String(value).startsWith('-') ? -cents : cents
-}
-
-/** Cents → plain two-decimal string for the API and the editor ("1234.50", "-150.50"); null stays null. */
-export function centsToString(cents) {
-  if (cents === null || cents === undefined) return null
-  const abs = Math.abs(cents)
-  return `${cents < 0 ? '-' : ''}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`
-}
-
-/** Display: $1,234.50 — negatives are signed and unmistakable: -$150.50. Blank stays ''. */
-export function formatMoney(cents) {
-  if (cents === null || cents === undefined) return ''
-  const abs = Math.abs(cents)
-  const whole = String(Math.floor(abs / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-  return `${cents < 0 ? '-' : ''}$${whole}.${String(abs % 100).padStart(2, '0')}`
-}
-
-/** Net payable = fixed salary - deduction + compensation. Blank salary → blank; blank deduction/compensation → 0. */
-export function payableCents(salary, deduction, compensation) {
-  return salary === null || salary === undefined ? null : salary - (deduction ?? 0) + (compensation ?? 0)
-}
-
-/** Sum of displayed rows. Payable counts only rows that have a fixed salary. */
-export function sumTotals(rows) {
-  const total = { employees: rows.length, fixed_salary: 0, deduction: 0, compensation: 0, payable: 0 }
-  for (const row of rows) {
-    total.fixed_salary += row.fixed_salary ?? 0
-    total.deduction += row.deduction ?? 0
-    total.compensation += row.compensation ?? 0
-    total.payable += payableCents(row.fixed_salary, row.deduction, row.compensation) ?? 0
+export function parseInput(column, input) {
+  if (input === null || input === undefined) return { ok: true, value: null }
+  if (column.value_type === 'text') {
+    const text = String(input).replace(/\s+/g, ' ').trim()
+    if (text === '') return { ok: true, value: null }
+    // eslint-disable-next-line no-control-regex
+    if (text.length > 255 || /[\u0000-\u001F\u007F]/.test(text)) return { ok: false, error: 'text' }
+    return { ok: true, value: text }
   }
-  return total
+  let text = normalizeNumeric(input)
+  if (text === '') return { ok: true, value: null }
+  const type = column.value_type
+  if (type === 'percent') text = text.replace(/\s*%$/, '')
+  if (type === 'amount') text = text.replace(new RegExp(`\\s*${SYMBOL.replace('.', '\\.')}$`), '').replace(/\s*SYP$/i, '')
+  const parenthesisNegative = /^\(.*\)$/.test(text)
+  if (parenthesisNegative) text = `-${text.slice(1, -1).trim()}`
+  text = text.replace(/^-\s+/, '-')
+  if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(text)) text = text.replace(/,/g, '')
+  const decimals = type === 'amount' ? 2 : type === 'percent' ? 4 : 6
+  const integerDigits = type === 'percent' ? 3 : 9
+  const match = new RegExp(`^(-?)(\\d{1,${integerDigits}})(?:\\.(\\d{1,${decimals}}))?$`).exec(text)
+  if (!match) {
+    if (/^-/.test(text) && !column.allow_negative && /^-\d/.test(text)) return { ok: false, error: 'negative' }
+    if (/^\d+(\.\d+)?$/.test(text) && text.split('.')[0].length > integerDigits) return { ok: false, error: 'range' }
+    return { ok: false, error: type === 'percent' ? 'invalidPercent' : type === 'amount' ? 'invalid' : 'invalidNumber' }
+  }
+  let value = parseDec(text)
+  if (isNegative(value) && !column.allow_negative) return { ok: false, error: 'negative' }
+  if (type === 'percent') {
+    if (compare(value, makeDec(100)) > 0) return { ok: false, error: 'invalidPercent' }
+    value = { n: value.n, s: value.s + 2 } // points -> fraction
+  }
+  return { ok: true, value: type === 'amount' ? toFixed(value, 2) : toPlain(value) }
+}
+
+/** Thousands separators on an unsigned digit string. */
+const groupDigits = digits => digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+
+/** "1,234.50" (amounts always two decimals; negative signed). Blank/null → ''. */
+export function formatAmount(value) {
+  if (value === null || value === undefined || value === '') return ''
+  const text = toFixed(parseDec(value), 2)
+  const negative = text.startsWith('-')
+  const [whole, fraction] = text.replace('-', '').split('.')
+  return `${negative ? '-' : ''}${groupDigits(whole)}.${fraction}`
+}
+
+/** "1,234.50 ل.س" — the symbol follows the number; negatives are signed and unmistakable. */
+export const formatSyp = value => (value === null || value === undefined || value === '' ? '' : `${formatAmount(value)} ${SYMBOL}`)
+
+/** Display text of a stored/wire value by column type. */
+export function formatValue(type, value) {
+  if (value === null || value === undefined || value === '') return ''
+  if (type === 'text') return String(value)
+  if (type === 'amount') return formatAmount(value)
+  const dec = parseDec(value)
+  if (type === 'percent') return `${pctText(dec)}%`
+  const plain = toPlain(round(dec, 6))
+  const negative = plain.startsWith('-')
+  const [whole, fraction] = plain.replace('-', '').split('.')
+  return `${negative ? '-' : ''}${groupDigits(whole)}${fraction ? `.${fraction}` : ''}`
+}
+
+/** Fraction -> percentage points text ("0.07" -> "7", "0.0725" -> "7.25"). */
+export function pctText(dec) {
+  const points = round({ n: dec.n * 100n, s: dec.s }, 4)
+  return toPlain(points)
+}
+
+/** Editor text for an existing value (what the user would type): plain digits, percentages as points. */
+export function editText(type, value) {
+  if (value === null || value === undefined) return ''
+  if (type === 'percent') return pctText(parseDec(value))
+  return String(value)
 }

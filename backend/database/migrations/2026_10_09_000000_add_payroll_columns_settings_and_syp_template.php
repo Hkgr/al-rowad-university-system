@@ -2,7 +2,8 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\{DB, Schema};
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Payroll phase 1.1: Syrian-pound amounts, configurable columns, global calculation settings and the workbook template.
@@ -98,11 +99,11 @@ return new class extends Migration
         // [key, label, group, kind, formula, blank_as_zero, allow_negative, warn_negative, compact]
         $template = [
             ['fixed_salary', 'الأجر المقطوع', 'salary', 'input', null, false, false, false, true],
-            ['salary_adjustment', 'فروقات الراتب', 'salary', 'input', null, true, true, false, true],
+            ['salary_adjustment', 'فروقات الراتب', 'salary', 'input', null, true, true, false, false],
             ['salary_entitlement', 'الراتب المستحق', 'salary', 'formula', '{fixed_salary} + {salary_adjustment}', false, false, false, false],
             ['salary_taxable_base', 'الوعاء الضريبي للراتب', 'salary', 'formula', '{salary_entitlement} - {insurance} - {tax_exemption}', false, false, true, false],
             ['compensation', 'التعويض', 'compensation', 'input', null, true, false, false, true],
-            ['compensation_adjustment', 'فروقات التعويض', 'compensation', 'input', null, true, true, false, true],
+            ['compensation_adjustment', 'فروقات التعويض', 'compensation', 'input', null, true, true, false, false],
             ['compensation_entitlement', 'التعويض المستحق', 'compensation', 'formula', '{compensation} + {compensation_adjustment}', false, false, false, false],
             ['combined_taxable_base', 'الوعاء الضريبي المجمّع', 'compensation', 'formula', '{salary_entitlement} + {compensation_entitlement} - {insurance} - {tax_exemption}', false, false, true, false],
             ['insurance', 'التأمينات الاجتماعية', 'deductions', 'formula', '{fixed_salary} * {insurance_rate}', false, false, false, false],

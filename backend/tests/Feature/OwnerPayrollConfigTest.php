@@ -63,7 +63,7 @@ final class OwnerPayrollConfigTest extends OwnerPayrollTestCase
             'label' => 'مكافأة شرطية', 'kind' => 'formula', 'value_type' => 'amount', 'group' => 'salary',
             'formula' => 'IF([الأجر المقطوع] > 50000, MAX([التعويض] * 10%, 1000), MIN(500, ROUND([الأجر المقطوع] / 3, 0)))',
         ])->assertCreated()->json('data.key');
-        $this->assertSame([ 'v' => '5520.00', 'st' => null, 'm' => null], $this->sheetRow('0001')['cells'][$cond]);
+        $this->assertSame(['v' => '5520.00', 'st' => null, 'm' => null], $this->sheetRow('0001')['cells'][$cond]);
 
         // Rename never breaks the formula (stable ids) and the display follows the new name.
         $rename = $this->patchJson(self::CFG.'/columns/fixed_salary', ['label' => 'الراتب الأساسي المقطوع', 'config_revision' => $this->configRevision()])->assertOk()->json('data.config');
@@ -142,7 +142,7 @@ final class OwnerPayrollConfigTest extends OwnerPayrollTestCase
 
         $this->deleteJson(self::CFG."/columns/{$bonus}", ['config_revision' => $this->configRevision()])
             ->assertStatus(409)->assertJsonPath('error_code', 'payroll_column_has_dependents')->assertJsonPath('data.dependents.0.key', $f);
-        $this->deleteJson(self::CFG."/columns/fixed_salary", ['config_revision' => $this->configRevision()])->assertStatus(409)->assertJsonPath('error_code', 'payroll_column_protected');
+        $this->deleteJson(self::CFG.'/columns/fixed_salary', ['config_revision' => $this->configRevision()])->assertStatus(409)->assertJsonPath('error_code', 'payroll_column_protected');
 
         $this->deleteJson(self::CFG."/columns/{$f}", ['config_revision' => $this->configRevision()])->assertOk();
         $row = $this->sheetRow('0001');

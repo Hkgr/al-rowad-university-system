@@ -186,6 +186,7 @@ final class PayrollCalculator
         if ($type === 'amount') {
             return (string) $v->toScale(self::AMOUNT_SCALE, RoundingMode::HALF_UP);
         }
+
         return self::plain($v->toScale(self::NUMBER_SCALE, RoundingMode::HALF_UP));
     }
 
