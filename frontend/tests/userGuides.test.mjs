@@ -85,17 +85,18 @@ const SAMPLE_USERS = {
   deanAndVp: id(['dean', 'vice_president_scientific'], ['registration_requests.review', 'vice_presidency.scientific.access', 'teaching_assignments.review_scientific'], { access_scopes: uni }),
 }
 
-test('every portal sidebar has exactly one «دليل الاستخدام» item bound to the guide path and access', async () => {
+test('every portal sidebar has exactly one guide item with its portal label, path and access', async () => {
   const seen = new Map()
   for (const [guideId, file] of Object.entries(NAV_FILES)) {
     const nav = await src(file)
     seen.set(file, (seen.get(file) ?? 0) + 1)
-    const expected = `{ to: GUIDE_PATHS.${guideId}, Icon: FaQuestionCircle, ar: 'دليل الاستخدام', en: 'User guide', ...GUIDE_ACCESS.${guideId} }`
+    const label = guideId === 'vpAdministrative' ? 'طريقة الاستخدام' : 'دليل الاستخدام'
+    const expected = `{ to: GUIDE_PATHS.${guideId}, Icon: FaQuestionCircle, ar: '${label}', en: 'User guide', ...GUIDE_ACCESS.${guideId} }`
     assert.equal(nav.split(expected).length - 1, 1, `${guideId} guide item`)
   }
   for (const [file, navCount] of seen) {
     const nav = await src(file)
-    assert.equal(nav.split("ar: 'دليل الاستخدام'").length - 1, navCount, `${file} has one guide item per sidebar`)
+    assert.equal((nav.match(/ar: '(?:دليل الاستخدام|طريقة الاستخدام)'/g) ?? []).length, navCount, `${file} has one guide item per sidebar`)
   }
   const layout = await src('components/layout/DashboardLayout.jsx')
   assert.match(layout, /items: section\.items\.filter\(item => canAccess\(item\)\)/)

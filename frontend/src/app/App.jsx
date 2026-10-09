@@ -96,6 +96,7 @@ import AcademicCalendarPage from '../features/academic-calendar/AcademicCalendar
 
 // ── نيابة رئاسة الجامعة (Vice Presidency shells) ───────────────────────────
 import { administrativeVicePresidentNav, scientificVicePresidentNav } from '../features/vice-presidency/nav'
+import AdministrativeNavigation from '../features/vice-presidency/components/AdministrativeNavigation'
 import VicePresidentShell from '../features/vice-presidency/pages/VicePresidentShell'
 import TeachingAssignmentQueue from '../features/vice-presidency/pages/TeachingAssignmentQueue'
 import TeachingAssignmentDetail from '../features/vice-presidency/pages/TeachingAssignmentDetail'
@@ -414,7 +415,7 @@ const router = createBrowserRouter(createRoutesFromElements(
         <Route
           element={
             <ProtectedRoute {...ACCESS.administrativeVicePresident}>
-              <DashboardLayout nav={administrativeVicePresidentNav} appTitle="نيابة الشؤون الإدارية" />
+              <DashboardLayout nav={administrativeVicePresidentNav} appTitle="الشؤون الإدارية" Navigation={AdministrativeNavigation} portalClassName="administrative-portal" />
             </ProtectedRoute>
           }
         >

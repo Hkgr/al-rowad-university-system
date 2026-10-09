@@ -1,0 +1,15 @@
+/* Only this portal opts into the organization view; shared portal styles stay intact. */
+.administrative-portal button:focus-visible,
+.administrative-portal a:focus-visible {
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .administrative-portal *,
+  .administrative-portal *::before,
+  .administrative-portal *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
