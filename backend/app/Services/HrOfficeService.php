@@ -236,7 +236,7 @@ final class HrOfficeService
         if ($employee && $rows->isNotEmpty()) {
             $ids = $rows->pluck('id');
             $relations = DB::table('hr_employment_relationships')->whereIn('employee_id', $ids)->orderBy('starts_on')->get()->groupBy('employee_id');
-            $positions = DB::table('employee_positions')->whereIn('employee_id', $ids)->where('start_date', '<=', now()->toDateString())
+            $positions = DB::table('employee_positions')->whereIn('employee_id', $ids)->where('is_active', true)->where('start_date', '<=', now()->toDateString())
                 ->where(fn ($q) => $q->whereNull('end_date')->orWhere('end_date', '>=', now()->toDateString()))
                 ->orderBy('position_id')->get(['employee_id', 'position_id'])->groupBy('employee_id');
             $faculty = DB::table('faculty_members')->whereIn('employee_id', $ids)->get(['employee_id', 'faculty_member_id'])->keyBy('employee_id');
