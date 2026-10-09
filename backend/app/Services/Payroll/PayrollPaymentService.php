@@ -119,7 +119,7 @@ final class PayrollPaymentService
     {
         $this->authorize($actor, true);
         $this->requireReady();
-        $d = $this->input($data, ['request_id' => 'required|uuid', 'expected_payroll_revision' => 'required|integer|min:1', 'expected_employee_revision' => 'required|integer|min:1', 'period' => ['required', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'], 'paid_on' => 'required|date_format:Y-m-d|before_or_equal:today', 'amount' => 'required', 'reference' => 'required|string|max:120|regex:/\S/u', 'reason' => 'required|string|max:4000|regex:/\S/u', 'confirmed' => 'required|accepted']);
+        $d = $this->input($data, ['request_id' => 'required|uuid', 'expected_period_revision' => 'required|integer|min:1', 'expected_payroll_revision' => 'required|integer|min:1', 'expected_employee_revision' => 'required|integer|min:1', 'period' => ['required', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'], 'paid_on' => 'required|date_format:Y-m-d|before_or_equal:today', 'amount' => 'required', 'reference' => 'required|string|max:120|regex:/\S/u', 'reason' => 'required|string|max:4000|regex:/\S/u', 'confirmed' => 'required|accepted']);
         try {
             $amount = PayrollInput::parse(['value_type' => 'amount', 'allow_negative' => false], $d['amount']);
             if (! $amount instanceof BigDecimal || ! $amount->isPositive()) {
@@ -148,6 +148,9 @@ final class PayrollPaymentService
                     }
 
                     return $this->present($old);
+                }
+                if ((int) $period->revision !== (int) $d['expected_period_revision']) {
+                    throw Failure::conflict('payroll_payment_period_stale', 'تغيرت مراجعة الشهر منذ فتح نموذج الصرف. احتفظ بالمدخلات وراجع حالة الشهر الحالية قبل تسجيل دفعة جديدة.');
                 }
                 if ((int) $payroll->revision !== (int) $d['expected_payroll_revision'] || (int) $person->hr_revision !== (int) $d['expected_employee_revision']) {
                     throw Failure::conflict('payroll_payment_stale', 'تغيرت هوية الملف المالي؛ راجع الملف قبل تسجيل الصرف.');
