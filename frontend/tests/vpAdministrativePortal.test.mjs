@@ -130,7 +130,9 @@ test('pages are guarded, capability-driven and keep the workflow as the only way
   assert.match(dashboard, /التوزيع حسب الكلية/)
   assert.doesNotMatch(dashboard, /university_total \?\? 0|totals\?\.[a-z]+ \?\? 0/)
   const shell = await source('features/vice-presidency/pages/VicePresidentShell.jsx')
-  assert.match(shell, /office === 'administrative'\s*\n?\s*\? canUseAdministrative\('dashboard', identity\) && <AdministrativeDashboard \/>/)
+  assert.match(shell, /office === 'administrative'\) return <AdministrativeHome identity=\{identity\}/)
+  const home = await source('features/vice-presidency/components/AdministrativeHome.jsx')
+  assert.match(home, /canUseAdministrative\('dashboard', identity\) && <AdministrativeDashboard \/>/)
 
   const modal = await source('features/dean-dashboard/components/TeacherAssignmentManagerModal.jsx')
   assert.match(modal, /course_offering_id=\$\{encodeURIComponent\(contextOfferingId\)\}/)

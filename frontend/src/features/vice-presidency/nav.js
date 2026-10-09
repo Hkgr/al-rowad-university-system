@@ -75,7 +75,7 @@ export const scientificVicePresidentNav = [
 
 export const administrativeVicePresidentNav = [
   {
-    label: 'نيابة الشؤون الإدارية',
+    label: 'الشؤون الإدارية',
     items: [
       { to: '/vp/administrative/calendar', Icon: FaCalendarAlt, ar: 'التقويم الأكاديمي', en: 'Academic calendar' },
       {
@@ -89,7 +89,7 @@ export const administrativeVicePresidentNav = [
       {
         to: '/vp/administrative/reports',
         Icon: FaChartBar,
-        ar: 'التقارير والإحصاءات',
+        ar: 'التقارير',
         en: 'Reports & analytics',
         allRoles: [ROLES.vicePresidentAdministrative],
         assignedPermissions: [PERMISSIONS.vicePresidencyAdministrativeAccess],
@@ -113,5 +113,5 @@ export const administrativeVicePresidentNav = [
       },
     ],
   },
-  { label: 'المساعدة', items: [{ to: GUIDE_PATHS.vpAdministrative, Icon: FaQuestionCircle, ar: 'دليل الاستخدام', en: 'User guide', ...GUIDE_ACCESS.vpAdministrative }] },
+  { label: 'المساعدة', items: [{ to: GUIDE_PATHS.vpAdministrative, Icon: FaQuestionCircle, ar: 'طريقة الاستخدام', en: 'User guide', ...GUIDE_ACCESS.vpAdministrative }] },
 ]

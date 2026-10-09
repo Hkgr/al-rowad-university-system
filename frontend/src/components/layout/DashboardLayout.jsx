@@ -13,7 +13,7 @@ import DashboardFooter from './DashboardFooter'
  *   { label: 'أخرى',            items: [{ to, Icon, ar, en }] },
  * ]
  */
-export default function DashboardLayout({ nav = [], appTitle = 'جامعة الرواد' }) {
+export default function DashboardLayout({ nav = [], appTitle = 'جامعة الرواد', Navigation, portalClassName = '' }) {
   const [collapsed, setCollapsed]   = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const navigate  = useNavigate()
@@ -85,7 +85,7 @@ export default function DashboardLayout({ nav = [], appTitle = 'جامعة ال�
   )
 
   return (
-    <div className="flex min-h-screen bg-[#f0f5ec]" dir="rtl">
+    <div className={`flex min-h-screen bg-[#f0f5ec] ${portalClassName}`} dir="rtl">
 
       {/* Mobile overlay */}
         {mobileOpen && (
@@ -140,7 +140,7 @@ export default function DashboardLayout({ nav = [], appTitle = 'جامعة ال�
             className="flex-1 px-[10px] pt-2 flex flex-col gap-2 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:w-[3px] [&::-webkit-scrollbar-thumb]:bg-white/7 [&::-webkit-scrollbar-thumb]:rounded-[3px]"
             dir="rtl"
           >
-            {authorizedNav.map((section, idx) => (
+            {Navigation ? <Navigation sections={authorizedNav} collapsed={collapsed} expandSidebar={() => setCollapsed(false)} onNavigate={() => setMobileOpen(false)} renderSection={renderSection} /> : authorizedNav.map((section, idx) => (
               <>
                 {idx > 0 && <div key={`divider-${idx}`} className="h-px bg-white/6 mx-3" />}
                 {renderSection(section, idx)}

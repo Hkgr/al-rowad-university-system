@@ -4,8 +4,7 @@ import { canAccessExecutiveReports } from '../../executive-reports/access'
 import ExecutiveOverview from '../../executive-reports/components/ExecutiveOverview'
 import { canViewCatalog } from '../../scientific-courses/catalog'
 import { canViewPrograms } from '../../scientific-programs/programs'
-import AdministrativeDashboard from '../components/AdministrativeDashboard'
-import { ADMINISTRATIVE_PATHS, canUseAdministrative } from '../utils/administrativeAccess'
+import AdministrativeHome from '../components/AdministrativeHome'
 
 const OFFICES = {
   scientific: {
@@ -45,6 +44,19 @@ export default function VicePresidentShell({ office }) {
   const unitName = identity?.organizational_unit?.name || identity?.organizational_unit || '—'
 
   const reportsAllowed = canAccessExecutiveReports(office, identity)
+  const identityDetails = (
+    <details className="bg-white border border-black/5 rounded-[16px] p-5 shadow-sm">
+      <summary className="cursor-pointer text-[12px] font-bold text-text-light">تفاصيل الهوية والنطاق</summary>
+      <dl className="grid gap-2 text-[13px] text-text-dark">
+        <div className="flex justify-between gap-4"><dt className="text-text-light">المستخدم</dt><dd>{identity?.username || identity?.email || '—'}</dd></div>
+        <div className="flex justify-between gap-4"><dt className="text-text-light">الأدوار</dt><dd>{roles || '—'}</dd></div>
+        <div className="flex justify-between gap-4"><dt className="text-text-light">الوحدة التنظيمية</dt><dd>{typeof unitName === 'string' ? unitName : unitName?.name || '—'}</dd></div>
+        <div className="flex justify-between gap-4"><dt className="text-text-light">نطاق الوصول</dt><dd>{scopes}</dd></div>
+      </dl>
+    </details>
+  )
+
+  if (office === 'administrative') return <AdministrativeHome identity={identity}>{identityDetails}</AdministrativeHome>
 
   return (
     <div className="flex flex-col gap-5 py-8 px-2" dir="rtl">
@@ -53,34 +65,10 @@ export default function VicePresidentShell({ office }) {
         <p className="text-[13px] text-text-light mt-1">{copy.scopeNote}</p>
       </div>
 
-      {office === 'administrative'
-        ? canUseAdministrative('dashboard', identity) && <AdministrativeDashboard />
-        : reportsAllowed && <ExecutiveOverview office={office} />}
-      {office === 'administrative' && canUseAdministrative('facultyView', identity) && <Link to={ADMINISTRATIVE_PATHS.faculty} className="rounded-[16px] border border-primary/15 bg-white p-5 shadow-sm hover:border-primary/40"><p className="text-[15px] font-black text-text-dark">إدارة المدرسين</p><p className="mt-1 text-[13px] text-text-light">ملفات المدرسين وانتماؤهم إلى الكليات مع السجل. الانتماء لا يعني تكليفًا بمادة.</p></Link>}
-      {office === 'administrative' && canUseAdministrative('deansView', identity) && <Link to={ADMINISTRATIVE_PATHS.deans} className="rounded-[16px] border border-primary/15 bg-white p-5 shadow-sm hover:border-primary/40"><p className="text-[15px] font-black text-text-dark">عمداء الكليات</p><p className="mt-1 text-[13px] text-text-light">تعيين عميد لكلية واحدة أو نقله أو إنهاء تكليفه مع إبقاء الحساب والسجل.</p></Link>}
+      {reportsAllowed && <ExecutiveOverview office={office} />}
       {office === 'scientific' && (canViewPrograms(identity) || canViewCatalog(identity)) && <Link to="/vp/scientific/programs-courses" className="rounded-[16px] border border-primary/15 bg-white p-5 shadow-sm hover:border-primary/40"><p className="text-[15px] font-black text-text-dark">البرامج والمواد</p><p className="mt-1 text-[13px] text-text-light">الخطة الإرشادية ودليل المواد ومتطلبات التخرج؛ إعداد التغييرات وتطبيقها للطلاب الجدد فقط ضمن نطاقك.</p></Link>}
 
-      <details className="bg-white border border-black/5 rounded-[16px] p-5 shadow-sm">
-        <summary className="cursor-pointer text-[12px] font-bold text-text-light">تفاصيل الهوية والنطاق</summary>
-        <dl className="grid gap-2 text-[13px] text-text-dark">
-          <div className="flex justify-between gap-4">
-            <dt className="text-text-light">المستخدم</dt>
-            <dd>{identity?.username || identity?.email || '—'}</dd>
-          </div>
-          <div className="flex justify-between gap-4">
-            <dt className="text-text-light">الأدوار</dt>
-            <dd>{roles || '—'}</dd>
-          </div>
-          <div className="flex justify-between gap-4">
-            <dt className="text-text-light">الوحدة التنظيمية</dt>
-            <dd>{typeof unitName === 'string' ? unitName : unitName?.name || '—'}</dd>
-          </div>
-          <div className="flex justify-between gap-4">
-            <dt className="text-text-light">نطاق الوصول</dt>
-            <dd>{scopes}</dd>
-          </div>
-        </dl>
-      </details>
+      {identityDetails}
 
       <Link
         to={copy.assignmentsPath}

@@ -329,7 +329,7 @@ const governanceTasks = [
 
 export const administrative = {
   id: 'vpAdministrative',
-  title: 'نيابة الشؤون الإدارية',
+  title: 'الشؤون الإدارية',
   intro: 'تراجع من هذه البوابة تكليفات المدرسين وطلبات الفتح الاستثنائي بالتوازي مع نيابة الشؤون العلمية، وتتابع المؤشرات الإدارية، وتدير ملفات المدرسين وانتماءهم وعمداء الكليات ضمن صلاحياتك، وتطّلع على التقارير والتقويم الأكاديمي.',
   sections: [
     { id: 'reviews', title: 'المراجعات المشتركة مع النيابة العلمية', tasks: parallelReviewTasks('administrative') },
