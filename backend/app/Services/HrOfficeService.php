@@ -10,6 +10,7 @@ use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
@@ -129,7 +130,7 @@ final class HrOfficeService
             if (! empty($f['body'])) {
                 $q->where(fn ($q) => $q
                     ->whereExists(fn ($r) => $this->effectiveQuery($r->selectRaw('1')->from('hr_employment_relationships')->whereColumn('employee_id', 'e.employee_id')->where('body', $f['body'])))
-                    ->orWhere(fn ($q) => $q->where('e.hr_body', $f['body'])->whereNotExists(fn ($r) => $this->effectiveQuery($r->selectRaw('1')->from('hr_employment_relationships')->whereColumn('employee_id', 'e.employee_id')))));
+                    ->orWhere(fn ($q) => $q->where('e.hr_body', $f['body'])->whereNotExists(fn ($r) => $r->selectRaw('1')->from('hr_employment_relationships')->whereColumn('employee_id', 'e.employee_id'))));
             }
             if (! empty($f['q'])) {
                 $q->where(fn ($q) => $q->where('e.employee_number', 'like', '%'.$f['q'].'%')->orWhere('e.first_name', 'like', '%'.$f['q'].'%')->orWhere('e.last_name', 'like', '%'.$f['q'].'%'));
@@ -212,12 +213,20 @@ final class HrOfficeService
             foreach ($rows as $row) {
                 $row->relationships = $relations->get($row->id, collect());
                 $row->faculty_member_id = $faculty->get($row->id)?->faculty_member_id;
-                $row->current_relationship = $row->relationships->first(fn ($r) => $this->effective($r));
+                foreach ($this->workerContext($row, $row->relationships) as $key => $value) {
+                    $row->$key = $value;
+                }
             }
         }
         if ($section === 'needs' && $rows->isNotEmpty()) {
             $items = DB::table('hr_staffing_need_items')->whereIn('need_id', $rows->pluck('id'))->get();
-            $counts = $this->effectiveQuery(DB::table('hr_employment_relationships'))->where('source', 'approved_request')->whereIn('need_item_id', $items->pluck('id'))->selectRaw('need_item_id, COUNT(DISTINCT employee_id) as filled')->groupBy('need_item_id')->pluck('filled', 'need_item_id');
+            $counts = $this->effectiveQuery(DB::table('hr_employment_relationships as r'))
+                ->join('hr_staffing_need_items as i', 'i.id', '=', 'r.need_item_id')
+                ->where('r.source', 'approved_request')->whereIn('r.need_item_id', $items->pluck('id'))
+                ->where(fn ($q) => $q
+                    ->where(fn ($q) => $q->whereNotNull('i.position_id')->whereColumn('r.position_id', 'i.position_id'))
+                    ->orWhere(fn ($q) => $q->whereNull('i.position_id')->whereNull('r.position_id')->whereRaw('HEX(TRIM(r.job_title)) = HEX(TRIM(i.job_title))')))
+                ->selectRaw('r.need_item_id, COUNT(DISTINCT r.employee_id) as filled')->groupBy('r.need_item_id')->pluck('filled', 'need_item_id');
             foreach ($items as $item) {
                 $item->filled = (int) ($counts[$item->id] ?? 0);
                 $item->remaining = max(0, $item->quantity - $item->filled);
@@ -240,6 +249,29 @@ final class HrOfficeService
     private function effective(object $r): bool
     {
         return $r->starts_on <= now()->toDateString() && (! $r->ends_on || $r->ends_on >= now()->toDateString()) && (! $r->superseded_from || $r->superseded_from > now()->toDateString());
+    }
+
+    /** Stored hr_body is a legacy attribution, never a substitute for a dated recorded relationship. */
+    private function workerContext(object $employee, ?Collection $relationships = null): array
+    {
+        $relationships ??= DB::table('hr_employment_relationships')->where('employee_id', $employee->employee_id)->orderByDesc('starts_on')->orderByDesc('id')->get();
+        $current = $relationships->first(fn ($r) => $this->effective($r));
+
+        return ['current_relationship' => $current, 'current_body' => $current?->body ?? ($relationships->isEmpty() ? $employee->hr_body : null)];
+    }
+
+    private function assertNeedPosition(?object $item, array $proposal): void
+    {
+        if (! $item) {
+            return;
+        }
+        $position = $proposal['position_id'] ?? null;
+        $matches = $item->position_id !== null
+            ? $position !== null && (int) $position === (int) $item->position_id
+            : $position === null && trim($proposal['job_title'], ' ') === trim($item->job_title, ' ');
+        if (! $matches) {
+            throw Failure::invalid('hr_need_position_mismatch', 'المنصب المقترح يجب أن يطابق بند الاحتياج؛ البند النصي يحتفظ بصفته الوظيفية دون منصب آخر.');
+        }
     }
 
     private function placement(User $actor, array $p): array
@@ -273,7 +305,7 @@ final class HrOfficeService
         $this->requireReady();
         $d = $this->input($data, ['revision' => $id ? self::REVISION : 'prohibited', 'title' => 'required|string|max:200', 'body' => 'required|in:educational,administrative', 'college_id' => 'nullable|integer|min:1', 'organizational_unit_id' => 'nullable|integer|min:1', 'notes' => 'nullable|string|max:4000', 'status' => 'required|in:open,closed', 'items' => 'required|array|min:1|max:30']);
         Validator::make($d, ['items.*' => 'array'])->validate();
-        $items = array_map(fn ($i) => $this->input($i, ['id' => 'nullable|integer|min:1', 'position_id' => 'nullable|integer|min:1', 'job_title' => 'required|string|max:200', 'quantity' => 'required|integer|min:1|max:1000', 'education' => 'nullable|string|max:4000', 'specialization' => 'nullable|string|max:4000', 'skills' => 'nullable|string|max:4000', 'experience' => 'nullable|string|max:4000', 'notes' => 'nullable|string|max:4000', 'is_active' => 'required|boolean']), $d['items']);
+        $items = array_map(fn ($i) => $this->input($i, ['id' => 'nullable|integer|min:1', 'position_id' => 'nullable|integer|min:1', 'job_title' => 'required|string|max:200', 'quantity' => 'required|integer|min:1|max:1000', 'education' => 'required|string|max:4000|regex:/\S/u', 'specialization' => 'nullable|string|max:4000', 'skills' => 'required|string|max:4000|regex:/\S/u', 'experience' => 'required|string|max:4000|regex:/\S/u', 'notes' => 'nullable|string|max:4000', 'is_active' => 'required|boolean']), $d['items']);
 
         return $this->atomic(function () use ($actor, $id, $d, $items): array {
             $old = $id ? $this->row('hr_staffing_needs', $id) : null;
@@ -532,6 +564,7 @@ final class HrOfficeService
                     }
                 }
                 $p = $this->proposal($actor, $d['proposal']);
+                $this->assertNeedPosition($i, $p);
                 if ($n && ($p['body'] !== $n->body || $p['college_id'] != $n->college_id || $p['organizational_unit_id'] != $n->organizational_unit_id)) {
                     throw Failure::invalid('hr_need_mismatch', 'العلاقة المقترحة لا تطابق جهة الاحتياج.');
                 }
@@ -574,13 +607,14 @@ final class HrOfficeService
 
         return $this->atomic(function () use ($actor, $id, $d): array {
             $hint = $this->row('hr_relationship_requests', $id, false);
-            [$n, , $c, $e] = $this->requestLocks($actor, $hint);
+            [$n, $i, $c, $e] = $this->requestLocks($actor, $hint);
             $r = $this->row('hr_relationship_requests', $id);
             $this->revision($r, $d['revision']);
             if (! in_array($r->status, ['draft', 'returned'], true) || $r->current_slot != 1) {
                 throw Failure::conflict('hr_request_locked', 'الطلب غير قابل للإرسال.');
             }
             $p = $this->proposal($actor, json_decode($r->proposal, true, 512, JSON_THROW_ON_ERROR));
+            $this->assertNeedPosition($i, $p);
             $this->relationContext($r, $p, $e);
             if ($n && $n->status !== 'open') {
                 throw Failure::conflict('hr_need_closed', 'الاحتياج مغلق.');
@@ -655,6 +689,7 @@ final class HrOfficeService
                         throw Failure::conflict('hr_context_stale', 'تغير ملف الموظف أو الاحتياج أو المقابلات بعد الإرسال. أعد الطلب للمراجعة.');
                     }
                     $p = $this->proposal($actor, json_decode($r->proposal, true, 512, JSON_THROW_ON_ERROR));
+                    $this->assertNeedPosition($i, $p);
                     if ($n && ($n->status !== 'open' || ! $i->is_active || $n->body !== $p['body'] || $n->college_id != ($p['college_id'] ?? null))) {
                         throw Failure::conflict('hr_need_changed', 'جهة الاحتياج غير صالحة للاعتماد.');
                     }
@@ -771,7 +806,7 @@ final class HrOfficeService
         }
         $this->access->unit($actor, $r['proposal']['organizational_unit_id']);
 
-        $identity = $employee ? collect((array) $employee)->only(['employee_id', 'employee_number', 'first_name', 'last_name', 'employee_type_id', 'employee_status_id', 'organizational_unit_id', 'hr_body', 'hr_revision'])->all() : null;
+        $identity = $employee ? collect((array) $employee)->only(['employee_id', 'employee_number', 'first_name', 'last_name', 'employee_type_id', 'employee_status_id', 'organizational_unit_id', 'hr_body', 'hr_revision'])->all() + $this->workerContext($employee) : null;
 
         return ['request' => $r, 'candidate_context' => $candidate, 'employee' => $identity, 'events' => $this->events('request', $id)];
     }
@@ -782,16 +817,17 @@ final class HrOfficeService
         $this->requireReady();
         $e = $this->row('employees', $id, false);
         $this->access->employee($actor, $e);
+        $relationships = DB::table('hr_employment_relationships')->where('employee_id', $id)->orderByDesc('starts_on')->orderByDesc('id')->get();
         $payroll = null;
         if ($this->access->allows($actor, HrOffice::PAYROLL_LINK) && Schema::hasColumn('payroll_employees', 'employee_id')) {
             $payroll = DB::table('payroll_employees')->where('employee_id', $id)->first(['id', 'employee_number', 'full_name', 'payroll_body_id', 'revision', 'hr_body_at_link', 'hr_revision_at_link']);
         }
 
-        return ['employee' => collect((array) $e)->only(['employee_id', 'employee_number', 'first_name', 'last_name', 'father_name', 'phone_number', 'email', 'employee_type_id', 'employee_status_id', 'organizational_unit_id', 'hr_body', 'hr_revision'])->all(),
+        return ['employee' => collect((array) $e)->only(['employee_id', 'employee_number', 'first_name', 'last_name', 'father_name', 'phone_number', 'email', 'employee_type_id', 'employee_status_id', 'organizational_unit_id', 'hr_body', 'hr_revision'])->all() + $this->workerContext($e, $relationships),
             'faculty' => DB::table('faculty_members')->where('employee_id', $id)->first(['faculty_member_id', 'academic_rank', 'specialization', 'is_active']),
             'positions' => DB::table('employee_positions')->where('employee_id', $id)->orderBy('start_date')->get(),
             'affiliations' => DB::table('employee_unit_assignments')->where('employee_id', $id)->orderBy('start_date')->get(),
-            'relationships' => DB::table('hr_employment_relationships')->where('employee_id', $id)->orderByDesc('starts_on')->orderByDesc('id')->get(), 'payroll' => $payroll, 'events' => $this->events('employee', $id)];
+            'relationships' => $relationships, 'payroll' => $payroll, 'events' => $this->events('employee', $id)];
     }
 
     public function payrollLookup(User $actor, array $input): array
@@ -822,7 +858,13 @@ final class HrOfficeService
             $q->where(fn ($q) => $q->where('e.employee_number', 'like', '%'.$d['q'].'%')->orWhere('e.first_name', 'like', '%'.$d['q'].'%')->orWhere('e.last_name', 'like', '%'.$d['q'].'%'));
         }
 
-        return $q->orderBy('e.employee_number')->orderBy('e.employee_id')->paginate(15, ['*'], 'page', $d['page'] ?? 1)->toArray();
+        $page = $q->orderBy('e.employee_number')->orderBy('e.employee_id')->paginate(15, ['*'], 'page', $d['page'] ?? 1);
+        $relationships = DB::table('hr_employment_relationships')->whereIn('employee_id', collect($page->items())->pluck('id'))->orderByDesc('starts_on')->orderByDesc('id')->get()->groupBy('employee_id');
+        foreach ($page->items() as $employee) {
+            $employee->current_body = $this->workerContext($employee, $relationships->get($employee->id, collect()))['current_body'];
+        }
+
+        return $page->toArray();
     }
 
     public function linkPayroll(User $actor, int $employeeId, array $data): array
@@ -849,8 +891,11 @@ final class HrOfficeService
                     throw Failure::conflict('hr_payroll_identity_conflict', 'الموظف مرتبط بملف مالي آخر.');
                 }
                 if (! $p->employee_id) {
-                    DB::table('payroll_employees')->where('id', $p->id)->update(['employee_id' => $employeeId, 'hr_revision_at_link' => $e->hr_revision, 'hr_body_at_link' => $e->hr_body, 'revision' => $p->revision + 1, 'updated_at' => now()]);
-                    $this->event($actor, 'employee', $employeeId, 'payroll_linked', ['payroll_employee_id' => $p->id, 'before' => null, 'after' => $employeeId, 'reason' => $d['reason'], 'financial_classification_unchanged' => true]);
+                    // Employee serialization also protects relationship changes; use a current read under these locks.
+                    $relationships = DB::table('hr_employment_relationships')->where('employee_id', $employeeId)->orderBy('id')->lockForUpdate()->get();
+                    $body = $this->workerContext($e, $relationships)['current_body'];
+                    DB::table('payroll_employees')->where('id', $p->id)->update(['employee_id' => $employeeId, 'hr_revision_at_link' => $e->hr_revision, 'hr_body_at_link' => $body, 'revision' => $p->revision + 1, 'updated_at' => now()]);
+                    $this->event($actor, 'employee', $employeeId, 'payroll_linked', ['payroll_employee_id' => $p->id, 'before' => null, 'after' => $employeeId, 'hr_body_at_link' => $body, 'reason' => $d['reason'], 'financial_classification_unchanged' => true]);
                 }
 
                 return ['employee_id' => $employeeId, 'payroll_employee_id' => $p->id];
