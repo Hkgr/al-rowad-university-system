@@ -517,46 +517,12 @@ class PayrollSheetService
 
     public function createEmployee(array $input, int $userId): array
     {
-        try {
-            $id = DB::transaction(function () use ($input, $userId): int {
-                // The target body is read FOR UPDATE inside this transaction: a concurrent deactivation can no longer slip in
-                // between the "is it active" check and the insert.
-                $data = $this->validatedEmployee($input, null);
-                $employee = PayrollEmployee::create($data + ['revision' => 1, 'created_by_user_id' => $userId, 'updated_by_user_id' => $userId]);
-                // Blank inputs: no stored values at all, never prefilled with zero.
-                PayrollEntry::create(['payroll_employee_id' => $employee->id, 'revision' => 1, 'updated_by_user_id' => $userId]);
-
-                return $employee->id;
-            });
-        } catch (UniqueConstraintViolationException) {
-            throw $this->duplicateNumber();
-        }
-
-        return $this->row($id);
+        throw new PayrollException('هوية العامل تأتي من النظام؛ لا تنشأ هوية مستقلة في الرواتب.', 'payroll_identity_managed_by_hr', 409);
     }
 
     public function updateEmployee(int $id, array $input, int $expectedRevision, int $userId): array
     {
-        try {
-            DB::transaction(function () use ($id, $input, $expectedRevision, $userId): void {
-                $employee = PayrollEmployee::query()->lockForUpdate()->find($id);
-                if ($employee === null) {
-                    throw new PayrollException('الموظف غير موجود.', 'not_found', 404);
-                }
-                if ($employee->revision !== $expectedRevision) {
-                    throw new PayrollException('عُدّلت بيانات هذا الموظف من جهة أخرى؛ حدّث الصف وأعد المحاولة.', 'payroll_conflict', 409, [], ['current' => $this->row($id)]);
-                }
-                $data = $this->validatedEmployee($input, $employee);
-                $employee->fill($data);
-                if ($employee->isDirty()) {
-                    $employee->fill(['revision' => $employee->revision + 1, 'updated_by_user_id' => $userId])->save();
-                }
-            });
-        } catch (UniqueConstraintViolationException) {
-            throw $this->duplicateNumber();
-        }
-
-        return $this->row($id);
+        throw new PayrollException('عدّل هوية العامل وتصنيفه من الموارد البشرية، وليس الملف المالي.', 'payroll_identity_managed_by_hr', 409);
     }
 
     private function duplicateNumber(): PayrollException
@@ -636,126 +602,7 @@ class PayrollSheetService
      */
     public function updateValues(array $changes, int $configRevision, int $userId): array
     {
-        if ($changes === [] || count($changes) > self::MAX_BATCH) {
-            throw new PayrollException('عدد الصفوف المرسلة غير مقبول (1 إلى '.self::MAX_BATCH.' صفًا).', 'payroll_validation', 422, ['changes' => ['عدد الصفوف يجب أن يكون بين 1 و '.self::MAX_BATCH.'.']]);
-        }
-
-        return DB::transaction(function () use ($changes, $configRevision, $userId): array {
-            // The configuration is read under a shared lock: a column/setting change cannot interleave with this save.
-            $current = (int) DB::table('payroll_config')->where('id', 1)->sharedLock()->value('revision');
-            if ($current !== $configRevision) {
-                throw new PayrollException('تغيّرت إعدادات الأعمدة أو المعادلات منذ تحميل الصفحة؛ لم يُحفظ شيء، وبقيت قيمك المعلّقة.', 'payroll_config_conflict', 409, [], ['config' => $this->configs->present($this->configs->load())]);
-            }
-            $config = $this->configs->load();
-            $columns = collect($config['columns'])->keyBy('key');
-
-            $errors = [];
-            $parsed = [];
-            $seen = [];
-            foreach (array_values($changes) as $i => $change) {
-                $id = is_array($change) ? ($change['employee_id'] ?? null) : null;
-                $revision = is_array($change) ? ($change['expected_revision'] ?? null) : null;
-                if (! is_int($id) || $id < 1) {
-                    $errors["changes.{$i}.employee_id"][] = 'معرّف الموظف غير صالح.';
-
-                    continue;
-                }
-                if (! is_int($revision) || $revision < 1) {
-                    $errors["changes.{$i}.expected_revision"][] = 'رقم نسخة الصف مطلوب.';
-                }
-                if (isset($seen[$id])) {
-                    $errors["changes.{$i}.employee_id"][] = 'الموظف مكرر في الطلب نفسه.';
-                }
-                $seen[$id] = true;
-                $values = [];
-                $submitted = is_array($change['values'] ?? null) ? $change['values'] : [];
-                foreach ($submitted as $key => $raw) {
-                    $column = $columns->get((string) $key);
-                    if ($column === null || $column['kind'] !== 'input') {
-                        $errors["changes.{$i}.values.{$key}"][] = $column === null ? 'عمود غير معروف.' : 'عمود محسوب: يُحسب تلقائيًا ولا يقبل التعديل.';
-
-                        continue;
-                    }
-                    try {
-                        $values[$column['key']] = PayrollInput::parse($column, $raw);
-                    } catch (InvalidArgumentException $e) {
-                        $errors["changes.{$i}.values.{$key}"][] = $e->getMessage();
-                    }
-                }
-                if ($values === [] && ! isset($errors["changes.{$i}.values"]) && $submitted === []) {
-                    $errors["changes.{$i}.values"][] = 'لا توجد قيمة للتعديل.';
-                }
-                $parsed[$i] = ['employee_id' => $id, 'expected_revision' => $revision, 'values' => $values];
-            }
-            if ($errors !== []) {
-                throw new PayrollException('قيم غير صالحة؛ لم يُحفظ شيء من هذه العملية.', 'payroll_validation', 422, $errors);
-            }
-
-            $ids = collect($parsed)->pluck('employee_id')->sort()->values()->all();
-            $entries = PayrollEntry::query()->whereIn('payroll_employee_id', $ids)->orderBy('payroll_employee_id')->lockForUpdate()->get()->keyBy('payroll_employee_id');
-            $missing = [];
-            $conflicts = [];
-            foreach ($parsed as $i => $change) {
-                $entry = $entries->get($change['employee_id']);
-                if ($entry === null) {
-                    $missing["changes.{$i}.employee_id"][] = 'الموظف غير موجود.';
-                } elseif ($entry->revision !== $change['expected_revision']) {
-                    $conflicts[] = $change['employee_id'];
-                }
-            }
-            if ($missing !== []) {
-                throw new PayrollException('بعض الموظفين غير موجودين؛ لم يُحفظ شيء.', 'not_found', 404, $missing);
-            }
-            if ($conflicts !== []) {
-                throw new PayrollException(
-                    'عُدّلت بعض هذه الخلايا من جهة أخرى؛ لم يُحفظ شيء، وبقيت قيمك المعلّقة كما هي.',
-                    'payroll_conflict', 409, [],
-                    ['conflicts' => collect($conflicts)->map(fn ($id) => ['employee_id' => $id, 'current' => $this->row($id, $config)])->all()],
-                );
-            }
-
-            $existing = [];
-            foreach (array_chunk($ids, 500) as $chunk) {
-                foreach (DB::table('payroll_entry_values')->whereIn('payroll_employee_id', $chunk)->get() as $v) {
-                    $existing[(int) $v->payroll_employee_id][(int) $v->payroll_column_id] = $v;
-                }
-            }
-            foreach ($parsed as $change) {
-                $dirty = false;
-                foreach ($change['values'] as $key => $value) {
-                    $column = $columns[$key];
-                    $stored = $value === null ? null : ($column['value_type'] === 'text' ? $value : PayrollCalculator::toStored($value));
-                    $row = $existing[$change['employee_id']][$column['id']] ?? null;
-                    $before = $row === null ? null : ($column['value_type'] === 'text' ? $row->value_text : ($row->value_scaled === null ? null : (int) $row->value_scaled));
-                    if ($before === $stored) {
-                        continue;
-                    }
-                    $dirty = true;
-                    $where = ['payroll_employee_id' => $change['employee_id'], 'payroll_column_id' => $column['id']];
-                    if ($stored === null) {
-                        DB::table('payroll_entry_values')->where($where)->delete();
-                    } elseif ($row === null) {
-                        DB::table('payroll_entry_values')->insert($where + [
-                            'value_scaled' => $column['value_type'] === 'text' ? null : $stored, 'value_text' => $column['value_type'] === 'text' ? $stored : null,
-                            'created_at' => now(), 'updated_at' => now(),
-                        ]);
-                    } else {
-                        DB::table('payroll_entry_values')->where($where)->update([
-                            'value_scaled' => $column['value_type'] === 'text' ? null : $stored, 'value_text' => $column['value_type'] === 'text' ? $stored : null, 'updated_at' => now(),
-                        ]);
-                    }
-                }
-                if ($dirty) {
-                    $entry = $entries->get($change['employee_id']);
-                    $entry->fill(['revision' => $entry->revision + 1, 'updated_by_user_id' => $userId])->save();
-                }
-            }
-
-            $rows = $this->base()->whereIn('e.id', $ids)->get(self::COLUMNS);
-            $byId = collect($this->computeRows($rows, $config))->keyBy('id');
-
-            return ['rows' => collect($parsed)->map(fn ($c) => $byId[$c['employee_id']])->values()->all(), 'config_revision' => $configRevision];
-        });
+        throw new PayrollException('الحفظ المالي يحتاج شهرًا صريحًا عبر واجهة المحاسبة الشهرية.', 'payroll_month_required', 409);
     }
 
     // ── what-if (nothing is saved) ────────────────────────────────────────

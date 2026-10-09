@@ -9,11 +9,11 @@ use Illuminate\Support\Facades\DB;
 
 final class ProvisionHrOfficeAccess extends Command
 {
-    protected $signature = 'hr-office:provision-access {--grant-hr : Assign office read/preparation/classification/recruitment to the existing hr_officer role} {--grant-vp : Assign those permissions plus review to the existing administrative VP role} {--grant-vp-payroll : Grant only existing payroll view/link/identity permissions to the existing administrative VP role} {--grant-vp-actions : Explicitly grant relationship correction/cancellation and individual worker PDF export to the existing administrative VP role} {--grant-vp-payments : Explicitly grant disbursement/receipt recording to the existing administrative VP role} {--check : Read only}';
+    protected $signature = 'hr-office:provision-access {--grant-hr : Assign office read/preparation/classification/recruitment/work-time rights to the existing hr_officer role} {--grant-vp : Assign those permissions plus review to the existing administrative VP role} {--grant-vp-payroll : Grant accounting entry/read only to the existing administrative VP} {--grant-vp-accounting : Explicitly grant amount editing, period preparation/correction, payments and financial export; not formulas or owner-portal access} {--grant-vp-actions : Explicitly grant relationship correction/cancellation and individual worker PDF export} {--grant-vp-payments : Explicitly grant disbursement/receipt recording} {--check : Read only}';
 
-    protected $description = 'Register HR office permissions; explicit existing-role grants, optional VP payroll view/link, no accounts, scopes, amount or formula grants';
+    protected $description = 'Register HR permissions and explicit VP accounting grants; no accounts/scopes, owner-portal access or formula-management grants';
 
-    private const VP_PAYROLL = [HrOffice::PAYROLL_ACCESS, OwnerPortal::PAYROLL_VIEW, HrOffice::PAYROLL_LINK, OwnerPortal::EMPLOYEES_MANAGE];
+    private const VP_PAYROLL = [HrOffice::PAYROLL_ACCESS, OwnerPortal::PAYROLL_VIEW];
 
     private const VP_ACTIONS = [HrOffice::CORRECT, HrOffice::CANCEL, HrOffice::WORKER_EXPORT];
 
@@ -34,7 +34,7 @@ final class ProvisionHrOfficeAccess extends Command
                 }
                 $payrollRole = null;
                 $payrollPermissions = collect();
-                $extraCodes = array_merge($this->option('grant-vp-payroll') ? self::VP_PAYROLL : [], $this->option('grant-vp-actions') ? self::VP_ACTIONS : [], $this->option('grant-vp-payments') ? [OwnerPortal::PAYMENTS_MANAGE] : []);
+                $extraCodes = array_values(array_unique(array_merge($this->option('grant-vp-payroll') ? self::VP_PAYROLL : [], $this->option('grant-vp-actions') ? self::VP_ACTIONS : [], $this->option('grant-vp-payments') ? [OwnerPortal::PAYMENTS_MANAGE] : [], $this->option('grant-vp-accounting') ? [HrOffice::PAYROLL_ACCESS, OwnerPortal::PAYROLL_VIEW, OwnerPortal::AMOUNTS_EDIT, OwnerPortal::PERIODS_MANAGE, OwnerPortal::PERIODS_CORRECT, OwnerPortal::PAYMENTS_MANAGE, OwnerPortal::EXPORT] : [])));
                 $ownerCodes = array_values(array_filter($extraCodes, fn ($code) => str_starts_with($code, 'owner_payroll.')));
                 if ($extraCodes !== []) {
                     $payrollRole = DB::table('roles')->where('role_code', 'vice_president_administrative')->where('is_active', true)->lockForUpdate()->first();
@@ -46,7 +46,7 @@ final class ProvisionHrOfficeAccess extends Command
                     $ownerModule = DB::table('system_modules')->where('module_code', OwnerPortal::MODULE)->lockForUpdate()->first();
                     $payrollPermissions = DB::table('permissions')->whereIn('permission_code', $ownerCodes)->lockForUpdate()->get()->keyBy('permission_code');
                     if (! $ownerModule?->is_active || $payrollPermissions->count() !== count($ownerCodes) || $payrollPermissions->contains(fn ($p) => ! $p->is_active || $p->module_id != $ownerModule->module_id)) {
-                        throw new \RuntimeException('Existing active owner payroll view/employee permissions in the owner module are required.');
+                        throw new \RuntimeException('All selected active payroll permissions must exist in the owner module. Run owner-portal:provision-access first.');
                     }
                 }
                 $roles = [];
@@ -91,7 +91,7 @@ final class ProvisionHrOfficeAccess extends Command
 
                 return 'APPLIED';
             });
-            $this->info($state.'. No user, scope or financial value was created; no owner-portal, amount-edit or formula-management permission was granted.');
+            $this->info($state.'. No user, scope or financial value created. Accounting rights only when explicitly selected; no owner-portal or formula-management grant.');
 
             return self::SUCCESS;
         } catch (\Throwable $e) {

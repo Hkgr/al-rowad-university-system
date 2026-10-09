@@ -30,7 +30,9 @@ final class HrOffice
 
     public const WORKER_EXPORT = 'administrative_hr.workers.export';
 
-    public const PERMISSIONS = [self::VIEW => 'عرض الموارد البشرية', self::RECRUIT => 'إدارة الاحتياجات والمقابلات', self::CLASSIFY => 'استكمال تصنيف العاملين', self::PREPARE => 'إعداد العلاقات الوظيفية', self::REVIEW => 'اعتماد العلاقات الوظيفية', self::PAYROLL_ACCESS => 'دخول المحاسبة إلى الرواتب', self::PAYROLL_LINK => 'ربط ملف الموظف بالرواتب', self::CORRECT => 'تصحيح علاقة وظيفية معتمدة مع حفظ الأصل', self::CANCEL => 'إلغاء نفاذ علاقة وظيفية مع حفظ التاريخ', self::WORKER_EXPORT => 'تصدير ملف العامل ضمن صلاحيات القراءة'];
+    public const WORK_TIME = 'administrative_hr.work_time.manage';
+
+    public const PERMISSIONS = [self::VIEW => 'عرض الموارد البشرية', self::RECRUIT => 'إدارة الاحتياجات والمقابلات', self::CLASSIFY => 'استكمال تصنيف العاملين', self::PREPARE => 'إعداد العلاقات الوظيفية', self::REVIEW => 'اعتماد العلاقات الوظيفية', self::PAYROLL_ACCESS => 'دخول المحاسبة إلى الرواتب', self::PAYROLL_LINK => 'صلاحية ربط تاريخية — لم يعد الإجراء متاحًا', self::CORRECT => 'تصحيح علاقة وظيفية معتمدة مع حفظ الأصل', self::CANCEL => 'إلغاء نفاذ علاقة وظيفية مع حفظ التاريخ', self::WORKER_EXPORT => 'تصدير ملف العامل ضمن صلاحيات القراءة', self::WORK_TIME => 'توثيق أيام وساعات فعلية للمحاسبة بمصدر وتدقيق'];
 
     public function __construct(private readonly DataScopeService $scope) {}
 

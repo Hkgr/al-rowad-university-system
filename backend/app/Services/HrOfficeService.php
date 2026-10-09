@@ -994,80 +994,40 @@ final class HrOfficeService
             'can_open_payroll' => $this->payrollReadable($actor), 'can_export' => $this->access->allows($actor, HrOffice::WORKER_EXPORT), 'events' => $this->events('employee', $id)];
     }
 
-    public function payrollLookup(User $actor, array $input): array
+    public function workTime(User $actor, int $id, array $data): array
     {
-        $this->access->authorize($actor, HrOffice::PAYROLL_LINK);
-        $this->access->payroll($actor, OwnerPortal::EMPLOYEES_MANAGE);
+        $this->access->authorize($actor, HrOffice::WORK_TIME);
         $this->requireReady();
-        $d = $this->input($input, ['q' => 'nullable|string|max:120', 'page' => 'sometimes|integer|min:1']);
-        if (! Schema::hasColumn('payroll_employees', 'employee_id')) {
-            throw new Failure('ربط الرواتب غير جاهز.', 503, 'hr_schema_not_ready');
+        if (! Schema::hasTable('hr_work_time_records')) {
+            throw new Failure('مخطط بيانات الدوام غير جاهز.', 503, 'hr_work_time_not_ready');
         }
-        $q = DB::table('payroll_employees')->select(['id', 'employee_number', 'full_name', 'job_title', 'payroll_body_id', 'employee_id', 'revision']);
-        if (! empty($d['q'])) {
-            $q->where(fn ($q) => $q->where('employee_number', 'like', '%'.$d['q'].'%')->orWhere('full_name', 'like', '%'.$d['q'].'%'));
+        $d = $this->input($data, ['period' => ['required', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'], 'revision' => 'required|integer|min:0', 'days' => ['nullable', 'numeric', 'min:0', 'max:31', 'regex:/^\d+(\.\d{1,2})?$/'], 'hours' => ['nullable', 'numeric', 'min:0', 'max:744', 'regex:/^\d+(\.\d{1,2})?$/'], 'source_reference' => 'required|string|max:4000|regex:/\S/u', 'confirmed' => 'required|accepted']);
+        if (($d['days'] ?? null) === null && ($d['hours'] ?? null) === null) {
+            throw Failure::invalid('hr_work_time_invalid', 'أدخل الأيام أو الساعات الفعلية المعروفة؛ لا تُملأ البيانات تلقائيًا.');
         }
-
-        return $q->orderBy('employee_number')->orderBy('id')->paginate(15, ['*'], 'page', $d['page'] ?? 1)->toArray();
-    }
-
-    public function payrollPersonnelLookup(User $actor, array $input): array
-    {
-        $this->access->authorize($actor, HrOffice::PAYROLL_LINK);
-        $this->access->payroll($actor, OwnerPortal::EMPLOYEES_MANAGE);
-        $this->requireReady();
-        $d = $this->input($input, ['q' => 'nullable|string|max:120', 'page' => 'sometimes|integer|min:1']);
-        $q = $this->employees($actor)->select(['e.employee_id as id', 'e.employee_number', 'e.first_name', 'e.last_name', 'e.hr_revision', 'e.hr_body']);
-        if (! empty($d['q'])) {
-            $q->where(fn ($q) => $q->where('e.employee_number', 'like', '%'.$d['q'].'%')->orWhere('e.first_name', 'like', '%'.$d['q'].'%')->orWhere('e.last_name', 'like', '%'.$d['q'].'%'));
+        if (($d['days'] ?? 0) > CarbonImmutable::parse($d['period'].'-01')->daysInMonth) {
+            throw Failure::invalid('hr_work_time_invalid', 'الأيام المدخلة تتجاوز أيام الشهر.');
         }
 
-        $page = $q->orderBy('e.employee_number')->orderBy('e.employee_id')->paginate(15, ['*'], 'page', $d['page'] ?? 1);
-        $relationships = DB::table('hr_employment_relationships')->whereIn('employee_id', collect($page->items())->pluck('id'))->orderByDesc('starts_on')->orderByDesc('id')->get()->groupBy('employee_id');
-        foreach ($page->items() as $employee) {
-            $employee->current_body = $this->workerContext($employee, $relationships->get($employee->id, collect()))['current_body'];
-        }
+        return $this->atomic(function () use ($actor, $id, $d): array {
+            $this->access->authorize($actor, HrOffice::WORK_TIME);
+            $e = $this->row('employees', $id);
+            $this->access->employee($actor, $e);
+            $old = DB::table('hr_work_time_records')->where('employee_id', $id)->where('period', $d['period'])->lockForUpdate()->first();
+            if ((int) ($old->revision ?? 0) !== (int) $d['revision']) {
+                throw Failure::conflict('hr_work_time_stale', 'تغيرت بيانات الدوام؛ احتفظ بالمدخلات وراجع السجل الحالي.');
+            }
+            $values = ['days' => $d['days'] ?? null, 'hours' => $d['hours'] ?? null, 'source_reference' => $d['source_reference'], 'recorded_by_user_id' => $actor->user_id, 'revision' => ($old->revision ?? 0) + 1, 'updated_at' => now()];
+            if ($old) {
+                DB::table('hr_work_time_records')->where('id', $old->id)->update($values);
+            } else {
+                DB::table('hr_work_time_records')->insert($values + ['employee_id' => $id, 'period' => $d['period'], 'created_at' => now()]);
+            }
+            $after = DB::table('hr_work_time_records')->where('employee_id', $id)->where('period', $d['period'])->first();
+            DB::table('employees')->where('employee_id', $id)->update(['updated_at' => now()]);
+            $this->event($actor, 'employee', $id, 'work_time_recorded', ['before' => $old, 'after' => $after, 'not_attendance_tracking' => true]);
 
-        return $page->toArray();
-    }
-
-    public function linkPayroll(User $actor, int $employeeId, array $data): array
-    {
-        $this->access->authorize($actor, HrOffice::PAYROLL_LINK);
-        $this->access->payroll($actor, OwnerPortal::EMPLOYEES_MANAGE);
-        $this->requireReady();
-        $d = $this->input($data, ['payroll_employee_id' => 'required|integer|min:1', 'revision' => self::REVISION, 'payroll_revision' => self::REVISION, 'confirmed' => 'required|accepted', 'reason' => 'required|string|max:4000']);
-        if (! Schema::hasColumn('payroll_employees', 'employee_id')) {
-            throw new Failure('ربط الرواتب غير جاهز.', 503, 'hr_schema_not_ready');
-        }
-        try {
-            return $this->atomic(function () use ($actor, $employeeId, $d): array {
-                // Existing financial writers lock payroll employee first. HR never locks financial rows during approval.
-                $p = $this->row('payroll_employees', $d['payroll_employee_id']);
-                $e = $this->row('employees', $employeeId);
-                $this->access->employee($actor, $e);
-                $this->revision($e, $d['revision'], 'hr_revision');
-                $this->revision($p, $d['payroll_revision']);
-                if ($p->employee_id && $p->employee_id != $employeeId) {
-                    throw Failure::conflict('hr_payroll_identity_conflict', 'الملف المالي مرتبط بشخص آخر.');
-                }
-                if (DB::table('payroll_employees')->where('employee_id', $employeeId)->where('id', '!=', $p->id)->exists()) {
-                    throw Failure::conflict('hr_payroll_identity_conflict', 'الموظف مرتبط بملف مالي آخر.');
-                }
-                if (! $p->employee_id) {
-                    // Employee serialization also protects relationship changes; use a current read under these locks.
-                    $relationships = DB::table('hr_employment_relationships')->where('employee_id', $employeeId)->orderBy('id')->lockForUpdate()->get();
-                    $body = $this->workerContext($e, $relationships)['current_body'];
-                    DB::table('payroll_employees')->where('id', $p->id)->update(['employee_id' => $employeeId, 'hr_revision_at_link' => $e->hr_revision, 'hr_body_at_link' => $body, 'revision' => $p->revision + 1, 'updated_at' => now()]);
-                    $this->event($actor, 'employee', $employeeId, 'payroll_linked', ['payroll_employee_id' => $p->id, 'before' => null, 'after' => $employeeId, 'hr_body_at_link' => $body, 'reason' => $d['reason'], 'financial_classification_unchanged' => true]);
-                }
-
-                return ['employee_id' => $employeeId, 'payroll_employee_id' => $p->id];
-            });
-        } catch (QueryException $e) {
-            if (in_array((string) $e->getCode(), ['23000', '19'], true)) {
-                throw Failure::conflict('hr_payroll_identity_conflict', 'الهوية مرتبطة بالفعل.');
-            } throw $e;
-        }
+            return (array) $after;
+        });
     }
 }

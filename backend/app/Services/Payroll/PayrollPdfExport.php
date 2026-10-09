@@ -341,7 +341,11 @@ final class PayrollPdfExport
         flock($lock, LOCK_EX);
         try {
             // TCPDF's constructor selects the core "helvetica" definition from the same font directory.
-            $core = base_path('vendor/tecnickcom/tcpdf/fonts/helvetica.php');
+            // Respect Composer's actual package/vendor directory; never patch or download into vendor.
+            $core = dirname((new \ReflectionClass(\TCPDF::class))->getFileName()).'/fonts/helvetica.php';
+            if (! is_file($core)) {
+                throw new RuntimeException('Official TCPDF core fonts missing. Run composer install from the release lock, then payroll:prepare-pdf-fonts.');
+            }
             if (! is_file($dir.'/helvetica.php') && ! copy($core, $dir.'/helvetica.php')) {
                 throw new RuntimeException('Could not prepare the PDF core font definition.');
             }

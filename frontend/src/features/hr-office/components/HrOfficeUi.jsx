@@ -26,19 +26,19 @@ export function HrTabs({ active, onChange }) {
   }
   return <div role="tablist" aria-label="أقسام الموارد البشرية" dir="rtl" className="flex min-w-0 gap-1 overflow-x-auto overscroll-x-contain rounded-t-[12px] border-b border-primary/15 bg-white px-1">
     {SECTIONS.map(([id, title], index) => <button type="button" key={id} id={`hr-tab-${id}`} role="tab" aria-selected={id === active} aria-controls="hr-office-panel" tabIndex={id === active ? 0 : -1}
-      className={`shrink-0 whitespace-nowrap border-b-2 px-4 py-3.5 text-[12.5px] font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary max-[560px]:px-3 ${id === active ? 'border-primary bg-primary/5 text-primary-dark' : 'border-transparent text-text-light hover:bg-primary/[0.035] hover:text-text-dark'}`}
+      className="hr-tab shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
       onKeyDown={event => moveFocus(event, index)} onClick={() => { if (id !== active) onChange(id) }}>{title}</button>)}
   </div>
 }
 
-export function PayrollLinkStatus({ detail, canLink, canView, onLink }) {
+export function PayrollLinkStatus({ detail, canView }) {
   if (!detail.payroll_status) return null
   if (detail.payroll_status === 'unavailable') return <Notice tone="warning">حالة الربط المالي غير متاحة؛ مخطط الربط غير جاهز.</Notice>
   const linked = detail.payroll_status === 'linked'
   return <section className="rounded-[12px] border border-primary/15 bg-primary/[0.035] p-4 space-y-3" aria-label="الربط المالي">
-    <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-[13px] font-bold">الربط المالي</h3><HrStatus value={detail.payroll_status}>{linked ? 'مرتبط بملف رواتب' : 'غير مرتبط'}</HrStatus></div>
-    {linked && <div className="text-[12.5px] leading-6"><p className="font-bold break-words">{detail.payroll.full_name}</p><p className="text-text-light">الرقم المالي: <bdi>{detail.payroll.employee_number}</bdi></p></div>}
-    <div className="flex flex-wrap gap-2">{linked && detail.can_open_payroll && canView && <Link className={secondaryButton} to={payrollFilePath(detail.payroll.id)}>فتح ملف الرواتب</Link>}{!linked && canLink && <button type="button" className={secondaryButton} onClick={onLink}>ربط ملف رواتب موجود</button>}</div>
-    <p className="text-[11px] text-text-light">الربط لا ينشئ ملفًا ماليًا ولا يغيّر التصنيف المالي أو المبالغ.</p>
+    <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-[13px] font-bold">الملف المحاسبي</h3><HrStatus value={detail.payroll_status}>{linked ? 'سجل مالي من هوية العامل' : 'بانتظار مزامنة العاملين'}</HrStatus></div>
+    {linked && <div className="text-[12.5px] leading-6"><p className="font-bold break-words">{detail.employee.first_name} {detail.employee.last_name}</p><p className="text-text-light">الرقم الوظيفي: <bdi>{detail.employee.employee_number}</bdi></p></div>}
+    <div className="flex flex-wrap gap-2">{linked && detail.can_open_payroll && canView && <Link className={secondaryButton} to={payrollFilePath(detail.employee.employee_id)}>فتح الملف المحاسبي</Link>}</div>
+    <p className="text-[11px] text-text-light">الهوية من سجل العامل. إدارة المبالغ والصرف والاستلام في المحاسبة فقط.</p>
   </section>
 }

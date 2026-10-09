@@ -947,13 +947,11 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     */
     Route::prefix('vice-presidency/administrative/hr')->controller(\App\Http\Controllers\Api\HrOfficeController::class)->group(function (): void {
         Route::get('options', 'options');
-        Route::get('payroll-lookup', 'payrollOptions');
-        Route::get('payroll-personnel-lookup', 'payrollPersonnel');
         Route::get('workers/{employee}', 'worker')->whereNumber('employee');
         Route::get('workers/{employee}/file', 'workerFile')->whereNumber('employee');
         Route::get('workers/{employee}/pdf', 'workerPdf')->whereNumber('employee');
         Route::post('workers/{employee}/classification', 'classify')->whereNumber('employee');
-        Route::post('workers/{employee}/payroll-link', 'linkPayroll')->whereNumber('employee');
+        Route::post('workers/{employee}/work-time', 'workTime')->whereNumber('employee');
         Route::post('needs', 'storeNeed');
         Route::patch('needs/{need}', 'updateNeed')->whereNumber('need');
         Route::post('candidates', 'storeCandidate');
@@ -984,6 +982,19 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
         });
     }
 
+    foreach (['vice-presidency/administrative/payroll' => \App\Http\Middleware\RequireAdministrativePayroll::class, 'owner/payroll' => \App\Http\Middleware\RequireOwnerPortal::class] as $prefix => $middleware) {
+        Route::prefix($prefix.'/months')->controller(\App\Http\Controllers\Api\MonthlyPayrollController::class)->group(function () use ($middleware): void {
+            $guard = fn ($p) => $middleware.':'.$p;
+            Route::get('options', 'options')->middleware($guard(\App\Support\OwnerPortal::PAYROLL_VIEW));
+            Route::get('report', 'report')->middleware($guard(\App\Support\OwnerPortal::PAYROLL_VIEW));
+            Route::post('prepare', 'prepare')->middleware($guard(\App\Support\OwnerPortal::PERIODS_MANAGE));
+            Route::post('save', 'save')->middleware($guard(\App\Support\OwnerPortal::AMOUNTS_EDIT));
+            Route::post('approve', 'approve')->middleware($guard(\App\Support\OwnerPortal::PERIODS_MANAGE));
+            Route::get('results/{uuid}', 'result')->whereUuid('uuid')->middleware($guard(\App\Support\OwnerPortal::PAYROLL_VIEW));
+            Route::get('export/{kind}', 'export')->whereIn('kind', ['pdf', 'xlsx'])->middleware($guard(\App\Support\OwnerPortal::EXPORT));
+        });
+    }
+
     // Reuses the owner payroll controller, calculations and tables; a separate entry guard
     // requires actual office role, university scope, explicit access and the SAME financial action permission.
     Route::prefix('vice-presidency/administrative/payroll')->controller(\App\Http\Controllers\Api\OwnerPayrollController::class)->group(function (): void {
@@ -996,9 +1007,6 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
         Route::patch('bodies/{body}', 'updateBody')->whereNumber('body')->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
         Route::post('bodies/{body}/{state}', 'setBodyActive')->whereNumber('body')->whereIn('state', ['activate', 'deactivate'])->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
         Route::delete('bodies/{body}', 'destroyBody')->whereNumber('body')->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
-        Route::post('employees', 'storeEmployee')->middleware($guard(\App\Support\OwnerPortal::EMPLOYEES_MANAGE));
-        Route::patch('employees/{employee}', 'updateEmployee')->whereNumber('employee')->middleware($guard(\App\Support\OwnerPortal::EMPLOYEES_MANAGE));
-        Route::patch('values', 'values')->middleware($guard(\App\Support\OwnerPortal::AMOUNTS_EDIT));
         Route::get('config', 'config')->middleware($view);
         Route::post('config/preview', 'previewConfig')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
         Route::post('config/columns', 'storeColumn')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
@@ -1022,9 +1030,6 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
             Route::patch('bodies/{body}', 'updateBody')->whereNumber('body')->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
             Route::post('bodies/{body}/{state}', 'setBodyActive')->whereNumber('body')->whereIn('state', ['activate', 'deactivate'])->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
             Route::delete('bodies/{body}', 'destroyBody')->whereNumber('body')->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
-            Route::post('employees', 'storeEmployee')->middleware($guard(\App\Support\OwnerPortal::EMPLOYEES_MANAGE));
-            Route::patch('employees/{employee}', 'updateEmployee')->whereNumber('employee')->middleware($guard(\App\Support\OwnerPortal::EMPLOYEES_MANAGE));
-            Route::patch('values', 'values')->middleware($guard(\App\Support\OwnerPortal::AMOUNTS_EDIT));
             Route::get('config', 'config')->middleware($guard(\App\Support\OwnerPortal::PAYROLL_VIEW));
             Route::post('config/preview', 'previewConfig')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
             Route::post('config/columns', 'storeColumn')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));

@@ -8,7 +8,7 @@ export const canHr = (key, identity) => canAccess(['review', 'correct', 'cancel'
 export const SECTIONS = Object.freeze([['workers', 'العاملون'], ['needs', 'الاحتياجات'], ['candidates', 'المرشحون والمقابلات'], ['requests', 'طلبات الاعتماد'], ['relationships', 'العقود والتوظيف'], ['classification', 'استكمال التصنيف']])
 export const labels = Object.freeze({ educational: 'هيئة تعليمية', administrative: 'هيئة إدارية', temporary_contract: 'تعاقد مؤقت — ثلاثة أشهر', continuous_contract: 'تعاقد مستمر', employment: 'توظيف', full: 'كلي', part: 'جزئي', draft: 'مسودة', submitted: 'بانتظار الاعتماد', returned: 'معاد للتعديل', approved: 'معتمد', rejected: 'مرفوض', candidate: 'مرشح', proposed: 'قبول مقترح', accepted: 'مقبول بعلاقة معتمدة', declined: 'اعتذار', open: 'مفتوح', closed: 'مغلق', scheduled: 'مجدولة', completed: 'مكتملة', cancelled: 'ملغاة', legacy_classification: 'توثيق البيانات القائمة — دون اعتماد تاريخي', approved_request: 'علاقة معتمدة', issue: 'إصدار علاقة', accept: 'قبول مرشح', renew: 'تجديد', convert: 'تحويل' })
 export const label = value => labels[value] || value || 'غير محدد'
-export const payrollFilePath = id => `/vp/administrative/payroll?payroll_employee_id=${encodeURIComponent(id)}`
+export const payrollFilePath = id => `/vp/administrative/payroll/workers/${encodeURIComponent(id)}`
 export const workerFilePath = id => `/vp/administrative/hr/workers/${encodeURIComponent(id)}`
 export const PAYMENT_MANAGE = 'owner_payroll.payments.manage'
 export function hrDate(value) {
