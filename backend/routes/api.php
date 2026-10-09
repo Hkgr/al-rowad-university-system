@@ -945,6 +945,56 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     | University-owner portal (Home + Payroll). Each route carries its own owner_* permission, checked
     | server-side by RequireOwnerPortal. Payroll data lives in isolated payroll_* tables only.
     */
+    Route::prefix('vice-presidency/administrative/hr')->controller(\App\Http\Controllers\Api\HrOfficeController::class)->group(function (): void {
+        Route::get('options', 'options');
+        Route::get('payroll-lookup', 'payrollOptions');
+        Route::get('payroll-personnel-lookup', 'payrollPersonnel');
+        Route::get('workers/{employee}', 'worker')->whereNumber('employee');
+        Route::post('workers/{employee}/classification', 'classify')->whereNumber('employee');
+        Route::post('workers/{employee}/payroll-link', 'linkPayroll')->whereNumber('employee');
+        Route::post('needs', 'storeNeed');
+        Route::patch('needs/{need}', 'updateNeed')->whereNumber('need');
+        Route::post('candidates', 'storeCandidate');
+        Route::get('candidates/{candidate}', 'candidate')->whereNumber('candidate');
+        Route::patch('candidates/{candidate}', 'updateCandidate')->whereNumber('candidate');
+        Route::post('candidates/{candidate}/decline', 'decline')->whereNumber('candidate');
+        Route::post('candidates/{candidate}/interviews', 'interview')->whereNumber('candidate');
+        Route::patch('candidates/{candidate}/interviews/{interview}', 'interview')->whereNumber('candidate')->whereNumber('interview');
+        Route::post('requests', 'storeRequest');
+        Route::get('requests/{request}', 'detail')->whereNumber('request');
+        Route::patch('requests/{request}', 'updateRequest')->whereNumber('request');
+        Route::post('requests/{request}/submit', 'submit')->whereNumber('request');
+        Route::post('requests/{request}/decide', 'decide')->whereNumber('request');
+        Route::get('{section}', 'index')->whereIn('section', ['workers', 'needs', 'candidates', 'requests', 'relationships', 'classification']);
+    });
+
+    // Reuses the owner payroll controller, calculations and tables; a separate entry guard
+    // requires actual office role, university scope, explicit access and the SAME financial action permission.
+    Route::prefix('vice-presidency/administrative/payroll')->controller(\App\Http\Controllers\Api\OwnerPayrollController::class)->group(function (): void {
+        $guard = fn (string $p) => \App\Http\Middleware\RequireAdministrativePayroll::class.':'.$p;
+        $view = $guard(\App\Support\OwnerPortal::PAYROLL_VIEW);
+        Route::get('options', 'options')->middleware($view);
+        Route::get('sheet', 'sheet')->middleware($view);
+        Route::get('bodies', 'bodies')->middleware($view);
+        Route::post('bodies', 'storeBody')->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
+        Route::patch('bodies/{body}', 'updateBody')->whereNumber('body')->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
+        Route::post('bodies/{body}/{state}', 'setBodyActive')->whereNumber('body')->whereIn('state', ['activate', 'deactivate'])->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
+        Route::delete('bodies/{body}', 'destroyBody')->whereNumber('body')->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
+        Route::post('employees', 'storeEmployee')->middleware($guard(\App\Support\OwnerPortal::EMPLOYEES_MANAGE));
+        Route::patch('employees/{employee}', 'updateEmployee')->whereNumber('employee')->middleware($guard(\App\Support\OwnerPortal::EMPLOYEES_MANAGE));
+        Route::patch('values', 'values')->middleware($guard(\App\Support\OwnerPortal::AMOUNTS_EDIT));
+        Route::get('config', 'config')->middleware($view);
+        Route::post('config/preview', 'previewConfig')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+        Route::post('config/columns', 'storeColumn')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+        Route::patch('config/columns/{column}', 'updateColumn')->where('column', '[a-z][a-z0-9_]{1,40}')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+        Route::post('config/columns/{column}/restore-formula', 'restoreColumnFormula')->where('column', '[a-z][a-z0-9_]{1,40}')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+        Route::delete('config/columns/{column}', 'destroyColumn')->where('column', '[a-z][a-z0-9_]{1,40}')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+        Route::put('config/layout', 'saveLayout')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+        Route::patch('config/settings', 'updateSettings')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+        Route::get('export/xlsx', 'exportXlsx')->middleware($guard(\App\Support\OwnerPortal::EXPORT));
+        Route::get('export/pdf', 'exportPdf')->middleware($guard(\App\Support\OwnerPortal::EXPORT));
+    });
+
     Route::prefix('owner')->controller(\App\Http\Controllers\Api\OwnerPayrollController::class)->group(function (): void {
         $guard = fn (string $permission) => \App\Http\Middleware\RequireOwnerPortal::class.':'.$permission;
         Route::get('home', 'home')->middleware($guard(\App\Support\OwnerPortal::HOME_VIEW));

@@ -201,8 +201,15 @@ final class OwnerPayrollTest extends OwnerPayrollTestCase
 
     public function test_no_existing_application_code_reads_or_writes_the_payroll_tables(): void
     {
-        // Workforce statistics, reports and workflows can never include payroll people because only payroll code names these tables.
-        $allowed = ['Services/Payroll/', 'Models/Payroll/', 'Http/Controllers/Api/OwnerPayrollController.php', 'Support/PayrollWorkplace.php', 'Support/OwnerPortal.php'];
+        // Statistics still never use financial people as personnel. Office 711's explicit identity
+        // bridge is the sole additional boundary (its HTTP tests prove amounts/body are unchanged).
+        $allowed = ['Services/Payroll/', 'Models/Payroll/', 'Http/Controllers/Api/OwnerPayrollController.php', 'Support/PayrollWorkplace.php', 'Support/OwnerPortal.php', 'Services/HrOfficeService.php', 'Models/Employee.php'];
+        // The personnel model exposes only an explicit optional relationship, never financial
+        // values or aggregates. EmployeeResource still has an explicit personnel-only allowlist.
+        $personnel = file_get_contents(app_path('Models/Employee.php'));
+        $this->assertStringContainsString('PayrollEmployee::class', $personnel);
+        $this->assertStringNotContainsString('payroll_entries', $personnel);
+        $this->assertStringNotContainsString('fixed_salary', $personnel);
         $offenders = [];
         foreach (File::allFiles(app_path()) as $file) {
             $relative = str_replace('\\', '/', $file->getRelativePathname());

@@ -2,13 +2,14 @@
 
 namespace App\Models\Payroll;
 
+use App\Models\Employee;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
- * Payroll employee: an independent record of the payroll feature. It has no relation to teachers, HR
- * employees, students or user accounts, and creating one never creates any of those.
+ * Financial working-sheet identity with an OPTIONAL explicit HR identity link. Creating one
+ * still never creates personnel/accounts; linkage never changes financial body or amounts.
  */
 class PayrollEmployee extends Model
 {
@@ -24,6 +25,11 @@ class PayrollEmployee extends Model
     public function body(): BelongsTo
     {
         return $this->belongsTo(PayrollBody::class, 'payroll_body_id');
+    }
+
+    public function personnel(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'employee_id', 'employee_id');
     }
 
     public function entry(): HasOne

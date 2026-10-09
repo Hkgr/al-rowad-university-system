@@ -8,7 +8,7 @@ const directorate = (code, title, offices) => Object.freeze({ code, title, offic
 export const ADMINISTRATIVE_DIRECTORATES = Object.freeze([
   directorate('71', 'مديرية الشؤون الإدارية', [
     office('711', 'مكتب الموارد البشرية', [
-      '/vp/administrative/faculty', '/vp/administrative/deans',
+      '/vp/administrative/hr', '/vp/administrative/faculty', '/vp/administrative/deans',
       '/vp/administrative/teaching-assignments', '/vp/administrative/exceptional-openings',
     ]),
     office('712', 'مكتب الديوان والأرشيف'),
@@ -17,7 +17,7 @@ export const ADMINISTRATIVE_DIRECTORATES = Object.freeze([
     office('715', 'المكتب التقني'),
   ]),
   directorate('72', 'مديرية الشؤون المالية', [
-    office('721', 'مكتب المحاسبة'), office('722', 'أمين الصندوق'), office('723', 'أمين المستودع'),
+    office('721', 'مكتب المحاسبة', ['/vp/administrative/payroll']), office('722', 'أمين الصندوق'), office('723', 'أمين المستودع'),
   ]),
   directorate('73', 'مديرية شؤون الطلاب', [
     office('731', 'مكتب الإرشاد والتوجيه', ['/vp/administrative/calendar']),

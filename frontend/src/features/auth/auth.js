@@ -209,6 +209,8 @@ export function landingRoute(user) {
   if (canAny(['attendance.manage', 'grades.manage'], user) && user?.employee_id) return '/professor'
   if (hasPermission('supplementary_exams.grades.view', user) && user?.employee_id) return '/professor/supplementary-exams'
   if (hasPermission('hr.view', user)) return '/hr'
+  if (hasRole('hr_officer', user) && canAccess({ assignedPermissions: ['administrative_hr.view'], actualScopeTypes: ['university', 'college'] }, user)) return '/vp/administrative/hr'
+  if (hasRole('finance_officer', user) && canAccess({ assignedPermissions: ['administrative_hr.payroll.access', PERMISSIONS.ownerPayrollView], actualUniversityScope: true }, user)) return '/vp/administrative/payroll'
   if (user?.student_id && canAny(['registration.view', 'grades.view', 'attendance.view'], user)) return '/student'
   if (hasPermission('academic_structure.view', user)) return '/academic-structure'
   if (canAccess({ assignedPermissions: [PERMISSIONS.admissionsManage], actualUniversityScope: true }, user)) return '/student-affairs/students/add'

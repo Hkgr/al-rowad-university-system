@@ -1,0 +1,17 @@
+import { useEffect, useState } from 'react'
+import { Link, useBlocker } from 'react-router-dom'
+import { canAccess } from '../../auth/auth'
+import { HR, payrollAccess } from '../lib/hrOffice'
+import { Editor, Input, Lookup } from '../components/HrForms'
+import { hrWrite } from '../lib/hrApi'
+import { Notice, secondaryButton } from '../../vice-presidency/components/GovernanceUi'
+export default function PayrollIdentityLink() {
+  const [guard, setGuard] = useState({}); const [saved, setSaved] = useState(null); const [closed, setClosed] = useState(false)
+  const blocker = useBlocker(() => !!(guard.dirty || guard.busy || guard.uncertain))
+  useEffect(() => { if (!guard.dirty && !guard.busy && !guard.uncertain) return undefined; const listener = e => { e.preventDefault(); e.returnValue = '' }; window.addEventListener('beforeunload', listener); return () => window.removeEventListener('beforeunload', listener) }, [guard])
+  const allowed = canAccess(payrollAccess('owner_payroll.employees.manage')) && canAccess({ assignedPermissions: [HR.payrollLink] })
+  if (!allowed) return <Notice tone="error">لا تملك صلاحية الربط المالي.</Notice>
+  return <div dir="rtl" className="space-y-4"><Link to="/vp/administrative/payroll" className="text-primary font-bold">العودة إلى الرواتب</Link><h1 className="text-xl font-bold">ربط الملف المالي بالموظف</h1>{saved ? <Notice tone="success">تم ربط الملف #{saved.payroll_employee_id} بالموظف #{saved.employee_id}. التصنيف والمبالغ لم تتغير.</Notice> : closed ? <Notice>أُغلقت المحاولة. راجع الملف الحالي قبل بدء ربط جديد.</Notice> : <Editor title="تحقق صريح من الهوية" initial={{ employee: null, payroll: null, reason: '', confirmed: false }} onGuard={setGuard} onClose={() => setClosed(true)} onAccessLost={() => { setSaved(null); setClosed(true) }} onSaved={setSaved} write={f => hrWrite(`workers/${f.employee?.id}/payroll-link`, { payroll_employee_id: f.payroll?.id, payroll_revision: f.payroll?.revision, revision: f.employee?.hr_revision, confirmed: f.confirmed, reason: f.reason })}>
+    {(f, set) => <><Notice>لا نطابق الأسماء تلقائيًا. اختر السجلين وتحقق من الرقم والهوية. لا يُنشأ سجل مالي أو مبلغ أو تصنيف جديد.</Notice><Lookup title="الموظف" path="payroll-personnel-lookup" value={f.employee?.id} pickedLabel={f.employee ? `${f.employee.employee_number} — ${f.employee.first_name} ${f.employee.last_name}` : ''} set={(_, row) => set(s => ({ ...s, employee: row, confirmed: false }))} describe={e => `${e.employee_number} — ${e.first_name} ${e.last_name}`} /><Lookup title="ملف الرواتب" path="payroll-lookup" value={f.payroll?.id} pickedLabel={f.payroll ? `${f.payroll.employee_number} — ${f.payroll.full_name}` : ''} set={(_, row) => set(s => ({ ...s, payroll: row, confirmed: false }))} describe={e => `${e.employee_number} — ${e.full_name} — ${e.job_title}`} /><Input title="سبب الربط" value={f.reason} set={v => set(s => ({ ...s, reason: v }))} required /><label className="flex gap-2"><input type="checkbox" required checked={f.confirmed} onChange={e => set(s => ({ ...s, confirmed: e.target.checked }))} />تحققت من أن السجلين للشخص نفسه.</label></>}
+  </Editor>}{blocker.state === 'blocked' && <Notice tone="warning" action={<><button type="button" className={secondaryButton} onClick={() => blocker.reset()}>البقاء</button><button type="button" className={secondaryButton} disabled={guard.busy} onClick={() => blocker.proceed()}>تجاهل المسودة والانتقال</button></>}>توجد مسودة أو عملية معلقة.</Notice>}</div>
+}
