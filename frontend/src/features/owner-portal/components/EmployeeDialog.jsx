@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import ManualGradeDialog from '../../exam-board/components/ManualGradeDialog'
-import { createPayrollEmployee, updatePayrollEmployee } from '../lib/ownerApi'
+import { usePayrollApi } from '../lib/PayrollApiContext'
 import { WORKPLACE_OPTIONS, errorText, fieldErrors } from '../lib/payrollView'
 
 const INPUT = 'w-full px-3 py-2.5 border rounded-[9px] text-[13.5px] text-text-dark outline-none transition-colors focus:border-primary disabled:bg-black/[0.03]'
@@ -21,6 +21,7 @@ const blank = bodies => ({ employee_number: '', full_name: '', job_title: '', bo
 
 /** Add (employee === null) or edit the metadata of one payroll employee. Amounts are never touched here. */
 export default function EmployeeDialog({ employee = null, bodies, onSaved, onCancel, onManageBodies }) {
+  const { createPayrollEmployee, updatePayrollEmployee } = usePayrollApi()
   const [form, setForm] = useState(() => (employee ? {
     employee_number: employee.employee_number, full_name: employee.full_name, job_title: employee.job_title, body_id: String(employee.body_id),
     workplace: employee.workplace, workplace_other: employee.workplace_other ?? '', academic_level: employee.academic_level ?? '',

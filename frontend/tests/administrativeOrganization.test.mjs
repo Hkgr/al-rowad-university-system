@@ -47,7 +47,9 @@ test('administrator portal shortcuts are preserved separately including their ad
 test('static integration is isolated, reuses existing authorization and metrics, and adds no data fetch', () => {
   const read = path => readFileSync(new URL('../src/' + path, import.meta.url), 'utf8')
   const app = read('app/App.jsx')
-  assert.equal((app.match(/Navigation=\{AdministrativeNavigation\}/g) ?? []).length, 1)
+  assert.equal((app.match(/Navigation=\{AdministrativeNavigation\}/g) ?? []).length, 3)
+  assert.match(app, /<ProtectedRoute \{\.\.\.hrAccess\(HR.view\)\}>/)
+  assert.match(app, /<ProtectedRoute \{\.\.\.payrollAccess\(PERMISSIONS.ownerPayrollView\)\}>/)
   assert.match(app, /<ProtectedRoute \{\.\.\.ACCESS\.administrativeVicePresident\}>\s*<DashboardLayout nav=\{administrativeVicePresidentNav\} appTitle="الشؤون الإدارية"/)
   const home = read('features/vice-presidency/components/AdministrativeHome.jsx')
   assert.match(home, /filter\(item => canAccess\(item, identity\)\)/)

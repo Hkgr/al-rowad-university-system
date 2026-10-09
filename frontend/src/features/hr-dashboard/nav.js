@@ -4,12 +4,14 @@ import {
 import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
 
 import { reportNav } from '../portal-reports/reportNav'
+import { HR, hrAccess } from '../hr-office/lib/hrOffice'
 
 const hrNav = [
   reportNav('hr'),
   {
     label: 'الموارد البشرية',
     items: [
+      { to: '/vp/administrative/hr', Icon: FaUsers, ar: 'مكتب الموارد البشرية — العاملون والاحتياجات', en: 'HR office', ...hrAccess(HR.view) },
       { to: '/hr/calendar', Icon: FaCalendarAlt, ar: 'التقويم الأكاديمي', en: 'Calendar' },
       { to: '/hr',                 Icon: FaHome,               ar: 'الرئيسية',            en: 'Home',      end: true },
       { to: '/hr/employees',       Icon: FaUsers,              ar: 'الموظفون',             en: 'Employees'           },

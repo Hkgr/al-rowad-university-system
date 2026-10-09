@@ -2,9 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FaArrowUp, FaArrowDown, FaPen, FaTrash, FaPlus } from 'react-icons/fa'
 import PayrollDialog from './PayrollDialog'
 import FormulaInput from './FormulaInput'
-import {
-  createPayrollColumn, deletePayrollColumn, previewPayrollConfig, restorePayrollColumnFormula, savePayrollLayout, savePayrollSettings, updatePayrollColumn,
-} from '../lib/ownerApi'
+import { usePayrollApi } from '../lib/PayrollApiContext'
 import { errorText, fieldErrors, GROUP_LABELS, GROUP_ORDER } from '../lib/payrollView'
 import { formatAmount, formatSyp, INPUT_ERRORS, parseInput, pctText, SYMBOL } from '../lib/payrollMoney'
 import { compare, parseDec } from '../lib/payrollDecimal'
@@ -67,6 +65,7 @@ function ImpactSummary({ impact, columnLabel }) {
 }
 
 export default function ColumnsDialog({ config, employees, canManage, ensureSaved, onChanged, onClose, initialTab = 'columns' }) {
+  const { createPayrollColumn, deletePayrollColumn, restorePayrollColumnFormula, savePayrollLayout, savePayrollSettings, updatePayrollColumn } = usePayrollApi()
   const [tab, setTab] = useState(initialTab)
   const [editing, setEditing] = useState(null) // { key|null, draft }
   const [busy, setBusy] = useState(false)
@@ -290,6 +289,7 @@ function columnPayload(draft, existing) {
 }
 
 function ColumnEditor({ editing, config, references, employees, canManage, busy, onSave, onCancel, onRestore, reportError }) {
+  const { previewPayrollConfig } = usePayrollApi()
   const existing = editing.key ? config.columns.find(c => c.key === editing.key) : null
   const system = Boolean(existing?.is_system)
   const formulaEditable = Boolean(existing?.formula_editable) // the net payable: its formula (only) can be changed and restored
@@ -321,7 +321,7 @@ function ColumnEditor({ editing, config, references, employees, canManage, busy,
       }
     }, 500)
     return () => clearTimeout(timer)
-  }, [draft, employeeId, previewable, editing.key, config.columns])
+  }, [draft, employeeId, previewable, editing.key, config.columns, previewPayrollConfig])
   const shownImpact = previewable ? impact : null
   const shownPreviewError = previewable ? previewError : ''
 
@@ -434,6 +434,7 @@ function ColumnEditor({ editing, config, references, employees, canManage, busy,
 
 /** Global settings (rates and the exemption): edited as plain numbers, previewed on every employee, saved atomically. */
 function SettingsPanel({ config, employees, canManage, busy, onSave }) {
+  const { previewPayrollConfig } = usePayrollApi()
   const textOf = s => (s.value_type === 'percent' ? pctText(parseDec(s.value)) : s.value)
   const [values, setValues] = useState(() => Object.fromEntries(config.settings.map(s => [s.key, textOf(s)])))
   const [impact, setImpact] = useState(null)
@@ -468,7 +469,7 @@ function SettingsPanel({ config, employees, canManage, busy, onSave }) {
       } catch (error) { if (run === seq.current) { setImpact(null); setPreviewError(Object.values(fieldErrors(error.details))[0] || errorText(error)) } }
     }, 400)
     return () => clearTimeout(timer)
-  }, [previewable, changed, firstEmployee])
+  }, [previewable, changed, firstEmployee, previewPayrollConfig])
   const shownImpact = previewable ? impact : null
   const shownError = previewable ? previewError : ''
 

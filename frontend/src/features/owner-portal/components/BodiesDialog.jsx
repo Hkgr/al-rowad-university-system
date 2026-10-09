@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import ManualGradeDialog from '../../exam-board/components/ManualGradeDialog'
-import { createPayrollBody, deletePayrollBody, renamePayrollBody, setPayrollBodyActive } from '../lib/ownerApi'
+import { usePayrollApi } from '../lib/PayrollApiContext'
 import { errorText, fieldErrors } from '../lib/payrollView'
 
 const INPUT = 'min-w-0 flex-1 px-3 py-2 border border-primary/20 rounded-[9px] text-[13px] text-text-dark outline-none focus:border-primary'
@@ -8,6 +8,7 @@ const SMALL = 'rounded-[9px] border border-primary/20 bg-white px-3 py-1.5 text-
 
 /** Payroll bodies (الهيئات): user-managed classifications. List, add, rename, deactivate/reactivate, delete unreferenced. */
 export default function BodiesDialog({ bodies, onChanged, onClose }) {
+  const { createPayrollBody, deletePayrollBody, renamePayrollBody, setPayrollBodyActive } = usePayrollApi()
   const [name, setName] = useState('')
   const [editing, setEditing] = useState(null) // { id, name }
   const [busy, setBusy] = useState(false)

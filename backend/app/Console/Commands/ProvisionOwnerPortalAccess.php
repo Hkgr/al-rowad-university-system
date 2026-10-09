@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Support\HrOffice;
 use App\Support\OwnerPortal;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -37,7 +38,20 @@ class ProvisionOwnerPortalAccess extends Command
                 }
                 $foreign = DB::table('role_permissions as rp')->join('permissions as p', 'p.permission_id', '=', 'rp.permission_id')
                     ->join('roles as r', 'r.role_id', '=', 'rp.role_id')->whereIn('p.permission_code', $codes)
-                    ->where('r.role_code', '!=', OwnerPortal::ROLE)->exists();
+                    ->where('r.role_code', '!=', OwnerPortal::ROLE)
+                    ->where(function ($q): void {
+                        // Deliberate accounting grants do not grant owner-portal access. Only the
+                        // registered office roles with their own assigned entry permission qualify.
+                        $q->where('p.permission_code', 'not like', 'owner_payroll.%')
+                            ->orWhereNotIn('r.role_code', ['finance_officer', 'hr_officer', 'vice_president_administrative'])
+                            ->orWhereNotExists(function ($grant): void {
+                                $grant->selectRaw('1')->from('role_permissions as office_rp')
+                                    ->join('permissions as office_p', 'office_p.permission_id', '=', 'office_rp.permission_id')
+                                    ->whereColumn('office_rp.role_id', 'r.role_id')
+                                    ->where('office_p.permission_code', HrOffice::PAYROLL_ACCESS)
+                                    ->where('office_p.is_active', true);
+                            });
+                    })->exists();
                 if ($foreign) {
                     throw new \RuntimeException('An owner permission is mapped to another role.');
                 }

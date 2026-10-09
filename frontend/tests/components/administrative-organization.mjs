@@ -117,7 +117,7 @@ test('limited/mixed roles keep exactly the former authorized nav items and show 
 test('central super-admin authority and all 12 separate account portal shortcuts remain intact', async () => {
   await mount(base, { username: 'مدير اختبار', roles: ['super_admin'], permissions: [], access_scopes: [] })
   const rendered = links(sidebar()).map(n => n.getAttribute('href'))
-  assert.equal(rendered.length, 8 + adminPortalNav.items.length)
+  assert.equal(rendered.length, 10 + adminPortalNav.items.length) // Two explicitly authorized HR/accounting service links.
   for (const item of adminPortalNav.items) assert.ok(rendered.includes(item.to), item.to)
   assert.equal(rendered.filter(path => path === base).length, 2, 'existing administrative account shortcut retained separately')
   const articles = allNodes(container).filter(n => n.localName === 'article')

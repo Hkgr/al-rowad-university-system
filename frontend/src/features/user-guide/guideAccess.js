@@ -9,6 +9,7 @@ import { PROGRAM_ACCESS } from '../scientific-programs/programs.js'
 import { WORKSPACE_ACCESS } from '../scientific-programs/workspace.js'
 import { reportAccessForOffice } from '../executive-reports/access.js'
 import { ADMINISTRATIVE_ACCESS } from '../vice-presidency/utils/administrativeAccess.js'
+import { HR, hrAccess, payrollAccess } from '../hr-office/lib/hrOffice.js'
 
 // Route-group guards exactly as written in App.jsx.
 export const GROUP_GUARDS = Object.freeze({
@@ -128,6 +129,8 @@ export const ROUTE_ACCESS = Object.freeze({
   '/vp/scientific/supplementary-exams': [G.vpScientific, { allRoles: ['vice_president_scientific'], assignedPermissions: [PERMISSIONS.supplementaryExamsPeriodsView] }],
   '/vp/scientific/calendar': [G.vpScientific],
   '/vp/administrative': [G.vpAdministrative],
+  '/vp/administrative/hr': [hrAccess(HR.view)],
+  '/vp/administrative/payroll': [payrollAccess(PERMISSIONS.ownerPayrollView)],
   '/vp/administrative/reports': [G.vpAdministrative, reportAccessForOffice('administrative')],
   '/vp/administrative/teaching-assignments': [G.vpAdministrative],
   '/vp/administrative/exceptional-openings': [G.vpAdministrative],

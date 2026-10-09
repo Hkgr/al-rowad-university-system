@@ -4,6 +4,7 @@ import { PERMISSIONS, ROLES } from '../auth/auth'
 import { WORKSPACE_ACCESS } from '../scientific-programs/workspace'
 import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
 import { ADMINISTRATIVE_ACCESS, ADMINISTRATIVE_PATHS } from './utils/administrativeAccess'
+import { HR, hrAccess, payrollAccess } from '../hr-office/lib/hrOffice'
 
 export const scientificVicePresidentNav = [
   {
@@ -102,6 +103,8 @@ export const administrativeVicePresidentNav = [
         en: 'Teaching assignments',
         permissions: [PERMISSIONS.teachingAssignmentsView],
       },
+      { to: '/vp/administrative/hr', Icon: FaUserTie, ar: 'العاملون والاحتياجات', en: 'HR office', ...hrAccess(HR.view) },
+      { to: '/vp/administrative/payroll', Icon: FaUserTie, ar: 'الرواتب', en: 'Payroll', ...payrollAccess(PERMISSIONS.ownerPayrollView) },
       { to: ADMINISTRATIVE_PATHS.faculty, Icon: FaUserTie, ar: 'إدارة المدرسين', en: 'Teachers', ...ADMINISTRATIVE_ACCESS.facultyView },
       { to: ADMINISTRATIVE_PATHS.deans, Icon: FaUniversity, ar: 'عمداء الكليات', en: 'College deans', ...ADMINISTRATIVE_ACCESS.deansView },
       {

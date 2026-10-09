@@ -9,7 +9,7 @@ import PayrollLegend from '../components/PayrollLegend'
 import EmployeeDialog from '../components/EmployeeDialog'
 import BodiesDialog from '../components/BodiesDialog'
 import ColumnsDialog from '../components/ColumnsDialog'
-import { downloadPayrollExport, fetchPayrollOptions, fetchPayrollSheet, saveValueChanges } from '../lib/ownerApi'
+import { usePayrollApi } from '../lib/PayrollApiContext'
 import { PayrollSheetController } from '../lib/payrollSheetController'
 import { WORKPLACE_OPTIONS, buildColumns, buildSheetQuery, emptyFilters, errorText, filtersFromParams, hasActiveFilters } from '../lib/payrollView'
 import { formatSyp, formatValue } from '../lib/payrollMoney'
@@ -46,13 +46,14 @@ function saveBlob({ blob, filename }, fallback) {
 const readView = () => { try { return window.localStorage.getItem(VIEW_KEY) === 'compact' } catch { return false } }
 const writeView = compact => { try { window.localStorage.setItem(VIEW_KEY, compact ? 'compact' : 'detailed') } catch { /* private mode: the choice just isn't remembered */ } }
 
-export default function OwnerPayroll() {
+export default function OwnerPayroll({ authorize }) {
+  const { downloadPayrollExport, fetchPayrollOptions, fetchPayrollSheet, saveValueChanges } = usePayrollApi()
   const [params] = useSearchParams()
   const applied = useRef({ query: null }) // what the grid shows right now (read by the controller's reload)
   const controller = useMemo(() => new PayrollSheetController({
     saveValues: saveValueChanges,
     reload: async () => { const response = await fetchPayrollSheet(applied.current.query ?? ''); return { rows: response.data, config: response.config } },
-  }), [])
+  }), [fetchPayrollSheet, saveValueChanges])
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
   // `desired` is what the controls show; `shown` is the dataset on screen (grid, totals, scope label and exports all describe `shown`).
   const [desired, setDesired] = useState(() => filtersFromParams(params.toString()))
@@ -73,7 +74,7 @@ export default function OwnerPayroll() {
   const [filtersOpen, setFiltersOpen] = useState(false) // narrow screens keep the filter selects behind one button
   const live = useRef(null)
   // Owner role AND the specific assigned permission (the central administrator keeps its existing authority).
-  const allowed = permission => canAccess({ allRoles: [ROLES.universityOwner], assignedPermissions: [PERMISSIONS.ownerPortalAccess, permission] })
+  const allowed = permission => authorize ? authorize(permission) : canAccess({ allRoles: [ROLES.universityOwner], assignedPermissions: [PERMISSIONS.ownerPortalAccess, permission] })
   const canEdit = allowed(PERMISSIONS.ownerPayrollAmountsEdit)
   const canEmployees = allowed(PERMISSIONS.ownerPayrollEmployeesManage)
   const canBodies = allowed(PERMISSIONS.ownerPayrollBodiesManage)
@@ -102,7 +103,7 @@ export default function OwnerPayroll() {
     setOptions(response.data)
     setOptionsReady(true)
     return response.data
-  }, [])
+  }, [fetchPayrollOptions])
   useEffect(() => { refreshOptions().catch(error => setLoad(l => ({ ...l, state: 'error', error }))) }, [refreshOptions])
 
   // The dataset follows the controls, but only once pending saves are settled. If a save failed, the controls keep what the user chose
@@ -196,7 +197,7 @@ export default function OwnerPayroll() {
     const response = await fetchPayrollSheet(applied.current.query ?? '')
     controller.load(response.data, response.config)
     return response.config
-  }, [controller])
+  }, [controller, fetchPayrollSheet])
   const ensureSaved = useCallback(async () => (await controller.flush()).ok, [controller])
 
   // ── export: pending edits must be saved first; the file is built from the saved snapshot of the dataset ON SCREEN ──
