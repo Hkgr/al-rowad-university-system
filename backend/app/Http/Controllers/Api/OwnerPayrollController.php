@@ -2,11 +2,11 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\PayrollException;
 use App\Http\Controllers\Controller;
+use App\Services\Payroll\MonthlyPayrollService;
 use App\Services\Payroll\PayrollConfigService;
-use App\Services\Payroll\PayrollPdfExport;
 use App\Services\Payroll\PayrollSheetService;
-use App\Services\Payroll\PayrollXlsxExport;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -25,9 +25,9 @@ class OwnerPayrollController extends Controller
 
     public function __construct(private readonly PayrollSheetService $sheet, private readonly PayrollConfigService $configs) {}
 
-    public function home(): JsonResponse
+    public function home(Request $request, MonthlyPayrollService $months): JsonResponse
     {
-        return response()->json(['data' => $this->sheet->home()], 200, self::NO_STORE);
+        return response()->json(['data' => $months->home($request->user())], 200, self::NO_STORE);
     }
 
     public function options(): JsonResponse
@@ -37,20 +37,7 @@ class OwnerPayrollController extends Controller
 
     public function sheet(Request $request): JsonResponse
     {
-        $filters = $this->sheet->filters($request->validate($this->sheet->filterRules()));
-        $snapshot = $this->sheet->snapshot($filters);
-
-        return response()->json([
-            'data' => $snapshot['rows'],
-            'meta' => [
-                'totals' => $snapshot['totals'],
-                'filters' => $filters,
-                'scope_labels' => $this->sheet->scopeLabels($filters),
-                'generated_at' => $snapshot['generated_at'],
-                'config_revision' => $snapshot['config']['revision'],
-            ],
-            'config' => $this->configs->present($snapshot['config']),
-        ], 200, self::NO_STORE);
+        throw new PayrollException('اختر الشهر واستخدم واجهة المحاسبة الشهرية؛ الورقة غير المؤرخة لم تعد مصدرًا للتقرير.', 'payroll_month_required', 409);
     }
 
     // ── bodies ────────────────────────────────────────────────────────────
@@ -195,18 +182,12 @@ class OwnerPayrollController extends Controller
 
     public function exportXlsx(Request $request): BinaryFileResponse
     {
-        [$snapshot, $labels] = $this->exportSnapshot($request);
-        $path = app(PayrollXlsxExport::class)->build($snapshot, $labels);
-
-        return response()->download($path, $this->fileName('xlsx'), ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'] + self::NO_STORE)->deleteFileAfterSend();
+        throw new PayrollException('التصدير المالي يحتاج شهرًا صريحًا عبر واجهة months/export.', 'payroll_month_required', 409);
     }
 
     public function exportPdf(Request $request): Response
     {
-        [$snapshot, $labels] = $this->exportSnapshot($request);
-        $bytes = app(PayrollPdfExport::class)->build($snapshot, $labels);
-
-        return response($bytes, 200, ['Content-Type' => 'application/pdf', 'Content-Disposition' => 'attachment; filename="'.$this->fileName('pdf').'"'] + self::NO_STORE);
+        throw new PayrollException('التصدير المالي يحتاج شهرًا صريحًا عبر واجهة months/export.', 'payroll_month_required', 409);
     }
 
     private function exportSnapshot(Request $request): array

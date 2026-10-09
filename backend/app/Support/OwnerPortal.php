@@ -41,6 +41,10 @@ final class OwnerPortal
 
     public const PAYMENTS_MANAGE = 'owner_payroll.payments.manage';
 
+    public const PERIODS_MANAGE = 'owner_payroll.periods.manage';
+
+    public const PERIODS_CORRECT = 'owner_payroll.periods.correct';
+
     /** @var array<string, string> code => Arabic label */
     public const PERMISSIONS = [
         self::ACCESS => 'الدخول إلى بوابة مالك الجامعة',
@@ -52,6 +56,8 @@ final class OwnerPortal
         self::CONFIG_MANAGE => 'إدارة أعمدة الرواتب والمعادلات والإعدادات العامة',
         self::EXPORT => 'تصدير ورقة الرواتب (Excel وPDF)',
         self::PAYMENTS_MANAGE => 'تسجيل صرف الرواتب وتوثيق الاستلام وإلغاء السجل الخاطئ',
+        self::PERIODS_MANAGE => 'إعداد الشهر واعتماد مستحقاته دون صرف تلقائي',
+        self::PERIODS_CORRECT => 'تصحيح مستحقات شهر معتمد مع حفظ الإصدار السابق',
     ];
 
     public const FORBIDDEN_MESSAGE = 'لا يملك حسابك صلاحية هذا القسم من بوابة مالك الجامعة.';

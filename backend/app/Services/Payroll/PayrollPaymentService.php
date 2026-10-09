@@ -99,11 +99,27 @@ final class PayrollPaymentService
         return [$payroll, $person];
     }
 
+    private function period(string $month, int $payrollId): object
+    {
+        if (! Schema::hasTable('payroll_periods')) {
+            throw new Failure('مخطط المحاسبة الشهرية غير جاهز.', 503, 'payroll_monthly_not_ready');
+        }
+        $period = DB::table('payroll_periods')->where('period', $month)->lockForUpdate()->first();
+        $entry = $period ? DB::table('payroll_period_entries')->where('period_id', $period->id)->where('payroll_employee_id', $payrollId)->lockForUpdate()->first(['identity_snapshot']) : null;
+        if (! $period || $period->status !== 'approved' || ! $entry) {
+            throw Failure::conflict('payroll_period_not_approved', 'اعتمد مستحق العامل في الشهر المحدد قبل تسجيل الصرف أو تغيير سجله.');
+        }
+
+        $period->identity_snapshot = json_decode($entry->identity_snapshot, true, 512, JSON_THROW_ON_ERROR);
+
+        return $period;
+    }
+
     public function record(User $actor, int $payrollId, array $data): array
     {
         $this->authorize($actor, true);
         $this->requireReady();
-        $d = $this->input($data, ['request_id' => 'required|uuid', 'expected_payroll_revision' => 'required|integer|min:1', 'expected_employee_revision' => 'required|integer|min:1', 'period' => ['required', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'], 'paid_on' => 'required|date_format:Y-m-d|before_or_equal:today', 'amount' => 'required', 'reference' => 'required|string|max:120|regex:/\S/u', 'reason' => 'required|string|max:4000|regex:/\S/u', 'confirmed' => 'required|accepted']);
+        $d = $this->input($data, ['request_id' => 'required|uuid', 'expected_period_revision' => 'required|integer|min:1', 'expected_payroll_revision' => 'required|integer|min:1', 'expected_employee_revision' => 'required|integer|min:1', 'period' => ['required', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'], 'paid_on' => 'required|date_format:Y-m-d|before_or_equal:today', 'amount' => 'required', 'reference' => 'required|string|max:120|regex:/\S/u', 'reason' => 'required|string|max:4000|regex:/\S/u', 'confirmed' => 'required|accepted']);
         try {
             $amount = PayrollInput::parse(['value_type' => 'amount', 'allow_negative' => false], $d['amount']);
             if (! $amount instanceof BigDecimal || ! $amount->isPositive()) {
@@ -121,6 +137,8 @@ final class PayrollPaymentService
         try {
             return DB::transaction(function () use ($actor, $payrollId, $d, $hash): array {
                 $this->authorize($actor, true);
+                DB::table('payroll_config')->where('id', 1)->lockForUpdate()->first();
+                $period = $this->period($d['period'], $payrollId);
                 [$payroll, $person] = $this->employee($payrollId);
                 $old = DB::table('payroll_payments')->where('request_id', $d['request_id'])->lockForUpdate()->first();
                 // Lost-response replay is checked after authorization and locks, BEFORE revision validation.
@@ -131,11 +149,14 @@ final class PayrollPaymentService
 
                     return $this->present($old);
                 }
+                if ((int) $period->revision !== (int) $d['expected_period_revision']) {
+                    throw Failure::conflict('payroll_payment_period_stale', 'تغيرت مراجعة الشهر منذ فتح نموذج الصرف. احتفظ بالمدخلات وراجع حالة الشهر الحالية قبل تسجيل دفعة جديدة.');
+                }
                 if ((int) $payroll->revision !== (int) $d['expected_payroll_revision'] || (int) $person->hr_revision !== (int) $d['expected_employee_revision']) {
                     throw Failure::conflict('payroll_payment_stale', 'تغيرت هوية الملف المالي؛ راجع الملف قبل تسجيل الصرف.');
                 }
-                $identity = ['employee_id' => $person->employee_id, 'employee_number' => $person->employee_number, 'name' => trim($person->first_name.' '.$person->last_name), 'payroll_employee_number' => $payroll->employee_number, 'payroll_full_name' => $payroll->full_name, 'payroll_body_id' => $payroll->payroll_body_id];
-                $id = DB::table('payroll_payments')->insertGetId(['request_id' => $d['request_id'], 'payload_hash' => $hash, 'payroll_employee_id' => $payrollId, 'employee_id' => $person->employee_id, 'period' => $d['period'], 'paid_on' => $d['paid_on'], 'amount_cents' => $d['amount_cents'], 'currency' => 'SYP', 'reference' => $d['reference'], 'reason' => $d['reason'], 'identity_snapshot' => json_encode($identity, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE), 'recorded_by_user_id' => $actor->user_id, 'created_at' => now(), 'updated_at' => now()]);
+                $identity = ['employee_id' => $person->employee_id, 'employee_number' => $person->employee_number, 'name' => trim($person->first_name.' '.$person->last_name), 'approved_month_identity' => $period->identity_snapshot];
+                $id = DB::table('payroll_payments')->insertGetId(['request_id' => $d['request_id'], 'payload_hash' => $hash, 'payroll_employee_id' => $payrollId, 'employee_id' => $person->employee_id, 'period' => $d['period'], 'period_revision_at_record' => $period->revision, 'paid_on' => $d['paid_on'], 'amount_cents' => $d['amount_cents'], 'currency' => 'SYP', 'reference' => $d['reference'], 'reason' => $d['reason'], 'identity_snapshot' => json_encode($identity, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE), 'recorded_by_user_id' => $actor->user_id, 'created_at' => now(), 'updated_at' => now()]);
                 $row = DB::table('payroll_payments')->where('id', $id)->first();
                 $this->event($actor, $id, 'disbursement_recorded', ['before' => null, 'after' => $this->present($row), 'external_transfer_performed_by_system' => false]);
 
@@ -162,7 +183,9 @@ final class PayrollPaymentService
 
         return $this->atomic(function () use ($actor, $id, $action, $d): array {
             $this->authorize($actor, true);
+            DB::table('payroll_config')->where('id', 1)->lockForUpdate()->first();
             $hint = DB::table('payroll_payments')->where('id', $id)->first() ?? throw Failure::denied('payroll_payment_not_found', 'الدفعة غير متاحة.');
+            $this->period($hint->period, $hint->payroll_employee_id);
             [$payroll, $person] = $this->employee($hint->payroll_employee_id);
             $row = DB::table('payroll_payments')->where('id', $id)->lockForUpdate()->first();
             if ($row->employee_id != $person->employee_id || $row->payroll_employee_id != $payroll->id) {
@@ -188,11 +211,14 @@ final class PayrollPaymentService
     public function history(User $actor, int $employee, array $input = []): array
     {
         $this->authorize($actor);
-        $d = $this->input($input, ['page' => 'sometimes|integer|min:1', 'per_page' => 'sometimes|integer|min:1|max:100']);
+        $d = $this->input($input, ['page' => 'sometimes|integer|min:1', 'per_page' => 'sometimes|integer|min:1|max:100', 'period' => ['sometimes', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/']]);
         if (! $this->ready()) {
             return ['schema_ready' => false, 'rows' => [], 'summary' => null, 'reason' => 'payroll_payments_not_ready'];
         }
         $q = DB::table('payroll_payments')->where('employee_id', $employee);
+        if (isset($d['period'])) {
+            $q->where('period', $d['period']);
+        }
         $totals = (clone $q)->selectRaw("COUNT(*) as records, SUM(CASE WHEN status <> 'voided' THEN amount_cents ELSE 0 END) as disbursed, SUM(CASE WHEN status = 'received' THEN amount_cents ELSE 0 END) as received")->first();
         $page = $q->orderByDesc('paid_on')->orderByDesc('id')->paginate($d['per_page'] ?? 15, ['*'], 'page', $d['page'] ?? 1);
 

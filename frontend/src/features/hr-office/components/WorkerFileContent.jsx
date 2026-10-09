@@ -8,7 +8,7 @@ export function WorkerFacts({ entries }) {
   return <dl className="grid grid-cols-2 gap-4 max-[560px]:grid-cols-1">{entries.map(([title, value]) => <div key={title} className="rounded-[10px] bg-primary/5 p-3"><dt className="text-[11.5px] text-text-light">{title}</dt><dd className="mt-1 break-words text-[13px] font-bold">{value || 'غير محدد'}</dd></div>)}</dl>
 }
 
-export default function WorkerFileContent({ worker, options, payrollRead, canLink, onLink, onCorrect, onCancel }) {
+export default function WorkerFileContent({ worker, options, payrollRead, onCorrect, onCancel }) {
   return <div className="space-y-5">
     <WorkerFacts entries={[
       ['الهيئة الحالية', worker.employee.current_body ? label(worker.employee.current_body) : 'غير محددة / لا علاقة نافذة'],
@@ -16,7 +16,7 @@ export default function WorkerFileContent({ worker, options, payrollRead, canLin
       ['الوحدة الأساسية المسجلة', placementName(worker.employee, options)],
       ['الملف التعليمي', worker.faculty ? worker.faculty.academic_rank || 'ملف تعليمي قائم' : 'لا يوجد ملف تعليمي'],
     ]} />
-    <PayrollLinkStatus detail={worker} canView={payrollRead} canLink={canLink} onLink={onLink} />
+    <PayrollLinkStatus detail={worker} canView={payrollRead} />
     <section className="space-y-3"><h2 className="text-[16px] font-bold">العلاقات والعقود المسجلة</h2>{worker.relationships.length === 0 ? <p className="text-[12.5px] text-text-light">لم تُوثق علاقة وظيفية بعد.</p> : worker.relationships.map(row => <article key={row.id} className="rounded-[12px] border border-primary/15 bg-white p-4 space-y-3">
       <div className="flex flex-wrap justify-between gap-3"><h3 className="font-bold text-[13px]">{positionName(row, options)}</h3><HrStatus value={row.cancelled_from ? 'cancelled' : row.superseded_from ? 'ended' : 'approved'}>{row.cancelled_from ? `إلغاء النفاذ من ${hrDate(row.cancelled_from)}` : row.superseded_from ? `استبدال مسجل من ${hrDate(row.superseded_from)}` : 'علاقة مسجلة'}</HrStatus></div>
       <WorkerFacts entries={[

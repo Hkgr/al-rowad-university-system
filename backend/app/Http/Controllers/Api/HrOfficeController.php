@@ -5,13 +5,13 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Services\HrOfficeService;
 use App\Services\HrWorkerPdfExport;
-use App\Services\Payroll\PayrollPaymentService;
 use App\Support\AdministrativeGovernanceException as Failure;
 use App\Support\HrOffice;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 final class HrOfficeController extends Controller
 {
@@ -37,22 +37,21 @@ final class HrOfficeController extends Controller
         return $this->response($this->hr->worker($r->user(), $employee));
     }
 
-    public function workerFile(Request $r, int $employee, PayrollPaymentService $payments): JsonResponse
+    public function workerFile(Request $r, int $employee): JsonResponse
     {
         $worker = $this->hr->worker($r->user(), $employee);
-        $d = $r->validate(['payment_page' => 'sometimes|integer|min:1']);
 
-        return $this->response(['worker' => $worker, 'options' => $this->hr->options($r->user()), 'payments' => $worker['can_open_payroll'] ? $payments->history($r->user(), $employee, ['page' => $d['payment_page'] ?? 1]) : null]);
+        return $this->response(['worker' => $worker, 'options' => $this->hr->options($r->user()), 'work_times' => Schema::hasTable('hr_work_time_records') ? DB::table('hr_work_time_records')->where('employee_id', $employee)->orderByDesc('period')->get() : null]);
     }
 
-    public function workerPdf(Request $r, int $employee, PayrollPaymentService $payments, HrWorkerPdfExport $pdf): Response
+    public function workerPdf(Request $r, int $employee, HrWorkerPdfExport $pdf): Response
     {
         app(HrOffice::class)->authorize($r->user(), HrOffice::WORKER_EXPORT);
         try {
-            $bytes = DB::transaction(function () use ($r, $employee, $payments, $pdf): string {
+            $bytes = DB::transaction(function () use ($r, $employee, $pdf): string {
                 $worker = $this->hr->worker($r->user(), $employee);
 
-                return $pdf->build($r->user(), $worker, $this->hr->options($r->user()), $worker['can_open_payroll'] ? $payments->history($r->user(), $employee) : null);
+                return $pdf->build($r->user(), $worker, $this->hr->options($r->user()));
             });
         } catch (Failure $e) {
             throw $e;
@@ -67,6 +66,11 @@ final class HrOfficeController extends Controller
     public function relationshipAction(Request $r, int $relationship): JsonResponse
     {
         return $this->response($this->hr->changeRelationship($r->user(), $relationship, $r->all()));
+    }
+
+    public function workTime(Request $r, int $employee): JsonResponse
+    {
+        return $this->response($this->hr->workTime($r->user(), $employee, $r->all()));
     }
 
     public function cancelRequest(Request $r, int $request): JsonResponse
@@ -137,20 +141,5 @@ final class HrOfficeController extends Controller
     public function classify(Request $r, int $employee): JsonResponse
     {
         return $this->response($this->hr->classify($r->user(), $employee, $r->all()));
-    }
-
-    public function payrollOptions(Request $r): JsonResponse
-    {
-        return $this->response($this->hr->payrollLookup($r->user(), $r->query()));
-    }
-
-    public function payrollPersonnel(Request $r): JsonResponse
-    {
-        return $this->response($this->hr->payrollPersonnelLookup($r->user(), $r->query()));
-    }
-
-    public function linkPayroll(Request $r, int $employee): JsonResponse
-    {
-        return $this->response($this->hr->linkPayroll($r->user(), $employee, $r->all()));
     }
 }

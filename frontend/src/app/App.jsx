@@ -149,7 +149,6 @@ import OwnerPayroll from '../features/owner-portal/pages/OwnerPayroll'
 import HrOfficePage from '../features/hr-office/pages/HrOfficePage'
 import WorkerFilePage from '../features/hr-office/pages/WorkerFilePage'
 import AdministrativePayroll from '../features/hr-office/pages/AdministrativePayroll'
-import PayrollIdentityLink from '../features/hr-office/pages/PayrollIdentityLink'
 import { HR, hrAccess, payrollAccess } from '../features/hr-office/lib/hrOffice'
 
 // ── دليل الاستخدام (per-portal user guides) ─────────────────────────────────
@@ -443,7 +442,8 @@ const router = createBrowserRouter(createRoutesFromElements(
         </Route>
         <Route element={<ProtectedRoute {...payrollAccess(PERMISSIONS.ownerPayrollView)}><DashboardLayout nav={administrativeVicePresidentNav} appTitle="الشؤون الإدارية" Navigation={AdministrativeNavigation} portalClassName="administrative-portal" /></ProtectedRoute>}>
           <Route path="/vp/administrative/payroll" element={<AdministrativePayroll />} />
-          <Route path="/vp/administrative/payroll/link" element={<PayrollIdentityLink />} />
+          <Route path="/vp/administrative/payroll/workers/:employee" element={<AdministrativePayroll />} />
+          <Route path="/vp/administrative/payroll/link" element={<Navigate to="/vp/administrative/payroll" replace />} />
         </Route>
 
         {/* ── المكتب التقني: التبعية التنظيمية لا تمنح صلاحية؛ الوصول من صلاحيات الأدوار فقط ── */}
@@ -503,6 +503,7 @@ const router = createBrowserRouter(createRoutesFromElements(
         <Route element={<ProtectedRoute {...ACCESS.ownerPortal}><DashboardLayout nav={ownerNav} appTitle="مالك الجامعة" /></ProtectedRoute>}>
           <Route path="/owner" element={protect(<OwnerHome />, ACCESS.ownerHome)} />
           <Route path="/owner/payroll" element={protect(<OwnerPayroll />, ACCESS.ownerPayroll)} />
+          <Route path="/owner/payroll/workers/:employee" element={protect(<OwnerPayroll />, ACCESS.ownerPayroll)} />
         </Route>
 
         {/* Default redirect */}
