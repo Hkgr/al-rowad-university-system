@@ -147,6 +147,7 @@ import ownerNav from '../features/owner-portal/nav'
 import OwnerHome from '../features/owner-portal/pages/OwnerHome'
 import OwnerPayroll from '../features/owner-portal/pages/OwnerPayroll'
 import HrOfficePage from '../features/hr-office/pages/HrOfficePage'
+import WorkerFilePage from '../features/hr-office/pages/WorkerFilePage'
 import AdministrativePayroll from '../features/hr-office/pages/AdministrativePayroll'
 import PayrollIdentityLink from '../features/hr-office/pages/PayrollIdentityLink'
 import { HR, hrAccess, payrollAccess } from '../features/hr-office/lib/hrOffice'
@@ -438,6 +439,7 @@ const router = createBrowserRouter(createRoutesFromElements(
         {/* Office entries never grant the VP's other routes. */}
         <Route element={<ProtectedRoute {...hrAccess(HR.view)}><DashboardLayout nav={administrativeVicePresidentNav} appTitle="الشؤون الإدارية" Navigation={AdministrativeNavigation} portalClassName="administrative-portal" /></ProtectedRoute>}>
           <Route path="/vp/administrative/hr" element={<HrOfficePage />} />
+          <Route path="/vp/administrative/hr/workers/:employee" element={<WorkerFilePage />} />
         </Route>
         <Route element={<ProtectedRoute {...payrollAccess(PERMISSIONS.ownerPayrollView)}><DashboardLayout nav={administrativeVicePresidentNav} appTitle="الشؤون الإدارية" Navigation={AdministrativeNavigation} portalClassName="administrative-portal" /></ProtectedRoute>}>
           <Route path="/vp/administrative/payroll" element={<AdministrativePayroll />} />

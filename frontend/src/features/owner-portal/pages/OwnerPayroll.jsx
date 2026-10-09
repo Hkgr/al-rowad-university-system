@@ -308,6 +308,8 @@ export default function OwnerPayroll({ authorize }) {
           </div>
         )}
 
+        {shownFilters.payroll_employee_id && <Notice tone="info" action={<button type="button" className={SECONDARY} disabled={blockedByError} onClick={() => setFilter('payroll_employee_id')('')}>عرض كل ملفات الرواتب</button>}>{shown?.meta?.scope_labels?.[0] || 'عرض ملف الرواتب المحدد'}</Notice>}
+
         {/* One compact toolbar: search, filters, view, save state, undo/redo. */}
         <div className="flex flex-wrap items-center gap-2" dir="rtl" role="toolbar" aria-label="أدوات الجدول" data-testid="payroll-toolbar">
           <div className="relative min-w-[220px] flex-1">

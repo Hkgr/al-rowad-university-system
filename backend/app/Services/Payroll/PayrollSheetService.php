@@ -55,6 +55,7 @@ class PayrollSheetService
 
         return [
             'search' => $search === null ? null : mb_substr($search, 0, 100),
+            'payroll_employee_id' => isset($input['payroll_employee_id']) && $input['payroll_employee_id'] !== '' ? (int) $input['payroll_employee_id'] : null,
             'body_id' => isset($input['body_id']) && $input['body_id'] !== '' ? (int) $input['body_id'] : null,
             'workplace' => in_array($input['workplace'] ?? null, PayrollWorkplace::codes(), true) ? $input['workplace'] : null,
             'academic_level' => $level,
@@ -69,6 +70,7 @@ class PayrollSheetService
     {
         return [
             'search' => ['nullable', 'string', 'max:100'],
+            'payroll_employee_id' => ['nullable', 'integer', 'min:1'],
             'body_id' => ['nullable', 'integer', 'min:1'],
             'workplace' => ['nullable', 'string', 'in:'.implode(',', PayrollWorkplace::codes())],
             'academic_level' => ['nullable', 'string', 'max:255'],
@@ -88,6 +90,9 @@ class PayrollSheetService
 
     private function applyFilters(Builder $query, array $filters): Builder
     {
+        if (($filters['payroll_employee_id'] ?? null) !== null) {
+            $query->where('e.id', $filters['payroll_employee_id']);
+        }
         if ($filters['body_id'] !== null) {
             $query->where('e.payroll_body_id', $filters['body_id']);
         }
@@ -376,6 +381,10 @@ class PayrollSheetService
     public function scopeLabels(array $filters): array
     {
         $labels = [];
+        if (($filters['payroll_employee_id'] ?? null) !== null) {
+            $employee = DB::table('payroll_employees')->where('id', $filters['payroll_employee_id'])->first(['full_name', 'employee_number']);
+            $labels[] = $employee ? 'ملف الرواتب: '.$employee->full_name.' — '.$employee->employee_number : 'ملف الرواتب المحدد غير موجود';
+        }
         if ($filters['search'] !== null) {
             $labels[] = 'بحث: '.$filters['search'];
         }

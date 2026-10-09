@@ -22,6 +22,8 @@ final class HrOfficeService
 
     private const REVISION = ['required', 'integer', 'min:1'];
 
+    private ?bool $relationshipActionsReady = null;
+
     public function __construct(private readonly HrOffice $access) {}
 
     private function atomic(Closure $work): mixed
@@ -97,7 +99,13 @@ final class HrOfficeService
             'units' => $units->orderBy('unit_name')->get(['organizational_unit_id', 'unit_name', 'unit_code', 'is_active']),
             'positions' => DB::table('positions')->orderBy('position_title')->get(['position_id', 'position_title', 'position_code']),
             'employee_types' => DB::table('employee_types')->orderBy('employee_type_id')->get(['employee_type_id', 'type_name', 'type_code']),
-            'capabilities' => collect(HrOffice::PERMISSIONS)->map(fn ($label, $code) => $this->access->allows($actor, $code))->all()];
+            'relationship_actions_ready' => $this->relationshipActionsReady(),
+            'capabilities' => collect(HrOffice::PERMISSIONS)->map(fn ($label, $code) => $this->access->allows($actor, $code))->all() + [OwnerPortal::PAYROLL_VIEW => $this->payrollReadable($actor), OwnerPortal::PAYMENTS_MANAGE => $this->payrollReadable($actor) && ($actor->isSuperAdmin() || $actor->effectivePermissions()->contains(OwnerPortal::PAYMENTS_MANAGE))]];
+    }
+
+    private function payrollReadable(User $actor): bool
+    {
+        return $this->access->allows($actor, HrOffice::PAYROLL_ACCESS) && ($actor->isSuperAdmin() || $actor->effectivePermissions()->contains(OwnerPortal::PAYROLL_VIEW));
     }
 
     private function employees(User $actor): Builder
@@ -138,6 +146,10 @@ final class HrOfficeService
             $order = 'e.employee_id';
         } elseif ($section === 'needs' || $section === 'relationships') {
             $q = $this->access->scopeUnits(DB::table($table.' as t'), $actor, 't.organizational_unit_id')->select('t.*');
+            if ($section === 'relationships') {
+                $q->leftJoin('employees as subject_employee', 'subject_employee.employee_id', '=', 't.employee_id')
+                    ->addSelect('subject_employee.first_name as employee_first_name', 'subject_employee.last_name as employee_last_name', 'subject_employee.employee_number');
+            }
             if (! empty($f['body'])) {
                 $q->where('t.body', $f['body']);
             }
@@ -150,6 +162,11 @@ final class HrOfficeService
             $order = 't.id';
         } else {
             $q = DB::table($table.' as t')->select('t.*');
+            if ($section === 'candidates') {
+                $q->join('hr_staffing_need_items as display_item', 'display_item.id', '=', 't.need_item_id')
+                    ->join('hr_staffing_needs as display_need', 'display_need.id', '=', 'display_item.need_id')
+                    ->addSelect('display_item.job_title as need_job_title', 'display_item.position_id as need_position_id', 'display_need.title as need_title', 'display_need.college_id', 'display_need.organizational_unit_id');
+            }
             if ($section === 'requests') {
                 $q->leftJoin('hr_candidates as target_candidate', 'target_candidate.id', '=', 't.candidate_id')
                     ->leftJoin('employees as target_employee', 'target_employee.employee_id', '=', 't.employee_id')
@@ -206,13 +223,27 @@ final class HrOfficeService
         }
         $page = $q->orderByDesc($order)->paginate($f['per_page'] ?? 15, ['*'], 'page', $f['page'] ?? 1);
         $rows = collect($page->items());
+        if ($section === 'requests') {
+            foreach ($rows as $row) {
+                $row->display_proposal = array_intersect_key(json_decode($row->proposal, true, 512, JSON_THROW_ON_ERROR), array_flip(['body', 'position_id', 'job_title', 'college_id', 'organizational_unit_id']));
+            }
+        }
+        if ($section === 'relationships') {
+            foreach ($rows as $row) {
+                $row->temporal_status = ! empty($row->cancelled_from) && $row->cancelled_from <= now()->toDateString() ? 'cancelled' : ($this->effective($row) ? 'effective' : ($row->starts_on > now()->toDateString() ? 'future' : 'ended'));
+            }
+        }
         if ($employee && $rows->isNotEmpty()) {
             $ids = $rows->pluck('id');
             $relations = DB::table('hr_employment_relationships')->whereIn('employee_id', $ids)->orderBy('starts_on')->get()->groupBy('employee_id');
+            $positions = DB::table('employee_positions')->whereIn('employee_id', $ids)->where('start_date', '<=', now()->toDateString())
+                ->where(fn ($q) => $q->whereNull('end_date')->orWhere('end_date', '>=', now()->toDateString()))
+                ->orderBy('position_id')->get(['employee_id', 'position_id'])->groupBy('employee_id');
             $faculty = DB::table('faculty_members')->whereIn('employee_id', $ids)->get(['employee_id', 'faculty_member_id'])->keyBy('employee_id');
             foreach ($rows as $row) {
                 $row->relationships = $relations->get($row->id, collect());
                 $row->faculty_member_id = $faculty->get($row->id)?->faculty_member_id;
+                $row->recorded_positions = $positions->get($row->id, collect());
                 foreach ($this->workerContext($row, $row->relationships) as $key => $value) {
                     $row->$key = $value;
                 }
@@ -222,7 +253,12 @@ final class HrOfficeService
             $items = DB::table('hr_staffing_need_items')->whereIn('need_id', $rows->pluck('id'))->get();
             $counts = $this->effectiveQuery(DB::table('hr_employment_relationships as r'))
                 ->join('hr_staffing_need_items as i', 'i.id', '=', 'r.need_item_id')
-                ->where('r.source', 'approved_request')->whereIn('r.need_item_id', $items->pluck('id'))
+                ->where(function ($q): void {
+                    $q->where('r.source', 'approved_request');
+                    if ($this->relationshipActionsReady()) {
+                        $q->orWhere(fn ($q) => $q->where('r.source', 'audited_correction')->whereNotNull('r.approval_origin_request_id'));
+                    }
+                })->whereIn('r.need_item_id', $items->pluck('id'))
                 ->where(fn ($q) => $q
                     ->where(fn ($q) => $q->whereNotNull('i.position_id')->whereColumn('r.position_id', 'i.position_id'))
                     ->orWhere(fn ($q) => $q->whereNull('i.position_id')->whereNull('r.position_id')->whereRaw('HEX(TRIM(r.job_title)) = HEX(TRIM(i.job_title))')))
@@ -233,6 +269,9 @@ final class HrOfficeService
             }
             foreach ($rows as $row) {
                 $row->items = $items->where('need_id', $row->id)->values();
+                $row->requested_quantity = (int) $row->items->sum('quantity');
+                $row->filled_quantity = (int) $row->items->sum('filled');
+                $row->remaining_quantity = (int) $row->items->sum('remaining');
             }
         }
 
@@ -242,13 +281,54 @@ final class HrOfficeService
     private function effectiveQuery(Builder $q): Builder
     {
         $today = now()->toDateString();
+        if ($this->relationshipActionsReady()) {
+            $q->where(fn ($q) => $q->whereNull('cancelled_from')->orWhere('cancelled_from', '>', $today));
+        }
 
         return $q->where('starts_on', '<=', $today)->where(fn ($q) => $q->whereNull('ends_on')->orWhere('ends_on', '>=', $today))->where(fn ($q) => $q->whereNull('superseded_from')->orWhere('superseded_from', '>', $today));
     }
 
     private function effective(object $r): bool
     {
-        return $r->starts_on <= now()->toDateString() && (! $r->ends_on || $r->ends_on >= now()->toDateString()) && (! $r->superseded_from || $r->superseded_from > now()->toDateString());
+        return $r->starts_on <= now()->toDateString() && (! $r->ends_on || $r->ends_on >= now()->toDateString()) && (! $r->superseded_from || $r->superseded_from > now()->toDateString()) && (empty($r->cancelled_from) || $r->cancelled_from > now()->toDateString());
+    }
+
+    private function relationshipActionsReady(): bool
+    {
+        return $this->relationshipActionsReady ??= Schema::hasColumns('hr_employment_relationships', ['revision', 'cancelled_from', 'cancelled_at', 'cancelled_by_user_id', 'approval_origin_request_id']);
+    }
+
+    private function requireRelationshipActions(): void
+    {
+        $this->requireReady();
+        if (! $this->relationshipActionsReady()) {
+            throw new Failure('مخطط التصحيح والإلغاء غير جاهز؛ السجلات القائمة لم تتغير.', 503, 'hr_relationship_actions_not_ready');
+        }
+    }
+
+    private function intervalEnd(object $relationship): ?string
+    {
+        $ends = array_filter([$relationship->ends_on,
+            $relationship->superseded_from ? CarbonImmutable::parse($relationship->superseded_from)->subDay()->toDateString() : null,
+            ! empty($relationship->cancelled_from) ? CarbonImmutable::parse($relationship->cancelled_from)->subDay()->toDateString() : null]);
+
+        return $ends === [] ? null : min($ends);
+    }
+
+    private function assertNoOverlap(object $employee, array $proposal, ?int $except = null): void
+    {
+        foreach (DB::table('hr_employment_relationships')->where('employee_id', $employee->employee_id)->orderBy('id')->lockForUpdate()->get() as $old) {
+            if ($except === (int) $old->id) {
+                continue;
+            }
+            $last = $this->intervalEnd($old);
+            if ($last && $last < $old->starts_on) {
+                continue; // Cancelled/replaced before its planned start; never became effective.
+            }
+            if ((! $last || $last >= $proposal['starts_on']) && (empty($proposal['ends_on']) || $old->starts_on <= $proposal['ends_on'])) {
+                throw Failure::conflict('hr_relation_overlap', 'توجد علاقة وظيفية متداخلة.');
+            }
+        }
     }
 
     /** Stored hr_body is a legacy attribution, never a substitute for a dated recorded relationship. */
@@ -631,7 +711,7 @@ final class HrOfficeService
         $predecessor = null;
         if (! empty($p['predecessor_id'])) {
             $predecessor = $this->row('hr_employment_relationships', $p['predecessor_id']);
-            if (! $e || $predecessor->employee_id != $e->employee_id || $predecessor->superseded_from) {
+            if (! $e || $predecessor->employee_id != $e->employee_id || $predecessor->superseded_from || ! empty($predecessor->cancelled_from)) {
                 throw Failure::conflict('hr_predecessor_stale', 'العلاقة السابقة لا تطابق السياق الحالي.');
             }
         }
@@ -648,16 +728,7 @@ final class HrOfficeService
             throw Failure::invalid('hr_renewal_invalid', 'التجديد يلي نهاية العقد ويحافظ على نوعه ونمطه؛ استخدم التحويل للتغيير.');
         }
         if ($e) {
-            $q = DB::table('hr_employment_relationships')->where('employee_id', $e->employee_id)->orderBy('id')->lockForUpdate();
-            foreach ($q->get() as $old) {
-                if ($predecessor && $old->id === $predecessor->id) {
-                    continue;
-                }
-                $last = $old->superseded_from ? CarbonImmutable::parse($old->superseded_from)->subDay()->toDateString() : $old->ends_on;
-                if ((! $last || $last >= $p['starts_on']) && (empty($p['ends_on']) || $old->starts_on <= $p['ends_on'])) {
-                    throw Failure::conflict('hr_relation_overlap', 'توجد علاقة وظيفية متداخلة.');
-                }
-            }
+            $this->assertNoOverlap($e, $p, $predecessor ? (int) $predecessor->id : null);
         }
 
         return $predecessor;
@@ -754,6 +825,88 @@ final class HrOfficeService
         return DB::table('hr_employment_relationships')->insertGetId(array_intersect_key($p, array_flip($keys)) + ['employee_id' => $employee, 'source' => $source, 'request_id' => $request, 'need_item_id' => $item, 'recorded_by_user_id' => $actor->user_id, 'created_at' => now(), 'updated_at' => now()]);
     }
 
+    /** Direct authorized lifecycle action: never delete the original or invent an approval request. */
+    public function changeRelationship(User $actor, int $id, array $data): array
+    {
+        if (! $this->access->allows($actor, HrOffice::CANCEL) && ! $this->access->allows($actor, HrOffice::CORRECT)) {
+            throw Failure::denied('hr_forbidden', 'لا تملك صلاحية التصحيح أو الإلغاء المباشر.');
+        }
+        $d = $this->input($data, ['revision' => self::REVISION, 'action' => 'required|in:cancel,correct', 'effective_on' => 'required|date_format:Y-m-d', 'reason' => 'required|string|max:4000|regex:/\S/u', 'confirmed' => 'required|accepted', 'proposal' => 'sometimes|array']);
+        $this->access->authorize($actor, $d['action'] === 'cancel' ? HrOffice::CANCEL : HrOffice::CORRECT);
+        $this->requireRelationshipActions();
+        if ($d['effective_on'] < now()->toDateString()) {
+            throw Failure::invalid('hr_action_date_invalid', 'لا يُعاد كتابة تاريخ النفاذ السابق؛ اختر اليوم أو تاريخًا لاحقًا.');
+        }
+
+        return $this->atomic(function () use ($actor, $id, $d): array {
+            $hint = $this->row('hr_employment_relationships', $id, false);
+            $item = $need = null;
+            if ($hint->need_item_id) {
+                $itemHint = $this->row('hr_staffing_need_items', $hint->need_item_id, false);
+                $need = $this->row('hr_staffing_needs', $itemHint->need_id);
+                $item = $this->row('hr_staffing_need_items', $itemHint->id);
+            }
+            $employee = $this->row('employees', $hint->employee_id);
+            $this->access->employee($actor, $employee);
+            $row = $this->row('hr_employment_relationships', $id);
+            $this->access->unit($actor, $row->organizational_unit_id);
+            $this->revision($row, $d['revision']);
+            if ($row->superseded_from || $row->cancelled_from || ($row->ends_on && $row->ends_on < $d['effective_on'])) {
+                throw Failure::conflict('hr_relationship_locked', 'هذه علاقة سابقة أو أُلغي نفاذها؛ الأصل محفوظ للقراءة.');
+            }
+            if (DB::table('hr_relationship_requests as r')->whereNotNull('r.current_slot')->where(fn ($q) => $q->where('r.employee_id', $employee->employee_id)->orWhereIn('r.candidate_id', DB::table('hr_candidates')->where('employee_id', $employee->employee_id)->select('id')))->exists()) {
+                throw Failure::conflict('hr_request_pending', 'احسم طلب العلاقة الحالي قبل التصحيح أو الإلغاء.');
+            }
+            $afterId = null;
+            if ($d['action'] === 'cancel') {
+                if (isset($d['proposal'])) {
+                    throw Failure::invalid('hr_invalid_fields', 'الإلغاء لا يقبل بيانات عقد بديل.');
+                }
+                DB::table('hr_employment_relationships')->where('id', $id)->update(['cancelled_from' => $d['effective_on'], 'cancelled_at' => now(), 'cancelled_by_user_id' => $actor->user_id, 'updated_at' => now()]);
+            } else {
+                $proposal = $this->proposal($actor, $d['proposal'] ?? []);
+                if ($proposal['starts_on'] !== $d['effective_on'] || (! empty($proposal['predecessor_id']) && (int) $proposal['predecessor_id'] !== $id) || ! empty($proposal['employee_number']) || ! empty($proposal['employee_type_id'])) {
+                    throw Failure::invalid('hr_correction_context_invalid', 'التصحيح يتعلق بالعامل نفسه ويبدأ بتاريخ النفاذ المحدد، دون إعادة إنشاء هويته.');
+                }
+                $proposal['predecessor_id'] = $id;
+                $this->assertNoOverlap($employee, $proposal, $id);
+                $keepItem = $item && $need->body === $proposal['body'] && $need->organizational_unit_id == $proposal['organizational_unit_id'] && ($item->position_id !== null ? $item->position_id == ($proposal['position_id'] ?? null) : empty($proposal['position_id']) && trim($item->job_title, ' ') === trim($proposal['job_title'], ' '));
+                $afterId = $this->materializeRelation($actor, $proposal, $employee->employee_id, 'audited_correction', null, $keepItem ? $item->id : null);
+                DB::table('hr_employment_relationships')->where('id', $afterId)->update(['approval_origin_request_id' => $row->request_id ?? $row->approval_origin_request_id]);
+                DB::table('hr_employment_relationships')->where('id', $id)->update(['superseded_from' => $d['effective_on'], 'updated_at' => now()]);
+            }
+            // Invalidate submitted/identity-link contexts without changing classification or financial values.
+            DB::table('employees')->where('employee_id', $employee->employee_id)->update(['updated_at' => now()]);
+            $this->event($actor, 'employee', $employee->employee_id, $d['action'] === 'cancel' ? 'relationship_cancelled' : 'relationship_corrected', ['before' => $row, 'after' => $this->row('hr_employment_relationships', $id), 'replacement' => $afterId ? $this->row('hr_employment_relationships', $afterId) : null, 'effective_on' => $d['effective_on'], 'reason' => $d['reason'], 'original_approval_unchanged' => true]);
+
+            return ['employee_id' => $employee->employee_id, 'relationship_id' => $id, 'replacement_id' => $afterId];
+        });
+    }
+
+    public function cancelRequest(User $actor, int $id, array $data): array
+    {
+        $this->access->authorize($actor, HrOffice::PREPARE);
+        $this->requireReady();
+        $d = $this->input($data, ['revision' => self::REVISION, 'reason' => 'required|string|max:4000|regex:/\S/u', 'confirmed' => 'required|accepted']);
+
+        return $this->atomic(function () use ($actor, $id, $d): array {
+            $hint = $this->row('hr_relationship_requests', $id, false);
+            [, , $candidate] = $this->requestLocks($actor, $hint);
+            $row = $this->row('hr_relationship_requests', $id);
+            $this->revision($row, $d['revision']);
+            if (! in_array($row->status, ['draft', 'returned', 'submitted'], true) || $row->current_slot != 1 || $row->materialized_at) {
+                throw Failure::conflict('hr_request_locked', 'لا يحذف الطلب المعتمد؛ ألغِ نفاذ علاقته أو صححها من ملف العامل.');
+            }
+            DB::table('hr_relationship_requests')->where('id', $id)->update(['status' => 'cancelled', 'current_slot' => null, 'revision' => $row->revision + 1, 'updated_at' => now()]);
+            if ($candidate) {
+                DB::table('hr_candidates')->where('id', $candidate->id)->update(['status' => 'candidate', 'revision' => $candidate->revision + 1, 'updated_at' => now()]);
+            }
+            $this->event($actor, 'request', $id, 'cancelled', ['before' => $row, 'after' => 'cancelled', 'reason' => $d['reason']]);
+
+            return $this->presentRequest($id);
+        });
+    }
+
     public function classify(User $actor, int $employeeId, array $data): array
     {
         $this->access->authorize($actor, HrOffice::CLASSIFY);
@@ -818,8 +971,17 @@ final class HrOfficeService
         $e = $this->row('employees', $id, false);
         $this->access->employee($actor, $e);
         $relationships = DB::table('hr_employment_relationships')->where('employee_id', $id)->orderByDesc('starts_on')->orderByDesc('id')->get();
+        $pending = DB::table('hr_relationship_requests')->whereNotNull('current_slot')->where(fn ($q) => $q->where('employee_id', $id)->orWhereIn('candidate_id', DB::table('hr_candidates')->where('employee_id', $id)->select('id')))->exists();
+        foreach ($relationships as $relationship) {
+            $locked = ! $this->relationshipActionsReady() || $pending || $relationship->superseded_from || ! empty($relationship->cancelled_from) || ($relationship->ends_on && $relationship->ends_on < now()->toDateString());
+            $relationship->can_correct = ! $locked && $this->access->allows($actor, HrOffice::CORRECT);
+            $relationship->can_cancel = ! $locked && $this->access->allows($actor, HrOffice::CANCEL);
+            $relationship->action_lock_reason = ! $this->relationshipActionsReady() ? 'مخطط التصحيح والإلغاء غير جاهز' : ($pending ? 'يوجد طلب علاقة حالي يجب حسمه' : ($locked ? 'سجل سابق أو أُلغي نفاذه؛ الأصل محفوظ' : null));
+        }
         $payroll = null;
-        if ($this->access->allows($actor, HrOffice::PAYROLL_LINK) && Schema::hasColumn('payroll_employees', 'employee_id')) {
+        $payrollVisible = $this->payrollReadable($actor) || $this->access->allows($actor, HrOffice::PAYROLL_LINK);
+        $payrollReady = $payrollVisible && Schema::hasColumn('payroll_employees', 'employee_id');
+        if ($payrollReady) {
             $payroll = DB::table('payroll_employees')->where('employee_id', $id)->first(['id', 'employee_number', 'full_name', 'payroll_body_id', 'revision', 'hr_body_at_link', 'hr_revision_at_link']);
         }
 
@@ -827,7 +989,9 @@ final class HrOfficeService
             'faculty' => DB::table('faculty_members')->where('employee_id', $id)->first(['faculty_member_id', 'academic_rank', 'specialization', 'is_active']),
             'positions' => DB::table('employee_positions')->where('employee_id', $id)->orderBy('start_date')->get(),
             'affiliations' => DB::table('employee_unit_assignments')->where('employee_id', $id)->orderBy('start_date')->get(),
-            'relationships' => $relationships, 'payroll' => $payroll, 'events' => $this->events('employee', $id)];
+            'relationships' => $relationships, 'payroll' => $payroll,
+            'payroll_status' => ! $payrollVisible ? null : (! $payrollReady ? 'unavailable' : ($payroll ? 'linked' : 'unlinked')),
+            'can_open_payroll' => $this->payrollReadable($actor), 'can_export' => $this->access->allows($actor, HrOffice::WORKER_EXPORT), 'events' => $this->events('employee', $id)];
     }
 
     public function payrollLookup(User $actor, array $input): array
