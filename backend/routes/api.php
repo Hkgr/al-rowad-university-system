@@ -950,6 +950,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
         Route::get('payroll-lookup', 'payrollOptions');
         Route::get('payroll-personnel-lookup', 'payrollPersonnel');
         Route::get('workers/{employee}', 'worker')->whereNumber('employee');
+        Route::get('workers/{employee}/file', 'workerFile')->whereNumber('employee');
+        Route::get('workers/{employee}/pdf', 'workerPdf')->whereNumber('employee');
         Route::post('workers/{employee}/classification', 'classify')->whereNumber('employee');
         Route::post('workers/{employee}/payroll-link', 'linkPayroll')->whereNumber('employee');
         Route::post('needs', 'storeNeed');
@@ -965,8 +967,22 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
         Route::patch('requests/{request}', 'updateRequest')->whereNumber('request');
         Route::post('requests/{request}/submit', 'submit')->whereNumber('request');
         Route::post('requests/{request}/decide', 'decide')->whereNumber('request');
+        Route::post('requests/{request}/cancel', 'cancelRequest')->whereNumber('request');
+        Route::post('relationships/{relationship}/action', 'relationshipAction')->whereNumber('relationship');
         Route::get('{section}', 'index')->whereIn('section', ['workers', 'needs', 'candidates', 'requests', 'relationships', 'classification']);
     });
+
+    // Explicit disbursement/receipt ledger; route grants never create owner-portal or HR access.
+    foreach (['vice-presidency/administrative/payroll' => \App\Http\Middleware\RequireAdministrativePayroll::class, 'owner/payroll' => \App\Http\Middleware\RequireOwnerPortal::class] as $prefix => $middleware) {
+        Route::prefix($prefix)->controller(\App\Http\Controllers\Api\PayrollPaymentController::class)->group(function () use ($middleware): void {
+            $read = $middleware.':'.\App\Support\OwnerPortal::PAYROLL_VIEW;
+            $write = $middleware.':'.\App\Support\OwnerPortal::PAYMENTS_MANAGE;
+            Route::get('employees/{employee}/payments', 'index')->whereNumber('employee')->middleware($read);
+            Route::post('employees/{employee}/payments', 'record')->whereNumber('employee')->middleware($write);
+            Route::post('payments/{payment}/receive', 'receive')->whereNumber('payment')->middleware($write);
+            Route::post('payments/{payment}/cancel', 'cancel')->whereNumber('payment')->middleware($write);
+        });
+    }
 
     // Reuses the owner payroll controller, calculations and tables; a separate entry guard
     // requires actual office role, university scope, explicit access and the SAME financial action permission.

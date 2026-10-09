@@ -4,8 +4,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\HrOfficeService;
+use App\Services\HrWorkerPdfExport;
+use App\Services\Payroll\PayrollPaymentService;
+use App\Support\AdministrativeGovernanceException as Failure;
+use App\Support\HrOffice;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 
 final class HrOfficeController extends Controller
 {
@@ -29,6 +35,43 @@ final class HrOfficeController extends Controller
     public function worker(Request $r, int $employee): JsonResponse
     {
         return $this->response($this->hr->worker($r->user(), $employee));
+    }
+
+    public function workerFile(Request $r, int $employee, PayrollPaymentService $payments): JsonResponse
+    {
+        $worker = $this->hr->worker($r->user(), $employee);
+        $d = $r->validate(['payment_page' => 'sometimes|integer|min:1']);
+
+        return $this->response(['worker' => $worker, 'options' => $this->hr->options($r->user()), 'payments' => $worker['can_open_payroll'] ? $payments->history($r->user(), $employee, ['page' => $d['payment_page'] ?? 1]) : null]);
+    }
+
+    public function workerPdf(Request $r, int $employee, PayrollPaymentService $payments, HrWorkerPdfExport $pdf): Response
+    {
+        app(HrOffice::class)->authorize($r->user(), HrOffice::WORKER_EXPORT);
+        try {
+            $bytes = DB::transaction(function () use ($r, $employee, $payments, $pdf): string {
+                $worker = $this->hr->worker($r->user(), $employee);
+
+                return $pdf->build($r->user(), $worker, $this->hr->options($r->user()), $worker['can_open_payroll'] ? $payments->history($r->user(), $employee) : null);
+            });
+        } catch (Failure $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            report($e);
+            throw new Failure('تعذر إعداد PDF. تحقق من خط Cairo وأصول الشعار وإعدادات التصدير.', 503, 'hr_pdf_not_ready');
+        }
+
+        return response($bytes, 200, ['Content-Type' => 'application/pdf', 'Content-Disposition' => 'attachment; filename="worker-'.$employee.'.pdf"', 'Cache-Control' => 'private, no-store']);
+    }
+
+    public function relationshipAction(Request $r, int $relationship): JsonResponse
+    {
+        return $this->response($this->hr->changeRelationship($r->user(), $relationship, $r->all()));
+    }
+
+    public function cancelRequest(Request $r, int $request): JsonResponse
+    {
+        return $this->response($this->hr->cancelRequest($r->user(), $request, $r->all()));
     }
 
     public function storeNeed(Request $r): JsonResponse

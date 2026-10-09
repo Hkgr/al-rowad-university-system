@@ -39,6 +39,8 @@ final class OwnerPortal
 
     public const CONFIG_MANAGE = 'owner_payroll.config.manage';
 
+    public const PAYMENTS_MANAGE = 'owner_payroll.payments.manage';
+
     /** @var array<string, string> code => Arabic label */
     public const PERMISSIONS = [
         self::ACCESS => 'الدخول إلى بوابة مالك الجامعة',
@@ -49,6 +51,7 @@ final class OwnerPortal
         self::AMOUNTS_EDIT => 'تعديل مبالغ الرواتب',
         self::CONFIG_MANAGE => 'إدارة أعمدة الرواتب والمعادلات والإعدادات العامة',
         self::EXPORT => 'تصدير ورقة الرواتب (Excel وPDF)',
+        self::PAYMENTS_MANAGE => 'تسجيل صرف الرواتب وتوثيق الاستلام وإلغاء السجل الخاطئ',
     ];
 
     public const FORBIDDEN_MESSAGE = 'لا يملك حسابك صلاحية هذا القسم من بوابة مالك الجامعة.';

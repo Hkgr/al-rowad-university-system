@@ -57,14 +57,14 @@ export function legendEntries(columns, canEdit) {
   return entries
 }
 
-export const emptyFilters = () => ({ search: '', body_id: '', workplace: '', academic_level: '', academic_level_blank: false, completeness: '', sort: 'employee_number', direction: 'asc' })
+export const emptyFilters = () => ({ search: '', payroll_employee_id: '', body_id: '', workplace: '', academic_level: '', academic_level_blank: false, completeness: '', sort: 'employee_number', direction: 'asc' })
 
-export const hasActiveFilters = f => Boolean(f.search || f.body_id || f.workplace || f.academic_level || f.academic_level_blank || f.completeness)
+export const hasActiveFilters = f => Boolean(f.search || f.payroll_employee_id || f.body_id || f.workplace || f.academic_level || f.academic_level_blank || f.completeness)
 
 /** Same parameter names the API (grid and exports) understands. */
 export function buildSheetQuery(filters) {
   const params = new URLSearchParams()
-  for (const key of ['search', 'body_id', 'workplace', 'academic_level', 'completeness', 'sort', 'direction']) {
+  for (const key of ['search', 'payroll_employee_id', 'body_id', 'workplace', 'academic_level', 'completeness', 'sort', 'direction']) {
     if (filters[key]) params.set(key, filters[key])
   }
   if (filters.academic_level_blank) params.set('academic_level_blank', '1')
@@ -75,6 +75,7 @@ export function buildSheetQuery(filters) {
 export function filtersFromParams(search) {
   const params = new URLSearchParams(search)
   const f = emptyFilters()
+  if (/^[1-9]\d*$/.test(params.get('payroll_employee_id') ?? '')) f.payroll_employee_id = params.get('payroll_employee_id')
   if (/^\d+$/.test(params.get('body_id') ?? '')) f.body_id = params.get('body_id')
   if (WORKPLACE_OPTIONS.some(option => option.value === params.get('workplace'))) f.workplace = params.get('workplace')
   if (['complete', 'incomplete', 'warning'].includes(params.get('completeness'))) f.completeness = params.get('completeness')

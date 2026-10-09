@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Services\DataScopeService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 final class HrOffice
 {
@@ -23,7 +24,13 @@ final class HrOffice
 
     public const PAYROLL_LINK = 'administrative_hr.payroll.link';
 
-    public const PERMISSIONS = [self::VIEW => 'عرض الموارد البشرية', self::RECRUIT => 'إدارة الاحتياجات والمقابلات', self::CLASSIFY => 'استكمال تصنيف العاملين', self::PREPARE => 'إعداد العلاقات الوظيفية', self::REVIEW => 'اعتماد العلاقات الوظيفية', self::PAYROLL_ACCESS => 'دخول المحاسبة إلى الرواتب', self::PAYROLL_LINK => 'ربط ملف الموظف بالرواتب'];
+    public const CORRECT = 'administrative_hr.relationships.correct';
+
+    public const CANCEL = 'administrative_hr.relationships.cancel';
+
+    public const WORKER_EXPORT = 'administrative_hr.workers.export';
+
+    public const PERMISSIONS = [self::VIEW => 'عرض الموارد البشرية', self::RECRUIT => 'إدارة الاحتياجات والمقابلات', self::CLASSIFY => 'استكمال تصنيف العاملين', self::PREPARE => 'إعداد العلاقات الوظيفية', self::REVIEW => 'اعتماد العلاقات الوظيفية', self::PAYROLL_ACCESS => 'دخول المحاسبة إلى الرواتب', self::PAYROLL_LINK => 'ربط ملف الموظف بالرواتب', self::CORRECT => 'تصحيح علاقة وظيفية معتمدة مع حفظ الأصل', self::CANCEL => 'إلغاء نفاذ علاقة وظيفية مع حفظ التاريخ', self::WORKER_EXPORT => 'تصدير ملف العامل ضمن صلاحيات القراءة'];
 
     public function __construct(private readonly DataScopeService $scope) {}
 
@@ -42,7 +49,7 @@ final class HrOffice
         if (in_array($permission, [self::PAYROLL_ACCESS, self::PAYROLL_LINK], true)) {
             return $roles->intersect(['finance_officer', 'hr_officer', 'vice_president_administrative'])->isNotEmpty() && $this->scope->hasActualUniversityScope($actor);
         }
-        if ($permission === self::REVIEW) {
+        if (in_array($permission, [self::REVIEW, self::CORRECT, self::CANCEL], true)) {
             return $roles->contains('vice_president_administrative') && $this->scope->hasActualUniversityScope($actor);
         }
 
@@ -87,12 +94,16 @@ final class HrOffice
         }
         $units = $this->collegeUnitIds($actor);
         $today = now()->toDateString();
+        $relationships = DB::table('hr_employment_relationships')->where('employee_id', $employee->employee_id)->whereIn('organizational_unit_id', $units)
+            ->where('starts_on', '<=', $today)->where(fn ($q) => $q->whereNull('ends_on')->orWhere('ends_on', '>=', $today))
+            ->where(fn ($q) => $q->whereNull('superseded_from')->orWhere('superseded_from', '>', $today));
+        if (Schema::hasColumn('hr_employment_relationships', 'cancelled_from')) {
+            $relationships->where(fn ($q) => $q->whereNull('cancelled_from')->orWhere('cancelled_from', '>', $today));
+        }
         $allowed = in_array((int) $employee->organizational_unit_id, $units, true)
             || DB::table('employee_unit_assignments')->where('employee_id', $employee->employee_id)->whereIn('organizational_unit_id', $units)
                 ->where('is_active', true)->where('start_date', '<=', $today)->where(fn ($q) => $q->whereNull('end_date')->orWhere('end_date', '>=', $today))->exists()
-            || DB::table('hr_employment_relationships')->where('employee_id', $employee->employee_id)->whereIn('organizational_unit_id', $units)
-                ->where('starts_on', '<=', $today)->where(fn ($q) => $q->whereNull('ends_on')->orWhere('ends_on', '>=', $today))
-                ->where(fn ($q) => $q->whereNull('superseded_from')->orWhere('superseded_from', '>', $today))->exists();
+            || $relationships->exists();
         if (! $allowed) {
             throw AdministrativeGovernanceException::denied('hr_scope_denied', 'الموظف خارج نطاقك.');
         }

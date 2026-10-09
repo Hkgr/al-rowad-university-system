@@ -370,4 +370,10 @@ final class PayrollPdfExport
 
         return $dir;
     }
+
+    /** Reuse the same Cairo/TCPDF font preparation for an individual HR document. */
+    public function fontDirectory(): string
+    {
+        return $this->ensureFonts();
+    }
 }
