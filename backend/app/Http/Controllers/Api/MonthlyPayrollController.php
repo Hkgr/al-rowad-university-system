@@ -62,22 +62,43 @@ final class MonthlyPayrollController extends Controller
         return $this->response($this->months->result($r->user(), $uuid));
     }
 
+    public function configuration(Request $r)
+    {
+        return $this->response($this->months->configuration($r->user(), $r->query()));
+    }
+
+    public function previewConfiguration(Request $r)
+    {
+        return $this->response($this->months->configurationPreview($r->user(), $r->all()));
+    }
+
+    public function saveConfiguration(Request $r)
+    {
+        return $this->response($this->months->saveConfiguration($r->user(), $r->all()));
+    }
+
     public function export(Request $r, string $kind, PayrollAccountingAccess $access, MonthlyPayrollExport $export)
     {
         $access->authorize($r->user(), OwnerPortal::EXPORT);
-        $f = $this->months->filters($r->query());
+        $selection = $r->validate(['view' => 'required|in:compact,detailed', 'columns' => 'required|array|min:1|max:100', 'columns.*' => 'required|string|max:40|distinct']);
+        $f = $this->months->filters($r->except(['view', 'columns']));
 
-        return DB::transaction(function () use ($r, $kind, $f, $export) {
+        return DB::transaction(function () use ($r, $kind, $f, $export, $selection) {
             $report = $this->months->report($r->user(), $f);
             if (! $report['initialized']) {
                 throw new PayrollException('لم تُعدّ الفترة المحاسبية بعد.', 'payroll_period_missing', 409);
             }
+            $report['export_selection'] = $selection;
+            $export->selectedColumns($report);
             if ($kind === 'xlsx') {
                 return response()->download($export->xlsx($r->user(), $report), 'payroll-'.$f['period'].'.xlsx', ['Cache-Control' => 'private, no-store'])->deleteFileAfterSend(true);
             }
             try {
                 $bytes = $export->pdf($r->user(), $report);
             } catch (\Throwable $e) {
+                if ($e instanceof PayrollException) {
+                    throw $e;
+                }
                 report($e);
                 throw new PayrollException('تعذر إعداد PDF؛ تحقق من اعتماديات Composer وخط Cairo والشعار.', 'payroll_pdf_not_ready', 503);
             }

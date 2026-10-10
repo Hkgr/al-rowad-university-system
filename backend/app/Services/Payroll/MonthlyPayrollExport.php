@@ -2,158 +2,160 @@
 
 namespace App\Services\Payroll;
 
+use App\Exceptions\PayrollException;
 use App\Models\User;
 use App\Services\UserIdentityService;
-use Illuminate\Support\Facades\DB;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
-/** Financial documents use frozen month values; no formula recalculation or receipt mutation on export. */
+/** The selected monthly view; frozen server cells only, never Excel recalculation or payment mutations. */
 final class MonthlyPayrollExport
 {
     public function __construct(private readonly PayrollPdfExport $fonts, private readonly PayrollConfigService $configs, private readonly UserIdentityService $identity) {}
 
-    private function esc(mixed $v): string
+    /** Exact allowlist matching the two UI projections; identifiers never select arbitrary row fields. */
+    public function selectedColumns(array $report): array
     {
-        return htmlspecialchars((string) ($v ?? 'لم يحدد'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $detailed = $report['export_selection']['view'] === 'detailed';
+        $identity = ['employee_number' => 'رقم الموظف', 'full_name' => 'الاسم الكامل', 'job_title' => 'الصفة الوظيفية', 'body_name' => 'الهيئة', 'workplace_label' => 'الكلية / الوحدة', 'academic_level' => 'المستوى الأكاديمي'];
+        $allowed = [];
+        foreach ($identity as $key => $label) {
+            if ($detailed || in_array($key, ['employee_number', 'full_name'], true)) {
+                $allowed[$key] = ['key' => $key, 'heading' => $label, 'group' => 'employee', 'group_label' => 'بيانات الموظف', 'type' => 'text', 'aggregation' => 'none', 'identity' => true, 'kind' => 'identity', 'net' => false];
+            }
+        }
+        if (! $detailed) {
+            foreach (['employee_status' => 'الحالة الوظيفية', 'placement' => 'الهيئة / الكلية أو الوحدة', 'disbursed' => 'المصروف الفعلي', 'received' => 'الاستلام الموثق', 'remaining' => 'المتبقي', 'payment_status' => 'حالة الصرف', 'completeness' => 'حالة الاستكمال'] as $key => $label) {
+                $money = in_array($key, ['disbursed', 'received', 'remaining'], true);
+                $allowed[$key] = ['key' => $key, 'heading' => $label.($money ? ' (ل.س)' : ''), 'group' => $money ? 'net' : 'employee', 'group_label' => $money ? 'الصافي والصرف' : 'بيانات الموظف', 'type' => $money ? 'amount' : 'text', 'aggregation' => $money ? 'sum' : 'none', 'identity' => false, 'kind' => 'formula', 'net' => false];
+            }
+        }
+        foreach (PayrollColumns::exportColumns($report['config']) as $column) {
+            if ($column['identity']) {
+                continue;
+            }
+            $definition = collect($report['config']['columns'])->firstWhere('key', $column['key']);
+            if ($definition['visible_grid'] && ($detailed || (! $definition['is_system'] && $definition['compact']) || $column['net'])) {
+                $allowed[$column['key']] = $column;
+            }
+        }
+        $columns = [];
+        foreach ($report['export_selection']['columns'] as $key) {
+            if (! isset($allowed[$key])) {
+                throw new PayrollException('عمود غير ظاهر أو غير مصرح بتصديره في العرض المحدد.', 'payroll_validation', 422);
+            }
+            $columns[] = $allowed[$key];
+        }
+        if (! in_array('employee_number', array_column($columns, 'key'), true) || ! in_array('full_name', array_column($columns, 'key'), true)) {
+            throw new PayrollException('يجب إبقاء رقم العامل واسمه في الكشف.', 'payroll_validation', 422);
+        }
+
+        return $columns;
+    }
+
+    private function snapshot(array $report): array
+    {
+        $rows = [];
+        foreach ($report['filtered_rows'] as $row) {
+            $row['workplace_label'] = $row['college_name'] ?? $row['unit_name'] ?? 'غير محدد';
+            foreach (['disbursed', 'received', 'remaining'] as $key) {
+                $row['cells'][$key] = ['v' => $row[$key], 'st' => $row[$key] === null ? 'missing' : null, 'm' => null];
+            }
+            $texts = ['employee_status' => $row['status_name'] ?? 'غير محدد', 'placement' => $row['body_name'].' — '.$row['workplace_label'], 'payment_status' => ['unpaid' => 'لا صرف مسجل', 'paid' => 'صرف فعلي مسجل', 'received' => 'استلام موثق', 'voided' => 'سجلات ملغاة فقط'][$row['payment_status']], 'completeness' => ['complete' => 'مكتملة', 'incomplete' => 'ناقصة أو بها خطأ', 'warning' => 'تحذير حسابي'][PayrollSheetService::status($row)]];
+            foreach ($texts as $key => $text) {
+                $row['cells'][$key] = ['v' => $text, 'st' => null, 'm' => null];
+            }
+            $rows[] = $row;
+        }
+        $totals = $report['totals'];
+        foreach (['disbursed', 'received', 'remaining'] as $key) {
+            $totals['columns'][$key] = $totals[$key];
+        }
+
+        return ['rows' => $rows, 'config' => $report['config'], 'totals' => $totals, 'filters' => ['sort' => 'employee_number', 'direction' => 'asc'] + $report['filters']];
+    }
+
+    private function scope(array $report): string
+    {
+        return 'الشهر '.$report['period'].' — مراجعة '.$report['revision'].' — '.($report['status'] === 'approved' ? 'معتمد' : 'مسودة').' — '.($report['export_selection']['view'] === 'detailed' ? 'عرض تفصيلي' : 'عرض مختصر').' — '.collect($report['filters'])->except(['page', 'per_page'])->map(fn ($v, $k) => $k.'='.$v)->implode('؛ ');
     }
 
     public function pdf(User $actor, array $report): string
     {
-        $dir = $this->fonts->fontDirectory();
-        if (! defined('K_PATH_FONTS')) {
-            define('K_PATH_FONTS', $dir.'/');
-        }
-        $pdf = new MonthlyPayrollDocument('P', 'mm', 'A4', true, 'UTF-8', false);
-        $pdf->AddFont('cairo', '', $dir.'/cairo.php');
-        $pdf->AddFont('cairo', 'B', $dir.'/cairob.php');
-        $pdf->setTitle('الكشف المحاسبي الشهري '.$report['period']);
-        $pdf->setCreator('Alrowad University');
-        $pdf->setRTL(true);
-        $pdf->setMargins(12, 40, 12);
-        $pdf->setAutoPageBreak(true, 20);
-        $pdf->headerLines = ['المحاسبة — الرواتب الشهرية', 'الفترة '.$report['period'].' — مراجعة '.$report['revision'].' — '.($report['status'] === 'approved' ? 'مستحق معتمد' : 'مسودة غير معتمدة'), 'المُصدر: '.$this->identity->documentGenerator($actor)['display_name'].' — '.now()->timezone('Asia/Damascus')->format('Y-m-d H:i')];
-        $pdf->AddPage();
-        $pdf->setFont('cairo', '', 9);
-        $pdf->writeHTML('<p>الفلاتر: '.$this->esc($this->scope($report['filters'])).'</p><p>المستحق المحسوب منفصل عن الصرف الفعلي والاستلام الموثق. البيانات غير المدخلة «لم يحدد». لا يشكل الكشف إثبات تحويل أو توقيعًا.</p>');
-        $summary = [['العاملون', $report['totals']['employees']], ['الصافي المستحق المحسوب', $report['totals']['columns'][PayrollSheetService::TOTAL_KEY]['sum'] ?? null], ['الصرف الفعلي المسجل', $report['totals']['disbursed']['sum']], ['الاستلام الموثق', $report['totals']['received']['sum']], ['المتبقي (المستحق ناقص المصروف)', $report['totals']['remaining']['sum']]];
-        $pdf->writeHTML($this->table(['المؤشر', 'القيمة'], $summary));
-        $pdf->writeHTML($this->table(['العامل / الرقم', 'المستحق الصافي', 'المصروف', 'الاستلام', 'المتبقي'], array_map(fn ($r) => [$r['full_name'].' — '.$r['employee_number'], $r['cells'][PayrollSheetService::TOTAL_KEY]['v'] ?? null, $r['disbursed'], $r['received'], $r['remaining']], $report['filtered_rows'])));
-        $config = $this->configs->present($report['config']);
-        $paymentsByPerson = collect();
-        foreach (array_chunk(array_column($report['filtered_rows'], 'employee_id'), 500) as $ids) {
-            $paymentsByPerson = $paymentsByPerson->concat(DB::table('payroll_payments')->whereIn('employee_id', $ids)->where('period', $report['period'])->orderBy('paid_on')->orderBy('id')->get());
-        }
-        $paymentsByPerson = $paymentsByPerson->groupBy('employee_id');
-        foreach ($report['filtered_rows'] as $r) {
-            $pdf->AddPage();
-            $pdf->writeHTML('<h3>'.$this->esc($r['full_name']).'</h3><p>الرقم: '.$this->esc($r['employee_number']).' — الهيئة: '.$this->esc($r['body_name']).'<br>المنصب: '.$this->esc($r['job_title'] ?: 'غير محدد').' — الكلية / الوحدة: '.$this->esc($r['college_name'] ?? $r['unit_name']).'</p>');
-            $time = $r['work_time'] ?? null;
-            $pdf->writeHTML('<p>بيانات الدوام الموثقة من الموارد البشرية: '.($time ? 'أيام '.$this->esc($time['days']).' / ساعات '.$this->esc($time['hours']).' — المصدر '.$this->esc($time['source_reference']) : 'غير متاحة؛ لا تستنتج من كلي/جزئي').'</p>');
-            $items = [];
-            foreach ($config['columns'] as $c) {
-                $cell = $r['cells'][$c['key']];
-                $items[] = [$c['group_label'].' / '.$c['label'], $cell['v'], $c['kind'] === 'formula' ? $c['formula_display'] : 'مدخل مالي صريح', $cell['m'] ?? ''];
-            }
-            $pdf->writeHTML($this->table(['البند', 'القيمة — ل.س للمبالغ', 'طريقة الاحتساب', 'ملاحظة'], $items));
-            $pdf->writeHTML($this->table(['المستحق', 'المصروف', 'الاستلام الموثق', 'المتبقي'], [[$r['cells'][PayrollSheetService::TOTAL_KEY]['v'] ?? null, $r['disbursed'], $r['received'], $r['remaining']]]));
-            $payments = $paymentsByPerson->get($r['employee_id'], collect());
-            $pdf->writeHTML('<h4>تفاصيل الصرف والاستلام</h4>');
-            foreach ($payments as $p) {
-                $pdf->writeHTML('<p>المبلغ '.$this->esc(PayrollPaymentService::amount($p->amount_cents)).' — تاريخ الصرف '.$this->esc($p->paid_on).' — المرجع '.$this->esc($p->reference).'<br>الحالة '.$this->esc(['paid' => 'صرف مسجل دون استلام موثق', 'received' => 'استلام موثق', 'voided' => 'سجل ملغى'][$p->status]).' — الاستلام '.$this->esc($p->received_on).'<br>إثبات الاستلام '.$this->esc($p->receipt_evidence).' — سبب السجل '.$this->esc($p->reason).($p->void_reason ? '<br>سبب الإلغاء '.$this->esc($p->void_reason) : '').'</p>');
-            }
-            if ($payments->isEmpty()) {
-                $pdf->writeHTML('<p>لا توجد دفعات فعلية مسجلة لهذه الفترة.</p>');
-            }
-        }
+        $snapshot = $this->snapshot($report);
 
-        return $pdf->Output('monthly-payroll.pdf', 'S');
-    }
-
-    private function scope(array $f): string
-    {
-        return collect($f)->except(['page', 'per_page'])->map(fn ($v, $k) => $k.'='.$v)->implode('؛ ');
-    }
-
-    private function table(array $headers, array $rows): string
-    {
-        $html = '<table border="1" cellpadding="5"><thead><tr style="background-color:#243d16;color:#ffffff">';
-        foreach ($headers as $h) {
-            $html .= '<th>'.$this->esc($h).'</th>';
-        } $html .= '</tr></thead><tbody>';
-        foreach ($rows as $r) {
-            $html .= '<tr>';
-            foreach ($r as $cell) {
-                $html .= '<td>'.$this->esc($cell).'</td>';
-            } $html .= '</tr>';
-        }
-
-        return $html.'</tbody></table>';
+        return $this->fonts->build($snapshot, [], ['columns' => $this->selectedColumns($report), 'title' => 'كشف الرواتب الشهرية', 'header_lines' => [
+            'كشف الرواتب الشهرية — '.($report['export_selection']['view'] === 'detailed' ? 'العرض التفصيلي' : 'العرض المختصر'),
+            $this->scope($report),
+            'المُصدر: '.$this->identity->documentGenerator($actor)['display_name'].' — '.$report['generated_at'],
+            'المبالغ بالليرة السورية. المستحق منفصل عن الصرف والاستلام؛ لا يشكل الكشف إثبات تحويل أو توقيع.',
+        ]]);
     }
 
     public function xlsx(User $actor, array $report): string
     {
+        $columns = $this->selectedColumns($report);
+        $snapshot = $this->snapshot($report);
         $book = new Spreadsheet;
         $sheet = $book->getActiveSheet();
-        $sheet->setTitle('الكشف الشهري');
+        $sheet->setTitle('الرواتب الشهرية');
         $sheet->setRightToLeft(true);
-        $columns = $report['config']['columns'];
-        $headers = array_merge(['الرقم', 'العامل', 'الهيئة', 'الكلية / الوحدة', 'الحالة الوظيفية'], array_column($columns, 'label'), ['المصروف', 'الاستلام الموثق', 'المتبقي']);
-        $sheet->setCellValueExplicit('A1', 'الفترة '.$report['period'].' — مراجعة '.$report['revision'].' — '.$this->scope($report['filters']), DataType::TYPE_STRING);
-        $sheet->setCellValueExplicit('A2', 'المُصدر: '.$this->identity->documentGenerator($actor)['display_name'].' — '.$report['generated_at'], DataType::TYPE_STRING);
-        $this->textRow($sheet, 4, $headers);
-        $index = 5;
-        foreach ($report['filtered_rows'] as $r) {
-            $values = array_merge([$r['employee_number'], $r['full_name'], $r['body_name'], $r['college_name'] ?? $r['unit_name'], $r['status_name']], array_map(fn ($c) => $r['cells'][$c['key']]['v'] ?? 'لم يحدد', $columns), [$r['disbursed'], $r['received'], $r['remaining'] ?? 'لم يحدد']);
-            foreach ($values as $i => $value) {
-                $sheet->setCellValueExplicit([$i + 1, $index], (string) ($value ?? 'غير محدد'), DataType::TYPE_STRING);
-            } $index++;
+        $put = fn ($col, $row, $text) => $sheet->setCellValueExplicit([$col, $row], (string) $text, DataType::TYPE_STRING);
+        $put(1, 1, $this->scope($report));
+        $put(1, 2, 'المُصدر: '.$this->identity->documentGenerator($actor)['display_name'].' — '.$report['generated_at']);
+        $put(1, 3, 'قيم محفوظة من الخادم، وليست معادلات Excel أو إثبات تحويل. جميع المبالغ بالليرة السورية.');
+        $end = Coordinate::stringFromColumnIndex(count($columns));
+        foreach ([1, 2, 3] as $row) {
+            if (count($columns) > 1) {
+                $sheet->mergeCells('A'.$row.':'.$end.$row);
+            }
         }
-        $summary = $book->createSheet();
-        $summary->setTitle('الإجماليات');
-        $summary->setRightToLeft(true);
-        $this->textRow($summary, 1, ['البند', 'المجموع الدقيق', 'سجلات غير محددة / مستثناة']);
-        $summaryRow = 2;
-        foreach ($report['totals']['columns'] as $key => $total) {
-            $label = collect($columns)->firstWhere('key', $key)['label'];
-            $this->textRow($summary, $summaryRow++, [$label, $total['sum'] ?? 'لم يحدد', $total['excluded']]);
+        for ($i = 0; $i < count($columns);) {
+            $start = $i;
+            while ($i + 1 < count($columns) && $columns[$i + 1]['group'] === $columns[$start]['group']) {
+                $i++;
+            }
+            $put($start + 1, 4, $columns[$start]['group_label']);
+            if ($i !== $start) {
+                $sheet->mergeCells(Coordinate::stringFromColumnIndex($start + 1).'4:'.Coordinate::stringFromColumnIndex($i + 1).'4');
+            }
+            $i++;
         }
-        foreach (['disbursed' => 'المصروف الفعلي', 'received' => 'الاستلام الموثق', 'remaining' => 'المتبقي'] as $key => $label) {
-            $this->textRow($summary, $summaryRow++, [$label, $report['totals'][$key]['sum'] ?? 'لم يحدد', $report['totals'][$key]['excluded']]);
-        }
-        $this->textRow($summary, $summaryRow, ['المبالغ نصوص عشرية دقيقة والقيم محفوظة؛ لا توجد معادلات Excel تعيد احتساب تاريخ الشهر.']);
-        $sheet->freezePane('C5');
-        $sheet->getPageSetup()->setRowsToRepeatAtTopByStartAndEnd(1, 4);
-        $sheet->getPageSetup()->setOrientation('landscape');
-        $end = Coordinate::stringFromColumnIndex(count($headers));
-        $sheet->getStyle('A4:'.$end.'4')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
-        $sheet->getStyle('A4:'.$end.'4')->getFill()->setFillType('solid')->getStartColor()->setRGB('243D16');
-        $sheet->getStyle('A1:'.$end.$index)->getAlignment()->setWrapText(true);
-        foreach (range(1, count($headers)) as $i) {
-            $sheet->getColumnDimensionByColumn($i)->setWidth($i === 2 ? 30 : 22);
-        }
-        $definitions = $book->createSheet();
-        $definitions->setTitle('البنود والمعادلات');
-        $definitions->setRightToLeft(true);
-        $this->textRow($definitions, 1, ['البند', 'المجموعة', 'النوع', 'المعادلة المحفوظة']);
         foreach ($columns as $i => $c) {
-            $this->textRow($definitions, $i + 2, [$c['label'], $c['group'], $c['kind'], $c['formula'] ?? 'مدخل صريح']);
+            $put($i + 1, 5, $c['heading']);
+            $sheet->getColumnDimensionByColumn($i + 1)->setWidth($c['key'] === 'full_name' ? 30 : 22);
         }
-        $paymentsSheet = $book->createSheet();
-        $paymentsSheet->setTitle('الصرف والاستلام');
-        $paymentsSheet->setRightToLeft(true);
-        $paymentsSheet->fromArray(['العامل', 'المرجع', 'تاريخ الصرف', 'المبلغ', 'الحالة', 'تاريخ الاستلام', 'الإثبات', 'سبب الإلغاء'], null, 'A1');
-        $i = 2;
-        foreach (array_chunk(array_column($report['filtered_rows'], 'employee_id'), 500) as $ids) {
-            foreach (DB::table('payroll_payments')->where('period', $report['period'])->whereIn('employee_id', $ids)->orderBy('id')->get() as $p) {
-                $name = json_decode($p->identity_snapshot, true)['name'];
-                $values = [$name, $p->reference, $p->paid_on, PayrollPaymentService::amount($p->amount_cents), ['paid' => 'صرف غير موثق الاستلام', 'received' => 'استلام موثق', 'voided' => 'ملغى'][$p->status], $p->received_on, $p->receipt_evidence, $p->void_reason];
-                foreach ($values as $col => $value) {
-                    $paymentsSheet->setCellValueExplicit([$col + 1, $i], (string) ($value ?? ''), DataType::TYPE_STRING);
-                } $i++;
+        $index = 6;
+        foreach ($snapshot['rows'] as $row) {
+            foreach ($columns as $i => $c) {
+                $put($i + 1, $index, PayrollColumns::display($c, $row));
+            }
+            $index++;
+        }
+        foreach ($columns as $i => $c) {
+            $total = $snapshot['totals']['columns'][$c['key']]['sum'] ?? null;
+            $put($i + 1, $index, $i === 0 ? 'الإجمالي ('.$snapshot['totals']['employees'].')' : ($c['aggregation'] === 'sum' ? ($total === null ? 'غير متاح' : PayrollColumns::formatValue($total, $c['type'])) : ''));
+            $color = $c['net'] ? 'E3F0D8' : ($c['kind'] === 'input' ? 'FFFAF0' : ($c['identity'] ? 'FFFFFF' : 'F4F5F1'));
+            $sheet->getStyle(Coordinate::stringFromColumnIndex($i + 1).'6:'.Coordinate::stringFromColumnIndex($i + 1).$index)->getFill()->setFillType('solid')->getStartColor()->setRGB($color);
+        }
+        $sheet->freezePane('C6');
+        $sheet->getPageSetup()->setRowsToRepeatAtTopByStartAndEnd(1, 5);
+        $sheet->getPageSetup()->setOrientation('landscape');
+        $sheet->getStyle('A4:'.$end.'4')->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle('A4:'.$end.'4')->getFill()->setFillType('solid')->getStartColor()->setRGB('1F3D12');
+        $sheet->getStyle('A5:'.$end.'5')->getFont()->setBold(true);
+        $sheet->getStyle('A5:'.$end.'5')->getFill()->setFillType('solid')->getStartColor()->setRGB('EEF4E7');
+        $sheet->getStyle('A1:'.$end.$index)->getAlignment()->setWrapText(true);
+        $sheet->setAutoFilter('A5:'.$end.($index - 1));
+        $definitions = $book->createSheet();
+        $definitions->setTitle('تعريف البنود الظاهرة');
+        $definitions->setRightToLeft(true);
+        foreach ($columns as $i => $c) {
+            $definition = collect($report['config']['columns'])->firstWhere('key', $c['key']);
+            foreach ([$c['heading'], $c['group_label'], $c['type'], $definition['formula'] ?? 'هوية / قيمة محفوظة'] as $j => $text) {
+                $definitions->setCellValueExplicit([$j + 1, $i + 1], $text, DataType::TYPE_STRING);
             }
         }
         $file = tempnam(sys_get_temp_dir(), 'rowad_month_');
@@ -164,12 +166,5 @@ final class MonthlyPayrollExport
         $book->disconnectWorksheets();
 
         return $file;
-    }
-
-    private function textRow(Worksheet $sheet, int $row, array $values): void
-    {
-        foreach ($values as $col => $value) {
-            $sheet->setCellValueExplicit([$col + 1, $row], (string) ($value ?? ''), DataType::TYPE_STRING);
-        }
     }
 }

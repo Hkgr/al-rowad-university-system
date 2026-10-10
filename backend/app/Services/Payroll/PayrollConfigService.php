@@ -110,7 +110,7 @@ class PayrollConfigService
      *
      * @return array{config: array, key: string}
      */
-    public function applyColumn(array $config, ?string $key, array $input): array
+    public function applyColumn(array $config, ?string $key, array $input, ?bool $valuesUsed = null): array
     {
         $errors = [];
         $existing = $key === null ? null : collect($config['columns'])->firstWhere('key', $key);
@@ -126,11 +126,18 @@ class PayrollConfigService
             'blank_as_zero' => true, 'allow_negative' => false, 'warn_negative' => false, 'aggregation' => 'none', 'visible_grid' => true,
             'visible_export' => true, 'compact' => false, 'is_system' => false, 'sort_order' => 0,
         ];
+        if ($existing === null && isset($input['new_key']) && $input['new_key'] !== '') {
+            $newKey = $input['new_key'];
+            if (! is_string($newKey) || ! preg_match('/^c_[a-z0-9][a-z0-9_]{0,37}$/', $newKey) || collect($config['columns'])->contains('key', $newKey) || collect($config['settings'])->contains('key', $newKey)) {
+                throw new PayrollException('مفتاح مخصص فريد يبدأ بـ c_ وحروف لاتينية صغيرة، حتى 40 حرفًا.', 'payroll_validation', 422, ['new_key' => ['مفتاح مخصص غير صالح أو مستخدم.']]);
+            }
+            $column['key'] = $newKey;
+        }
         $systemLocked = $existing !== null && $existing['is_system'];
-        // A protected template column whose FORMULA (only) the owner may change: the net payable.
+        // Only the formula/presentation may change; system identity, type and aggregation remain protected.
         $formulaEditable = $systemLocked && PayrollTemplate::isFormulaEditable($existing['key']);
         if ($systemLocked && ! $formulaEditable && (array_key_exists('formula', $input) || array_key_exists('formula_display', $input))) {
-            $errors['formula'][] = 'معادلة هذا العمود من القالب محمية؛ المعادلة القابلة للتعديل هي معادلة «إجمالي الصافي المستحق» فقط.';
+            $errors['formula'][] = 'هذا العمود لا يملك معادلة قالب قابلة للتعديل.';
         }
         foreach ($input as $field => $value) {
             if (! array_key_exists($field, $column) || in_array($field, ['id', 'key', 'is_system', 'formula'], true)) {
@@ -190,7 +197,7 @@ class PayrollConfigService
 
         // Kind/type changes must never reinterpret stored values.
         if ($existing !== null && ! $systemLocked) {
-            $hasValues = DB::table('payroll_entry_values')->where('payroll_column_id', $existing['id'])->exists();
+            $hasValues = $valuesUsed ?? DB::table('payroll_entry_values')->where('payroll_column_id', $existing['id'])->exists();
             $numeric = ['number', 'amount'];
             if ($hasValues && ($existing['kind'] !== $column['kind'] || ($existing['value_type'] !== $column['value_type'] && ! (in_array($existing['value_type'], $numeric, true) && in_array($column['value_type'], $numeric, true))))) {
                 $errors['value_type'][] = 'يحتوي العمود على بيانات مدخلة؛ لا يمكن تغيير نوعه أو طريقة تعبئته (يمكن التبديل بين رقم ومبلغ فقط).';
@@ -229,9 +236,119 @@ class PayrollConfigService
         }
 
         $config['columns'][] = $column;
+        if ($existing === null && $column['sort_order'] === 0) {
+            $last = max(array_map(fn ($c) => $c['group'] === $column['group'] ? $c['sort_order'] : 0, $config['columns']));
+            $config['columns'][array_key_last($config['columns'])]['sort_order'] = min(65000, $last + 10);
+        }
         $this->assertConsistent($config);
 
         return ['config' => $config, 'key' => $column['key']];
+    }
+
+    /** Apply the existing editor's operations to a MONTH snapshot, never to legacy sheet values. */
+    public function applyMonthlyOperation(array $config, string $action, array $payload, array $rows): array
+    {
+        $key = $payload['key'] ?? null;
+        $used = $key !== null && collect($rows)->contains(fn ($r) => isset($r['inputs'][$key]));
+        switch ($action) {
+            case 'column_create':
+            case 'column_update':
+                $config = $this->applyColumn($config, $action === 'column_create' ? null : $key, $payload['column'], $used)['config'];
+                break;
+            case 'restore':
+                $default = PayrollTemplate::defaultFormula($key);
+                $current = collect($config['columns'])->firstWhere('key', $key);
+                if ($default === null || ! $current || ! $current['is_system']) {
+                    throw new PayrollException('معادلة القالب غير متاحة للاستعادة.', 'payroll_validation', 422);
+                }
+                $config = $this->applyColumn($config, $key, ['formula' => $default], $used)['config'];
+                break;
+            case 'settings':
+                $config = $this->applySettings($config, $payload['settings']);
+                break;
+            case 'delete':
+                $current = collect($config['columns'])->firstWhere('key', $key);
+                if (! $current || $current['is_system']) {
+                    throw new PayrollException('أعمدة القالب لا تُحذف.', 'payroll_column_protected', 409);
+                }
+                if ($used && ! ($payload['confirm_values'] ?? false)) {
+                    throw new PayrollException('توجد قيم لهذا البند؛ أكّد إزالته من قالب الشهر مع إبقاء التاريخ.', 'payroll_column_has_values', 409, [], ['values_count' => collect($rows)->filter(fn ($r) => isset($r['inputs'][$key]))->count()]);
+                }
+                $config['columns'] = array_values(array_filter($config['columns'], fn ($c) => $c['key'] !== $key));
+                break;
+            case 'layout':
+                $layout = $payload['columns'];
+                $keys = array_column($layout, 'key');
+                $known = array_column($config['columns'], 'key');
+                if (count($keys) !== count(array_unique($keys)) || array_diff($keys, $known) || array_diff($known, $keys)) {
+                    throw new PayrollException('يجب إرسال كل الأعمدة مرة واحدة.', 'payroll_validation', 422);
+                }
+                $columns = collect($config['columns'])->keyBy('key');
+                $config['columns'] = [];
+                foreach ($layout as $i => $item) {
+                    $current = $columns[$item['key']];
+                    foreach (['visible_grid', 'visible_export', 'compact'] as $flag) {
+                        $current[$flag] = filter_var($item[$flag] ?? $current[$flag], FILTER_VALIDATE_BOOLEAN);
+                    }
+                    $current['sort_order'] = ($i + 1) * 10;
+                    $config['columns'][] = $current;
+                }
+                break;
+            default:
+                throw new PayrollException('عملية قالب غير مسموحة.', 'payroll_validation', 422);
+        }
+        $this->assertConsistent($config);
+        $groupIndex = array_flip(array_keys(self::GROUPS));
+        usort($config['columns'], fn ($a, $b) => ($groupIndex[$a['group']] <=> $groupIndex[$b['group']]) ?: ($a['sort_order'] <=> $b['sort_order']) ?: strcmp($a['key'], $b['key']));
+
+        return $config;
+    }
+
+    /** Called only under the shared configuration lock by an explicitly confirmed monthly operation. */
+    public function publishMonthlyOperation(array $month, string $action, array $payload, int $expectedRevision, int $userId): array
+    {
+        return $this->guarded($expectedRevision, $userId, function (array $future) use ($month, $action, $payload, $userId): array {
+            // Publish this operation, NOT the old month's entire configuration over unrelated future edits.
+            if ($action === 'column_create') {
+                if (empty($payload['column']['new_key'])) {
+                    throw new PayrollException('هوية العمود الجديد غير مثبتة.', 'payroll_config_conflict', 409);
+                }
+            }
+            $key = $payload['key'] ?? null;
+            $existing = $key === null ? null : collect($future['columns'])->firstWhere('key', $key);
+            $used = $existing && DB::table('payroll_entry_values')->where('payroll_column_id', $existing['id'])->exists();
+            if ($action === 'delete' && $used) {
+                throw new PayrollException('القالب المستقبلي يملك قيمًا قديمة لهذا البند؛ لم تُحذف بيانات. أزله من الشهر الحالي فقط أو أخفه.', 'payroll_config_conflict', 409);
+            }
+            if ($action === 'column_update' && ! $existing) {
+                $column = collect($month['columns'])->firstWhere('key', $key);
+                if (! $column || $column['is_system']) {
+                    throw new PayrollException('تعريف القالب المستقبلي غير متوافق.', 'payroll_config_conflict', 409);
+                }
+                $action = 'column_create';
+                $payload = ['column' => ['new_key' => $key] + $column];
+                unset($payload['column']['key']);
+            }
+            $config = $this->applyMonthlyOperation($future, $action, $payload, $used ? [['inputs' => [$key => '0']]] : []);
+            foreach ($config['columns'] as $column) {
+                $previous = collect($future['columns'])->firstWhere('key', $column['key']);
+                if ($column !== $previous) {
+                    $this->persistColumn($config, $column['key'], $userId, $previous === null);
+                }
+            }
+            foreach ($future['columns'] as $column) {
+                if (! collect($config['columns'])->contains('key', $column['key'])) {
+                    DB::table('payroll_columns')->where('key', $column['key'])->delete();
+                }
+            }
+            foreach ($config['settings'] as $setting) {
+                if ($setting !== collect($future['settings'])->firstWhere('key', $setting['key'])) {
+                    DB::table('payroll_settings')->where('key', $setting['key'])->update(['value_scaled' => PayrollCalculator::toStored(BigDecimal::of($setting['value'])), 'updated_by_user_id' => $userId, 'updated_at' => now()]);
+                }
+            }
+
+            return ['before' => $future, 'after' => ['revision' => $future['revision'] + 1] + $config];
+        });
     }
 
     /**
