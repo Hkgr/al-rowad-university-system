@@ -311,25 +311,29 @@ class PayrollConfigService
             // Publish this operation, NOT the old month's entire configuration over unrelated future edits.
             if ($action === 'column_create') {
                 if (empty($payload['column']['new_key'])) {
-                    throw new PayrollException('هوية العمود الجديد غير مثبتة.', 'payroll_config_conflict', 409);
+                    throw new PayrollException('هوية العمود الجديد غير مثبتة؛ احفظ للشهر الحالي فقط أو راجع تعريف العمود قبل النشر للأشهر الجديدة.', 'payroll_future_publication_incompatible', 409);
                 }
             }
             $key = $payload['key'] ?? null;
             $existing = $key === null ? null : collect($future['columns'])->firstWhere('key', $key);
             $used = $existing && DB::table('payroll_entry_values')->where('payroll_column_id', $existing['id'])->exists();
             if ($action === 'delete' && $used) {
-                throw new PayrollException('القالب المستقبلي يملك قيمًا قديمة لهذا البند؛ لم تُحذف بيانات. أزله من الشهر الحالي فقط أو أخفه.', 'payroll_config_conflict', 409);
+                throw new PayrollException('القالب المستقبلي يملك قيمًا قديمة لهذا البند؛ لم تُحذف بيانات. أزله من الشهر الحالي فقط أو أخفه.', 'payroll_future_publication_incompatible', 409);
             }
             if ($action === 'column_update' && ! $existing) {
                 $column = collect($month['columns'])->firstWhere('key', $key);
                 if (! $column || $column['is_system']) {
-                    throw new PayrollException('تعريف القالب المستقبلي غير متوافق.', 'payroll_config_conflict', 409);
+                    throw new PayrollException('تعريف القالب المستقبلي غير متوافق؛ احفظ للشهر الحالي فقط أو راجع تعريف العمود قبل النشر للأشهر الجديدة.', 'payroll_future_publication_incompatible', 409);
                 }
                 $action = 'column_create';
                 $payload = ['column' => ['new_key' => $key] + $column];
                 unset($payload['column']['key']);
             }
-            $config = $this->applyMonthlyOperation($future, $action, $payload, $used ? [['inputs' => [$key => '0']]] : []);
+            try {
+                $config = $this->applyMonthlyOperation($future, $action, $payload, $used ? [['inputs' => [$key => '0']]] : []);
+            } catch (PayrollException $e) {
+                throw new PayrollException($e->getMessage().' النشر للأشهر الجديدة غير متوافق؛ احفظ للشهر الحالي فقط أو راجع المقترح ثم أكّده مجددًا.', 'payroll_future_publication_incompatible', 409, $e->errors, $e->data);
+            }
             foreach ($config['columns'] as $column) {
                 $previous = collect($future['columns'])->firstWhere('key', $column['key']);
                 if ($column !== $previous) {

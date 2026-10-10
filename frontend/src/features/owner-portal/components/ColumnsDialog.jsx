@@ -76,10 +76,23 @@ export default function ColumnsDialog({ config, employees, canManage: permitted,
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [scope, setScope] = useState({ publishFuture: false, reason: '', confirmed: false })
   const [uncertain, setUncertain] = useState(false)
+  const [editorGuard, setEditorGuard] = useState({}); const [settingsGuard, setSettingsGuard] = useState({})
+  const [restoreTarget, setRestoreTarget] = useState(null)
+  const proposalEpoch = useRef(0); const reviewedEpoch = useRef(null); const writePending = useRef(false)
+  const invalidateReview = useCallback(() => { ++proposalEpoch.current; reviewedEpoch.current = null; setScope(s => ({ ...s, confirmed: false })) }, [])
+  const proposalChanged = useCallback(() => { invalidateReview(); setRestoreTarget(null) }, [invalidateReview])
+  const editorGuardChanged = useCallback(value => setEditorGuard(value), [])
+  const settingsGuardChanged = useCallback(value => setSettingsGuard(value), [])
+  function changeScope(patch) {
+    if ('confirmed' in patch) reviewedEpoch.current = patch.confirmed ? proposalEpoch.current : null
+    else { ++proposalEpoch.current; reviewedEpoch.current = null }
+    const next = { ...scope, ...patch, confirmed: 'confirmed' in patch ? patch.confirmed : false }
+    setScope(next); onScopeChange?.(next)
+  }
   const canManage = permitted && !busy && !uncertain && !message?.conflict
   useEffect(() => { onScopeChange?.(scope) }, [scope, onScopeChange])
-  useEffect(() => { onGuard?.({ dirty: layoutDirty || !!editing, busy, uncertain }); return () => onGuard?.({}) }, [layoutDirty, editing, busy, uncertain, onGuard])
-  const close = () => { if (busy || uncertain) return; if ((layoutDirty || editing) && !window.confirm('تجاهل مسودة إعدادات القالب وإغلاق النافذة؟')) return; onClose() }
+  useEffect(() => { onGuard?.({ dirty: layoutDirty || !!editing || !!confirmDelete || editorGuard.dirty || settingsGuard.dirty, proposal: { column: editorGuard.proposal, settings: settingsGuard.proposal }, busy, uncertain }); return () => onGuard?.({}) }, [layoutDirty, editing, confirmDelete, editorGuard, settingsGuard, busy, uncertain, onGuard])
+  const close = () => { if (busy || uncertain) return; if ((layoutDirty || editing || confirmDelete || editorGuard.dirty || settingsGuard.dirty) && !window.confirm('تجاهل مسودة إعدادات القالب وإغلاق النافذة؟')) return; onClose() }
 
   // A newer configuration (after a save or a reload) replaces the draft only when nothing is being edited.
   useEffect(() => {
@@ -94,25 +107,30 @@ export default function ColumnsDialog({ config, employees, canManage: permitted,
   ], [config])
 
   const fail = useCallback(error => {
-    const conflict = error?.status === 409 && error?.errorCode !== 'payroll_column_has_values'
-    if (error.pendingRequestId) setUncertain(true)
-    setMessage({ tone: 'error', conflict, text: conflict ? 'عُدّلت الإعدادات من جهة أخرى بعد فتح هذه النافذة. لم يُحفظ شيء. حدّث الإعدادات ثم أعد المحاولة.' : errorText(error) })
-  }, [])
+    const conflict = error?.status === 409 && error?.errorCode === 'payroll_config_conflict'
+    invalidateReview()
+    if (error?.pendingRequestId) setUncertain(true)
+    setMessage({ tone: 'error', conflict, text: errorText(error) })
+  }, [invalidateReview])
 
   async function guard(action) {
-    if (busy || uncertain || message?.conflict) return null
-    if (monthly && (!scope.confirmed || (monthly.status === 'approved' && !scope.reason.trim()))) { setMessage({ tone: 'error', text: 'راجع نطاق الحفظ وأكّد العملية؛ تصحيح الشهر المعتمد يحتاج سببًا.' }); return null }
+    if (writePending.current || busy || uncertain || message?.conflict) return null
+    const reviewed = proposalEpoch.current
+    if (monthly && (!scope.confirmed || reviewedEpoch.current !== reviewed || (monthly.status === 'approved' && !scope.reason.trim()))) { setMessage({ tone: 'error', text: 'راجع المقترح الحالي ونطاق الحفظ وأكّد العملية؛ أي تعديل يلغي التأكيد السابق.' }); return null }
+    writePending.current = true
     setBusy(true); setMessage(null)
     try {
       const saved = await ensureSaved()
       if (!saved) { setMessage({ tone: 'error', text: 'احفظ تعديلات الجدول أو حلّ مشكلة الحفظ أولًا، ثم عدّل الأعمدة.' }); return null }
-      const result = await action(); setScope(s => ({ ...s, confirmed: false })); return result
-    } catch (error) { fail(error); return undefined } finally { setBusy(false) }
+      if (monthly && (reviewedEpoch.current !== reviewed || proposalEpoch.current !== reviewed)) { setMessage({ tone: 'error', text: 'تغير المقترح بعد التأكيد؛ راجعه وأكّده مجددًا. لم يُرسل طلب حفظ.' }); return null }
+      const result = await action(); invalidateReview(); return result
+    } catch (error) { fail(error); return undefined } finally { writePending.current = false; setBusy(false) }
   }
 
   // ── layout tab ──
   const groupOf = key => byKey.get(key).group
   const move = (key, delta) => {
+    invalidateReview(); setConfirmDelete(null)
     setLayout(current => {
       const group = groupOf(key)
       const indexes = current.map((item, i) => [item, i]).filter(([item]) => groupOf(item.key) === group).map(([, i]) => i)
@@ -125,7 +143,7 @@ export default function ColumnsDialog({ config, employees, canManage: permitted,
     })
     setLayoutDirty(true)
   }
-  const toggle = (key, field, value) => { setLayout(current => current.map(item => (item.key === key ? { ...item, [field]: value } : item))); setLayoutDirty(true) }
+  const toggle = (key, field, value) => { invalidateReview(); setConfirmDelete(null); setLayout(current => current.map(item => (item.key === key ? { ...item, [field]: value } : item))); setLayoutDirty(true) }
   const saveLayout = () => guard(async () => {
     const result = await savePayrollLayout(layout, config.revision)
     setLayoutDirty(false)
@@ -133,10 +151,11 @@ export default function ColumnsDialog({ config, employees, canManage: permitted,
     await onChanged(result.data.config, result.data)
   })
 
-  const startNew = () => { if (!canManage) return; if (layoutDirty) { setMessage({ tone: 'error', text: 'احفظ ترتيب الأعمدة أو تراجع عنه قبل تحرير عمود.' }); return }; setEditing({ key: null, draft: emptyColumn() }); setTab('editor'); setMessage(null) }
+  const startNew = () => { if (!canManage) return; if (layoutDirty) { setMessage({ tone: 'error', text: 'احفظ ترتيب الأعمدة أو تراجع عنه قبل تحرير عمود.' }); return }; proposalChanged(); setConfirmDelete(null); setEditing({ key: null, draft: emptyColumn() }); setTab('editor'); setMessage(null) }
   const startEdit = key => {
     if (busy || layoutDirty) { setMessage({ tone: 'error', text: 'احفظ ترتيب الأعمدة أو تراجع عنه قبل تحرير عمود.' }); return }
     const c = byKey.get(key)
+    proposalChanged(); setConfirmDelete(null)
     setEditing({ key, draft: { ...c, formula: c.formula_display ?? '' } })
     setTab('editor'); setMessage(null)
   }
@@ -144,6 +163,7 @@ export default function ColumnsDialog({ config, employees, canManage: permitted,
   const requestDelete = key => {
     if (busy || layoutDirty) { setMessage({ tone: 'error', text: 'احفظ ترتيب الأعمدة أو تراجع عنه قبل إزالة عمود.' }); return }
     const c = byKey.get(key)
+    proposalChanged()
     setConfirmDelete({ key, label: c.label, dependents: c.dependents ?? [], values: false })
   }
   const doDelete = () => guard(async () => {
@@ -153,23 +173,30 @@ export default function ColumnsDialog({ config, employees, canManage: permitted,
       setMessage({ tone: 'info', text: `تم حذف «${confirmDelete.label}».` })
       await onChanged(result.data.config, result.data)
     } catch (error) {
-      if (error?.errorCode === 'payroll_column_has_values') { setConfirmDelete(c => ({ ...c, values: true, valuesCount: error.details?.values_count })); return }
+      if (error?.errorCode === 'payroll_column_has_values') { invalidateReview(); setConfirmDelete(c => ({ ...c, values: true, valuesCount: error.details?.values_count })); return }
       throw error
     }
   })
 
   const tabs = [['columns', 'الأعمدة'], ['editor', editing ? (editing.key ? 'تعديل عمود' : 'عمود جديد') : 'إضافة عمود'], ['settings', 'الإعدادات العامة']]
+  function selectTab(id) {
+    if (id === tab || busy || uncertain) return
+    if (((tab === 'editor' && editorGuard.dirty) || (tab === 'settings' && settingsGuard.dirty)) && !window.confirm('تجاهل مسودة هذا القسم والانتقال؟')) return
+    proposalChanged(); setConfirmDelete(null)
+    if (tab === 'editor') setEditing(null)
+    if (id === 'editor' && !editing) startNew(); else setTab(id)
+  }
 
   return (
     <PayrollDialog
       title="إدارة الأعمدة والمعادلات" subtitle={monthly ? `قالب شهر ${monthly.period}؛ كل حفظ يعيد حساب هذا الشهر فقط، دون تغيير الصرف والاستلام.` : 'الأعمدة والمعادلات والنسب تُطبّق على كل الموظفين دون استثناء. كل حفظ عملية واحدة ذرّية.'}
       onClose={close} footer={<button type="button" className={SECONDARY} disabled={busy || uncertain} onClick={close}>إغلاق</button>}
     >
-      {monthly && <fieldset className="mb-4 grid gap-2 rounded-[12px] border border-primary/15 bg-primary/[0.03] p-3"><legend className="px-1 font-bold">نطاق الحفظ — {monthly.period}</legend><p>يُطبّق على الشهر الحالي. الأشهر السابقة وسجلات الصرف والاستلام لا تتغير.</p><Check checked={scope.publishFuture} disabled={busy || uncertain} onChange={value => setScope(s => ({ ...s, publishFuture: value, confirmed: false }))}>اعتماد القالب للأشهر الجديدة أيضًا</Check>{monthly.status === 'approved' && <Field id="monthly-correction-reason" label="سبب تصحيح الشهر المعتمد"><input id="monthly-correction-reason" className={INPUT} value={scope.reason} disabled={busy || uncertain} onChange={e => setScope(s => ({ ...s, reason: e.target.value, confirmed: false }))} /></Field>}<Check checked={scope.confirmed} disabled={busy || uncertain} onChange={value => setScope(s => ({ ...s, confirmed: value }))}>راجعت التعديل ونطاقه؛ {scope.publishFuture ? 'الشهر الحالي والأشهر الجديدة' : 'الشهر الحالي فقط'}.</Check></fieldset>}
-      {uncertain && <div role="alert" className="mb-3 rounded-[10px] bg-amber-50 p-3">نتيجة الحفظ غير مؤكدة. المسودة محفوظة ولم يُكرر الطلب.<button className={SECONDARY} disabled={busy} onClick={async () => { setBusy(true); try { const result = await recoverPayrollConfig(); await onChanged(result.data.config, result.data); setUncertain(false); setEditing(null); setLayoutDirty(false); setScope(s => ({ ...s, confirmed: false })); setMessage({ tone: 'info', text: 'تأكد الحفظ من النتيجة المسجلة؛ لم نكرر الكتابة.' }) } catch (e) { setMessage({ tone: 'error', text: errorText(e) }) } finally { setBusy(false) } }}>التحقق من النتيجة المحفوظة</button></div>}
+      {monthly && <fieldset className="mb-4 grid gap-2 rounded-[12px] border border-primary/15 bg-primary/[0.03] p-3"><legend className="px-1 font-bold">نطاق الحفظ — {monthly.period}</legend><p>يُطبّق على الشهر الحالي. الأشهر السابقة وسجلات الصرف والاستلام لا تتغير.</p><Check checked={scope.publishFuture} disabled={busy || uncertain} onChange={value => changeScope({ publishFuture: value })}>اعتماد القالب للأشهر الجديدة أيضًا</Check>{monthly.status === 'approved' && <Field id="monthly-correction-reason" label="سبب تصحيح الشهر المعتمد"><input id="monthly-correction-reason" className={INPUT} value={scope.reason} disabled={busy || uncertain} onChange={e => changeScope({ reason: e.target.value })} /></Field>}<Check checked={scope.confirmed} disabled={busy || uncertain} onChange={value => changeScope({ confirmed: value })}>راجعت التعديل ونطاقه؛ {scope.publishFuture ? 'الشهر الحالي والأشهر الجديدة' : 'الشهر الحالي فقط'}.</Check></fieldset>}
+      {uncertain && <div role="alert" className="mb-3 rounded-[10px] bg-amber-50 p-3">نتيجة الحفظ غير مؤكدة. المسودة محفوظة ولم يُكرر الطلب.<button className={SECONDARY} disabled={busy} onClick={async () => { setBusy(true); try { const result = await recoverPayrollConfig(); await onChanged(result.data.config, result.data); setUncertain(false); setEditing(null); setLayoutDirty(false); proposalChanged(); setMessage({ tone: 'info', text: 'تأكد الحفظ من النتيجة المسجلة؛ لم نكرر الكتابة.' }) } catch (e) { setMessage({ tone: 'error', text: errorText(e) }) } finally { setBusy(false) } }}>التحقق من النتيجة المحفوظة</button></div>}
       <div role="tablist" aria-label="أقسام الإدارة" className="mb-4 flex flex-wrap gap-2 border-b border-primary/10 pb-2">
         {tabs.map(([id, label]) => (
-          <button key={id} role="tab" type="button" disabled={busy || uncertain} aria-selected={tab === id} id={`tab-${id}`} aria-controls={`panel-${id}`} onClick={() => { if (id === 'editor' && !editing) startNew(); else setTab(id) }}
+          <button key={id} role="tab" type="button" disabled={busy || uncertain} aria-selected={tab === id} id={`tab-${id}`} aria-controls={`panel-${id}`} onClick={() => selectTab(id)}
             className={`rounded-[10px] px-4 py-2 text-[12.5px] font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${tab === id ? 'bg-primary text-white' : 'bg-primary/[0.06] text-primary-dark hover:bg-primary/10'}`}>{label}</button>
         ))}
       </div>
@@ -177,7 +204,7 @@ export default function ColumnsDialog({ config, employees, canManage: permitted,
       {message && (
         <div role={message.tone === 'error' ? 'alert' : 'status'} className={`mb-3 rounded-[10px] px-3 py-2 text-[12.5px] font-semibold ${message.tone === 'error' ? 'bg-red-50 text-red-800' : 'bg-primary/[0.07] text-primary-dark'}`}>
           {message.text}
-          {message.conflict && !uncertain && <button type="button" className="mr-3 underline" onClick={async () => { if (!window.confirm('تجاهل مسودة القالب وفتح إعدادات الشهر الحالية؟ لا يُعاد الحفظ.')) return; setBusy(true); try { await onChanged(null); setLayoutDirty(false); setEditing(null); setScope(s => ({ ...s, confirmed: false })); setMessage({ tone: 'info', text: 'تم تحديث الإعدادات من الخادم.' }) } catch (e) { setMessage({ tone: 'error', conflict: true, text: errorText(e) }) } finally { setBusy(false) } }}>فتح الإعدادات الحالية بعد تجاهل المسودة</button>}
+          {message.conflict && !uncertain && <button type="button" className="mr-3 underline" onClick={async () => { if (!window.confirm('تجاهل مسودة القالب وفتح إعدادات الشهر الحالية؟ لا يُعاد الحفظ.')) return; setBusy(true); try { await onChanged(null); setLayoutDirty(false); setEditing(null); setConfirmDelete(null); proposalChanged(); setMessage({ tone: 'info', text: 'تم تحديث الإعدادات من الخادم.' }) } catch (e) { setMessage({ tone: 'error', conflict: true, text: errorText(e) }) } finally { setBusy(false) } }}>فتح الإعدادات الحالية بعد تجاهل المسودة</button>}
         </div>
       )}
 
@@ -231,7 +258,7 @@ export default function ColumnsDialog({ config, employees, canManage: permitted,
           {canManage && (
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <button type="button" className={PRIMARY} disabled={!layoutDirty || busy} onClick={saveLayout}>حفظ الترتيب والظهور</button>
-              {layoutDirty && <><span className="text-[12px] font-bold text-amber-700">تغييرات غير محفوظة</span><button type="button" className={SECONDARY} onClick={() => { setLayoutDirty(false) }}>تراجع عن التغييرات</button></>}
+              {layoutDirty && <><span className="text-[12px] font-bold text-amber-700">تغييرات غير محفوظة</span><button type="button" className={SECONDARY} onClick={() => { invalidateReview(); setLayoutDirty(false) }}>تراجع عن التغييرات</button></>}
             </div>
           )}
           {confirmDelete && (
@@ -244,7 +271,7 @@ export default function ColumnsDialog({ config, employees, canManage: permitted,
               ) : <p>سيُحذف العمود من الجدول والتصدير. لا تعتمد عليه أي معادلة.</p>}
               <div className="mt-2 flex gap-2">
                 {confirmDelete.dependents.length === 0 && <button type="button" className={DANGER} disabled={busy || !canManage} onClick={doDelete}>{monthly ? 'إزالة من قالب الشهر مع حفظ التاريخ' : confirmDelete.values ? 'حذف العمود وقيمه' : 'تأكيد الحذف'}</button>}
-                <button type="button" className={SECONDARY} onClick={() => setConfirmDelete(null)}>إلغاء</button>
+                <button type="button" className={SECONDARY} disabled={busy || uncertain} onClick={() => { invalidateReview(); setConfirmDelete(null) }}>إلغاء</button>
               </div>
             </div>
           )}
@@ -254,25 +281,33 @@ export default function ColumnsDialog({ config, employees, canManage: permitted,
       {tab === 'editor' && editing && (
         <ColumnEditor
           key={editing.key ?? 'new'} editing={editing} config={config} references={references} employees={employees} canManage={canManage} busy={busy}
-          onCancel={() => { setEditing(null); setTab('columns') }}
-          onSave={draft => guard(async () => {
-            const payload = columnPayload(draft, editing.key ? byKey.get(editing.key) : null)
-            const result = editing.key ? await updatePayrollColumn(editing.key, payload, config.revision) : await createPayrollColumn(payload, config.revision)
-            setEditing(null); setTab('columns'); setMessage({ tone: 'info', text: editing.key ? 'تم حفظ التعديل.' : 'تمت إضافة العمود. لم تتغير أي قيمة قائمة.' })
-            await onChanged(result.data.config, result.data)
-          })}
+          onProposalChange={proposalChanged} onGuardChange={editorGuardChanged} restorePending={restoreTarget === editing.key}
+          onCancel={() => { if (busy || uncertain) return; proposalChanged(); setEditing(null); setTab('columns') }}
+          onSave={draft => {
+            if (monthly && restoreTarget !== null) { proposalChanged(); setMessage({ tone: 'info', text: 'انتقلت من الاستعادة إلى حفظ مقترح العمود؛ راجعه وأكّده مجددًا.' }); return }
+            return guard(async () => {
+              const payload = columnPayload(draft, editing.key ? byKey.get(editing.key) : null)
+              const result = editing.key ? await updatePayrollColumn(editing.key, payload, config.revision) : await createPayrollColumn(payload, config.revision)
+              setEditing(null); setTab('columns'); setMessage({ tone: 'info', text: editing.key ? 'تم حفظ التعديل.' : 'تمت إضافة العمود. لم تتغير أي قيمة قائمة.' })
+              await onChanged(result.data.config, result.data)
+            })
+          }}
           reportError={fail}
-          onRestore={() => guard(async () => {
-            const result = await restorePayrollColumnFormula(editing.key, config.revision)
-            setEditing(null); setTab('columns'); setMessage({ tone: 'info', text: 'تمت استعادة معادلة القالب. لم تتغير الإعدادات ولا القيم المدخلة ولا الأعمدة المخصصة.' })
-            await onChanged(result.data.config, result.data)
-          })}
+          onRestore={() => {
+            if (monthly && restoreTarget !== editing.key) { invalidateReview(); setRestoreTarget(editing.key); setMessage({ tone: 'info', text: 'اخترت استعادة معادلة القالب. راجع نطاقها وأكّد العملية ثم اضغط تأكيد الاستعادة.' }); return }
+            return guard(async () => {
+              const result = await restorePayrollColumnFormula(editing.key, config.revision)
+              setEditing(null); setTab('columns'); setMessage({ tone: 'info', text: 'تمت استعادة معادلة القالب. لم تتغير الإعدادات ولا القيم المدخلة ولا الأعمدة المخصصة.' })
+              await onChanged(result.data.config, result.data)
+            })
+          }}
         />
       )}
 
       {tab === 'settings' && (
         <SettingsPanel
           key={config.revision} config={config} employees={employees} canManage={canManage} busy={busy}
+          onProposalChange={proposalChanged} onGuardChange={settingsGuardChanged}
           onSave={values => guard(async () => {
             const result = await savePayrollSettings(values, config.revision)
             setMessage({ tone: 'info', text: 'تم حفظ الإعدادات وإعادة حساب كل الموظفين.' })
@@ -302,7 +337,7 @@ function columnPayload(draft, existing) {
   return payload
 }
 
-function ColumnEditor({ editing, config, references, employees, canManage, busy, onSave, onCancel, onRestore, reportError }) {
+function ColumnEditor({ editing, config, references, employees, canManage, busy, onSave, onCancel, onRestore, reportError, onProposalChange, onGuardChange, restorePending }) {
   const { previewPayrollConfig } = usePayrollApi()
   const existing = editing.key ? config.columns.find(c => c.key === editing.key) : null
   const system = Boolean(existing?.is_system)
@@ -313,7 +348,8 @@ function ColumnEditor({ editing, config, references, employees, canManage, busy,
   const [previewError, setPreviewError] = useState('')
   const [employeeId, setEmployeeId] = useState(employees[0]?.id ?? '')
   const seq = useRef(0)
-  const set = (field, value) => { setDraft(d => ({ ...d, [field]: value })); setErrors(e => ({ ...e, [field]: '' })) }
+  const set = (field, value) => { onProposalChange(); setDraft(d => ({ ...d, [field]: value })); setErrors(e => ({ ...e, [field]: '' })) }
+  useEffect(() => { onGuardChange({ dirty: JSON.stringify(draft) !== JSON.stringify(editing.draft), proposal: draft }); return () => onGuardChange({}) }, [draft, editing.draft, onGuardChange])
   const isFormula = draft.kind === 'formula'
   const numeric = draft.value_type !== 'text'
   const lockedType = Boolean(editing.key) && !system
@@ -387,7 +423,7 @@ function ColumnEditor({ editing, config, references, employees, canManage, busy,
           {formulaEditable && (
             <div className="mt-2 flex flex-wrap items-center gap-3 rounded-[10px] bg-amber-50 px-3 py-2 text-[12px] text-amber-950" data-testid="net-formula-note">
               <span>معادلة <b>{existing.label}</b> الافتراضية: <span className="font-mono" dir="rtl" data-testid="template-formula">{existing.template_formula_display}</span>. يؤثر العمود المخصص في الصافي فقط إذا أشارت إليه المعادلات.</span>
-              {canManage && <button type="button" className={SECONDARY} disabled={busy || existing.is_template_default} onClick={onRestore}>استعادة معادلة القالب</button>}
+              {canManage && <button type="button" className={SECONDARY} disabled={busy || existing.is_template_default} onClick={onRestore}>{restorePending ? 'تأكيد استعادة معادلة القالب' : 'استعادة معادلة القالب'}</button>}
             </div>
           )}
           <p id="formula-help" className="mt-1 text-[11px] leading-5 text-text-light">
@@ -444,17 +480,19 @@ function ColumnEditor({ editing, config, references, employees, canManage, busy,
 
       <div className="flex flex-wrap items-center gap-2">
         {canManage && <button type="button" className={PRIMARY} disabled={busy || Boolean(shownPreviewError)} onClick={submit}>{editing.key ? 'حفظ التعديل' : 'إضافة العمود'}</button>}
-        <button type="button" className={SECONDARY} onClick={onCancel}>إلغاء</button>
+        <button type="button" className={SECONDARY} disabled={busy} onClick={onCancel}>إلغاء</button>
       </div>
     </div>
   )
 }
 
 /** Global settings (rates and the exemption): edited as plain numbers, previewed on every employee, saved atomically. */
-function SettingsPanel({ config, employees, canManage, busy, onSave }) {
+function SettingsPanel({ config, employees, canManage, busy, onSave, onProposalChange, onGuardChange }) {
   const { previewPayrollConfig } = usePayrollApi()
   const textOf = s => (s.value_type === 'percent' ? pctText(parseDec(s.value)) : s.value)
   const [values, setValues] = useState(() => Object.fromEntries(config.settings.map(s => [s.key, textOf(s)])))
+  const [baseline] = useState(() => Object.fromEntries(config.settings.map(s => [s.key, textOf(s)])))
+  useEffect(() => { onGuardChange({ dirty: JSON.stringify(values) !== JSON.stringify(baseline), proposal: values }); return () => onGuardChange({}) }, [values, baseline, onGuardChange])
   const [impact, setImpact] = useState(null)
   const [previewError, setPreviewError] = useState('')
   const seq = useRef(0)
@@ -498,7 +536,7 @@ function SettingsPanel({ config, employees, canManage, busy, onSave }) {
       <div className="grid grid-cols-3 gap-3 max-[760px]:grid-cols-1">
         {config.settings.map(s => (
           <Field key={s.key} id={`setting-${s.key}`} label={`${s.label}${s.value_type === 'percent' ? ' (%)' : ` (${SYMBOL})`}`} error={errors[s.key]}>
-            <input id={`setting-${s.key}`} className={INPUT} dir="ltr" inputMode="decimal" value={values[s.key]} disabled={!canManage} onChange={event => setValues(v => ({ ...v, [s.key]: event.target.value }))} />
+            <input id={`setting-${s.key}`} className={INPUT} dir="ltr" inputMode="decimal" value={values[s.key]} disabled={!canManage} onChange={event => { onProposalChange(); setValues(v => ({ ...v, [s.key]: event.target.value })) }} />
           </Field>
         ))}
       </div>
