@@ -58,7 +58,7 @@ final class PayrollColumns
     {
         return (string) match ($key) {
             'employee_number' => $row['employee_number'], 'full_name' => $row['full_name'], 'job_title' => $row['job_title'],
-            'body' => $row['body_name'], 'workplace' => $row['workplace_label'], 'academic_level' => $row['academic_level'] ?? '',
+            'body', 'body_name' => $row['body_name'], 'workplace', 'workplace_label' => $row['workplace_label'], 'academic_level' => $row['academic_level'] ?? '',
         };
     }
 

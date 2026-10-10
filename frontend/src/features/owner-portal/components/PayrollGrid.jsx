@@ -44,7 +44,7 @@ function clipboardText(column, row) {
   return column.type === 'percent' ? `${pctText(parseDec(cell.v))}%` : cell.v
 }
 
-export default function PayrollGrid({ snapshot, columns: columnDefs, totals, sort, canEdit, onSort, onEditMeta, onUndo, onRedo, onClear, onPaste, onInvalidEdit, onFocusCell, controller, invalid, announce }) {
+export default function PayrollGrid({ snapshot, columns: columnDefs, totals, sort, canEdit, onSort, onEditMeta, onUndo, onRedo, onClear, onPaste, onInvalidEdit, onFocusCell, controller, invalid, announce, columnWidths, onWidthsChange, identityActionLabel = 'تعديل بيانات الموظف', active = true, onEditingChange }) {
   const gridRef = useRef(null)
   const wrapperRef = useRef(null)
   const latest = useRef({})
@@ -57,7 +57,8 @@ export default function PayrollGrid({ snapshot, columns: columnDefs, totals, sor
     query.addEventListener('change', onChange)
     return () => query.removeEventListener('change', onChange)
   }, [])
-  const [widths, setWidths] = useState({}) // widths the user dragged; a rebuilt column list must not reset them
+  const [localWidths, setWidths] = useState({}) // monthly host can retain widths across view/context refreshes
+  const widths = columnWidths ?? localWidths
   const hooks = useRef({ moveAfterSave: null, onInvalid: null })
   const getHooks = useCallback(() => hooks.current, [])
   const editStartedAt = useRef(0) // RevoGrid mounts the editor input a tick after an edit starts; keys in that window belong to the edit
@@ -129,7 +130,7 @@ export default function PayrollGrid({ snapshot, columns: columnDefs, totals, sor
           if (model._footer) {
             const total = model._totals[prop]
             if (!total) return h('span', {}, '')
-            return h('span', { class: 'pg-amount pg-footer-value', dir: 'ltr', title: total.excluded ? `${total.excluded} سجل غير متاح (ناقص أو به خطأ) مستثنى من هذا المجموع` : 'مجموع كل الصفوف المطابقة' }, [formatValue(column.type, total.sum), total.excluded ? h('sup', { class: 'pg-excluded' }, '*') : null])
+            return h('span', { class: 'pg-amount pg-footer-value', dir: 'ltr', title: total.excluded ? `${total.excluded} سجل غير متاح (ناقص أو به خطأ) مستثنى من هذا المجموع` : 'مجموع كل الصفوف المطابقة' }, [total.sum == null ? 'غير متاح' : formatValue(column.type, total.sum), total.excluded ? h('sup', { class: 'pg-excluded' }, '*') : null])
           }
           const cell = model._cells?.[prop]
           if (cell?.st === 'missing') return column.computed ? h('span', { class: 'pg-unavailable', title: cell.m }, '—') : h('span', { title: cell.m }, '') // a blank input stays blank; only a calculated result is "unavailable"
@@ -142,7 +143,7 @@ export default function PayrollGrid({ snapshot, columns: columnDefs, totals, sor
           ? h('span', { class: 'pg-footer-label' }, model.full_name)
           : h('span', { class: 'pg-name' }, [
             h('span', { class: 'pg-name-text' }, model.full_name),
-            h('button', { type: 'button', class: 'pg-edit', 'data-edit-id': model.id, 'aria-label': `تعديل بيانات ${model.full_name}`, title: 'تعديل بيانات الموظف' }, '✎'),
+            h('button', { type: 'button', class: 'pg-edit', 'data-edit-id': model.id, 'aria-label': `${identityActionLabel} — ${model.full_name}`, title: identityActionLabel }, identityActionLabel === 'تعديل بيانات الموظف' ? '✎' : '↗'),
           ]))
       } else if (column.prop === 'employee_number') {
         base.cellTemplate = (h, { model }) => h('span', { class: 'pg-code', dir: 'ltr' }, model.employee_number)
@@ -156,11 +157,11 @@ export default function PayrollGrid({ snapshot, columns: columnDefs, totals, sor
       if (members.length) groups.push({ key, members })
     }
     return groups.map(({ key, members }) => ({ name: GROUP_LABELS[key], children: members.map((column, index) => leaf(column, index)), _group: key }))
-  }, [canEdit, sort, invalid, layout, columnDefs, compactScreen, widths])
+  }, [canEdit, sort, invalid, layout, columnDefs, compactScreen, widths, identityActionLabel])
 
   // Latest values for the long-lived DOM listeners.
   useEffect(() => { hooks.current.onInvalid = onInvalidEdit
-    latest.current = { layout, logical, columnDefs, rows, canEdit, onUndo, onRedo, onClear, onPaste, onEditMeta, onInvalidEdit, onFocusCell, controller, announce } })
+    latest.current = { layout, logical, columnDefs, rows, canEdit, onUndo, onRedo, onClear, onPaste, onEditMeta, onInvalidEdit, onFocusCell, controller, announce, onEditingChange } })
 
   const grid = () => gridRef.current
 
@@ -170,9 +171,10 @@ export default function PayrollGrid({ snapshot, columns: columnDefs, totals, sor
   const hasRows = snapshot.rows.length > 0
   useEffect(() => {
     // Twice: the first call can land before RevoGrid has measured its viewport.
+    if (!active) return undefined
     const timers = [150, 600].map(delay => window.setTimeout(() => { if (firstFree) grid()?.scrollToColumnProp?.(firstFree, 'rgCol') }, delay))
     return () => timers.forEach(timer => window.clearTimeout(timer))
-  }, [firstFree, columnSignature, compactScreen, hasRows])
+  }, [firstFree, columnSignature, compactScreen, hasRows, active])
 
   /** Focused cell and selection translated into display-row / reading-order-column indexes. Footer (totals) cells are not selectable data. */
   const readSelection = useCallback(async () => {
@@ -276,6 +278,7 @@ export default function PayrollGrid({ snapshot, columns: columnDefs, totals, sor
       }
       if (key === 'Escape') {
         editStartedAt.current = 0
+        latest.current.onEditingChange?.(false)
         // After the editor closes keep the cell focused so the keyboard keeps working.
         window.setTimeout(async () => { const current = await readSelection(); if (current) focusCell(current.focus.row, current.focus.col) }, 80)
       }
@@ -390,6 +393,7 @@ export default function PayrollGrid({ snapshot, columns: columnDefs, totals, sor
     // normally (cancelling the event leaves its keyboard handling stuck) while the value shown comes from our state.
     const { prop, val, model, rowIndex } = event.detail
     editStartedAt.current = 0
+    onEditingChange?.(false)
     const move = hooks.current.moveAfterSave
     hooks.current.moveAfterSave = null
     const order = latest.current.logical
@@ -402,10 +406,10 @@ export default function PayrollGrid({ snapshot, columns: columnDefs, totals, sor
     controller.edit([{ id: model.id, key: prop, value: parsed.value }])
     setRefresh(n => n + 1)
   }
-  const onBeforeEditStart = () => { editStartedAt.current = Date.now() }
+  const onBeforeEditStart = () => { editStartedAt.current = Date.now(); onEditingChange?.(true) }
   const onBeforeRangeEdit = event => event.preventDefault() // multi-cell writes only via our paste/clear/undo paths
   const onBeforeAutofill = event => event.preventDefault() // the fill handle must not bypass validation
-  const onColumnResize = event => setWidths(current => ({ ...current, ...Object.fromEntries(Object.values(event.detail ?? {}).filter(column => column?.prop).map(column => [column.prop, column.size])) }))
+  const onColumnResize = event => { const next = { ...widths, ...Object.fromEntries(Object.values(event.detail ?? {}).filter(column => column?.prop).map(column => [column.prop, column.size])) }; setWidths(next); onWidthsChange?.(next) }
   const onHeaderClick = event => {
     const target = event.detail?.prop
     const column = latest.current.columnDefs.find(item => item.prop === target)

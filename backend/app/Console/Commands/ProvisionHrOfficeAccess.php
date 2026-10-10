@@ -9,9 +9,9 @@ use Illuminate\Support\Facades\DB;
 
 final class ProvisionHrOfficeAccess extends Command
 {
-    protected $signature = 'hr-office:provision-access {--grant-hr : Assign office read/preparation/classification/recruitment/work-time rights to the existing hr_officer role} {--grant-vp : Assign those permissions plus review to the existing administrative VP role} {--grant-vp-payroll : Grant accounting entry/read only to the existing administrative VP} {--grant-vp-accounting : Explicitly grant amount editing, period preparation/correction, payments and financial export; not formulas or owner-portal access} {--grant-vp-actions : Explicitly grant relationship correction/cancellation and individual worker PDF export} {--grant-vp-payments : Explicitly grant disbursement/receipt recording} {--check : Read only}';
+    protected $signature = 'hr-office:provision-access {--grant-hr : Assign office read/preparation/classification/recruitment/work-time rights to the existing hr_officer role} {--grant-vp : Assign those permissions plus review to the existing administrative VP role} {--grant-vp-payroll : Grant accounting entry/read only to the existing administrative VP} {--grant-vp-accounting : Explicitly grant amount editing, period preparation/correction, payments and financial export; not formulas or owner-portal access} {--grant-vp-formulas : Explicitly grant existing payroll configuration/formula permission to the administrative VP; no HR grants} {--grant-vp-actions : Explicitly grant relationship correction/cancellation and individual worker PDF export} {--grant-vp-payments : Explicitly grant disbursement/receipt recording} {--check : Read only}';
 
-    protected $description = 'Register HR permissions and explicit VP accounting grants; no accounts/scopes, owner-portal access or formula-management grants';
+    protected $description = 'Register HR permissions and explicitly selected VP accounting/formula grants; no accounts/scopes or owner-portal access';
 
     private const VP_PAYROLL = [HrOffice::PAYROLL_ACCESS, OwnerPortal::PAYROLL_VIEW];
 
@@ -34,7 +34,7 @@ final class ProvisionHrOfficeAccess extends Command
                 }
                 $payrollRole = null;
                 $payrollPermissions = collect();
-                $extraCodes = array_values(array_unique(array_merge($this->option('grant-vp-payroll') ? self::VP_PAYROLL : [], $this->option('grant-vp-actions') ? self::VP_ACTIONS : [], $this->option('grant-vp-payments') ? [OwnerPortal::PAYMENTS_MANAGE] : [], $this->option('grant-vp-accounting') ? [HrOffice::PAYROLL_ACCESS, OwnerPortal::PAYROLL_VIEW, OwnerPortal::AMOUNTS_EDIT, OwnerPortal::PERIODS_MANAGE, OwnerPortal::PERIODS_CORRECT, OwnerPortal::PAYMENTS_MANAGE, OwnerPortal::EXPORT] : [])));
+                $extraCodes = array_values(array_unique(array_merge($this->option('grant-vp-payroll') ? self::VP_PAYROLL : [], $this->option('grant-vp-actions') ? self::VP_ACTIONS : [], $this->option('grant-vp-payments') ? [OwnerPortal::PAYMENTS_MANAGE] : [], $this->option('grant-vp-formulas') ? [OwnerPortal::CONFIG_MANAGE] : [], $this->option('grant-vp-accounting') ? [HrOffice::PAYROLL_ACCESS, OwnerPortal::PAYROLL_VIEW, OwnerPortal::AMOUNTS_EDIT, OwnerPortal::PERIODS_MANAGE, OwnerPortal::PERIODS_CORRECT, OwnerPortal::PAYMENTS_MANAGE, OwnerPortal::EXPORT] : [])));
                 $ownerCodes = array_values(array_filter($extraCodes, fn ($code) => str_starts_with($code, 'owner_payroll.')));
                 if ($extraCodes !== []) {
                     $payrollRole = DB::table('roles')->where('role_code', 'vice_president_administrative')->where('is_active', true)->lockForUpdate()->first();
@@ -91,7 +91,7 @@ final class ProvisionHrOfficeAccess extends Command
 
                 return 'APPLIED';
             });
-            $this->info($state.'. No user, scope or financial value created. Accounting rights only when explicitly selected; no owner-portal or formula-management grant.');
+            $this->info($state.'. No user, scope or financial value created. Formula permission only with --grant-vp-formulas; no owner-portal or automatic HR financial grant.');
 
             return self::SUCCESS;
         } catch (\Throwable $e) {

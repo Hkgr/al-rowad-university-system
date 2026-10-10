@@ -991,6 +991,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
             Route::post('save', 'save')->middleware($guard(\App\Support\OwnerPortal::AMOUNTS_EDIT));
             Route::post('approve', 'approve')->middleware($guard(\App\Support\OwnerPortal::PERIODS_MANAGE));
             Route::get('results/{uuid}', 'result')->whereUuid('uuid')->middleware($guard(\App\Support\OwnerPortal::PAYROLL_VIEW));
+            Route::get('config', 'configuration')->middleware($guard(\App\Support\OwnerPortal::PAYROLL_VIEW));
+            Route::post('config/preview', 'previewConfiguration')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::post('config/save', 'saveConfiguration')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
             Route::get('export/{kind}', 'export')->whereIn('kind', ['pdf', 'xlsx'])->middleware($guard(\App\Support\OwnerPortal::EXPORT));
         });
     }

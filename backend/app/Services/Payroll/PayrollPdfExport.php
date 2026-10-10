@@ -24,29 +24,30 @@ final class PayrollPdfExport
     private const IDENTITY_WIDTHS = ['employee_number' => 26, 'full_name' => 52, 'job_title' => 44, 'body' => 36, 'workplace' => 30, 'academic_level' => 34];
 
     /** Returns the PDF bytes. */
-    public function build(array $snapshot, array $scopeLabels): string
+    public function build(array $snapshot, array $scopeLabels, ?array $document = null): string
     {
         $fontDir = $this->ensureFonts();
         if (! defined('K_PATH_FONTS')) {
             define('K_PATH_FONTS', $fontDir.'/');
         }
         $config = $snapshot['config'];
-        $columns = PayrollColumns::exportColumns($config);
+        $columns = $document['columns'] ?? PayrollColumns::exportColumns($config);
 
         $pdf = new PayrollPdfDocument('L', 'mm', self::PAGE_FORMAT, true, 'UTF-8', false);
         $pdf->setCreator('Alrowad University');
-        $pdf->setTitle(PayrollColumns::TITLE);
+        $pdf->setTitle($document['title'] ?? PayrollColumns::TITLE);
         $pdf->setRTL(true);
         $pdf->setPrintHeader(true);
         $pdf->setPrintFooter(true);
-        $pdf->setMargins(self::MARGIN, 38, self::MARGIN);
+        $pdf->setMargins(self::MARGIN, $document === null ? 38 : 45, self::MARGIN);
         $pdf->setHeaderMargin(8);
         $pdf->setFooterMargin(10);
         $pdf->setAutoPageBreak(false);
         $pdf->setCellPaddings(1.5, 1, 1.5, 1);
         $pdf->AddFont('cairo', '', $fontDir.'/cairo.php');
         $pdf->AddFont('cairo', 'B', $fontDir.'/cairob.php');
-        $pdf->headerLines = [
+        $pdf->logoPath = $document === null ? null : base_path('../frontend/public/logo.png');
+        $pdf->headerLines = $document['header_lines'] ?? [
             PayrollColumns::TITLE,
             PayrollColumns::scopeLine($snapshot, $scopeLabels),
             PayrollColumns::sortLine($snapshot['filters'], $config).' — تاريخ التوليد: '.now()->format('Y-m-d H:i'),
@@ -191,7 +192,8 @@ final class PayrollPdfExport
         $top = $this->side(0.5, self::BOUNDARY);
         $pdf->MultiCell(array_sum(array_slice($widths, 0, $labelSpan)), 9, 'الإجمالي ('.$snapshot['totals']['employees'].' موظفًا)', ['T' => $top, 'B' => $this->side(0.15, self::GRID), 'L' => $this->side(0.15, self::GRID), 'R' => $this->side(0.45, self::BOUNDARY)], 'R', true, 0, '', '', true, 0, false, true, 9, 'M');
         foreach (array_slice($columns, $labelSpan, null, true) as $i => $c) {
-            $total = $c['aggregation'] === 'sum' ? PayrollColumns::formatValue($snapshot['totals']['columns'][$c['key']]['sum'] ?? '0', $c['type']) : '';
+            $sum = $snapshot['totals']['columns'][$c['key']]['sum'] ?? null;
+            $total = $c['aggregation'] === 'sum' ? ($sum === null ? 'غير متاح' : PayrollColumns::formatValue($sum, $c['type'])) : '';
             $negative = str_starts_with($total, '-');
             $border = $this->border($columns, $i);
             $border['T'] = $top;

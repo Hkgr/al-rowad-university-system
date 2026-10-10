@@ -52,7 +52,7 @@ final class MonthlyPayrollService
 
     public function filters(array $data): array
     {
-        return $this->input($data, ['period' => ['required', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'], 'revision' => 'sometimes|integer|min:1', 'employee_id' => 'sometimes|integer|min:1', 'body' => 'nullable|in:educational,administrative,unknown', 'college_id' => 'sometimes|integer|min:1', 'unit_id' => 'sometimes|integer|min:1', 'q' => 'nullable|string|max:120', 'payment_status' => 'nullable|in:unpaid,paid,received,voided', 'completeness' => 'nullable|in:complete,incomplete,warning', 'page' => 'sometimes|integer|min:1', 'per_page' => 'sometimes|integer|min:1|max:100']);
+        return $this->input($data, ['period' => ['required', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'], 'revision' => 'sometimes|integer|min:1', 'employee_id' => 'sometimes|integer|min:1', 'body' => 'nullable|in:educational,administrative,unknown', 'college_id' => 'sometimes|integer|min:1', 'unit_id' => 'sometimes|integer|min:1', 'q' => 'nullable|string|max:120', 'payment_status' => 'nullable|in:unpaid,paid,received,voided', 'completeness' => 'nullable|in:complete,incomplete,warning', 'sort' => 'sometimes|string|max:40', 'direction' => 'sometimes|in:asc,desc', 'page' => 'sometimes|integer|min:1', 'per_page' => 'sometimes|integer|min:1|max:100']);
     }
 
     /** Payment totals refer to explicit records, never calculation or a fabricated receipt. */
@@ -114,6 +114,7 @@ final class MonthlyPayrollService
             $currentIdentities = collect($this->personnel->identities(array_column($snapshot['rows'], 'employee_id')))->keyBy('employee_id');
             $rows = [];
             foreach ($snapshot['rows'] as $row) {
+                $row['workplace_label'] = $row['college_name'] ?? $row['unit_name'] ?? 'غير محدد';
                 $row['current_hr_revision'] = $currentIdentities->get($row['employee_id'])['hr_revision'] ?? null;
                 $row['current_employee_revision'] = $currentIdentities->get($row['employee_id'])['employee_revision'] ?? null;
                 $s = $settlements[$row['employee_id']] ?? null;
@@ -149,7 +150,24 @@ final class MonthlyPayrollService
                 }
                 $rows[] = $row;
             }
-            usort($rows, fn ($a, $b) => strcmp($a['employee_number'], $b['employee_number']) ?: $a['employee_id'] <=> $b['employee_id']);
+            $sort = $filters['sort'] ?? 'employee_number';
+            $column = collect($snapshot['config']['columns'])->firstWhere('key', $sort);
+            $identitySorts = ['employee_number' => 'employee_number', 'full_name' => 'full_name', 'job_title' => 'job_title', 'body' => 'body_name', 'workplace' => 'workplace_label', 'academic_level' => 'academic_level'];
+            if (! $column && ! isset($identitySorts[$sort])) {
+                $this->fail('payroll_validation', 'عمود ترتيب غير مسموح في قالب الشهر.', 422);
+            }
+            usort($rows, function ($a, $b) use ($sort, $column, $identitySorts, $filters): int {
+                $av = $column ? ($a['cells'][$sort]['v'] ?? null) : ($a[$identitySorts[$sort]] ?? null);
+                $bv = $column ? ($b['cells'][$sort]['v'] ?? null) : ($b[$identitySorts[$sort]] ?? null);
+                $emptyA = $av === null || $av === '';
+                $emptyB = $bv === null || $bv === '';
+                if ($emptyA !== $emptyB) {
+                    return $emptyA ? 1 : -1;
+                }
+                $result = $emptyA ? 0 : ($column && $column['value_type'] !== 'text' ? BigDecimal::of($av)->compareTo(BigDecimal::of($bv)) : strcmp((string) $av, (string) $bv));
+
+                return $result ? (($filters['direction'] ?? 'asc') === 'desc' ? -$result : $result) : (strcmp($a['employee_number'], $b['employee_number']) ?: $a['employee_id'] <=> $b['employee_id']);
+            });
             $totals = $this->sheet->totals($rows, $snapshot['config']);
             foreach ($totals['columns'] as $key => &$total) {
                 $known = count(array_filter($rows, fn ($r) => ($r['cells'][$key]['v'] ?? null) !== null && ! in_array($r['cells'][$key]['st'] ?? null, ['missing', 'error'], true)));
@@ -369,6 +387,166 @@ final class MonthlyPayrollService
         DB::table('payroll_period_history')->insert(['period_id' => $period->id, 'revision' => $period->revision, 'snapshot' => $this->json($this->rawSnapshot($period)), 'actor_user_id' => $actor->user_id, 'reason' => $reason, 'created_at' => now()]);
     }
 
+    public function configuration(User $actor, array $query): array
+    {
+        $f = $this->input($query, ['period' => ['required', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/']]);
+        $report = $this->report($actor, $f);
+        if (! $report['initialized']) {
+            $this->fail('payroll_period_missing', 'أعدّ الشهر قبل تحرير قالبه.');
+        }
+        $config = $report['config'];
+        $config['revision'] = $report['revision'];
+
+        return ['config' => $this->configs->present($config), 'period' => $report['period'], 'status' => $report['status'], 'future_revision' => $this->configs->load()['revision']];
+    }
+
+    private function configurationPayload(string $action, array $payload): array
+    {
+        $rules = match ($action) {
+            'column_create' => ['column' => 'required|array'],
+            'column_update' => ['key' => 'required|string|max:40', 'column' => 'required|array'],
+            'restore' => ['key' => 'required|string|max:40'],
+            'delete' => ['key' => 'required|string|max:40', 'confirm_values' => 'required|boolean'],
+            'settings' => ['settings' => 'required|array|min:1|max:100'],
+            'layout' => ['columns' => 'required|array|min:1|max:200'],
+            default => $this->fail('payroll_validation', 'عملية قالب غير معروفة.', 422),
+        };
+        $p = $this->input($payload, $rules);
+        if (isset($p['column'])) {
+            $p['column'] = $this->input($p['column'], ['new_key' => 'sometimes|nullable|string|max:40', 'key' => 'sometimes|string|max:40', 'label' => 'sometimes|string|max:100', 'group' => 'sometimes|string|max:20', 'kind' => 'sometimes|in:input,formula', 'value_type' => 'sometimes|in:text,number,amount,percent', 'formula' => 'sometimes|string|max:4000', 'blank_as_zero' => 'sometimes|boolean', 'allow_negative' => 'sometimes|boolean', 'warn_negative' => 'sometimes|boolean', 'aggregation' => 'sometimes|in:sum,none', 'visible_grid' => 'sometimes|boolean', 'visible_export' => 'sometimes|boolean', 'compact' => 'sometimes|boolean', 'sort_order' => 'sometimes|integer|min:0|max:65000']);
+            if (isset($p['column']['key']) && ($action === 'column_create' || $p['column']['key'] !== $p['key'])) {
+                $this->fail('payroll_validation', 'لا يمكن تغيير هوية العمود.', 422);
+            }
+        }
+        if (isset($p['columns'])) {
+            foreach ($p['columns'] as &$item) {
+                if (! is_array($item)) {
+                    $this->fail('payroll_validation', 'تعريف ترتيب العمود غير صالح.', 422);
+                }
+                $item = $this->input($item, ['key' => 'required|string|max:40', 'visible_grid' => 'sometimes|boolean', 'visible_export' => 'sometimes|boolean', 'compact' => 'sometimes|boolean']);
+            } unset($item);
+        }
+
+        return $p;
+    }
+
+    public function configurationPreview(User $actor, array $data): array
+    {
+        $this->access->authorize($actor, OwnerPortal::CONFIG_MANAGE);
+        $d = $this->input($data, ['period' => ['required', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'], 'revision' => 'required|integer|min:1', 'column' => 'sometimes|array', 'settings' => 'sometimes|array', 'employee_id' => 'nullable|integer|min:1']);
+
+        return DB::transaction(function () use ($actor, $d): array {
+            $r = $this->report($actor, ['period' => $d['period']]);
+            if (! $r['initialized'] || $r['revision'] != $d['revision']) {
+                $this->fail('payroll_config_conflict', 'تغير قالب الشهر؛ احتفظ بالمسودة وراجعه صراحة.');
+            }
+            $action = isset($d['column']) ? (isset($d['column']['key']) ? 'column_update' : 'column_create') : 'settings';
+            $payload = isset($d['column']) ? ['column' => $d['column']] + (isset($d['column']['key']) ? ['key' => $d['column']['key']] : []) : ['settings' => $d['settings'] ?? []];
+            $next = $this->configs->applyMonthlyOperation($r['config'], $action, $this->configurationPayload($action, $payload), $r['rows']);
+            $calculator = $this->configs->calculator($next);
+            $rows = array_map(fn ($row) => ['cells' => $calculator->evaluateRow($row['inputs'])] + $row, $r['rows']);
+            $focus = $d['column']['key'] ?? collect($next['columns'])->whereNotIn('key', array_column($r['config']['columns'], 'key'))->pluck('key')->first();
+            $selected = isset($d['employee_id']) ? collect($rows)->firstWhere('employee_id', $d['employee_id']) : null;
+            $before = isset($d['employee_id']) ? collect($r['rows'])->firstWhere('employee_id', $d['employee_id']) : null;
+            $beforeByPerson = collect($r['rows'])->keyBy('employee_id');
+            if (isset($d['employee_id']) && ! $selected) {
+                $this->fail('payroll_validation', 'العامل لا ينتمي إلى هذا الشهر.', 422);
+            }
+            $oldTotal = $this->sheet->totals($r['rows'], $r['config'])['columns'][PayrollSheetService::TOTAL_KEY];
+            $newTotal = $this->sheet->totals($rows, $next)['columns'][PayrollSheetService::TOTAL_KEY];
+            if ($oldTotal['excluded'] === count($rows)) {
+                $oldTotal['sum'] = null;
+            }
+            if ($newTotal['excluded'] === count($rows)) {
+                $newTotal['sum'] = null;
+            }
+
+            return ['period' => $r['period'], 'revision' => $r['revision'], 'employees' => count($rows), 'focus_key' => $focus, 'net_payable' => ['before' => $oldTotal, 'after' => $newTotal], 'employees_changed' => count(array_filter($rows, fn ($row) => $row['cells'][PayrollSheetService::TOTAL_KEY] !== $beforeByPerson[$row['employee_id']]['cells'][PayrollSheetService::TOTAL_KEY])), 'errors_introduced' => count(array_filter($rows, fn ($row) => PayrollSheetService::status($row) === 'incomplete' && PayrollSheetService::status($beforeByPerson[$row['employee_id']]) !== 'incomplete')), 'preview' => $selected ? ['cells' => $selected['cells'], 'before' => $before['cells']] : null];
+        });
+    }
+
+    public function saveConfiguration(User $actor, array $data): array
+    {
+        $this->access->authorize($actor, OwnerPortal::CONFIG_MANAGE);
+        $this->personnel->requireReady();
+        $d = $this->input($data, ['request_id' => 'required|uuid', 'period' => ['required', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'], 'revision' => 'required|integer|min:1', 'action' => 'required|in:column_create,column_update,restore,delete,layout,settings', 'payload' => 'required|array', 'publish_future' => 'required|boolean', 'future_revision' => 'required_if:publish_future,true|integer|min:1', 'correction_reason' => 'nullable|string|max:4000|regex:/\S/u', 'confirmed' => 'required|accepted']);
+        $d['payload'] = $this->configurationPayload($d['action'], $d['payload']);
+
+        return $this->atomic(function () use ($actor, $d): array {
+            $this->access->authorize($actor, OwnerPortal::CONFIG_MANAGE);
+            DB::table('payroll_config')->where('id', 1)->lockForUpdate()->first();
+            [$hash, $old] = $this->lockedReceipt($actor, $d, 'config_saved');
+            if ($old) {
+                return $old;
+            }
+            $p = DB::table('payroll_periods')->where('period', $d['period'])->lockForUpdate()->first();
+            if (! $p || $p->revision != $d['revision']) {
+                $this->fail('payroll_config_conflict', 'تغير الشهر أو قالبه؛ لم تُحفظ العملية، والمسودة تحتاج مراجعة صريحة.');
+            }
+            if ($p->status === 'approved') {
+                $this->access->authorize($actor, OwnerPortal::PERIODS_CORRECT);
+                if (empty($d['correction_reason']) || trim($d['correction_reason']) === '') {
+                    $this->fail('payroll_correction_reason_required', 'تصحيح قالب شهر معتمد يحتاج سببًا صريحًا.', 422);
+                }
+            }
+            DB::table('employees')->orderBy('employee_id')->lockForUpdate()->get(['employee_id']);
+            DB::table('payroll_employees')->orderBy('id')->lockForUpdate()->get(['id']);
+            $entries = DB::table('payroll_period_entries')->where('period_id', $p->id)->orderBy('id')->lockForUpdate()->get()->keyBy('payroll_employee_id');
+            $snapshot = $this->rawSnapshot($p);
+            $config = $snapshot['config'];
+            $next = $this->configs->applyMonthlyOperation($config, $d['action'], $d['payload'], $snapshot['rows']);
+            $changed = $next['columns'] !== $config['columns'] || $next['settings'] !== $config['settings'];
+            $diff = [];
+            if ($changed) {
+                $calculator = $this->configs->calculator($next);
+                foreach ($snapshot['rows'] as $row) {
+                    if (! $row['id']) {
+                        $this->fail('payroll_personnel_sync_required', 'الملف المالي لأحد العاملين غير جاهز؛ لم تُحفظ العملية.');
+                    }
+                    foreach ($next['columns'] as $column) {
+                        if ($column['kind'] === 'input' && isset($row['inputs'][$column['key']])) {
+                            try {
+                                PayrollInput::parse($column, $row['inputs'][$column['key']]);
+                            } catch (\InvalidArgumentException $e) {
+                                $this->fail('payroll_validation', $e->getMessage(), 422);
+                            }
+                        }
+                    }
+                    $cells = $calculator->evaluateRow($row['inputs']);
+                    if ($p->status === 'approved' && in_array($cells[PayrollSheetService::TOTAL_KEY]['st'] ?? 'missing', ['missing', 'error'], true)) {
+                        $this->fail('payroll_incomplete', 'التصحيح لا يجوز أن يجعل مستحقًا معتمدًا غير متاح.', 422);
+                    }
+                    $entry = $entries->get($row['id']);
+                    $values = ['identity_snapshot' => $this->json(array_diff_key($row, array_flip(['inputs', 'cells', 'work_time', 'entry_revision']))), 'work_time_snapshot' => $row['work_time'] ? $this->json($row['work_time']) : null, 'inputs' => $this->json($row['inputs']), 'cells' => $this->json($cells), 'revision' => ($entry->revision ?? 0) + 1, 'updated_at' => now()];
+                    if ($entry) {
+                        DB::table('payroll_period_entries')->where('id', $entry->id)->update($values);
+                    } else {
+                        DB::table('payroll_period_entries')->insert($values + ['period_id' => $p->id, 'payroll_employee_id' => $row['id'], 'created_at' => now()]);
+                    }
+                    if ($row['cells'] !== $cells) {
+                        $diff[] = ['employee_id' => $row['employee_id'], 'before' => $row['cells'], 'after' => $cells];
+                    }
+                }
+                $next['revision'] = $p->revision + 1;
+                DB::table('payroll_periods')->where('id', $p->id)->update(['config_snapshot' => $this->json($next), 'revision' => $p->revision + 1, 'updated_at' => now()]);
+            }
+            $futurePayload = $d['payload'];
+            if ($d['action'] === 'column_create') {
+                $futurePayload['column']['new_key'] = array_values(array_diff(array_column($next['columns'], 'key'), array_column($config['columns'], 'key')))[0];
+            }
+            $future = $d['publish_future'] ? $this->configs->publishMonthlyOperation($next, $d['action'], $futurePayload, $d['future_revision'], $actor->user_id) : null;
+            $current = DB::table('payroll_periods')->where('id', $p->id)->first();
+            if ($changed && $current->status === 'approved') {
+                $this->history($actor, $current, $d['correction_reason']);
+            }
+            $next['revision'] = (int) $current->revision;
+            $result = ['period' => $p->period, 'revision' => (int) $current->revision, 'changed' => $changed, 'config' => $this->configs->present($next), 'future_revision' => $this->configs->load()['revision']];
+            $this->event($actor, $current, $d, 'config_saved', $hash, ['is_correction' => $p->status === 'approved', 'config_before' => $config, 'config_after' => $next, 'cells_changes' => $diff, 'future' => $future, 'no_payments_changed' => true], $result);
+
+            return $result;
+        });
+    }
+
     public function approve(User $actor, array $data): array
     {
         $this->access->authorize($actor, OwnerPortal::PERIODS_MANAGE);
@@ -423,7 +601,9 @@ final class MonthlyPayrollService
         if (! $event) {
             $this->fail('payroll_result_not_found', 'لا توجد نتيجة محفوظة متاحة لهذه العملية.', 404);
         }
-        $this->access->authorize($actor, $event->action === 'values_saved' ? OwnerPortal::AMOUNTS_EDIT : OwnerPortal::PERIODS_MANAGE);
+        $this->access->authorize($actor, match ($event->action) {
+            'values_saved' => OwnerPortal::AMOUNTS_EDIT, 'config_saved' => OwnerPortal::CONFIG_MANAGE, default => OwnerPortal::PERIODS_MANAGE
+        });
         if (! empty($this->decode($event->details)['is_correction'])) {
             $this->access->authorize($actor, OwnerPortal::PERIODS_CORRECT);
         }
