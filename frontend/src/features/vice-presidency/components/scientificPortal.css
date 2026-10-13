@@ -1,0 +1,99 @@
+/* Isolated presentation: no global/admin portal styles, data filters or workflow overrides. */
+.scientific-portal button:focus-visible,
+.scientific-portal a:focus-visible {
+  outline-offset: 3px;
+}
+
+.scientific-portal .scientific-tree-stem {
+  width: 1px;
+  height: 24px;
+  margin-inline-start: 12px;
+  background: rgb(86 153 51 / 30%);
+}
+
+.scientific-portal .scientific-organization-groups {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  margin-inline-start: 12px;
+  padding-inline-start: 16px;
+  border-inline-start: 1px solid rgb(86 153 51 / 25%);
+}
+
+.scientific-portal .scientific-department {
+  position: relative;
+}
+
+.scientific-portal .scientific-department::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: -16px;
+  inset-block-start: 32px;
+  width: 16px;
+  height: 1px;
+  background: rgb(86 153 51 / 30%);
+  pointer-events: none;
+}
+
+.scientific-portal .scientific-children {
+  margin: 16px;
+  padding-inline-start: 16px;
+  border-inline-start: 1px solid rgb(86 153 51 / 20%);
+}
+
+.scientific-portal .scientific-child-node {
+  position: relative;
+}
+
+.scientific-portal .scientific-child-node::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: -16px;
+  inset-block-start: 26px;
+  width: 12px;
+  height: 1px;
+  background: rgb(86 153 51 / 25%);
+  pointer-events: none;
+}
+
+@media (min-width: 1024px) {
+  .scientific-portal .scientific-tree-stem {
+    margin-inline: auto;
+  }
+
+  .scientific-portal .scientific-organization-groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-inline-start: 0;
+    padding-inline-start: 0;
+    padding-block-start: 20px;
+    border-inline-start: 0;
+  }
+
+  .scientific-portal .scientific-organization-groups::before {
+    content: '';
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline: 25%;
+    height: 1px;
+    background: rgb(86 153 51 / 30%);
+    pointer-events: none;
+  }
+
+  .scientific-portal .scientific-department::before {
+    inset-inline-start: 50%;
+    inset-block-start: -20px;
+    width: 1px;
+    height: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scientific-portal *,
+  .scientific-portal *::before,
+  .scientific-portal *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
