@@ -17,10 +17,8 @@ const officeServices = [studentAffairsNav, examBoardNav, technicalNav, [reportNa
 
 export const scientificVicePresidentNav = [
   {
-    label: 'نيابة الشؤون العلمية',
+    label: 'الشؤون العلمية',
     items: [
-      { to: '/vp/scientific/programs-courses', Icon: FaClipboardList, ar: 'البرامج والمواد', en: 'Programs and courses', ...WORKSPACE_ACCESS },
-      { to: '/vp/scientific/calendar', Icon: FaCalendarAlt, ar: 'التقويم الأكاديمي', en: 'Academic calendar' },
       {
         to: '/vp/scientific',
         Icon: FaHome,
@@ -29,15 +27,13 @@ export const scientificVicePresidentNav = [
         end: true,
         permissions: [PERMISSIONS.vicePresidencyScientificAccess],
       },
-      {
-        to: '/vp/scientific/reports',
-        Icon: FaChartBar,
-        ar: 'التقارير والإحصاءات',
-        en: 'Reports & analytics',
-        allRoles: [ROLES.vicePresidentScientific],
-        assignedPermissions: [PERMISSIONS.vicePresidencyScientificAccess],
-        actualUniversityScope: true,
-      },
+    ],
+  },
+  {
+    label: 'إدارة التعليم الجامعي',
+    items: [
+      { to: '/vp/scientific/calendar', Icon: FaCalendarAlt, ar: 'التقويم الأكاديمي', en: 'Academic calendar' },
+      { to: '/vp/scientific/programs-courses', Icon: FaClipboardList, ar: 'البرامج والمواد', en: 'Programs and courses', ...WORKSPACE_ACCESS },
       {
         to: '/vp/scientific/semester-offerings',
         Icon: FaClipboardCheck,
@@ -66,7 +62,7 @@ export const scientificVicePresidentNav = [
       {
         to: '/vp/scientific/exceptional-openings',
         Icon: FaUnlock,
-        ar: 'الفتح الاستثنائي',
+        ar: 'الفتح الاستثنائي للشعب',
         en: 'Exceptional opening',
         permissions: [PERMISSIONS.exceptionalOpenView],
       },
@@ -80,7 +76,19 @@ export const scientificVicePresidentNav = [
       },
     ],
   },
-  { label: 'المساعدة', items: [{ to: GUIDE_PATHS.vpScientific, Icon: FaQuestionCircle, ar: 'دليل الاستخدام', en: 'User guide', ...GUIDE_ACCESS.vpScientific }] },
+  {
+    label: 'التقارير والإحصاءات',
+    items: [{
+      to: '/vp/scientific/reports',
+      Icon: FaChartBar,
+      ar: 'التقارير والإحصاءات',
+      en: 'Reports & analytics',
+      allRoles: [ROLES.vicePresidentScientific],
+      assignedPermissions: [PERMISSIONS.vicePresidencyScientificAccess],
+      actualUniversityScope: true,
+    }],
+  },
+  { label: 'المساعدة', items: [{ to: GUIDE_PATHS.vpScientific, Icon: FaQuestionCircle, ar: 'طريقة الاستخدام', en: 'User guide', ...GUIDE_ACCESS.vpScientific }] },
 ]
 
 export const administrativeVicePresidentNav = [

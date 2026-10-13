@@ -1,31 +1,8 @@
-import { Link } from 'react-router-dom'
-import { PERMISSIONS, ROLES, getIdentity, canAccess } from '../../auth/auth'
+import { getIdentity } from '../../auth/auth'
 import { canAccessExecutiveReports } from '../../executive-reports/access'
 import ExecutiveOverview from '../../executive-reports/components/ExecutiveOverview'
-import { canViewCatalog } from '../../scientific-courses/catalog'
-import { canViewPrograms } from '../../scientific-programs/programs'
 import AdministrativeHome from '../components/AdministrativeHome'
-
-const OFFICES = {
-  scientific: {
-    title: 'نائب رئيس الجامعة للشؤون العلمية',
-    scopeNote: 'نطاق العمل: الجامعة كاملة. الصلاحيات تُحدد لكل إجراء على حدة.',
-    assignmentsPath: '/vp/scientific/teaching-assignments',
-    semesterOfferingsPath: '/vp/scientific/semester-offerings',
-    exceptionalPath: '/vp/scientific/exceptional-openings',
-    supplementaryPath: '/vp/scientific/supplementary-exams',
-    futureSections: [
-      'الموافقة العلمية على إغلاق الشعب',
-    ],
-  },
-  administrative: {
-    title: 'نائب رئيس الجامعة للشؤون الإدارية',
-    scopeNote: 'نطاق العمل: الجامعة كاملة. الصلاحيات تُحدد لكل إجراء على حدة.',
-    assignmentsPath: '/vp/administrative/teaching-assignments',
-    exceptionalPath: '/vp/administrative/exceptional-openings',
-    futureSections: [],
-  },
-}
+import ScientificHome from '../components/ScientificHome'
 
 function scopeLabel(scope) {
   if (!scope) return ''
@@ -35,7 +12,6 @@ function scopeLabel(scope) {
 }
 
 export default function VicePresidentShell({ office }) {
-  const copy = OFFICES[office] ?? OFFICES.scientific
   const identity = getIdentity()
   const roles = Array.isArray(identity?.roles) ? identity.roles.join('، ') : '—'
   const scopes = Array.isArray(identity?.access_scopes) && identity.access_scopes.length > 0
@@ -59,62 +35,10 @@ export default function VicePresidentShell({ office }) {
   if (office === 'administrative') return <AdministrativeHome identity={identity}>{identityDetails}</AdministrativeHome>
 
   return (
-    <div className="flex flex-col gap-5 py-8 px-2" dir="rtl">
-      <div>
-        <p className="text-[18px] font-black text-text-dark">{copy.title}</p>
-        <p className="text-[13px] text-text-light mt-1">{copy.scopeNote}</p>
-      </div>
-
+    <ScientificHome identity={identity}>
+      <p className="text-[13px] text-text-light">نطاق العمل: الجامعة كاملة. الصلاحيات تُحدد لكل إجراء على حدة.</p>
       {reportsAllowed && <ExecutiveOverview office={office} />}
-      {office === 'scientific' && (canViewPrograms(identity) || canViewCatalog(identity)) && <Link to="/vp/scientific/programs-courses" className="rounded-[16px] border border-primary/15 bg-white p-5 shadow-sm hover:border-primary/40"><p className="text-[15px] font-black text-text-dark">البرامج والمواد</p><p className="mt-1 text-[13px] text-text-light">الخطة الإرشادية ودليل المواد ومتطلبات التخرج؛ إعداد التغييرات وتطبيقها للطلاب الجدد فقط ضمن نطاقك.</p></Link>}
-
       {identityDetails}
-
-      <Link
-        to={copy.assignmentsPath}
-        className="bg-white border border-primary/15 rounded-[16px] p-5 shadow-sm hover:border-primary/40"
-      >
-        <p className="text-[15px] font-black text-text-dark">تكليفات المدرسين</p>
-        <p className="text-[13px] text-text-light mt-1">مراجعة طلبات تكليف المدرسين ضمن صلاحية هذه النيابة فقط.</p>
-      </Link>
-
-      {copy.semesterOfferingsPath
-        && canAccess({ allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView], actualUniversityScope: true }, identity) && (
-      <Link to={copy.semesterOfferingsPath} className="bg-white border border-primary/15 rounded-[16px] p-5 shadow-sm hover:border-primary/40">
-        <p className="text-[15px] font-black text-text-dark">اعتماد الطروحات الفصلية</p>
-        <p className="text-[13px] text-text-light mt-1">مراجعة كل طرح فصلي بعد اكتمال التكليف الفعّال واعتماده أو إعادته للعميد.</p>
-      </Link>
-      )}
-
-      <Link
-        to={copy.exceptionalPath}
-        className="bg-white border border-primary/15 rounded-[16px] p-5 shadow-sm hover:border-primary/40"
-      >
-        <p className="text-[15px] font-black text-text-dark">الفتح الاستثنائي للشعب</p>
-        <p className="text-[13px] text-text-light mt-1">مراجعة طلبات فتح الشعب استثنائيًا عند نقص تكليف المدرسين ضمن صلاحية هذه النيابة فقط.</p>
-      </Link>
-
-      {copy.supplementaryPath
-        && canAccess({ allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.supplementaryExamsPeriodsView] }, identity) && (
-      <Link
-        to={copy.supplementaryPath}
-        className="bg-white border border-primary/15 rounded-[16px] p-5 shadow-sm hover:border-primary/40"
-      >
-        <p className="text-[15px] font-black text-text-dark">الامتحانات التكميلية</p>
-        <p className="text-[13px] text-text-light mt-1">اعتماد فتح دورة امتحانية تكميلية اختيارية مرتبطة بسنة أكاديمية وفصل قائم.</p>
-      </Link>
-      )}
-
-      {copy.futureSections.length > 0 && (
-      <div className="bg-white border border-dashed border-primary/25 rounded-[16px] p-5">
-        <p className="text-[12px] font-bold text-text-light mb-3">أقسام لاحقة — غير مفعّلة في هذه المرحلة</p>
-        <ul className="flex flex-col gap-2 text-[13px] text-text-dark">
-          {copy.futureSections.map(section => (
-            <li key={section} className="text-text-light">• {section}</li>
-          ))}
-        </ul>
-      </div>
-      )}
-    </div>
+    </ScientificHome>
   )
 }
