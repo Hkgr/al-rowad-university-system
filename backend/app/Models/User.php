@@ -200,6 +200,8 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return $this->userRoleRecords()
             ->where('is_active', true)
+            ->where(fn ($q) => $q->whereHas('role', fn ($r) => $r->where('role_code', '<>', \App\Support\AdministrativeOfficeAccess::ROLE))
+                ->orWhere(fn ($assignment) => $assignment->whereNull('assigned_at')->orWhere('assigned_at', '<=', now())))
             ->whereHas('role', fn ($query) => $query->where('is_active', true))
             ->with('role')
             ->get()
@@ -211,11 +213,13 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function effectivePermissions(): Collection
     {
+        $administrativeOfficeAuthority = \App\Support\AdministrativeOfficeAccess::hasAuthority($this);
         return \App\Models\Permission::query()
             ->where('is_active', true)
             ->whereHas('rolePermissions', fn ($rolePermissions) => $rolePermissions
                 ->whereHas('role', fn ($roles) => $roles
                     ->where('is_active', true)
+                    ->when(! $administrativeOfficeAuthority, fn ($q) => $q->where('role_code', '<>', \App\Support\AdministrativeOfficeAccess::ROLE))
                     ->whereHas('userRoles', fn ($userRoles) => $userRoles
                         ->where('user_id', $this->user_id)
                         ->where('user_roles.is_active', true))))
@@ -237,7 +241,8 @@ class User extends Authenticatable implements MustVerifyEmail
 
     private function canActAs(string $administrativeRole): bool
     {
-        return $this->isSuperAdmin() || $this->hasRoleCode($administrativeRole);
+        return $this->isSuperAdmin() || $this->hasRoleCode($administrativeRole)
+            || \App\Support\AdministrativeOfficeAccess::actsForOffice($this, $administrativeRole);
     }
 
     public function hasRoleCode(string $roleCode): bool

@@ -1,3 +1,5 @@
+import { hasAdministrativeOfficeRole } from '../../auth/auth'
+
 export const SUPPLEMENTARY_OVERVIEW_PATH = '/v1/exams/supplementary-overview'
 
 export const OVERVIEW_STAGE_LABELS = Object.freeze({
@@ -31,7 +33,7 @@ export function overviewEmptyMessage(payload) {
 
 export function canOpenSupplementaryGrades(payload, identity) {
   return payload?.capabilities?.can_access_grades === true
-    && identity?.roles?.includes('exam_officer') === true
+    && (identity?.roles?.includes('exam_officer') === true || hasAdministrativeOfficeRole('exam_officer', identity))
     && identity?.permissions?.includes('supplementary_exams.grades.review') === true
 }
 

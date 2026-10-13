@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { OfficeLink as Link } from '../../vice-presidency/utils/administrativeOfficeNavigation'
 import { apiRequest } from '../../../services/apiClient'
 import { ACCESS, canAccess, getIdentity } from '../../auth/auth'
 import { Pager, card, field } from '../components/RegistrationGridRow'

@@ -251,6 +251,13 @@ final class SupplementaryExamMaterializationGovernance
             ->where('r.is_active', true)
             ->count();
 
-        return $allMappings === 1 && $examOfficerMappings === 1;
+        $administrativeMappings = DB::table('role_permissions as rp')
+            ->join('permissions as p', 'p.permission_id', '=', 'rp.permission_id')
+            ->join('roles as r', 'r.role_id', '=', 'rp.role_id')
+            ->where('p.permission_code', self::MATERIALIZE)
+            ->where('r.role_code', AdministrativeOfficeAccess::ROLE)->count();
+
+        // Preserve the required original mapping and reject every other role; the approved office supervisor is additive.
+        return $allMappings === 1 + $administrativeMappings && $examOfficerMappings === 1;
     }
 }

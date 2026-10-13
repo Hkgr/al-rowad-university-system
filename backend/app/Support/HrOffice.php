@@ -55,7 +55,8 @@ final class HrOffice
             return $roles->contains('vice_president_administrative') && $this->scope->hasActualUniversityScope($actor);
         }
 
-        return ($roles->contains('hr_officer') || $roles->contains('vice_president_administrative')) && ($this->scope->hasActualUniversityScope($actor) || $this->collegeUnitIds($actor) !== []);
+        return ($roles->contains('vice_president_administrative') && $this->scope->hasActualUniversityScope($actor))
+            || ($roles->contains('hr_officer') && ($this->scope->hasActualUniversityScope($actor) || $this->collegeUnitIds($actor) !== []));
     }
 
     public function collegeUnitIds(User $actor): array

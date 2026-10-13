@@ -2,7 +2,7 @@ import { canAccess } from '../../auth/auth.js'
 
 export const HR = Object.freeze({ view: 'administrative_hr.view', recruit: 'administrative_hr.recruitment.manage', classify: 'administrative_hr.classification.manage', prepare: 'administrative_hr.relationships.prepare', review: 'administrative_hr.relationships.review', correct: 'administrative_hr.relationships.correct', cancel: 'administrative_hr.relationships.cancel', workerExport: 'administrative_hr.workers.export', payrollAccess: 'administrative_hr.payroll.access', payrollLink: 'administrative_hr.payroll.link' })
 const roles = ['hr_officer', 'vice_president_administrative']
-export const hrAccess = permission => ({ anyAccess: roles.map(role => ({ allRoles: [role], assignedPermissions: [permission], actualScopeTypes: ['university', 'college'] })) })
+export const hrAccess = permission => ({ anyAccess: roles.map(role => ({ allRoles: [role], assignedPermissions: [permission], ...(role === 'vice_president_administrative' ? { actualUniversityScope: true } : { actualScopeTypes: ['university', 'college'] }) })) })
 export const payrollAccess = permission => ({ anyAccess: [...roles, 'finance_officer'].map(role => ({ allRoles: [role], assignedPermissions: [HR.payrollAccess, permission], actualUniversityScope: true })) })
 export const canHr = (key, identity) => canAccess(['review', 'correct', 'cancel'].includes(key) ? { allRoles: ['vice_president_administrative'], assignedPermissions: [HR[key]], actualUniversityScope: true } : hrAccess(HR[key]), identity)
 export const SECTIONS = Object.freeze([['workers', 'العاملون'], ['needs', 'الاحتياجات'], ['candidates', 'المرشحون والمقابلات'], ['requests', 'طلبات الاعتماد'], ['relationships', 'العقود والتوظيف'], ['classification', 'استكمال التصنيف']])

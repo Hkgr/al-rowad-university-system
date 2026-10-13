@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { FaSpinner, FaBriefcase, FaEdit, FaTrash, FaPlus, FaSave, FaTimes } from 'react-icons/fa'
 
-const API = 'https://rust.alrowaduni.edu.sy/api/v1'
+import { API_BASE_URL } from '../../../services/apiClient'
+const API = `${API_BASE_URL}/v1`
 function authHeaders() {
   return { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }
 }

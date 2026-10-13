@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { OfficeLink as Link } from '../../vice-presidency/utils/administrativeOfficeNavigation'
+import { useOfficeNavigate as useNavigate } from '../../vice-presidency/utils/administrativeOfficePaths'
 import { motion } from 'framer-motion'
 import { FaEye, FaHistory, FaInfoCircle, FaSpinner, FaTimes } from 'react-icons/fa'
 import DataTable from '../../../components/table/DataTable'

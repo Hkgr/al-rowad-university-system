@@ -3,7 +3,8 @@ import { FaSpinner, FaCalendarCheck } from 'react-icons/fa'
 import StudentPicker from '../components/StudentPicker'
 import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 
-const API = 'https://rust.alrowaduni.edu.sy/api/v1'
+import { API_BASE_URL } from '../../../services/apiClient'
+const API = `${API_BASE_URL}/v1`
 function authHeaders() {
   return { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }
 }

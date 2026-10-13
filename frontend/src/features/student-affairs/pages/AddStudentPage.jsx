@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useOfficeNavigate as useNavigate } from '../../vice-presidency/utils/administrativeOfficePaths'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FaSpinner, FaCheckCircle, FaUserPlus, FaFolderOpen, FaListUl, FaFileExcel } from 'react-icons/fa'
 import { canAccess, hasPermission, PERMISSIONS } from '../../auth/auth'

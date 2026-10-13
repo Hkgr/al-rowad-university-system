@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useOfficeNavigate as useNavigate } from '../../vice-presidency/utils/administrativeOfficePaths'
 import { FaArrowRight, FaCheckCircle, FaExclamationTriangle, FaFileExcel, FaSearch, FaSpinner, FaUpload } from 'react-icons/fa'
 import { hasPermission, PERMISSIONS } from '../../auth/auth'
 import { apiRequest } from '../../../services/apiClient'

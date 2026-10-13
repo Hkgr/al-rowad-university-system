@@ -1,4 +1,5 @@
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
+import { OfficeLink as Link } from '../vice-presidency/utils/administrativeOfficeNavigation'
 import { apiRequest } from '../../services/apiClient'
 import { getIdentity } from '../auth/auth'
 import { PageHeader, Section, Notice, StatePanel, FilterSelect, MiniTable, InfoGrid } from '../ministry-portal/components/MinistryUi'

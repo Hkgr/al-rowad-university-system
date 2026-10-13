@@ -97,6 +97,7 @@ import AcademicCalendarPage from '../features/academic-calendar/AcademicCalendar
 // ── نيابة رئاسة الجامعة (Vice Presidency shells) ───────────────────────────
 import { administrativeVicePresidentNav, scientificVicePresidentNav } from '../features/vice-presidency/nav'
 import AdministrativeNavigation from '../features/vice-presidency/components/AdministrativeNavigation'
+import { ADMINISTRATIVE_OFFICE_ACCESS } from '../features/vice-presidency/utils/administrativeOfficePaths'
 import VicePresidentShell from '../features/vice-presidency/pages/VicePresidentShell'
 import TeachingAssignmentQueue from '../features/vice-presidency/pages/TeachingAssignmentQueue'
 import TeachingAssignmentDetail from '../features/vice-presidency/pages/TeachingAssignmentDetail'
@@ -435,7 +436,45 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/vp/administrative/guide" element={<UserGuidePage guideId="vpAdministrative" />} />
         </Route>
 
-        {/* Office entries never grant the VP's other routes. */}
+        {/* Existing office functions inside the VP shell. APIs and operation-specific guards are reused, not bypassed. */}
+        <Route element={<ProtectedRoute {...ADMINISTRATIVE_OFFICE_ACCESS}><DashboardLayout nav={administrativeVicePresidentNav} appTitle="الشؤون الإدارية" Navigation={AdministrativeNavigation} portalClassName="administrative-portal" /></ProtectedRoute>}>
+          <Route path="/vp/administrative/technical/accounts" element={protect(<AccountsPermissionsPage />, ACCESS.technicalAccounts)} />
+          <Route path="/vp/administrative/technical/activity" element={protect(<ActivityLogPage />, ACCESS.technicalActivity)} />
+          <Route path="/vp/administrative/technical/university-email" element={protect(<UniversityEmailPage />, ACCESS.universityEmail)} />
+          <Route path="/vp/administrative/technical/reports" element={protect(<PortalReportsPage portal="technical" />, reportAccess('technical'))} />
+          <Route path="/vp/administrative/student-affairs/students" element={protect(<StudentsPage />, ACCESS.studentAffairs)} />
+          <Route path="/vp/administrative/student-affairs/students/add" element={protect(<AddStudentPage />, ACCESS.studentAffairsAddStudent)} />
+          <Route path="/vp/administrative/student-affairs/students/archived" element={protect(<ArchivedStudentsPage />, ACCESS.studentAffairsArchivedStudents)} />
+          <Route path="/vp/administrative/student-affairs/graduates" element={protect(<GraduatesPage />, ACCESS.studentAffairs)} />
+          <Route path="/vp/administrative/student-affairs/students/:id" element={protect(<StudentProfilePage />, ACCESS.studentAffairs)} />
+          <Route path="/vp/administrative/student-affairs/students/:id/edit" element={protect(<EditStudentPage />, ACCESS.studentAffairsArchivedStudents)} />
+          <Route path="/vp/administrative/student-affairs/ministry-placements" element={protect(<MinistryPlacementsPage />, { assignedPermissions: ['admissions.view'], actualUniversityScope: true })} />
+          <Route path="/vp/administrative/student-affairs/supplementary-exams" element={protect(<SupplementaryExamRegistrations />, { allRoles: ['registration_officer'], assignedPermissions: ['supplementary_exams.registrations.view', 'students.view'] })} />
+          <Route path="/vp/administrative/student-affairs/approved-registration-requests" element={protect(<ApprovedRegistrationRequestsPage />, ACCESS.studentAffairsApprovedRegistrationRequests)} />
+          <Route path="/vp/administrative/student-affairs/reports" element={protect(<PortalReportsPage portal="student-affairs" />, reportAccess('student-affairs'))} />
+          <Route path="/vp/administrative/exams/manual-grade-entry" element={protect(<ManualGradeEntryPage />, ACCESS.manualGradeEntry)} />
+          <Route path="/vp/administrative/exams/manual-grade-entry/students/:studentId" element={protect(<StudentManualGradePage />, ACCESS.manualGradeEntry)} />
+          <Route path="/vp/administrative/exams/grade-sheet" element={protect(<GradeSheetPage />, { permissions: ['grades.view'] })} />
+          <Route path="/vp/administrative/exams/grade-sheet/:studentId" element={protect(<ExamStudentAcademicRecordPage />, { permissions: ['grades.view'] })} />
+          <Route path="/vp/administrative/exams/approvals" element={protect(<ApprovalsPage />, { permissions: ['exams.manage'] })} />
+          <Route path="/vp/administrative/exams/deprivation" element={protect(<DeprivationPage />, { permissions: ['exams.manage'] })} />
+          <Route path="/vp/administrative/exams/supplementary" element={protect(<SupplementaryExamsPage />, { permissions: ['supplementary_exams.registrations.view'] })} />
+          <Route path="/vp/administrative/exams/supplementary-grades" element={protect(<SupplementaryGradesPage />, { allRoles: ['exam_officer'], assignedPermissions: ['supplementary_exams.grades.review'] })} />
+          <Route path="/vp/administrative/exams/courses" element={protect(<CoursesPage />, ACCESS.courseManagement)} />
+          <Route path="/vp/administrative/exams/course-offerings" element={protect(<CourseOfferingsPage />, ACCESS.courseManagement)} />
+          <Route path="/vp/administrative/exams/course-table" element={protect(<CourseTablePage />, ACCESS.courseManagement)} />
+          <Route path="/vp/administrative/exams/course-registration" element={protect(<CourseRegistrationPage />, ACCESS.courseRegistration)} />
+          <Route path="/vp/administrative/exams/approved-registration-requests" element={protect(<ApprovedRegistrationRequestsPage />, ACCESS.courseRegistration)} />
+          <Route path="/vp/administrative/exams/results" element={protect(<PortalReportsPage portal="exam-board" />, reportAccess('exam-board'))} />
+          <Route path="/vp/administrative/exams/registration-reports" element={protect(<PortalReportsPage portal="admissions" />, reportAccess('admissions'))} />
+          <Route path="/vp/administrative/personnel/employees" element={protect(<EmployeesPage />, { permissions: ['hr.view'] })} />
+          <Route path="/vp/administrative/personnel/employees/add" element={protect(<AddEmployeePage />, { allPermissions: ['hr.view', 'hr.manage'] })} />
+          <Route path="/vp/administrative/personnel/employees/:id" element={protect(<EmployeeProfilePage />, { permissions: ['hr.view'] })} />
+          <Route path="/vp/administrative/personnel/positions" element={protect(<PositionsPage />, { permissions: ['hr.view'] })} />
+          <Route path="/vp/administrative/personnel/reports" element={protect(<PortalReportsPage portal="hr" />, reportAccess('hr'))} />
+        </Route>
+
+        {/* Ordinary office staff retain only their existing grants and scopes. */}
         <Route element={<ProtectedRoute {...hrAccess(HR.view)}><DashboardLayout nav={administrativeVicePresidentNav} appTitle="الشؤون الإدارية" Navigation={AdministrativeNavigation} portalClassName="administrative-portal" /></ProtectedRoute>}>
           <Route path="/vp/administrative/hr" element={<HrOfficePage />} />
           <Route path="/vp/administrative/hr/workers/:employee" element={<WorkerFilePage />} />

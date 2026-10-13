@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { OfficeLink as Link } from '../../vice-presidency/utils/administrativeOfficeNavigation'
 import { FaBookOpen, FaCheckCircle, FaClock, FaRedo, FaSearch, FaUsers } from 'react-icons/fa'
 import { apiRequest } from '../../../services/apiClient'
 import { getIdentity } from '../../auth/auth'

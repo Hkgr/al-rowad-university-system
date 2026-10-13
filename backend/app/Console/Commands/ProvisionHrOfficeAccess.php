@@ -9,9 +9,9 @@ use Illuminate\Support\Facades\DB;
 
 final class ProvisionHrOfficeAccess extends Command
 {
-    protected $signature = 'hr-office:provision-access {--grant-hr : Assign office read/preparation/classification/recruitment/work-time rights to the existing hr_officer role} {--grant-vp : Assign those permissions plus review to the existing administrative VP role} {--grant-vp-payroll : Grant accounting entry/read only to the existing administrative VP} {--grant-vp-accounting : Explicitly grant amount editing, period preparation/correction, payments and financial export; not formulas or owner-portal access} {--grant-vp-formulas : Explicitly grant existing payroll configuration/formula permission to the administrative VP; no HR grants} {--grant-vp-actions : Explicitly grant relationship correction/cancellation and individual worker PDF export} {--grant-vp-payments : Explicitly grant disbursement/receipt recording} {--check : Read only}';
+    protected $signature = 'hr-office:provision-access {--grant-hr : Assign the existing limited ordinary HR permissions} {--grant-vp : Compatibility alias for complete administrative office provisioning} {--grant-vp-payroll : Compatibility alias for complete administrative office provisioning} {--grant-vp-accounting : Compatibility alias for complete administrative office provisioning} {--grant-vp-formulas : Compatibility alias for complete administrative office provisioning} {--grant-vp-actions : Compatibility alias for complete administrative office provisioning} {--grant-vp-payments : Compatibility alias for complete administrative office provisioning} {--check : Read only}';
 
-    protected $description = 'Register HR permissions and explicitly selected VP accounting/formula grants; no accounts/scopes or owner-portal access';
+    protected $description = 'Register ordinary HR permissions; VP options delegate to the unified 71/72/73 grant. No accounts/scopes or owner-portal access';
 
     private const VP_PAYROLL = [HrOffice::PAYROLL_ACCESS, OwnerPortal::PAYROLL_VIEW];
 
@@ -19,6 +19,11 @@ final class ProvisionHrOfficeAccess extends Command
 
     public function handle(): int
     {
+        // Historical VP switches remain accepted, but any one now provisions the complete directorate role.
+        if (collect(['grant-vp', 'grant-vp-payroll', 'grant-vp-accounting', 'grant-vp-formulas', 'grant-vp-actions', 'grant-vp-payments'])->contains(fn ($flag) => $this->option($flag))) {
+            $result = $this->call('administrative-offices:provision-access', ['--check' => (bool) $this->option('check')]);
+            if ($result !== self::SUCCESS || (! $this->option('grant-hr'))) return $result;
+        }
         try {
             $state = DB::transaction(function (): string {
                 // One shared command mutex/order, including the pre-existing core grant options.
@@ -91,7 +96,7 @@ final class ProvisionHrOfficeAccess extends Command
 
                 return 'APPLIED';
             });
-            $this->info($state.'. No user, scope or financial value created. Formula permission only with --grant-vp-formulas; no owner-portal or automatic HR financial grant.');
+            $this->info($state.'. No user, scope or financial value created. VP switches delegate to complete directorate provisioning; ordinary HR grants remain limited.');
 
             return self::SUCCESS;
         } catch (\Throwable $e) {

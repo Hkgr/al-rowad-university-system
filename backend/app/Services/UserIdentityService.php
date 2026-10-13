@@ -52,6 +52,7 @@ class UserIdentityService
             'board_member_id' => $user->board_member_id,
             'roles' => $user->effectiveRoles()->all(),
             'permissions' => $user->effectivePermissions()->all(),
+            'administrative_offices' => \App\Support\AdministrativeOfficeAccess::identity($user),
         ];
     }
 

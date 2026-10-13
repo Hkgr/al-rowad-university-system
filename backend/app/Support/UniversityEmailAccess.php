@@ -41,7 +41,8 @@ final class UniversityEmailAccess
     {
         if ($user?->isSuperAdmin()) return true;
         if (! $user || $user->accountStatus?->status_code !== 'active'
-            || ! $user->effectiveRoles()->contains(AccountAdministration::ROLE_TECHNICAL_TEAM)) return false;
+            || (! $user->effectiveRoles()->contains(AccountAdministration::ROLE_TECHNICAL_TEAM)
+                && ! AdministrativeOfficeAccess::actsForOffice($user, AccountAdministration::ROLE_TECHNICAL_TEAM))) return false;
         $assigned = $user->effectivePermissions();
         return $assigned->contains(AccountAdministration::PORTAL_ACCESS) && $assigned->contains($permission);
     }

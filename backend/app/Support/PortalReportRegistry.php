@@ -87,10 +87,10 @@ final class PortalReportRegistry
         if ($portal === 'hr') {
             return $scopes->contains(fn ($s) => in_array($s['type'], ['college', 'university'], true));
         }
-        if ($portal === 'exam-board' && ! $roles->contains('exam_officer')) {
+        if ($portal === 'exam-board' && ! $user->isExamOfficer()) {
             return false;
         }
-        if ($portal === 'admissions' && ! $roles->contains('registration_officer')) {
+        if ($portal === 'admissions' && ! $user->isRegistrationOfficer()) {
             return false;
         }
 

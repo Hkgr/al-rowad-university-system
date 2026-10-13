@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useOfficeNavigate as useNavigate } from '../../vice-presidency/utils/administrativeOfficePaths'
 import { motion } from 'framer-motion'
 import {
   FaUserPlus, FaEye, FaEdit, FaTrash,
@@ -8,7 +8,8 @@ import {
 import DataTable from '../../../components/table/DataTable'
 import FilterBar from '../../../components/table/FilterBar'
 
-const API = 'https://rust.alrowaduni.edu.sy/api/v1'
+import { API_BASE_URL } from '../../../services/apiClient'
+const API = `${API_BASE_URL}/v1`
 function authHeaders() {
   return { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }
 }
