@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useBlocker, useParams } from 'react-router-dom'
+import { useBlocker, useParams } from 'react-router-dom'
+import { OfficeLink as Link } from '../../vice-presidency/utils/administrativeOfficeNavigation'
 import { apiRequest } from '../../../services/apiClient'
 import { ACCESS, canAccess, getIdentity } from '../../auth/auth'
 import ManualGradeDialog from '../components/ManualGradeDialog'

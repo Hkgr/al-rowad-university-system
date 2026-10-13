@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useOfficeNavigate as useNavigate } from '../../vice-presidency/utils/administrativeOfficePaths'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FaSpinner, FaCheckCircle, FaUserPlus, FaFolderOpen, FaListUl, FaFileExcel } from 'react-icons/fa'
 import { canAccess, hasPermission, PERMISSIONS } from '../../auth/auth'
@@ -331,7 +331,7 @@ setErrors(prev => ({ ...prev, _load: 'تعذّر تحميل البيانات. ت
             <button
               type="button"
               className="px-6 py-[11px] border-[1.5px] border-primary/25 rounded-[12px] bg-white text-primary-dark text-[14px] font-bold cursor-pointer transition-all duration-200 hover:bg-primary/7 hover:border-primary/40"
-              onClick={() => navigate('/students')}
+              onClick={() => navigate('/student-affairs/students')}
             >
               إلغاء
             </button>

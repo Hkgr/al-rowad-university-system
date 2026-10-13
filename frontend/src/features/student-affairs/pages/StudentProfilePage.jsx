@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
+import { useOfficeNavigate as useNavigate } from '../../vice-presidency/utils/administrativeOfficePaths'
 import { motion } from 'framer-motion'
 import {
   FaArrowRight, FaEdit, FaSpinner, FaUser,
@@ -10,7 +11,8 @@ import StudentDocuments from '../components/StudentDocuments'
 import { canAccess } from '../../auth/auth'
 import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 
-const API = 'https://rust.alrowaduni.edu.sy/api/v1'
+import { API_BASE_URL } from '../../../services/apiClient'
+const API = `${API_BASE_URL}/v1`
 
 function authHeaders() {
   return {

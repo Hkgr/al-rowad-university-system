@@ -102,7 +102,7 @@ export const ACCESS = Object.freeze({
   studentAffairsArchivedStudents: { allPermissions: [PERMISSIONS.studentsView, PERMISSIONS.studentsManage] },
   studentAffairsApprovedRegistrationRequests: { allPermissions: [PERMISSIONS.studentsView, PERMISSIONS.registrationView] },
   scientificVicePresident: { permissions: [PERMISSIONS.vicePresidencyScientificAccess] },
-  administrativeVicePresident: { permissions: [PERMISSIONS.vicePresidencyAdministrativeAccess] },
+  administrativeVicePresident: { allRoles: [ROLES.vicePresidentAdministrative], assignedPermissions: [PERMISSIONS.vicePresidencyAdministrativeAccess], actualUniversityScope: true },
   // المكتب التقني: organizational placement grants nothing; access comes from role permissions only.
   technicalPortal: { allPermissions: [PERMISSIONS.technicalPortalAccess] },
   technicalAccounts: { allPermissions: [PERMISSIONS.technicalPortalAccess, PERMISSIONS.userAccountsView] },
@@ -156,6 +156,13 @@ export function hasAssignedPermission(permission, user = getIdentity()) {
 export function hasActualUniversityScope(user = getIdentity()) {
   return user?.access_scopes?.some(scope => scope?.type === 'university') ?? false
 }
+// Server-declared implemented-office authority, not a new assigned role or permission bypass.
+export function hasAdministrativeOfficeRole(role, user = getIdentity()) {
+  const offices = user?.administrative_offices
+  return !!(hasRole(ROLES.vicePresidentAdministrative, user) && hasActualUniversityScope(user)
+    && offices?.role === ROLES.vicePresidentAdministrative && offices?.operator_roles?.[role]
+    && offices.offices?.includes(offices.operator_roles[role]))
+}
 export function can(permission, user = getIdentity()) { return hasPermission(permission, user) }
 export function canAny(permissions, user = getIdentity()) { return permissions.some(permission => can(permission, user)) }
 export function canAll(permissions, user = getIdentity()) { return permissions.every(permission => can(permission, user)) }
@@ -170,10 +177,10 @@ export function canAccess({ permissions = [], allPermissions = [], roles = [], a
   if (actualScopeTypes.length && !user.access_scopes?.some(scope => actualScopeTypes.includes(scope?.type) && Number(scope.id) > 0)) return false
   if (actualAcademicScope && !user.access_scopes?.some(scope => ['university', 'college', 'department', 'program'].includes(scope?.type) && Number(scope.id) > 0)) return false
   const hasEveryRequiredPermission = allPermissions.every(permission => hasPermission(permission, user))
-  const hasEveryRequiredRole = allRoles.every(role => hasRole(role, user))
+  const hasEveryRequiredRole = allRoles.every(role => hasRole(role, user) || hasAdministrativeOfficeRole(role, user))
   const hasEveryAssignedPermission = assignedPermissions.every(permission => hasAssignedPermission(permission, user))
   const hasAnyAlternative = permissions.some(permission => hasPermission(permission, user))
-    || roles.some(role => hasRole(role, user))
+    || roles.some(role => hasRole(role, user) || hasAdministrativeOfficeRole(role, user))
     || (permissions.length === 0 && roles.length === 0)
 
   return hasEveryRequiredPermission && hasEveryRequiredRole && hasEveryAssignedPermission && hasAnyAlternative

@@ -164,6 +164,8 @@ class DataScopeService
 
         $model = $query->getModel();
         $table = $model->getTable();
+        $officePermission = \App\Support\AdministrativeOfficeAccess::RESOURCE_PERMISSIONS[$table] ?? null;
+        if ($officePermission && \App\Support\AdministrativeOfficeAccess::hasAuthority($user) && $user->hasPermission($officePermission)) return $query;
         if ($table === 'academic_levels') return $query;
         if ($table === 'colleges') return $this->scopeColleges($query, $user);
         if ($table === 'departments') return $this->scopeDepartments($query, $user);
@@ -238,6 +240,7 @@ class DataScopeService
     public function canStaffAccessStudent(User $user, Student $student): bool
     {
         if ($this->bypassesScope($user)) return true;
+        if (\App\Support\AdministrativeOfficeAccess::hasAuthority($user)) return $this->scopeStudents(Student::withTrashed(), $user)->whereKey($student->student_id)->exists();
         if ($user->employee_id === null) return false;
 
         return $this->scopeStudentsForStaff(Student::withTrashed(), $user)
@@ -252,6 +255,7 @@ class DataScopeService
     public function canStaffAccessOffering(User $user, CourseOffering $offering): bool
     {
         if ($this->bypassesScope($user)) return true;
+        if (\App\Support\AdministrativeOfficeAccess::hasAuthority($user)) return $this->scopeOfferings(CourseOffering::query(), $user)->whereKey($offering->course_offering_id)->exists();
         if ($user->employee_id === null) return false;
 
         return $this->scopeOfferingsForStaff(CourseOffering::query(), $user)
@@ -476,6 +480,7 @@ class DataScopeService
     private function scopeStudentsForStaff(Builder $query, User $user): Builder
     {
         if ($this->bypassesScope($user)) return $query;
+        if (\App\Support\AdministrativeOfficeAccess::hasAuthority($user)) return $this->scopeStudents($query, $user);
         if ($user->employee_id === null) return $query->whereRaw('1 = 0');
         $scopes = $this->grouped($user);
         if ($scopes['university'] !== []) return $query;
@@ -492,6 +497,7 @@ class DataScopeService
     private function scopeOfferingsForStaff(Builder $query, User $user): Builder
     {
         if ($this->bypassesScope($user)) return $query;
+        if (\App\Support\AdministrativeOfficeAccess::hasAuthority($user)) return $this->scopeOfferings($query, $user);
         if ($user->employee_id === null) return $query->whereRaw('1 = 0');
         $scopes = $this->grouped($user);
         if ($scopes['university'] !== []) return $query;

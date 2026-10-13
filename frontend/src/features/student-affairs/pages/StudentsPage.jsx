@@ -1,11 +1,13 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { OfficeLink as Link } from '../../vice-presidency/utils/administrativeOfficeNavigation'
+import { useOfficeNavigate as useNavigate } from '../../vice-presidency/utils/administrativeOfficePaths'
 import { FaUserPlus, FaEye, FaEdit, FaArchive, FaGraduationCap, FaPhone, FaDownload, FaSpinner } from 'react-icons/fa'
 import DataTable from '../../../components/table/DataTable'
 import FilterBar from '../../../components/table/FilterBar'
 import { exportRowsToPdf } from '../../../utils/pdfExport'
 
-const API = 'https://rust.alrowaduni.edu.sy/api/v1'
+import { API_BASE_URL } from '../../../services/apiClient'
+const API = `${API_BASE_URL}/v1`
 const PAGE_SIZE = 15
 
 // Arabic ordinal words keyed by the numeric level_order field (language-neutral,

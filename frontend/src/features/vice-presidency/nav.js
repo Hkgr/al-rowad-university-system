@@ -1,10 +1,19 @@
 import { FaCalendarAlt, FaChalkboardTeacher, FaChartBar, FaClipboardCheck, FaClipboardList, FaHome, FaUnlock, FaQuestionCircle, FaUniversity, FaUserTie } from 'react-icons/fa'
 
-import { PERMISSIONS, ROLES } from '../auth/auth'
+import { ACCESS, PERMISSIONS, ROLES } from '../auth/auth'
 import { WORKSPACE_ACCESS } from '../scientific-programs/workspace'
 import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
 import { ADMINISTRATIVE_ACCESS, ADMINISTRATIVE_PATHS } from './utils/administrativeAccess'
 import { HR, hrAccess, payrollAccess } from '../hr-office/lib/hrOffice'
+import studentAffairsNav from '../student-affairs/nav'
+import examBoardNav from '../exam-board/nav'
+import technicalNav from '../technical-portal/nav'
+import { reportNav } from '../portal-reports/reportNav'
+import { administrativeOfficeAccess, administrativeOfficePath } from './utils/administrativeOfficePaths'
+
+const officeServices = [studentAffairsNav, examBoardNav, technicalNav, [reportNav('hr')]].flatMap(nav => nav.flatMap(section => section.items))
+  .filter(item => !['/student-affairs', '/exam-board', '/student-affairs/calendar', '/exam-board/calendar', '/exam-board/appeals', '/exam-board/settings'].includes(item.to) && !item.to.endsWith('/guide'))
+  .map(item => ({ ...item, ...administrativeOfficeAccess(item), to: administrativeOfficePath(item.to, '/vp/administrative') }))
 
 export const scientificVicePresidentNav = [
   {
@@ -85,7 +94,7 @@ export const administrativeVicePresidentNav = [
         ar: 'الرئيسية',
         en: 'Home',
         end: true,
-        permissions: [PERMISSIONS.vicePresidencyAdministrativeAccess],
+        ...ACCESS.administrativeVicePresident,
       },
       {
         to: '/vp/administrative/reports',
@@ -107,6 +116,10 @@ export const administrativeVicePresidentNav = [
       { to: '/vp/administrative/payroll', Icon: FaUserTie, ar: 'الرواتب', en: 'Payroll', ...payrollAccess(PERMISSIONS.ownerPayrollView) },
       { to: ADMINISTRATIVE_PATHS.faculty, Icon: FaUserTie, ar: 'إدارة المدرسين', en: 'Teachers', ...ADMINISTRATIVE_ACCESS.facultyView },
       { to: ADMINISTRATIVE_PATHS.deans, Icon: FaUniversity, ar: 'عمداء الكليات', en: 'College deans', ...ADMINISTRATIVE_ACCESS.deansView },
+      ...officeServices,
+      { to: '/vp/administrative/student-affairs/ministry-placements', Icon: FaClipboardList, ar: 'القبول والمفاضلات', en: 'Admissions', ...administrativeOfficeAccess({ assignedPermissions: ['admissions.view'] }) },
+      { to: '/vp/administrative/personnel/employees', Icon: FaUserTie, ar: 'سجلات الموظفين', en: 'Personnel records', ...administrativeOfficeAccess({ assignedPermissions: ['hr.view'] }) },
+      { to: '/vp/administrative/personnel/positions', Icon: FaUserTie, ar: 'المناصب المسجلة', en: 'Recorded positions', ...administrativeOfficeAccess({ assignedPermissions: ['hr.view'] }) },
       {
         to: '/vp/administrative/exceptional-openings',
         Icon: FaUnlock,

@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { useOfficeNavigate as useNavigate } from '../../vice-presidency/utils/administrativeOfficePaths'
 import { FaClipboardList } from 'react-icons/fa'
 import StudentPicker from '../components/StudentPicker'
 
