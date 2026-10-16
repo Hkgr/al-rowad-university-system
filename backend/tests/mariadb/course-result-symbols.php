@@ -322,6 +322,7 @@ if(($config['scenario']??'all')==='ordered'){
     orderedDropRace(1720,true,'installed');orderedDropRace(1721,false,'installed');
     echo "ORDERED_ONLY | PASS\n";file_put_contents($directory.'/verification-passed',$config['marker']);exit;
 }
+Tests\Support\IncompleteMariaDbAcceptance::run();
 $first=concurrencySuite(0,'fallback');
 orderedDropRace(720,true,'fallback');orderedDropRace(721,false,'fallback');
 foreach([1100,1200,1300,1350,1400,1500,1600,1700,1701,1702,1720,1721,1900,1901] as $id)context($id,false);
