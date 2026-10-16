@@ -286,7 +286,7 @@ class SupplementaryExamMaterializationService
         $this->assertExamOfficer($actor);
         $this->assertReady();
 
-        return DB::transaction(function () use ($actor, $seed): array {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($actor, $seed): array {
             $seed = SupplementaryExamOffering::query()->findOrFail($seed->getKey());
             $period = SupplementaryExamPeriod::query()
                 ->lockForUpdate()
@@ -313,6 +313,7 @@ class SupplementaryExamMaterializationService
             $sourceEvents = $this->lockPublishedSourceEvents($sourceResults, $submission);
 
             $originalRegistrationIds = $registrations->pluck('student_course_registration_id')->map(fn ($id) => (int) $id);
+            foreach ($originalRegistrationIds as $id) \App\Support\IncompleteOutcomeGuard::assertOrdinaryWrite($id);
             $regularRegistrationMap = StudentCourseRegistration::query()
                 ->whereIn('student_course_registration_id', $originalRegistrationIds)
                 ->pluck('course_offering_id', 'student_course_registration_id');

@@ -52,7 +52,7 @@ class StudentTranscriptEntryResource extends JsonResource
             'theoretical_total' => $this->whenLoaded('studentCourseResult', fn () => $this->studentCourseResult?->theoretical_total),
             'practical_total' => $this->whenLoaded('studentCourseResult', fn () => $this->studentCourseResult?->practical_total),
             'coursework_total' => $this->whenLoaded('studentCourseResult', fn () => $this->studentCourseResult?->coursework_total),
-            'final_mark' => $this->whenLoaded('studentCourseResult', fn () => $this->studentCourseResult?->final_mark),
+            'final_mark' => $this->whenLoaded('studentCourseResult', fn () => $this->studentCourseResult?->resultStatus?->status_code === 'incomplete' || $this->registrationStatus?->status_code === 'withdrawn' ? null : $this->studentCourseResult?->final_mark),
             'result_status' => ResultStatusResource::make($this->when(
                 $this->relationLoaded('studentCourseResult') && $this->studentCourseResult?->relationLoaded('resultStatus'),
                 $this->studentCourseResult?->resultStatus

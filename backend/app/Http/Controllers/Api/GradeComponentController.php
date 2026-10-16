@@ -15,17 +15,17 @@ class GradeComponentController extends ApiController
 {
     public function store(): JsonResponse
     {
-        return DB::transaction(fn (): JsonResponse => parent::store(), 3);
+        return \App\Services\AcademicPlanContext::transaction(fn (): JsonResponse => parent::store());
     }
 
     public function update($id): JsonResponse
     {
-        return DB::transaction(fn (): JsonResponse => parent::update($id), 3);
+        return \App\Services\AcademicPlanContext::transaction(fn (): JsonResponse => parent::update($id));
     }
 
     public function destroy($id): JsonResponse
     {
-        return DB::transaction(fn (): JsonResponse => parent::destroy($id), 3);
+        return \App\Services\AcademicPlanContext::transaction(fn (): JsonResponse => parent::destroy($id));
     }
 
     protected function beforeStoreMutation(array $payload): void
@@ -33,6 +33,7 @@ class GradeComponentController extends ApiController
         SupplementaryExamTargetGuard::assertCourseOfferingConfigurationsMutable([
             (int) $payload['course_offering_id'],
         ]);
+        \App\Support\IncompleteOutcomeGuard::assertConfigurationMutable([(int) $payload['course_offering_id']]);
     }
 
     protected function beforeUpdateMutation(GradeComponent $component, array $payload): void
@@ -44,6 +45,7 @@ class GradeComponentController extends ApiController
             (int) ($payload['course_offering_id'] ?? $component->course_offering_id),
         ])->filter()->unique()->values();
         SupplementaryExamTargetGuard::assertCourseOfferingConfigurationsMutable($offeringIds);
+        if (array_intersect(array_keys($payload), ['course_offering_id', 'component_type', 'is_required', 'max_mark', 'weight_percentage'])) \App\Support\IncompleteOutcomeGuard::assertConfigurationMutable($offeringIds);
         $locked = GradeComponent::query()->whereKey($component->getKey())->lockForUpdate()->first();
         if (! $locked || ! $offeringIds->contains((int) $locked->course_offering_id)) {
             throw new GradeException(
@@ -62,6 +64,7 @@ class GradeComponentController extends ApiController
             (int) $currentOfferingId,
         ])->filter()->unique()->values();
         SupplementaryExamTargetGuard::assertCourseOfferingConfigurationsMutable($offeringIds);
+        \App\Support\IncompleteOutcomeGuard::assertConfigurationMutable($offeringIds);
         $locked = GradeComponent::query()->whereKey($component->getKey())->lockForUpdate()->first();
         if (! $locked || ! $offeringIds->contains((int) $locked->course_offering_id)) {
             throw new GradeException(

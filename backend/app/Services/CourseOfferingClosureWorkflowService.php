@@ -207,7 +207,7 @@ class CourseOfferingClosureWorkflowService
      */
     private function runLocked(int $offeringId, callable $then): array
     {
-        return DB::transaction(function () use ($offeringId, $then): array {
+        return AcademicPlanContext::transaction(function () use ($offeringId, $then): array {
             $locked = CourseOffering::query()
                 ->whereKey($offeringId)
                 ->lockForUpdate()

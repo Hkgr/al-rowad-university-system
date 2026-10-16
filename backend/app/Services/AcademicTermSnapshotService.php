@@ -164,7 +164,11 @@ class AcademicTermSnapshotService
 
     private function present(StudentAcademicTerm $term): array
     {
+        $current = \App\Support\IncompleteOutcomeGuard::ready()
+            ? $this->grades->officialTermMetrics(Student::findOrFail($term->student_id), (int) $term->academic_year_id, (int) $term->semester_id) : null;
         return [
+            'current_metrics' => $current,
+            'snapshot_is_historical' => $term->isFinalized(),
             'student_academic_term_id' => $term->student_academic_term_id,
             'student_id' => $term->student_id,
             'academic_year_id' => $term->academic_year_id,

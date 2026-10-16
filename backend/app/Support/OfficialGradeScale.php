@@ -5,7 +5,17 @@ namespace App\Support;
 /** Canonical grade bands shared by transactional grading and read-only analytics. */
 final class OfficialGradeScale
 {
-    public const EXCLUDED_STATUSES = ['incomplete', 'deprived', 'withdrawn'];
+    public const EXCLUDED_STATUSES = ['incomplete', 'withdrawn', 'pending_approval'];
+
+    public static function isFailure(?string $status): bool { return in_array($status, ['failed', 'deprived'], true); }
+
+    /** Shared eligibility: a persisted failure does not require a fabricated numeric mark. */
+    public static function gpaEligibilitySql(string $status, string $final, string $theory, string $practice, string $requiresTheory, string $requiresPractice): string
+    {
+        return "({$status} IN ('failed','deprived') OR ({$status}='passed' AND {$final} IS NOT NULL AND ({$requiresTheory}=0 OR {$theory} IS NOT NULL) AND ({$requiresPractice}=0 OR {$practice} IS NOT NULL)))";
+    }
+
+    public static function numericAverageSql(string $mark, string $status): string { return "AVG(CASE WHEN {$status} NOT IN ('incomplete','pending_approval','withdrawn') THEN {$mark} END)"; }
 
     /** Descending thresholds are the single source used by PHP and SQL. */
     public const BANDS = [
@@ -30,7 +40,7 @@ final class OfficialGradeScale
 
     public static function points(string $letter, string $statusCode): float
     {
-        if (in_array($letter, ['F', 'Z', 'W', 'I'], true) || $statusCode === 'failed' || in_array($statusCode, self::EXCLUDED_STATUSES, true)) {
+        if (in_array($letter, ['F', 'Z', 'W', 'I'], true) || self::isFailure($statusCode) || in_array($statusCode, self::EXCLUDED_STATUSES, true)) {
             return 0.0;
         }
 

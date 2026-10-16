@@ -460,6 +460,7 @@ class DeanCourseOfferingController extends Controller
             )
             ->whereColumn('dean_offering_scr.course_offering_id', 'course_offerings.course_offering_id')
             ->whereIn('dean_offering_rs.status_code', StudentCourseRegistration::HISTORICAL_ATTEMPT_STATUSES)
+            ->whereHas('resultStatus', fn (Builder $status) => $status->whereNotIn('status_code', ['incomplete', 'pending_approval', 'withdrawn']))
             ->whereNotNull('student_course_results.final_mark');
     }
 

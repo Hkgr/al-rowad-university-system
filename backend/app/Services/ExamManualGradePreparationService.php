@@ -148,6 +148,7 @@ final class ExamManualGradePreparationService
             $ids = [];
             foreach ($r['plan']['components'] as $component) {
                 $key = $component['key']; unset($component['key']);
+                if ($r['plan']['create']) \App\Support\IncompleteOutcomeGuard::assertConfigurationMutable([(int) $offering->getKey()]);
                 $ids[$key] = $r['plan']['create'] ? GradeComponent::create(['course_offering_id' => $offering->getKey()] + $component)->getKey() : (int) $key;
             }
             $seen = []; $marks = [];

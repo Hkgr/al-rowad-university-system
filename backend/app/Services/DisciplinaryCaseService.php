@@ -21,7 +21,7 @@ class DisciplinaryCaseService
 
     public function createCase(array $data, ?int $userId): StudentDisciplinaryCase
     {
-        return DB::transaction(function () use ($data, $userId): StudentDisciplinaryCase {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($data, $userId): StudentDisciplinaryCase {
             $penaltyType = DisciplinaryPenaltyType::query()->findOrFail($data['penalty_type_id']);
 
             $attributes = [
@@ -149,7 +149,7 @@ class DisciplinaryCaseService
 
     public function revertCase(StudentDisciplinaryCase $case, ?int $userId): void
     {
-        DB::transaction(function () use ($case): void {
+        \App\Services\AcademicPlanContext::transaction(function () use ($case): void {
             $affectedCourses = DisciplinaryCaseAffectedCourse::query()
                 ->where('case_id', $case->case_id)
                 ->whereNull('reverted_at')
@@ -210,7 +210,7 @@ class DisciplinaryCaseService
 
     public function submitAppeal(int $caseId, array $data): DisciplinaryCaseAppeal
     {
-        return DB::transaction(function () use ($caseId, $data): DisciplinaryCaseAppeal {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($caseId, $data): DisciplinaryCaseAppeal {
             $case = StudentDisciplinaryCase::query()->findOrFail($caseId);
 
             $submittedStatusId = AppealStatus::query()
@@ -236,7 +236,7 @@ class DisciplinaryCaseService
 
     public function decideAppeal(int $appealId, string $decisionStatusCode, ?string $notes, ?int $userId): DisciplinaryCaseAppeal
     {
-        return DB::transaction(function () use ($appealId, $decisionStatusCode, $notes, $userId): DisciplinaryCaseAppeal {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($appealId, $decisionStatusCode, $notes, $userId): DisciplinaryCaseAppeal {
             $appeal = DisciplinaryCaseAppeal::query()->with('disciplinaryCase')->findOrFail($appealId);
 
             $statusId = AppealStatus::query()

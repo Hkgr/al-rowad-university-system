@@ -25,6 +25,8 @@ class ExecutiveReportsPhase1BehaviorTest extends TestCase
         Schema::create('permissions', fn(Blueprint $t)=>[$t->increments('permission_id'),$t->string('permission_code'),$t->boolean('is_active')->default(true)]);
         Schema::create('user_roles', fn(Blueprint $t)=>[$t->increments('user_role_id'),$t->unsignedInteger('user_id'),$t->unsignedInteger('role_id'),$t->boolean('is_active')->default(true)]);
         Schema::create('role_permissions', fn(Blueprint $t)=>[$t->increments('role_permission_id'),$t->unsignedInteger('role_id'),$t->unsignedInteger('permission_id')]);
+        // Current VP authority checks the effective assignment date; omitted columns are not valid SQLite fixtures.
+        Schema::table('user_roles', fn(Blueprint $t)=>$t->dateTime('assigned_at')->nullable());
         Schema::create('organizational_units', fn(Blueprint $t)=>[$t->increments('organizational_unit_id'),$t->string('unit_code'),$t->boolean('is_active')->default(true)]);
         Schema::create('user_access_scopes', fn(Blueprint $t)=>[$t->increments('user_access_scope_id'),$t->unsignedInteger('user_id'),$t->string('scope_type'),$t->unsignedInteger('scope_id'),$t->boolean('is_active')->default(true),$t->timestamps()]);
         Schema::create('colleges', fn(Blueprint $t)=>[$t->increments('college_id'),$t->string('college_name')->nullable(),$t->unsignedInteger('organizational_unit_id')->nullable()]);
@@ -44,6 +46,7 @@ class ExecutiveReportsPhase1BehaviorTest extends TestCase
         Schema::create('student_course_registrations', fn(Blueprint $t)=>[$t->increments('student_course_registration_id'),$t->unsignedInteger('student_id'),$t->unsignedInteger('course_offering_id'),$t->unsignedInteger('registration_status_id')]);
         Schema::create('result_statuses', fn(Blueprint $t)=>[$t->increments('result_status_id'),$t->string('status_code')]);
         Schema::create('student_course_results', fn(Blueprint $t)=>[$t->increments('student_course_result_id'),$t->unsignedInteger('student_course_registration_id'),$t->decimal('theoretical_total',6,2)->nullable(),$t->decimal('practical_total',6,2)->nullable(),$t->decimal('final_mark',6,2)->nullable(),$t->unsignedInteger('result_status_id')]);
+        Schema::table('student_course_results', fn(Blueprint $t)=>$t->boolean('is_deprived')->default(false));
         Schema::create('approval_statuses', fn(Blueprint $t)=>[$t->increments('approval_status_id'),$t->string('status_code')]);
         Schema::create('grade_approvals', fn(Blueprint $t)=>[$t->increments('grade_approval_id'),$t->unsignedInteger('course_offering_id'),$t->unsignedInteger('approval_status_id')]);
         Schema::create('employees', fn(Blueprint $t)=>[$t->increments('employee_id'),$t->string('employee_number'),$t->string('first_name')->nullable(),$t->string('last_name')->nullable(),$t->unsignedInteger('organizational_unit_id')->nullable()]);
@@ -154,15 +157,18 @@ class ExecutiveReportsPhase1BehaviorTest extends TestCase
         self::assertArrayHasKey('generated_at',$data);
     }
 
-    public function test_failed_high_mark_is_zero_points_and_missing_required_totals_are_excluded_from_gpa(): void
+    public function test_failed_high_mark_and_absent_totals_remain_zero_point_attempts(): void
     {
         DB::table('student_course_results')->where('student_course_result_id',1)->update(['final_mark'=>80,'theoretical_total'=>80]);
         $failed=app(ExecutiveReportQueryService::class)->run(['subject'=>'academic_performance','mode'=>'summary','metrics'=>['official_gpa'],'dimensions'=>[],'filters'=>['offering_ids'=>[1]],'period'=>['type'=>'academic','academic_year_ids'=>[1]],'page'=>1,'per_page'=>25]);
         self::assertSame(0.0,$failed['summary']['official_gpa']['value']);
         DB::table('student_course_results')->where('student_course_result_id',1)->update(['theoretical_total'=>null]);
         $missing=app(ExecutiveReportQueryService::class)->run(['subject'=>'academic_performance','mode'=>'summary','metrics'=>['official_gpa'],'dimensions'=>[],'filters'=>['offering_ids'=>[1]],'period'=>['type'=>'academic','academic_year_ids'=>[1]],'page'=>1,'per_page'=>25]);
-        self::assertNull($missing['summary']['official_gpa']['value']);
-        self::assertSame(0,$missing['summary']['official_gpa']['contributing_students']);
+        self::assertSame(0.0,$missing['summary']['official_gpa']['value']);
+        self::assertSame(1,$missing['summary']['official_gpa']['contributing_students']);
+        DB::table('student_course_results')->where('student_course_result_id',1)->update(['result_status_id'=>1]);
+        $passedMissing=app(ExecutiveReportQueryService::class)->run(['subject'=>'academic_performance','mode'=>'summary','metrics'=>['official_gpa'],'dimensions'=>[],'filters'=>['offering_ids'=>[1]],'period'=>['type'=>'academic','academic_year_ids'=>[1]],'page'=>1,'per_page'=>25]);
+        self::assertNull($passedMissing['summary']['official_gpa']['value']);
     }
 
     public function test_student_academic_membership_does_not_require_an_official_result(): void
@@ -392,6 +398,28 @@ class ExecutiveReportsPhase1BehaviorTest extends TestCase
         $identities=collect([$first,$second,$third])->map(fn($response)=>[$response->json('data.rows.0.faculty_member_id'),$response->json('data.rows.0.college_id')])->all();
         self::assertSame([[1,1],[1,2],[2,null]],$identities);
         self::assertSame($identities[0],[$repeated->json('data.rows.0.faculty_member_id'),$repeated->json('data.rows.0.college_id')]);
+    }
+
+    public function test_symbols_http_summary_grouped_and_student_detail_gpa_match_grade_service_with_absent_failure_marks(): void
+    {
+        // Two distinct courses for one student: B(3h) plus Z/F(3h), never two single-course student GPAs.
+        DB::table('courses')->insert(['course_id'=>10,'course_code'=>'SYMBOL','course_name'=>'Symbol course','credit_hours'=>3,'theoretical_hours'=>2,'practical_hours'=>0]);
+        DB::table('course_offerings')->where('course_offering_id',1)->update(['course_id'=>10]);
+        DB::table('student_course_results')->where('student_course_result_id',1)->update(['theoretical_total'=>null,'practical_total'=>null,'final_mark'=>null]);
+        DB::table('result_statuses')->insert([['result_status_id'=>3,'status_code'=>'deprived'],['result_status_id'=>4,'status_code'=>'incomplete']]);
+        Sanctum::actingAs($this->actor(70,'vice_president_scientific','vice_presidency.scientific.access',true));
+        foreach([2=>1.5,3=>1.5,4=>3.0] as $status=>$expected){
+            DB::table('student_course_results')->where('student_course_result_id',1)->update(['result_status_id'=>$status,'is_deprived'=>$status===3]);
+            $payload=['subject'=>'academic_performance','mode'=>'summary','metrics'=>['official_gpa','official_average'],'dimensions'=>['program'],'filters'=>['offering_ids'=>[1,2]],'period'=>['type'=>'academic','academic_year_ids'=>[1]],'page'=>1,'per_page'=>25];
+            $data=$this->postJson('/api/v1/vice-presidency/reports/query',$payload)->assertOk()->json('data');
+            self::assertEquals($expected,$data['summary']['official_gpa']['value']); self::assertEquals($expected,$data['series'][0]['official_gpa']['value']);
+            self::assertEquals(80.0,$data['summary']['official_average']);
+            self::assertSame($expected,app(GradeService::class)->calculateCgpa(Student::findOrFail(1))['cgpa']);
+            $detailPayload=array_replace($payload,['subject'=>'students','mode'=>'details','dimensions'=>[],'filters'=>['program_ids'=>[1]]]);
+            $details=$this->postJson('/api/v1/vice-presidency/reports/query',$detailPayload)->assertOk()->json('data.rows');
+            $detail=collect($details)->firstWhere('student_id',1);
+            self::assertEquals($expected,$detail['official_gpa']['value']);
+        }
     }
 
     private function seedFacts(): void

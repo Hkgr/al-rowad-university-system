@@ -16,6 +16,7 @@ use App\Models\StudentCourseResult;
 use App\Models\StudentGradeComponent;
 use App\Models\User;
 use App\Support\CourseRequirementClassification;
+use App\Support\IncompleteOutcomeGuard;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -50,6 +51,7 @@ class GradePartWorkflowService
             ->keyBy('component_type');
         $registrations = StudentCourseRegistration::query()->where('course_offering_id', $offeringId)->current()
             ->with(['student', 'registrationStatus', 'resultStatus', 'studentCourseResult.resultStatus', 'studentGradeComponents.gradeComponent'])->get();
+        IncompleteOutcomeGuard::attach($registrations);
 
         $isExamActor = $actor !== null && $actor->hasPermission('exams.manage');
         $assignment = $actor === null
@@ -68,7 +70,7 @@ class GradePartWorkflowService
             $editableStatus = in_array($status, ['draft', 'returned'], true);
             $complete = $this->partComplete($registrations, $offering->gradeComponents, $part);
             $gradeStateAllowsEditing = $registrations->contains(
-                fn ($registration): bool => $registration->allowsGradeEntry() && ! $this->registrationIsDeprived($registration)
+                fn ($registration): bool => $registration->allowsGradeEntry() && ! $this->registrationIsDeprived($registration) && IncompleteOutcomeGuard::forRegistration($registration) === null
             );
             $parts[$part] = [
                 'required' => $requiredPart,
@@ -137,6 +139,7 @@ class GradePartWorkflowService
 
                 return [
                     'registration_id' => $registration->student_course_registration_id,
+                    'result_lifecycle' => IncompleteOutcomeGuard::readState($registration),
                     'registration_status' => $registration->registrationStatus?->status_code,
                     'theoretical_deferred' => $deferral !== null,
                     'supplementary_exam_offering_id' => $deferral?->supplementary_exam_offering_id,
@@ -169,7 +172,7 @@ class GradePartWorkflowService
     {
         $this->assertPart($part);
         $this->assignments->assertCanManageGradePart($user, (int) $registration->course_offering_id, $part);
-        return DB::transaction(function () use ($registration, $part, $data, $user): array {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($registration, $part, $data, $user): array {
             CourseOfferingLock::lock((int) $registration->course_offering_id);
             $this->assignments->assertCanManageGradePart($user, (int) $registration->course_offering_id, $part);
             $this->lockApproval((int) $registration->course_offering_id, $part);
@@ -186,6 +189,7 @@ class GradePartWorkflowService
     private function persistPartInTransaction(StudentCourseRegistration $locked, string $part, array $data, User $user, string $auditReason): void
     {
             $this->grades->assertNotSupplementaryMaterialized((int) $locked->getKey());
+            IncompleteOutcomeGuard::assertOrdinaryWrite((int) $locked->getKey());
             if (! $locked->allowsGradeEntry()) {
                 $this->fail('Grade entry is not allowed for this registration.', 'grade_entry_not_allowed', 409);
             }
@@ -226,7 +230,7 @@ class GradePartWorkflowService
     {
         $this->assertPart($part);
         $this->assignments->assertCanManageGradePart($user, $offeringId, $part);
-        return DB::transaction(function () use ($offeringId, $part, $user): GradePartApproval {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($offeringId, $part, $user): GradePartApproval {
             CourseOffering::query()->whereKey($offeringId)->lockForUpdate()->firstOrFail();
 
             return $this->submitPartInTransaction($offeringId, $part, $user->user_id);
@@ -244,7 +248,7 @@ class GradePartWorkflowService
             $this->fail('You are not authorized to submit grade parts for this offering.', 'unauthorized_grade_part', 403);
         }
 
-        return DB::transaction(function () use ($user, $offeringId, $assigned): array {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($user, $offeringId, $assigned): array {
             CourseOffering::query()->whereKey($offeringId)->lockForUpdate()->firstOrFail();
             $required = $this->requiredParts($offeringId);
             $assignedRequired = array_values(array_intersect($assigned, $required));
@@ -341,7 +345,7 @@ class GradePartWorkflowService
     public function review(User $user, int $id, string $action, ?string $notes): GradePartApproval
     {
         $visible = $this->find($user, $id);
-        return DB::transaction(function () use ($visible, $user, $action, $notes): GradePartApproval {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($visible, $user, $action, $notes): GradePartApproval {
             CourseOffering::query()->whereKey($visible->course_offering_id)->lockForUpdate()->firstOrFail();
             $approval = GradePartApproval::query()->whereKey($visible->grade_part_approval_id)->lockForUpdate()->firstOrFail();
             if ($approval->status === 'approved' && $action === 'approve') return $approval;
@@ -381,7 +385,7 @@ class GradePartWorkflowService
         $old = $approval?->toArray();
         $values = ['status' => 'submitted', 'submission_version' => ($approval?->submission_version ?? 0) + 1, 'submitted_by_user_id' => $userId, 'submitted_at' => now(), 'reviewed_by_user_id' => null, 'reviewed_at' => null, 'review_notes' => null];
         $approval ? $approval->update($values) : $approval = GradePartApproval::query()->create(['course_offering_id' => $offeringId, 'component_type' => $part] + $values);
-        StudentGradeComponent::query()->whereIn('student_course_registration_id', $registrations->pluck('student_course_registration_id'))->whereIn('grade_component_id', $components->pluck('grade_component_id'))->update(['grade_status' => 'submitted']);
+        IncompleteOutcomeGuard::ordinaryComponents(StudentGradeComponent::query())->whereIn('student_course_registration_id', $registrations->pluck('student_course_registration_id'))->whereIn('grade_component_id', $components->pluck('grade_component_id'))->update(['grade_status' => 'submitted']);
         $this->event($approval, 'submitted', $old, $approval->fresh()->toArray(), $userId);
         return $approval->fresh();
     }
@@ -476,6 +480,8 @@ class GradePartWorkflowService
         );
         foreach ($registrations as $registration) {
             // An explicit, currently valid deferral is provenance for an intentionally absent regular theory result.
+            // Every I state already owns a persisted, audited outcome. Do not recalculate it from retained marks.
+            if (IncompleteOutcomeGuard::preservesOutcome($registration, true)) continue;
             if ($this->supplementaryEligibility->resolveInvalidCurrentDeferral($registration, $userId)) continue;
             $existing = StudentCourseResult::query()->where('student_course_registration_id', $registration->student_course_registration_id)->lockForUpdate()->first();
             $existingStatus = $existing === null ? $registration->resultStatus?->status_code
@@ -534,7 +540,9 @@ class GradePartWorkflowService
     private function partComplete($registrations, $components, string $part): bool
     {
         $partComponents = $components->where('component_type', $part); if ($partComponents->isEmpty()) return false;
+        IncompleteOutcomeGuard::attach($registrations);
         foreach ($registrations as $registration) {
+            if (IncompleteOutcomeGuard::preservesOutcome($registration)) continue;
             if ($registration->studentCourseResult?->is_deprived || $registration->studentCourseResult?->resultStatus?->status_code === 'deprived' || $registration->resultStatus?->status_code === 'deprived') continue;
             if ($part === 'theoretical' && $this->supplementaryEligibility->activeValidDeferral($registration)) continue;
             $grades = StudentGradeComponent::query()->where('student_course_registration_id', $registration->student_course_registration_id)->whereIn('grade_component_id', $partComponents->pluck('grade_component_id'))->get()->keyBy('grade_component_id');
@@ -557,7 +565,7 @@ class GradePartWorkflowService
             || $registration->studentCourseResult?->resultStatus?->status_code === 'deprived'
             || $registration->resultStatus?->status_code === 'deprived';
     }
-    private function setComponentStatus(GradePartApproval $approval, string $status): void { $componentIds = GradeComponent::query()->where('course_offering_id', $approval->course_offering_id)->where('component_type', $approval->component_type)->where('is_required', true)->lockForUpdate()->pluck('grade_component_id'); StudentGradeComponent::query()->whereIn('grade_component_id', $componentIds)->whereHas('studentCourseRegistration', fn ($q) => $q->where('course_offering_id', $approval->course_offering_id))->where('grade_status', 'submitted')->lockForUpdate()->update(['grade_status' => $status]); }
+    private function setComponentStatus(GradePartApproval $approval, string $status): void { $componentIds = GradeComponent::query()->where('course_offering_id', $approval->course_offering_id)->where('component_type', $approval->component_type)->where('is_required', true)->lockForUpdate()->pluck('grade_component_id'); IncompleteOutcomeGuard::ordinaryComponents(StudentGradeComponent::query())->whereIn('grade_component_id', $componentIds)->whereHas('studentCourseRegistration', fn ($q) => $q->where('course_offering_id', $approval->course_offering_id))->where('grade_status', 'submitted')->lockForUpdate()->update(['grade_status' => $status]); }
     private function event(GradePartApproval $approval, string $action, ?array $old, array $new, int $userId): void { GradePartApprovalEvent::query()->create(['grade_part_approval_id' => $approval->grade_part_approval_id, 'submission_version' => $approval->submission_version, 'action' => $action, 'old_values' => $old, 'new_values' => $new, 'performed_by_user_id' => $userId, 'performed_at' => now()]); }
     private function userName(?User $user): ?string
     {

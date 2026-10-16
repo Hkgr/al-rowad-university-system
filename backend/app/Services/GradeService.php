@@ -20,6 +20,7 @@ use App\Models\StudentCourseResult;
 use App\Models\StudentGradeComponent;
 use App\Support\CourseRequirementClassification;
 use App\Support\OfficialGradeScale;
+use App\Support\IncompleteOutcomeGuard;
 use App\Support\SupplementaryExamTargetGuard;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -108,6 +109,7 @@ class GradeService
 
         $withResults = $registrations->filter(fn (StudentCourseRegistration $registration) => $registration->studentCourseResult !== null);
         $finalMarks = $withResults
+            ->filter(fn ($r) => $r->studentCourseResult->final_mark !== null && !in_array($this->resolveEffectiveResultStatusCode($r), ['incomplete', 'pending_approval', 'withdrawn'], true))
             ->map(fn (StudentCourseRegistration $registration) => (float) $registration->studentCourseResult->final_mark)
             ->values();
 
@@ -253,6 +255,7 @@ class GradeService
     {
         $withResults = $registrations->filter(fn (StudentCourseRegistration $registration) => $registration->studentCourseResult !== null);
         $finalMarks = $withResults
+            ->filter(fn ($r) => $r->studentCourseResult->final_mark !== null && !in_array($this->resolveEffectiveResultStatusCode($r), ['incomplete', 'pending_approval', 'withdrawn'], true))
             ->map(fn (StudentCourseRegistration $registration) => (float) $registration->studentCourseResult->final_mark)
             ->values();
 
@@ -298,9 +301,10 @@ class GradeService
 
     public function createRegistrationGrades(int $registrationId, array $data, ?int $userId = null): array
     {
-        return DB::transaction(function () use ($registrationId, $data, $userId): array {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($registrationId, $data, $userId): array {
             $registration = $this->lockRegistrationWorkflow($registrationId);
             $this->assertNotSupplementaryMaterialized($registrationId);
+            IncompleteOutcomeGuard::assertOrdinaryWrite($registrationId);
             $this->assertLegacyGradeWorkflowAllowed((int) $registration->course_offering_id);
             $this->assertRegistrationAllowsGrading($registration);
             $this->assertOfferingGradesEditable((int) $registration->course_offering_id);
@@ -318,9 +322,10 @@ class GradeService
 
     public function updateRegistrationGrades(int $registrationId, array $data, ?int $userId = null): array
     {
-        return DB::transaction(function () use ($registrationId, $data, $userId): array {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($registrationId, $data, $userId): array {
             $registration = $this->lockRegistrationWorkflow($registrationId);
             $this->assertNotSupplementaryMaterialized($registrationId);
+            IncompleteOutcomeGuard::assertOrdinaryWrite($registrationId);
             $this->assertLegacyGradeWorkflowAllowed((int) $registration->course_offering_id);
             $this->assertRegistrationAllowsGrading($registration);
             $this->assertOfferingGradesEditable((int) $registration->course_offering_id);
@@ -355,9 +360,10 @@ class GradeService
 
     public function calculateRegistrationResult(int $registrationId, ?int $userId = null): array
     {
-        return DB::transaction(function () use ($registrationId, $userId): array {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($registrationId, $userId): array {
             $registration = $this->lockRegistrationWorkflow($registrationId);
             $this->assertNotSupplementaryMaterialized($registrationId);
+            IncompleteOutcomeGuard::assertOrdinaryWrite($registrationId);
             $this->assertLegacyGradeWorkflowAllowed((int) $registration->course_offering_id);
             $this->assertRegistrationAllowsGrading($registration);
             $this->assertOfferingGradesEditable((int) $registration->course_offering_id);
@@ -404,16 +410,21 @@ class GradeService
     {
         $student->load(['currentAcademicLevel', 'academicProgram.department.college']);
 
-        $registrations = $this->officialAcademicAttempts($student)
-            ->get()
-            ->filter(fn (StudentCourseRegistration $registration): bool => $this->isOfficiallyVisibleAttempt($registration))
-            ->values();
+        $registrations = $this->loadOfficialVisibleAttempts($student);
         $registrations->each(fn (StudentCourseRegistration $registration) => $registration->setRelation('student', $student));
         CourseRequirementClassification::attachStudentProgramCourses($registrations);
 
+        // Withdrawal is a registration fact, not an inference from only the
+        // officially visible subset (which can omit another pending attempt).
+        $termStates = DB::table('student_course_registrations as withdrawal_scr')
+            ->join('course_offerings as withdrawal_co', 'withdrawal_co.course_offering_id', '=', 'withdrawal_scr.course_offering_id')
+            ->join('registration_statuses as withdrawal_rs', 'withdrawal_rs.registration_status_id', '=', 'withdrawal_scr.registration_status_id')
+            ->where('withdrawal_scr.student_id', $student->getKey())->whereIn('withdrawal_rs.status_code', ['registered', 'completed', 'withdrawn'])
+            ->get(['withdrawal_co.academic_year_id', 'withdrawal_co.semester_id', 'withdrawal_rs.status_code'])
+            ->groupBy(fn ($row) => $row->academic_year_id.'-'.$row->semester_id);
         $terms = $registrations
             ->groupBy(fn (StudentCourseRegistration $registration) => ($registration->courseOffering?->academic_year_id ?? 'none').'-'.($registration->courseOffering?->semester_id ?? 'none'))
-            ->map(function (Collection $termRegistrations) {
+            ->map(function (Collection $termRegistrations, string $key) use ($termStates) {
                 $first = $termRegistrations->first();
                 $year = $first?->courseOffering?->academicYear;
                 $semester = $first?->courseOffering?->semester;
@@ -429,6 +440,8 @@ class GradeService
                     'semester' => $this->compactSemester($semester),
                     'term_gpa' => $gpaEvaluation['gpa'],
                     'included_credit_hours' => $gpaEvaluation['included_credit_hours'],
+                    'withdrawal_status' => $termStates->get($key, collect())->isNotEmpty() && $termStates[$key]->every(fn ($r) => $r->status_code === 'withdrawn') ? 'full_withdrawal' : 'not_full_withdrawal',
+                    'counts_towards_maximum_study_duration' => true,
                     'courses' => $courses->all(),
                     '_sort_start' => $year?->start_date?->format('Y-m-d') ?? '9999-99-99',
                     '_sort_order' => (int) ($semester?->semester_order ?? 9999),
@@ -812,7 +825,8 @@ class GradeService
         $practical = $result?->practical_total !== null ? (float) $result->practical_total : null;
         $statusCode = $this->resolveEffectiveResultStatusCode($registration);
         $officiallyVisible ??= $this->isOfficiallyVisibleAttempt($registration);
-        if ($result !== null && $officiallyVisible && $statusCode !== null) {
+        $lifecycle = IncompleteOutcomeGuard::readState($registration);
+        if ($result !== null && ($officiallyVisible || $lifecycle['case_id'] !== null) && $statusCode !== null) {
             $finalMark = $result->final_mark === null ? null : (float) $result->final_mark;
             $letterGrade = $this->letterGradeFromOfficialResult(
                 $theoretical,
@@ -860,9 +874,10 @@ class GradeService
             ] : null,
             'theoretical_mark' => $theoretical,
             'practical_mark' => $practical,
-            'final_mark' => $calculation['final_mark'],
-            'letter_grade' => $calculation['letter_grade'],
-            'grade_points' => $calculation['grade_points'],
+            'final_mark' => in_array($statusCode, ['incomplete', 'withdrawn'], true) ? null : $calculation['final_mark'],
+            'letter_grade' => $result === null && $statusCode !== 'withdrawn' ? null : $calculation['letter_grade'],
+            'grade_points' => in_array($statusCode, ['incomplete', 'withdrawn'], true) || $result === null ? null : $calculation['grade_points'],
+            'result_lifecycle' => $lifecycle,
             'result_status' => $this->compactResultStatus($calculation['result_status_code']),
             'notes' => $registration->notes,
         ];
@@ -876,7 +891,7 @@ class GradeService
     {
         $grades = $this->formatRegistrationGrades($registration, $officiallyVisible);
         $registrationAllowsGradeEntry = $registration->allowsGradeEntry();
-        $gradeEntryAllowed = $registrationAllowsGradeEntry && $workflowEditable;
+        $gradeEntryAllowed = $registrationAllowsGradeEntry && $workflowEditable && $grades['result_lifecycle']['ordinary_grade_edit_allowed'];
 
         return [
             'student_course_registration_id' => $registration->student_course_registration_id,
@@ -896,6 +911,7 @@ class GradeService
             'grade_entry_allowed' => $gradeEntryAllowed,
             'grade_entry_blocked_reason' => match (true) {
                 $gradeEntryAllowed => null,
+                !$grades['result_lifecycle']['ordinary_grade_edit_allowed'] => 'incomplete_outcome_locked',
                 ! $registrationAllowsGradeEntry => 'Historical or inactive registrations are read-only.',
                 default => 'Grades have been submitted for approval and are currently locked.',
             },
@@ -914,6 +930,7 @@ class GradeService
         $theoretical = $result?->theoretical_total !== null ? (float) $result->theoretical_total : null;
         $practical = $result?->practical_total !== null ? (float) $result->practical_total : null;
         $finalMark = $result?->final_mark !== null ? (float) $result->final_mark : null;
+        if (in_array($statusCode, ['incomplete', 'withdrawn'], true)) $finalMark = null;
         $letterGrade = $this->letterGradeFromOfficialResult(
             $theoretical,
             $practical,
@@ -942,13 +959,14 @@ class GradeService
                 'practical_mark' => $visibility['practical'] ? $practical : null,
                 'final_mark' => $finalMark,
                 'letter_grade' => $letterGrade,
-                'grade_points' => $this->resolveGradePoints($letterGrade, $statusCode),
+                'grade_points' => in_array($statusCode, ['incomplete', 'withdrawn'], true) ? null : $this->resolveGradePoints($letterGrade, $statusCode),
             ],
             'theoretical_mark' => $visibility['theoretical'] ? $theoretical : null,
             'practical_mark' => $visibility['practical'] ? $practical : null,
             'final_mark' => $finalMark,
             'letter_grade' => $letterGrade,
-            'grade_points' => $this->resolveGradePoints($letterGrade, $statusCode),
+            'grade_points' => in_array($statusCode, ['incomplete', 'withdrawn'], true) ? null : $this->resolveGradePoints($letterGrade, $statusCode),
+            'result_lifecycle' => IncompleteOutcomeGuard::readState($registration),
             'is_deprived' => $isDeprived,
             'result_status' => [
                 'status_code' => $statusCode,
@@ -1071,10 +1089,11 @@ class GradeService
             ];
         }
 
+        $statusCode = $this->resolveEffectiveResultStatusCode($registration);
         $visibility = $this->officialComponentVisibility($registration->courseOffering);
-        if (($visibility['theoretical'] && $result->theoretical_total === null)
+        if (!OfficialGradeScale::isFailure($statusCode) && (($visibility['theoretical'] && $result->theoretical_total === null)
             || ($visibility['practical'] && $result->practical_total === null)
-            || $result->final_mark === null) {
+            || $result->final_mark === null)) {
             return [
                 'included' => false,
                 'course' => array_merge($base, ['exclusion_reason' => 'missing_marks']),
@@ -1083,9 +1102,7 @@ class GradeService
             ];
         }
 
-        $statusCode = $this->resolveEffectiveResultStatusCode($registration);
-
-        if (in_array($statusCode, OfficialGradeScale::EXCLUDED_STATUSES, true)) {
+        if (!in_array($statusCode, ['passed', 'failed', 'deprived'], true)) {
             return [
                 'included' => false,
                 'course' => array_merge($base, ['exclusion_reason' => $statusCode]),
@@ -1096,7 +1113,7 @@ class GradeService
 
         $theoretical = $result->theoretical_total === null ? null : (float) $result->theoretical_total;
         $practical = $result->practical_total === null ? null : (float) $result->practical_total;
-        $finalMark = (float) $result->final_mark;
+        $finalMark = $result->final_mark === null ? null : (float) $result->final_mark;
         $letterGrade = $this->letterGradeFromOfficialResult(
             $theoretical,
             $practical,
@@ -1182,10 +1199,12 @@ class GradeService
     {
         $student->loadMissing(['academicProgram']);
 
-        $registrations = $this->officialAcademicAttempts($student)
-            ->get()
-            ->filter(fn (StudentCourseRegistration $registration): bool => $this->isOfficiallyVisibleAttempt($registration))
-            ->values();
+        $registrations = StudentCourseRegistration::query()->where('student_id', $student->getKey())
+            ->where(function ($q): void { $q->academicAttempts()->orWhereHas('registrationStatus', fn ($s) => $s->where('status_code', 'withdrawn')); })
+            ->with(['courseOffering.course', 'courseOffering.academicYear', 'courseOffering.semester', 'courseOffering.gradeComponents',
+                'courseOffering.gradeApprovals.approvalStatus', 'studentCourseResult.resultStatus', 'registrationStatus'])->get()
+            ->filter(fn ($r) => $r->registrationStatus?->status_code === 'withdrawn' || $this->isOfficiallyVisibleAttempt($r))->values();
+        IncompleteOutcomeGuard::attach($registrations);
         $registrations->each(fn (StudentCourseRegistration $registration) => $registration->setRelation('student', $student));
 
         return $registrations;
@@ -1229,6 +1248,7 @@ class GradeService
         $earnedHours = 0;
         foreach ($term as $registration) {
             $hours = (int) ($registration->courseOffering?->course?->credit_hours ?? 0);
+            if ($registration->registrationStatus?->status_code === 'withdrawn') continue;
             $attemptedHours += $hours;
             if ($this->isOfficiallyPassedAttempt($registration)) {
                 $earnedHours += $hours;
@@ -1242,7 +1262,9 @@ class GradeService
             'attempted_hours' => $attemptedHours,
             'earned_hours' => $earnedHours,
             'included_credit_hours' => $termSummary['included_credit_hours'],
-            'official_attempts_count' => $term->count(),
+            'gpa_denominator_credit_hours' => $termSummary['included_credit_hours'],
+            'registration_workload_hours' => $this->registrationWorkloadHours($student, $academicYearId, $semesterId),
+            'official_attempts_count' => $term->filter(fn ($r) => $r->registrationStatus?->status_code !== 'withdrawn')->count(),
         ];
     }
 
@@ -1259,6 +1281,7 @@ class GradeService
         $latestKey = null;
 
         foreach ($this->loadOfficialVisibleAttempts($student) as $registration) {
+            if ($registration->registrationStatus?->status_code === 'withdrawn') continue;
             $offering = $registration->courseOffering;
             if ((int) ($offering?->academic_year_id ?? 0) !== $academicYearId) {
                 continue;
@@ -1309,7 +1332,7 @@ class GradeService
                 $completed[$courseId] = $row;
             }
 
-            if ($statusCode === 'failed') {
+            if (OfficialGradeScale::isFailure($statusCode)) {
                 $failed[] = $row;
                 if ($courseId !== null) {
                     $failedCourseIds[$courseId] = true;
@@ -1591,11 +1614,14 @@ class GradeService
         $attemptedHours = 0;
         $passedHours = 0;
         $failedHours = 0;
+        $historyHours = 0;
 
         foreach ($registrations as $registration) {
             $hours = (int) ($registration->courseOffering?->course?->credit_hours ?? 0);
-            $attemptedHours += $hours;
             $statusCode = $this->resolveEffectiveResultStatusCode($registration);
+            $historyHours += $hours;
+            if ($statusCode === 'withdrawn') continue;
+            if ($statusCode !== 'withdrawn') $attemptedHours += $hours;
             $isDeprived = (bool) ($registration->studentCourseResult?->is_deprived || $statusCode === 'deprived');
 
             if ($isDeprived) {
@@ -1618,6 +1644,8 @@ class GradeService
             'failed_courses_count' => $failed,
             'deprived_courses_count' => $deprived,
             'total_attempted_credit_hours' => $attemptedHours,
+            'historical_credit_hours' => $historyHours,
+            'gpa_denominator_credit_hours' => $this->summarizeGpaCollection($this->selectBestAttempts($registrations))['included_credit_hours'],
             'total_passed_credit_hours' => $passedHours,
             'total_failed_credit_hours' => $failedHours,
             'cgpa' => $cgpa,
@@ -1654,6 +1682,16 @@ class GradeService
                 'level_name' => $student->currentAcademicLevel->level_name,
             ] : null,
         ];
+    }
+
+    /** Current workload is not official-attempt hours, earned hours, or a GPA denominator. */
+    private function registrationWorkloadHours(Student $student, ?int $year = null, ?int $semester = null): int
+    {
+        return (int) StudentCourseRegistration::query()->where('student_course_registrations.student_id', $student->getKey())->current()
+            ->join('course_offerings as workload_co', 'workload_co.course_offering_id', '=', 'student_course_registrations.course_offering_id')
+            ->join('courses as workload_c', 'workload_c.course_id', '=', 'workload_co.course_id')
+            ->when($year !== null, fn ($q) => $q->where('workload_co.academic_year_id', $year))
+            ->when($semester !== null, fn ($q) => $q->where('workload_co.semester_id', $semester))->sum('workload_c.credit_hours');
     }
 
     private function loadRegistration(int $registrationId, bool $lock = false): StudentCourseRegistration
@@ -1766,6 +1804,8 @@ class GradeService
         if ($registration->registrationStatus?->status_code === 'withdrawn') {
             return 'withdrawn';
         }
+
+        if ($registration->studentCourseResult?->is_deprived) return 'deprived';
 
         return $registration->studentCourseResult?->resultStatus?->status_code
             ?? $registration->resultStatus?->status_code;

@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Models\SupplementaryExamRegistration;
 use App\Support\SupplementaryExamRegistrationGovernance;
 use App\Support\ExamManualGradeEntryAccess;
+use App\Support\IncompleteOutcomeGuard;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -29,6 +30,7 @@ trait ExamManualGradeOperations
             'courseOffering.academicProgram.department.college', 'courseOffering.gradePartApprovals',
             'courseOffering.gradeComponents', 'courseOffering.gradeApprovals.approvalStatus',
             'studentGradeComponents' => fn ($q) => $q->withMax('gradeAuditLogs', 'grade_audit_log_id')]);
+        IncompleteOutcomeGuard::attach($rows);
         $context = $this->supplementaryEligibility->evaluationContext(collect(), $rows);
         // Validate canonical fixed-roster schema before its bounded informational projection.
         $schemaError = null;
@@ -51,6 +53,7 @@ trait ExamManualGradeOperations
         $marks = $registration->studentGradeComponents->keyBy('grade_component_id');
         $approvals = $offering->gradePartApprovals->keyBy('component_type');
         $blocked = $context['schema_error'];
+        if (IncompleteOutcomeGuard::forRegistration($registration)) $blocked ??= 'incomplete_outcome_locked';
         if ($context['materialized_target_ids']->contains((int) $registration->getKey())) $blocked ??= 'supplementary_materialized_result_locked';
         if ($context['fixed_ids']->contains((int) $registration->getKey())) $blocked ??= 'supplementary_fixed_roster_target_locked';
         if (! $registration->allowsGradeEntry()) $blocked ??= 'grade_entry_not_allowed';
@@ -80,6 +83,7 @@ trait ExamManualGradeOperations
             // There is no separate section label in the persisted offering schema.
             'section' => (string) $offering->getKey(), 'parts' => $parts,
             'blocked_reason' => $blocked ?? ($components->isEmpty() ? 'grade_part_not_required' : null),
+            'result_lifecycle' => IncompleteOutcomeGuard::readState($registration),
             'components' => $components->map(fn ($c) => ['grade_component_id' => (int) $c->getKey(),
                 'component_type' => $c->component_type, 'name' => $c->component_name,
                 'max_mark' => (float) $c->max_mark, 'mark' => $marks->get($c->getKey())?->mark === null
@@ -99,7 +103,7 @@ trait ExamManualGradeOperations
     public function saveManualMarks(Student $student, StudentCourseRegistration $registration, array $data, User $actor): array
     {
         app(ExamManualGradeEntryAccess::class)->authorize($actor, $student, $registration);
-        return DB::transaction(function () use ($student, $registration, $data, $actor): array {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($student, $registration, $data, $actor): array {
             $locked = $this->lockManualContext($student, $registration, $actor);
             $snapshot = $this->manualRegistration($locked);
             $this->assertManualRevision($data['revision'], $snapshot['revision']);
@@ -164,7 +168,8 @@ trait ExamManualGradeOperations
             $snapshot = $snapshots->get($row->getKey());
             $revisions[] = [$row->getKey(), $snapshot['revision']];
             $reason = $snapshot['parts'][$part]['blocked_reason'];
-            if (in_array($reason, ['deprived_student_grade_locked', 'supplementary_theoretical_deferred'], true)) {
+            if (in_array($reason, ['deprived_student_grade_locked', 'supplementary_theoretical_deferred', 'incomplete_outcome_locked'], true)) {
+                if ($reason === 'incomplete_outcome_locked') IncompleteOutcomeGuard::preservesOutcome($row);
                 $counts['exempt']++;
             } else {
                 $counts['eligible']++;
@@ -191,7 +196,7 @@ trait ExamManualGradeOperations
     public function submitManualPart(Student $student, StudentCourseRegistration $registration, string $part, array $data, User $actor): array
     {
         app(ExamManualGradeEntryAccess::class)->authorize($actor, $student, $registration);
-        return DB::transaction(function () use ($student, $registration, $part, $data, $actor): array {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($student, $registration, $part, $data, $actor): array {
             // Own offering first, then approvals, then the full roster in ID order.
             CourseOffering::query()->whereKey($registration->course_offering_id)->lockForUpdate()->firstOrFail();
             GradePartApproval::query()->where('course_offering_id', $registration->course_offering_id)->orderBy('component_type')->lockForUpdate()->get();

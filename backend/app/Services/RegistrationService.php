@@ -824,6 +824,7 @@ class RegistrationService
         StudentCourseRegistration $lockedRegistration,
         CourseOffering $lockedOffering
     ): void {
+        \App\Support\IncompleteOutcomeGuard::assertRegistrationTransition((int) $lockedRegistration->getKey(), 'dropped');
         SupplementaryExamTargetGuard::assertAvailable((int) $lockedRegistration->getKey());
         SupplementaryExamTargetGuard::assertFixedRosterAvailable((int) $lockedRegistration->getKey());
         $this->assertLockedRegistrationIsRegistered($lockedRegistration);
@@ -839,6 +840,7 @@ class RegistrationService
         StudentCourseRegistration $lockedRegistration,
         CourseOffering $lockedOffering
     ): void {
+        \App\Support\IncompleteOutcomeGuard::assertRegistrationTransition((int) $lockedRegistration->getKey(), 'withdrawn');
         SupplementaryExamTargetGuard::assertAvailable((int) $lockedRegistration->getKey());
         SupplementaryExamTargetGuard::assertFixedRosterAvailable((int) $lockedRegistration->getKey());
         $this->assertLockedRegistrationIsRegistered($lockedRegistration);
@@ -854,6 +856,7 @@ class RegistrationService
         StudentCourseRegistration $lockedRegistration,
         CourseOffering $lockedOffering
     ): void {
+        \App\Support\IncompleteOutcomeGuard::assertRegistrationTransition((int) $lockedRegistration->getKey(), 'cancelled');
         SupplementaryExamTargetGuard::assertAvailable((int) $lockedRegistration->getKey());
         SupplementaryExamTargetGuard::assertFixedRosterAvailable((int) $lockedRegistration->getKey());
         $this->assertLockedRegistrationIsRegistered($lockedRegistration);
