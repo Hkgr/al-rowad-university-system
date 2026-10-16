@@ -62,8 +62,9 @@ final class CatalogEnvironment
     public function package(PDO $p, string $name, ?string $stopAfter = null, string $package = 'scientific-course-management'): array
     {
         $this->guard($p);
-        if (!in_array($name, ['00_preflight.sql','01_apply.sql','02_verify.sql'], true)) throw new RuntimeException('Package allowlist');
-        if (!in_array($package, ['scientific-course-management', 'academic-program-management'], true)) throw new RuntimeException('Package directory allowlist');
+        if (!in_array($name, ['00_preflight.sql','01_apply.sql','02_verify.sql'], true)
+            && !($package === 'approved-catalog-completion' && $name === '03_rollback.sql')) throw new RuntimeException('Package allowlist');
+        if (!in_array($package, ['scientific-course-management', 'academic-program-management', 'approved-catalog-completion'], true)) throw new RuntimeException('Package directory allowlist');
         $sql = file_get_contents(dirname(__DIR__, 2).'/database/sql/'.$package.'/'.$name);
         if (preg_match('/^\s*USE\s+(?!alrowad_uni_rust\b)/im', $sql)) throw new RuntimeException('Unexpected USE');
         $delimiter = ';'; $buffer = ''; $rows = [];
