@@ -23,9 +23,19 @@ final class IncompleteResultService
         $query = CourseIncompleteCase::query()
             ->whereIn('student_id', $scope->scopeManualGradeStudents(Student::query(), $actor)->select('students.student_id'))
             ->whereIn('student_course_registration_id', StudentCourseRegistration::query()->select('student_course_registration_id')
+                ->whereColumn('student_course_registrations.student_id', 'student_course_incomplete_cases.student_id')
                 ->whereIn('course_offering_id', $scope->scopeManualGradeOfferings(\App\Models\CourseOffering::query(), $actor)->select('course_offerings.course_offering_id')));
+        // Period choices share the case scope, independently of the selected period/state.
+        $options = (clone $query)->when(isset($filters['student_id']), fn ($q) => $q->where('student_id', $filters['student_id']))
+            ->join('academic_years as y', 'y.academic_year_id', '=', 'student_course_incomplete_cases.academic_year_id')
+            ->join('semesters as s', 's.semester_id', '=', 'student_course_incomplete_cases.semester_id')
+            ->select('y.academic_year_id', 'y.year_name', 's.semester_id', 's.semester_name')->distinct()
+            ->orderBy('y.academic_year_id')->orderBy('s.semester_id')->limit(101)->get();
         foreach (['state', 'student_id', 'academic_year_id', 'semester_id'] as $key) if (isset($filters[$key])) $query->where($key, $filters[$key]);
-        return $query->orderBy('deadline_at')->orderBy('incomplete_case_id')->paginate($filters['per_page'] ?? 15)->toArray();
+        $page = $query->with(array_map(fn ($relation) => 'registration.'.$relation, IncompleteResultReadProjection::RELATIONS))
+            ->orderBy('deadline_at')->orderBy('incomplete_case_id')->paginate($filters['per_page'] ?? 15);
+        $page->getCollection()->transform(fn ($case) => $case->attributesToArray() + app(IncompleteResultReadProjection::class)->identity($case->registration));
+        return $page->toArray() + ['filter_options' => ['terms' => $options->take(100)->toArray(), 'complete' => $options->count() <= 100, 'limit' => 100]];
     }
 
     public function registrationView(User $actor, int $id): array
@@ -43,13 +53,14 @@ final class IncompleteResultService
         }
         if ($ready && !$case && $block === null && !$this->grantable($r)) $block = 'incomplete_grant_not_allowed';
         $overdue = $case?->state === 'active' && $this->clock()->gt($case->deadline_at);
-        return ['schema_ready' => $ready, 'registration_id' => $id, 'state' => $state, 'is_official' => $official,
+        $view = ['schema_ready' => $ready, 'registration_id' => $id, 'state' => $state, 'is_official' => $official,
             'legacy_incomplete_without_grant' => !$case && $status === 'incomplete', 'case' => $case?->toArray(), 'overdue' => $overdue,
             'allowed_operations' => ['grant' => $ready && !$case && $block === null && $this->grantable($r),
                 'deadline_update' => $ready && $case?->state === 'active' && $block === null,
                 'resolve' => $ready && $case?->state === 'active' && !$overdue && $block === null],
             'blocking_code' => $block ?? ($overdue ? 'incomplete_deadline_elapsed' : ($case && $case->state !== 'active' ? 'incomplete_already_settled' : null)),
             'deadline_suggestion' => !$case ? $this->deadlines->suggest($r) : null];
+        return app(IncompleteResultReadProjection::class)->detail($r, $view);
     }
 
     public function show(User $actor, int $id): array
@@ -57,7 +68,9 @@ final class IncompleteResultService
         Guard::assertReady();
         $case = CourseIncompleteCase::findOrFail($id);
         $view = $this->registrationView($actor, (int) $case->student_course_registration_id);
-        $view['events'] = $case->events->toArray();
+        $events = $case->events;
+        $actors = User::query()->whereIn('user_id', $events->pluck('actor_user_id')->filter()->unique())->pluck('username', 'user_id');
+        $view['events'] = $events->map(fn ($event) => $event->attributesToArray() + ['actor_label' => $event->actor_kind === 'system' ? 'النظام' : ($actors[$event->actor_user_id] ?? 'مستخدم مسجل')])->all();
         return $view;
     }
 

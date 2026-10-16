@@ -7,6 +7,7 @@ import {
 import { paginateMeasuredSections } from '../../../utils/pdfPagination'
 import { escapeHtml, exportPagedHtmlToPdf, PDF_PAGE_CONFIGS } from '../../../utils/pdfExport'
 import { transcriptGenerationMetadata } from './academicRecordPresentation'
+import { resultDescription, resultSymbol, termWithdrawalText } from './resultSymbols'
 
 const DISCLAIMER = 'تنبيه: هذا الكشف مُولّد إلكترونيًا من نظام جامعة الرواد، ولا يُعد وثيقة رسمية أو مصدقة، ولا يكتسب الحجية إلا بعد استكمال التواقيع والأختام الرسمية المعتمدة.'
 
@@ -59,7 +60,7 @@ function headingHtml(identity) {
 function termHeading(term, continuation = false) {
   const year = value(term.academic_year?.year_name)
   const semester = value(term.semester?.semester_name)
-  return `<header style="display:flex;justify-content:space-between;align-items:center;background:#edf5e9;border-right:4px solid #569933;padding:7px 9px;margin:0 0 5px;box-sizing:border-box;font-size:10px;"><strong style="color:#315c20;font-size:11px;">${escapeHtml(year)} · ${escapeHtml(semester)}${continuation ? ' — متابعة' : ''}</strong><span>المعدل الفصلي: <strong>${escapeHtml(value(term.term_gpa))}</strong></span></header>`
+  return `<header style="display:flex;justify-content:space-between;align-items:center;background:#edf5e9;border-right:4px solid #569933;padding:7px 9px;margin:0 0 5px;box-sizing:border-box;font-size:10px;"><strong style="color:#315c20;font-size:11px;">${escapeHtml(year)} · ${escapeHtml(semester)}${continuation ? ' — متابعة' : ''}<small style="display:block;font-size:8px;">${escapeHtml(termWithdrawalText(term))}</small></strong><span>المعدل الفصلي: <strong>${escapeHtml(value(term.term_gpa))}</strong><br>ساعات مقام المعدل: ${escapeHtml(value(term.included_credit_hours))}</span></header>`
 }
 
 function tableHeader() {
@@ -71,6 +72,7 @@ function tableHeader() {
 }
 
 function statusText(course) {
+  if (course.result_lifecycle?.case_id || ['incomplete', 'withdrawn', 'pending_approval'].includes(course.result_status?.status_code)) return resultDescription(course)
   const code = String(course?.result_status?.status_code || '').toLowerCase()
   if (code === 'passed') return 'ناجح'
   if (code === 'failed') return 'راسب'
@@ -84,7 +86,7 @@ function courseRow(course, index) {
   const cells = [
     `<div style="font-weight:700;line-height:1.45;">${escapeHtml(value(course?.course_name))}</div><div dir="ltr" style="font-size:7.5px;color:#6b7280;text-align:right;">${escapeHtml(value(course?.course_code))}</div>${secondary}`,
     escapeHtml(value(course?.credit_hours)), escapeHtml(value(course?.practical_mark)), escapeHtml(value(course?.theoretical_mark)),
-    escapeHtml(value(course?.final_mark)), escapeHtml(value(course?.letter_grade)), escapeHtml(statusText(course)),
+    escapeHtml(value(course?.final_mark)), escapeHtml(resultSymbol(course)), escapeHtml(statusText(course)),
   ]
   return `<tr style="background:${index % 2 === 0 ? '#ffffff' : '#f8faf7'};">${cells.map((cell, cellIndex) => `<td style="padding:6px 4px;border:1px solid #dce7d7;text-align:${cellIndex === 0 ? 'right' : 'center'};font-size:8.5px;line-height:1.4;overflow-wrap:anywhere;">${cell}</td>`).join('')}</tr>`
 }
@@ -135,7 +137,9 @@ function summaryHtml(summary = {}) {
     ['المقررات الناجحة', summary.passed_courses_count],
     ['المقررات الراسبة', summary.failed_courses_count],
     ['المقررات المحروم منها', summary.deprived_courses_count],
-    ['الساعات المحاولة', summary.total_attempted_credit_hours],
+    ['ساعات المحاولات — ليست عبء التسجيل', summary.total_attempted_credit_hours],
+    ['ساعات مقام المعدل', summary.gpa_denominator_credit_hours],
+    ['ساعات السجل التاريخي', summary.historical_credit_hours],
     ['الساعات المجتازة', summary.total_passed_credit_hours],
     ['الساعات الراسبة', summary.total_failed_credit_hours],
   ]

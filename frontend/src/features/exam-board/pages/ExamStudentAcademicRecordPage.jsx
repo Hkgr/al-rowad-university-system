@@ -13,6 +13,9 @@ import AcademicRequirementProgress, {
 } from '../../../components/academic/AcademicRequirementProgress'
 import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 import { apiRequest } from '../../../services/apiClient'
+import { ACCESS, canAccess } from '../../auth/auth'
+import { OfficeLink as Link } from '../../vice-presidency/utils/administrativeOfficeNavigation'
+import { resultDescription, resultSymbol, termWithdrawalText } from '../../academic-record/lib/resultSymbols'
 
 function value(item) {
   return item === null || item === undefined || item === '' ? '—' : item
@@ -66,7 +69,9 @@ function IdentityCard({ student }) {
 function AcademicSummary({ summary = {} }) {
   const metrics = [
     ['المعدل التراكمي', summary.cgpa == null ? '—' : Number(summary.cgpa).toFixed(2)],
-    ['الساعات المحاولة', summary.total_attempted_credit_hours ?? 0],
+    ['ساعات المحاولات', value(summary.total_attempted_credit_hours)],
+    ['ساعات مقام المعدل', value(summary.gpa_denominator_credit_hours)],
+    ['ساعات السجل التاريخي', value(summary.historical_credit_hours)],
     ['الساعات المجتازة', summary.total_passed_credit_hours ?? 0],
     ['المقررات الناجحة', summary.passed_courses_count ?? 0],
     ['المقررات الراسبة', summary.failed_courses_count ?? 0],
@@ -76,6 +81,7 @@ function AcademicSummary({ summary = {} }) {
   return (
     <section>
       <h2 className="mb-3 text-[17px] font-black text-text-dark">الملخص الأكاديمي</h2>
+      <p className="mb-3 text-[12px] text-text-light">ساعات النتائج لا تمثل عبء التسجيل الحالي؛ عبء التسجيل غير متاح ضمن هذا الكشف.</p>
       <div className="grid grid-cols-6 gap-3 max-[1100px]:grid-cols-3 max-[620px]:grid-cols-2">
         {metrics.map(([label, item], index) => (
           <article key={label} className="rounded-[16px] border border-primary/12 bg-white px-4 py-4 shadow-[0_2px_10px_rgba(26,46,16,0.04)]">
@@ -104,14 +110,14 @@ function TranscriptTable({ courses }) {
             const code = course.result_status?.status_code
             return (
               <tr key={course.registration_id} className="border-t border-primary/8">
-                <td className="px-4 py-3"><p className="font-bold text-text-dark">{value(course.course_name)}</p><p className="mt-0.5 font-mono text-[11px] text-text-light">{value(course.course_code)}</p></td>
+                <td className="px-4 py-3"><p className="font-bold text-text-dark">{value(course.course_name)}</p><p className="mt-0.5 font-mono text-[11px] text-text-light">{value(course.course_code)}</p>{canAccess(ACCESS.manualGradeEntry) && <Link className="mt-1 inline-block text-[11px] text-primary underline" to={`/exam-board/incomplete-results/registrations/${course.registration_id}`}>حالة I لهذا التسجيل</Link>}</td>
                 <td className="px-3 py-3"><CourseRequirementBadges classification={course.requirement_classification} compact /></td>
                 <td className="px-3 py-3 text-center font-bold">{value(course.credit_hours)}</td>
                 <td className="px-3 py-3 text-center">{formatMark(course.practical_mark)}</td>
                 <td className="px-3 py-3 text-center">{formatMark(course.theoretical_mark)}</td>
                 <td className="px-3 py-3 text-center font-black">{formatMark(course.final_mark)}</td>
-                <td className="px-3 py-3 text-center text-[15px] font-black">{value(course.letter_grade)}</td>
-                <td className="px-3 py-3 text-center"><span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${statusClass(code)}`}>{value(course.result_status?.status_name)}</span></td>
+                <td className="px-3 py-3 text-center text-[15px] font-black">{resultSymbol(course)}</td>
+                <td className="px-3 py-3 text-center"><span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${statusClass(code)}`}>{resultDescription(course)}</span></td>
               </tr>
             )
           })}
@@ -137,8 +143,9 @@ function TranscriptSection({ transcript }) {
             <article key={`${term.academic_year?.academic_year_id}-${term.semester?.semester_id}-${index}`} className="overflow-hidden rounded-[16px] border border-primary/12 bg-white shadow-[0_2px_10px_rgba(26,46,16,0.04)]">
               <header className="flex items-center justify-between gap-3 border-b border-primary/10 bg-primary/[0.05] px-5 py-3.5">
                 <div><p className="text-[15px] font-black text-primary-dark">{value(term.academic_year?.year_name)}</p><p className="text-[12.5px] font-bold text-text-dark">{value(term.semester?.semester_name)}</p></div>
-                <div className="text-left text-[12px] text-text-light"><p>المعدل الفصلي: <strong className="text-text-dark">{term.term_gpa == null ? '—' : Number(term.term_gpa).toFixed(2)}</strong></p><p>الساعات المحتسبة: <strong className="text-text-dark">{term.included_credit_hours ?? 0}</strong></p></div>
+                <div className="text-left text-[12px] text-text-light"><p>المعدل الفصلي: <strong className="text-text-dark">{term.term_gpa == null ? '—' : Number(term.term_gpa).toFixed(2)}</strong></p><p>ساعات مقام المعدل: <strong className="text-text-dark">{value(term.included_credit_hours)}</strong></p></div>
               </header>
+              {termWithdrawalText(term) && <p className="px-5 py-3 text-[12px] text-text-light">{termWithdrawalText(term)}</p>}
               <TranscriptTable courses={term.courses ?? []} />
             </article>
           ))}

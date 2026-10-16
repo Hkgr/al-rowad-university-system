@@ -56,6 +56,7 @@ import ExamBoardHome     from '../features/exam-board/pages/ExamBoardHome'
 import GradeSheetPage    from '../features/exam-board/pages/GradeSheetPage'
 import ManualGradeEntryPage from '../features/exam-board/pages/ManualGradeEntryPage'
 import StudentManualGradePage from '../features/exam-board/pages/StudentManualGradePage'
+import IncompleteResultsPage from '../features/exam-board/pages/IncompleteResultsPage'
 import ExamStudentAcademicRecordPage from '../features/exam-board/pages/ExamStudentAcademicRecordPage'
 import ApprovalsPage     from '../features/exam-board/pages/ApprovalsPage'
 import DeprivationPage        from '../features/exam-board/pages/DeprivationPage'
@@ -199,6 +200,9 @@ const router = createBrowserRouter(createRoutesFromElements(
         {/* ── شؤون الطلاب dashboard ── */}
         <Route element={<ProtectedRoute {...ACCESS.manualGradeEntry}><DashboardLayout nav={examBoardNav} appTitle="هيئة الامتحانات" /></ProtectedRoute>}>
           <Route path="/exam-board/manual-grade-entry" element={<ManualGradeEntryPage />} />
+          <Route path="/exam-board/incomplete-results" element={<IncompleteResultsPage />} />
+          <Route path="/exam-board/incomplete-results/:caseId" element={<IncompleteResultsPage />} />
+          <Route path="/exam-board/incomplete-results/registrations/:registrationId" element={<IncompleteResultsPage />} />
           <Route path="/exam-board/manual-grade-entry/students/:studentId" element={<StudentManualGradePage />} />
         </Route>
         <Route
@@ -454,6 +458,9 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/vp/administrative/student-affairs/approved-registration-requests" element={protect(<ApprovedRegistrationRequestsPage />, ACCESS.studentAffairsApprovedRegistrationRequests)} />
           <Route path="/vp/administrative/student-affairs/reports" element={protect(<PortalReportsPage portal="student-affairs" />, reportAccess('student-affairs'))} />
           <Route path="/vp/administrative/exams/manual-grade-entry" element={protect(<ManualGradeEntryPage />, ACCESS.manualGradeEntry)} />
+          <Route path="/vp/administrative/exams/incomplete-results" element={protect(<IncompleteResultsPage />, ACCESS.manualGradeEntry)} />
+          <Route path="/vp/administrative/exams/incomplete-results/:caseId" element={protect(<IncompleteResultsPage />, ACCESS.manualGradeEntry)} />
+          <Route path="/vp/administrative/exams/incomplete-results/registrations/:registrationId" element={protect(<IncompleteResultsPage />, ACCESS.manualGradeEntry)} />
           <Route path="/vp/administrative/exams/manual-grade-entry/students/:studentId" element={protect(<StudentManualGradePage />, ACCESS.manualGradeEntry)} />
           <Route path="/vp/administrative/exams/grade-sheet" element={protect(<GradeSheetPage />, { permissions: ['grades.view'] })} />
           <Route path="/vp/administrative/exams/grade-sheet/:studentId" element={protect(<ExamStudentAcademicRecordPage />, { permissions: ['grades.view'] })} />
