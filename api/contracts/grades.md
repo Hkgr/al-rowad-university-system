@@ -1,5 +1,17 @@
 # Grades API Contract
 
+## Phase 2 additive Incomplete read projection
+
+See [Phase 2 implementation and actual verification](../../docs/course-result-symbols-phase2.md). The Phase 1 six endpoints, mutation payloads, authorization and lifecycle ownership are unchanged. Deadline modification remains **PATCH**, not POST.
+
+`GET /exams/incomplete-results` retains the paginator inside `data`, adds safe `student {id,number,full_name}`, `course {id,code,name}`, actual `academic_year`, `semester`, `offering` identities and `registration_status` per row. The actual registration/student match and independent offering scope are checked. Relations load for the page, not per row. Added `filter_options: {terms: [{academic_year_id,year_name,semester_id,semester_name}], complete, limit:100}` comes from the same authorized case scope; the selected student narrows options, state/period do not. Over 100 distinct pairs is explicit (`complete:false`); case pagination is not truncated. Strict original query allowlist and max100 per page remain.
+
+Registration and case GETs retain every prior field and add those identities, required actual `components [{grade_component_id,name,type,max_mark,mark,editable,blocking_code}]`, `resolution {available,blocking_code}`, and nullable `current_result {id,status,theoretical_total,practical_total,final_mark,letter_grade,grade_points,is_official,result_announced_at}`. Completed non-NULL marks, including 0, are readonly. Resolution availability also checks actual component maxima/policy compatibility through GradeService. Missing components are not invented. No result stays NULL; pending and official result visibility are labelled separately. Case events additionally have `actor_label`, looked up in one query from recorded actor IDs (system expiry stays system).
+
+These internal case reads require the existing Exam Affairs/manual-entry guard and independent student/offering scope, including the existing administrative office 735 authority. They expose no contact/account data. Reasons, requirements and actors never enter the public transcript/PDF projection. All GETs are read-only; no context, registration, calendar, grant or requirement is created.
+
+The UI freezes method/target/UUID/revision/serialized payload for a write; no automatic retry. A user-selected exact replay after reading current state relies on Phase 1 replay-before-revision, not a replacement UUID. 409 retains baseline/proposed/current states until explicit review. Shared screen/PDF symbol helpers consume the existing safe `result_lifecycle` and official metrics; no new GPA, repeat or deadline formula is introduced. Phase 1 durable cache/atomic lock/scheduler requirements still apply. No Phase 2 schema or permission installation is needed.
+
 ## Base URL
 
 `http://127.0.0.1:8000/api/v1`

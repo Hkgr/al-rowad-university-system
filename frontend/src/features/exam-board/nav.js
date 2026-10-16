@@ -11,6 +11,7 @@ import { reportNav } from '../portal-reports/reportNav'
 const examBoardNav = [
   reportNav('exam-board'),
   reportNav('admissions'),
+  { label: 'النتائج غير المكتملة', items: [{ to: '/exam-board/incomplete-results', Icon: FaClipboardList, ar: 'النتائج غير المكتملة I', en: 'Incomplete results', ...ACCESS.manualGradeEntry }] },
   { label: 'إدخال العلامات', items: [{ to: '/exam-board/manual-grade-entry', Icon: FaClipboardList, ar: 'إدخال العلامات اليدوي', en: 'Manual grade entry', ...ACCESS.manualGradeEntry }] },
   {
     label: 'هيئة الامتحانات',

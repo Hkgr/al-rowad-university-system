@@ -2,6 +2,8 @@ import { useEffect, useReducer, useRef, useState } from 'react'
 import { FaChevronLeft, FaChevronRight, FaExclamationTriangle, FaPaperPlane, FaRedo, FaSave } from 'react-icons/fa'
 import { apiRequest } from '../../../services/apiClient'
 import { getIdentity } from '../../auth/auth'
+import { OfficeLink as Link } from '../../vice-presidency/utils/administrativeOfficeNavigation'
+import { resultDescription } from '../../academic-record/lib/resultSymbols'
 import ManualGradeDialog from '../components/ManualGradeDialog'
 import { createGradeDraft, gradeDraftReducer, hasGradeDraft } from '../lib/manualGradeDraft'
 import { catalogLabel } from '../lib/manualGradeGrid'
@@ -123,7 +125,7 @@ export function RegistrationGridRow({ row, course, context, requiredParts, stude
     <td className="p-3 font-mono" dir="ltr">{course.course_code}</td>
     <td className="p-3"><strong>{course.course_name}</strong><p className="text-[11px] text-text-light">{catalogLabel(course)}</p></td>
     <td className="p-3" dir="ltr">{course.credit_hours}</td>
-    <td className="min-w-[180px] p-3">{context}<p className="mt-2 text-[11px]">{row.academic_year} / {row.semester} — الشعبة {row.section}</p><p>التسجيل/المحاولة {row.registration_id}</p></td>
+    <td className="min-w-[180px] p-3">{context}<p className="mt-2 text-[11px]">{row.academic_year} / {row.semester} — الشعبة {row.section}</p><p>التسجيل/المحاولة {row.registration_id}</p>{row.result_lifecycle?.case_id && <p>{resultDescription(row)}</p>}<Link className="mt-2 inline-block text-[11px] text-primary underline" to={`/exam-board/incomplete-results/registrations/${row.registration_id}`}>حالة I لهذا التسجيل</Link></td>
     {['theoretical', 'practical'].map(part => {
       const state = row.parts[part]
       return <td key={part} className="min-w-[145px] p-3">

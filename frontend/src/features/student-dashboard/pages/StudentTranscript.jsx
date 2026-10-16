@@ -4,6 +4,7 @@ import { FaGraduationCap } from 'react-icons/fa'
 import TranscriptPdfExportAction from '../../academic-record/components/TranscriptPdfExportAction'
 import { apiRequest } from '../../../services/apiClient'
 import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
+import { resultDescription, resultSymbol, termWithdrawalText } from '../../academic-record/lib/resultSymbols'
 
 const STATUS_LABELS = {
   passed: { ar: 'ناجح', className: 'bg-green-100 text-green-800 border-green-200' },
@@ -28,6 +29,7 @@ function formatGpa(value) {
 }
 
 function statusInfo(course) {
+  if (course.result_lifecycle?.case_id || ['incomplete', 'withdrawn'].includes(course.result_status?.status_code)) return { ar: resultDescription(course), className: 'bg-amber-50 text-amber-900 border-amber-200' }
   if (course.is_deprived || course.result_status?.status_code === 'deprived') {
     return STATUS_LABELS.deprived
   }
@@ -117,7 +119,7 @@ function CourseTable({ courses }) {
                   <td className="px-3 py-3 text-center text-text-gray">{formatMark(course.practical_mark)}</td>
                   <td className="px-3 py-3 text-center text-text-gray">{formatMark(course.theoretical_mark)}</td>
                   <td className="px-3 py-3 text-center font-black text-text-dark">{formatMark(course.final_mark)}</td>
-                  <td className="px-3 py-3 text-center font-black text-primary">{course.letter_grade || '—'}</td>
+                  <td className="px-3 py-3 text-center font-black text-primary">{resultSymbol(course)}</td>
                   <td className="px-3 py-3 text-center">
                     <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${status.className}`}>
                       {status.ar}
@@ -148,7 +150,7 @@ function CourseTable({ courses }) {
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 text-[12px]">
                 <p className="text-text-light">الساعات: <span className="font-bold text-text-dark">{course.credit_hours ?? '—'}</span></p>
-                <p className="text-text-light">التقدير: <span className="font-black text-primary">{course.letter_grade || '—'}</span></p>
+                <p className="text-text-light">التقدير: <span className="font-black text-primary">{resultSymbol(course)}</span></p>
                 <p className="text-text-light">العملي: <span className="font-semibold text-text-dark">{formatMark(course.practical_mark)}</span></p>
                 <p className="text-text-light">النظري: <span className="font-semibold text-text-dark">{formatMark(course.theoretical_mark)}</span></p>
               </div>
@@ -285,6 +287,10 @@ export default function StudentTranscript() {
         </article>
       </section>
 
+      <dl className="grid grid-cols-3 gap-3 text-[12px] max-[700px]:grid-cols-1">
+        {[['ساعات المحاولات', summary.total_attempted_credit_hours], ['ساعات مقام المعدل', summary.gpa_denominator_credit_hours], ['ساعات السجل التاريخي', summary.historical_credit_hours]].map(([label, amount]) => <div key={label} className="rounded-[12px] border border-primary/12 bg-white p-4"><dt>{label}</dt><dd className="mt-1 font-bold">{amount ?? '—'}</dd></div>)}
+      </dl>
+      <p className="text-[12px] text-text-light">عبء التسجيل الحالي غير متاح ضمن كشف النتائج؛ لا يُستنتج من ساعات المحاولات أو مقام المعدل.</p>
       {years.length > 1 ? (
         <label className="print-hidden flex flex-col gap-1 text-[12px] font-semibold text-text-light">
           السنة الدراسية
@@ -317,9 +323,10 @@ export default function StudentTranscript() {
                 </div>
                 <div className="text-left text-[12px] text-text-light">
                   <p>معدل الفصل: <span className="font-black text-text-dark">{formatGpa(term.term_gpa)}</span></p>
-                  <p>الساعات المحتسبة: <span className="font-bold text-text-dark">{term.included_credit_hours ?? 0}</span></p>
+                  <p>ساعات مقام المعدل: <span className="font-bold text-text-dark">{term.included_credit_hours ?? '—'}</span></p>
                 </div>
               </div>
+              {termWithdrawalText(term) && <p className="px-5 py-3 text-[12px] text-text-light">{termWithdrawalText(term)}</p>}
               <CourseTable courses={term.courses ?? []} />
             </section>
           ))}

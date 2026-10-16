@@ -5,6 +5,7 @@ export const partLabel = part => ({ practical: 'العملي', theoretical: 'ا�
 export const stateLabel = state => ({ draft: 'مسودة', returned: 'معاد للتصحيح', submitted: 'مرسل للاعتماد', approved: 'معتمد' }[state] ?? 'حالة غير متاحة')
 export const registrationLabel = status => ({ registered: 'مسجل', completed: 'مكتمل', dropped: 'مسقط', withdrawn: 'منسحب', cancelled: 'ملغى' }[status] ?? 'حالة غير متاحة')
 export const blockedLabel = code => ({
+  incomplete_outcome_locked: 'لهذا التسجيل دورة I موثقة؛ التعديل العادي مقفل. افتح النتائج غير المكتملة.',
   grade_part_locked: 'الجزء مقفل وفق دورة الاعتماد.',
   official_result_locked: 'النتيجة رسمية؛ التصحيح بعد الاعتماد غير مدعوم هنا.',
   grade_entry_not_allowed: 'حالة التسجيل لا تسمح بإدخال العلامات.',
@@ -44,6 +45,7 @@ export function searchPath(q, page = 1) {
   return `${MANUAL_GRADE_BASE}/students?${new URLSearchParams({ q: q.trim(), page, per_page: 15 })}`
 }
 export function manualError(error) {
+  if (error.errorCode?.startsWith('incomplete_')) return 'التسجيل مرتبط بدورة I موثقة؛ راجع الحالة في النتائج غير المكتملة، ولا تعد المحاولة تلقائيًا.'
   if (error.status === 403 || error.status === 401) return 'انتهى التفويض أو لم يعد الوصول مسموحًا. أعد تسجيل الدخول أو راجع المسؤول.'
   if (error.status === 409) return 'تغيرت العلامات أو أصبحت مقفلة. أعد تحميل الحالة الحالية قبل المتابعة.'
   if (error.status === 422) return Object.values(error.details ?? {}).flat().join(' ') || 'تحقق من العلامات والمكونات والإقرار وسبب التصحيح.'

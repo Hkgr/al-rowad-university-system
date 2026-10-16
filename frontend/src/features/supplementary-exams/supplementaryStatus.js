@@ -224,6 +224,8 @@ export function operationalStatusLabel(row) {
 }
 
 const ERROR_MESSAGES = Object.freeze({
+  incomplete_outcome_locked: 'المحاولة مرتبطة بدورة I موثقة؛ لا تُغيّر عبر التكميلي. راجع النتائج غير المكتملة.',
+  incomplete_registration_transition_locked: 'لا يمكن تغيير حالة تسجيل مرتبط بدورة I موثقة عبر هذا المسار.',
   supplementary_grading_not_open: 'إدخال العلامات التكميلية مغلق حالياً.',
   supplementary_grading_open_invalid: 'يجب إغلاق التسجيل وتثبيت القائمة قبل فتح إدخال العلامات.',
   supplementary_grade_roster_empty: 'لا يمكن المتابعة لأن قائمة الطلاب المثبتة فارغة.',

@@ -7,6 +7,7 @@ import { hasPermission, PERMISSIONS } from '../../auth/auth'
 import CourseRequirementBadges, { pickRequirementClassification } from '../../../components/academic/CourseRequirementBadges'
 
 import { API_BASE_URL } from '../../../services/apiClient'
+import { incompleteLabels } from '../lib/incompleteResults'
 const API = `${API_BASE_URL}/v1`
 
 function authHeaders() {
@@ -465,7 +466,7 @@ export default function CourseRegistrationPage() {
         showToast(`تم حذف "${name}" من قائمة التسجيل`)
         loadData(selectedStudent.student_id, yearId, semId)
       } else {
-        setErr(json.message || 'فشل الحذف')
+        setErr(incompleteLabels[json.error_code] || json.message || 'فشل الحذف')
       }
     } catch {
       setErr('تعذّر الاتصال بالخادم')
