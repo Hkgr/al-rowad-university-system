@@ -483,7 +483,7 @@ class AcademicProgressionService
             ->where('semester_id', $semesterId)
             ->first();
 
-        if ($term !== null && $term->isFinalized()) {
+        if ($term !== null && $term->isFinalized() && !\App\Support\IncompleteOutcomeGuard::installed()) {
             return $term->term_gpa !== null ? (float) $term->term_gpa : null;
         }
 

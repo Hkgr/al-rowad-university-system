@@ -8,6 +8,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class StudentGradeComponent extends Model
 {
+    protected static function booted(): void
+    {
+        static::saving(function (self $r): void {
+            foreach (array_unique([(int) $r->student_course_registration_id, (int) $r->getOriginal('student_course_registration_id')]) as $id)
+                if ($id > 0) \App\Support\IncompleteOutcomeGuard::assertOrdinaryWrite($id);
+        });
+        static::deleting(fn (self $r) => \App\Support\IncompleteOutcomeGuard::assertOrdinaryWrite((int) $r->student_course_registration_id));
+    }
     protected $table = 'student_grade_components';
 
     protected $primaryKey = 'student_grade_component_id';

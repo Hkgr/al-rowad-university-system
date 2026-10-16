@@ -601,6 +601,7 @@ class DeanDashboardService
             )
             ->whereIn('dean_dash_scr.course_offering_id', $offeringIds)
             ->whereIn('dean_dash_rs.status_code', StudentCourseRegistration::HISTORICAL_ATTEMPT_STATUSES)
+            ->whereNotIn('dean_dash_result_st.status_code', ['incomplete', 'pending_approval', 'withdrawn'])
             ->whereNotNull('student_course_results.final_mark');
 
         $summary = (clone $base)

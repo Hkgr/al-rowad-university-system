@@ -87,7 +87,7 @@ class GradeApprovalWorkflowService
         $visible = $this->find($user, $id);
         $this->grades->assertLegacyGradeWorkflowAllowed((int) $visible->course_offering_id);
 
-        return DB::transaction(function () use ($user, $visible, $targetStatus, $notes): GradeApproval {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($user, $visible, $targetStatus, $notes): GradeApproval {
             CourseOffering::query()->whereKey($visible->course_offering_id)->lockForUpdate()->firstOrFail();
             $approval = GradeApproval::query()
                 ->whereKey($visible->grade_approval_id)
@@ -135,7 +135,7 @@ class GradeApprovalWorkflowService
                 throw new GradeException('The requested grade approval status is not configured.', status: 409, errorCode: 'grade_approval_status_missing');
             }
 
-            StudentGradeComponent::query()->whereIn('student_course_registration_id', $registrationIds)
+            \App\Support\IncompleteOutcomeGuard::ordinaryComponents(StudentGradeComponent::query())->whereIn('student_course_registration_id', $registrationIds)
                 ->lockForUpdate()->update(['grade_status' => $targetStatus === 'approved' ? 'approved' : 'draft']);
             $approval->update([
                 'approval_status_id' => $statusId,

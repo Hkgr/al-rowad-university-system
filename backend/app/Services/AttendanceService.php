@@ -110,7 +110,7 @@ class AttendanceService
 
     public function recordSessionAttendance(int $sessionId, array $records): array
     {
-        return DB::transaction(function () use ($sessionId, $records): array {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($sessionId, $records): array {
             $session = AttendanceSession::query()->findOrFail($sessionId);
             $saved = [];
 
@@ -399,7 +399,7 @@ class AttendanceService
 
     public function applyDeprivation(int $courseOfferingId, ?int $userId = null): array
     {
-        return DB::transaction(function () use ($courseOfferingId, $userId): array {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($courseOfferingId, $userId): array {
             $deprivedStatusId = $this->deprivedResultStatusId();
             $deprivationNote = 'Deprived due to absence percentage greater than '.self::DEPRIVATION_THRESHOLD.'%.';
 

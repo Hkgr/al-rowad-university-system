@@ -187,7 +187,7 @@ class SupplementaryExamGradingService
         $this->professor($actor, Governance::ENTER);
         $this->ready();
 
-        return DB::transaction(function () use ($actor, $seed, $marks): array {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($actor, $seed, $marks): array {
             [$period, $offering] = $this->lockGraph($seed);
             $this->assertAssigned($actor, $offering, true);
             if ($period->status !== 'grading_open') {
@@ -239,7 +239,7 @@ class SupplementaryExamGradingService
         $this->professor($actor, Governance::ENTER);
         $this->ready();
 
-        return DB::transaction(function () use ($actor, $seed, $resubmit): array {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($actor, $seed, $resubmit): array {
             [$period, $offering] = $this->lockGraph($seed);
             $assignment = $this->assertAssigned($actor, $offering, true);
             if ($period->status !== 'grading_open') {
@@ -317,7 +317,7 @@ class SupplementaryExamGradingService
         $this->exam($actor, $permission);
         $this->ready();
 
-        return DB::transaction(function () use ($actor, $submissionId, $action, $reason): array {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($actor, $submissionId, $action, $reason): array {
             $seed = SupplementaryExamGradeSubmission::query()->findOrFail($submissionId);
             $offeringSeed = SupplementaryExamOffering::query()->findOrFail($seed->supplementary_exam_offering_id);
             [$period, $offering] = $this->lockGraph($offeringSeed);
@@ -393,7 +393,7 @@ class SupplementaryExamGradingService
             $this->fail('Opening grading for a whole period requires an actual university scope.', 'supplementary_grading_out_of_scope', 403);
         }
 
-        return DB::transaction(function () use ($actor, $seed): SupplementaryExamPeriod {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($actor, $seed): SupplementaryExamPeriod {
             $period = SupplementaryExamPeriod::query()->lockForUpdate()->findOrFail($seed->getKey());
             if (! in_array($period->status, ['registration_closed', 'grading_open'], true)) {
                 $this->fail('The fixed registration roster must be closed first.', 'supplementary_grading_open_invalid', 409);
@@ -422,7 +422,7 @@ class SupplementaryExamGradingService
         $this->exam($actor, Governance::ASSIGN);
         $this->ready();
 
-        return DB::transaction(function () use ($actor, $seed, $facultyId): SupplementaryExamGraderAssignment {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($actor, $seed, $facultyId): SupplementaryExamGraderAssignment {
             [$period, $offering] = $this->lockGraph($seed);
             if (! $this->scope->canMutateProgram($actor, (int) $offering->academic_program_id)) {
                 $this->fail('The supplementary offering is outside the assigned data scope.', 'supplementary_grade_out_of_scope', 403);

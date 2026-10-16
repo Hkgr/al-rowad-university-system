@@ -10,6 +10,14 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class StudentCourseRegistration extends Model
 {
+    public function incompleteCase(): HasOne { return $this->hasOne(CourseIncompleteCase::class, 'student_course_registration_id'); }
+
+    protected static function booted(): void
+    {
+        static::updating(function (self $r): void {
+            if ($r->isDirty(['result_status_id', 'course_offering_id', 'student_id'])) \App\Support\IncompleteOutcomeGuard::assertOrdinaryWrite((int) $r->getKey());
+        });
+    }
     public const CURRENT_STATUS = 'registered';
 
     public const DROPPED_STATUS = 'dropped';

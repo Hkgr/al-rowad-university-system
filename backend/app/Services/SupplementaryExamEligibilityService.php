@@ -73,6 +73,8 @@ class SupplementaryExamEligibilityService
 
         return [
             'schema_ready' => $schemaReady,
+            'incomplete_case_ids' => \App\Support\IncompleteOutcomeGuard::installed()
+                ? \App\Models\CourseIncompleteCase::whereIn('student_course_registration_id', $registrationIds)->pluck('student_course_registration_id') : collect(),
             'materialized_target_ids' => SupplementaryExamTargetGuard::materializedTargetIds($registrationIds),
             'parts_by_course_offering' => $parts->groupBy('course_offering_id'),
             'marks_by_registration' => $marks->groupBy('student_course_registration_id'),
@@ -108,6 +110,7 @@ class SupplementaryExamEligibilityService
         if (! $this->sourceAllowed($offering, $registration)) $blockers[] = 'source_not_allowed';
         if (! $theoreticalRequired) $blockers[] = 'theoretical_not_required';
         if ($this->deprived($registration)) $blockers[] = 'student_deprived';
+        if ($context !== null ? $context['incomplete_case_ids']->contains((int) $registration->getKey()) : \App\Support\IncompleteOutcomeGuard::caseFor((int) $registration->getKey()) !== null) $blockers[] = 'incomplete_lifecycle_conflict';
         if ($practicalRequired && $practicalMark === null) $blockers[] = 'practical_mark_missing';
         if ($practicalRequired && $practicalMark !== null && $practicalMark < $minimum) $blockers[] = 'practical_failed';
         $deferral = $this->activeValidDeferral(
@@ -179,7 +182,7 @@ class SupplementaryExamEligibilityService
     public function declare(User $user,int $offeringId,int $registrationId): SupplementaryExamTheoreticalDeferral
     {
         $this->assertStudent($user);$this->assertSchemaReady();
-        $outcome=DB::transaction(function()use($user,$offeringId,$registrationId){
+        $outcome=\App\Services\AcademicPlanContext::transaction(function()use($user,$offeringId,$registrationId){
             $supplementaryPeriodId=SupplementaryExamOffering::query()->whereKey($offeringId)->value('supplementary_exam_period_id');
             if($supplementaryPeriodId===null)SupplementaryExamOffering::query()->findOrFail($offeringId);
             $period=SupplementaryExamPeriod::query()->lockForUpdate()->findOrFail($supplementaryPeriodId);
@@ -206,7 +209,7 @@ class SupplementaryExamEligibilityService
 
     public function cancel(User $user,SupplementaryExamTheoreticalDeferral $deferral,?string $reason): SupplementaryExamTheoreticalDeferral
     {
-        $this->assertStudent($user);$this->assertSchemaReady();$outcome=DB::transaction(function()use($user,$deferral,$reason){$seed=SupplementaryExamTheoreticalDeferral::query()->findOrFail($deferral->getKey());$registrationId=(int)$seed->student_course_registration_id;$supplementaryOfferingId=(int)$seed->supplementary_exam_offering_id;
+        $this->assertStudent($user);$this->assertSchemaReady();$outcome=\App\Services\AcademicPlanContext::transaction(function()use($user,$deferral,$reason){$seed=SupplementaryExamTheoreticalDeferral::query()->findOrFail($deferral->getKey());$registrationId=(int)$seed->student_course_registration_id;$supplementaryOfferingId=(int)$seed->supplementary_exam_offering_id;
             $supplementaryPeriodId=SupplementaryExamOffering::query()->whereKey($supplementaryOfferingId)->value('supplementary_exam_period_id');if($supplementaryPeriodId===null)SupplementaryExamOffering::query()->findOrFail($supplementaryOfferingId);$period=SupplementaryExamPeriod::query()->lockForUpdate()->findOrFail($supplementaryPeriodId);$supplementaryOffering=SupplementaryExamOffering::query()->lockForUpdate()->findOrFail($supplementaryOfferingId);if((int)$supplementaryOffering->supplementary_exam_period_id!==(int)$period->getKey())return ['error'=>['The supplementary offering changed while it was being locked.','deferral_source_drift',409]];
             $regularOfferingId=StudentCourseRegistration::query()->whereKey($registrationId)->value('course_offering_id');if($regularOfferingId===null)StudentCourseRegistration::query()->findOrFail($registrationId);CourseOfferingLock::lock((int)$regularOfferingId);
             $r=StudentCourseRegistration::query()->with(['registrationStatus','resultStatus','studentCourseResult.resultStatus'])->lockForUpdate()->findOrFail($registrationId);if((int)$r->course_offering_id!==(int)$regularOfferingId)return ['error'=>['The academic attempt changed while it was being locked.','deferral_source_drift',409]];
@@ -220,7 +223,7 @@ class SupplementaryExamEligibilityService
         if(isset($outcome['error']))$this->fail(...$outcome['error']);return $outcome['row'];
     }
 
-    private function declarationBlockers($o,$r,$parts,$approval): array {$b=[];if(!$o->isOpen())$b[]='supplementary_offering_not_open';if($o->period?->status!=='announced')$b[]='supplementary_period_not_announced';if($r->registrationStatus?->status_code!=='registered')$b[]='registration_not_academic_attempt';if(!$this->sourceAllowed($o,$r))$b[]='source_not_allowed';if(!$parts->contains('component_type','theoretical'))$b[]='theoretical_not_required';if($this->deprived($r))$b[]='student_deprived';if($this->hasAnyPartMark($r,$parts,'theoretical'))$b[]='theoretical_already_graded';if($approval&&!in_array($approval->status,['draft','returned'],true))$b[]='theoretical_part_locked';if($r->studentCourseResult&&$this->grades->isOfficiallyVisibleAttempt($r))$b[]='deferral_too_late';if($parts->contains('component_type','practical')){$pa=GradePartApproval::query()->where('course_offering_id',$r->course_offering_id)->where('component_type','practical')->lockForUpdate()->first();if($pa?->status!=='approved')$b[]='practical_result_not_approved';$m=$this->partMark($r,$parts,'practical');if($m===null)$b[]='practical_mark_missing';elseif($m<(float)$this->grades->defaultGradingPolicy()->minimum_practical_mark)$b[]='practical_failed';}return array_values(array_unique($b));}
+    private function declarationBlockers($o,$r,$parts,$approval): array {$b=[];if(\App\Support\IncompleteOutcomeGuard::caseFor((int)$r->getKey()))$b[]='incomplete_lifecycle_conflict';if(!$o->isOpen())$b[]='supplementary_offering_not_open';if($o->period?->status!=='announced')$b[]='supplementary_period_not_announced';if($r->registrationStatus?->status_code!=='registered')$b[]='registration_not_academic_attempt';if(!$this->sourceAllowed($o,$r))$b[]='source_not_allowed';if(!$parts->contains('component_type','theoretical'))$b[]='theoretical_not_required';if($this->deprived($r))$b[]='student_deprived';if($this->hasAnyPartMark($r,$parts,'theoretical'))$b[]='theoretical_already_graded';if($approval&&!in_array($approval->status,['draft','returned'],true))$b[]='theoretical_part_locked';if($r->studentCourseResult&&$this->grades->isOfficiallyVisibleAttempt($r))$b[]='deferral_too_late';if($parts->contains('component_type','practical')){$pa=GradePartApproval::query()->where('course_offering_id',$r->course_offering_id)->where('component_type','practical')->lockForUpdate()->first();if($pa?->status!=='approved')$b[]='practical_result_not_approved';$m=$this->partMark($r,$parts,'practical');if($m===null)$b[]='practical_mark_missing';elseif($m<(float)$this->grades->defaultGradingPolicy()->minimum_practical_mark)$b[]='practical_failed';}return array_values(array_unique($b));}
     private function parts($r,bool $lock=false,?array $context=null){if(!$lock&&$context!==null)return $context['parts_by_course_offering']->get((int)$r->course_offering_id,collect());$q=GradeComponent::query()->where('course_offering_id',$r->course_offering_id)->where('is_required',true)->whereIn('component_type',['practical','theoretical']);return ($lock?$q->lockForUpdate():$q)->get();}
     private function hasAnyPartMark(
         StudentCourseRegistration $registration,

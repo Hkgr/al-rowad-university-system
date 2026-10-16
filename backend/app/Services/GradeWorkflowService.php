@@ -23,7 +23,7 @@ class GradeWorkflowService
 
     public function submit(int $courseOfferingId, int $userId): array
     {
-        return DB::transaction(function () use ($courseOfferingId, $userId): array {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($courseOfferingId, $userId): array {
             CourseOffering::query()->whereKey($courseOfferingId)->lockForUpdate()->firstOrFail();
             $grades = app(GradeService::class);
             $grades->assertLegacyGradeWorkflowAllowed($courseOfferingId);
@@ -105,7 +105,7 @@ class GradeWorkflowService
                 $approval->update($values);
             }
 
-            StudentGradeComponent::query()
+            \App\Support\IncompleteOutcomeGuard::ordinaryComponents(StudentGradeComponent::query())
                 ->whereIn('student_course_registration_id', $registrationIds)
                 ->lockForUpdate()
                 ->update(['grade_status' => 'submitted']);
@@ -148,13 +148,16 @@ class GradeWorkflowService
 
     public function completedRegistrations(Collection $registrations): Collection
     {
+        \App\Support\IncompleteOutcomeGuard::attach($registrations);
         return $registrations->filter(fn (StudentCourseRegistration $registration): bool =>
-            $this->resultIsComplete($registration->studentCourseResult));
+            \App\Support\IncompleteOutcomeGuard::preservesOutcome($registration) || $this->resultIsComplete($registration->studentCourseResult));
     }
 
     public function incompleteRegistrations(Collection $registrations, ?Collection $results = null): Collection
     {
+        \App\Support\IncompleteOutcomeGuard::attach($registrations);
         return $registrations->filter(function (StudentCourseRegistration $registration) use ($results): bool {
+            if (\App\Support\IncompleteOutcomeGuard::preservesOutcome($registration)) return false;
             $result = $results?->get($registration->student_course_registration_id)
                 ?? $registration->studentCourseResult;
 

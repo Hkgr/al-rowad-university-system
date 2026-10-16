@@ -23,7 +23,7 @@ class SupplementaryExamReconciliationService
 
     public function reconcile(User $actor, SupplementaryExamPeriod $period): array
     {
-        return DB::transaction(function () use ($actor, $period): array {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($actor, $period): array {
             $snapshotPeriod = SupplementaryExamPeriod::query()->findOrFail($period->getKey());
 
             return $this->reconcileSnapshot($actor, $snapshotPeriod);
