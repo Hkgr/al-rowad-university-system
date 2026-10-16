@@ -26,12 +26,7 @@ final class IncompleteOutcomeGuard
             && Schema::hasColumns(self::EVENTS, ['incomplete_event_id', 'incomplete_case_id', 'revision', 'action', 'request_id',
                 'request_hash', 'actor_user_id', 'actor_kind', 'before_values', 'after_values', 'response_snapshot', 'performed_at']);
         if (!$basic || DB::getDriverName() !== 'mysql') return $basic;
-        $schema = DB::getDatabaseName();
-        return DB::table('information_schema.COLUMNS')->where('TABLE_SCHEMA', $schema)->where('TABLE_NAME', 'student_course_results')
-                ->whereIn('COLUMN_NAME', ['theoretical_total', 'practical_total', 'final_mark'])->where('IS_NULLABLE', 'YES')->where('DATA_TYPE', 'decimal')->where('NUMERIC_PRECISION', 5)->where('NUMERIC_SCALE', 2)->count() === 3
-            && DB::table('information_schema.TABLES')->where('TABLE_SCHEMA', $schema)->whereIn('TABLE_NAME', [self::CASES, self::EVENTS])->where('ENGINE', 'InnoDB')->where('TABLE_COMMENT', 'course-result-symbols-phase1-v1')->count() === 2
-            && DB::table('information_schema.REFERENTIAL_CONSTRAINTS')->where('CONSTRAINT_SCHEMA', $schema)->whereIn('TABLE_NAME', [self::CASES, self::EVENTS])->whereIn('DELETE_RULE', ['RESTRICT', 'NO ACTION'])->count() === 9
-            && DB::table('information_schema.TRIGGERS')->where('TRIGGER_SCHEMA', $schema)->whereIn('TRIGGER_NAME', ['crs_events_immutable_u', 'crs_events_immutable_d', 'crs_case_history_u', 'crs_case_history_d'])->count() === 4;
+        return DB::select(IncompleteSchemaContract::issuesSql(true).' LIMIT 1') === [];
     }
     public static function assertReady(): void
     {
@@ -61,6 +56,14 @@ final class IncompleteOutcomeGuard
     {
         if (self::caseFor($registrationId, DB::transactionLevel() > 0)) {
             throw new GradeException('This result belongs to an audited Incomplete lifecycle; ordinary grade writes cannot replace it.', status: 409, errorCode: 'incomplete_outcome_locked');
+        }
+    }
+    /** Called by canonical locked transitions, with a model backstop for other writers. */
+    public static function assertRegistrationTransition(int $registrationId, ?string $target, ?string $source = 'registered'): void
+    {
+        if (self::caseFor($registrationId, DB::transactionLevel() > 0)
+            && (!in_array($target, ['registered', 'completed'], true) || !in_array($source, ['registered', 'completed'], true))) {
+            throw new GradeException('This registration belongs to an Incomplete lifecycle; withdrawal, drop and cancellation are not supported.', status: 409, errorCode: 'incomplete_registration_transition_locked');
         }
     }
     public static function ordinaryComponents($query)

@@ -1,4 +1,4 @@
-param([string]$BinaryDirectory='C:\wamp64\bin\mariadb\mariadb11.4.9\bin')
+param([string]$BinaryDirectory='C:\wamp64\bin\mariadb\mariadb11.4.9\bin',[ValidateSet('all','ordered')][string]$Scenario='all')
 $ErrorActionPreference='Stop'
 $binary=(Resolve-Path -LiteralPath $BinaryDirectory).Path
 $installer=Join-Path $binary 'mariadb-install-db.exe'
@@ -9,7 +9,7 @@ $directory=Join-Path ([IO.Path]::GetTempPath()) ('course-symbols-'+$marker)
 $null=New-Item -ItemType Directory -Path $directory
 $port=Get-Random -Minimum 25000 -Maximum 39000
 $password=[guid]::NewGuid().ToString('N')
-$config=@{directory=$directory;marker=$marker;host='127.0.0.1';port=$port;database=('course_symbols_'+$marker);password=$password}
+$config=@{directory=$directory;marker=$marker;host='127.0.0.1';port=$port;database=('course_symbols_'+$marker);password=$password;scenario=$Scenario}
 $configPath=Join-Path $directory 'isolated.json'
 [IO.File]::WriteAllText($configPath,($config|ConvertTo-Json),[Text.UTF8Encoding]::new($false))
 $env:COURSE_SYMBOLS_MARIADB_CONFIG=$configPath

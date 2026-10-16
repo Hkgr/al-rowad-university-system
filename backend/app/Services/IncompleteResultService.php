@@ -77,9 +77,10 @@ final class IncompleteResultService
     {
         Guard::assertReady();
         $this->validateAction($action, $input);
-        $this->authorize($actor, $this->registration($registrationId));
-        try { return AcademicPlanContext::transaction(function () use ($actor, $registrationId, $action, $input): array {
-            $r = $this->lock($registrationId);
+        $seed = $this->registration($registrationId);
+        $this->authorize($actor, $seed);
+        try { return AcademicPlanContext::transaction(function () use ($actor, $registrationId, $seed, $action, $input): array {
+            $r = $this->lock($seed);
             $this->authorize($actor, $r);
             $hash = $this->requestHash($registrationId, $action, $input);
             $event = DB::table(Guard::EVENTS)->where('request_id', $input['request_id'])->lockForUpdate()->first();
@@ -138,8 +139,9 @@ final class IncompleteResultService
     {
         Guard::assertReady();
         $preview = CourseIncompleteCase::findOrFail($caseId);
-        return AcademicPlanContext::transaction(function () use ($preview): bool {
-            $r = $this->lock((int) $preview->student_course_registration_id);
+        $seed = $this->registration((int) $preview->student_course_registration_id);
+        return AcademicPlanContext::transaction(function () use ($seed): bool {
+            $r = $this->lock($seed);
             $case = Guard::caseFor((int) $r->getKey(), true);
             if (!$case || $case->state !== 'active' || $this->clock()->lte($case->deadline_at)) return false;
             Guard::preservesOutcome($r, true);
@@ -154,18 +156,24 @@ final class IncompleteResultService
         });
     }
 
-    private function lock(int $id): StudentCourseRegistration
+    private function lock(StudentCourseRegistration $preview): StudentCourseRegistration
     {
-        $preview = StudentCourseRegistration::findOrFail($id);
+        // Identity preview is taken before the transaction. A plain read here
+        // would pin an obsolete REPEATABLE READ view while waiting for locks.
+        $id = (int) $preview->getKey();
         Student::query()->whereKey($preview->student_id)->lockForUpdate()->firstOrFail();
         \App\Models\CourseOffering::query()->whereKey($preview->course_offering_id)->lockForUpdate()->firstOrFail();
         DB::table('grade_approvals')->where('course_offering_id', $preview->course_offering_id)->orderBy('grade_approval_id')->lockForUpdate()->get();
         DB::table('grade_part_approvals')->where('course_offering_id', $preview->course_offering_id)->orderBy('component_type')->lockForUpdate()->get();
-        StudentCourseRegistration::query()->whereKey($id)->lockForUpdate()->firstOrFail();
+        $locked = StudentCourseRegistration::query()->whereKey($id)->lockForUpdate()->firstOrFail();
+        if ((int) $locked->student_id !== (int) $preview->student_id || (int) $locked->course_offering_id !== (int) $preview->course_offering_id)
+            $this->fail('Registration academic identity changed while locking.', 'incomplete_context_stale');
         DB::table('grade_components')->where('course_offering_id', $preview->course_offering_id)->orderBy('grade_component_id')->lockForUpdate()->get();
         DB::table('student_grade_components')->where('student_course_registration_id', $id)->orderBy('student_grade_component_id')->lockForUpdate()->get();
-        DB::table('student_course_results')->where('student_course_registration_id', $id)->lockForUpdate()->first();
-        return $this->registration($id);
+        $result = StudentCourseResult::query()->with('resultStatus')->where('student_course_registration_id', $id)->lockForUpdate()->first();
+        $locked->load(['student', 'registrationStatus', 'resultStatus', 'courseOffering.course', 'courseOffering.gradeComponents']);
+        $locked->setRelation('studentCourseResult', $result);
+        return $locked;
     }
     private function registration(int $id): StudentCourseRegistration
     {

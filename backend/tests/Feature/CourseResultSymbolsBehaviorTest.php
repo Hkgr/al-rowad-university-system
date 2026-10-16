@@ -278,6 +278,7 @@ class CourseResultSymbolsBehaviorTest extends TestCase
     }
     public function test_deadline_inclusive_boundary_and_command_idempotency(): void
     {
+        $this->expirationCache();
         $case=$this->grant(); $this->travelTo(CarbonImmutable::parse($case['case']['deadline_at']));
         self::assertFalse(app(IncompleteResultService::class)->expire($case['case']['incomplete_case_id']));
         $this->travelTo(now()->addMicroseconds(500000));
@@ -286,6 +287,29 @@ class CourseResultSymbolsBehaviorTest extends TestCase
         $this->artisan('course-results:expire-incomplete',['--batch'=>1])->assertSuccessful();
         $this->artisan('course-results:expire-incomplete',['--batch'=>1])->assertSuccessful();
         self::assertSame(2,DB::table('student_course_incomplete_events')->count());
+    }
+    private function expirationCache(): void
+    {
+        $path=sys_get_temp_dir().'/crs-expiry-'.Str::uuid();
+        config(['cache.default'=>'file','cache.stores.file.path'=>$path,'cache.stores.file.lock_path'=>$path]);
+        app('cache')->purge('file');
+    }
+    public function test_bounded_expiration_cursor_passes_a_permanently_blocked_oldest_case(): void
+    {
+        $this->expirationCache(); $first=$this->grant();
+        $second=$this->postJson(self::BASE.'/registrations/2',['request_id'=>(string)Str::uuid(),'expected_revision'=>0,
+            'reason'=>'Synthetic later case','requirements'=>'Missing theory','expiry_outcome'=>'F','deadline_at'=>'2026-10-18'])->assertCreated()->json('data.case');
+        DB::table('student_course_results')->where('student_course_registration_id',1)->update(['final_mark'=>100]);
+        $blocked=CourseIncompleteCase::findOrFail($first['case']['incomplete_case_id'])->toArray();
+        $events=DB::table('student_course_incomplete_events')->where('incomplete_case_id',$first['case']['incomplete_case_id'])->get()->toArray();
+        $this->travelTo(CarbonImmutable::parse('2026-10-19','UTC'));
+        $this->artisan('course-results:expire-incomplete',['--batch'=>1])->expectsOutputToContain('incomplete_outcome_conflict')->assertFailed();
+        // Fresh command invocation shares only its durable operational cursor.
+        $this->artisan('course-results:expire-incomplete',['--batch'=>1])->assertSuccessful();
+        self::assertSame('expired',CourseIncompleteCase::findOrFail($second['incomplete_case_id'])->state);
+        $this->artisan('course-results:expire-incomplete',['--batch'=>1])->expectsOutputToContain('incomplete_outcome_conflict')->assertFailed();
+        self::assertSame($blocked,CourseIncompleteCase::findOrFail($first['case']['incomplete_case_id'])->toArray());
+        self::assertEquals($events,DB::table('student_course_incomplete_events')->where('incomplete_case_id',$first['case']['incomplete_case_id'])->get()->toArray());
     }
     public function test_single_required_part_resolution_has_no_assumed_sixty_forty_input(): void
     {
@@ -399,6 +423,44 @@ class CourseResultSymbolsBehaviorTest extends TestCase
         $this->getJson(self::BASE)->assertUnauthorized();
         $this->postJson(self::BASE.'/registrations/1',[])->assertUnauthorized();
         self::assertSame(0,DB::table('student_course_incomplete_cases')->count());
+    }
+    public static function lifecycleTransitions(): array
+    {
+        $cases=[];
+        foreach(['active','resolved','expired'] as $state)foreach(['Dropped','Withdrawn','Cancelled'] as $transition)$cases[$state.'-'.$transition]=[$state,$transition];
+        return $cases;
+    }
+    #[\PHPUnit\Framework\Attributes\DataProvider('lifecycleTransitions')]
+    public function test_canonical_registration_transitions_cannot_orphan_owned_lifecycle(string $state,string $transition): void
+    {
+        $case=$this->grant();
+        if($state==='resolved')$this->resolve($case,[['grade_component_id'=>1,'mark'=>50],['grade_component_id'=>2,'mark'=>30]])->assertOk();
+        if($state==='expired'){$this->travelTo(CarbonImmutable::parse('2026-10-18','UTC'));app(IncompleteResultService::class)->expire($case['case']['incomplete_case_id']);}
+        $before=[]; foreach(['student_course_registrations','student_course_incomplete_cases','student_course_incomplete_events','student_course_results','student_grade_components'] as $table)$before[$table]=DB::table($table)->get()->toArray();
+        try{
+            \App\Services\AcademicPlanContext::transaction(function()use($transition):void{
+                $service=app(\App\Services\RegistrationService::class);
+                $service->lockStudent(1); $offering=$service->lockOffering(1); $registration=$service->lockRegistration(1);
+                if($transition==='Cancelled'){$offering->update(['status'=>'closed']);}
+                $service->{'transitionRegisteredTo'.$transition}($registration,$offering);
+            });
+            self::fail('Canonical transition orphaned a lifecycle.');
+        }catch(\App\Exceptions\GradeException $e){self::assertSame(409,$e->status);self::assertSame('incomplete_registration_transition_locked',$e->errorCode);}
+        foreach($before as $table=>$rows)self::assertEquals($rows,DB::table($table)->get()->toArray(),$table);
+    }
+    public function test_self_drop_http_rejects_owned_registration_and_model_keeps_completed_supported(): void
+    {
+        $case=$this->grant();
+        Schema::create('student_registration_requests',fn(Blueprint $t)=>[$t->increments('student_registration_request_id'),$t->integer('student_id'),$t->integer('academic_year_id'),$t->integer('semester_id'),$t->string('status')]);
+        DB::table('roles')->where('role_id',1)->update(['role_code'=>'super_admin']);
+        DB::table('users')->where('user_id',1)->update(['student_id'=>1]); Sanctum::actingAs(User::findOrFail(1));
+        $this->postJson('/api/v1/student/registration/1/drop')->assertConflict()->assertJsonPath('error_code','incomplete_registration_transition_locked');
+        StudentCourseRegistration::findOrFail(1)->update(['registration_status_id'=>4]);
+        self::assertSame('completed',StudentCourseRegistration::findOrFail(1)->registrationStatus->status_code);
+        $this->resolve($case,[['grade_component_id'=>1,'mark'=>50],['grade_component_id'=>2,'mark'=>30]])->assertOk();
+        self::assertSame('resolved',CourseIncompleteCase::first()->state);
+        try{StudentCourseRegistration::findOrFail(1)->update(['registration_status_id'=>5]);self::fail('Model allowed lifecycle withdrawal.');}
+        catch(\App\Exceptions\GradeException $e){self::assertSame('incomplete_registration_transition_locked',$e->errorCode);}
     }
     public function test_conflicting_persisted_evidence_denies_finalization_without_repair_or_approval_writes(): void
     {
