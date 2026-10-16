@@ -40,8 +40,9 @@ No grant/write occurs during GET. No writer method, calculation band, eligibilit
 - Grant requires nonblank reason/requirements, an explicit F or Z (nothing preselected), and either the server's published-calendar suggestion or a manual date. Dates are submitted unchanged for server interpretation as end-of-day Damascus. Accepted dates are displayed with `Asia/Damascus`, independently of the device timezone; no deadline is calculated in React.
 - Deadline editing has no invented justification. Terminal cases have no reopen/ordinary-edit action. Resolution fills only actual missing required marks via the dedicated canonical operation.
 - Confirmation identifies student/course/actual period and proposed changes. The attempt freezes method, route/target, UUID, revision and serialized content. A synchronous write guard prevents double clicks. There is no automatic mutation retry.
-- After lost/5xx response, fields and original attempt remain locked. Read current state first; an explicit exact replay uses the same method/UUID/body, allowing Phase 1's authorized replay-before-revision behavior. It never creates a replacement UUID automatically. Rebase/discard is disabled while the result remains uncertain; navigation warns that leaving does not cancel the server operation.
-- After 409, original baseline/proposal and current server state stay separate. Explicit review may retain proposed values only where the action/component IDs remain eligible; otherwise discard/re-enter. A refresh never silently attaches a proposal to a new revision.
+- A success HTTP status alone is not an acknowledgement. The envelope must have `success:true`, `data.changed:true`, a valid case/registration identity, the operation's successor revision and matching resulting lifecycle state. A replay is checked against the **frozen original attempt**, not the newest GET state. Invalid/missing JSON, a negative/incomplete envelope, or a mismatched identity enters uncertain recovery without clearing the proposal or reporting success.
+- After lost/5xx response or invalid acknowledgement, fields and original attempt remain locked. A **successful current-state GET after each unknown response** is required before explicit exact replay of the same method/UUID/body. Failed reads do not supply this proof, nor does an earlier successful GET authorize another replay after a subsequent unknown response. It never creates a replacement UUID automatically. Rebase/discard is disabled while uncertain; navigation warns that leaving does not cancel the server operation.
+- Canonical HTTP 409/422 explicitly rejects that invocation; it does **not** prove an earlier lost invocation never committed. The proposal/baseline and immutable original request remain locked in a rejected/review-required state, separate from the current server read. An automatic GET is read-only. Deliberate review/re-preparation requires a new successful read and still-eligible action/component IDs; otherwise the user may explicitly discard. Re-preparation, not rejection or refresh, releases the old attempt for a separately confirmed new UUID. Terminal cases cannot reopen. A failed read also disables beginning a replacement draft, even after discard.
 - Native unload and data-router blockers protect drafts and pending writes, including sidebar/back navigation. Cancel retains the proposal; pending writes cannot be discarded mid-flight. Reads use AbortController plus active request guards, even if transport ignores abort. Identity/authorization invalidation unmounts sensitive state and bypasses draft confirmation; storage/focus events plus a polling fallback detect changes. Lookup/read/write errors and informational notices are separate.
 
 ## Academic records and shared PDF
@@ -50,7 +51,7 @@ No grant/write occurs during GET. No writer method, calculation band, eligibilit
 
 Both record screens and the **existing single shared PDF generator** use the helper. Internal reason/requirements/actor evidence is not rendered into the student document. Server-provided full-withdrawal/study-duration flags remain visible, including W with no result. Attempt hours, GPA denominator hours, earned hours and historical hours have separate labels; missing metrics are not invented. Existing A4 branding, disclaimer/signatures, measured pagination and repeated headings remain. Frozen historical snapshots/decisions are untouched; this UI consumes current official record data.
 
-## Verification actually executed
+## Initial implementation verification (reviewed head `60d48af`)
 
 Existing `backend/vendor` and `frontend/node_modules` were used; nothing installed. Baseline: `9fa642d0e34a473e809945f1c985602d058d5110` (latest fetched develop).
 
@@ -91,3 +92,31 @@ Deployment is not performed. Phase 1's manual schema must already be verified RE
 - Documentation: this file and `api/contracts/grades.md`.
 
 All 23 files are implementation/tests/documentation in this phase; no dependency, SQL, migration, permission, production configuration, historic test or Phase 1 writer method changed.
+
+## PR #168 review follow-up — acknowledgements and recovery
+
+Started from verified remote/local head `60d48af8ccd93969644c8f4f96547b7116b6e961`, clean worktree, same `feature/course-result-symbols-phase2-ui` branch. The follow-up changes only two frontend source files, their two existing test files and the two documentation files. No shared API client, backend, writer, rule, SQL, permission, dependency or PDF implementation change.
+
+Before editing application code, 17 new actual ReactDOM/router regressions failed on the reviewed source (27 tests: 10 passed / 17 failed). They reproduced 13 malformed/missing/negative/incomplete/mismatched acknowledgement cases, both lost-response → successful GET → exact replay → 409/422 sequences, stale successful-read proof after another unknown response, and missing accepted calendar-source presentation. Successful test responses now mirror the real `changed + case` mutation envelope instead of the former incomplete `{changed:true}` fixture.
+
+Fixes:
+
+1. `sendAttempt()` validates positive case/registration IDs (and the frozen case ID for deadline/resolve), `changed:true`, the exact successor revision and action-appropriate `active/resolved` state before success. Grant accepts the newly allocated positive case ID. Missing/malformed acknowledgement is an unknown outcome, not inferred rollback/success. Canonical original snapshots replay successfully even after later revisions or a terminal current-state GET; the UI refreshes after acknowledgement rather than using that old snapshot as current state.
+2. Recovery has explicit unknown versus rejected states. Neither discards the original request or proposal. The successful-read key is tracked separately from render/failure keys and is invalidated as replay proof on every unknown response. Reconciliation GET failures cannot unlock replay/review/replacement. After 409 or 422, fields remain locked until explicit eligible review/re-preparation or discard; no UUID or mutation is generated by those decisions. Auth loss still removes all sensitive state. Tests also cover terminal-state rejection/discard, confirmed-rejection read failure and authorization denial during recovery.
+3. The authorized case details show the accepted manual/calendar source and recorded event/version IDs, version number, period reference and recorded study start when present. Missing reference stays “غير مسجل”; manual sources do not borrow a calendar. Snapshot DB timestamps are interpreted as recorded UTC before Damascus formatting, never the device's implicit timezone. Explicit expiry choices and confirmation label **F — رسوب** and **Z — حرمان**. No internal evidence was added to student/PDF projections.
+
+Follow-up checks actually executed:
+
+| Check | Result |
+|---|---|
+| Actual ReactDOM/router, synthetic API, no-layout host | **32/32 PASS** (22 added cases plus the original ten); every invalid acknowledgement preserves the draft and prevents a saved notice, exact replay keeps the same serialized request, rejected attempts require explicit decisions, terminal/auth protections remain |
+| Existing real PDF HTML builder, deterministic fake measurement | **1/1 semantic test PASS**, not a PDF download/visual check |
+| Focused Node pure/static auth/manual/search/record/PDF/VP selection | **80/80 PASS**, including ten Incomplete pure contract/state/presentation tests |
+| Full dependency-free Node selection | **422 tests: 408 passed / 14 failed**. Fresh isolated clean worktree of reviewed `60d48af`: **419 tests: 405 passed / the exact same 14 failing identities**; no historical failure hidden or test weakened |
+| Targeted Laravel selection re-run | **106 tests / 1,283 assertions PASS**; no backend source changed |
+| PHP Phase 1 and Phase 2 contracts | Both PASS; Phase 2 remains 13 static checks, not runtime evidence |
+| Changed-source ESLint / production build / diff | Both source files lint PASS without warnings; Vite build PASS, 985 modules, existing large-chunk warning; `git diff --check` PASS |
+
+The full MariaDB harness, Composer/platform checks and PHP syntax checks in the original implementation section are **prior results**, not re-executed evidence for this frontend-only follow-up. No PHP source changed. No dependency installation or live system connection occurred.
+
+**Still pending, not closed by synthetic tests:** live browser React + isolated Laravel/MariaDB integration; 390/768/1440px responsive/reference/keyboard/accessibility inspection; actual PDF download/opening, Arabic/logo/page-boundary visual inspection. No visual/end-to-end acceptance, production verification, MariaDB 10.11 verification or Phase 3 work is claimed. Keep PR #168 Draft, open, unmerged and undeployed.

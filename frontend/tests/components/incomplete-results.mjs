@@ -19,13 +19,19 @@ const officer = { roles: ['exam_officer'], permissions: ['exams.manage', 'grades
 const path = '/exam-board/incomplete-results/registrations/1'
 const base = () => ({ registration_id: 1, schema_ready: true, student: { id: 1, number: 'SYN-1', full_name: 'سارة اصطناعية' }, course: { id: 1, name: 'مقرر اصطناعي', code: 'SYN101' }, academic_year: { id: 1, name: '2026' }, semester: { id: 1, name: 'الأول' }, offering: { id: 1 }, case: null, is_official: false, allowed_operations: { grant: true }, resolution: { available: false }, deadline_suggestion: { available: false }, components: [{ grade_component_id: 1, name: 'النظري', max_mark: 60, mark: null, editable: false }] })
 const active = (revision = 1) => ({ ...base(), state: 'incomplete_active', case: { incomplete_case_id: 3, revision, state: 'active', expiry_outcome: 'F', reason: 'سبب موثق', requirements: 'متطلب', deadline_at: '2026-10-21T20:59:59Z' }, allowed_operations: { grant: false, deadline_update: true, resolve: true }, resolution: { available: true }, components: [{ grade_component_id: 1, name: 'النظري', max_mark: 60, mark: null, editable: true }, { grade_component_id: 2, name: 'العملي', max_mark: 40, mark: 0, editable: false, blocking_code: 'completed_component_locked' }] })
+const acknowledgement = request => ({ changed: true, case: { ...active().case, student_course_registration_id: 1,
+  revision: JSON.parse(request.body).expected_revision + 1, state: request.path.endsWith('/resolve') ? 'resolved' : 'active' } })
 let root, router, container, requests
 function api(handler) {
   requests = []
   globalThis.fetch = async (url, options = {}) => {
     const request = { path: new URL(url).pathname, search: new URL(url).search, method: options.method || 'GET', body: options.body, signal: options.signal }; requests.push(request)
     const result = await handler(request)
-    return { ok: !result?.status || result.status < 400, status: result?.status || 200, json: async () => result?.status >= 400 ? { message: 'تعارض اصطناعي', error_code: result.code } : { success: true, data: result?.data || base() } }
+    return { ok: !result?.status || result.status < 400, status: result?.status || 200, json: async () => {
+      if (result?.malformed) throw new SyntaxError('Malformed JSON')
+      if (result && Object.hasOwn(result, 'raw')) return result.raw
+      return result?.status >= 400 ? { success: false, message: 'رفض اصطناعي', error_code: result.code, errors: result.errors || {} } : { success: true, data: result?.data || base() }
+    } }
   }
 }
 async function settle(ms = 20) { await act(async () => { await new Promise(resolve => setTimeout(resolve, ms)) }) }
@@ -40,12 +46,17 @@ async function click(text, tag = 'button') {
   const matches = named(container, tag, text); assert.equal(matches.length, 1, text); assert.ok(!matches[0].disabled, `${text} enabled`)
   await act(async () => matches[0].dispatchEvent(new host.Event('click'))); await settle()
 }
+async function readCurrent() {
+  const refresh = named(container, 'button', 'قراءة الحالة الحالية').at(-1); assert.ok(refresh && !refresh.disabled)
+  await act(async () => refresh.dispatchEvent(new host.Event('click'))); await settle()
+}
 async function input(node, value, type = 'input') {
   assert.ok(node); await act(async () => { Object.getOwnPropertyDescriptor(Object.getPrototypeOf(node), 'value').set.call(node, value); node.dispatchEvent(new host.Event(type)) }); await settle()
 }
 const nodes = tag => allNodes(container).filter(node => node.localName === tag)
 async function fillGrant() {
   await click('منح I'); await input(nodes('textarea')[0], 'سبب اصطناعي'); await input(nodes('textarea')[1], 'الامتحان المتبقي')
+  assert.ok(container.textContent.includes('F — رسوب')); assert.ok(container.textContent.includes('Z — حرمان'))
   const radio = nodes('input').find(node => node.type === 'radio')
   await act(async () => { radio.checked = true; radio.dispatchEvent(new host.Event('click')) }); await settle()
   await input(nodes('input').find(node => node.type === 'date'), '2026-10-21', 'change')
@@ -55,7 +66,7 @@ after(async () => server.close())
 
 test('grant uses real form inputs and cancelled back navigation retains a savable proposal', async () => {
   let saved = false
-  api(request => request.method === 'POST' ? (saved = true, { data: { changed: true } }) : { data: saved ? active() : base() })
+  api(request => request.method === 'POST' ? (saved = true, { status: 201, data: acknowledgement(request) }) : { data: saved ? active() : base() })
   await mount(); await fillGrant()
   await act(async () => router.navigate(-1)); await settle(); assert.equal(router.state.location.pathname, path)
   await click('إلغاء'); assert.equal(nodes('textarea')[0].value, 'سبب اصطناعي')
@@ -66,7 +77,7 @@ test('grant uses real form inputs and cancelled back navigation retains a savabl
   await click('العودة إلى الحالات', 'a'); assert.equal(router.state.location.pathname, '/exam-board/incomplete-results')
 })
 test('deadline update and settlement have independent explicit payloads and zero is read-only', async () => {
-  api(request => ({ data: request.method !== 'GET' ? { changed: true } : active() }))
+  api(request => ({ data: request.method !== 'GET' ? acknowledgement(request) : active() }))
   await mount(); await click('تعديل المهلة'); await input(nodes('input')[0], '2026-11-01', 'change'); await click('مراجعة وتأكيد'); await click('تأكيد')
   const deadline = requests.find(r => r.method === 'PATCH'); assert.ok(deadline.path.endsWith('/3/deadline'))
   assert.equal(JSON.parse(deadline.body).deadline_at, '2026-11-01')
@@ -85,12 +96,13 @@ test('409 preserves proposed values and baseline until an explicit review; refre
 })
 test('lost response requires GET then an explicit exact UUID/content replay, never an automatic write', async () => {
   let lost = false
-  api(request => { if (request.method === 'POST') { if (!lost) { lost = true; throw new TypeError('lost response') } return { data: { changed: true } } } return { data: lost ? active() : base() } })
+  api(request => { if (request.method === 'POST') { if (!lost) { lost = true; throw new TypeError('lost response') } return { data: acknowledgement(request) } } return { data: lost ? active(5) : base() } })
   await mount(); await fillGrant(); await click('مراجعة وتأكيد'); await click('تأكيد')
   assert.equal(requests.filter(r => r.method === 'POST').length, 1); assert.ok(container.textContent.includes('لم تتأكد'))
   await click('قراءة الحالة الحالية'); assert.equal(requests.filter(r => r.method === 'POST').length, 1)
   await click('إعادة إرسال الطلب الأصلي بعد القراءة'); await click('تأكيد')
   const writes = requests.filter(r => r.method === 'POST'); assert.equal(writes.length, 2); assert.equal(writes[0].body, writes[1].body)
+  assert.equal(nodes('textarea').length, 0); assert.ok(container.textContent.includes('تم حفظ العملية'), 'a valid old snapshot replay is acknowledged even after revision 5')
 })
 test('pending write blocks transitions and double confirmation cannot duplicate the request', async () => {
   let release
@@ -100,7 +112,7 @@ test('pending write blocks transitions and double confirmation cannot duplicate 
   await act(async () => { confirm.dispatchEvent(new host.Event('click')); confirm.dispatchEvent(new host.Event('click')) }); await settle()
   assert.equal(requests.filter(r => r.method !== 'GET').length, 1)
   await click('العودة إلى الحالات', 'a'); assert.equal(router.state.location.pathname, path); assert.ok(named(container, 'button', 'تجاهل المقترح والانتقال')[0].disabled)
-  await click('إلغاء'); await act(async () => release({ data: { changed: true } })); await settle()
+  await click('إلغاء'); await act(async () => release({ data: acknowledgement(requests.find(r => r.method !== 'GET')) })); await settle()
 })
 test('identity loss purges sensitive proposal immediately and late reads cannot repopulate it', async () => {
   api(() => ({ data: active() })); await mount(); await click('تسوية الحالة'); await input(nodes('input')[0], '50')
@@ -138,4 +150,136 @@ test('administrative office authority stays within office 735 paths without anot
   api(() => ({ data: active() })); await mount('/vp/administrative/exams/incomplete-results/registrations/1', vp)
   assert.ok(container.textContent.includes('سارة')); assert.equal(named(container, 'a', 'العودة إلى الحالات')[0].getAttribute('href'), '/vp/administrative/exams/incomplete-results')
   assert.equal(requests[0].path, '/api/v1/exams/incomplete-results/registrations/1')
+})
+
+for (const [name, response] of [
+  ['malformed JSON', { malformed: true }], ['null', { raw: null }], ['missing JSON', { raw: undefined }], ['empty body', { raw: '' }],
+  ['empty object', { raw: {} }], ['negative envelope', { raw: { success: false } }],
+  ['empty data', { raw: { success: true, data: {} } }], ['missing case', { raw: { success: true, data: { changed: true } } }],
+  ['missing registration', { raw: { success: true, data: { changed: true, case: { incomplete_case_id: 3, revision: 2, state: 'resolved' } } } }],
+  ['wrong registration', { raw: { success: true, data: { changed: true, case: { incomplete_case_id: 3, student_course_registration_id: 2, revision: 2, state: 'resolved' } } } }],
+  ['wrong case', { raw: { success: true, data: { changed: true, case: { incomplete_case_id: 4, student_course_registration_id: 1, revision: 2, state: 'resolved' } } } }],
+  ['wrong revision', { raw: { success: true, data: { changed: true, case: { incomplete_case_id: 3, student_course_registration_id: 1, revision: 1, state: 'resolved' } } } }],
+  ['wrong action state', { raw: { success: true, data: { changed: true, case: { incomplete_case_id: 3, student_course_registration_id: 1, revision: 2, state: 'active' } } } }],
+]) test(`invalid acknowledgement (${name}) retains the frozen proposal and cannot announce success`, async () => {
+  api(request => request.method === 'GET' ? { data: active() } : response)
+  await mount(); await click('تسوية الحالة'); await input(nodes('input')[0], '50'); await click('مراجعة وتأكيد'); await click('تأكيد')
+  assert.equal(nodes('input')[0]?.value, '50', 'proposal retained'); assert.ok(nodes('input')[0].disabled, 'immutable attempt stays locked')
+  assert.ok(!container.textContent.includes('تم حفظ العملية')); assert.ok(container.textContent.includes('لم تتأكد'))
+  assert.equal(requests.filter(r => r.method !== 'GET').length, 1)
+  assert.ok(named(container, 'button', 'إعادة إرسال الطلب الأصلي بعد القراءة')[0].disabled)
+  await click('قراءة الحالة الحالية'); await click('إعادة إرسال الطلب الأصلي بعد القراءة'); await click('تأكيد')
+  const writes = requests.filter(r => r.method !== 'GET'); assert.equal(writes[0].body, writes[1].body)
+  assert.equal(nodes('input')[0]?.value, '50'); assert.ok(!container.textContent.includes('تم حفظ العملية'))
+  assert.ok(named(container, 'button', 'إعادة إرسال الطلب الأصلي بعد القراءة')[0].disabled, 'another unknown acknowledgement needs another successful read')
+})
+
+for (const status of [409, 422]) test(`lost response -> successful GET -> original replay -> ${status} requires explicit review before a new UUID`, async () => {
+  let writes = 0
+  api(request => {
+    if (request.method === 'GET') return { data: active(writes >= 2 && status === 409 ? 2 : 1) }
+    writes++
+    if (writes === 1) throw new TypeError('lost response')
+    if (writes === 2) return { status, code: status === 409 ? 'incomplete_stale' : undefined, errors: status === 422 ? { components: ['Invalid mark'] } : {} }
+    return { data: acknowledgement(request) }
+  })
+  await mount(); await click('تسوية الحالة'); await input(nodes('input')[0], '50'); await click('مراجعة وتأكيد'); await click('تأكيد')
+  await click('قراءة الحالة الحالية'); await click('إعادة إرسال الطلب الأصلي بعد القراءة'); await click('تأكيد')
+  const old = requests.filter(r => r.method !== 'GET'); assert.equal(old.length, 2); assert.equal(old[0].body, old[1].body)
+  assert.equal(nodes('input')[0].value, '50'); assert.ok(nodes('input')[0].disabled, 'a rejection does not unlock old attempt fields')
+  assert.ok(!named(container, 'button', 'تجاهل المقترح صراحة')[0].disabled, 'explicit rejection permits deliberate discard')
+  assert.ok(!container.textContent.includes('تم حفظ العملية'))
+  await click('راجعت الحالة — إعادة إعداد مقترحي'); assert.equal(nodes('input')[0].value, '50'); assert.ok(!nodes('input')[0].disabled)
+  assert.equal(writes, 2, 'review is not a mutation')
+  await input(nodes('input')[0], '40'); await click('مراجعة وتأكيد'); await click('تأكيد')
+  const latest = requests.filter(r => r.method !== 'GET'); assert.equal(latest.length, 3)
+  assert.notEqual(JSON.parse(latest[2].body).request_id, JSON.parse(latest[0].body).request_id)
+  assert.equal(JSON.parse(latest[2].body).expected_revision, status === 409 ? 2 : 1)
+  assert.ok(container.textContent.includes('تم حفظ العملية'))
+})
+
+test('failed reconciliation reads and repeated unknown responses cannot authorize another replay without a new successful read', async () => {
+  let reads = 0, writes = 0
+  api(request => {
+    if (request.method !== 'GET') { writes++; if (writes <= 2) throw new TypeError('lost response'); return { data: acknowledgement(request) } }
+    reads++; if ([2, 4].includes(reads)) throw new TypeError('read failed')
+    return { data: active() }
+  })
+  await mount(); await click('تسوية الحالة'); await input(nodes('input')[0], '50'); await click('مراجعة وتأكيد'); await click('تأكيد')
+  await readCurrent(); assert.equal(writes, 1); assert.ok(named(container, 'button', 'إعادة إرسال الطلب الأصلي بعد القراءة')[0].disabled)
+  await readCurrent(); await click('إعادة إرسال الطلب الأصلي بعد القراءة'); await click('تأكيد')
+  assert.equal(writes, 2); assert.ok(named(container, 'button', 'إعادة إرسال الطلب الأصلي بعد القراءة')[0].disabled)
+  // A second failed read also cannot revive proof from the earlier successful GET.
+  await readCurrent()
+  assert.equal(writes, 2); assert.ok(named(container, 'button', 'إعادة إرسال الطلب الأصلي بعد القراءة')[0].disabled)
+  await readCurrent()
+  await click('إعادة إرسال الطلب الأصلي بعد القراءة'); await click('تأكيد'); assert.equal(writes, 3)
+  const attempts = requests.filter(r => r.method !== 'GET'); assert.ok(attempts.every(request => request.body === attempts[0].body))
+  assert.ok(container.textContent.includes('تم حفظ العملية'))
+})
+
+test('accepted deadline source and recorded calendar reference are visible only in the authorized case workspace', async () => {
+  api(() => ({ data: { ...active(), case: { ...active().case, deadline_source: 'calendar', calendar_snapshot: { academic_calendar_event_id: 9, academic_calendar_event_version_id: 12, version_number: 2, academic_year_id: 1, semester_id: 2, starts_at: '2026-10-01T05:00:00Z' } } } }))
+  await mount(); assert.ok(container.textContent.includes('التقويم المنشور')); assert.ok(container.textContent.includes('12')); assert.ok(container.textContent.includes('9'))
+})
+
+test('manual deadline does not invent a calendar reference or prepare a mutation', async () => {
+  api(() => ({ data: { ...active(), case: { ...active().case, deadline_source: 'manual', calendar_snapshot: null } } }))
+  await mount(); assert.ok(container.textContent.includes('موعد يدوي مسجل')); assert.ok(!container.textContent.includes('مرجع الحدث:'))
+  assert.equal(named(container, 'button', 'تجاهل المقترح صراحة').length, 0)
+  assert.equal(requests.filter(r => r.method !== 'GET').length, 0)
+})
+
+test('lost settlement can replay its original valid acknowledgement after a terminal GET without reopening the case', async () => {
+  let writes = 0
+  const terminal = { ...active(2), case: { ...active(2).case, state: 'resolved' }, state: 'incomplete_resolved', allowed_operations: {}, resolution: { available: false } }
+  api(request => {
+    if (request.method === 'GET') return { data: writes ? terminal : active() }
+    writes++; if (writes === 1) throw new TypeError('lost response')
+    return { data: acknowledgement(request) }
+  })
+  await mount(); await click('تسوية الحالة'); await input(nodes('input')[0], '50'); await click('مراجعة وتأكيد'); await click('تأكيد')
+  await readCurrent(); await click('إعادة إرسال الطلب الأصلي بعد القراءة'); await click('تأكيد')
+  assert.ok(container.textContent.includes('تم حفظ العملية')); assert.equal(nodes('input').length, 0)
+  assert.equal(named(container, 'button', 'تسوية الحالة').length, 0); assert.equal(named(container, 'button', 'تعديل المهلة').length, 0)
+  assert.equal(requests.filter(r => r.method !== 'GET')[0].body, requests.filter(r => r.method !== 'GET')[1].body)
+})
+
+test('explicit rejection permits discard but cannot re-prepare an operation against a terminal server state', async () => {
+  let writes = 0
+  api(request => {
+    if (request.method === 'GET') return { data: writes >= 2 ? { ...active(3), case: { ...active(3).case, state: 'expired' }, allowed_operations: {}, resolution: { available: false } } : active() }
+    writes++; if (writes === 1) throw new TypeError('lost response')
+    return { status: 409, code: 'incomplete_already_settled' }
+  })
+  await mount(); await click('تسوية الحالة'); await input(nodes('input')[0], '50'); await click('مراجعة وتأكيد'); await click('تأكيد')
+  await readCurrent(); await click('إعادة إرسال الطلب الأصلي بعد القراءة'); await click('تأكيد')
+  await click('راجعت الحالة — إعادة إعداد مقترحي'); assert.ok(nodes('input')[0].disabled); assert.equal(writes, 2)
+  await click('تجاهل المقترح صراحة'); assert.equal(named(container, 'button', 'تسوية الحالة').length, 0); assert.equal(nodes('input').length, 0)
+  assert.equal(writes, 2)
+})
+
+test('failed refresh after rejection blocks re-preparation, while explicit discard never resubmits the old operation', async () => {
+  let reads = 0, writes = 0
+  api(request => {
+    if (request.method !== 'GET') { writes++; return { status: 422, errors: { components: ['Invalid mark'] } } }
+    reads++; if (reads === 2) throw new TypeError('failed read after rejection')
+    return { data: active() }
+  })
+  await mount(); await click('تسوية الحالة'); await input(nodes('input')[0], '50'); await click('مراجعة وتأكيد'); await click('تأكيد')
+  assert.ok(named(container, 'button', 'راجعت الحالة — إعادة إعداد مقترحي')[0].disabled); assert.equal(nodes('input')[0].value, '50')
+  await click('تجاهل المقترح صراحة'); assert.equal(writes, 1)
+  assert.ok(named(container, 'button', 'تسوية الحالة')[0].disabled, 'failed GET cannot supply a replacement baseline')
+  await readCurrent(); await click('تسوية الحالة'); assert.equal(writes, 1); assert.equal(nodes('input')[0].value, '')
+})
+
+test('authorization failure during uncertain recovery removes the entire sensitive workspace without replay', async () => {
+  let reads = 0, writes = 0
+  api(request => {
+    if (request.method !== 'GET') { writes++; throw new TypeError('lost response') }
+    reads++; return reads === 1 ? { data: active() } : { status: 403, code: 'forbidden' }
+  })
+  await mount(); await click('تسوية الحالة'); await input(nodes('input')[0], '50'); await click('مراجعة وتأكيد'); await click('تأكيد'); await readCurrent()
+  assert.ok(container.textContent.includes('الوصول غير متاح')); assert.ok(!container.textContent.includes('سارة')); assert.equal(nodes('input').length, 0)
+  assert.equal(writes, 1); assert.equal(named(container, 'button', 'إعادة إرسال الطلب الأصلي بعد القراءة').length, 0)
 })

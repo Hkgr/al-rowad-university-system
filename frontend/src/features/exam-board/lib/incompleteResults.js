@@ -3,6 +3,7 @@ import { apiRequest } from '../../../services/apiClient.js'
 export const incompleteBase = '/v1/exams/incomplete-results'
 export const incompletePage = '/exam-board/incomplete-results'
 export const caseStates = { active: 'نشطة', resolved: 'مسوّاة', expired: 'منتهية' }
+export const expiryOutcomes = { F: 'F — رسوب', Z: 'Z — حرمان' }
 export const registrationResultStates = { no_result: 'لا توجد نتيجة محفوظة', pending_approval: 'نتيجة بانتظار الاعتماد', ordinary_missing_components: 'نقص مكونات عادي — ليس منحة I موثقة', official_result: 'نتيجة رسمية', incomplete_active: 'I نشطة موثقة', incomplete_resolved: 'نتيجة مسوّاة لها تاريخ I', incomplete_expired: 'نتيجة انتهاء مهلة I' }
 export const operationLabels = { grant: 'منح I', deadline_changed: 'تعديل المهلة', resolved: 'تسوية', expired: 'انتهاء المهلة' }
 export const incompleteLabels = {
@@ -32,7 +33,9 @@ export function incompleteError(error) {
 }
 export function damascusTime(value) {
   if (!value) return 'غير محدد'
-  const date = new Date(value)
+  // Recorded calendar snapshots contain DB timestamps in UTC without an offset.
+  const utcValue = typeof value === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(value) ? value.replace(' ', 'T') + 'Z' : value
+  const date = new Date(utcValue)
   return Number.isNaN(date.getTime()) ? 'غير محدد' : new Intl.DateTimeFormat('ar-SY', { timeZone: 'Asia/Damascus', dateStyle: 'medium', timeStyle: 'short', hour12: false }).format(date)
 }
 export function listQuery(search) {
@@ -74,15 +77,58 @@ export function freezeAttempt(view, action, proposal, uuid = crypto.randomUUID()
     if (components.length) body.components = components
     path = `/${view.case.incomplete_case_id}/resolve`
   }
-  return Object.freeze({ path, method: action === 'deadline' ? 'PATCH' : 'POST', body: JSON.stringify(body), action, registrationId: view.registration_id })
+  return Object.freeze({ path, method: action === 'deadline' ? 'PATCH' : 'POST', body: JSON.stringify(body), action, registrationId: view.registration_id, caseId: view.case?.incomplete_case_id ?? null })
 }
-export const sendAttempt = attempt => apiRequest(incompleteBase + attempt.path, { method: attempt.method, body: attempt.body })
-export function newDraft(view, action) { return { baseline: view, server: view, action, proposal: blankProposal(action), conflict: false, attempt: null, uncertain: false } }
+const positiveId = value => (typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value))) && Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : null
+export function validateAcknowledgement(response, attempt) {
+  const data = response?.data, caseData = data?.case, expected = JSON.parse(attempt.body)
+  const expectedState = attempt.action === 'resolve' ? 'resolved' : 'active'
+  // Validate the original operation snapshot, NOT the latest GET revision: canonical
+  // idempotent replay returns the saved snapshot even after later lifecycle events.
+  const valid = response?.success === true && data?.changed === true && caseData && !Array.isArray(caseData)
+    && positiveId(caseData.incomplete_case_id) !== null && positiveId(attempt.registrationId) !== null
+    && positiveId(caseData.student_course_registration_id) === positiveId(attempt.registrationId)
+    && (attempt.action === 'grant' || (positiveId(attempt.caseId) !== null && positiveId(caseData.incomplete_case_id) === positiveId(attempt.caseId)))
+    && Number.isSafeInteger(caseData.revision) && caseData.revision === expected.expected_revision + 1 && caseData.state === expectedState
+  if (!valid) {
+    const error = new Error('لم يصل إقرار حفظ صالح يطابق هذه المحاولة. لا يمكن الجزم بنتيجتها؛ احتُفظ بالطلب الأصلي للتحقق.')
+    error.errorCode = 'incomplete_acknowledgement_invalid'
+    throw error
+  }
+  return data
+}
+export async function sendAttempt(attempt) {
+  return validateAcknowledgement(await apiRequest(incompleteBase + attempt.path, { method: attempt.method, body: attempt.body }), attempt)
+}
+export function newDraft(view, action) { return { baseline: view, server: view, action, proposal: blankProposal(action), conflict: false, attempt: null, uncertain: false, rejected: false, recoveryReadKey: null } }
 export function receiveDraft(draft, server) { return { ...draft, server, conflict: draft.conflict || draft.baseline.case?.revision !== server.case?.revision } }
-export function reviewDraft(draft) {
+export const hasRecoveryRead = (draft, readKey) => !!readKey && readKey !== draft.recoveryReadKey
+export function failedAttempt(draft, error, readKey) {
+  // Canonical 409/422 rejects this invocation without mutation. It is not proof
+  // that an earlier lost invocation never committed. Keep its identity and proposal
+  // until an explicit decision against a freshly read, still-eligible context.
+  const rejected = [409, 422].includes(error.status)
+  return { ...draft, uncertain: !rejected, rejected, conflict: draft.conflict || rejected, recoveryReadKey: readKey }
+}
+export function reviewDraft(draft, readKey) {
+  if (draft.uncertain || (draft.attempt && !hasRecoveryRead(draft, readKey))) return null
   const operation = { grant: 'grant', deadline: 'deadline_update', resolve: 'resolve' }[draft.action]
   if (draft.server.allowed_operations && (!draft.server.allowed_operations[operation] || (draft.action === 'resolve' && !draft.server.resolution?.available))) return null
   // Explicit review keeps proposed values, but never silently moves component IDs to a new definition.
   if (draft.action === 'resolve' && Object.keys(draft.proposal.marks).some(id => !draft.server.components.some(c => String(c.grade_component_id) === id && c.editable))) return null
-  return { ...draft, baseline: draft.server, conflict: false, uncertain: false, attempt: null }
+  return { ...draft, baseline: draft.server, conflict: false, uncertain: false, rejected: false, attempt: null, recoveryReadKey: null }
+}
+
+export function deadlineEvidence(caseData) {
+  if (caseData.deadline_source === 'manual') return ['موعد يدوي مسجل']
+  if (caseData.deadline_source !== 'calendar') return ['مصدر المهلة غير مسجل']
+  const snapshot = caseData.calendar_snapshot
+  const details = ['التقويم المنشور — فترة الدراسة للفصل التالي']
+  if (!snapshot || typeof snapshot !== 'object') return [...details, 'مرجع التقويم التفصيلي غير مسجل']
+  if (snapshot.academic_calendar_event_id != null) details.push(`مرجع الحدث: ${snapshot.academic_calendar_event_id}`)
+  if (snapshot.academic_calendar_event_version_id != null) details.push(`مرجع النسخة المسجلة: ${snapshot.academic_calendar_event_version_id}`)
+  if (snapshot.version_number != null) details.push(`رقم النسخة: ${snapshot.version_number}`)
+  if (snapshot.academic_year_id != null && snapshot.semester_id != null) details.push(`فترة التقويم المسجلة: السنة ${snapshot.academic_year_id} / الفصل ${snapshot.semester_id}`)
+  if (snapshot.starts_at) details.push(`بداية الدراسة المسجلة — دمشق: ${damascusTime(snapshot.starts_at)}`)
+  return details
 }

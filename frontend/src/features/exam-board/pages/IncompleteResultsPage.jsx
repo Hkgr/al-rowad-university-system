@@ -9,7 +9,7 @@ import ManualGradeDialog from '../components/ManualGradeDialog'
 import { Pager, button, card, field } from '../components/RegistrationGridRow'
 import { searchPath } from '../lib/manualGradeEntry'
 import { studentSearchLifecycle } from '../lib/studentSearchLifecycle'
-import { caseStates, damascusTime, freezeAttempt, incompleteError, incompleteLabels, incompletePage, incompleteRead, listQuery, newDraft, operationLabels, receiveDraft, registrationResultStates, reviewDraft, sendAttempt } from '../lib/incompleteResults'
+import { caseStates, damascusTime, deadlineEvidence, expiryOutcomes, failedAttempt, freezeAttempt, hasRecoveryRead, incompleteError, incompleteLabels, incompletePage, incompleteRead, listQuery, newDraft, operationLabels, receiveDraft, registrationResultStates, reviewDraft, sendAttempt } from '../lib/incompleteResults'
 import { missingValue } from '../../academic-record/lib/resultSymbols'
 
 const stamp = () => JSON.stringify(getIdentity())
@@ -35,11 +35,11 @@ function useRead(path, identity, onDenied) {
     const abort = new AbortController()
     let active = true
     const current = () => active && !abort.signal.aborted && identity === stamp() && authorized()
-    incompleteRead(path, abort.signal).then(data => { if (current()) setSnapshot({ key, path, data, error: '' }) })
-      .catch(e => { if (current() && e.name !== 'AbortError') { setSnapshot(previous => ({ key, path, data: previous?.path === path ? previous.data : null, error: incompleteError(e) })); if ([401, 403].includes(e.status)) onDenied() } })
+    incompleteRead(path, abort.signal).then(data => { if (current()) setSnapshot({ key, path, data, readKey: key, error: '' }) })
+      .catch(e => { if (current() && e.name !== 'AbortError') { setSnapshot(previous => ({ key, path, data: previous?.path === path ? previous.data : null, readKey: previous?.path === path ? previous.readKey : null, error: incompleteError(e) })); if ([401, 403].includes(e.status)) onDenied() } })
     return () => { active = false; abort.abort() }
   }, [path, identity, key, onDenied])
-  return { data: snapshot?.path === path ? snapshot.data : null, error: snapshot?.key === key ? snapshot.error : '', loading: snapshot?.key !== key, reload: () => setVersion(value => value + 1) }
+  return { data: snapshot?.path === path ? snapshot.data : null, readKey: snapshot?.path === path ? snapshot.readKey : null, error: snapshot?.key === key ? snapshot.error : '', loading: snapshot?.key !== key, reload: () => setVersion(value => value + 1) }
 }
 
 function StudentFilter({ onSelect, onDenied }) {
@@ -122,11 +122,11 @@ function CaseWorkspace({ path, identity, onDenied }) {
     <header><Link className={button} to={`${incompletePage}${search}`}>العودة إلى الحالات</Link><h1 className="mt-4 text-[20px] font-black text-text-dark">النتيجة غير المكتملة — التفاصيل والإجراءات</h1></header>
     {read.error && <p role="alert">{read.error} <button className={button} onClick={read.reload}>قراءة الحالة الحالية</button></p>}
     {read.loading && <p role="status">جاري قراءة الحالة…</p>}
-    {read.data && <CaseEditor view={read.data} loading={read.loading} refresh={read.reload} identity={identity} onDenied={onDenied} />}
+    {read.data && <CaseEditor view={read.data} readKey={read.readKey} readError={read.error} loading={read.loading} refresh={read.reload} identity={identity} onDenied={onDenied} />}
   </main>
 }
 
-function CaseEditor({ view, loading, refresh, identity, onDenied }) {
+function CaseEditor({ view, readKey, readError, loading, refresh, identity, onDenied }) {
   const [storedDraft, setDraft] = useState(null), [confirm, setConfirm] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
   const draft = storedDraft ? receiveDraft(storedDraft, view) : null
   const mounted = useRef(true), writing = useRef(false)
@@ -140,10 +140,10 @@ function CaseEditor({ view, loading, refresh, identity, onDenied }) {
     window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn)
   }, [current, dirty])
   const execute = async () => {
-    if (writing.current || !draft || (draft.conflict && !draft.uncertain) || !current()) return
+    if (writing.current || !draft || draft.rejected || loading || readError || (draft.conflict && !draft.uncertain) || (draft.uncertain && !hasRecoveryRead(draft, readKey)) || !current()) return
     let attempt = draft.attempt
     try { attempt ||= freezeAttempt(draft.baseline, draft.action, draft.proposal) } catch (e) { setError(e.message); setConfirm(false); return }
-    writing.current = true; setBusy(true); setError(''); setConfirm(false); setDraft(previous => ({ ...previous, attempt }))
+    writing.current = true; setBusy(true); setError(''); setNotice(''); setConfirm(false); setDraft(previous => ({ ...previous, attempt }))
     try {
       await sendAttempt(attempt)
       if (!current()) return
@@ -152,15 +152,18 @@ function CaseEditor({ view, loading, refresh, identity, onDenied }) {
       if (!current()) return
       if ([401, 403].includes(e.status)) { setDraft(null); onDenied(); return }
       setError(incompleteError(e))
-      if (e.status === 409) { setDraft(previous => ({ ...previous, conflict: true })); refresh() }
-      else if (!e.status || e.status >= 500) { setDraft(previous => ({ ...previous, uncertain: true })); setNotice('لم تتأكد نتيجة الكتابة. لم يُعد الطلب تلقائيًا؛ اقرأ الحالة الحالية أولًا.') }
-      else setDraft(previous => ({ ...previous, attempt: null }))
+      setDraft(previous => failedAttempt(previous, e, readKey))
+      if ([409, 422].includes(e.status)) {
+        setNotice('رفض الخادم هذه المحاولة صراحةً. احتُفظ بالمقترح والطلب الأصلي؛ راجع الحالة الحالية ثم اختر إعادة الإعداد أو التجاهل. لا يعني ذلك إلغاء أثر محاولة سابقة.')
+        refresh()
+      } else setNotice('لم تتأكد نتيجة الكتابة. لم يُعد الطلب تلقائيًا؛ اقرأ الحالة الحالية أولًا.')
     } finally { writing.current = false; if (current()) setBusy(false) }
   }
-  const patch = (key, value) => { if (!busy && !draft.attempt) { setConfirm(false); setDraft(previous => ({ ...previous, proposal: { ...previous.proposal, [key]: value } })) } }
+  const patch = (key, value) => { if (!busy && !draft.attempt && !draft.uncertain && !draft.rejected) { setConfirm(false); setDraft(previous => ({ ...previous, proposal: { ...previous.proposal, [key]: value } })) } }
   const baseline = draft?.baseline || view, caseData = view.case
   const allowed = view.allowed_operations
-  const locked = busy || loading || draft?.conflict || !!draft?.attempt
+  const recoveryReady = draft && hasRecoveryRead(draft, readKey) && !loading && !readError
+  const locked = busy || loading || !!readError || draft?.conflict || !!draft?.attempt || draft?.uncertain || draft?.rejected
   return <>
     <section className={`${card} space-y-3 p-5`}>
       <h2 className="text-[17px] font-black text-text-dark">{view.student.full_name} — <bdi>{view.student.number}</bdi></h2>
@@ -169,27 +172,27 @@ function CaseEditor({ view, loading, refresh, identity, onDenied }) {
       <p>{view.is_official ? 'الطرح معتمد؛ تعرض النتيجة وفق أهليتها الرسمية.' : 'بانتظار اعتماد الطرح؛ ليست نتيجة رسمية.'}</p>
       <p>{registrationResultStates[view.state] || 'وضع النتيجة غير متاح'}</p>
       {view.current_result && <p>النتيجة الحالية: <bdi>{missingValue(view.current_result.letter_grade)}</bdi> — العلامة {missingValue(view.current_result.final_mark)}</p>}
-      {caseData && <dl className="space-y-2"><div><dt>المهلة — دمشق</dt><dd>{damascusTime(caseData.deadline_at)} (Asia/Damascus)</dd></div><div><dt>السبب</dt><dd className="whitespace-pre-wrap break-words">{caseData.reason}</dd></div><div><dt>المتطلبات</dt><dd className="whitespace-pre-wrap break-words">{caseData.requirements}</dd></div><div><dt>مخرج الانتهاء</dt><dd><bdi>{caseData.expiry_outcome}</bdi></dd></div></dl>}
+      {caseData && <dl className="space-y-2"><div><dt>المهلة — دمشق</dt><dd>{damascusTime(caseData.deadline_at)} (Asia/Damascus)</dd></div><div><dt>مصدر المهلة المقبولة</dt><dd>{deadlineEvidence(caseData).map(detail => <p key={detail}>{detail}</p>)}</dd></div><div><dt>السبب</dt><dd className="whitespace-pre-wrap break-words">{caseData.reason}</dd></div><div><dt>المتطلبات</dt><dd className="whitespace-pre-wrap break-words">{caseData.requirements}</dd></div><div><dt>مخرج الانتهاء</dt><dd><bdi>{expiryOutcomes[caseData.expiry_outcome] || caseData.expiry_outcome}</bdi></dd></div></dl>}
       {view.blocking_code && <p className="text-amber-800">{incompleteLabels[view.blocking_code] || 'الإجراء مقيد بالحالة الأكاديمية الحالية.'}</p>}
       {allowed.resolve && !view.resolution.available && <p className="text-amber-800">{incompleteLabels[view.resolution.blocking_code] || 'التسوية غير متاحة وفق تعريف المكونات الحالي.'}</p>}
       <button className={button} disabled={busy || loading} onClick={refresh}>قراءة الحالة الحالية</button>
     </section>
     {notice && <p role="status">{notice}</p>}{error && <p role="alert" className="text-red-700">{error}</p>}
-    {!draft && <div className="flex flex-wrap gap-2">{allowed.grant && <button className={primary} disabled={loading} onClick={() => { setError(''); setDraft(newDraft(view, 'grant')) }}>منح I</button>}{allowed.deadline_update && <button className={button} disabled={loading} onClick={() => { setError(''); setDraft(newDraft(view, 'deadline')) }}>تعديل المهلة</button>}{allowed.resolve && view.resolution.available && <button className={primary} disabled={loading} onClick={() => { setError(''); setDraft(newDraft(view, 'resolve')) }}>تسوية الحالة</button>}</div>}
+    {!draft && <div className="flex flex-wrap gap-2">{allowed.grant && <button className={primary} disabled={loading || !!readError} onClick={() => { setError(''); setNotice(''); setDraft(newDraft(view, 'grant')) }}>منح I</button>}{allowed.deadline_update && <button className={button} disabled={loading || !!readError} onClick={() => { setError(''); setNotice(''); setDraft(newDraft(view, 'deadline')) }}>تعديل المهلة</button>}{allowed.resolve && view.resolution.available && <button className={primary} disabled={loading || !!readError} onClick={() => { setError(''); setNotice(''); setDraft(newDraft(view, 'resolve')) }}>تسوية الحالة</button>}</div>}
     {draft && <section className={`${card} space-y-4 p-5`}>
       <h2 className="text-[16px] font-black">{draft.action === 'deadline' ? 'تعديل المهلة' : draft.action === 'resolve' ? 'تسوية الحالة' : 'منح I'}</h2>
-      {draft.conflict && <div role="alert" className="space-y-3 rounded-[10px] border border-amber-300 bg-amber-50 p-4"><p>احتُفظ بالمقترح ومراجعة البداية ({draft.baseline.case?.revision ?? 0}) منفصلين عن حالة الخادم ({draft.server.case?.revision ?? 0}). راجع الحالة أعلاه قبل القرار.</p><button className={button} disabled={loading || busy || draft.uncertain} onClick={() => { const next = reviewDraft(draft); if (next) { setDraft(next); setError(''); setConfirm(false) } else setError('تغيرت هوية المكونات أو أُكملت؛ احتفظ بالقيم للمراجعة، ثم تجاهل المقترح لإعداد عملية جديدة.') }}>راجعت الحالة — إعادة إعداد مقترحي</button></div>}
+      {draft.conflict && <div role="alert" className="space-y-3 rounded-[10px] border border-amber-300 bg-amber-50 p-4"><p>احتُفظ بالمقترح ومراجعة البداية ({draft.baseline.case?.revision ?? 0}) منفصلين عن حالة الخادم ({draft.server.case?.revision ?? 0}). راجع الحالة أعلاه قبل القرار.</p><button className={button} disabled={loading || busy || !!readError || draft.uncertain || (!!draft.attempt && !recoveryReady)} onClick={() => { const next = reviewDraft(draft, readKey); if (next) { setDraft(next); setError(''); setConfirm(false) } else setError('لا تسمح الحالة الحالية أو المكونات بإعادة إعداد هذا المقترح؛ احتفظ بالقيم للمراجعة أو تجاهله صراحة. لا يمكن إعادة فتح حالة نهائية.') }}>راجعت الحالة — إعادة إعداد مقترحي</button></div>}
       {draft.action === 'grant' && <><label className={label}>سبب المنح<textarea className={field} maxLength={4000} disabled={locked} value={draft.proposal.reason} onChange={e => patch('reason', e.target.value)} /></label><label className={label}>متطلبات الاستكمال<textarea className={field} maxLength={4000} disabled={locked} value={draft.proposal.requirements} onChange={e => patch('requirements', e.target.value)} /></label>
-        <fieldset disabled={locked} className="space-y-2"><legend>مخرج انتهاء المهلة — اختيار إلزامي</legend>{['F', 'Z'].map(outcome => <label key={outcome} className="ml-5 inline-flex gap-2"><input type="radio" name="expiry" checked={draft.proposal.expiry_outcome === outcome} onChange={() => patch('expiry_outcome', outcome)} />{outcome}</label>)}</fieldset>
+        <fieldset disabled={locked} className="space-y-2"><legend>مخرج انتهاء المهلة — اختيار إلزامي</legend>{['F', 'Z'].map(outcome => <label key={outcome} className="ml-5 inline-flex gap-2"><input type="radio" name="expiry" checked={draft.proposal.expiry_outcome === outcome} onChange={() => patch('expiry_outcome', outcome)} />{expiryOutcomes[outcome]}</label>)}</fieldset>
         <p>{baseline.deadline_suggestion?.available ? `اقتراح التقويم المنشور: ${damascusTime(baseline.deadline_suggestion.deadline_at)} — المصدر: فترة الدراسة للفصل التالي.` : 'لا يوجد اقتراح تقويم موثوق؛ يلزم موعد يدوي.'}</p></>}
       {draft.action !== 'resolve' && <label className={label}>{draft.action === 'grant' && baseline.deadline_suggestion?.available ? 'موعد يدوي بديل — اختياري' : 'الموعد'}<input type="date" className={field} disabled={locked} value={draft.proposal.deadline_at} onChange={e => patch('deadline_at', e.target.value)} /><span className="text-text-light">نهاية اليوم المختار بتوقيت دمشق؛ يحسم الخادم الموعد ويحفظه UTC.</span></label>}
       {draft.action === 'resolve' && <div className="space-y-3"><p>تُستكمل العلامات المطلوبة الغائبة فقط. الصفر المحفوظ مكتمل ولا يُستبدل.</p>{baseline.components.map(component => <label key={component.grade_component_id} className={label}>{component.name} — الحد {component.max_mark}<input type="text" className={field} inputMode="decimal" disabled={locked || !component.editable} value={component.editable ? draft.proposal.marks[component.grade_component_id] ?? '' : missingValue(component.mark)} onChange={e => patch('marks', { ...draft.proposal.marks, [component.grade_component_id]: e.target.value })} /><span className="text-text-light">{incompleteLabels[component.blocking_code] || ''}</span></label>)}</div>}
       {draft.uncertain && <p role="alert">لا تعدّل الطلب غير المؤكد ولا تنشئ بديلًا له. اقرأ الحالة؛ إعادة الإرسال الصريحة تستخدم UUID والمحتوى الأصليين فقط.</p>}
-      <div className="flex flex-wrap gap-2"><button className={primary} disabled={busy || loading || (draft.conflict && !draft.uncertain) || (draft.uncertain && view === draft.baseline)} onClick={() => { try { if (!draft.attempt) freezeAttempt(baseline, draft.action, draft.proposal); setError(''); setConfirm(true) } catch (e) { setError(e.message) } }}>{draft.uncertain ? 'إعادة إرسال الطلب الأصلي بعد القراءة' : 'مراجعة وتأكيد'}</button><button className={button} disabled={busy || draft.uncertain} onClick={() => { setDraft(null); setConfirm(false); setError('') }}>تجاهل المقترح صراحة</button></div>
+      <div className="flex flex-wrap gap-2"><button className={primary} disabled={busy || loading || (draft.conflict && !draft.uncertain) || (draft.uncertain && !recoveryReady) || !!readError || draft.rejected} onClick={() => { try { if (!draft.attempt) freezeAttempt(baseline, draft.action, draft.proposal); setError(''); setConfirm(true) } catch (e) { setError(e.message) } }}>{draft.uncertain ? 'إعادة إرسال الطلب الأصلي بعد القراءة' : 'مراجعة وتأكيد'}</button><button className={button} disabled={busy || draft.uncertain} onClick={() => { setDraft(null); setConfirm(false); setError('') }}>تجاهل المقترح صراحة</button></div>
     </section>}
     {!draft && <section className={`${card} space-y-3 p-5`}><h2 className="font-black">المكونات المطلوبة</h2>{view.components.map(component => <p key={component.grade_component_id}>{component.name}: {missingValue(component.mark)} / {component.max_mark} — {incompleteLabels[component.blocking_code] || 'تُستكمل عبر إجراء التسوية فقط'}</p>)}{!view.components.length && <p>لم تُعرّف المكونات المطلوبة؛ لا تُفترض علامات أو تقسيمات.</p>}</section>}
     <section className={`${card} space-y-3 p-5`}><h2 className="text-[16px] font-black">تاريخ الحالة</h2>{view.events?.map(event => <article className="border-b border-primary/10 pb-3" key={event.incomplete_event_id}><strong>{operationLabels[event.action] || 'حدث مسجل'}</strong> — {damascusTime(event.performed_at)} — {event.actor_label}<p>المراجعة {event.revision}</p>{event.action === 'deadline_changed' && <p>المهلة: {damascusTime(event.before_values?.deadline_at)} ← {damascusTime(event.after_values?.deadline_at)}</p>}</article>)}{!view.events?.length && <p>لا توجد أحداث معروضة. افتح الحالة المحفوظة لعرض تاريخها.</p>}{caseData && !view.events && <Link className={button} to={`${incompletePage}/${caseData.incomplete_case_id}`}>فتح تاريخ الحالة</Link>}</section>
-    {confirm && <ManualGradeDialog title="تأكيد العملية" busy={busy} onCancel={() => setConfirm(false)} onConfirm={execute}><p>{view.student.full_name} — {view.course.name} — {view.academic_year.name} — {view.semester.name}</p><p>هذا إجراء فردي للتسجيل المحدد، ولا يعيد اعتماد الطرح أو ينشر نتائج طلاب آخرين.</p>{draft.action !== 'resolve' && <p>الموعد: {draft.proposal.deadline_at ? `${draft.proposal.deadline_at} — نهاية اليوم بدمشق` : damascusTime(baseline.deadline_suggestion?.deadline_at)}</p>}{draft.action === 'grant' && <><p>السبب: {draft.proposal.reason}</p><p>المتطلبات: {draft.proposal.requirements}</p><p>مخرج الانتهاء: <bdi>{draft.proposal.expiry_outcome}</bdi></p></>}{draft.action === 'resolve' && <ul>{baseline.components.filter(component => component.editable).map(component => <li key={component.grade_component_id}>{component.name}: {missingValue(component.mark)} ← {draft.proposal.marks[component.grade_component_id]}</li>)}</ul>}</ManualGradeDialog>}
+    {confirm && <ManualGradeDialog title="تأكيد العملية" busy={busy} onCancel={() => setConfirm(false)} onConfirm={execute}><p>{view.student.full_name} — {view.course.name} — {view.academic_year.name} — {view.semester.name}</p><p>هذا إجراء فردي للتسجيل المحدد، ولا يعيد اعتماد الطرح أو ينشر نتائج طلاب آخرين.</p>{draft.action !== 'resolve' && <p>الموعد: {draft.proposal.deadline_at ? `${draft.proposal.deadline_at} — نهاية اليوم بدمشق` : damascusTime(baseline.deadline_suggestion?.deadline_at)}</p>}{draft.action === 'grant' && <><p>السبب: {draft.proposal.reason}</p><p>المتطلبات: {draft.proposal.requirements}</p><p>مخرج الانتهاء: <bdi>{expiryOutcomes[draft.proposal.expiry_outcome]}</bdi></p></>}{draft.action === 'resolve' && <ul>{baseline.components.filter(component => component.editable).map(component => <li key={component.grade_component_id}>{component.name}: {missingValue(component.mark)} ← {draft.proposal.marks[component.grade_component_id]}</li>)}</ul>}</ManualGradeDialog>}
     {blocker.state === 'blocked' && <ManualGradeDialog title={busy ? 'توجد عملية قيد التنفيذ' : 'حماية المقترح غير المحفوظ'} disabled={busy} onCancel={() => blocker.reset()} onConfirm={() => blocker.proceed()} confirmLabel="تجاهل المقترح والانتقال"><p>{busy ? 'انتظر نتيجة الكتابة قبل الانتقال.' : draft?.uncertain ? 'النتيجة غير مؤكدة. الانتقال لا يلغي العملية؛ اقرأ الحالة قبل أي محاولة لاحقة.' : 'الانتقال سيتجاهل المقترح. الإلغاء يبقيه كما هو.'}</p></ManualGradeDialog>}
   </>
 }

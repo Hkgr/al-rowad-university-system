@@ -12,6 +12,10 @@ These internal case reads require the existing Exam Affairs/manual-entry guard a
 
 The UI freezes method/target/UUID/revision/serialized payload for a write; no automatic retry. A user-selected exact replay after reading current state relies on Phase 1 replay-before-revision, not a replacement UUID. 409 retains baseline/proposed/current states until explicit review. Shared screen/PDF symbol helpers consume the existing safe `result_lifecycle` and official metrics; no new GPA, repeat or deadline formula is introduced. Phase 1 durable cache/atomic lock/scheduler requirements still apply. No Phase 2 schema or permission installation is needed.
 
+Mutation acknowledgement is the existing `{success:true,data:{changed:true,case:{...}}}` snapshot, not merely HTTP success. The client checks positive case/registration identities, the frozen target case for deadline/resolve, exact original `expected_revision + 1`, and the expected resulting `active` (grant/deadline) or `resolved` state. Replayed snapshots are intentionally checked against the original attempt, not a later GET revision. Invalid/missing JSON, negative/incomplete envelopes and identity/state/revision mismatches retain the immutable request and proposal as an **unknown outcome**; they cannot announce success or trigger automatic retry.
+
+Each unknown mutation response requires a new successful current-state GET before explicit exact replay. A failed GET or a successful GET preceding that latest unknown response cannot authorize replay. Canonical 409/422 is a confirmed rejection **of that invocation**, not proof that an earlier lost invocation never committed. It retains the original request/proposal in review-required state; only deliberate eligible review/re-preparation or discard can release it. A replacement operation is never generated automatically, and terminal-state/action restrictions remain authoritative. The authorized case UI also labels `deadline_source` and recorded `calendar_snapshot` references, and explains F as failure / Z as deprivation; these internal fields remain excluded from student documents.
+
 ## Base URL
 
 `http://127.0.0.1:8000/api/v1`

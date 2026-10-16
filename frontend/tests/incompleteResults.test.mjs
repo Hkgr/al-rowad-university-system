@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { blankProposal, damascusTime, freezeAttempt, listQuery, newDraft, receiveDraft, reviewDraft, incompleteError } from '../src/features/exam-board/lib/incompleteResults.js'
+import { blankProposal, damascusTime, deadlineEvidence, failedAttempt, freezeAttempt, hasRecoveryRead, listQuery, newDraft, receiveDraft, reviewDraft, incompleteError, validateAcknowledgement } from '../src/features/exam-board/lib/incompleteResults.js'
 import { missingValue, resultDescription, resultSymbol, termWithdrawalText } from '../src/features/academic-record/lib/resultSymbols.js'
 const view = { registration_id: 17, case: { incomplete_case_id: 4, revision: 2 }, components: [{ grade_component_id: 1, name: 'نظري', max_mark: 60, mark: null, editable: true }, { grade_component_id: 2, name: 'عملي', max_mark: 40, mark: 0, editable: false }] }
 
@@ -33,7 +33,7 @@ test('a new server revision never rebases a proposal or an immutable original at
   const original = draft.attempt.body, server = { ...view, case: { ...view.case, revision: 3 } }
   draft = receiveDraft(draft, server)
   assert.equal(draft.conflict, true); assert.equal(draft.baseline.case.revision, 2); assert.equal(draft.proposal.marks[1], '50'); assert.equal(draft.attempt.body, original)
-  const reviewed = reviewDraft(draft); assert.equal(reviewed.baseline.case.revision, 3); assert.equal(reviewed.attempt, null); assert.equal(reviewed.proposal.marks[1], '50')
+  const reviewed = reviewDraft(draft, 'fresh-read'); assert.equal(reviewed.baseline.case.revision, 3); assert.equal(reviewed.attempt, null); assert.equal(reviewed.proposal.marks[1], '50')
   assert.equal(reviewDraft({ ...draft, server: { ...server, components: [] } }), null)
 })
 test('query allowlist retains list return context and discards unknown parameters', () => {
@@ -56,4 +56,46 @@ test('errors separate authorization, validation, lifecycle conflicts and unknown
   assert.match(incompleteError({ status: 403 }), /صلاحية/)
   assert.match(incompleteError({ status: 422, details: { mark: ['حد العلامة'] } }), /حد العلامة/)
   assert.match(incompleteError({ status: 409, errorCode: 'incomplete_stale' }), /بمقترحك/)
+})
+
+test('acknowledgement validates the original transaction identity, state and revision, not a subsequent read', () => {
+  for (const action of ['grant', 'deadline', 'resolve']) {
+    const baseline = action === 'grant' ? { ...view, case: null } : view
+    const proposal = action === 'grant' ? { reason: 'سبب', requirements: 'متطلب', expiry_outcome: 'F', deadline_at: '2026-10-21' } : action === 'deadline' ? { deadline_at: '2026-11-01' } : { marks: { 1: '50' } }
+    const attempt = freezeAttempt(baseline, action, proposal, 'original')
+    const data = { changed: true, case: { incomplete_case_id: 4, student_course_registration_id: 17, revision: action === 'grant' ? 1 : 3, state: action === 'resolve' ? 'resolved' : 'active' } }
+    assert.equal(validateAcknowledgement({ success: true, data }, attempt), data)
+    assert.equal(validateAcknowledgement(JSON.parse(JSON.stringify({ success: true, data })), attempt).case.revision, data.case.revision)
+    for (const change of [{ changed: false }, { case: null }, { case: { ...data.case, student_course_registration_id: 18 } }, { case: { ...data.case, revision: 99 } }]) assert.throws(() => validateAcknowledgement({ success: true, data: { ...data, ...change } }, attempt), { errorCode: 'incomplete_acknowledgement_invalid' })
+    if (action !== 'grant') assert.throws(() => validateAcknowledgement({ success: true, data: { ...data, case: { ...data.case, incomplete_case_id: 5 } } }, attempt))
+  }
+})
+
+test('unknown and rejected attempts retain identity and baseline until an explicit eligible fresh-read review', () => {
+  let draft = newDraft(view, 'resolve'); draft.proposal.marks[1] = '50'; draft.attempt = freezeAttempt(view, 'resolve', draft.proposal, 'original')
+  draft = failedAttempt(draft, new TypeError('lost'), 'read-0')
+  assert.equal(draft.uncertain, true); assert.equal(hasRecoveryRead(draft, 'read-0'), false); assert.equal(hasRecoveryRead(draft, 'read-1'), true)
+  assert.equal(reviewDraft(draft, 'read-1'), null)
+  const repeated = failedAttempt(draft, new Error('invalid acknowledgement'), 'read-1')
+  assert.equal(hasRecoveryRead(repeated, 'read-1'), false)
+  for (const status of [500, 503]) {
+    const unavailable = failedAttempt(draft, { status }, 'read-1')
+    assert.equal(unavailable.uncertain, true); assert.equal(unavailable.rejected, false); assert.equal(unavailable.attempt, draft.attempt)
+  }
+  for (const status of [409, 422]) {
+    const rejected = failedAttempt(repeated, { status }, 'read-1')
+    assert.equal(rejected.uncertain, false); assert.equal(rejected.rejected, true); assert.equal(rejected.attempt, draft.attempt)
+    assert.equal(rejected.baseline, view); assert.equal(rejected.proposal.marks[1], '50'); assert.equal(reviewDraft(rejected, 'read-1'), null)
+    const reviewed = reviewDraft(receiveDraft(rejected, { ...view, case: { ...view.case, revision: 3 } }), 'read-2')
+    assert.equal(reviewed.attempt, null); assert.equal(reviewed.baseline.case.revision, 3); assert.equal(reviewed.proposal.marks[1], '50')
+  }
+})
+
+test('deadline evidence preserves recorded source and references and interprets snapshot DB timestamps as UTC', () => {
+  assert.deepEqual(deadlineEvidence({ deadline_source: 'manual', calendar_snapshot: { academic_calendar_event_id: 999 } }), ['موعد يدوي مسجل'])
+  assert.deepEqual(deadlineEvidence({}), ['مصدر المهلة غير مسجل'])
+  assert.match(deadlineEvidence({ deadline_source: 'calendar' }).join(' '), /غير مسجل/)
+  const evidence = deadlineEvidence({ deadline_source: 'calendar', calendar_snapshot: { academic_calendar_event_id: 9, academic_calendar_event_version_id: 12, version_number: 2, academic_year_id: 1, semester_id: 2, starts_at: '2026-10-01 05:00:00' } }).join(' ')
+  for (const text of ['التقويم المنشور', 'مرجع الحدث: 9', 'مرجع النسخة المسجلة: 12', 'رقم النسخة: 2', 'السنة 1 / الفصل 2']) assert.ok(evidence.includes(text))
+  assert.equal(damascusTime('2026-10-01 05:00:00'), damascusTime('2026-10-01T05:00:00Z'))
 })
