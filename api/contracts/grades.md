@@ -1,5 +1,7 @@
 # Grades API Contract
 
+Final acceptance status: see [Phase 3 evidence](../../docs/course-result-symbols-final-acceptance.md) and [starting-state-specific operator instructions](../../docs/course-result-symbols-operator-handoff.md). Phase 3 changes tests/documentation only, not this API or the Phase 1 installer. MariaDB 10.11.18 verification and pending live browser/PDF gates are distinguished there; an already READY deployment needs no new SQL/migration for Phase 2/3.
+
 ## Phase 2 additive Incomplete read projection
 
 See [Phase 2 implementation and actual verification](../../docs/course-result-symbols-phase2.md). The Phase 1 six endpoints, mutation payloads, authorization and lifecycle ownership are unchanged. Deadline modification remains **PATCH**, not POST.

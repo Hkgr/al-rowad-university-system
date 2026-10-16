@@ -1,5 +1,7 @@
 # Course Result Symbols — Phase 2
 
+Phase 2 is merged. For the new, separately scoped final-acceptance run on the merged baseline, see [Phase 3 evidence and BLOCKED release verdict](course-result-symbols-final-acceptance.md) and [operator handoff](course-result-symbols-operator-handoff.md). Historical verification below retains its original environment/results; the new report records executed MariaDB 10.11.18 evidence without treating synthetic component tests as browser/PDF acceptance.
+
 Scope: Incomplete workspace, additive authorized reads, and shared academic-record/PDF presentation. Phase 1 remains the sole lifecycle writer and calculator. No new SQL, migration, permission, dependency, scheduled task, production connection or Phase 3 work.
 
 ## Design and routes
