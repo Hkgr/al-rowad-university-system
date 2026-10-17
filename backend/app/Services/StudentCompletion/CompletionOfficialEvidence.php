@@ -23,20 +23,22 @@ final class CompletionOfficialEvidence
             $model->setRelation('gradeApprovals',collect($approvals));$offerings[$o['course_offering_id']]=$model;
         }
         $out=[];$service=app(GradeService::class);
+        $readiness=app(\App\Services\CatalogCompletion\CompletionRegistrationReadiness::class);
         foreach($state['student_course_registrations'] as $r) {
-            $result=$results[$r['student_course_registration_id']]??null;if(!$result)continue;
+            $result=$results[$r['student_course_registration_id']]??null;
             $registration=new StudentCourseRegistration;$registration->setRawAttributes($r);
             $registrationResultStatus=new ResultStatus;$registrationResultStatus->setRawAttributes($statuses[$r['result_status_id']??null]??[]);
             $registration->setRelation('resultStatus',$registrationResultStatus);
             $status=new RegistrationStatus;$status->setRawAttributes($rs[$r['registration_status_id']]??[]);
-            $resultModel=new StudentCourseResult;$resultModel->setRawAttributes($result);$resultStatus=new ResultStatus;$resultStatus->setRawAttributes($statuses[$result['result_status_id']]??[]);
+            $resultModel=new StudentCourseResult;$resultModel->setRawAttributes($result??[]);$resultStatus=new ResultStatus;$resultStatus->setRawAttributes($statuses[$result['result_status_id']??null]??[]);
             $resultModel->setRelation('resultStatus',$resultStatus);$registration->setRelation('registrationStatus',$status);
-            $registration->setRelation('studentCourseResult',$resultModel);$offering=$offerings[$r['course_offering_id']]??null;
+            $registration->setRelation('studentCourseResult',$result?$resultModel:null);$offering=$offerings[$r['course_offering_id']]??null;
             $registration->setRelation('courseOffering',$offering);
             $official=$service->officialAttemptResultStatus($registration);
-            if($official!==null)$out[$r['student_course_registration_id']]=['status'=>$official,'result_id'=>$result['student_course_result_id'],
+            $out[$r['student_course_registration_id']]=['status'=>$official,'result_id'=>$result['student_course_result_id']??null,
                 'registration_id'=>$r['student_course_registration_id'],'offering_id'=>$r['course_offering_id'],
-                'approval_id'=>$offering->gradeApprovals->sortByDesc('grade_approval_id')->first()?->grade_approval_id];
+                'approval_id'=>$offering?->gradeApprovals->sortByDesc('grade_approval_id')->first()?->grade_approval_id,
+                'work_blocker'=>$readiness->historicalOutcomeReason($registration)];
         }
         return $out;
     }

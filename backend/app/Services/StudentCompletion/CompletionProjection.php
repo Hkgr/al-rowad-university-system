@@ -82,10 +82,11 @@ final class CompletionProjection
             foreach([...$identities,...$observations] as $source)if(!in_array(CompletionData::hash($source['reference']),$acceptedReferences,true))$identityBlockers[]='unreviewed_source_identity';
         } elseif (count(array_unique($names))>1 && (!$accepted || array_diff($names,$accepted))) $identityBlockers[]='identity_names_differ';
         $approvedFields=array_map(fn($field)=>$field['value'],$decision['fields']??[]);
-        $programs=[];
+        $programs=[];$programResolution=null;
         if(isset($approvedFields['program'])) {
-            $label=$approvedFields['program'];$code=$config['program_aliases'][$label]??null;
-            $programs=array_values(array_filter($state['academic_programs'],fn($p)=>$code!==null?$p['program_code']===$code:CompletionData::text($p['program_name'])===$label));
+            $programResolution=(new CompletionProgramIdentity)->resolve($decision['fields']['program'],$state,$config);
+            $identityBlockers=array_merge($identityBlockers,$programResolution['blockers']);
+            $programs=array_values(array_filter($state['academic_programs'],fn($p)=>(int)$p['academic_program_id']===($programResolution['program_id']??null)));
         } elseif (isset($approved['program_code'])) {
             $programs=array_values(array_filter($state['academic_programs'],fn($p)=>$p['program_code']===$approved['program_code']));
         } else {
@@ -147,7 +148,8 @@ final class CompletionProjection
         if (!$administrative&&array_filter($observations,fn($o)=>$o['kind']==='regular' && CompletionData::year($o['year'])===null)) $statusBlockers[]='examination_year_missing';
         // Annual observations beyond a classified period are later activity even when their semester is unknown.
         if (!$administrative&&$last && $reference!==null && $reference>$last['year_start']) $statusBlockers[]='later_examination_period_unresolved';
-        $statusBlockers=array_merge($statusBlockers,$this->operationBlockers($student,$state));
+        $operations=$this->operationBlockers($student,$state);
+        $statusBlockers=array_merge($statusBlockers,$operations['reasons']);
         if ($student) $statusBlockers=array_merge($statusBlockers,$state['lifecycle_blockers'][$student['student_id']]??[]);
         $frozen=array_values(array_filter($state['student_statuses'],fn($s)=>$s['status_code']==='frozen' && ($s['is_active']??true)));
         if (count($frozen)!==1) $statusBlockers[]='discontinuation_status_unavailable';
@@ -187,6 +189,7 @@ final class CompletionProjection
             'archived'=>$student&&!empty($student['deleted_at']),'source_identities'=>$identities,'source_names'=>$names,'source_observations'=>$observations,
             'observation_count'=>count($observations),'source_observation_count'=>array_sum(array_column($observations,'duplicate_count')),
             'identity_blockers'=>array_values(array_unique($identityBlockers)),'program_id'=>$program?(int)$program['academic_program_id']:null,
+            'program_resolution'=>$programResolution,
             'lock_program_id'=>$student?(int)$student['academic_program_id']:($program?(int)$program['academic_program_id']:null),
             'current_status'=>$status['status_code']??null,'current_level_id'=>$student['current_academic_level_id']??null,
             'derived_level'=>['value'=>$derived,'basis'=>$levelBasis,'reference_year'=>$reference,'blockers'=>array_values(array_unique($levelReasons))],
@@ -196,7 +199,7 @@ final class CompletionProjection
             'approved_identity'=>$decision,'identity_correction'=>['ready'=>(bool)$corrections&&!$correctionBlockers,'changes'=>$corrections,'blockers'=>$correctionBlockers],
             'status_change'=>['authority'=>$administrative?'administrative':'examination','decision'=>$administrative?$decision['fields']['status']:null,
                 'ready'=>!$statusBlockers,'to_status_id'=>count($frozen)===1?(int)$frozen[0]['student_status_id']:null,
-                'blockers'=>array_values(array_unique($statusBlockers))],
+                'blockers'=>array_values(array_unique($statusBlockers)),'registration_blockers'=>$operations['registrations']],
             'baseline'=>$student?array_intersect_key($student,array_flip(['student_id','student_number','first_name','last_name','father_name','academic_program_id','student_status_id','current_academic_level_id','enrollment_date','deleted_at','updated_at'])):null];
     }
 
@@ -290,8 +293,8 @@ final class CompletionProjection
 
     private function operationBlockers(?array $student,array $state): array
     {
-        if (!$student) return [];
-        $reasons=[];$id=(int)$student['student_id'];
+        if (!$student) return ['reasons'=>[],'registrations'=>[]];
+        $reasons=[];$registrations=[];$id=(int)$student['student_id'];
         foreach (['student_registration_requests','student_registration_modification_requests','student_registration_replacement_requests','student_registration_withdrawal_requests'] as $table)
             foreach ($state[$table] as $r) if ((int)$r['student_id']===$id && in_array($r['status'],['draft','submitted','returned'],true)) $reasons[]='pending_academic_operation';
         foreach (['student_progression_decisions','student_graduation_decisions'] as $table) foreach ($state[$table] as $r) if ((int)$r['student_id']===$id &&
@@ -303,11 +306,17 @@ final class CompletionProjection
         foreach ($state['supplementary_exam_registrations'] as $r) if ((int)$r['student_id']===$id && $r['status']==='registered'
             && !$this->lookup($state['supplementary_exam_materializations'],'supplementary_exam_registration_id',$r['supplementary_exam_registration_id'])) $reasons[]='supplementary_materialization_pending';
         foreach($state['student_course_registrations'] as $r) if((int)$r['student_id']===$id) {
+            $registrationStatus=$this->lookup($state['registration_statuses'],'registration_status_id',$r['registration_status_id']);
+            $work=$state['official_evidence'][$r['student_course_registration_id']]['work_blocker']??null;
+            if(in_array($registrationStatus['status_code']??null,['registered','completed'],true)&&$work!==null) {
+                $reasons[]='ongoing_registration:'.$work;
+                $registrations[]=['registration_id'=>(int)$r['student_course_registration_id'],'offering_id'=>(int)$r['course_offering_id'],'reason'=>$work];
+            }
             $result=$this->lookup($state['student_course_results'],'student_course_registration_id',$r['student_course_registration_id']);
             $status=$result?$this->lookup($state['result_statuses'],'result_status_id',$result['result_status_id']):null;
             if(in_array($status['status_code']??null,['incomplete','pending_approval'],true))$reasons[]='academic_outcome_unresolved';
         }
-        return array_values(array_unique($reasons));
+        return ['reasons'=>array_values(array_unique($reasons)),'registrations'=>$registrations];
     }
     private function lookup(array $rows,string $key,mixed $value): ?array {foreach($rows as $row) if((string)($row[$key]??'')===(string)$value)return $row;return null;}
     public function summarize(array $rows): array

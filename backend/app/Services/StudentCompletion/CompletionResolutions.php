@@ -47,6 +47,8 @@ final class CompletionResolutions
                             if(!$supported)throw new \InvalidArgumentException('Explicit field value lacks supporting source evidence: row '.$decision['review_row'].' / '.$key);
                         }
                     } else throw new \InvalidArgumentException('Unsupported field authority.');
+                    // Context is reconstructed from pinned records, never accepted as an unverified program ID.
+                    if($key==='program')$field['contexts']=$this->programContexts($field,$target,$decision,$bundle);
                     $fields[$key]=$field+['decision_reference'=>$reference+['cell'=>$field['authority'].$decision['review_row']]];
                 }
                 $approved[$number]=['fields'=>$fields,'display_name'=>$target['display_name'],'reference'=>$reference,
@@ -84,5 +86,25 @@ final class CompletionResolutions
         $bundle['resolution_controls']=['rows'=>count($reviews),'explicit'=>count(array_filter($reviews,fn($r)=>CompletionData::text($r['solution'])!=='')),
             'fallback'=>count(array_filter($reviews,fn($r)=>CompletionData::text($r['solution'])===''))];
         return $bundle;
+    }
+
+    private function programContexts(array $field,array $target,array $decision,array $bundle): array
+    {
+        $sources=[...$bundle['identities'],...$bundle['observations']];
+        $reference=$field['authority']==='C'?$field['roster_reference']:($field['context_reference']??$field['support_reference']??null);
+        if($reference!==null) {
+            $source=collect($sources)->first(fn($r)=>CompletionData::hash($r['reference'])===CompletionData::hash($reference));
+            $owned=collect($decision['records'])->contains(fn($r)=>$r['target']===$target['number']&&CompletionData::hash($r['reference'])===CompletionData::hash($reference));
+            if(!$source||!$owned)throw new \InvalidArgumentException('Program context is not backed by an owned source reference.');
+            $contexts=[$source];
+        } else {
+            // E chooses the program; C supplies its unit context unless E identifies a different supported context.
+            $contexts=array_values(array_filter($bundle['identities'],fn($r)=>$r['reference']['file']==='roster'
+                &&collect($decision['records'])->contains(fn($o)=>$o['target']===$target['number']&&CompletionData::hash($o['reference'])===CompletionData::hash($r['reference']))));
+            $aliases=$bundle['config']['program_aliases']??[];
+            $matching=array_values(array_filter($contexts,fn($r)=>($aliases[$r['program']]??$r['program'])===($aliases[$field['value']]??$field['value'])));
+            if($matching)$contexts=$matching;
+        }
+        return array_map(fn($r)=>['college'=>CompletionData::text($r['college']??''),'source_program'=>$r['program'],'reference'=>$r['reference']],$contexts);
     }
 }

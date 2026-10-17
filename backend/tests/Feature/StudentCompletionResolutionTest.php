@@ -29,6 +29,98 @@ final class StudentCompletionResolutionTest extends TestCase
     private function compile(array $b): array {return (new CompletionResolutions)->compile($b);}
     private function preview(array $b): array{return app(StudentCompletionService::class)->preview(User::findOrFail(1),$b);}
     private function apply(array $b,array $r): array{return app(StudentCompletionService::class)->apply(User::findOrFail(1),$b,$r['review'],$r['review_hash'],(string)Str::uuid(),$r['review']['revision']);}
+    private function administrative(): array
+    {
+        $b=$this->bundle('S1','منقطع');$b['config']['resolutions'][0]['targets'][0]['fields']['status']=['authority'=>'E','passage'=>'منقطع','value'=>'frozen'];
+        return $this->compile($b);
+    }
+    public function test_administrative_authority_cannot_bypass_open_registration_but_identity_only_remains_available(): void
+    {
+        DB::table('course_offerings')->where('course_offering_id',1)->update(['status'=>'OPEN']);
+        DB::table('student_course_results')->where('student_course_registration_id',1)->delete();
+        DB::table('students')->where('student_id',1)->update(['first_name'=>'Wrong']);
+        $b=$this->administrative();$before=app(\App\Services\StudentCompletion\CompletionDatabase::class)->evidence([1],[1]);
+        $r=$this->preview($b);$row=$r['students'][0];self::assertSame('administrative',$row['status_change']['authority']);
+        self::assertFalse($row['status_change']['ready']);self::assertContains('ongoing_registration:offering_not_closed',$row['status_change']['blockers']);
+        self::assertSame([['registration_id'=>1,'offering_id'=>1,'reason'=>'offering_not_closed']],$row['status_change']['registration_blockers']);
+        self::assertSame(['correct_identity'],$r['review']['proposals'][0]['actions']);
+        $result=$this->apply($b,$r);self::assertSame('identity_corrected',$result['students'][0]['action']);
+        self::assertSame('Test',Student::findOrFail(1)->first_name);self::assertSame(1,Student::findOrFail(1)->student_status_id);
+        self::assertSame($before,app(\App\Services\StudentCompletion\CompletionDatabase::class)->evidence([1],[1]));
+        // A forged extra action cannot use the independently approved identity proposal to change status.
+        DB::table('students')->where('student_id',1)->update(['first_name'=>'Wrong']);$r=$this->preview($b);
+        $r['review']['proposals'][0]['actions'][]='record_discontinuation';$r['review_hash']=CompletionData::hash($r['review']);
+        $result=$this->apply($b,$r);self::assertSame(['student_completion_action_invalid'],$result['students'][0]['blockers']);
+        self::assertSame(1,Student::findOrFail(1)->student_status_id);self::assertSame('Wrong',Student::findOrFail(1)->first_name);
+    }
+    public function test_only_closed_officially_settled_history_allows_administrative_status_write(): void
+    {
+        $b=$this->administrative();$before=app(\App\Services\StudentCompletion\CompletionDatabase::class)->evidence([1],[1]);
+        $r=$this->preview($b);self::assertTrue($r['students'][0]['status_change']['ready']);
+        self::assertSame([],$r['students'][0]['status_change']['registration_blockers']);
+        $this->apply($b,$r);self::assertSame(17,Student::findOrFail(1)->student_status_id);
+        self::assertSame($before,app(\App\Services\StudentCompletion\CompletionDatabase::class)->evidence([1],[1]));
+        DB::table('students')->where('student_id',1)->update(['student_status_id'=>1]);
+        DB::table('approval_statuses')->insert(['approval_status_id'=>99,'status_code'=>'revoked']);
+        DB::table('grade_approvals')->insert(['course_offering_id'=>1,'approval_status_id'=>99]);
+        self::assertContains('ongoing_registration:authoritative_approval_not_approved',$this->preview($b)['students'][0]['status_change']['blockers']);
+    }
+    public function test_authoritative_approvals_are_offering_owned_even_if_a_nullable_student_column_exists(): void
+    {
+        Schema::table('grade_approvals',fn(Blueprint $t)=>$t->integer('student_id')->nullable());
+        $database=app(\App\Services\StudentCompletion\CompletionDatabase::class);$before=$database->evidence([1],[1]);
+        self::assertTrue($this->preview($this->administrative())['students'][0]['status_change']['ready']);
+        DB::table('approval_statuses')->insert(['approval_status_id'=>99,'status_code'=>'revoked']);
+        DB::table('grade_approvals')->insert(['course_offering_id'=>1,'approval_status_id'=>99]);
+        self::assertNotSame($before,$database->evidence([1],[1]));
+        self::assertContains('ongoing_registration:authoritative_approval_not_approved',$this->preview($this->administrative())['students'][0]['status_change']['blockers']);
+    }
+    public function test_registration_changed_after_review_rejects_write_and_new_preview_reports_the_reference(): void
+    {
+        $b=$this->administrative();$r=$this->preview($b);$logs=DB::table('user_activity_logs')->count();
+        DB::table('course_offerings')->insert(['course_offering_id'=>2,'course_id'=>2,'academic_program_id'=>1,'academic_year_id'=>2,'semester_id'=>1,'status'=>'OPEN']);
+        DB::table('student_course_registrations')->insert(['student_course_registration_id'=>2,'student_id'=>1,'course_offering_id'=>2,'registration_status_id'=>2]);
+        try{$this->apply($b,$r);self::fail('A stale registration review was accepted');}
+        catch(\App\Services\StudentCompletion\CompletionException $e){self::assertSame('student_completion_stale',$e->errorCode);}
+        self::assertSame(1,Student::findOrFail(1)->student_status_id);self::assertSame($logs,DB::table('user_activity_logs')->count());
+        self::assertSame([['registration_id'=>2,'offering_id'=>2,'reason'=>'offering_not_closed']],$this->preview($b)['students'][0]['status_change']['registration_blockers']);
+    }
+    private function businessBundle(int $college,string $authority='C'): array
+    {
+        DB::table('departments')->whereIn('department_id',[1,2])->update(['department_name'=>'إدارة الأعمال']);
+        DB::table('colleges')->where('college_id',1)->update(['college_name'=>'كلية الإدارة']);
+        DB::table('colleges')->where('college_id',2)->update(['college_name'=>'معهد الإدارة']);
+        DB::table('students')->where('student_id',1)->update(['academic_program_id'=>$college]);
+        $b=$this->bundle('S1',$authority==='E'?'إدارة الأعمال':'');$b['identities'][0]['program']='إدارة الأعمال';$b['identities'][0]['college']=$college===1?'كلية الإدارة':'معهد الإدارة';
+        $b['config']['program_aliases']=['إدارة الأعمال'=>'P1','معهد الإدارة|إدارة الأعمال'=>'P2'];
+        $d=&$b['config']['resolutions'][0];$d['records'][0]['program']='إدارة الأعمال';$d['records'][0]['college']=$b['identities'][0]['college'];
+        $d['targets'][0]['fields']['program']=$authority==='C'?['value'=>'إدارة الأعمال','authority'=>'C','roster_reference'=>$b['identities'][0]['reference']]
+            :['value'=>'إدارة الأعمال','authority'=>'E','passage'=>'إدارة الأعمال'];
+        return $b;
+    }
+    public function test_c_and_e_programs_keep_college_institute_context_and_do_not_report_false_transfers(): void
+    {
+        foreach(['C','E'] as $authority)foreach([2,1] as $college) {
+            $b=$this->compile($this->businessBundle($college,$authority));$row=$this->preview($b)['students'][0];
+            self::assertSame($college,$row['program_id']);self::assertSame('P'.$college,$row['program_resolution']['program_code']);
+            self::assertSame([],$row['identity_blockers']);self::assertNotContains('existing_program_transfer_required',$row['status_change']['blockers']);
+            self::assertSame($b['identities'][0]['reference'],$row['program_resolution']['contexts'][0]['reference']);
+            self::assertSame($authority,$row['approved_identity']['fields']['program']['authority']);
+        }
+    }
+    public function test_missing_ambiguous_or_conflicting_qualified_program_context_is_blocked_not_guessed(): void
+    {
+        $b=$this->businessBundle(2);$b['identities'][0]['college']='';$b['config']['resolutions'][0]['records'][0]['college']='';
+        $row=$this->preview($this->compile($b))['students'][0];self::assertNull($row['program_id']);self::assertContains('approved_program_context_missing',$row['identity_blockers']);
+        $b=$this->businessBundle(2);$b['config']['program_aliases']['معهد الإدارة|إدارة الأعمال']='P1';
+        $row=$this->preview($this->compile($b))['students'][0];self::assertNull($row['program_id']);self::assertContains('approved_program_missing_or_ambiguous_in_college',$row['identity_blockers']);
+        $b=$this->businessBundle(2);$b['config']['college_aliases']['معهد الإدارة']='OTHER';
+        $row=$this->preview($this->compile($b))['students'][0];self::assertNull($row['program_id']);self::assertContains('approved_program_context_conflict',$row['identity_blockers']);
+        $b=$this->businessBundle(2);unset($b['config']['program_aliases']['معهد الإدارة|إدارة الأعمال']);
+        DB::table('academic_programs')->insert(['academic_program_id'=>3,'department_id'=>2,'program_code'=>'P3','program_name'=>'Another administration plan','total_credit_hours'=>3]);
+        $row=$this->preview($this->compile($b))['students'][0];self::assertNull($row['program_id']);self::assertContains('approved_program_missing_or_ambiguous_in_college',$row['identity_blockers']);
+        self::assertNotContains('existing_program_transfer_required',$row['identity_blockers']);
+    }
     public function test_blank_e_uses_structured_c_and_scoped_exam_label_without_global_alias(): void
     {
         $b=$this->bundle();$b['observations'][0]['name']='Old exam label';$b['config']['resolutions'][0]['records'][1]['label']='Old exam label';
@@ -41,6 +133,9 @@ final class StudentCompletionResolutionTest extends TestCase
     {
         DB::table('students')->where('student_id',1)->update(['first_name'=>'Wrong']);$b=$this->bundle('S1','Program two');
         $b['config']['program_aliases']['Program two']='P2';$b['config']['resolutions'][0]['targets'][0]['fields']['program']=['authority'=>'E','passage'=>'Program two','value'=>'Program two'];
+        $source=$b['identities'][0];$source['program']='Program two';$source['college']='كلية 2';$source['reference']['row']=8;$b['identities'][]=$source;
+        $b['config']['resolutions'][0]['records'][]=['reference'=>$source['reference'],'number'=>'S1','label'=>$source['full_name'],'program'=>$source['program'],'father_name'=>$source['father_name'],'college'=>$source['college'],'target'=>'S1'];
+        $b['config']['resolutions'][0]['targets'][0]['fields']['program']['context_reference']=$source['reference'];
         $b=$this->compile($b);$r=$this->preview($b);$row=$r['students'][0];
         self::assertContains('existing_program_transfer_required',$row['status_change']['blockers']);self::assertTrue($row['identity_correction']['ready']);
         $result=$this->apply($b,$r);self::assertSame('identity_corrected',$result['students'][0]['action']);
@@ -81,7 +176,10 @@ final class StudentCompletionResolutionTest extends TestCase
     }
     public function test_two_explicit_people_are_separated_by_source_context_and_ambiguous_rows_stay_unassigned(): void
     {
-        $b=$this->bundle('NEW','NEW and OTHER');$d=&$b['config']['resolutions'][0];$other=$d['targets'][0];$other['number']='OTHER';$other['roster_number']='NEW';$d['targets'][]=$other;
+        $b=$this->bundle('NEW','NEW and OTHER');$d=&$b['config']['resolutions'][0];$other=$d['targets'][0];$other['number']='OTHER';
+        $source=$b['identities'][0];$source['number']='OTHER';$source['reference']['row']=8;$b['identities'][]=$source;
+        foreach($other['fields'] as &$field)$field['roster_reference']=$source['reference'];unset($field);$d['targets'][]=$other;
+        $d['records'][]=['reference'=>$source['reference'],'number'=>'OTHER','label'=>$source['full_name'],'program'=>$source['program'],'father_name'=>$source['father_name'],'college'=>$source['college'],'target'=>'OTHER'];
         $d['records'][1]['target']='OTHER';$b=$this->compile($b);
         self::assertSame('OTHER',$b['observations'][0]['ownership']['number']);self::assertSame('NEW',$b['identities'][0]['ownership']['number']);
         $b=$this->bundle('NEW','NEW and OTHER');$b['config']['resolutions'][0]['records'][1]['target']=null;$b=$this->compile($b);
@@ -131,7 +229,7 @@ final class StudentCompletionResolutionTest extends TestCase
         Schema::table('student_course_results',fn(Blueprint $t)=>$t->boolean('is_deprived')->default(false));
         DB::table('approval_statuses')->insert(['approval_status_id'=>99,'status_code'=>'approved']);DB::table('grade_approvals')->insert(['course_offering_id'=>1,'approval_status_id'=>99]);
         foreach(['passed'=>91,'failed'=>92,'deprived'=>93] as $code=>$id)DB::table('result_statuses')->insert(['result_status_id'=>$id,'status_code'=>$code]);
-        DB::table('student_course_results')->insert(['student_course_registration_id'=>1,'result_status_id'=>91,'final_mark'=>80]);
+        DB::table('student_course_results')->where('student_course_registration_id',1)->update(['result_status_id'=>91,'final_mark'=>80]);
         $r=$this->preview(Fixture::bundle())['students'][0];self::assertFalse($r['status_change']['ready']);
         self::assertContains('official_success_conflicts_with_absence',$r['periods'][0]['blockers']);self::assertSame(1,$r['periods'][0]['evidence_conflicts'][0]['official']['registration_id']);
         foreach([[92,null,0],[93,null,0],[93,95,1],[91,95,1]] as [$status,$mark,$z]) {
@@ -143,6 +241,7 @@ final class StudentCompletionResolutionTest extends TestCase
     {
         DB::table('course_offerings')->insert(['course_offering_id'=>2,'course_id'=>2,'academic_program_id'=>1,'academic_year_id'=>1,'semester_id'=>2]);
         DB::table('student_course_registrations')->insert(['student_course_registration_id'=>2,'student_id'=>1,'course_offering_id'=>2,'registration_status_id'=>2]);
+        Fixture::settle(2,2);
         DB::table('student_academic_terms')->insert(['student_id'=>1,'academic_year_id'=>1,'semester_id'=>2,'is_finalized'=>1,'total_registered_hours'=>3]);
         $b=Fixture::bundle();$o=$b['observations'][0];$o['course_code']='C2';$o['course_name']='مادة 2';$o['reference']['row']=3;$b['observations'][]=$o;
         $r=$this->preview($b)['students'][0];self::assertTrue($r['status_change']['ready']);self::assertSame('confirmed_full_absence',$r['exam_classification']);self::assertCount(2,$r['periods']);

@@ -188,6 +188,8 @@ final class StudentCompletionBehaviorTest extends TestCase
     public function test_actual_incomplete_lifecycle_blocks_status_change_and_its_evidence_is_preserved(): void
     {
         \Tests\Support\CompletionRegistrationFixture::prepare();\Tests\Support\CompletionRegistrationFixture::sqliteLifecycle();
+        // The grant requires an unresolved attempt, not the fixture's already settled historical F.
+        DB::table('student_course_results')->where('student_course_registration_id',1)->delete();
         DB::table('grade_components')->insert(['grade_component_id'=>1,'course_offering_id'=>1,'component_name'=>'Synthetic theory','component_type'=>'theoretical','max_mark'=>100,'is_required'=>1]);
         DB::table('grade_approvals')->insert(['course_offering_id'=>1,'approval_status_id'=>1]);
         \Tests\Support\CompletionRegistrationFixture::lifecycle(1);

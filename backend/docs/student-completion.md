@@ -309,7 +309,7 @@ native Excel application. No frontend feature is introduced by this work.
 
 ## Release boundaries
 
-### Approved-resolution repair verification (PR #173)
+### Earlier approved-resolution repair verification (superseded counts)
 
 The replacement workbook controls were recalculated: **97 review rows, 45 explicit
 solutions and 52 approved C fallbacks**. These are controls, not execution lists.
@@ -382,3 +382,114 @@ code and approving any eventual data operation are separate decisions. Do not
 run completion automatically during deployment or from GET requests. Keep this
 change's PR Draft, open, unmerged and undeployed until review; there is no new
 scheduled task, production import or automatic status sweep.
+
+### Remaining-review repair: ongoing registrations and qualified programs
+
+Baseline inspected and fetched: `15b4409fda9fd99ad1d29f7d0c48649e0472cf1b`.
+The two findings were reproduced against that head in a detached, isolated
+worktree using the new synthetic regressions: an administrative status proposal
+incorrectly stayed ready on an open offering without a result; the institute's
+Business Administration resolved to the college program; absent unit context
+still resolved through the generic alias. All three regressions failed there.
+
+Administrative E authority still bypasses **examination proof only**. Both live
+preview and the catalog/program/student-graph-locked writer use the same pure
+projection and the existing catalog-completion distinction: a historical
+registration must have a closed offering, an authoritative approved outcome and
+a settled F/Z/pass (a pass needs its actual mark). Merely retaining `registered`
+does not block closed, officially settled history. Genuine ongoing work produces
+`ongoing_registration:<reason>` and `status_change.registration_blockers` with
+the registration ID, offering ID and precise reason. Lifecycle protection remains
+an additional independent check. Nothing rewrites registrations, results,
+approvals or history to remove a blocker. Identity-only proposals remain explicit
+and independent and cannot acquire a status action implicitly.
+
+The canonical academic distinction was extracted without changing its original
+catalog-completion lifecycle checks or their ordering. Official evidence remains
+batched and query-free during snapshot projection. Offering-owned approvals are
+selected and fingerprinted by offering, even if a compatible test schema also
+contains a nullable student column; that column must not hide the authoritative
+approval. Synthetic historical fixtures now contain a genuinely approved settled
+F, rather than relying on missing/unapproved results being ignored.
+
+Approved program fields now retain their source-bound unit context. C uses its
+structured roster reference and college/institute. E retains its exact decision
+and uses an owned supporting `context_reference`, or unambiguous owned roster
+context. An E decision can select a different department without changing C's
+unaddressed identity fields. A source reference belonging to another/unassigned
+owner is not admissible context. `CompletionProgramIdentity` validates the
+program's real department/college relationships and returns the canonical program
+ID/code and unit. Qualified aliases take precedence; a generic alias is only a
+candidate **inside** that unit. An alias cannot replace a conflicting exact unit
+identity. Missing, conflicting or ambiguous context yields a narrow
+`approved_program_*` blocker, not a guessed program or a transfer. No program is
+created, reparented or transferred by this reader.
+
+Private interpretations were regenerated, including explicitly source-bound E
+contexts and reviewed source-unit spelling aliases. The four former transfer
+cases were inspected individually: **two C-backed institute cases already match
+their existing institute program**; **two E-backed program decisions still
+require the existing academic transfer workflow**. Neither is executed here.
+The source fingerprints, complete snapshot contents, student baselines and all
+15 independent identity-correction proposals/24 fields were compared and remain
+unchanged. Detailed references and the four-case reconciliation stay outside Git.
+
+Latest private snapshot controls (categories overlap and must not be summed):
+
+| Category | Count |
+| --- | ---: |
+| Union / existing / missing | 1,008 / 909 / 99 |
+| Missing ready / blocked | 3 / 96 |
+| Reviewed owners / explicit E / C fallbacks | 98 / 45 / 52 |
+| Ready identity corrections / fields | 15 / 24 |
+| Genuine program transfers / former false institute transfers | 2 / 2 |
+| Administrative discontinued decisions / ready frozen admissions | 3 / 2 |
+| Ready existing status writes / examination-proved current absence | 0 / 0 |
+| Students with ongoing-registration blockers / referenced registrations | 5 / 12 |
+| Reviewed program labels still missing or ambiguous inside their unit | 7 |
+| Raw examination rows / assigned deduplicated observations | 16,455 / 15,864 |
+| Unassigned source observations / unnumbered rows | 28 / 6 |
+
+The seven program-context blockers do not license new programs or inferred
+aliases. Missing admission fields, protected states, identity/source-ownership
+conflicts, undated supplementary evidence and incomplete examination coverage
+remain visible. The report is a snapshot, **not a live authorization or an apply**.
+The final bundle SHA-256 is
+`d059b7375b981a5f5004dfd18873315323e862879b66e7aa06b89fc381e8d83f`.
+Use this new bundle and an authorized **new live review and new operation UUID**.
+Do not resume an older operation with the changed content. Old receipts and old
+private artifacts have not been modified.
+
+Actual verification for this repair:
+
+- Final focused four-class run: **60 tests / 291 assertions passed**. Expanded
+  11-class run: **169 tests /
+  15,066 assertions: 166 passed, the same 3 historical contracts failed**. No
+  repository-wide or CI pass is implied. The same three old source-contract
+  failures listed above were reproduced at the reviewed baseline (22 tests:
+  19 pass, 3 fail); they were not edited or skipped.
+- The isolated **10.11.18-MariaDB** harness passed eight real independent-process
+  catalog-lock races, including a newly inserted open registration with no
+  result competing with an administrative write. The new preview is blocked
+  with exact references; an explicitly selected identity correction leaves
+  status and complete academic material unchanged. Installed catalog/plan/I
+  contracts, historical admission-trigger history, GPA/transcript preservation
+  and simultaneous same-UUID behavior were exercised. No claim about other
+  database versions or SQLite proving locks is made.
+- PHP **8.4.14** syntax checks, Composer **2.8.12** validation/platform checks,
+  three dependency-free static/pure contracts and `git diff --check` passed.
+  No dependencies were installed.
+- Private preparation/full reconstruction ran with a deliberately invalid DB
+  connection and process-local array cache. The initial default 128 MB report
+  process exhausted memory; the documented process-local `768M` limit completed
+  preparation/reconstruction. No production configuration was changed.
+- The one-sheet Excel report was regenerated with Artifact Tool; summary
+  formulas reconcile to JSON, formula-error scan is clear and SDK previews were
+  inspected. The metadata-only native RTL step asserted unchanged values,
+  formulas and caches. Native Excel rendering remains unexecuted; an SDK preview
+  is not native Excel acceptance.
+
+No production connection, live preview/apply, deployment, frontend work, marks
+import, SQL, migration or permission change occurred. Keep PR #173 Draft, open
+and unmerged. Resolving remaining academic/source blockers is a separate reviewed
+operation, not permission to clear evidence or silently rerun writes.

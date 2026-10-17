@@ -31,6 +31,7 @@ final class CompletionDatabase
                 $q->where(function($q)use($relationships){foreach($relationships as $key=>$values)$q->orWhereIn($key,$values);});
             }
             elseif(in_array($table,['student_course_results','student_grade_components'],true))$q->whereIn('student_course_registration_id',$registrations);
+            elseif($table==='grade_approvals')$q->whereIn('course_offering_id',$offerings);
             elseif (Schema::hasColumn($table,'student_id')) $q->whereIn('student_id',$studentIds);
             elseif (Schema::hasColumn($table,'student_course_registration_id')) $q->whereIn('student_course_registration_id',$registrations);
             elseif (Schema::hasColumn($table,'course_offering_id')) $q->whereIn('course_offering_id',$offerings);
@@ -69,10 +70,10 @@ final class CompletionDatabase
             if ($table==='students') {$state[$table]=$students;continue;}
             if($table==='student_course_results')$q->whereIn('student_course_registration_id',$registrationIds);
             elseif($table==='supplementary_exam_materializations')$q->whereIn('supplementary_exam_registration_id',$supplementaryIds);
+            elseif($table==='grade_approvals')$q->whereIn('course_offering_id',$offeringIds);
             elseif (Schema::hasColumn($table,'student_id')) $q->whereIn('student_id',$ids);
             elseif (in_array($table,['academic_programs','academic_plan_versions'],true)) $q->whereIn('academic_program_id',$programIds);
             elseif($table==='course_offerings')$q->whereIn('course_offering_id',$offeringIds);
-            elseif($table==='grade_approvals')$q->whereIn('course_offering_id',$offeringIds);
             elseif($table==='courses')$q->whereIn('course_id',$courseIds);
             elseif($table==='departments')$q->whereIn('department_id',$departmentIds);
             elseif($table==='colleges')$q->whereIn('college_id',$collegeIds);

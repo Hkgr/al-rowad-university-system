@@ -38,13 +38,22 @@ final class StudentCompletionFixture
         DB::table('course_offerings')->insert(['course_offering_id'=>1,'course_id'=>1,'academic_program_id'=>1,'academic_year_id'=>1,'semester_id'=>1,'status'=>'closed']);
         DB::table('student_course_registrations')->insert(['student_course_registration_id'=>1,'student_id'=>1,'course_offering_id'=>1,'registration_status_id'=>2]);
         DB::table('student_academic_terms')->insert(['student_id'=>1,'academic_year_id'=>1,'semester_id'=>1,'is_finalized'=>1,'total_registered_hours'=>3]);
+        self::settle(1,1);
+    }
+
+    public static function settle(int $registration,int $offering): void
+    {
+        $status=DB::table('result_statuses')->where('status_code','failed')->value('result_status_id')
+            ?? DB::table('result_statuses')->insertGetId(['status_code'=>'failed'],'result_status_id');
+        DB::table('student_course_results')->insert(['student_course_registration_id'=>$registration,'result_status_id'=>$status,'final_mark'=>null]);
+        DB::table('grade_approvals')->insert(['course_offering_id'=>$offering,'approval_status_id'=>1]);
     }
 
     public static function bundle(string $number='S1'): array
     {
         return ['contract'=>'student-completion.sources.v1','config'=>['program_aliases'=>['Synthetic program'=>'P1']],
             'sources'=>[],'snapshot'=>[], 'identities'=>[['number'=>$number,'first_name'=>'Test','last_name'=>'Student','father_name'=>'Parent',
-                'full_name'=>'Test Student','program'=>'Synthetic program','enrollment_date'=>'2023-12-10','cohort'=>'2024/2023','status'=>'active',
+                'full_name'=>'Test Student','program'=>'Synthetic program','college'=>'كلية 1','enrollment_date'=>'2023-12-10','cohort'=>'2024/2023','status'=>'active',
                 'reference'=>['file'=>'roster','sheet'=>'Synthetic','row'=>5]]],
             'observations'=>[['number'=>$number,'name'=>'Test Student','program'=>'Synthetic program','course_code'=>'C1','course_name'=>'مادة 1',
                 'plan_term'=>7,'year'=>'2024/2023','cohort'=>'2024/2023','attempt'=>1,'exam_mark'=>'-','outcome'=>'Absent','supplementary'=>null,

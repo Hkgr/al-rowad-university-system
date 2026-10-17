@@ -45,12 +45,14 @@ $bundle=\Tests\Support\StudentCompletionFixture::bundle();
 $p->exec("INSERT INTO course_offerings(course_offering_id,course_id,academic_program_id,academic_year_id,semester_id,status) VALUES(10001,1,900,1,1,'closed')");
 $p->exec('INSERT INTO student_course_registrations(student_course_registration_id,student_id,course_offering_id,registration_status_id) VALUES(10001,1,10001,2)');
 $p->exec('INSERT INTO student_academic_terms(student_id,academic_year_id,semester_id,is_finalized,total_registered_hours) VALUES(1,1,1,1,3)');
-$p->exec("INSERT INTO grade_approvals(course_offering_id,approval_status_id) VALUES(10001,1)");
+$approved=DB::table('approval_statuses')->where('status_code','approved')->value('approval_status_id')
+    ?? DB::table('approval_statuses')->insertGetId(['status_code'=>'approved'],'approval_status_id');
+DB::table('grade_approvals')->insert(['course_offering_id'=>10001,'approval_status_id'=>$approved]);
 $p->exec('INSERT INTO student_course_results(student_course_registration_id,result_status_id,final_mark) SELECT 10001,result_status_id,NULL FROM result_statuses WHERE status_code=\'failed\'');
 $p->exec('UPDATE student_course_registrations SET result_status_id=(SELECT result_status_id FROM result_statuses WHERE status_code=\'failed\') WHERE student_course_registration_id=10001');
 $read=static function($pipe): array {$line=fgets($pipe);if($line===false)throw new RuntimeException('Worker ended unexpectedly');return json_decode($line,true,flags:JSON_THROW_ON_ERROR);};
 $race=function(string $label,array $b,callable $mutate)use($environment,$p,$check,$read,$service,$actor,$revision): void {
-    $preview=$service->preview($actor,$b);$check(count($preview['review']['proposals'])===1,'Expected one ready proposal: '.$label);
+    $preview=$service->preview($actor,$b);$check(count($preview['review']['proposals'])===1,'Expected one ready proposal: '.$label.' '.json_encode(collect($preview['students'])->firstWhere('number','S1')['status_change']??null));
     DB::beginTransaction();DB::table('academic_catalog_control')->where('control_id',1)->lockForUpdate()->first();$mutate();
     $monitor=$environment->connect(true);$process=proc_open([PHP_BINARY,__FILE__,'worker'],[['pipe','r'],['pipe','w'],['file',$environment->config['directory'].'/student-worker.stderr','a']],$pipes);
     $failure=null;
@@ -115,3 +117,29 @@ try {
     if(DB::transactionLevel())DB::rollBack();foreach($workers as $w){fclose($w['pipes'][0]);fclose($w['pipes'][1]);proc_close($w['process']);}
 }
 echo "PASS same UUID / two independent observed catalog waiters / one student and one canonical admission\n";
+
+// Administrative E authority bypasses examination proof, never genuine ongoing academic work.
+app(AcademicCatalogTransaction::class)->run(fn()=>DB::table('students')->where('student_id',1)->update(['student_status_id'=>1]));
+$admin=$bundle;$admin['config']['resolution_policy']='administration_e_then_roster_c';
+$cells=['A'=>'S1','B'=>'Test Student','C'=>null,'D'=>'Synthetic review','E'=>'منقطع Test'];
+$admin['sources']['conflicts']=['sha256'=>str_repeat('f',64)];
+$admin['conflicts']=[['number'=>'S1','solution'=>$cells['E'],'cells'=>$cells,'reference'=>['file'=>'conflicts','sheet'=>'Synthetic','row'=>6]]];
+$records=[];foreach([...$admin['identities'],...$admin['observations']] as $row)$records[]=['reference'=>$row['reference'],'number'=>$row['number'],
+    'label'=>$row['full_name']??$row['name'],'program'=>$row['program'],'college'=>$row['college']??null,'father_name'=>$row['father_name']??null,'target'=>'S1'];
+$admin['config']['resolutions']=[['review_row'=>6,'expected_cells'=>$cells,'targets'=>[['number'=>'S1','display_name'=>'Test Student','fields'=>[
+    'status'=>['authority'=>'E','passage'=>'منقطع','value'=>'frozen'],'first_name'=>['authority'=>'E','passage'=>'Test','value'=>'Test']]]],'records'=>$records]];
+$admin=(new \App\Services\StudentCompletion\CompletionResolutions)->compile($admin);
+$race('administrative-ongoing-registration',$admin,function(): void {
+    DB::table('course_offerings')->insert(['course_offering_id'=>20001,'course_id'=>1,'academic_program_id'=>900,'academic_year_id'=>1,'semester_id'=>1,'status'=>'OPEN']);
+    DB::table('student_course_registrations')->insert(['student_course_registration_id'=>20001,'student_id'=>1,'course_offering_id'=>20001,'registration_status_id'=>2]);
+});
+$row=collect($service->preview($actor,$admin)['students'])->firstWhere('number','S1');
+$check(!$row['status_change']['ready']&&$row['status_change']['registration_blockers']===[['registration_id'=>20001,'offering_id'=>20001,'reason'=>'offering_not_closed']],
+    'Administrative authority bypassed the newly ongoing registration');
+app(AcademicCatalogTransaction::class)->run(fn()=>DB::table('students')->where('student_id',1)->update(['first_name'=>'Wrong']));
+$before=$snapshot();$review=$service->preview($actor,$admin);$proposal=collect($review['review']['proposals'])->firstWhere('number','S1');
+$check($proposal['actions']===['correct_identity'],'Blocked status leaked into an identity-only proposal');
+$result=$service->apply($actor,$admin,$review['review'],$review['review_hash'],(string)Str::uuid(),$revision());
+$check(Student::findOrFail(1)->student_status_id===1&&Student::findOrFail(1)->first_name==='Test','Identity-only write changed status');
+$check($before===$snapshot(),'Identity-only correction rewrote academic history');
+echo "PASS administrative E / concurrent new open registration without result / explicit blocker references / identity-only history preservation\n";
