@@ -42,12 +42,12 @@ final class AcademicPlanRecords
             ->chunkById(250, function ($rows) use ($memberships, $versionId) {
                 foreach ($rows->groupBy('course_id') as $courseId => $group) DB::table('student_course_registrations')
                     ->whereIn('student_course_registration_id', $group->pluck('student_course_registration_id'))
-                    ->update(['academic_plan_version_id' => $versionId, 'plan_program_course_id' => $memberships->get($courseId)]);
+                    ->update(['academic_plan_version_id' => $versionId, 'plan_program_course_id' => $memberships->get($courseId), 'updated_at' => DB::raw('updated_at')]);
             }, 'r.student_course_registration_id', 'student_course_registration_id');
         foreach (['student_registration_requests', 'student_registration_modification_requests', 'student_registration_replacement_requests',
             'student_progression_decisions', 'student_graduation_decisions'] as $table) {
             DB::table($table)->whereIn('student_id', DB::table('students')->where('academic_program_id', $programId)->select('student_id'))
-                ->whereNull('academic_plan_version_id')->update(['academic_plan_version_id' => $versionId]);
+                ->whereNull('academic_plan_version_id')->update(['academic_plan_version_id' => $versionId, 'updated_at' => DB::raw('updated_at')]);
         }
     }
 }

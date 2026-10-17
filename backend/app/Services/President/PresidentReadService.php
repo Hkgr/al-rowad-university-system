@@ -95,7 +95,10 @@ final class PresidentReadService
         $this->period($q, $f);
         $q->when($f['id'] ?? null, fn ($q, $id) => $q->where('r.student_course_result_id', $id))
             ->when($f['search'] ?? null, fn ($q, $s) => $q->where(fn ($x) => $x->where('s.student_number', 'like', MinistryQueries::like($s))->orWhere('cr.course_code', 'like', MinistryQueries::like($s))));
-        return $this->page($q, $f, ['r.student_course_result_id as id', 's.student_id', 's.student_number', 'cr.course_code', 'cr.course_name', 'co.academic_year_id', 'co.semester_id', 'r.final_mark', 'rst.status_code'], 'r.student_course_result_id');
+        $page = $this->page($q, $f, ['r.student_course_result_id as id', 'scr.student_course_registration_id', 's.student_id', 's.student_number', 'cr.course_code', 'cr.course_name', 'co.academic_year_id', 'co.semester_id', 'r.final_mark', 'rst.status_code'], 'r.student_course_result_id');
+        $references = \App\Support\HistoricalCourseCode::index($page['data']->pluck('student_course_registration_id'));
+        $page['data'] = $page['data']->map(fn ($row) => (object) array_replace((array) $row, $references[$row->student_course_registration_id] ?? []));
+        return $page;
     }
 
     private function offerings(array $f): Builder

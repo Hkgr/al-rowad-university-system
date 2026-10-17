@@ -337,6 +337,10 @@ final class ExecutiveReportQueryService
         };
         $page=$query->paginate((int)($input['per_page']??25),['*'],'page',(int)($input['page']??1));
         $rows=collect($page->items())->map(fn($r)=>(array)$r);
+        if ($subject === 'academic_performance') {
+            $references = \App\Support\HistoricalCourseCode::index($rows->pluck('student_course_registration_id'));
+            $rows = $rows->map(fn ($row) => array_replace($row, $references[$row['student_course_registration_id']] ?? []));
+        }
         if($subject==='students'&&in_array('official_gpa',$input['metrics']??[],true)&&$rows->isNotEmpty()){
             $gpaInput=$input;$gpaInput['_student_ids']=$rows->pluck('student_id')->map(fn($id)=>(int)$id)->all();
             $gpas=$this->officialGpa('students',$gpaInput,['student'])['groups'];
@@ -364,7 +368,7 @@ final class ExecutiveReportQueryService
     }
     private function performanceDetailQuery(array $input): Builder
     {
-        [$q]=$this->performanceFacts($input);$map=['official_result_count'=>'r.student_course_result_id','passed_count'=>'rst.status_code','failed_count'=>'rst.status_code','deprived_count'=>'rst.status_code','incomplete_count'=>'rst.status_code','official_average'=>'r.final_mark','attempted_credit_hours'=>'crs.credit_hours','earned_credit_hours'=>'crs.credit_hours','college'=>'c.college_id','department'=>'d.department_id','program'=>'co.academic_program_id','academic_year'=>'co.academic_year_id','semester'=>'co.semester_id','academic_level'=>'s.current_academic_level_id','result_status'=>'rst.status_code','course'=>'crs.course_id'];return$this->applyDetailSort($q->select('r.student_course_result_id','s.student_id','s.student_number',DB::raw($this->fullNameSql('s').' AS full_name'),'c.college_name','ap.program_name','al.level_name','rst.status_code as result_status','crs.course_code','crs.course_name','crs.credit_hours','r.final_mark'),$input,$map,'r.student_course_result_id','s.student_number');
+        [$q]=$this->performanceFacts($input);$map=['official_result_count'=>'r.student_course_result_id','passed_count'=>'rst.status_code','failed_count'=>'rst.status_code','deprived_count'=>'rst.status_code','incomplete_count'=>'rst.status_code','official_average'=>'r.final_mark','attempted_credit_hours'=>'crs.credit_hours','earned_credit_hours'=>'crs.credit_hours','college'=>'c.college_id','department'=>'d.department_id','program'=>'co.academic_program_id','academic_year'=>'co.academic_year_id','semester'=>'co.semester_id','academic_level'=>'s.current_academic_level_id','result_status'=>'rst.status_code','course'=>'crs.course_id'];return$this->applyDetailSort($q->select('r.student_course_result_id','scr.student_course_registration_id','s.student_id','s.student_number',DB::raw($this->fullNameSql('s').' AS full_name'),'c.college_name','ap.program_name','al.level_name','rst.status_code as result_status','crs.course_code','crs.course_name','crs.credit_hours','r.final_mark'),$input,$map,'r.student_course_result_id','s.student_number');
     }
     private function offeringDetailQuery(array $input): Builder
     {

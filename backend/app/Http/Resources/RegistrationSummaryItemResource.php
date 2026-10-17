@@ -35,7 +35,7 @@ class RegistrationSummaryItemResource extends JsonResource
 
         return [
             'registration_id' => $this->student_course_registration_id,
-            'course_code' => $this->whenLoaded('courseOffering', fn () => $this->courseOffering?->course?->course_code),
+            ...\App\Support\HistoricalCourseCode::fields($this->resource),
             'course_name' => $this->whenLoaded('courseOffering', fn () => $this->courseOffering?->course?->course_name),
             'credit_hours' => $this->whenLoaded('courseOffering', fn () => $this->courseOffering?->course?->credit_hours),
             'course_offering_id' => $this->course_offering_id,

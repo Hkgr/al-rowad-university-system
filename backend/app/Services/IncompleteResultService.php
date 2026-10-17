@@ -34,6 +34,7 @@ final class IncompleteResultService
         foreach (['state', 'student_id', 'academic_year_id', 'semester_id'] as $key) if (isset($filters[$key])) $query->where($key, $filters[$key]);
         $page = $query->with(array_map(fn ($relation) => 'registration.'.$relation, IncompleteResultReadProjection::RELATIONS))
             ->orderBy('deadline_at')->orderBy('incomplete_case_id')->paginate($filters['per_page'] ?? 15);
+        \App\Support\HistoricalCourseCode::attach($page->getCollection()->pluck('registration'));
         $page->getCollection()->transform(fn ($case) => $case->attributesToArray() + app(IncompleteResultReadProjection::class)->identity($case->registration));
         return $page->toArray() + ['filter_options' => ['terms' => $options->take(100)->toArray(), 'complete' => $options->count() <= 100, 'limit' => 100]];
     }

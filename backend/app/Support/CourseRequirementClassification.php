@@ -362,6 +362,8 @@ class CourseRequirementClassification
 
     public static function attachStudentProgramCourses(iterable $registrations): void
     {
+        $registrations = collect($registrations);
+        HistoricalCourseCode::attach($registrations);
         $models = collect($registrations)->filter();
         if (\App\Services\AcademicPlanContext::installed()) {
             \App\Services\AcademicPlanContext::assertReady();
