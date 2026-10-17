@@ -43,6 +43,10 @@ final class CatalogCompletionService
                     }
                 }
             }
+            $report['registration_readiness_summary'] = $this->registrationSummary(array_column($report['students'],'registration_readiness'))
+                + ['students_without_preview_blockers'=>count(array_filter($report['students'],fn($s)=>$s['blockers']===[])),
+                    'blocked_students'=>count(array_filter($report['students'],fn($s)=>$s['blockers']!==[])),
+                    'note'=>'No detected preview blockers is not a target assignment approval; review the published target and locked assignment preview.'];
             $report['writes_performed'] = false;
             return $report;
         });
@@ -185,6 +189,11 @@ final class CatalogCompletionService
                     $result[$id]['historical_source_matches'] = $saved['source_version_id'] === null
                         || $this->sourceFingerprint((int) $saved['source_version_id']) === $saved['source_fingerprint'];
                 }
+                $verified = $saved && ($result[$id]['publication_context_matches'] ?? false) && $result[$id]['default_matches']
+                    && $result[$id]['plan_content_matches'] && $result[$id]['historical_source_matches'];
+                $result[$id]['assignment_readiness'] = $verified
+                    ? $this->assignmentReadinessSummary($actor,$id,(int)$versionId,$manifest->hash)
+                    : ['available'=>false,'reason'=>$saved ? 'publication_context_not_verified' : 'target_not_yet_published'];
             }
             return ['writes_performed' => false, 'manifest_hash' => $manifest->hash, 'revision' => $this->transaction->revision(), 'programs' => $result,
                 'schema_prerequisites' => $report['schema_prerequisites'],
@@ -341,7 +350,7 @@ final class CatalogCompletionService
     {
         $id = $target['academic_program_id']; $version = $target['academic_plan_version_id'];
         $ids = DB::table('students')->where('academic_program_id', $id)->orderBy('student_id')->pluck('student_id')->map(fn ($id) => (int) $id)->all();
-        $report = ['already_assigned' => [], 'transferred' => [], 'blocked' => []];
+        $report = ['already_assigned' => [], 'transferred' => [], 'blocked' => [], 'registration_readiness' => []];
         foreach (array_chunk($ids, 50) as $chunk) {
             try { $preview = $this->plans->previewCatalogCompletion($actor, $id, $version, $chunk, $manifest->hash); }
             catch (AcademicPlanException $e) {
@@ -350,6 +359,7 @@ final class CatalogCompletionService
             }
             $eligible = [];
             foreach ($preview['students'] as $student) {
+                $report['registration_readiness'][$student['student_id']] = $student['registration_readiness'];
                 if ($student['from_version_id'] === $version) $report['already_assigned'][] = $student['student_id'];
                 elseif ($student['blockers']) $report['blocked'][] = ['student_id' => $student['student_id'], 'blockers' => $student['blockers'],
                     'before_available' => $student['before']['available'], 'after_available' => $student['after']['available']];
@@ -364,7 +374,38 @@ final class CatalogCompletionService
                 foreach ($eligible as $studentId) $report['blocked'][] = ['student_id' => $studentId, 'blockers' => [$e->errorCode]];
             }
         }
+        $report['summary'] = $this->registrationSummary(array_values($report['registration_readiness']))
+            + ['transferred_students'=>count($report['transferred']),'already_assigned_students'=>count($report['already_assigned']), 'blocked_students'=>count($report['blocked'])];
         return $report;
+    }
+
+    private function registrationSummary(array $rows): array
+    {
+        $result=['historical_settled_registrations'=>0,'blocking_registrations'=>0,'blocking_reasons'=>[]];
+        foreach ($rows as $row) {
+            $result['historical_settled_registrations'] += $row['historical_settled_registrations'];
+            $result['blocking_registrations'] += $row['blocking_registrations'];
+            foreach ($row['blocking_reasons'] as $reason=>$count) $result['blocking_reasons'][$reason]=($result['blocking_reasons'][$reason]??0)+$count;
+        }
+        ksort($result['blocking_reasons']);
+        return $result;
+    }
+
+    /** Compact, fenced read of actual target eligibility; never infer it from registration totals. */
+    private function assignmentReadinessSummary(User $actor, int $programId, int $versionId, string $hash): array
+    {
+        $summary=['available'=>true,'eligible_students'=>0,'already_assigned_students'=>0,'blocked_students'=>0];
+        $registrations=[];
+        $ids=DB::table('students')->where('academic_program_id',$programId)->orderBy('student_id')->pluck('student_id')->all();
+        foreach (array_chunk($ids,50) as $chunk) {
+            try {$preview=$this->plans->catalogCompletionAssignmentReadiness($actor,$programId,$versionId,$chunk,$hash);}
+            catch (AcademicPlanException $e) {return ['available'=>false,'reason'=>$e->errorCode];}
+            foreach ($preview['students'] as $student) {
+                $key=$student['from_version_id']===$versionId ? 'already_assigned_students' : ($student['blockers'] ? 'blocked_students' : 'eligible_students');
+                $summary[$key]++; $registrations[]=$student['registration_readiness'];
+            }
+        }
+        return $summary+$this->registrationSummary($registrations);
     }
 
     /** Connected new/shared origins are published in one bounded transaction. */
