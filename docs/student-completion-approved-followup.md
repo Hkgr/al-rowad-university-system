@@ -4,7 +4,7 @@
 
 Base: `86d27bd` (merged PR #173). This increment uses the existing five student-completion commands and the existing three catalog-completion commands. It adds no web route, frontend, permission, dependency, migration, SQL package, offering, registration or marks import. Nothing here is a production application or a historical plan approval.
 
-Issued private `student-completion.sources.v3` and `v4` contracts remain reconstructible with their original inputs, hashes and meaning. New two-file preparation emits **v5**, through `student-completion.consolidated-inputs.v2`, with the explicit `followup-course-identities.2026-10-18.v2` revision included in its catalog profile/hash. It needs only the handoff workbook and companion SQL snapshot. It retains E-then-C decisions, original observations and the exact 28 approved observation references. A source number is never a number-wide replacement. The competing canonical owners remain separate. Matching copies retain their references; regular and undated supplementary observations remain different evidence. Ownership resolution does not establish an examination date or settle conflicting marks.
+Issued private `student-completion.sources.v3`, `v4` and `v5` contracts remain reconstructible with their original inputs, hashes and meaning. New two-file preparation emits **v6**, through `student-completion.consolidated-inputs.v3`, with the explicit `followup-course-identities.2026-10-18.v3` revision included in its catalog profile/hash. Issued v5 remains on its original mapping revision v2. Preparation needs only the handoff workbook and companion SQL snapshot. It retains E-then-C decisions, original observations and the exact 28 approved observation references. A source number is never a number-wide replacement. The competing canonical owners remain separate. Matching copies retain their references; regular and undated supplementary observations remain different evidence. Ownership resolution does not establish an examination date or settle conflicting marks.
 
 The streaming cached-value reader validates every `SourceRows` hash (canonical UTF-8 JSON with sorted object keys, preserved objects/floats, unescaped Unicode and compact separators) and each `ExtractionControl` count/boundary/hash (row hashes joined with LF, no trailing LF). It checks the `ConflictReview` mirror against the embedded original A–E cells. `Sources` original-file hashes are recorded provenance, **not independently rehashed absent originals**. The actual handoff and SQL are independently fingerprinted executable inputs. `Students` is an index only and is never used for ownership or application authority. Every retained source row has an extraction category; missing numbers remain explicitly unidentified. Zero, false, missing cells, ISO dates, formula text and cached values remain distinct; no formula, macro or workbook prose is executed. Derived enrollment dates use the existing date normalizer while raw ISO evidence is retained.
 
@@ -41,6 +41,9 @@ Deterministic identity amendments:
 | Civil / statics, `exam1:DBMater:833` | CE211 | TI-CE-211 | 4 |
 | Civil / engineering geology, `exam1:DBMater:834` | CE212 | TI-CE-212 | 3 |
 | Civil / reinforced concrete (2), `exam1:DBMater:846` | CE222 | TI-CE-222 | 3 |
+| Civil / research, `exam1:DBMater:838` | RUS211 | TI-CE-RES211 | 2 |
+| Civil / reinforced concrete (1), `exam1:DBMater:839` | CE213 | TI-CE-213 | 3 |
+| Civil / structural mechanics (2), `exam1:DBMater:847` | CE223 | TI-CE-223 | 3 |
 | Environment / global environmental issues | ESI112 | ESI112 | 2 |
 | Environment / climate, earth and people | ESI114 | ESI114 | 2 |
 | Environment / social projects and small business | ESI224 | ESI224 | 3 |
@@ -50,7 +53,34 @@ The four extracted university elective alternatives use `ESI-UE-01` through `ESI
 
 Existing course reuse requires verified subject identity (exact label or an enumerated documented university alias), credits/activity, actual department/university-membership evidence, reviewed before-images and prerequisites. Matching code and credits alone is insufficient. New preparation never adopts prerequisites from a colliding origin: it resolves the source references through the verified program-qualified map; missing/ambiguous evidence, cycles and unsupported existing prerequisite context block the program. Names/contact hours/prerequisites of used origins are not rewritten. New origins and complete memberships/groups are passed through canonical course, workspace, validation, approval and default services. Existing incomplete references are fixed **before** any related origin/plan completion. Each program is transactional: approval failure rolls back its program, draft, origins and events; independently valid contexts may continue. Same-operation shared origins require their exact earlier saved receipt/publication evidence, not a collision bypass.
 
-## Course-identity follow-up (2026-10-18)
+## Approved six-intent decisions (current, 2026-10-18)
+
+Continuation base: PR #175 head `3fdf25266b34eb3c6c86ae5177755c60f7654f2b`. The user subsequently approved all six previously blocked intents. These approvals are separate from workbook source facts, explicitly recorded in the new profile, and do not modify an issued artifact.
+
+Only these exact program/source pairs use existing **409 / RUS211 / مدخل إلى الحياة الجامعية / 2 credits**:
+
+| Program | Source reference | Original source code | Target |
+|---|---|---|---|
+| Civil | `exam1:DBMater:830` | RUS111 | Existing 409 / RUS211 |
+| Surveying | `exam1:DBMater:859` | RUS111 | Existing 409 / RUS211 |
+| Drawing | `exam1:DBMater:802` | RUS111 | Existing 409 / RUS211 |
+
+This is **not** a global RUS111 substitution. The expected target ID is mandatory: absence or changed code/name/credits/activity/university-membership evidence blocks reuse and cannot fall back to creating another university-life course. Live preview and locked application recheck the target before-images and pinned context references.
+
+Civil source **RUS211 / أصول البحث العلمي** instead becomes **TI-CE-RES211**, two credits. It is not university-life. Source prerequisites resolve against program-qualified **original source** identities, so a reference to RUS111 resolves to RUS211 / 409, while a reference to RUS211 resolves to TI-CE-RES211. Existing colliding-origin edges are not adopted. The three additional TI targets require exact subject/credit/activity and Civil department context if already present. Newly created origins receive that department association; their membership classifications and source contact-hour values are not inferred from the new codes. In particular, the research membership remains university elective, preserving the approved Civil four-credit elective budget; it is not silently reclassified to institute mandatory.
+
+The [updated four-program audit](reports/followup-course-identity-audit-2026-10-18-approved.json) rechecks all **116 intents** against the same actual handoff and data-only SQL snapshot. It records original row hashes, source/system labels/codes/hours, ownership/context references, explicit approvals and prerequisites. The earlier audit below is retained unchanged as historical evidence.
+
+| Program | Total | Intents | Verified reuse | Proposed new identity | Offline blockers |
+|---|---:|---:|---:|---:|---:|
+| Civil | 85 | 29 | 7 | 22 | 0 |
+| Surveying | 80 | 28 | 7 | 21 | 0 |
+| Drawing | 78 | 28 | 7 | 21 | 0 |
+| Environment | 74 | 31 | 6 | 25 | 0 |
+
+Actual result: **27 verified reused intents, 89 proposed new identities, no remaining offline intent blockers**. No check was cleared wholesale and READY is not hardcoded. Program totals and all six budgets are unchanged. All supplied curriculum prerequisite fields remain blank; the hypothetical source-code distinction is tested without inventing prerequisites for these real sources. These counts are **not live readiness or publication verification**. New live authorization/scope/revision/identity/plan checks remain mandatory, and this repair performs no operator catalog or student application.
+
+## Earlier course-identity audit (historical v5, 2026-10-18)
 
 Repair base: `839b36db63c8c45a2cb5a8e72e63be0dec46b492`, latest fetched develop after PR #174. The reported credit conflicts were actually distinct subjects sharing codes. IDs 856 / CE211 / مقاومة المواد (1) / 3, 857 / CE212 / علم التحريك- ديناميك / 4, and 859 / CE222 / تصميم وإنشاء مباني / 4 are **not** the institute subjects above. Their origin attributes, prerequisites and existing academic references must remain unchanged.
 
@@ -65,7 +95,7 @@ The [four-program audit](reports/followup-course-identity-audit-2026-10-18.json)
 
 The 24 reused intents are RU111/112/113/121/122/123: the exact source/system alias pairs are enumerated in `FollowupCourseIdentity::SHARED` and supported by actual active university requirement memberships (also documented in the pinned approved catalog). No approximate spelling/subject match grants reuse. The three proposed TI-CE codes are absent in this snapshot; an unverified live collision blocks them rather than overwriting or choosing a suffix. Environment has no **offline identity** blocker; authorization/live state/publication validation still apply.
 
-Additional unresolved evidence, intentionally **not auto-split or merged**:
+Previously unresolved evidence in v5, intentionally **not auto-split or merged** then (resolved only by the subsequent exact approvals above):
 
 | Program / exact source reference | Source subject (credits) | Existing candidate | Blocker |
 |---|---|---|---|
@@ -76,9 +106,9 @@ Additional unresolved evidence, intentionally **not auto-split or merged**:
 | Surveying / `exam1:DBMater:859` | RUS111 / مدخل إلى الحياة الجامعية (2) | Same 409 / RUS211 | Different-code equivalence not approved |
 | Drawing / `exam1:DBMater:802` | RUS111 / مدخل إلى الحياة الجامعية (2) | Same 409 / RUS211 | Different-code equivalence not approved |
 
-The six approved budgets and totals are unchanged; elective alternatives are availability, not extra graduation budget. Independent ready contexts may proceed through the existing per-program transactional workflow; the engineering contexts require an explicit academic identity decision before publication. All supplied curriculum prerequisite fields are blank, and verified shared candidates have no stored prerequisite edges; no colliding-origin edges were imported.
+The six approved budgets and totals are unchanged; elective alternatives are availability, not extra graduation budget. These v5 engineering blockers remain reproducible when reconstructing an issued v5 artifact; the new decisions apply only to newly prepared v6 profiles. All supplied curriculum prerequisite fields are blank, and verified shared candidates have no stored prerequisite edges; no colliding-origin edges were imported.
 
-Issued legacy preparation remains frozen for reconstruction; the live subject/context guard also protects new writes through legacy v3/v4 profiles. Matching historical replay still returns the original saved receipt before stale-revision rejection. It does not rewrite an already completed operation or reinterpret its hash. A formerly accepted but unverified origin is not authority for a new publication.
+Issued legacy preparation remains frozen for reconstruction; the live subject/context guard also protects new writes through legacy v3/v4/v5 profiles. Matching historical replay still returns the original saved receipt before stale-revision rejection. It does not rewrite an already completed operation or reinterpret its hash. A formerly accepted but unverified origin is not authority for a new publication.
 
 A newly created program is never published empty. Its first complete approved plan has no fake transitional predecessor. Historical CLI admission to that particular program requires the reviewed profile hash, exact publication event, new-program provenance, current approved fixed target and actual content fingerprint. The default alone is insufficient. The event states “approved now from recorded source curriculum, not historical approval.” Its narrow internal evidence validator uses Student Affairs' active-account, student-completion permissions, student creation policy and independent program scope; it does not call the permission-bearing scientific page projection or grant scientific capabilities. Scientific publication/browsing still requires its original scientific authorization. Ordinary admission hooks and database assignment triggers remain active. Existing-program transitional admission remains unchanged; no general transfer path is relaxed.
 
@@ -90,31 +120,31 @@ Use fresh private paths **outside Git and the web tree**. Preserve old sources, 
 
 The supplied incident contains **preview only**, revision 5320, no follow-up catalog apply. Start a **new** operation after this fix is deployed: do not resume an invented operation, reuse revision 5320/its review hash, or edit old bundle/review files. The resume instructions below apply only to a future genuinely started, unchanged operation with durable stage receipts.
 
-1. Generate a fresh v5 bundle directly from the **same two supplied files**. No original roster/examination/conflicts workbook, earlier bundle or private source configuration is needed. This is data-only, does not resolve an actor or database service, and does not execute SQL or VBA:
+1. Generate a fresh v6 bundle directly from the **same two supplied files**. No original roster/examination/conflicts workbook, earlier bundle or private source configuration is needed. This is data-only, does not resolve an actor or database service, and does not execute SQL or VBA:
 
 ```sh
-php -d memory_limit=768M artisan student-completion:prepare --handoff=/private/followup/AlRowad-Student-Completion-Handoff.xlsx --snapshot=/private/followup/alrowad_uni_rust17-10-2.sql --output=/private/followup/identity-v5-bundle.json
-sha256sum /private/followup/identity-v5-bundle.json
+php -d memory_limit=768M artisan student-completion:prepare --handoff=/private/followup/AlRowad-Student-Completion-Handoff.xlsx --snapshot=/private/followup/alrowad_uni_rust17-10-2.sql --output=/private/followup/approved-identity-v6-bundle.json
+sha256sum /private/followup/approved-identity-v6-bundle.json
 ```
 
 For a demonstrably disconnected offline shell, the executed preparation also used `APP_ENV=testing CACHE_STORE=array SESSION_DRIVER=array DB_CONNECTION=unavailable_consolidated_probe` (set these environment variables using the shell's syntax). These overrides apply to offline **prepare only**, not authenticated live preview/apply. `--sources=/private/original-config.json` remains available for v1/v2/issued v3 reconstruction; do not combine it with `--handoff`/`--snapshot` or reinterpret old bundles.
 
 On PowerShell use `Get-FileHash -Algorithm SHA256 -LiteralPath <fresh-bundle-path>` instead of `sha256sum`. Do not take this guide's local test bundle hash as authorization for a different file/path.
 
-2. A currently authorized scientific operator with all four actual department scopes (or the existing super-admin guard) previews catalog prerequisites. The `--manifest` for **this** follow-up is the newly generated v5 source bundle; issued v3/v4 bundles remain supported. Existing pinned v1 catalog manifests continue using their original command contract:
+2. A currently authorized scientific operator with all four actual department scopes (or the existing super-admin guard) previews catalog prerequisites. The `--manifest` for **this** follow-up is the newly generated v6 source bundle; issued v3/v4/v5 bundles remain supported with their original meanings. Existing pinned v1 catalog manifests continue using their original command contract:
 
 ```sh
-php -d memory_limit=768M artisan academic-catalog:complete --actor=<catalog-actor-id> --manifest=/private/followup/identity-v5-bundle.json --manifest-hash=<new-bundle-file-sha256> --output=/private/followup/identity-v5-catalog-preview.json
+php -d memory_limit=768M artisan academic-catalog:complete --actor=<catalog-actor-id> --manifest=/private/followup/approved-identity-v6-bundle.json --manifest-hash=<new-bundle-file-sha256> --output=/private/followup/approved-identity-v6-catalog-preview.json
 ```
 
-Review its `review`, blockers, before-images, six budgets, source amendments and proposed origins. Do not substitute an unrelated existing draft. Unexpected hierarchy, origin or prerequisite evidence remains blocked. The command also writes `identity-v5-catalog-preview.json.review.json`.
+Review its `review`, blockers, before-images, six budgets, source amendments and proposed origins. Do not substitute an unrelated existing draft. Unexpected hierarchy, origin or prerequisite evidence remains blocked. The command also writes `approved-identity-v6-catalog-preview.json.review.json`.
 
 3. Generate a **new** catalog UUID with the existing Laravel dependency, `php -r 'require "vendor/autoload.php"; echo Illuminate\Support\Str::uuid(), PHP_EOL;'`. Persist its output privately **before writing**, with the new bundle hash, actor, canonical review hash and **new reviewed revision**. Only after explicit authorization, apply with that UUID and the exact immutable review:
 
 ```sh
-php -d memory_limit=768M artisan academic-catalog:complete --apply --actor=<catalog-actor-id> --manifest=/private/followup/identity-v5-bundle.json --manifest-hash=<new-bundle-file-sha256> --review=/private/followup/identity-v5-catalog-preview.json.review.json --review-hash=<new-canonical-catalog-review-hash> --expected-revision=<new-reviewed-revision> --operation-id=<persisted-new-catalog-uuid> --output=/private/followup/identity-v5-catalog-result.json
-php -d memory_limit=768M artisan academic-catalog:completion-status <same-catalog-uuid> --actor=<same-catalog-actor-id> --manifest=/private/followup/identity-v5-bundle.json --manifest-hash=<new-bundle-file-sha256> --output=/private/followup/identity-v5-catalog-status.json
-php -d memory_limit=768M artisan academic-catalog:verify-completion --actor=<catalog-actor-id> --manifest=/private/followup/identity-v5-bundle.json --manifest-hash=<new-bundle-file-sha256> --output=/private/followup/identity-v5-catalog-verification.json
+php -d memory_limit=768M artisan academic-catalog:complete --apply --actor=<catalog-actor-id> --manifest=/private/followup/approved-identity-v6-bundle.json --manifest-hash=<new-bundle-file-sha256> --review=/private/followup/approved-identity-v6-catalog-preview.json.review.json --review-hash=<new-canonical-catalog-review-hash> --expected-revision=<new-reviewed-revision> --operation-id=<persisted-new-catalog-uuid> --output=/private/followup/approved-identity-v6-catalog-result.json
+php -d memory_limit=768M artisan academic-catalog:completion-status <same-catalog-uuid> --actor=<same-catalog-actor-id> --manifest=/private/followup/approved-identity-v6-bundle.json --manifest-hash=<new-bundle-file-sha256> --output=/private/followup/approved-identity-v6-catalog-status.json
+php -d memory_limit=768M artisan academic-catalog:verify-completion --actor=<catalog-actor-id> --manifest=/private/followup/approved-identity-v6-bundle.json --manifest-hash=<new-bundle-file-sha256> --output=/private/followup/approved-identity-v6-catalog-verification.json
 ```
 
 No automatic write retry after disconnection. The same actor/content UUID returns its durable receipt **before** rejecting an old revision. `--resume` is explicit, uses the same immutable review/UUID, and requires the currently reviewed epoch. Saved stages are not repeated. A changed source/proposal needs a new bundle, review and UUID, not an edited old receipt. Re-read status before resuming; a missing receipt is not rollback proof.
@@ -122,13 +152,13 @@ No automatic write retry after disconnection. The same actor/content UUID return
 For unchanged, interrupted work only, inspect status and a new read-only preview first, then deliberately resume the **original** intent. If a published target changed, stop; do not substitute the new preview for the old immutable review or restore anything:
 
 ```sh
-php -d memory_limit=768M artisan academic-catalog:complete --apply --resume --actor=<same-catalog-actor-id> --manifest=/private/followup/identity-v5-bundle.json --manifest-hash=<same-new-bundle-file-sha256> --review=/private/followup/identity-v5-catalog-preview.json.review.json --review-hash=<original-catalog-review-hash> --expected-revision=<currently-reviewed-epoch> --operation-id=<same-catalog-uuid> --output=/private/followup/identity-v5-catalog-resumed-result.json
+php -d memory_limit=768M artisan academic-catalog:complete --apply --resume --actor=<same-catalog-actor-id> --manifest=/private/followup/approved-identity-v6-bundle.json --manifest-hash=<same-new-bundle-file-sha256> --review=/private/followup/approved-identity-v6-catalog-preview.json.review.json --review-hash=<original-catalog-review-hash> --expected-revision=<currently-reviewed-epoch> --operation-id=<same-catalog-uuid> --output=/private/followup/approved-identity-v6-catalog-resumed-result.json
 ```
 
 4. Only after verifying the relevant publications, obtain a **fresh live student preview**, using the existing student-policy/read/manage permissions and actual program scope. A `PARTIAL/BLOCKED` catalog is not proof that all four programs were published. The offline snapshot is not apply authority. This repair does not authorize or perform student application:
 
 ```sh
-php -d memory_limit=768M artisan student-completion:preview --actor=<student-actor-id> --bundle=/private/followup/identity-v5-bundle.json --bundle-hash=<new-bundle-file-sha256> --output=/private/followup/identity-v5-student-preview.json
+php -d memory_limit=768M artisan student-completion:preview --actor=<student-actor-id> --bundle=/private/followup/approved-identity-v6-bundle.json --bundle-hash=<new-bundle-file-sha256> --output=/private/followup/approved-identity-v6-student-preview.json
 ```
 
 The student writer retains catalog-first locking, per-student transactions, locked evidence/review checks, actor-bound receipts and explicit resume. Never transfer an existing student, change enrollment evidence, clear a blocker by changing registrations/results, or import marks through these commands.
@@ -137,13 +167,26 @@ After reading student status, an explicitly reviewed continuation of unchanged s
 
 ## Earlier operation verification
 
-Run `verify` with its **original** bundle and UUID. Old v1/v2 and issued v3/v4 bundles retain their original reconstruction and replay contracts; v5 does not mutate them. A receipt is historical, not an instruction to restore old current values.
+Run `verify` with its **original** bundle and UUID. Old v1/v2 and issued v3/v4/v5 bundles retain their original reconstruction and replay contracts; v6 does not mutate them. A receipt is historical, not an instruction to restore old current values.
 
 Verification separately returns `current_state_matches`, `current_state_verdict`, `subsequent_audit` and the academic-evidence comparison. An unbroken later completion receipt chain, with exact before/after fields and preserved assignment context, can explain a legitimate later correction; it does not make the old current-state comparison true or dismiss academic-evidence changes. Unexplained changes require an audit investigation, not automatic “damage” classification, repair, or success. Changes made by other workflows require their own audit evidence review; this increment does not invent such proof.
 
 ## Executed verification and limits
 
-### Identity repair verification (2026-10-18)
+### Six-intent approval verification (current continuation, 2026-10-18)
+
+- Regenerated the two-file bundle **without a configured database connection** and fully reconstructed it: source contract v6, input contract v3, mapping revision `followup-course-identities.2026-10-18.v3`. Private bundle SHA-256 `c396e7fba0dd9028999218fc174d655a16932dee876892c5effa72f5240a80ff`; catalog profile hash `6b72cc135a22b9497e0ea023e5ced4e7a24be64bf3dec2278c034ccbb22fb2ad`. These local evidence hashes are not live apply authorization. The unchanged executable input fingerprints are recorded in the audit.
+- Independently reconstructed **issued v5**, not upgraded in place: file hash `cd8f9f462149a52542228d1b7a8e2a55c006c8f4168e196a05e2342b527402af`, original profile hash `22b5d31f5cc679ddf01535fd7fc19103d1e4a87a30e03d784ae8d492902c4c13`, including its historical six blockers. Actual issued v4 and v3 reconstruction also passed with exactly the hashes documented below. No old bundle, review, audit or operation receipt was edited.
+- Academic-only audit verification reconciled **all 116 original row hashes and source facts**, credits, contact hours, advisory placements and classifications against the earlier audit; all program totals/six requirement budgets remain unchanged. Exactly three memberships resolve to 409. New totals: 27 verified reuse / 89 proposed new / zero offline intent blockers. Private student-containing source bundles/reports remain outside Git.
+- **111/111 focused tests, 708 assertions**: the previous nine test classes plus `ApprovedFollowupIdentityDecisionsTest`. Explicitly covers the Civil source-code distinction (RUS111 life versus RUS211 research), exact references/credits/source hashes, required target 409 and real university scope, all new-code collisions/context checks, unrelated blockers retained, source-specific prerequisite resolution without inherited edges, one-origin/three-membership publication and replay/resume/verification, and issued v5/v6 round trips. SQLite service fixtures are behavior tests, not concurrency evidence.
+- **91/91 affected tests, 13,590 assertions**, in the eight plan/catalog/placement/result classes listed in the historical repair results below.
+- Final isolated MariaDB runner **passed**, actual `SELECT VERSION()` **`10.11.18-MariaDB`**, with installed catalog/plan/code/placement/I guards and independent processes/connections. Approved v6 publication was interrupted after the first committed stage by another catalog revision; stale continuation was rejected, explicit resume retained that stage and all prior receipts, and verification/replay passed. Exactly three new university-life memberships reference 409 with no RUS111 origin; research is separate. Full content comparisons preserve all six old origins, existing membership rows, prerequisite edges, offerings/announcement times, historical receipts and academic evidence. Test people are synthetic; no university SQL imported. The runner stopped only its own disposable loopback server. An intermediate assertion incorrectly compared DB objects by identity and failed; it was corrected to compare serialized content. New 409 memberships are checked separately from preservation of existing membership rows. That failed attempt is not counted as a successful test.
+- Five independent static/pure contracts passed. Registration/progression source contracts remain **19/22 passing**, with the same three old-literal failures reproduced on a clean worktree at this continuation's actual base **`3fdf252`**. No test was weakened or skipped.
+- PHP **8.4.14** syntax, Composer **2.8.12** validation/installed platform requirements and `git diff --check` passed. No dependency installation. No frontend/build/visual acceptance is claimed or required by this backend-only change.
+
+No production connection, live catalog preview/application, student application, marks import, new SQL/migration/permission/dependency, merge or deployment. No remaining **offline academic identity** blockers were found; live authorization, current catalog identity/context, revision and publication validation remain unperformed against production and must not be inferred from source analysis.
+
+### Earlier identity repair verification (historical v5, 2026-10-18)
 
 - Reproduced the same-code/**same-credit** different-subject regression before the live guard fix: it incorrectly lacked `course_identity_unverified`. The regression passes after the fix. Exact three-row mapping/source hashes/placements, unverified proposed-code rejection, scope evidence, explicit shared aliases, program-qualified prerequisites, unknown evidence/cycles and additional unapproved collisions are covered.
 - **104/104 focused tests, 588 assertions**, through `FollowupCourseIdentityTest`, `ApprovedFollowupCatalogTest`, `ApprovedFollowupManifestTest`, `ConsolidatedStudentCompletionTest`, `StudentCompletionSourcesTest`, `StudentCompletionResolutionTest`, `StudentCompletionFollowupTest`, `StudentCompletionBehaviorTest`, `CompletionHistoricalRegistrationTest`. Includes read-only preparation/preview, canonical publication/replay/resume/verification, unchanged old origin/prerequisite/history content and issued-contract reconstruction.

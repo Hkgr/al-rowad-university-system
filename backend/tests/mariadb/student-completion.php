@@ -31,16 +31,20 @@ if(($argv[1]??'')==='fixture') {
     }
     // Nonempty historical references for the three conflicting academic identities.
     // Fixture data only, before installing fixed-plan guards; no source SQL import.
-    DB::table('academic_programs')->insert(['academic_program_id'=>901,'department_id'=>1,'program_code'=>'SYN-OLD-IDENTITIES','program_name'=>'Synthetic existing identity history','total_credit_hours'=>11]);
+    DB::table('academic_programs')->insert(['academic_program_id'=>901,'department_id'=>1,'program_code'=>'SYN-OLD-IDENTITIES','program_name'=>'Synthetic existing identity history','total_credit_hours'=>19]);
     $group=DB::table('academic_requirement_groups')->insertGetId(['academic_program_id'=>901,'group_code'=>'SYN-OLD-IDENTITY-G','group_name'=>'Synthetic existing identity requirement',
-        'requirement_scope'=>'department','requirement_type'=>'mandatory','required_credit_hours'=>11],'requirement_group_id');
+        'requirement_scope'=>'department','requirement_type'=>'mandatory','required_credit_hours'=>17],'requirement_group_id');
+    $lifeGroup=DB::table('academic_requirement_groups')->insertGetId(['academic_program_id'=>901,'group_code'=>'SYN-OLD-LIFE-G','group_name'=>'Synthetic existing university elective',
+        'requirement_scope'=>'university','requirement_type'=>'elective','required_credit_hours'=>2],'requirement_group_id');
     DB::table('course_prerequisites')->insert(['course_id'=>856,'prerequisite_course_id'=>857,'minimum_result_status_id'=>null]);
-    foreach([856,857,859] as $id) {
-        $membership=DB::table('program_courses')->insertGetId(['academic_program_id'=>901,'course_id'=>$id,'course_type'=>'mandatory','academic_level_id'=>2,'recommended_semester_id'=>1],'program_course_id');
-        DB::table('program_course_requirement_groups')->insert(['program_course_id'=>$membership,'requirement_group_id'=>$group]);
+    DB::table('course_prerequisites')->insert(['course_id'=>778,'prerequisite_course_id'=>860,'minimum_result_status_id'=>null]);
+    foreach([856,857,859,409,778,860] as $id) {
+        $membership=DB::table('program_courses')->insertGetId(['academic_program_id'=>901,'course_id'=>$id,'course_type'=>$id===409?'elective':'mandatory','academic_level_id'=>2,'recommended_semester_id'=>1],'program_course_id');
+        DB::table('program_course_requirement_groups')->insert(['program_course_id'=>$membership,'requirement_group_id'=>$id===409?$lifeGroup:$group]);
     }
     DB::table('students')->insert(['student_id'=>1901,'academic_program_id'=>901,'student_number'=>'SYN-OLD-IDENTITIES']);
-    foreach([856=>['CE211','مقاومة المواد (1)',3],857=>['CE212','علم التحريك- ديناميك',4],859=>['CE222','تصميم وإنشاء مباني',4]] as $id=>[$code,$name,$credits]) {
+    foreach([856=>['CE211','مقاومة المواد (1)',3],857=>['CE212','علم التحريك- ديناميك',4],859=>['CE222','تصميم وإنشاء مباني',4],
+        409=>['RUS211','مدخل إلى الحياة الجامعية',2],778=>['CE213','مواد البناء',3],860=>['CE223','ميكانيك الموائع1 (هيدروليك1)',3]] as $id=>[$code,$name,$credits]) {
         $course=DB::table('courses')->where('course_id',$id)->sole();
         $check($course->course_code===$code&&$course->course_name===$name&&(int)$course->credit_hours===$credits,'Conflicting fixture identity differs');
         DB::table('course_offerings')->insert(['course_offering_id'=>11000+$id,'academic_program_id'=>901,'course_id'=>$id,'academic_year_id'=>1,'semester_id'=>1,'status'=>'closed','result_announced_at'=>'2025-04-03 12:00:00']);
@@ -299,13 +303,17 @@ app(AcademicCatalogTransaction::class)->run(function()use(&$departments){
         ?? DB::table('colleges')->insertGetId(['college_code'=>$code,'college_name'=>'Synthetic identity institute '.$code,'is_active'=>true],'college_id');
     foreach(range(0,3) as $i)$departments[]=DB::table('departments')->insertGetId(['college_id'=>$units[$i===3?'INST-CD':'INST-ENG'],'department_code'=>'SYN-ID-D'.$i,'department_name'=>'Synthetic identity department '.$i,'is_active'=>true],'department_id');
 });
-$ids=[856,857,859];$oldOrigins=DB::table('courses')->whereIn('course_id',$ids)->orderBy('course_id')->get()->toJson();
+$ids=[856,857,859,409,778,860];$oldOrigins=DB::table('courses')->whereIn('course_id',$ids)->orderBy('course_id')->get()->toJson();
 $oldMemberships=DB::table('program_courses')->whereIn('course_id',$ids)->orderBy('program_course_id')->get()->toJson();
+$oldMemberIds=DB::table('program_courses')->whereIn('course_id',$ids)->pluck('program_course_id');
 $oldPrerequisites=DB::table('course_prerequisites')->whereIn('course_id',$ids)->orderBy('course_prerequisite_id')->get()->toJson();
-$check(DB::table('courses')->whereIn('course_id',$ids)->count()===3&&DB::table('program_courses')->whereIn('course_id',$ids)->count()===3
+$oldOfferings=DB::table('course_offerings')->whereIn('course_id',$ids)->orderBy('course_offering_id')->get()->toJson();
+$oldReceipts=DB::table('user_activity_logs')->orderBy('activity_log_id')->get()->all();
+$check(DB::table('courses')->whereIn('course_id',$ids)->count()===6&&DB::table('program_courses')->whereIn('course_id',$ids)->count()===6
     &&DB::table('course_prerequisites')->whereIn('course_id',$ids)->exists(),'Historical identity assertions require nonempty fixtures');
 $academicBefore=app(\App\Services\CatalogCompletion\CatalogCompletionService::class)->academicFingerprint();
-$corrected=\Tests\Support\FollowupIdentityFixture::bundle($departments,['INST-ENG','INST-ENG','INST-ENG','INST-CD']);$r=$catalog->preview($actor,$corrected);$check($r['status']==='READY','Corrected identity preview blocked: '.json_encode($r));$id=(string)Str::uuid();
+$corrected=\Tests\Support\FollowupIdentityFixture::bundle($departments,['INST-ENG','INST-ENG','INST-ENG','INST-CD'],'SYN-ID',true);$r=$catalog->preview($actor,$corrected);$check($r['status']==='READY','Corrected identity preview blocked: '.json_encode($r));$id=(string)Str::uuid();
+$check(json_encode($oldReceipts)===DB::table('user_activity_logs')->orderBy('activity_log_id')->get()->toJson(),'Identity preview wrote audit');
 $process=proc_open([PHP_BINARY,__FILE__,'worker'],[['pipe','r'],['pipe','w'],['file',$environment->config['directory'].'/catalog-identity.stderr','a']],$pipes);
 try {
     $connection=$read($pipes[1]);$check($connection['ready']!==(int)DB::selectOne('SELECT CONNECTION_ID() id')->id,'Identity worker reused parent connection');
@@ -317,10 +325,16 @@ $civilProgram=\App\Models\AcademicProgram::where('program_code','SYN-ID-P0')->so
 $done=$catalog->apply($actor,$corrected,$r['review'],$r['review_hash'],$id,$revision(),true);$check($done['status']==='COMPLETE','Corrected identity resume did not complete: '.json_encode($done));
 $check($prior===DB::table('academic_plan_events')->where('academic_program_id',$civilProgram->getKey())->orderBy('academic_plan_event_id')->get()->toJson(),'Corrected first stage republished');
 $check($oldOrigins===DB::table('courses')->whereIn('course_id',$ids)->orderBy('course_id')->get()->toJson(),'Conflicting origins changed');
-$check($oldMemberships===DB::table('program_courses')->whereIn('course_id',$ids)->orderBy('program_course_id')->get()->toJson(),'Conflicting memberships changed');
+$check($oldMemberships===DB::table('program_courses')->whereIn('program_course_id',$oldMemberIds)->orderBy('program_course_id')->get()->toJson(),'Existing membership contents changed');
 $check($oldPrerequisites===DB::table('course_prerequisites')->whereIn('course_id',$ids)->orderBy('course_prerequisite_id')->get()->toJson(),'Conflicting prerequisites changed');
+$check($oldOfferings===DB::table('course_offerings')->whereIn('course_id',$ids)->orderBy('course_offering_id')->get()->toJson(),'Old offering identity/announcement changed');
+foreach($oldReceipts as $receipt)$check((array)$receipt===(array)DB::table('user_activity_logs')->where('activity_log_id',$receipt->activity_log_id)->sole(),'Earlier operation receipt changed');
 $check($academicBefore===app(\App\Services\CatalogCompletion\CatalogCompletionService::class)->academicFingerprint(),'Identity repair changed academic history');
-foreach(['TI-CE-211'=>4,'TI-CE-212'=>3,'TI-CE-222'=>3] as $code=>$hours){$course=DB::table('courses')->where('course_code',$code)->sole();$check((int)$course->credit_hours===$hours,'Wrong new identity credits');$check(!DB::table('course_prerequisites')->where('course_id',$course->course_id)->exists(),'Prerequisites leaked from source-code collision');}
+foreach(['TI-CE-211'=>4,'TI-CE-212'=>3,'TI-CE-222'=>3,'TI-CE-RES211'=>2,'TI-CE-213'=>3,'TI-CE-223'=>3] as $code=>$hours){$course=DB::table('courses')->where('course_code',$code)->sole();$check((int)$course->credit_hours===$hours,'Wrong new identity credits');$check(!DB::table('course_prerequisites')->where('course_id',$course->course_id)->exists(),'Prerequisites leaked from source-code collision');}
+$versions=\App\Models\AcademicProgram::whereIn('program_code',['SYN-ID-P0','SYN-ID-P1','SYN-ID-P2'])->pluck('default_academic_plan_version_id');
+$check(DB::table('program_courses')->whereIn('academic_plan_version_id',$versions)->where('course_id',409)->count()===3,'Three university-life memberships do not share 409');
+$check(DB::table('courses')->where('course_code','RUS211')->count()===1&&!DB::table('courses')->where('course_code','RUS111')->exists(),'University-life origin duplicated');
+$research=DB::table('courses')->where('course_code','TI-CE-RES211')->sole();$check((int)$research->course_id!==409&&$research->course_name==='أصول البحث العلمي','Research was confused with university-life');
 $check($catalog->verify($actor,$corrected)['status']==='COMPLETE','Corrected publication verification failed');$logs=DB::table('user_activity_logs')->orderBy('activity_log_id')->get()->toJson();
 $check($done===$catalog->apply($actor,$corrected,$r['review'],$r['review_hash'],$id,'0'),'Corrected historical replay differs');$check($logs===DB::table('user_activity_logs')->orderBy('activity_log_id')->get()->toJson(),'Corrected replay wrote');
-echo "PASS revised identities / installed guards / independent stage revision conflict / explicit resume / publication verify / exact old origin, prerequisite, membership and academic history preservation\n";
+echo "PASS all approved identities / three memberships reuse 409 / research stays distinct / installed guards / independent stage revision conflict / explicit resume / publication verify / exact old origin, prerequisite, membership, offering, receipt and academic history preservation\n";

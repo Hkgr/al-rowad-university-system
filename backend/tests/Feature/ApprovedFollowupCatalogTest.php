@@ -84,6 +84,42 @@ final class ApprovedFollowupCatalogTest extends TestCase
         $r=$this->apply($b);self::assertSame('COMPLETE',$r['status'],json_encode($r));self::assertSame('لغة عربية (1)',DB::table('courses')->where('course_id',403)->value('course_name'));
         self::assertSame(1,DB::table('courses')->where('course_code','RU111')->count());
     }
+    private function approvedIdentities(): array
+    {
+        foreach([409=>['RUS211','مدخل إلى الحياة الجامعية',2],778=>['CE213','مواد البناء',3],860=>['CE223','ميكانيك الموائع1 (هيدروليك1)',3],
+            856=>['CE211','مقاومة المواد (1)',3],857=>['CE212','علم التحريك- ديناميك',4],859=>['CE222','تصميم وإنشاء مباني',4]] as $id=>[$code,$name,$hours])
+            DB::table('courses')->insert(['course_id'=>$id,'course_code'=>$code,'course_name'=>$name,'credit_hours'=>$hours,'is_active'=>true]);
+        DB::table('course_prerequisites')->insert(['course_id'=>778,'prerequisite_course_id'=>860,'minimum_result_status_id'=>null]);
+        $membership=DB::table('program_courses')->insertGetId(['academic_program_id'=>1,'course_id'=>409,'course_type'=>'elective','academic_level_id'=>1,'recommended_semester_id'=>1],'program_course_id');
+        $group=DB::table('academic_requirement_groups')->where('academic_program_id',1)->where('requirement_scope','university')->where('requirement_type','elective')->value('requirement_group_id');
+        DB::table('program_course_requirement_groups')->insert(['program_course_id'=>$membership,'requirement_group_id'=>$group]);
+        return \Tests\Support\FollowupIdentityFixture::bundle([3,4,5,6],['INST-ENG','INST-ENG','INST-ENG','INST-CD'],'SYN-APPROVED',true);
+    }
+    public function test_approved_six_decisions_publish_one_life_origin_and_a_distinct_research_origin_and_preserve_receipts(): void
+    {
+        $b=$this->approvedIdentities();$ids=[409,778,860,856,857,859];$origins=DB::table('courses')->whereIn('course_id',$ids)->orderBy('course_id')->get()->toJson();
+        $members=DB::table('program_courses')->orderBy('program_course_id')->get()->toJson();$edges=DB::table('course_prerequisites')->orderBy('course_prerequisite_id')->get()->toJson();
+        $history=app(\App\Services\CatalogCompletion\CatalogCompletionService::class)->academicFingerprint();$service=app(FollowupCatalogService::class);$actor=User::findOrFail(1);$r=$service->preview($actor,$b);
+        self::assertSame('READY',$r['status'],json_encode($r));self::assertSame($members,DB::table('program_courses')->orderBy('program_course_id')->get()->toJson());$id=(string)Str::uuid();
+        $result=$service->apply($actor,$b,$r['review'],$r['review_hash'],$id,$r['review']['revision']);self::assertSame('COMPLETE',$result['status'],json_encode($result));
+        $versions=AcademicProgram::whereIn('program_code',['SYN-APPROVED-P0','SYN-APPROVED-P1','SYN-APPROVED-P2'])->pluck('default_academic_plan_version_id');
+        self::assertSame(3,DB::table('program_courses')->whereIn('academic_plan_version_id',$versions)->where('course_id',409)->count());
+        self::assertSame(1,DB::table('courses')->where('course_code','RUS211')->count());self::assertFalse(DB::table('courses')->where('course_code','RUS111')->exists());
+        $research=DB::table('courses')->where('course_code','TI-CE-RES211')->sole();self::assertNotSame(409,(int)$research->course_id);self::assertSame('أصول البحث العلمي',$research->course_name);self::assertSame(2,(int)$research->credit_hours);
+        self::assertTrue(DB::table('course_departments')->where('course_id',$research->course_id)->where('department_id',3)->exists());
+        foreach(['TI-CE-RES211'=>2,'TI-CE-213'=>3,'TI-CE-223'=>3] as $code=>$hours){$course=DB::table('courses')->where('course_code',$code)->sole();self::assertSame($hours,(int)$course->credit_hours);self::assertNull($course->theoretical_hours);self::assertNull($course->practical_hours);self::assertFalse(DB::table('course_prerequisites')->where('course_id',$course->course_id)->exists());}
+        self::assertSame($origins,DB::table('courses')->whereIn('course_id',$ids)->orderBy('course_id')->get()->toJson());self::assertSame($edges,DB::table('course_prerequisites')->orderBy('course_prerequisite_id')->get()->toJson());self::assertSame($history,app(\App\Services\CatalogCompletion\CatalogCompletionService::class)->academicFingerprint());
+        $logs=DB::table('user_activity_logs')->get()->toJson();self::assertSame($result,$service->apply($actor,$b,$r['review'],$r['review_hash'],$id,'0'));self::assertSame($logs,DB::table('user_activity_logs')->get()->toJson());
+        self::assertSame('COMPLETE',$service->apply($actor,$b,$r['review'],$r['review_hash'],$id,app(AcademicCatalogTransaction::class)->revision(),true)['status']);self::assertSame('COMPLETE',$service->verify($actor,$b)['status']);
+    }
+    public function test_live_approved_life_identity_and_scope_changes_stay_blocked_without_any_publication(): void
+    {
+        $b=$this->approvedIdentities();DB::table('courses')->where('course_id',409)->update(['course_name'=>'Changed target subject']);
+        $s=app(FollowupCatalogService::class);$a=User::findOrFail(1);$before=DB::table('user_activity_logs')->get()->toJson();$r=$s->preview($a,$b);
+        self::assertContains('course_identity_unverified:exam1:DBMater:830',$r['review']['programs'][0]['blockers']);self::assertSame($before,DB::table('user_activity_logs')->get()->toJson());
+        DB::table('courses')->where('course_id',409)->update(['course_name'=>'مدخل إلى الحياة الجامعية']);DB::table('program_course_requirement_groups')->whereIn('program_course_id',DB::table('program_courses')->where('course_id',409)->pluck('program_course_id'))->delete();
+        $r=$s->preview($a,$b);self::assertContains('course_identity_unverified:exam1:DBMater:859',$r['review']['programs'][1]['blockers']);self::assertSame($before,DB::table('user_activity_logs')->get()->toJson());
+    }
     public function test_student_affairs_operator_can_admit_with_publication_proof_without_scientific_capabilities(): void
     {
         $b=$this->bundle();$this->apply($b);$p=AcademicProgram::where('program_code','NEW-0')->sole();$a=$this->affairsOperator((int)$p->getKey());

@@ -16,7 +16,7 @@ abstract class StudentCompletionCommand extends Command
             if ($this->operation==='prepare') {
                 if($this->option('handoff')||$this->option('snapshot')) {
                     if($this->option('sources'))throw new \InvalidArgumentException('Choose consolidated inputs or the original configuration, not both.');
-                    $config=['contract'=>'student-completion.consolidated-inputs.v2','approval_profile'=>'approved-followup-2026-10-17'];
+                    $config=['contract'=>'student-completion.consolidated-inputs.v3','approval_profile'=>'approved-followup-2026-10-17'];
                     foreach(['handoff','snapshot'] as $key){$path=$this->required($key);if(!is_file($path))throw new \InvalidArgumentException('Input missing: '.$key);$config[$key]=['path'=>$path,'sha256'=>hash_file('sha256',$path)];}
                 } else $config=json_decode(file_get_contents($this->required('sources')),true,flags:JSON_THROW_ON_ERROR);
                 $bundle=app(CompletionSources::class)->prepare($config);

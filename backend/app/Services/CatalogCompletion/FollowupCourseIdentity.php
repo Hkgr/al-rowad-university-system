@@ -8,10 +8,22 @@ use App\Services\StudentCompletion\CompletionData;
 final class FollowupCourseIdentity
 {
     public const REVISION='followup-course-identities.2026-10-18.v2';
+    // Issued v5 profiles retain REVISION forever; new approvals use a new input/profile revision.
+    public const APPROVED_REVISION='followup-course-identities.2026-10-18.v3';
     private const CIVIL=[
         'exam1:DBMater:833'=>['CE211','علم السكون – استاتيك',4,'TI-CE-211'],
         'exam1:DBMater:834'=>['CE212','جيولوجيا هندسية',3,'TI-CE-212'],
         'exam1:DBMater:846'=>['CE222','منشأ بيتون مسلح (2)',3,'TI-CE-222'],
+    ];
+    private const APPROVED_CIVIL=[
+        'exam1:DBMater:838'=>['RUS211','أصول البحث العلمي',2,'TI-CE-RES211'],
+        'exam1:DBMater:839'=>['CE213','منشأ بيتون مسلح (1)',3,'TI-CE-213'],
+        'exam1:DBMater:847'=>['CE223','ميكانيك الإنشاءات (2)',3,'TI-CE-223'],
+    ];
+    private const UNIVERSITY_LIFE=[
+        'engineering_civil'=>'exam1:DBMater:830',
+        'engineering_survey'=>'exam1:DBMater:859',
+        'engineering_drawing'=>'exam1:DBMater:802',
     ];
     // Exact documented university labels, not a fuzzy Arabic-name normalizer.
     // The existing shared university membership is independently required too.
@@ -51,6 +63,10 @@ final class FollowupCourseIdentity
 
     public function contextMatches(array $row,array $program,array $contexts): bool
     {
+        if(isset($row['identity_department_id'])) {
+            foreach($contexts as $c)if((int)$c['department_id']===(int)$row['identity_department_id'])return true;
+            return false;
+        }
         foreach($contexts as $c)if(($row['requirement_scope']==='university'&&$c['kind']==='university_membership')
             ||($row['requirement_scope']!=='university'&&(int)$c['department_id']===(int)$program['department_id']))return true;
         return false;
@@ -80,23 +96,39 @@ final class FollowupCourseIdentity
     /** Only the explicitly new preparation revision invokes this transformation. */
     public function revise(array $config,array $state,array $tables): array
     {
-        if(($config['identity_mapping_revision']??null)!==self::REVISION)throw new \InvalidArgumentException('Unsupported follow-up identity mapping revision.');
+        $revision=$config['identity_mapping_revision']??null;
+        if(!in_array($revision,[self::REVISION,self::APPROVED_REVISION],true))throw new \InvalidArgumentException('Unsupported follow-up identity mapping revision.');
+        $approved=$revision===self::APPROVED_REVISION;
         $sources=array_column($tables['Curriculum'],null,'record_id');$byCode=[];$contextMap=[];
         foreach($state['courses'] as $c){$byCode[$c['course_code']][]=$c;$contextMap[(int)$c['course_id']]=$this->contexts($state,(int)$c['course_id']);}
         $approval=['decision_id'=>'civil-distinct-course-identities-2026-10-18','authority'=>'USER_EXPLICIT_REQUEST','approved_at'=>'2026-10-18',
             'decision'=>'Only Civil source rows DBMater 833, 834 and 846 use TI-CE-211, TI-CE-212 and TI-CE-222. Existing CE origins remain unchanged.'];
         if(!in_array($approval,$config['approvals']??[],true))$config['approvals'][]=$approval;
+        $civilApproval=['decision_id'=>'civil-additional-distinct-identities-2026-10-18','authority'=>'USER_EXPLICIT_REQUEST','approved_at'=>'2026-10-18',
+            'decision'=>'Only Civil DBMater 838, 839 and 847 use TI-CE-RES211, TI-CE-213 and TI-CE-223. Preserve existing origins and requirement budgets/classifications.'];
+        $lifeApproval=['decision_id'=>'university-life-exact-three-source-equivalence-2026-10-18','authority'=>'USER_EXPLICIT_REQUEST','approved_at'=>'2026-10-18',
+            'decision'=>'Only Civil DBMater 830, Surveying 859 and Drawing 802 are equivalent to existing 409 / RUS211 / مدخل إلى الحياة الجامعية / 2 credits. No global code substitution.'];
+        if($approved)foreach([$civilApproval,$lifeApproval] as $a)if(!in_array($a,$config['approvals']??[],true))$config['approvals'][]=$a;
         foreach($config['programs'] as &$p) {
             foreach(['courses','elective_alternatives'] as $kind)foreach($p[$kind]??[] as $i=>$row) {
                 $source=$sources[$row['record_id']]??null;$original=$source['source_code']??null;
-                if($p['key']==='engineering_civil'&&isset(self::CIVIL[$row['record_id']])) {
-                    [$code,$name,$credits,$system]=self::CIVIL[$row['record_id']];
+                // These are derived constraints of exact approved rows, never caller-supplied scope overrides.
+                unset($row['approved_existing_course_id'],$row['identity_department_id']);
+                $civil=self::CIVIL+($approved?self::APPROVED_CIVIL:[]);
+                $life=$approved&&(self::UNIVERSITY_LIFE[$p['key']]??null)===$row['record_id'];
+                $definition=$p['key']==='engineering_civil'?($civil[$row['record_id']]??null):null;
+                if($life)$definition=['RUS111','مدخل إلى الحياة الجامعية',2,'RUS211'];
+                if($definition) {
+                    [$code,$name,$credits,$system]=$definition;
                     if(!$source||CompletionData::text($original)!==$code||CompletionData::text($source['course_name'])!==$name||(int)$source['credits']!==$credits) {
                         $p['blockers'][]='approved_identity_source_changed:'.$row['record_id'];
                     } else {
                         $row['system_code']=$system;
+                        $decision=$life?$lifeApproval:(isset(self::APPROVED_CIVIL[$row['record_id']])?$civilApproval:$approval);
                         $config['amendments'][$row['record_id']]=['before_code'=>$code,'before_credits'=>$credits,'system_code'=>$system,'credit_hours'=>$credits,
-                            'reason'=>'Distinct institute subject; existing source-code origin is a different course.','approval_reference'=>$approval];
+                            'reason'=>$life?'Explicit three-source equivalence to existing university-life identity 409.':'Distinct institute subject; existing source-code origin is a different course.','approval_reference'=>$decision];
+                        if($life)$row['approved_existing_course_id']=409;
+                        elseif($approved&&isset(self::APPROVED_CIVIL[$row['record_id']]))$row['identity_department_id']=(int)$p['department_id'];
                     }
                 }
                 // Never keep the old code-only origin or its inherited prerequisite proposal.
@@ -104,18 +136,19 @@ final class FollowupCourseIdentity
                 $row['original_source_code']=$original;$matches=$byCode[$row['system_code']]??[];$candidate=count($matches)===1?$matches[0]:null;
                 $contexts=$candidate?$contextMap[(int)$candidate['course_id']]:[];
                 $valid=$candidate&&$this->nameMatches($row,$candidate)&&(int)$candidate['credit_hours']===$row['credit_hours']
-                    &&(bool)$candidate['is_active']&&$this->contextMatches($row,$p,$contexts);
+                    &&(bool)$candidate['is_active']&&$this->contextMatches($row,$p,$contexts)
+                    &&(!isset($row['approved_existing_course_id'])||(int)$candidate['course_id']===$row['approved_existing_course_id']);
                 $alternates=[];
                 if(!$matches&&!isset($config['amendments'][$row['record_id']])&&$original!==null)foreach($state['courses'] as $other) {
                     $otherContext=$contextMap[(int)$other['course_id']];
                     if($this->nameMatches($row,$other)&&(int)$other['credit_hours']===$row['credit_hours']&&$this->contextMatches($row,$p,$otherContext))
                         $alternates[]=['origin'=>$this->origin($other),'context'=>$otherContext];
                 }
-                $blocked=count($matches)>1||($candidate&&!$valid)||$alternates!==[];
+                $blocked=count($matches)>1||($candidate&&!$valid)||$alternates!==[]||(isset($row['approved_existing_course_id'])&&!$valid);
                 if($alternates)$p['blockers'][]='different_code_identity_requires_review:'.$row['record_id'];
                 elseif($blocked)$p['blockers'][]='course_identity_unverified:'.$row['record_id'];
                 if($valid)$row['existing']=$this->origin($candidate);
-                $row['identity_audit']=['revision'=>self::REVISION,'record_id'=>$row['record_id'],'source_hash'=>$row['source_hash'],
+                $row['identity_audit']=['revision'=>$revision,'record_id'=>$row['record_id'],'source_hash'=>$row['source_hash'],
                     'source_code'=>$original,'source_name'=>$row['course_name'],'system_code'=>$row['system_code'],'credits'=>$row['credit_hours'],
                     'program_key'=>$p['key'],'college_code'=>$p['college_code'],'department_id'=>$p['department_id'],
                     'candidate'=>$candidate?$this->origin($candidate):null,'candidate_context'=>$contexts,
