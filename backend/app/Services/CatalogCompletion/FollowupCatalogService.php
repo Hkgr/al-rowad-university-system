@@ -81,7 +81,9 @@ final class FollowupCatalogService
                 $owned=isset($publishedOrigins[$row['system_code']])&&hash_equals(CompletionData::hash($publishedOrigins[$row['system_code']]),CompletionData::hash($attributes));
                 $identity=app(FollowupCourseIdentity::class);$contexts=$identity->liveContexts((int)$current->getKey());
                 if(!$identity->nameMatches($row,$attributes)||(!$owned&&!$identity->contextMatches($row,$p,$contexts)))$blockers[]='course_identity_unverified:'.$row['record_id'];
-                foreach($row['identity_audit']['candidate_context']??[] as $reference)if(!in_array($reference,$contexts,true))$blockers[]='course_identity_context_changed:'.$row['record_id'];
+                // Persisted artifacts sort associative keys; compare all typed fields, not insertion order.
+                $contextHashes=array_map(CompletionData::hash(...),$contexts);
+                foreach($row['identity_audit']['candidate_context']??[] as $reference)if(!in_array(CompletionData::hash($reference),$contextHashes,true))$blockers[]='course_identity_context_changed:'.$row['record_id'];
                 if(!$expected&&!$publication&&!$owned)$blockers[]='unreviewed_course_collision:'.$row['record_id'];
                 if($expected&&((int)$expected['course_id']!==(int)$current->getKey()||!hash_equals(CompletionData::hash($this->origin($expected)),CompletionData::hash($this->origin($current->only(array_keys($expected)))))))$blockers[]='course_origin_changed:'.$row['record_id'];
                 if((int)$current->credit_hours!==$row['credit_hours']||!$current->is_active)$blockers[]='course_credit_or_activity_conflict:'.$row['record_id'];

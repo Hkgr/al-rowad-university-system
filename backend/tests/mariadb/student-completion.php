@@ -52,11 +52,13 @@ if(($argv[1]??'')==='fixture') {
         DB::table('student_course_results')->insert(['student_course_registration_id'=>11000+$id,'result_status_id'=>1,'final_mark'=>80,'theoretical_total'=>80]);
         DB::table('grade_approvals')->insert(['course_offering_id'=>11000+$id,'approval_status_id'=>1]);
     }
+    \Tests\Support\PersistedFollowupCatalogFixture::seed();
     echo "PASS synthetic completion fixture prepared before plan guards\n";exit;
 }
 if(($argv[1]??'')==='worker') {
     echo json_encode(['ready'=>(int)$p->query('SELECT CONNECTION_ID()')->fetchColumn()])."\n";flush();
     $job=json_decode(fgets(STDIN),true,flags:JSON_THROW_ON_ERROR);echo "{\"entered\":true}\n";flush();
+    if(isset($job['manifest']))$job['bundle']=app(\App\Services\StudentCompletion\CompletionSources::class)->load($job['manifest'],$job['manifest_hash']);
     if(isset($job['pause_after_stage'])) {
         $stages=0;
         DB::listen(function($query)use(&$stages,$job){
@@ -309,7 +311,7 @@ $oldMemberIds=DB::table('program_courses')->whereIn('course_id',$ids)->pluck('pr
 $oldPrerequisites=DB::table('course_prerequisites')->whereIn('course_id',$ids)->orderBy('course_prerequisite_id')->get()->toJson();
 $oldOfferings=DB::table('course_offerings')->whereIn('course_id',$ids)->orderBy('course_offering_id')->get()->toJson();
 $oldReceipts=DB::table('user_activity_logs')->orderBy('activity_log_id')->get()->all();
-$check(DB::table('courses')->whereIn('course_id',$ids)->count()===6&&DB::table('program_courses')->whereIn('course_id',$ids)->count()===6
+$check(DB::table('courses')->whereIn('course_id',$ids)->count()===6&&DB::table('program_courses')->where('academic_program_id',901)->whereIn('course_id',$ids)->count()===6
     &&DB::table('course_prerequisites')->whereIn('course_id',$ids)->exists(),'Historical identity assertions require nonempty fixtures');
 $academicBefore=app(\App\Services\CatalogCompletion\CatalogCompletionService::class)->academicFingerprint();
 $corrected=\Tests\Support\FollowupIdentityFixture::bundle($departments,['INST-ENG','INST-ENG','INST-ENG','INST-CD'],'SYN-ID',true);$r=$catalog->preview($actor,$corrected);$check($r['status']==='READY','Corrected identity preview blocked: '.json_encode($r));$id=(string)Str::uuid();
@@ -338,3 +340,33 @@ $research=DB::table('courses')->where('course_code','TI-CE-RES211')->sole();$che
 $check($catalog->verify($actor,$corrected)['status']==='COMPLETE','Corrected publication verification failed');$logs=DB::table('user_activity_logs')->orderBy('activity_log_id')->get()->toJson();
 $check($done===$catalog->apply($actor,$corrected,$r['review'],$r['review_hash'],$id,'0'),'Corrected historical replay differs');$check($logs===DB::table('user_activity_logs')->orderBy('activity_log_id')->get()->toJson(),'Corrected replay wrote');
 echo "PASS all approved identities / three memberships reuse 409 / research stays distinct / installed guards / independent stage revision conflict / explicit resume / publication verify / exact old origin, prerequisite, membership, offering, receipt and academic history preservation\n";
+
+// A real persisted v6 artifact, loader and authenticated Artisan command boundary.
+$private=$environment->config['directory'].'/persisted-artifacts';mkdir($private,0700);
+$a=\Tests\Support\PersistedFollowupCatalogFixture::write($private);$bundle=$a['bundle'];$profile=$bundle['catalog_followup']['hash'];
+$immutable=[];foreach(glob($private.'/*') as $file)$immutable[$file]=hash_file('sha256',$file);
+$academic=app(\App\Services\CatalogCompletion\CatalogCompletionService::class)->academicFingerprint();$audit=DB::table('user_activity_logs')->orderBy('activity_log_id')->get()->toJson();
+$args=['--actor'=>1,'--manifest'=>$a['path'],'--manifest-hash'=>$a['hash'],'--output'=>$private.'/preview.json'];
+$exit=\Illuminate\Support\Facades\Artisan::call('academic-catalog:complete',$args);$check($exit===0,'Persisted command preview failed: '.\Illuminate\Support\Facades\Artisan::output());
+$preview=json_decode(file_get_contents($private.'/preview.json'),true,flags:JSON_THROW_ON_ERROR);$check($preview['status']==='READY'&&!$preview['writes_performed'],'Persisted contexts not ready');
+$check($audit===DB::table('user_activity_logs')->orderBy('activity_log_id')->get()->toJson(),'Persisted preview wrote audit');$id=(string)Str::uuid();
+$process=proc_open([PHP_BINARY,__FILE__,'worker'],[['pipe','r'],['pipe','w'],['file',$environment->config['directory'].'/persisted-worker.stderr','a']],$pipes);
+try {
+    $connection=$read($pipes[1]);$check($connection['ready']!==(int)DB::selectOne('SELECT CONNECTION_ID() id')->id,'Persisted worker shares connection');
+    fwrite($pipes[0],json_encode(['kind'=>'catalog','manifest'=>$a['path'],'manifest_hash'=>$a['hash'],'review'=>$preview['review'],'hash'=>$preview['review_hash'],'id'=>$id,'revision'=>$preview['review']['revision'],'pause_after_stage'=>1])."\n");fflush($pipes[0]);
+    $check($read($pipes[1])['entered'],'Persisted worker not entered');$check($read($pipes[1])['stage_committed']===1,'Persisted stage not committed');
+    app(AcademicCatalogTransaction::class)->run(fn()=>DB::table('departments')->where('department_id',1)->update(['description'=>'Persisted artifact independent epoch barrier']));
+    fwrite($pipes[0],"continue\n");fflush($pipes[0]);$out=$read($pipes[1]);$check(!$out['ok']&&$out['code']==='catalog_followup_stale','Persisted write adopted a concurrent epoch');
+} finally {fclose($pipes[0]);fclose($pipes[1]);proc_close($process);}
+$prior=DB::table('academic_plan_events')->where('context->manifest_hash',$profile)->orderBy('academic_plan_event_id')->get()->all();
+$args=['--actor'=>1,'--manifest'=>$a['path'],'--manifest-hash'=>$a['hash'],'--apply'=>true,'--resume'=>true,'--review'=>$private.'/preview.json.review.json','--review-hash'=>$preview['review_hash'],'--expected-revision'=>$revision(),'--operation-id'=>$id,'--output'=>$private.'/resumed.json'];
+$exit=\Illuminate\Support\Facades\Artisan::call('academic-catalog:complete',$args);$check($exit===0,'Persisted resume failed: '.\Illuminate\Support\Facades\Artisan::output());
+foreach($prior as $event)$check((array)$event===(array)DB::table('academic_plan_events')->where('academic_plan_event_id',$event->academic_plan_event_id)->sole(),'Persisted resume rewrote a committed stage');
+$result=json_decode(file_get_contents($private.'/resumed.json'),true,flags:JSON_THROW_ON_ERROR);$check($result['status']==='COMPLETE','Persisted resume incomplete');
+$exit=\Illuminate\Support\Facades\Artisan::call('academic-catalog:verify-completion',['--actor'=>1,'--manifest'=>$a['path'],'--manifest-hash'=>$a['hash'],'--output'=>$private.'/verification.json']);
+$check($exit===0,'Persisted verification command failed');$check(json_decode(file_get_contents($private.'/verification.json'),true)['status']==='COMPLETE','Persisted verification incomplete');
+$logs=DB::table('user_activity_logs')->orderBy('activity_log_id')->get()->toJson();$check($result===$catalog->apply($actor,$bundle,$preview['review'],$preview['review_hash'],$id,'0'),'Persisted historical replay differs');
+$check($logs===DB::table('user_activity_logs')->orderBy('activity_log_id')->get()->toJson(),'Persisted replay wrote');
+$check($academic===app(\App\Services\CatalogCompletion\CatalogCompletionService::class)->academicFingerprint(),'Persisted publication changed academic evidence');
+foreach($immutable as $file=>$hash)$check($hash===hash_file('sha256',$file),'Persisted source artifact changed');
+echo "PASS persisted v6 / real writer + loader / authenticated Artisan preview / independent epoch conflict / explicit command resume / publication verification / pure replay / immutable artifacts and academic content\n";

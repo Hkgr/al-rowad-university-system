@@ -2,6 +2,8 @@
 
 ## Scope and authority
 
+**Comparison-only repair after PR #175:** preserve an existing v6 bundle that still reconstructs with unchanged sources. It does **not** need regeneration or a new profile revision. Use a fresh live preview/review filename after deployment; do not reuse revision 5320 or invent a resume operation. See [persisted-context repair and exact preview commands](followup-context-canonical-comparison.md). The preparation sequence below remains for genuinely new source/academic intent, not a requirement of this comparison fix.
+
 Base: `86d27bd` (merged PR #173). This increment uses the existing five student-completion commands and the existing three catalog-completion commands. It adds no web route, frontend, permission, dependency, migration, SQL package, offering, registration or marks import. Nothing here is a production application or a historical plan approval.
 
 Issued private `student-completion.sources.v3`, `v4` and `v5` contracts remain reconstructible with their original inputs, hashes and meaning. New two-file preparation emits **v6**, through `student-completion.consolidated-inputs.v3`, with the explicit `followup-course-identities.2026-10-18.v3` revision included in its catalog profile/hash. Issued v5 remains on its original mapping revision v2. Preparation needs only the handoff workbook and companion SQL snapshot. It retains E-then-C decisions, original observations and the exact 28 approved observation references. A source number is never a number-wide replacement. The competing canonical owners remain separate. Matching copies retain their references; regular and undated supplementary observations remain different evidence. Ownership resolution does not establish an examination date or settle conflicting marks.
