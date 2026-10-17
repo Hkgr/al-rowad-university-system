@@ -219,9 +219,9 @@ guard-marked server. SQLite tests are not evidence of MariaDB locks.
 
 Executed focused regressions passed **31 tests / 125 assertions**. The expanded
 eight-class run passed **126 tests / 14,463 assertions**; the four additional
-record-count assertions were then exercised in the focused run. A final combined
-run, including the two historical source-contract classes, is recorded in the
-PR verification section. Three failures in those old contracts were reproduced
+record-count assertions were then exercised in the focused run. The final combined
+ten-class run executed **148 tests / 14,959 assertions: 145 passed, 3 failed**.
+All three failures are the old source contracts below, reproduced
 on a clean detached worktree at base `ebb5eff7501df91a00fb59fb5bdf77913d950f14`:
 
 - `StudentAcademicProgressionContractTest::test_canonical_calculators_are_reused_not_duplicated`
