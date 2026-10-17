@@ -9,7 +9,8 @@ try {
     foreach($step in @(@('catalog.php','init'),@('catalog.php','01_apply.sql'),@('academic-plans.php','fixture'),
         @('academic-plans.php','complete-runtime-fixture'),@('academic-plans.php','complete-decision-fixture'),
         @('catalog-completion.php','prepare'),@('student-completion.php','fixture'),@('academic-plans.php','01_apply.sql'),
-        @('academic-plans.php','02_verify.sql'),@('student-completion.php','run'))) {
+        @('academic-plans.php','02_verify.sql'),@('catalog-completion.php','01_apply.sql'),@('catalog-completion.php','02_verify.sql'),
+        @('elective-placement.php','install'),@('student-completion.php','run'))) {
         & php (Join-Path $PSScriptRoot $step[0]) $step[1]
         if($LASTEXITCODE -ne 0){throw ('Failed guarded step: '+($step -join ' '))}
     }

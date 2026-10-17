@@ -34,7 +34,16 @@ if(($argv[1]??'')==='fixture') {
 if(($argv[1]??'')==='worker') {
     echo json_encode(['ready'=>(int)$p->query('SELECT CONNECTION_ID()')->fetchColumn()])."\n";flush();
     $job=json_decode(fgets(STDIN),true,flags:JSON_THROW_ON_ERROR);echo "{\"entered\":true}\n";flush();
-    try {$r=$service->apply($actor,$job['bundle'],$job['review'],$job['hash'],$job['id'],$job['revision']);echo json_encode(['ok'=>true,'result'=>$r])."\n";}
+    if(isset($job['pause_after_stage'])) {
+        $stages=0;
+        DB::listen(function($query)use(&$stages,$job){
+            if(str_starts_with(strtolower($query->sql),'insert into `user_activity_logs`')&&in_array('student_completion.followup_catalog_program',$query->bindings,true)&&++$stages===$job['pause_after_stage']) {
+                DB::afterCommit(function()use($stages){echo json_encode(['stage_committed'=>$stages])."\n";flush();if(trim((string)fgets(STDIN))!=='continue')throw new RuntimeException('Synthetic process interrupted after durable stage');});
+            }
+        });
+    }
+    try {$writer=($job['kind']??null)==='catalog'?app(\App\Services\CatalogCompletion\FollowupCatalogService::class):$service;
+        $r=$writer->apply($actor,$job['bundle'],$job['review'],$job['hash'],$job['id'],$job['revision']);echo json_encode(['ok'=>true,'result'=>$r])."\n";}
     catch(Throwable $e){echo json_encode(['ok'=>false,'code'=>$e->errorCode??get_class($e),'message'=>$e->getMessage()])."\n";}
     exit;
 }
@@ -143,3 +152,123 @@ $result=$service->apply($actor,$admin,$review['review'],$review['review_hash'],(
 $check(Student::findOrFail(1)->student_status_id===1&&Student::findOrFail(1)->first_name==='Test','Identity-only write changed status');
 $check($before===$snapshot(),'Identity-only correction rewrote academic history');
 echo "PASS administrative E / concurrent new open registration without result / explicit blocker references / identity-only history preservation\n";
+
+// The new missing-only administrative defaults run through the installed path too.
+$follow=\Tests\Support\StudentCompletionFixture::bundle('FOLLOWUP-NEW');
+$follow['identities'][0]['status']=null;$follow['identities'][0]['enrollment_date']=null;
+$decisions=[['decision_id'=>'status','field'=>'status_default','canonical_number'=>null,'approved_value'=>'active','authority'=>'USER_APPROVED','_row'=>2],
+    ['decision_id'=>'date','field'=>'enrollment_date_fallback','canonical_number'=>null,'approved_value'=>'SEPTEMBER_1_OF_EARLIEST_EVIDENCED_EXAM_YEAR','authority'=>'USER_APPROVED','_row'=>3]];
+$follow['sources']['handoff']=['sha256'=>str_repeat('a',64)];
+$follow['config']['followup']=['policy'=>'approved_missing_students_2026_10','decision_ids'=>['status','date'],'owner_record_ids'=>[],
+    'table_hashes'=>['Decisions'=>CompletionData::hash($decisions),'ExamOwners'=>CompletionData::hash([])]];
+$follow=(new \App\Services\StudentCompletion\CompletionFollowup)->compile($follow,['Decisions'=>$decisions,'ExamOwners'=>[]]);
+$raceDraft=$plans->copy($actor,900,$version,['revision'=>$revision(),'label'=>'Synthetic concurrent draft']);
+$raceDraftId=(int)$raceDraft['version']->getKey();
+$race('followup-plan-content',$follow,fn()=>DB::table('academic_requirement_groups')->where('academic_program_id',900)->where('academic_plan_version_id',$raceDraftId)->update(['group_name'=>'Concurrent editable draft label']));
+$race('followup-create',$follow,fn()=>Student::create(['student_number'=>'FOLLOWUP-NEW','first_name'=>'Test','last_name'=>'Student','father_name'=>'Parent',
+    'academic_program_id'=>900,'current_academic_level_id'=>1,'student_status_id'=>1,'enrollment_date'=>'2023-09-01']));
+echo "PASS missing-only approved date/status / installed plan-content and student-creation races\n";
+
+// Four synthetic new contexts; never import a source workbook or university snapshot.
+$college=DB::table('colleges')->where('college_id',1)->value('college_code');$programs=[];
+app(AcademicCatalogTransaction::class)->run(function()use(&$programs,$college) {
+    foreach(['engineering_civil','engineering_survey','engineering_drawing','environment'] as $i=>$key) {
+        $department=DB::table('departments')->insertGetId(['college_id'=>1,'department_code'=>'SYN-FOLLOWUP-'.($i+1),'department_name'=>'Synthetic follow-up '.($i+1),'is_active'=>1],'department_id');
+        $groups=[];foreach(['university','college','department'] as $scope)foreach(['mandatory','elective'] as $type)$groups[]=['requirement_scope'=>$scope,'requirement_type'=>$type,
+            'required_credit_hours'=>$scope==='college'&&$type==='mandatory'?3:0,'is_active'=>true];
+        $programs[]=['key'=>$key,'department_id'=>$department,'college_code'=>$college,'program_code'=>'SYN-FOLLOWUP-'.($i+1),'program_name'=>'Synthetic approved '.($i+1),
+            'degree_level'=>'Diploma','duration_years'=>2,'total_credit_hours'=>3,'blockers'=>[],'requirements'=>['total_credit_hours'=>3,'groups'=>$groups],
+            'courses'=>[['record_id'=>'synthetic:'.$i,'system_code'=>'SYN-FU-SHARED','course_name'=>'Synthetic shared follow-up origin','credit_hours'=>3,'requirement_scope'=>'college','course_type'=>'mandatory',
+                'academic_level_id'=>1,'recommended_semester_id'=>1,'prerequisite_codes'=>[],'existing_prerequisites'=>[]]]];
+    }
+});
+$catalogBundle=['contract'=>'student-completion.sources.v3','catalog_followup'=>['contract'=>'approved-catalog.followup.v1','programs'=>$programs,'historical_approval_claimed'=>false]];
+$catalogBundle['catalog_followup']['hash']=CompletionData::hash($catalogBundle['catalog_followup']);$catalog=app(\App\Services\CatalogCompletion\FollowupCatalogService::class);
+$review=$catalog->preview($actor,$catalogBundle);$check($review['status']==='READY','Synthetic catalog follow-up not ready');
+// A real independent connection waits behind the same catalog root; changing a plan invalidates its reviewed write.
+DB::beginTransaction();DB::table('academic_catalog_control')->where('control_id',1)->lockForUpdate()->first();
+DB::table('departments')->where('department_id',$programs[0]['department_id'])->update(['description'=>'Concurrent synthetic context']);
+$process=proc_open([PHP_BINARY,__FILE__,'worker'],[['pipe','r'],['pipe','w'],['file',$environment->config['directory'].'/catalog-followup.stderr','a']],$pipes);
+try {
+    $identity=$read($pipes[1]);fwrite($pipes[0],json_encode(['kind'=>'catalog','bundle'=>$catalogBundle,'review'=>$review['review'],'hash'=>$review['review_hash'],'id'=>(string)Str::uuid(),'revision'=>$review['review']['revision']])."\n");fflush($pipes[0]);$check($read($pipes[1])['entered'],'Catalog worker did not enter');
+    $monitor=$environment->connect(true);$waiting=false;$until=microtime(true)+20;
+    do{$q=$monitor->prepare('SELECT INFO FROM information_schema.PROCESSLIST WHERE ID=?');$q->execute([$identity['ready']]);$sql=strtolower((string)$q->fetchColumn());if(str_contains($sql,'academic_catalog_control')&&str_contains($sql,'for update')){$waiting=true;break;}usleep(20000);}while(microtime(true)<$until);
+    $check($waiting,'Catalog follow-up worker did not wait');DB::commit();$r=$read($pipes[1]);$check(!$r['ok']&&$r['code']==='catalog_followup_stale','Catalog follow-up accepted a stale review');
+}finally{if(DB::transactionLevel())DB::rollBack();fclose($pipes[0]);fclose($pipes[1]);proc_close($process);}
+$r=$catalog->preview($actor,$catalogBundle);$op=(string)Str::uuid();$before=$snapshot();
+$applied=$catalog->apply($actor,$catalogBundle,$r['review'],$r['review_hash'],$op,$r['review']['revision']);
+$check($applied['status']==='COMPLETE','Four synthetic catalog contexts failed: '.json_encode($applied));
+$check($catalog->verify($actor,$catalogBundle)['status']==='COMPLETE','Catalog publication verification failed');
+$check($applied===$catalog->apply($actor,$catalogBundle,$r['review'],$r['review_hash'],$op,'0'),'Catalog replay differs');
+$after=$snapshot();foreach(['academic_plan_versions','program_courses','academic_requirement_groups'] as $table)unset($before[$table],$after[$table]);$check($before===$after,'Catalog follow-up changed academic outcomes');
+echo "PASS catalog follow-up / observed independent wait / stale rejected / four canonical approvals / shared origin / historical contents / pure replay\n";
+
+$affairsId=DB::table('users')->insertGetId(['username'=>'synthetic-affairs-only','account_status_id'=>1],'user_id');
+$roleId=DB::table('roles')->insertGetId(['role_code'=>'student_affairs'],'role_id');DB::table('user_roles')->insert(['user_id'=>$affairsId,'role_id'=>$roleId]);
+foreach(['students.view','students.manage','grades.view'] as $code)DB::table('role_permissions')->insert(['role_id'=>$roleId,'permission_id'=>DB::table('permissions')->where('permission_code',$code)->value('permission_id')]);
+$targetProgram=\App\Models\AcademicProgram::where('program_code',$programs[0]['program_code'])->sole();
+DB::table('user_access_scopes')->insert(['user_id'=>$affairsId,'scope_type'=>'program','scope_id'=>$targetProgram->getKey()]);$affairs=User::findOrFail($affairsId);
+$admit=\Tests\Support\StudentCompletionFixture::bundle('SYN-AFFAIRS-ADMISSION');$admit['contract']='student-completion.sources.v3';$admit['catalog_followup']=$catalogBundle['catalog_followup'];
+$admit['config']['program_aliases']['Synthetic program']=$targetProgram->program_code;$admit['identities'][0]['college']=DB::table('colleges')->where('college_id',1)->value('college_name');
+$check(!$affairs->isSuperAdmin()&&!$affairs->hasPermission(\App\Support\ScientificProgramAccess::VIEW),'Synthetic affairs operator has scientific authority');
+$r=$service->preview($affairs,$admit);$check($r['counts']['ready_create']===1,'Scoped Student Affairs preview rejected publication');
+$result=$service->apply($affairs,$admit,$r['review'],$r['review_hash'],(string)Str::uuid(),$r['review']['revision']);
+$check($result['status']==='COMPLETE'&&Student::where('student_number','SYN-AFFAIRS-ADMISSION')->count()===1,'Scoped Student Affairs admission failed');
+try{$plans->version($affairs,(int)$targetProgram->getKey(),(int)$targetProgram->default_academic_plan_version_id);throw new RuntimeException('Affairs acquired scientific browsing');}
+catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){$check($e->getStatusCode()===403,'Wrong scientific authorization denial');}
+echo "PASS non-super-admin Student Affairs-only admission / installed assignment trigger / no scientific management capability\n";
+
+// A barrier AFTER commit proves a different connection's epoch cannot be adopted
+// as this operation's next revision. No production service contains a test hook.
+$catalogCase=function(string $prefix)use($catalogBundle,$college): array {
+    $copy=$catalogBundle;
+    app(AcademicCatalogTransaction::class)->run(function()use(&$copy,$prefix,$college){
+        foreach($copy['catalog_followup']['programs'] as $i=>&$target) {
+            $target['department_id']=DB::table('departments')->insertGetId(['college_id'=>1,'department_code'=>$prefix.'-D'.$i,'department_name'=>'Synthetic '.$prefix.' '.$i,'is_active'=>1],'department_id');
+            $target['program_code']=$prefix.'-P'.$i;$target['courses'][0]['system_code']=$prefix.'-COURSE';
+        }unset($target);
+    });
+    unset($copy['catalog_followup']['hash']);$copy['catalog_followup']['hash']=CompletionData::hash($copy['catalog_followup']);return $copy;
+};
+$barrier=function(string $label,int $pause,callable $compete,string $signal='continue')use($catalogCase,$catalog,$actor,$read,$check,$environment,$revision): array {
+    $b=$catalogCase($label);$r=$catalog->preview($actor,$b);$id=(string)Str::uuid();
+    $process=proc_open([PHP_BINARY,__FILE__,'worker'],[['pipe','r'],['pipe','w'],['file',$environment->config['directory'].'/catalog-barrier.stderr','a']],$pipes);
+    try {
+        $identity=$read($pipes[1]);$check($identity['ready']!==(int)DB::selectOne('SELECT CONNECTION_ID() id')->id,'Race reused one connection');
+        fwrite($pipes[0],json_encode(['kind'=>'catalog','bundle'=>$b,'review'=>$r['review'],'hash'=>$r['review_hash'],'id'=>$id,'revision'=>$r['review']['revision'],'pause_after_stage'=>$pause])."\n");fflush($pipes[0]);$check($read($pipes[1])['entered'],'Worker missing');
+        $check($read($pipes[1])['stage_committed']===$pause,'Worker did not pause after committed publication');
+        $stages=DB::table('user_activity_logs')->where('action_code','student_completion.followup_catalog_program')->orderBy('activity_log_id')->get()->toJson();
+        $compete($b);$epoch=$revision();fwrite($pipes[0],$signal."\n");fflush($pipes[0]);$out=$read($pipes[1]);
+        $check(!$out['ok']&&$out['code']==='catalog_followup_stale','Concurrent post-stage commit silently adopted: '.json_encode($out));
+        $check($stages===DB::table('user_activity_logs')->where('action_code','student_completion.followup_catalog_program')->orderBy('activity_log_id')->get()->toJson(),'Stale worker wrote dependent stage receipts');
+        $check(app(\App\Services\StudentCompletion\CompletionReceipts::class)->find('followup_catalog_result',$id)===null,'False final result recorded');
+        $check($revision()===$epoch,'Stale worker advanced catalog');
+        echo 'PASS independent post-commit barrier / immutable receipts / no false COMPLETE: '.$label."\n";
+        return [$b,$r,$id];
+    }finally{fclose($pipes[0]);fclose($pipes[1]);proc_close($process);}
+};
+$changeDefault=function(array $b)use($plans,$actor,$revision): void {
+    $program=\App\Models\AcademicProgram::where('program_code',$b['catalog_followup']['programs'][0]['program_code'])->sole();
+    $new=$plans->copy($actor,(int)$program->getKey(),(int)$program->default_academic_plan_version_id,['revision'=>$revision(),'label'=>'Synthetic independent authorized replacement']);
+    $v=(int)$new['version']->getKey();$plans->approve($actor,(int)$program->getKey(),$v,['revision'=>$revision(),'confirmed'=>true]);$plans->setDefault($actor,(int)$program->getKey(),$v,['revision'=>$revision(),'confirmed'=>true]);
+};
+[$interrupted,$reviewed,$interruptedId]=$barrier('SYN-BETWEEN',1,$changeDefault);
+$preserved=$snapshot();$logs=DB::table('user_activity_logs')->orderBy('activity_log_id')->get()->toJson();
+try{$catalog->apply($actor,$interrupted,$reviewed['review'],$reviewed['review_hash'],$interruptedId,$revision(),true);throw new RuntimeException('Changed publication accepted on explicit resume');}
+catch(\App\Exceptions\AcademicPlanException $e){$check($e->errorCode==='catalog_completion_default_changed','Wrong resume conflict');}
+$check($preserved===$snapshot()&&$logs===DB::table('user_activity_logs')->orderBy('activity_log_id')->get()->toJson(),'Resume repaired evidence or rewrote history');
+$barrier('SYN-EPOCH',1,fn()=>app(AcademicCatalogTransaction::class)->run(fn()=>DB::table('departments')->where('department_id',1)->update(['description'=>'Independent catalog commit'])));
+$barrier('SYN-FINAL',4,$changeDefault);
+echo "PASS explicit interrupted resume validates prior publication before any dependent work / final target change rejected\n";
+[$unchanged,$original,$unchangedId]=$barrier('SYN-RESUME',1,fn()=>null,'interrupt');
+$programId=\App\Models\AcademicProgram::where('program_code',$unchanged['catalog_followup']['programs'][0]['program_code'])->value('academic_program_id');
+$source=DB::table('academic_plan_events')->where('academic_program_id',$programId)->orderBy('academic_plan_event_id')->get()->toJson();
+$stagesBefore=DB::table('user_activity_logs')->where('action_code','student_completion.followup_catalog_program')->orderBy('activity_log_id')->get()->all();
+$resumed=$catalog->apply($actor,$unchanged,$original['review'],$original['review_hash'],$unchangedId,$revision(),true);
+$check($resumed['status']==='COMPLETE','Unchanged interruption could not explicitly resume');
+$check($source===DB::table('academic_plan_events')->where('academic_program_id',$programId)->orderBy('academic_plan_event_id')->get()->toJson(),'Resume repeated an earlier program publication');
+foreach($stagesBefore as $receipt)$check((array)$receipt===(array)DB::table('user_activity_logs')->where('activity_log_id',$receipt->activity_log_id)->sole(),'Resume rewrote an earlier receipt');
+$check(DB::table('courses')->where('course_code','SYN-RESUME-COURSE')->count()===1,'Resume duplicated a shared origin');
+$audit=DB::table('user_activity_logs')->orderBy('activity_log_id')->get()->toJson();$check($resumed===$catalog->apply($actor,$unchanged,$original['review'],$original['review_hash'],$unchangedId,'0'),'Unchanged replay differs');
+$check($audit===DB::table('user_activity_logs')->orderBy('activity_log_id')->get()->toJson(),'Historical replay wrote');
+echo "PASS real interrupted unchanged resume / same earlier publication and receipts / one shared origin / historical replay\n";

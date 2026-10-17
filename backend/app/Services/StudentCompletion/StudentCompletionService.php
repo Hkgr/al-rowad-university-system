@@ -17,7 +17,7 @@ final class StudentCompletionService
     {
         $this->authorize($actor,false); AcademicPlanContext::assertReady();
         return $this->transactions->snapshot(function()use($actor,$bundle) {
-            $state=$this->database->read($actor);
+            $state=$this->database->read($actor,null,isset($bundle['catalog_followup']));
             $report=$this->projection->build($bundle,$state,'live_authorized_database'); $proposals=[];
             $allowedPrograms=array_fill_keys(array_column($state['academic_programs'],'academic_program_id'),true);
             $university=$actor->isSuperAdmin()||collect($this->scope->scopes($actor))->contains(fn($s)=>$s['type']==='university');
@@ -94,7 +94,7 @@ final class StudentCompletionService
                     abort_unless($this->scope->canMutateProgram($actor,$program),403);
                     $student=Student::withTrashed()->where('student_number',$proposal['number'])->lockForUpdate()->first();
                     if($student) app(AcademicRecordGraphLocker::class)->lockStudentAcademicGraph((int)$student->getKey());
-                    $currentState=$this->database->read($actor,[$proposal['number']]);
+                    $currentState=$this->database->read($actor,[$proposal['number']],isset($bundle['catalog_followup']));
                     $current=$this->projection->build($bundle,$currentState,'locked_database',[$proposal['number']])['students'][0]??null;
                     if($current)$current=$this->scopeRow($current,array_fill_keys(array_column($currentState['academic_programs'],'academic_program_id'),true),
                         $actor->isSuperAdmin()||collect($this->scope->scopes($actor))->contains(fn($s)=>$s['type']==='university'));
@@ -106,9 +106,10 @@ final class StudentCompletionService
                         if($student || !$current['creation']['ready']) throw new CompletionException('student_completion_creation_blocked','Creation is no longer ready.');
                         $fields=$current['creation']['fields'];
                         Validator::make($fields,(new \App\Http\Requests\Student\StoreStudentRequest)->rules())->validate();
-                        $student=AcademicPlanAdmission::createHistorical($actor,$fields,$current['historical_plan']['version_id'],$operationId);
+                        $student=AcademicPlanAdmission::createHistorical($actor,$fields,$current['historical_plan']['version_id'],$operationId,$current['historical_plan']['completion_context']??null);
                         $result=['number'=>$proposal['number'],'action'=>'created','student_id'=>(int)$student->getKey(),'before'=>null,
                             'after'=>$fields,'historical_plan'=>$current['historical_plan'],'source_bundle_hash'=>$review['bundle_hash'],
+                            'completion_provenance'=>$current['creation']['provenance'],
                             'status_authority'=>$current['status_change']['authority'],'administrative_decision'=>$current['status_change']['decision'],
                             'identity_authorities'=>$current['approved_identity']['fields']??[]];
                     } else {
@@ -192,15 +193,44 @@ final class StudentCompletionService
                 if($student&&$saved) {
                     $matches=(int)$student->getKey()===$saved['student_id'];
                     foreach($saved['after'] as $field=>$value) {
-                        $actual=$student->getRawOriginal($field);if((string)$actual!==(string)$value)$matches=false;
+                        $actual=$student->getRawOriginal($field);
+                        if($field==='enrollment_date')$actual=CompletionData::date($actual)??$actual;
+                        if((string)$actual!==(string)$value)$matches=false;
                     }
                     if($saved['action']==='created') $matches=$matches&&AcademicPlanContext::forStudent($student)->versionId===$saved['historical_plan']['version_id'];
                 }
-                $results[]=['number'=>$proposal['number'],'receipt_found'=>$saved!==null,'current_state_matches'=>$matches];
+                $later=$student&&$saved&&!$matches?$this->subsequentAudit($student,$saved,$receipt):null;
+                $results[]=['number'=>$proposal['number'],'receipt_found'=>$saved!==null,'current_state_matches'=>$matches,
+                    'current_state_verdict'=>$matches?'matches_recorded_result':($later?'subsequent_completion_audit_explains_current_fields':'diverged_requires_audit_review_no_automatic_damage_inference'),
+                    'subsequent_audit'=>$later];
             }
             return ['operation_id'=>$id,'writes_performed'=>false,'revision'=>$this->transactions->revision(),'students'=>$results,
                 'existing_academic_evidence_matches'=>hash_equals($review['evidence_hash'],$this->database->evidence($review['evidence_students'],$review['evidence_programs']))];
         });
+    }
+
+    private function subsequentAudit(Student $student,array $saved,array $original): ?array
+    {
+        // Only an unbroken, later completion receipt chain explains a difference. Do not
+        // turn arbitrary activity text or a matching name into proof of a legitimate change.
+        $fields=$saved['after'];$found=false;$references=[];
+        $logs=\App\Models\UserActivityLog::where('action_code','student_completion.student')->orderBy('activity_log_id')->get();
+        foreach($logs as $log) {
+            $header=json_decode($log->description,true,flags:JSON_THROW_ON_ERROR);
+            if(($header['operation_id']??null)===($original['operation_id']??null)){$found=true;continue;}
+            if(!$found||empty($header['operation_id']))continue;
+            $receipt=$this->receipts->find('student',$header['operation_id']);$result=$receipt['value']['result']??null;
+            if(!$result||(int)($result['student_id']??0)!==(int)$student->getKey()||!in_array($result['action']??null,['identity_corrected','discontinuation_recorded'],true))continue;
+            foreach($result['before'] as $field=>$value)if(!array_key_exists($field,$fields)||(string)$fields[$field]!== (string)$value)return null;
+            $fields=array_replace($fields,$result['after']);$references[]=['activity_log_id'=>(int)$log->getKey(),'actor_id'=>$receipt['actor_id'],'operation_id'=>$header['operation_id']];
+        }
+        if(!$references)return null;
+        foreach($fields as $field=>$value) {
+            $actual=$student->getRawOriginal($field);if($field==='enrollment_date')$actual=CompletionData::date($actual)??$actual;
+            if((string)$actual!==(string)$value)return null;
+        }
+        if($saved['action']==='created'&&AcademicPlanContext::forStudent($student)->versionId!==$saved['historical_plan']['version_id'])return null;
+        return ['scope'=>'recorded_fields_only_academic_evidence_verified_separately','receipts'=>$references];
     }
 
     private function finish(User $actor,array $review,string $hash,string $id,array $outcomes,string $status): array

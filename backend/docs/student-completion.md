@@ -493,3 +493,13 @@ No production connection, live preview/apply, deployment, frontend work, marks
 import, SQL, migration or permission change occurred. Keep PR #173 Draft, open
 and unmerged. Resolving remaining academic/source blockers is a separate reviewed
 operation, not permission to clear evidence or silently rerun writes.
+
+## Approved follow-up
+
+The subsequent missing-program/source-ownership increment is documented in
+[Approved student-completion follow-up](../../docs/student-completion-approved-followup.md).
+Its original v3 bundles remain reconstructible and replayable. New two-file
+preparation uses the distinct v4 contract (handoff plus companion SQL only), fresh
+live reviews and new operation UUIDs. Do not modify or reuse the historical
+operation described above. See the follow-up guide for exact 768 MB preparation,
+catalog-first operating order, explicit resume and current verification commands.

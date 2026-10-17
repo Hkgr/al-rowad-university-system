@@ -13,11 +13,13 @@ final class CompletionSnapshot
         'appeal_statuses', 'supplementary_exam_registrations', 'supplementary_exam_materializations',
         'student_progression_decisions', 'student_graduation_decisions', 'result_statuses','grade_approvals','approval_statuses'];
 
-    public function read(string $file): array
+    public const FOLLOWUP_TABLES=['academic_plan_events','academic_requirement_groups','program_courses','program_course_requirement_groups','course_prerequisites'];
+
+    public function read(string $file,bool $followup=false): array
     {
         $sql = file_get_contents($file);
         if ($sql === false) throw new \InvalidArgumentException('Snapshot is unreadable.');
-        $tables = array_fill_keys(self::TABLES, []);
+        $tables = array_fill_keys(array_merge(self::TABLES,$followup?self::FOLLOWUP_TABLES:[]), []);
         // The lexical terminator respects SQL strings, including escaped semicolons/newlines.
         preg_match_all('/^INSERT INTO `([^`]+)` \(([^\r\n]+)\) VALUES\s*/m', $sql, $headers, PREG_OFFSET_CAPTURE);
         foreach ($headers[0] as $i => [$header, $offset]) {
