@@ -22,14 +22,11 @@ final class StudentCompletionService
             $allowedPrograms=array_fill_keys(array_column($state['academic_programs'],'academic_program_id'),true);
             $university=$actor->isSuperAdmin()||collect($this->scope->scopes($actor))->contains(fn($s)=>$s['type']==='university');
             foreach($report['students'] as &$row) {
-                $id=$row['program_id'];
-                $allowed=$id!==null&&isset($allowedPrograms[$id]);
-                if (!$allowed) foreach(['creation','status_change'] as $key) {$row[$key]['ready']=false;$row[$key]['blockers'][]='program_out_of_scope_or_missing';}
-                if(!$allowed&&!$university&&!$row['exists']) {
-                    $row['exists']=null;$row['creation']['action']='existence_unavailable';
-                }
-                if($row['creation']['ready']) $proposals[]=['number'=>$row['number'],'action'=>'create_historical','row'=>$row];
-                elseif($row['status_change']['ready']) $proposals[]=['number'=>$row['number'],'action'=>'record_discontinuation','row'=>$row];
+                $row=$this->scopeRow($row,$allowedPrograms,$university);
+                $actions=[];
+                if($row['creation']['ready'])$actions[]='create_historical';
+                else {if($row['identity_correction']['ready'])$actions[]='correct_identity';if($row['status_change']['ready'])$actions[]='record_discontinuation';}
+                if($actions)$proposals[]=['number'=>$row['number'],'action'=>$actions[0],'actions'=>$actions,'row'=>$row];
             } unset($row);
             $report['counts']['existing']=count(array_filter($report['students'],fn($r)=>$r['exists']===true));
             $report['counts']['missing']=count(array_filter($report['students'],fn($r)=>$r['exists']===false));
@@ -37,6 +34,7 @@ final class StudentCompletionService
             $report['counts']['ready_create']=count(array_filter($report['students'],fn($r)=>$r['creation']['ready']));
             $report['counts']['ready_status']=count(array_filter($report['students'],fn($r)=>$r['status_change']['ready']));
             $report['counts']['blocked_create']=count(array_filter($report['students'],fn($r)=>$r['exists']===false&&!$r['creation']['ready']));
+            $report['reconciliation']=$this->projection->summarize($report['students']);
             $report['review_gaps']=array_values(array_map(fn($r)=>['number'=>$r['number'],'identity'=>$r['identity_blockers'],'level'=>$r['derived_level']['blockers'],'examination'=>$r['exam_classification']],
                 array_filter($report['students'],fn($r)=>$r['identity_blockers']||$r['derived_level']['blockers']||in_array($r['exam_classification'],['no_examination_data','possible_absence_incomplete_evidence'],true))));
             $ids=array_map('intval',array_column($state['students'],'student_id'));
@@ -75,7 +73,7 @@ final class StudentCompletionService
                 $storedReview=$review;
                 foreach($storedReview['proposals'] as &$stored) {
                     $stored['row_hash']=CompletionData::hash($stored['row']);
-                    $stored['row']=['program_id'=>$stored['row']['program_id']];
+                    $stored['row']=['program_id'=>$stored['row']['program_id'],'lock_program_id'=>$stored['row']['lock_program_id']];
                 }unset($stored);
                 // Raw examination marks/source names stay in the access-controlled private review,
                 // not in the generic activity feed. Its complete immutable hash is retained.
@@ -92,28 +90,44 @@ final class StudentCompletionService
                     $this->authorize($actor,true);$this->authorizeTargets($actor,$review);
                     if($saved=$this->receipts->find('student',$stage)) {$this->check($actor,$saved,$payloadHash);return $saved['value']['result']+['replayed'=>true];}
                     if($this->transactions->revision()!==$next) $this->stale();
-                    $program=AcademicProgram::whereKey($proposal['row']['program_id'])->lockForUpdate()->firstOrFail();
+                    $program=AcademicProgram::whereKey($proposal['row']['lock_program_id']??$proposal['row']['program_id'])->lockForUpdate()->firstOrFail();
                     abort_unless($this->scope->canMutateProgram($actor,$program),403);
                     $student=Student::withTrashed()->where('student_number',$proposal['number'])->lockForUpdate()->first();
                     if($student) app(AcademicRecordGraphLocker::class)->lockStudentAcademicGraph((int)$student->getKey());
-                    $current=$this->projection->build($bundle,$this->database->read($actor,[$proposal['number']]),'locked_database',[$proposal['number']])['students'][0]??null;
+                    $currentState=$this->database->read($actor,[$proposal['number']]);
+                    $current=$this->projection->build($bundle,$currentState,'locked_database',[$proposal['number']])['students'][0]??null;
+                    if($current)$current=$this->scopeRow($current,array_fill_keys(array_column($currentState['academic_programs'],'academic_program_id'),true),
+                        $actor->isSuperAdmin()||collect($this->scope->scopes($actor))->contains(fn($s)=>$s['type']==='university'));
                     if(!$current || !hash_equals(CompletionData::hash($proposal['row']),CompletionData::hash($current)))
                         throw new CompletionException('student_completion_student_changed','Student evidence changed; retain the original request and review again.');
                     $beforeEvidence=$this->database->evidence($student?[(int)$student->getKey()]:[],[(int)$program->getKey()]);
                     if($proposal['action']==='create_historical') {
+                        if(($proposal['actions']??['create_historical'])!==['create_historical'])throw new CompletionException('student_completion_action_invalid','Creation must be explicitly reviewed.');
                         if($student || !$current['creation']['ready']) throw new CompletionException('student_completion_creation_blocked','Creation is no longer ready.');
                         $fields=$current['creation']['fields'];
                         Validator::make($fields,(new \App\Http\Requests\Student\StoreStudentRequest)->rules())->validate();
                         $student=AcademicPlanAdmission::createHistorical($actor,$fields,$current['historical_plan']['version_id'],$operationId);
                         $result=['number'=>$proposal['number'],'action'=>'created','student_id'=>(int)$student->getKey(),'before'=>null,
-                            'after'=>$fields,'historical_plan'=>$current['historical_plan'],'source_bundle_hash'=>$review['bundle_hash']];
+                            'after'=>$fields,'historical_plan'=>$current['historical_plan'],'source_bundle_hash'=>$review['bundle_hash'],
+                            'status_authority'=>$current['status_change']['authority'],'administrative_decision'=>$current['status_change']['decision'],
+                            'identity_authorities'=>$current['approved_identity']['fields']??[]];
                     } else {
-                        if(!$student || !$current['status_change']['ready']) throw new CompletionException('student_completion_status_blocked','Discontinuation is no longer proven.');
+                        if(!$student || (!$current['status_change']['ready']&&!$current['identity_correction']['ready'])) throw new CompletionException('student_completion_status_blocked','No reviewed action remains ready.');
                         Gate::forUser($actor)->authorize('update',$student);
-                        $before=$student->student_status_id;
-                        $student->update(['student_status_id'=>$current['status_change']['to_status_id']]);
-                        $result=['number'=>$proposal['number'],'action'=>'discontinuation_recorded','student_id'=>(int)$student->getKey(),
-                            'before'=>['student_status_id'=>$before],'after'=>['student_status_id'=>$student->student_status_id],
+                        $actions=$proposal['actions']??[$proposal['action']];
+                        $correct=in_array('correct_identity',$actions,true);$changeStatus=in_array('record_discontinuation',$actions,true);
+                        if(array_diff($actions,['correct_identity','record_discontinuation'])||(!$correct&&!$changeStatus)
+                            ||($correct&&!$current['identity_correction']['ready'])||($changeStatus&&!$current['status_change']['ready']))
+                            throw new CompletionException('student_completion_action_invalid','The explicitly reviewed actions are not ready.');
+                        $changes=$correct?array_map(fn($v)=>$v['after'],$current['identity_correction']['changes']):[];
+                        if($changeStatus)$changes['student_status_id']=$current['status_change']['to_status_id'];
+                        $before=[];foreach($changes as $field=>$value)$before[$field]=$student->getRawOriginal($field);
+                        Validator::make($changes,(new \App\Http\Requests\Student\UpdateStudentRequest)->rules())->validate();
+                        $student->update($changes);
+                        $result=['number'=>$proposal['number'],'action'=>$changeStatus?'discontinuation_recorded':'identity_corrected','actions'=>$actions,'student_id'=>(int)$student->getKey(),
+                            'before'=>$before,'after'=>$changes,'identity_changes'=>$correct?$current['identity_correction']['changes']:[],
+                            'status_authority'=>$changeStatus?$current['status_change']['authority']:null,
+                            'administrative_decision'=>$changeStatus?$current['status_change']['decision']:null,
                             'period_evidence'=>array_map(fn($period)=>[
                                 'year_id'=>$period['year_id'],'semester_id'=>$period['semester_id'],'classification'=>$period['classification'],
                                 'coverage_basis'=>$period['coverage_basis'],'expected'=>$period['expected'],
@@ -200,6 +214,14 @@ final class StudentCompletionService
             $this->receipts->put($actor,'result',$id,['payload_hash'=>$hash,'result'=>$result]);return $result;
         });
     }
+    private function scopeRow(array $row,array $allowedPrograms,bool $university): array
+    {
+        $allowed=$row['program_id']!==null&&isset($allowedPrograms[$row['program_id']]);
+        if(!$allowed)foreach(['creation','status_change'] as $key){$row[$key]['ready']=false;$row[$key]['blockers'][]='program_out_of_scope_or_missing';}
+        if(!isset($allowedPrograms[$row['lock_program_id']??0])){$row['identity_correction']['ready']=false;$row['identity_correction']['blockers'][]='program_out_of_scope_or_missing';}
+        if(!$allowed&&!$university&&!$row['exists']){$row['exists']=null;$row['creation']['action']='existence_unavailable';}
+        return $row;
+    }
     private function authorize(User $actor,bool $write): void
     {
         $fresh=$actor->fresh();abort_unless($fresh&&$fresh->accountStatus?->status_code==='active',403);
@@ -210,7 +232,7 @@ final class StudentCompletionService
     {
         $allowed=$this->scope->scopeProgramsForMutation(AcademicProgram::query(),$actor)->pluck('academic_program_id')->map(fn($id)=>(int)$id)->all();
         abort_if(array_diff(array_map('intval',$review['evidence_programs']),$allowed),403);
-        $programs=array_map(fn($p)=>(int)$p['row']['program_id'],$review['proposals']);abort_if(array_diff($programs,$allowed),403);
+        $programs=array_map(fn($p)=>(int)($p['row']['lock_program_id']??$p['row']['program_id']),$review['proposals']);abort_if(array_diff($programs,$allowed),403);
         abort_if(DB::table('students')->whereIn('student_id',$review['evidence_students'])->whereNotIn('academic_program_id',$allowed)->exists(),403);
         abort_if(DB::table('students')->whereIn('student_number',array_column($review['proposals'],'number'))->whereNotIn('academic_program_id',$allowed)->exists(),403);
     }

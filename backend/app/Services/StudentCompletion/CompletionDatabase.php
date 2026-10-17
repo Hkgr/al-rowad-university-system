@@ -72,6 +72,7 @@ final class CompletionDatabase
             elseif (Schema::hasColumn($table,'student_id')) $q->whereIn('student_id',$ids);
             elseif (in_array($table,['academic_programs','academic_plan_versions'],true)) $q->whereIn('academic_program_id',$programIds);
             elseif($table==='course_offerings')$q->whereIn('course_offering_id',$offeringIds);
+            elseif($table==='grade_approvals')$q->whereIn('course_offering_id',$offeringIds);
             elseif($table==='courses')$q->whereIn('course_id',$courseIds);
             elseif($table==='departments')$q->whereIn('department_id',$departmentIds);
             elseif($table==='colleges')$q->whereIn('college_id',$collegeIds);

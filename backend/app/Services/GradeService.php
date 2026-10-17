@@ -1583,7 +1583,9 @@ class GradeService
         $latest = $approvals
             ->sortByDesc(fn (GradeApproval $approval): int => (int) $approval->grade_approval_id)
             ->first();
-        $latest?->loadMissing('approvalStatus');
+        if ($latest !== null && ! $latest->relationLoaded('approvalStatus')) {
+            $latest->loadMissing('approvalStatus');
+        }
 
         return $latest?->approvalStatus?->status_code === 'approved';
     }

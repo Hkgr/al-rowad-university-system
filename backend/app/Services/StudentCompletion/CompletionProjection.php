@@ -7,7 +7,9 @@ final class CompletionProjection
 {
     public function build(array $bundle,array $state,string $basis,?array $numbers=null): array
     {
+        $state['official_evidence']=(new CompletionOfficialEvidence)->read($state);
         $config=$bundle['config']; $groups=[];
+        foreach(array_keys($bundle['approved_identities']??[]) as $number)$groups[$number]=[];
         foreach (['identities','observations'] as $kind) foreach ($bundle[$kind] as $row) {
             $number=$this->number($row,$config); $row['source_number']=$row['original']['number']??$row['number'];
             $row['number']=$number; $groups[$number][$kind][]=$row;
@@ -21,7 +23,7 @@ final class CompletionProjection
         ksort($groups,SORT_STRING); $rows=[];
         foreach ($groups as $number=>$group) {
             if ($numbers!==null && !in_array((string)$number,$numbers,true)) continue;
-            $rows[]=$this->student((string)$number,$group,$existing[$number]??null,$state,$config,$bundle['conflicts']);
+            $rows[]=$this->student((string)$number,$group,$existing[$number]??null,$state,$config,$bundle['conflicts'],$bundle['approved_identities'][$number]??null);
         }
         $counts=['existing'=>0,'archived'=>0,'missing'=>0,'ready_create'=>0,'ready_status'=>0,'blocked_create'=>0];
         $classifications=[];$examinations=[];
@@ -35,20 +37,25 @@ final class CompletionProjection
             $examinations[$row['exam_classification']]=($examinations[$row['exam_classification']]??0)+1;
         }
         $studentIds=array_filter(array_column($rows,'student_id'),fn($id)=>$id!==null);
+        $unassignedObservations=count(array_filter($bundle['unassigned_source_records']??[],fn($r)=>isset($r['kind'])));
+        $unassignedIdentities=count($bundle['unassigned_source_records']??[])-$unassignedObservations;
         $records=['students'=>count($rows),
             'registrations'=>count(array_filter($state['student_course_registrations'],fn($r)=>in_array((int)$r['student_id'],$studentIds,true))),
             'eligible_expected_registrations'=>array_sum(array_map(fn($r)=>array_sum(array_map(fn($p)=>count($p['expected']),$r['periods'])),$rows)),
-            'source_identity_rows'=>array_sum(array_map(fn($r)=>count($r['source_identities']),$rows)),
-            'source_observation_rows'=>array_sum(array_column($rows,'source_observation_count')),
+            'source_identity_rows'=>array_sum(array_map(fn($r)=>count($r['source_identities']),$rows))+$unassignedIdentities,
+            'source_observation_rows'=>array_sum(array_column($rows,'source_observation_count'))+$unassignedObservations,
+            'unassigned_observation_rows'=>$unassignedObservations,'unassigned_identity_rows'=>$unassignedIdentities,
             'deduplicated_observations'=>array_sum(array_column($rows,'observation_count')),
             'unidentified_source_rows'=>count($bundle['unidentified_source_rows']??[])];
         return ['contract'=>'student-completion.report.v1','basis'=>$basis,'writes_performed'=>false,
             'counts'=>$counts,'record_counts'=>$records,'classifications'=>$classifications,'examination_classifications'=>$examinations,
-            'unidentified_source_rows'=>$bundle['unidentified_source_rows']??[],'students'=>$rows];
+            'unidentified_source_rows'=>$bundle['unidentified_source_rows']??[],'unassigned_source_records'=>$bundle['unassigned_source_records']??[],
+            'resolution_controls'=>$bundle['resolution_controls']??null,'reconciliation'=>$this->summarize($rows),'students'=>$rows];
     }
 
     private function number(array $row,array $config): string
     {
+        if(isset($row['ownership']))return $row['ownership']['number'];
         $original=CompletionData::text($row['number']);
         $name=CompletionData::text($row['full_name']??$row['name']??'');
         foreach ($config['identity_decisions']??[] as $decision) {
@@ -59,19 +66,27 @@ final class CompletionProjection
         return $original;
     }
 
-    private function student(string $number,array $group,?array $student,array $state,array $config,array $conflicts): array
+    private function student(string $number,array $group,?array $student,array $state,array $config,array $conflicts,?array $decision=null): array
     {
         $identities=$group['identities']??[]; $observations=$this->deduplicate($group['observations']??[]);
         $identityBlockers=[]; $approved=$config['approved_students'][$number]??[];
-        foreach ($conflicts as $conflict) if ($conflict['number']===$number && !in_array($number,$config['resolved_conflict_numbers']??[],true))
+        foreach ($conflicts as $conflict) if (!$decision && $conflict['number']===$number && !in_array($number,$config['resolved_conflict_numbers']??[],true))
             $identityBlockers[]='identity_review_unresolved';
         // A reviewed alias is number AND name scoped; an unrecognized name cannot inherit its authority.
         $names=array_values(array_unique(array_filter(array_map(fn($r)=>CompletionData::text($r['full_name']??$r['name']??''),[...$identities,...$observations]))));
         if ($student) $names[]=CompletionData::text(($student['first_name']??'').' '.($student['last_name']??''));
         $accepted=$approved['names']??[];
-        if (count(array_unique($names))>1 && (!$accepted || array_diff($names,$accepted))) $identityBlockers[]='identity_names_differ';
+        if($decision) {
+            $identityBlockers=$decision['blockers'];
+            $acceptedReferences=array_map(CompletionData::hash(...),$decision['accepted_records']);
+            foreach([...$identities,...$observations] as $source)if(!in_array(CompletionData::hash($source['reference']),$acceptedReferences,true))$identityBlockers[]='unreviewed_source_identity';
+        } elseif (count(array_unique($names))>1 && (!$accepted || array_diff($names,$accepted))) $identityBlockers[]='identity_names_differ';
+        $approvedFields=array_map(fn($field)=>$field['value'],$decision['fields']??[]);
         $programs=[];
-        if (isset($approved['program_code'])) {
+        if(isset($approvedFields['program'])) {
+            $label=$approvedFields['program'];$code=$config['program_aliases'][$label]??null;
+            $programs=array_values(array_filter($state['academic_programs'],fn($p)=>$code!==null?$p['program_code']===$code:CompletionData::text($p['program_name'])===$label));
+        } elseif (isset($approved['program_code'])) {
             $programs=array_values(array_filter($state['academic_programs'],fn($p)=>$p['program_code']===$approved['program_code']));
         } else {
             $contexts=$identities?:$observations;
@@ -91,6 +106,7 @@ final class CompletionProjection
         if (!$program) $identityBlockers[]='program_missing_or_ambiguous';
         if ($student && $program && (int)$program['academic_program_id']!==(int)$student['academic_program_id']) $identityBlockers[]='existing_program_transfer_required';
         $dates=array_values(array_unique(array_filter(array_map(fn($r)=>CompletionData::date($r['enrollment_date']??null),$identities))));
+        if(isset($approvedFields['enrollment_date']))$dates=[CompletionData::date($approvedFields['enrollment_date'])];
         $enrollment=$student ? CompletionData::date($student['enrollment_date']??null) : (count($dates)===1?$dates[0]:null);
         $dateBlockers=count($dates)>1?['enrollment_dates_conflict']:[];
         if ($student && $dates && $enrollment && !in_array($enrollment,$dates,true)) $dateBlockers[]='existing_enrollment_date_differs';
@@ -111,7 +127,9 @@ final class CompletionProjection
         $undated=array_values(array_filter($observations,fn($o)=>$o['kind']==='undated_supplementary' && $o['exam_mark']!==null && $o['exam_mark']!==''));
         $complete=array_values(array_filter($periods,fn($p)=>$p['classification']==='confirmed_full_absence'));
         $hasLater=false;
-        foreach ($complete as $period) foreach ($periods as $later) if ($later['order']>$period['order']) $hasLater=true;
+        $latestAbsence=$complete?end($complete):null;
+        if($latestAbsence)foreach($periods as $later)if($later['order']>$latestAbsence['order'])$hasLater=true;
+        if($latestAbsence&&$reference!==null&&$reference>$latestAbsence['year_start'])$hasLater=true;
         $classification=!$observations?'no_examination_data':($complete?($hasLater?'historical_absence_with_later_activity':'confirmed_full_absence'):
             (array_filter($periods,fn($p)=>$p['classification']==='partial_absence')?'partial_absence':
                 ($periods&&collect($periods)->every(fn($p)=>$p['classification']==='no_full_absence')?'no_full_absence':'possible_absence_incomplete_evidence')));
@@ -123,11 +141,12 @@ final class CompletionProjection
         if (!$student) $statusBlockers[]='student_missing';
         if ($student && !empty($student['deleted_at'])) $statusBlockers[]='student_archived';
         if ($student && ($status['status_code']??null)!=='active') $statusBlockers[]='existing_status_protected';
-        if (!$last || $last['classification']!=='confirmed_full_absence' || $hasLater) $statusBlockers[]='current_full_absence_not_proven';
-        if ($undated) $statusBlockers[]='supplementary_chronology_unknown';
-        if (array_filter($observations,fn($o)=>$o['kind']==='regular' && CompletionData::year($o['year'])===null)) $statusBlockers[]='examination_year_missing';
+        $administrative=($approvedFields['status']??null)==='frozen';
+        if (!$administrative&&(!$last || $last['classification']!=='confirmed_full_absence' || $hasLater)) $statusBlockers[]='current_full_absence_not_proven';
+        if (!$administrative&&$undated) $statusBlockers[]='supplementary_chronology_unknown';
+        if (!$administrative&&array_filter($observations,fn($o)=>$o['kind']==='regular' && CompletionData::year($o['year'])===null)) $statusBlockers[]='examination_year_missing';
         // Annual observations beyond a classified period are later activity even when their semester is unknown.
-        if ($last && $reference!==null && $reference>$last['year_start']) $statusBlockers[]='later_examination_period_unresolved';
+        if (!$administrative&&$last && $reference!==null && $reference>$last['year_start']) $statusBlockers[]='later_examination_period_unresolved';
         $statusBlockers=array_merge($statusBlockers,$this->operationBlockers($student,$state));
         if ($student) $statusBlockers=array_merge($statusBlockers,$state['lifecycle_blockers'][$student['student_id']]??[]);
         $frozen=array_values(array_filter($state['student_statuses'],fn($s)=>$s['status_code']==='frozen' && ($s['is_active']??true)));
@@ -137,34 +156,48 @@ final class CompletionProjection
             'enrollment_date'=>$enrollment,'current_academic_level_id'=>$level?(int)$level['academic_level_id']:null,'student_status_id'=>null];
         foreach (['first_name','last_name','father_name'] as $key) {
             $values=array_values(array_unique(array_filter(array_map(fn($r)=>CompletionData::text($r[$key]??''),$identities))));
-            $fields[$key]=$approved[$key]??(count($values)===1?$values[0]:null);
+            $fields[$key]=$approvedFields[$key]??$approved[$key]??(count($values)===1?$values[0]:null);
         }
         $sourceStatuses=array_values(array_unique(array_filter(array_column($identities,'status'))));
         $creationStatus=count($sourceStatuses)===1?$sourceStatuses[0]:null;
+        if($administrative)$creationStatus='frozen';
         $installedStatus=$creationStatus?$this->lookup($state['student_statuses'],'status_code',$creationStatus):null;
-        if ($installedStatus) $fields['student_status_id']=(int)$installedStatus['student_status_id'];
+        if ($installedStatus&&(!$administrative||count($frozen)===1)) $fields['student_status_id']=(int)$installedStatus['student_status_id'];
         $creationBlockers=array_merge($identityBlockers,$dateBlockers,$levelReasons);
+        if($administrative&&count($frozen)!==1)$creationBlockers[]='discontinuation_status_unavailable';
+        foreach(array_keys($decision['unresolved_fields']??[]) as $field)$creationBlockers[]='approved_field_unresolved:'.$field;
         foreach (['first_name','last_name','academic_program_id','enrollment_date','current_academic_level_id','student_status_id'] as $key)
             if ($fields[$key]===null || $fields[$key]==='') $creationBlockers[]='creation_field_missing:'.$key;
         foreach(['student_number'=>50,'first_name'=>100,'last_name'=>100,'father_name'=>100] as $key=>$max)
             if($fields[$key]!==null && mb_strlen($fields[$key])>$max)$creationBlockers[]='creation_field_too_long:'.$key;
         $creationName=CompletionData::text(($fields['first_name']??'').' '.($fields['last_name']??''));
-        if($creationName!==''&&!in_array($creationName,[...$names,...$accepted],true))$creationBlockers[]='creation_name_not_supported_by_evidence';
+        if(!$decision&&$creationName!==''&&!in_array($creationName,[...$names,...$accepted],true))$creationBlockers[]='creation_name_not_supported_by_evidence';
         if($program&&!empty($program['duration_years'])&&$derived!==null&&$derived>(int)$program['duration_years']) $creationBlockers[]='derived_level_exceeds_program_duration';
         $plan=$program?$this->plan($program,$state):['ready'=>false,'version_id'=>null,'basis'=>null,'blockers'=>['program_missing_or_ambiguous']];
         $creationBlockers=array_merge($creationBlockers,$plan['blockers']);
+        $corrections=[];
+        if($student&&$decision)foreach(['first_name','last_name','father_name'] as $field)if(isset($approvedFields[$field])&&CompletionData::text($student[$field]??'')!==$approvedFields[$field])
+            $corrections[$field]=['before'=>$student[$field]??null,'after'=>$approvedFields[$field],'authority'=>$decision['fields'][$field]];
+        $correctionBlockers=[];
+        foreach($corrections as $field=>$change)if(!is_string($change['after'])||CompletionData::text($change['after'])===''||mb_strlen($change['after'])>100)
+            $correctionBlockers[]='student_identity_field_invalid:'.$field;
+        if($student&&!empty($student['deleted_at']))$correctionBlockers[]='student_archived';
+        if($student&&($status['status_code']??null)!=='active')$correctionBlockers[]='existing_status_protected';
         return ['number'=>$number,'exists'=>$student!==null,'student_id'=>$student?(int)$student['student_id']:null,
             'archived'=>$student&&!empty($student['deleted_at']),'source_identities'=>$identities,'source_names'=>$names,'source_observations'=>$observations,
             'observation_count'=>count($observations),'source_observation_count'=>array_sum(array_column($observations,'duplicate_count')),
             'identity_blockers'=>array_values(array_unique($identityBlockers)),'program_id'=>$program?(int)$program['academic_program_id']:null,
+            'lock_program_id'=>$student?(int)$student['academic_program_id']:($program?(int)$program['academic_program_id']:null),
             'current_status'=>$status['status_code']??null,'current_level_id'=>$student['current_academic_level_id']??null,
             'derived_level'=>['value'=>$derived,'basis'=>$levelBasis,'reference_year'=>$reference,'blockers'=>array_values(array_unique($levelReasons))],
             'periods'=>$periods,'undated_supplementary_count'=>count($undated),'classification'=>$classification,'exam_classification'=>$examClassification,
             'historical_plan'=>$plan,'creation'=>['ready'=>!$student&&!$creationBlockers,'action'=>$student?'existing_noop':'create_historical',
                 'fields'=>$fields,'blockers'=>$student?[]:array_values(array_unique($creationBlockers))],
-            'status_change'=>['ready'=>!$statusBlockers,'to_status_id'=>count($frozen)===1?(int)$frozen[0]['student_status_id']:null,
+            'approved_identity'=>$decision,'identity_correction'=>['ready'=>(bool)$corrections&&!$correctionBlockers,'changes'=>$corrections,'blockers'=>$correctionBlockers],
+            'status_change'=>['authority'=>$administrative?'administrative':'examination','decision'=>$administrative?$decision['fields']['status']:null,
+                'ready'=>!$statusBlockers,'to_status_id'=>count($frozen)===1?(int)$frozen[0]['student_status_id']:null,
                 'blockers'=>array_values(array_unique($statusBlockers))],
-            'baseline'=>$student?array_intersect_key($student,array_flip(['student_id','student_number','academic_program_id','student_status_id','current_academic_level_id','enrollment_date','deleted_at','updated_at'])):null];
+            'baseline'=>$student?array_intersect_key($student,array_flip(['student_id','student_number','first_name','last_name','father_name','academic_program_id','student_status_id','current_academic_level_id','enrollment_date','deleted_at','updated_at'])):null];
     }
 
     private function periods(?array $student,array $observations,array $state,array $config): array
@@ -219,6 +252,11 @@ final class CompletionProjection
                 $observed=$period['observations'][$expected['registration_id']]??[];
                 if (count($observed)!==1) {$period['blockers'][]=$observed?'conflicting_examination_copies':'examination_coverage_missing';continue;}
                 $obs=$observed[0];
+                $official=$state['official_evidence'][$expected['registration_id']]??null;
+                if($obs['exam_mark']==='-'&&($official['status']??null)==='passed') {
+                    $period['blockers'][]='official_success_conflicts_with_absence';
+                    $period['evidence_conflicts'][]=['source_references'=>$obs['references'],'official'=>$official];continue;
+                }
                 if (in_array(CompletionData::text($obs['outcome']),['I','W','غير مكتمل','منسحب'],true)) {$period['blockers'][]='examination_outcome_unresolved';continue;}
                 if ($obs['exam_mark']==='-' && in_array(CompletionData::text($obs['outcome']),['passed','ناجح','ناجح شرطي'],true)) {$period['blockers'][]='examination_conflicting_evidence';continue;}
                 if ($obs['exam_mark']==='-') $absent++;
@@ -272,6 +310,23 @@ final class CompletionProjection
         return array_values(array_unique($reasons));
     }
     private function lookup(array $rows,string $key,mixed $value): ?array {foreach($rows as $row) if((string)($row[$key]??'')===(string)$value)return $row;return null;}
+    public function summarize(array $rows): array
+    {
+        $count=fn($f)=>count(array_filter($rows,$f));$blockers=[];
+        foreach($rows as $r)foreach(array_unique([...$r['identity_blockers'],...$r['creation']['blockers'],...$r['status_change']['blockers'],
+            ...($r['identity_correction']['changes']?$r['identity_correction']['blockers']:[])]) as $reason)$blockers[$reason]=($blockers[$reason]??0)+1;
+        ksort($blockers);
+        return ['exam_linked_existing'=>$count(fn($r)=>$r['exists']===true&&$r['source_observation_count']>0),
+            'ready_missing'=>$count(fn($r)=>$r['creation']['ready']),'remaining_missing'=>$count(fn($r)=>$r['exists']===false&&!$r['creation']['ready']),
+            'reviewed_identity_resolutions'=>$count(fn($r)=>$r['approved_identity']!==null),
+            'identity_correction_students'=>$count(fn($r)=>$r['identity_correction']['ready']),
+            'identity_correction_fields'=>array_sum(array_map(fn($r)=>$r['identity_correction']['ready']?count($r['identity_correction']['changes']):0,$rows)),
+            'required_program_transfers'=>$count(fn($r)=>in_array('existing_program_transfer_required',$r['identity_blockers'],true)),
+            'administrative_discontinued'=>$count(fn($r)=>$r['status_change']['authority']==='administrative'),
+            'examination_proved_current'=>$count(fn($r)=>$r['exam_classification']==='confirmed_full_absence'),
+            'examination_insufficient_evidence'=>$count(fn($r)=>$r['exam_classification']==='possible_absence_incomplete_evidence'),
+            'remaining_blockers'=>$blockers];
+    }
     private function deduplicate(array $observations): array
     {
         $unique=[];

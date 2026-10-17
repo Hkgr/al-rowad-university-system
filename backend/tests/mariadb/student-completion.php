@@ -66,6 +66,8 @@ $race=function(string $label,array $b,callable $mutate)use($environment,$p,$chec
 };
 $race('status',$bundle,fn()=>DB::table('students')->where('student_id',1)->update(['student_status_id'=>17]));
 app(AcademicCatalogTransaction::class)->run(fn()=>DB::table('students')->where('student_id',1)->update(['student_status_id'=>1]));
+$race('identity-field',$bundle,fn()=>DB::table('students')->where('student_id',1)->update(['father_name'=>'Changed concurrent parent']));
+app(AcademicCatalogTransaction::class)->run(fn()=>DB::table('students')->where('student_id',1)->update(['father_name'=>'Parent']));
 $race('program',$bundle,fn()=>DB::table('students')->where('student_id',1)->update(['academic_program_id'=>2]));
 app(AcademicCatalogTransaction::class)->run(fn()=>DB::table('students')->where('student_id',1)->update(['academic_program_id'=>900]));
 $race('registration',$bundle,fn()=>DB::table('student_course_registrations')->where('student_course_registration_id',10001)->update(['registration_date'=>'2023-12-11']));

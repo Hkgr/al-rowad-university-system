@@ -104,16 +104,17 @@ final class CompletionSources
             }
         }
         $source=$this->source($config['conflicts'],'conflicts',$sources);
-        foreach($this->sheets($source['path'],$source['sheet']??'مراجعة بيانات الطلاب',6,['A','D','E']) as [$sheet,$start,$end]) {
+        foreach($this->sheets($source['path'],$source['sheet']??'مراجعة بيانات الطلاب',6,['A','B','C','D','E']) as [$sheet,$start,$end]) {
         $this->headers($sheet,['A5'=>'الرقم الجامعي','D5'=>'المشكلة','E5'=>'حل المشكلة']);
+        if(isset($config['resolution_policy']))$this->headers($sheet,['B5'=>'ملفات شؤون الامتحانات','C5'=>'ملف شؤون الطلاب']);
         for ($i=$start;$i<=$end;$i++) {
             $number=CompletionData::text($this->cell($sheet,'A'.$i)); if ($number==='') continue;
             $conflicts[]=['number'=>$number,'problem'=>$this->cell($sheet,'D'.$i),'solution'=>$this->cell($sheet,'E'.$i),
-                'reference'=>$this->ref('conflicts',$sheet->getTitle(),$i)];
+                'reference'=>$this->ref('conflicts',$sheet->getTitle(),$i),'cells'=>array_combine(['A','B','C','D','E'],array_map(fn($c)=>$this->cell($sheet,$c.$i),['A','B','C','D','E']))];
         }
         }
-        return ['contract'=>'student-completion.sources.v1','config'=>$config,'sources'=>$sources,
-            'identities'=>$identities,'observations'=>$observations,'conflicts'=>$conflicts,'unidentified_source_rows'=>$unidentified,'snapshot'=>$tables];
+        return (new CompletionResolutions)->compile(['contract'=>isset($config['resolution_policy'])?'student-completion.sources.v2':'student-completion.sources.v1','config'=>$config,'sources'=>$sources,
+            'identities'=>$identities,'observations'=>$observations,'conflicts'=>$conflicts,'unidentified_source_rows'=>$unidentified,'snapshot'=>$tables]);
     }
 
     public function load(string $path, string $expectedHash): array
@@ -121,8 +122,13 @@ final class CompletionSources
         if (!preg_match('/^[a-f0-9]{64}$/',$expectedHash) || !hash_equals($expectedHash,hash_file('sha256',$path)))
             throw new \InvalidArgumentException('Source bundle fingerprint differs.');
         $bundle=json_decode(file_get_contents($path),true,flags:JSON_THROW_ON_ERROR);
-        if (($bundle['contract']??null)!=='student-completion.sources.v1') throw new \InvalidArgumentException('Unsupported source contract.');
+        if (!in_array($bundle['contract']??null,['student-completion.sources.v1','student-completion.sources.v2'],true)) throw new \InvalidArgumentException('Unsupported source contract.');
         $fresh=$this->prepare($bundle['config']);
+        // Preserve read/replay of genuine pre-resolution bundles. Never strip arbitrary fields.
+        if($bundle['contract']==='student-completion.sources.v1'&&!isset($bundle['config']['resolution_policy'])) {
+            if(isset($bundle['conflicts'][0])&&!isset($bundle['conflicts'][0]['cells']))foreach($fresh['conflicts'] as &$conflict)unset($conflict['cells']);unset($conflict);
+            foreach(['grade_approvals','approval_statuses'] as $table)if(!array_key_exists($table,$bundle['snapshot']))unset($fresh['snapshot'][$table]);
+        }
         if (!hash_equals(CompletionData::hash($bundle),CompletionData::hash($fresh))) throw new \InvalidArgumentException('Source data or approved decisions changed. Prepare/review again.');
         return $bundle;
     }

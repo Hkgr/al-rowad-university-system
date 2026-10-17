@@ -11,7 +11,7 @@ final class CompletionSnapshot
         'student_academic_terms', 'student_registration_requests', 'student_registration_modification_requests',
         'student_registration_replacement_requests', 'student_registration_withdrawal_requests', 'grade_appeals',
         'appeal_statuses', 'supplementary_exam_registrations', 'supplementary_exam_materializations',
-        'student_progression_decisions', 'student_graduation_decisions', 'result_statuses'];
+        'student_progression_decisions', 'student_graduation_decisions', 'result_statuses','grade_approvals','approval_statuses'];
 
     public function read(string $file): array
     {

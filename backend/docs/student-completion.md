@@ -24,14 +24,17 @@ The operator's private `sources.json` pins SHA-256 hashes and selected worksheet
 - `data 2023@2024.xlsm`: `OutcomeofMater`, `supplementary`, `Data` and `FilterVac`.
 - **`data 2025.xlsm` is the actual attached file**, not the request's alternative
   filename `data 2025(1).xlsm`: `علامات`, `تكميلي` and `FilterVac`.
-- The reviewed student-conflicts workbook, and the supplied local SQL snapshot.
+- The replacement `AlRowad-Student-Conflicts-solve.xlsx` (SHA-256
+  `f9b931e9690e80dd515a80cf7bfd01bb799de3459f45d770d1f8da0c3aff0932`),
+  and the supplied local SQL snapshot. The previous unresolved-workbook policy
+  is superseded for this new review; its old operation receipts remain unchanged.
 
 `Data` is the identity master. `FilterVac` is a display copy, not evidence of an
 active administrative status. Derived transcripts, login cells, macro sheets and
 course-catalog displays are not additional authoritative examination attempts.
 The reader loads only selected columns in 250-row chunks and uses cached formula
 values; a missing cache remains unknown. Aggregate reports still require memory
-for the complete population; the supplied files were prepared with a **512 MB
+for the complete population; the revised files were prepared with a **768 MB
 CLI memory limit**, not a production PHP configuration change.
 
 The private configuration carries reviewed number-and-name identity decisions,
@@ -40,7 +43,7 @@ and explicit creation-name fields where approved. No real student identity is
 hardcoded in the repository. A number swap never applies to another name. The
 reviewed canonical-number/program disagreement remains a required academic
 transfer, not a duplicate creation or a direct program update. An unresolved
-conflict without a new approved solution stays blocked. Source originals,
+field that still lacks an authoritative resolution stays narrowly blocked. Source originals,
 normalized values, source file/sheet/row references and all identical-copy
 references remain in the private bundle/report. Rows without a number are
 reported separately; they are not assumed to be distinct identifiable students.
@@ -49,6 +52,44 @@ The bundle is deterministic. Loading it rechecks file fingerprints and reconstru
 the normalized content from the original files and private decisions; editing a
 report/bundle to remove a blocker is not accepted. Content hashes bind requests;
 they **do not replace the installed, increasing catalog revision**.
+
+### Revised administrative precedence (source contract v2)
+
+`E` resolves only the fields it actually addresses. Remaining fields use `C`,
+backed by the latest structured Student Affairs roster. Blank E is approved C
+fallback, **not** automatically “waiting for administration.” The workbook's old
+blank-cell instruction does not override that approved policy. “Not present in
+Student Affairs” does not supply an identity, date, program or status.
+
+The private configuration lists each interpreted review row, exact A:E values,
+approved targets and fields, E passages or C roster references, plus exact
+source-record number/label/father/program/college context. Preparation validates
+these against the pinned files. Original text, hashes and cell references remain
+available. A JSON key-order change is not a changed source reference.
+
+No fuzzy/global name aliases are introduced. Distinct people sharing a short
+name/source number are disambiguated only by the recorded context and explicit
+decision. Unknown records remain in `unassigned_source_records`; they are not
+assigned to either person by guesswork. Competing reviewed owners are documented,
+not merged. Existing registration/result ownership is never reassigned.
+
+Structured first/family/father fields remain separate. An unlabelled three-part
+display name does not license mechanical splitting, duplicating a compound first
+name or inserting the father's name into the family name. Unresolved individual
+fields remain visible without unnecessarily blocking an independent approved
+field correction. A program-only E does not resolve a name discrepancy.
+
+Explicit current administrative discontinuation and examination-proved absence
+are different authorities. The former uses E's approved frozen status (including
+at missing-student admission) without inventing examination periods, and overrides
+an older source's active flag. The latter still requires the complete examination
+proof below. Existing archived/nonactive/protected records and live administrative
+blockers remain protected. There is no automatic reactivation.
+
+**Changed sources/decisions require a new bundle, new authorized live review and
+NEW operation UUID. Never resume an old UUID with this replacement workbook.**
+Status can still read old receipts; genuine original v1 bundles retain their
+original source-shape read/replay compatibility. Old receipts are not rewritten.
 
 ## Interpretation and readiness
 
@@ -60,9 +101,18 @@ they **do not replace the installed, increasing catalog revision**.
 | Values | Numeric zero is an attended numeric mark, not absence; blank is unknown. Result symbols are not interchangeable with `-`. Conflicting copies, unresolved I/W evidence and inconsistent academic evidence block action. |
 | Chronology | Later actual registrations or examination periods, even ambiguous ones, prevent a current-discontinuation write. Undated supplementary evidence cannot be placed on a guessed date. |
 | Level | Exact enrollment date within recorded academic-year boundaries first; only when no date exists, a consistent source cohort can support a derived level. Its reference is the last recorded examination year, **not** promotion to the current year. Existing levels never change. |
-| Existing student | Creation is a no-op. Personal data, user account, email, program and level are not updated. Creation readiness, derived level and status readiness are independent. |
+| Existing student | Creation is a no-op. Only explicitly reviewed first/family/father field differences may be corrected through the normal model/policy, with before/after and decision references. Account, email, program, level and unrelated personal fields are not changed. Creation, bounded correction, derived level and status readiness are independent. |
 | Missing student | Require true normal admission fields, exact enrollment date, documented status, installed level, unambiguous program and explicit provable plan context. Cohort alone cannot supply the required enrollment date. |
-| Status write | Only active, nonarchived students, to the installed active `frozen` code (no numeric ID assumption), with complete current evidence, no later activity, protected state, unresolved request/appeal/decision/supplementary/Incomplete evidence. No automatic reactivation. |
+| Status write | Only active, nonarchived students, to installed active `frozen` (no numeric ID assumption), under explicit administrative authority or full examination proof. Existing protected states and live request/appeal/decision/supplementary/Incomplete blockers remain. No automatic reactivation. |
+
+The already-batched results/approvals are hydrated for GradeService's canonical
+`officialAttemptResultStatus()`. An official pass conflicting with an absence
+claim for the **same registered attempt** blocks examination-derived status and
+records both the source rows and official result/approval references. A later
+returned approval is not official. F/Z alone do not prove absence or attendance;
+retained Z marks cannot become a pass. Missing marks remain missing.
+Consecutive fully proved absent semesters remain current absence: later activity
+is evaluated after the **latest** candidate, not after every historical absence.
 
 Private reports separate identity/program problems, examination classifications,
 raw source-observation counts, deduplicated observations and actual registration
@@ -86,7 +136,7 @@ under locks. Installed revision triggers fence other admission, program,
 registration and academic-evidence writers. There is no value-fingerprint-only
 revision and no automatic transaction retry.
 
-Each student is independently transactional. Successful admission/status change,
+Each student is independently transactional. Successful admission/bounded identity correction/status change,
 plan handling and its receipt commit together; failure rolls them all back. Known
 blocked students do not prevent unrelated ready students. Unexpected failures
 stop execution; a disconnected client must not infer rollback.
@@ -125,7 +175,7 @@ use a report made against the supplied SQL snapshot as a live review.
    ```powershell
    $env:CACHE_STORE = 'array'
    $env:DB_CONNECTION = 'unavailable_source_preparation_probe'
-   php -d memory_limit=512M artisan student-completion:prepare --sources=C:/private/sources.json --output=C:/private/bundle.json
+   php -d memory_limit=768M artisan student-completion:prepare --sources=C:/private/sources.json --output=C:/private/bundle.json
    Remove-Item Env:DB_CONNECTION
    Remove-Item Env:CACHE_STORE
    ```
@@ -137,7 +187,7 @@ use a report made against the supplied SQL snapshot as a live review.
    real existing permissions and scope:
 
    ```text
-   php -d memory_limit=512M artisan student-completion:preview --actor=ACTOR --bundle=/private/bundle.json --bundle-hash=SHA256 --output=/private/preview.json
+   php -d memory_limit=768M artisan student-completion:preview --actor=ACTOR --bundle=/private/bundle.json --bundle-hash=SHA256 --output=/private/preview.json
    ```
 
    Review every proposed action, field, plan context, evidence, blocked row and
@@ -148,7 +198,7 @@ use a report made against the supplied SQL snapshot as a live review.
 3. Apply only the explicitly approved live review, using a new UUID:
 
    ```text
-   php -d memory_limit=512M artisan student-completion:apply --actor=ACTOR --bundle=/private/bundle.json --bundle-hash=SHA256 --review=/private/preview.json.review.json --review-hash=REVIEW_SHA256 --operation-id=UUID --expected-revision=REVISION --output=/private/apply-1.json
+   php -d memory_limit=768M artisan student-completion:apply --actor=ACTOR --bundle=/private/bundle.json --bundle-hash=SHA256 --review=/private/preview.json.review.json --review-hash=REVIEW_SHA256 --operation-id=UUID --expected-revision=REVISION --output=/private/apply-1.json
    ```
 
    Root receipt lookup follows authorization/locks **before** rejecting an old
@@ -178,7 +228,7 @@ use a report made against the supplied SQL snapshot as a live review.
 5. Verify without mutation:
 
    ```text
-   php -d memory_limit=512M artisan student-completion:verify --actor=ACTOR --bundle=/private/bundle.json --bundle-hash=SHA256 --operation-id=UUID --output=/private/verification-1.json
+   php -d memory_limit=768M artisan student-completion:verify --actor=ACTOR --bundle=/private/bundle.json --bundle-hash=SHA256 --operation-id=UUID --output=/private/verification-1.json
    ```
 
    Verification checks current written fields/assignment, original academic
@@ -241,11 +291,14 @@ Three separate dependency-free catalog/Phase 1/Phase 2 contracts passed; these
 are static/pure checks, not database behavior tests. PHP syntax (20 PHP files),
 PowerShell parsing, Composer validation/platform checks and diff checks passed.
 
-The private snapshot review has 1,008 canonical identities (909 existing, 99
+The **initial, superseded** private snapshot review had 1,008 canonical identities (909 existing, 99
 missing), 7,918 registrations, 16,455 source examination rows / 15,887 deduplicated
 observations, and 6 separately reported unnumbered rows. Only 3 missing identities
 are preliminarily creation-ready; 96 are blocked. No status change is fully
-proved. These are snapshot findings, not production counts or executed actions.
+proved. They are not targets for the revised reconciliation. Revised counts and
+verification are recorded in the PR and regenerated private report, separately
+for existing exam identities, creations, corrections, transfers, administrative
+status decisions and examination proof. Neither review performed a real apply.
 
 No full-suite/CI, native Excel UI,
 browser/live Laravel integration or production verification is implied by the
@@ -255,6 +308,73 @@ metadata added without changing values/formulas/caches; it was not opened in the
 native Excel application. No frontend feature is introduced by this work.
 
 ## Release boundaries
+
+### Approved-resolution repair verification (PR #173)
+
+The replacement workbook controls were recalculated: **97 review rows, 45 explicit
+solutions and 52 approved C fallbacks**. These are controls, not execution lists.
+Its 97 rows describe 98 approved number owners because one explicit decision
+identifies two separate people. All private interpretations retain original
+cells, field authority, selected source context and competing-owner checks.
+
+The regenerated snapshot report separately records:
+
+| Category | Count |
+| --- | ---: |
+| Exam-linked identities already present | 749 |
+| Ready missing / still-blocked missing | 3 / 96 |
+| Reviewed number-owner resolutions | 98 |
+| Ready existing identity corrections / actual fields | 15 / 24 |
+| Required program transfers (not executed directly) | 4 |
+| Explicit administrative discontinued decisions | 3 |
+| Ready discontinued admissions within those decisions | 2 |
+| Examination-proved current discontinuation | 0 |
+| Insufficient examination proof | 717 |
+| Source examination rows left unassigned, not merged | 28 |
+
+The union still happens to contain 1,008 identities / 909 existing / 99 missing;
+these values were recomputed, not used as targets. Source examination-row counts
+include unassigned observations (16,455 total); 15,864 assigned deduplicated
+observations are reported separately. A simple **one-sheet** Excel accompanies
+the detailed private JSON. Neither is a live review or evidence that a student
+was created/corrected/frozen. The missing civil-institute program, missing exact
+admission fields, program-transfer workflow, an ambiguous spelling in an
+unlabelled name decision, unreviewed names and source ownership remain explicit.
+
+Executed repair verification:
+
+- Final focused suites: **46 tests / 177 assertions, PASS** (including active
+  installed frozen status, field-specific fallback, name correction, source
+  identity separation, administrative creation, official-pass conflict and
+  consecutive absence). Normal UpdateStudentRequest field validation is reused
+  under locks for corrections/status writes.
+- Expanded 11-class invocation: **163 tests / 15,010 assertions: 160 passed,
+  the same 3 historical source contracts failed**. The final missing-interpretation
+  assertion was then covered by the focused suites; this is not a claim of a
+  green complete repository suite.
+- Both old contract classes were reproduced in a clean detached worktree at
+  reviewed head `e6b98328c96d927738f14a7fdf3b735a2d35a8cf`: 22 tests / 19 passed /
+  the same 3 failed. No old test was edited or skipped.
+- The isolated **10.11.18-MariaDB** harness passed again with seven observed
+  independent catalog-lock races (now including identity-field changes), exact
+  academic material/GPA/transcript preservation, installed admission-trigger
+  assignment history and two concurrent same-UUID executions.
+- PHP syntax on changed files, Composer validation/platform requirements,
+  three static/pure catalog/result-symbol contracts and diff checks passed.
+- Real source preparation **and full source-bundle reconstruction** succeeded
+  with an intentionally unavailable DB connection and process-local array cache.
+  Report fingerprints matched the current projection. The only GradeService
+  change avoids constructing a relation loader when approvalStatus is already
+  hydrated; it changes no result/approval rule or writer.
+- Excel summary formulas matched the JSON; formula-error scan was clear and
+  previews were inspected. Native RTL metadata preserves all values/formulas/
+  caches. Native Excel rendering, full repository/CI and live production
+  preview/apply/verification remain unexecuted.
+
+Use `--sources` with the new private configuration, preserve its new bundle/hash,
+obtain an authorized **new live preview**, then use a **new operation UUID** for
+any separately authorized future application. Existing five command names and
+the runbook sequence above are unchanged. No real apply was executed.
 
 No new schema or permission activation is necessary; existing catalog/plan and
 Incomplete contracts must already be installed and ready. Deploying backend

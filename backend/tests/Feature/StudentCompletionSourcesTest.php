@@ -77,4 +77,17 @@ final class StudentCompletionSourcesTest extends TestCase
         self::assertSame('display_copy',$display['source_role']);
         self::assertSame(3,$b['unidentified_source_rows'][0]['reference']['row']);
     }
+    public function test_canonical_official_evidence_from_snapshot_requires_no_database_configuration(): void
+    {
+        $old=config('database.default');config(['database.default'=>'unavailable_source_preparation_probe']);
+        try {
+            $state=['course_offerings'=>[['course_offering_id'=>1]],'grade_approvals'=>[['grade_approval_id'=>1,'course_offering_id'=>1,'approval_status_id'=>1]],
+                'approval_statuses'=>[['approval_status_id'=>1,'status_code'=>'approved']],
+                'student_course_registrations'=>[['student_course_registration_id'=>1,'course_offering_id'=>1,'registration_status_id'=>1]],
+                'registration_statuses'=>[['registration_status_id'=>1,'status_code'=>'completed']],
+                'student_course_results'=>[['student_course_result_id'=>1,'student_course_registration_id'=>1,'result_status_id'=>1]],
+                'result_statuses'=>[['result_status_id'=>1,'status_code'=>'passed']]];
+            self::assertSame('passed',(new \App\Services\StudentCompletion\CompletionOfficialEvidence)->read($state)[1]['status']);
+        } finally {config(['database.default'=>$old]);}
+    }
 }
