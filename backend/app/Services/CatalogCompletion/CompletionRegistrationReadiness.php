@@ -51,15 +51,34 @@ final class CompletionRegistrationReadiness
 
     private function reason(StudentCourseRegistration $r, bool $lifecycleReady, ?array $evidence): ?string
     {
+        if (($reason = $this->contextReason($r)) !== null) return $reason;
+        if (!$lifecycleReady) return 'incomplete_schema_unavailable';
+        if ($evidence['reason'] ?? null) return $evidence['reason'];
+        if (($evidence['state'] ?? null) === 'active') return 'incomplete_active';
+        if (($evidence['state'] ?? null) !== null && !($evidence['preserved'] ?? false)) return 'incomplete_outcome_conflict';
+        return $this->outcomeReason($r);
+    }
+
+    /** Pure academic distinction, also used by the student-completion snapshot/live projection.
+     * Lifecycle evidence is checked separately by each caller; this never infers a settlement.
+     */
+    public function historicalOutcomeReason(StudentCourseRegistration $r): ?string
+    {
+        return $this->contextReason($r) ?? $this->outcomeReason($r);
+    }
+
+    private function contextReason(StudentCourseRegistration $r): ?string
+    {
         if (!in_array($r->registrationStatus?->status_code,['registered','completed'],true)) return 'unsupported_registration_state';
         if (!$r->courseOffering) return 'offering_missing';
         if (strtolower((string)$r->courseOffering->status) !== 'closed') return 'offering_not_closed';
         if (!$r->studentCourseResult) return 'result_missing';
         if (!$this->grades->isOfficiallyVisibleAttempt($r)) return 'authoritative_approval_not_approved';
-        if (!$lifecycleReady) return 'incomplete_schema_unavailable';
-        if ($evidence['reason'] ?? null) return $evidence['reason'];
-        if (($evidence['state'] ?? null) === 'active') return 'incomplete_active';
-        if (($evidence['state'] ?? null) !== null && !($evidence['preserved'] ?? false)) return 'incomplete_outcome_conflict';
+        return null;
+    }
+
+    private function outcomeReason(StudentCourseRegistration $r): ?string
+    {
         if ($r->studentCourseResult->resultStatus?->status_code === 'incomplete') return 'legacy_incomplete_unsettled';
         if (!in_array($r->studentCourseResult->resultStatus?->status_code,['passed','failed','deprived'],true)) return 'outcome_not_settled';
         $status = $this->grades->officialAttemptResultStatus($r);
