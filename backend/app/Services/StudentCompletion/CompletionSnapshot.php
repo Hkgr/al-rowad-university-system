@@ -15,11 +15,11 @@ final class CompletionSnapshot
 
     public const FOLLOWUP_TABLES=['academic_plan_events','academic_requirement_groups','program_courses','program_course_requirement_groups','course_prerequisites'];
 
-    public function read(string $file,bool $followup=false): array
+    public function read(string $file,bool $followup=false,bool $identityContext=false): array
     {
         $sql = file_get_contents($file);
         if ($sql === false) throw new \InvalidArgumentException('Snapshot is unreadable.');
-        $tables = array_fill_keys(array_merge(self::TABLES,$followup?self::FOLLOWUP_TABLES:[]), []);
+        $tables = array_fill_keys(array_merge(self::TABLES,$followup?self::FOLLOWUP_TABLES:[],$identityContext?['course_departments']:[]), []);
         // The lexical terminator respects SQL strings, including escaped semicolons/newlines.
         preg_match_all('/^INSERT INTO `([^`]+)` \(([^\r\n]+)\) VALUES\s*/m', $sql, $headers, PREG_OFFSET_CAPTURE);
         foreach ($headers[0] as $i => [$header, $offset]) {

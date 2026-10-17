@@ -82,6 +82,23 @@ final class ConsolidatedStudentCompletionTest extends TestCase
         $file=$this->directory.'/bundle.json';CompletionFiles::write($file,$b);self::assertSame(CompletionData::hash($b),CompletionData::hash($sources->load($file,hash_file('sha256',$file))));
     }
     public static function invalidInputs(): array {return array_map(fn($v)=>[$v],['hash','duplicate','count','mirror','owner','missing','header']);}
+    public function test_new_identity_contract_is_explicit_without_reinterpreting_issued_v4(): void
+    {
+        $input=$this->inputs();config(['database.default'=>'intentionally_unavailable']);$s=new CompletionSources;$old=$s->prepare($input);$oldHash=CompletionData::hash($old);
+        $input['contract']='student-completion.consolidated-inputs.v2';$new=$s->prepare($input);
+        self::assertSame('student-completion.sources.v5',$new['contract']);self::assertSame(\App\Services\CatalogCompletion\FollowupCourseIdentity::REVISION,$new['catalog_followup']['identity_mapping_revision']);
+        self::assertArrayNotHasKey('identity_mapping_revision',$old['catalog_followup']);self::assertSame($oldHash,CompletionData::hash($s->prepare($old['config'])));
+        $file=$this->directory.'/new.json';CompletionFiles::write($file,$new);self::assertSame(CompletionData::hash($new),CompletionData::hash($s->load($file,hash_file('sha256',$file))));
+    }
+    public function test_approved_identity_revision_uses_v6_without_reinterpreting_an_issued_v5_bundle(): void
+    {
+        $input=$this->inputs();config(['database.default'=>'intentionally_unavailable']);$input['contract']='student-completion.consolidated-inputs.v2';$s=new CompletionSources;
+        $old=$s->prepare($input);$hash=CompletionData::hash($old);$input['contract']='student-completion.consolidated-inputs.v3';$new=$s->prepare($input);
+        self::assertSame('student-completion.sources.v6',$new['contract']);self::assertSame(\App\Services\CatalogCompletion\FollowupCourseIdentity::APPROVED_REVISION,$new['catalog_followup']['identity_mapping_revision']);
+        self::assertSame(\App\Services\CatalogCompletion\FollowupCourseIdentity::REVISION,$old['catalog_followup']['identity_mapping_revision']);self::assertNotSame($old['catalog_followup']['hash'],$new['catalog_followup']['hash']);
+        self::assertSame($hash,CompletionData::hash($s->prepare($old['config'])));
+        foreach(['v5'=>$old,'v6'=>$new] as $v=>$b){$file=$this->directory.'/'.$v.'.json';CompletionFiles::write($file,$b);self::assertSame(CompletionData::hash($b),CompletionData::hash($s->load($file,hash_file('sha256',$file))));}
+    }
     #[DataProvider('invalidInputs')]
     public function test_incompatible_or_tampered_consolidated_evidence_is_rejected(string $damage): void
     {

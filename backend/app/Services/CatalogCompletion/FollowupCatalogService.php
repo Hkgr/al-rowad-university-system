@@ -21,7 +21,7 @@ final class FollowupCatalogService
         foreach([ScientificProgramAccess::VIEW,ScientificProgramAccess::MANAGE,ScientificProgramAccess::PLANS,ScientificProgramAccess::APPROVE,ScientificProgramAccess::ASSIGN] as $p)$this->access->authorize($actor,$p);
         $this->courses->authorize($actor,true);AcademicPlanContext::assertReady();
         $profile=$bundle['catalog_followup']??[];
-        if(!in_array($bundle['contract']??null,['student-completion.sources.v3','student-completion.sources.v4'],true)||($profile['contract']??null)!=='approved-catalog.followup.v1'
+        if(!in_array($bundle['contract']??null,['student-completion.sources.v3','student-completion.sources.v4','student-completion.sources.v5','student-completion.sources.v6'],true)||($profile['contract']??null)!=='approved-catalog.followup.v1'
             ||!hash_equals($profile['hash']??'',CompletionData::hash(array_diff_key($profile,['hash'=>true]))))$this->fail('manifest_invalid');
         foreach($profile['programs'] as $p) {
             abort_unless($this->courses->departments($actor)->where('department_id',$p['department_id'])->whereHas('college',fn($q)=>$q->where('college_code',$p['college_code']))->exists(),403);
@@ -75,9 +75,13 @@ final class FollowupCatalogService
         foreach($p['courses'] as $row) {
             $current=$this->courses->courses($actor)->where('course_code',$row['system_code'])->first();
             $expected=$row['existing']??null;
+            if(isset($row['approved_existing_course_id'])&&(!$current||(int)$current->getKey()!==$row['approved_existing_course_id']))$blockers[]='course_identity_unverified:'.$row['record_id'];
             if($current) {
                 $attributes=$current->only(['course_id','course_code','course_name','credit_hours','theoretical_hours','practical_hours','is_active']);
                 $owned=isset($publishedOrigins[$row['system_code']])&&hash_equals(CompletionData::hash($publishedOrigins[$row['system_code']]),CompletionData::hash($attributes));
+                $identity=app(FollowupCourseIdentity::class);$contexts=$identity->liveContexts((int)$current->getKey());
+                if(!$identity->nameMatches($row,$attributes)||(!$owned&&!$identity->contextMatches($row,$p,$contexts)))$blockers[]='course_identity_unverified:'.$row['record_id'];
+                foreach($row['identity_audit']['candidate_context']??[] as $reference)if(!in_array($reference,$contexts,true))$blockers[]='course_identity_context_changed:'.$row['record_id'];
                 if(!$expected&&!$publication&&!$owned)$blockers[]='unreviewed_course_collision:'.$row['record_id'];
                 if($expected&&((int)$expected['course_id']!==(int)$current->getKey()||!hash_equals(CompletionData::hash($this->origin($expected)),CompletionData::hash($this->origin($current->only(array_keys($expected)))))))$blockers[]='course_origin_changed:'.$row['record_id'];
                 if((int)$current->credit_hours!==$row['credit_hours']||!$current->is_active)$blockers[]='course_credit_or_activity_conflict:'.$row['record_id'];
@@ -191,7 +195,7 @@ final class FollowupCatalogService
                 else {
                     $saved=$this->catalog->saveCourse($actor,null,['revision'=>$this->tx->revision(),'course_code'=>$row['system_code'],'course_name'=>$row['course_name'],
                         'credit_hours'=>$row['credit_hours'],'theoretical_hours'=>$row['theoretical_hours']??null,'practical_hours'=>$row['practical_hours']??null,
-                        'is_active'=>true,'departments'=>$row['requirement_scope']==='university'?[]:[['department_id'=>$p['department_id'],'is_primary'=>true]],'prerequisites'=>$prereq]);
+                            'is_active'=>true,'departments'=>isset($row['identity_department_id'])?[['department_id'=>$row['identity_department_id'],'is_primary'=>true]]:($row['requirement_scope']==='university'?[]:[['department_id'=>$p['department_id'],'is_primary'=>true]]),'prerequisites'=>$prereq]);
                     $ids[$row['system_code']]=(int)$saved['data']['course_id'];
                     $newOrigins[$row['system_code']]=Course::findOrFail($ids[$row['system_code']])->only(['course_id','course_code','course_name','credit_hours','theoretical_hours','practical_hours','is_active']);
                 }

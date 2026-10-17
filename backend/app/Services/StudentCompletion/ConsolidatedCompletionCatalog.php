@@ -23,7 +23,7 @@ final class ConsolidatedCompletionCatalog
             'التربية والتنمية المجتمعية'=>'FED','الحقوق'=>'FL','التربية البدنية والرياضية'=>'ES','كلية التربية البدنية والرياضية'=>'ES'];
     }
     private function departmentName(string $s): string {return str_replace(['قسم','العمارة والرسم الهندسي'],['','المدني والرسم الهندسي'],CompletionData::text($s));}
-    public function configure(array &$bundle,array $tables,array $evidence): array
+    public function configure(array &$bundle,array $tables,array $evidence,?string $identityRevision=null): array
     {
         $state=$bundle['snapshot'];$profiles=[];$amendments=[];$evidence=array_values(array_filter($evidence,fn($r)=>$r['source_id']==='environment'&&$r['source_sheet']==='RU- CDI- ESI    '&&in_array($r['source_row'],[43,44,45,46],true)));
         $ref=fn($id,$description)=>['decision_id'=>$id,'authority'=>'USER_EXPLICIT_CHAT_APPROVAL','approved_at'=>'2026-10-17','decision'=>$description];
@@ -57,11 +57,11 @@ final class ConsolidatedCompletionCatalog
                     'theoretical_hours'=>$r['theoretical_hours'],'practical_hours'=>$r['practical_hours'],'requirement_scope'=>str_starts_with($system,'RU')?'university':'college',
                     'course_type'=>str_starts_with($system,'RUS')?'elective':'mandatory','academic_level_id'=>(int)$levels[(int)ceil($term/2)],'recommended_semester_id'=>(int)$semesters[$term%2?1:2],
                     'prerequisite_codes'=>[],'existing_prerequisites'=>[]];
-                if(isset($origins[$system])) {
+                if($identityRevision===null&&isset($origins[$system])) {
                     $origin=$origins[$system];$model=new \App\Models\Course;$model->setRawAttributes($origin);$row['existing']=$model->only(['course_id','course_code','course_name','credit_hours','theoretical_hours','practical_hours','is_active']);
                     foreach($state['course_prerequisites'] as $edge)if((int)$edge['course_id']===(int)$origin['course_id'])$row['existing_prerequisites'][]=['course_code'=>$originIds[$edge['prerequisite_course_id']]['course_code'],'minimum_result_status_id'=>$edge['minimum_result_status_id']===null?null:(int)$edge['minimum_result_status_id']];
                     usort($row['existing_prerequisites'],fn($a,$b)=>strcmp($a['course_code'],$b['course_code']));$row['prerequisite_codes']=array_column($row['existing_prerequisites'],'course_code');
-                } elseif(CompletionData::text($r['prerequisite_source'])!=='')$p['blockers'][]='source_prerequisite_requires_explicit_resolution:'.$r['record_id'];
+                } elseif($identityRevision===null&&CompletionData::text($r['prerequisite_source'])!=='')$p['blockers'][]='source_prerequisite_requires_explicit_resolution:'.$r['record_id'];
                 $p['courses'][]=$row;
             }
             if($key==='environment')foreach($evidence as $i=>$r) {
@@ -73,7 +73,9 @@ final class ConsolidatedCompletionCatalog
             $profiles[]=$p;
             foreach([$s['source_program_label'],$s['approved_program_label']] as $label){$bundle['config']['program_aliases'][$label]=$code;$bundle['config']['program_aliases'][$s['college_or_institute'].'|'.$label]=$code;}
         }
-        return ['table_hashes'=>array_map(CompletionData::hash(...),array_intersect_key($tables,array_flip(['Programs','Curriculum','CourseMappings'])))+['SourceRows'=>CompletionData::hash($evidence)],
+        $config=['table_hashes'=>array_map(CompletionData::hash(...),array_intersect_key($tables,array_flip(['Programs','Curriculum','CourseMappings'])))+['SourceRows'=>CompletionData::hash($evidence)],
             'programs'=>$profiles,'amendments'=>$amendments,'approvals'=>$approvals,'evidence_record_ids'=>array_column($evidence,'record_id'),'evidence'=>$evidence];
+        if($identityRevision!==null){$config['identity_mapping_revision']=$identityRevision;$config=(new \App\Services\CatalogCompletion\FollowupCourseIdentity)->revise($config,$state,$tables);}
+        return $config;
     }
 }
