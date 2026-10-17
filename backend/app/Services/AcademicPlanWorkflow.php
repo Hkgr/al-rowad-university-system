@@ -213,11 +213,16 @@ final class AcademicPlanWorkflow
         $this->access->programs($actor)->findOrFail($programId);
         if (count($studentIds) > 50) $this->fail('catalog_completion_batch_limit', 'At most 50 explicit students per readiness read.');
         $rows = [];
-        foreach (Student::withTrashed()->where('academic_program_id', $programId)->whereIn('student_id', $studentIds)->orderBy('student_id')->get() as $student) {
+        $students = Student::withTrashed()->where('academic_program_id', $programId)->whereIn('student_id', $studentIds)->orderBy('student_id')->get();
+        $registrations = app(\App\Services\CatalogCompletion\CompletionRegistrationReadiness::class)->forStudents($students->modelKeys());
+        foreach ($students as $student) {
             $context = AcademicPlanContext::forStudent($student);
             $rows[] = ['student_id' => (int) $student->getKey(), 'archived' => $student->trashed(), 'current_version_id' => $context->versionId,
-                'before' => $this->transferProgress(app(AcademicRequirementService::class)->forPlanContext($context), $student, $context),
-                'blockers' => $this->transferBlockers((int) $student->getKey()),
+                'before' => isset($registrations[$student->getKey()]['blocking_reasons']['incomplete_schema_unavailable'])
+                    ? ['available'=>false,'reason'=>'incomplete_schema_unavailable']
+                    : $this->transferProgress(app(AcademicRequirementService::class)->forPlanContext($context), $student, $context),
+                'blockers' => $this->completionBlockers((int) $student->getKey(), $registrations[$student->getKey()]),
+                'registration_readiness' => $registrations[$student->getKey()],
                 'target_progress' => ['available' => false, 'reason' => 'target_not_yet_published_preview_only']];
         }
         return $rows;
@@ -232,6 +237,17 @@ final class AcademicPlanWorkflow
             $this->access->programs($actor)->findOrFail($programId);
             return $this->completionTransferProjection($actor, $programId, $versionId, $studentIds, $manifestHash);
         });
+    }
+
+    /** Read facade for a caller ALREADY owning a fenced snapshot or catalog-first write.
+     * Nested snapshot() would acquire a writer lock on a read-only verification. No HTTP route.
+     */
+    public function catalogCompletionAssignmentReadiness(User $actor, int $programId, int $versionId, array $studentIds, string $manifestHash): array
+    {
+        if (DB::transactionLevel() < 1) throw new \LogicException('An owned completion snapshot is required.');
+        $this->access->authorize($actor, ScientificProgramAccess::ASSIGN); AcademicPlanContext::assertReady();
+        $this->access->programs($actor)->findOrFail($programId);
+        return $this->completionTransferProjection($actor,$programId,$versionId,$studentIds,$manifestHash);
     }
 
     public function transferCatalogCompletion(User $actor, int $programId, int $versionId, array $input): array
@@ -286,19 +302,24 @@ final class AcademicPlanWorkflow
         $targetContext = AcademicPlanContext::forVersion($target);
         $students = Student::withTrashed()->where('academic_program_id', $programId)->whereIn('student_id', $studentIds)->orderBy('student_id')->get();
         if ($students->count() !== count($studentIds)) abort(404);
+        $registrations = app(\App\Services\CatalogCompletion\CompletionRegistrationReadiness::class)->forStudents($students->modelKeys());
         $rows = [];
         foreach ($students as $student) {
             $context = AcademicPlanContext::forStudent($student);
-            $blockers = $this->transferBlockers((int) $student->getKey());
-            $before = $this->transferProgress(app(AcademicRequirementService::class)->forPlanContext($context), $student, $context);
-            $after = $this->transferProgress(app(AcademicRequirementService::class)->forPlanContext($targetContext), $student, $targetContext);
+            $blockers = $this->completionBlockers((int) $student->getKey(), $registrations[$student->getKey()]);
+            $unavailable = isset($registrations[$student->getKey()]['blocking_reasons']['incomplete_schema_unavailable']);
+            $before = $unavailable ? ['available'=>false,'reason'=>'incomplete_schema_unavailable']
+                : $this->transferProgress(app(AcademicRequirementService::class)->forPlanContext($context), $student, $context);
+            $after = $unavailable ? ['available'=>false,'reason'=>'incomplete_schema_unavailable']
+                : $this->transferProgress(app(AcademicRequirementService::class)->forPlanContext($targetContext), $student, $targetContext);
             // Only the exact pinned source may have unavailable old progress. Never fabricate zero.
             $source = $context->versionId ? AcademicPlanVersion::find($context->versionId) : null;
             if (!$before['available'] && !($source?->status === 'transitional' && $source->fixed_at
                 && $context->versionId === (int) $publication['source_version_id'])) $blockers[] = 'Unverified or unavailable source progress.';
             if (!$after['available'] || $context->versionId === null) $blockers[] = 'Target progress or current assignment is unavailable.';
             $rows[] = ['student_id' => (int) $student->getKey(), 'from_version_id' => $context->versionId, 'to_version_id' => $versionId,
-                'before' => $before, 'after' => $after, 'blockers' => array_values(array_unique($blockers))];
+                'before' => $before, 'after' => $after, 'blockers' => array_values(array_unique($blockers)),
+                'registration_readiness' => $registrations[$student->getKey()]];
         }
         return ['students' => $rows, 'can_transfer' => collect($rows)->every(fn ($r) => $r['blockers'] === []), 'revision' => $this->transaction->revision()];
     }
@@ -346,6 +367,18 @@ final class AcademicPlanWorkflow
     {
         $blocked = [];
         if (\App\Models\StudentCourseRegistration::where('student_id', $studentId)->current()->exists()) $blocked[] = 'توجد تسجيلات دراسية جارية.';
+        return array_values(array_unique(array_merge($blocked,$this->academicOperationBlockers($studentId))));
+    }
+
+    private function completionBlockers(int $studentId, array $registrations): array
+    {
+        return array_values(array_unique(array_merge($registrations['blocking_registrations'] ? ['توجد تسجيلات دراسية جارية.'] : [],
+            $this->academicOperationBlockers($studentId))));
+    }
+
+    private function academicOperationBlockers(int $studentId): array
+    {
+        $blocked = [];
         foreach (['student_registration_requests', 'student_registration_modification_requests', 'student_registration_replacement_requests'] as $table) {
             if (DB::table($table)->where('student_id', $studentId)->whereIn('status', ['draft', 'submitted', 'returned'])->exists()) $blocked[] = 'توجد طلبات تسجيل غير محسومة.';
         }

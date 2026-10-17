@@ -98,8 +98,46 @@ final class IncompleteOutcomeGuard
         if ((int) $case->student_id !== (int) $registration->student_id || (int) $case->course_id !== (int) $offering?->course_id
             || (int) $case->academic_year_id !== (int) $offering?->academic_year_id || (int) $case->semester_id !== (int) $offering?->semester_id) self::conflict();
         $result = DB::table('student_course_results')->where('student_course_registration_id', $registration->getKey())->first();
-        $snapshot = $case->outcome_snapshot;
         $event = DB::table(self::EVENTS)->where('incomplete_case_id', $case->getKey())->where('revision', $case->revision)->first();
+        $status = $result ? DB::table('result_statuses')->where('result_status_id', $result->result_status_id)->value('status_code') : null;
+        return self::assertOutcomeEvidence($registration, $case, $result, $event, $status);
+    }
+
+    /** Read-only batch projection of the SAME protection as preservesOutcome().
+     * Caller owns a fenced snapshot or the existing catalog-first transaction.
+     * Never replaces the locked writer guard or authorizes a lifecycle mutation.
+     */
+    public static function readPreservedOutcomes(Collection $registrations): array
+    {
+        self::assertReady();
+        $ids = $registrations->map->getKey()->all();
+        $cases = CourseIncompleteCase::whereIn('student_course_registration_id', $ids)->get()->keyBy('student_course_registration_id');
+        $results = DB::table('student_course_results')->whereIn('student_course_registration_id', $ids)->get()->keyBy('student_course_registration_id');
+        $events = DB::table(self::EVENTS.' as e')->join(self::CASES.' as c', 'c.incomplete_case_id', '=', 'e.incomplete_case_id')
+            ->whereColumn('e.revision','c.revision')->whereIn('c.student_course_registration_id',$ids)->select('e.*')->get()->keyBy('incomplete_case_id');
+        $statuses = DB::table('result_statuses')->whereIn('result_status_id',$results->pluck('result_status_id')->unique())->pluck('status_code','result_status_id');
+        $evidence = [];
+        foreach ($registrations as $registration) {
+            $id = $registration->getKey(); $case = $cases->get($id);
+            $registration->setRelation('incompleteCase',$case);
+            $evidence[$id] = ['state'=>$case?->state,'preserved'=>false,'reason'=>null];
+            if (!$case) continue;
+            $result = $results->get($id);
+            try {
+                self::assertOutcomeEvidence($registration,$case,$result,$events->get($case->getKey()),$statuses->get($result?->result_status_id));
+                $evidence[$id]['preserved'] = true;
+            } catch (GradeException $e) { $evidence[$id]['reason'] = $e->errorCode; }
+            catch (\JsonException $e) { $evidence[$id]['reason'] = 'incomplete_outcome_conflict'; }
+        }
+        return $evidence;
+    }
+
+    private static function assertOutcomeEvidence(StudentCourseRegistration $registration, CourseIncompleteCase $case, ?object $result, ?object $event, ?string $status): bool
+    {
+        $offering = $registration->courseOffering;
+        if ((int) $case->student_id !== (int) $registration->student_id || (int) $case->course_id !== (int) $offering?->course_id
+            || (int) $case->academic_year_id !== (int) $offering?->academic_year_id || (int) $case->semester_id !== (int) $offering?->semester_id) self::conflict();
+        $snapshot = $case->outcome_snapshot;
         if (!$result || !$event || !is_array($snapshot) || !in_array($case->state, ['active', 'resolved', 'expired'], true)
             || $case->revision < 1 || array_diff(self::RESULT_FIELDS, array_keys($snapshot))
             || (int) $case->student_course_result_id !== (int) $result->student_course_result_id) self::conflict();
@@ -107,7 +145,6 @@ final class IncompleteOutcomeGuard
             || ($case->state === 'resolved' && $event->action !== 'resolved') || ($case->state === 'expired' && $event->action !== 'expired')) self::conflict();
         $after = json_decode($event->after_values, true, flags: JSON_THROW_ON_ERROR);
         if ($after !== $case->toArray()) self::conflict();
-        $status = DB::table('result_statuses')->where('result_status_id', $result->result_status_id)->value('status_code');
         if (($case->state === 'active' && $status !== 'incomplete')
             || ($case->state === 'resolved' && !in_array($status, ['passed', 'failed'], true))
             || ($case->state === 'expired' && $status !== ($case->expiry_outcome === 'Z' ? 'deprived' : 'failed'))) self::conflict();
