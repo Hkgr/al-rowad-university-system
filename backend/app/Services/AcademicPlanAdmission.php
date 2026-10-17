@@ -13,7 +13,7 @@ final class AcademicPlanAdmission
      * Ordinary model/DB admission hooks remain active. The default trigger's actual insertion
      * is retained and explicitly ended in this same transaction when a historical reference differs.
      */
-    public static function createHistorical(\App\Models\User $actor, array $fields, ?int $historicalVersionId, string $operationId): Student
+    public static function createHistorical(\App\Models\User $actor, array $fields, ?int $historicalVersionId, string $operationId,?array $completionContext=null): Student
     {
         \Illuminate\Support\Facades\Gate::forUser($actor)->authorize('create', Student::class);
         if (!\Ramsey\Uuid\Uuid::isValid($operationId)) throw new \InvalidArgumentException('Historical admission requires the reviewed operation UUID.');
@@ -24,9 +24,23 @@ final class AcademicPlanAdmission
         $historical=null;
         if ($program->plan_state==='ready') {
             $versions=AcademicPlanVersion::where('academic_program_id',$program->getKey())->where('status','transitional')->whereNotNull('fixed_at')->orderBy('academic_plan_version_id')->lockForUpdate()->get();
-            if ($versions->count()!==1 || (int)$versions->sole()->getKey()!==$historicalVersionId)
-                throw AcademicPlanException::conflict('historical_plan_context_unproven','Review the fixed historical reference before creating this student.');
-            $historical=$versions->sole();
+            if ($versions->count()===1 && (int)$versions->sole()->getKey()===$historicalVersionId)$historical=$versions->sole();
+            else {
+                // A newly-created, fully approved completion program has no invented transitional
+                // predecessor. Its exact recorded source/publication proof is required instead.
+                if($versions->isNotEmpty()||($completionContext['kind']??null)!=='approved_now_from_recorded_source_curriculum_not_historical_approval'
+                    ||!preg_match('/^[a-f0-9]{64}$/',$completionContext['profile_hash']??'')||(int)$program->default_academic_plan_version_id!==$historicalVersionId)
+                    throw AcademicPlanException::conflict('historical_plan_context_unproven','Review the fixed historical reference or explicitly published completion source before creating this student.');
+                $event=DB::table('academic_plan_events')->where('academic_plan_event_id',$completionContext['event_id']??null)->where('academic_program_id',$program->getKey())
+                    ->where('academic_plan_version_id',$historicalVersionId)->where('action','catalog_completion_published')->first();
+                $proof=$event?json_decode($event->context,true,flags:JSON_THROW_ON_ERROR):null;
+                if(!$proof||($proof['new_program_created']??false)!==true||($proof['source_version_id']??null)!==null
+                    ||($proof['reference_kind']??null)!==$completionContext['kind']||($proof['manifest_hash']??null)!==$completionContext['profile_hash']
+                    ||($proof['program_key']??null)!==($completionContext['program_key']??null))
+                    throw AcademicPlanException::conflict('historical_plan_context_unproven','The recorded completion source is missing or changed.');
+                app(\App\Services\CatalogCompletion\CatalogCompletionPublication::class)->assertTarget($actor,['academic_program_id'=>$program->getKey(),'academic_plan_version_id'=>$historicalVersionId],$completionContext['profile_hash']);
+                $historical=AcademicPlanVersion::findOrFail($historicalVersionId);
+            }
         } elseif ($historicalVersionId!==null) throw AcademicPlanException::conflict('historical_plan_context_unproven','Legacy admission cannot select an unrelated plan.');
         $student=Student::create($fields); // All ordinary admission hooks and the installed DB triggers run.
         if ($historical) {
@@ -42,7 +56,8 @@ final class AcademicPlanAdmission
             DB::table('academic_plan_events')->insert(['academic_program_id'=>$program->getKey(),'academic_plan_version_id'=>$historicalVersionId,
                 'action'=>'historical_student_admitted','actor_user_id'=>$actor->getKey(),'created_at'=>now(),
                 'context'=>json_encode(['operation_id'=>$operationId,'student_id'=>$student->getKey(),'initial_trigger_assignment'=>$links->sole()->academic_plan_version_id,
-                    'historical_reference'=>$historicalVersionId,'reference_kind'=>'current_state_not_historical_approval'],JSON_THROW_ON_ERROR)]);
+                    'historical_reference'=>$historicalVersionId,'reference_kind'=>$completionContext['kind']??'current_state_not_historical_approval',
+                    'completion_source'=>$completionContext],JSON_THROW_ON_ERROR)]);
         }
         return $student;
     }

@@ -481,7 +481,7 @@ final class CatalogCompletionService
         return CatalogCompletionPublication::sourceFingerprint($version);
     }
 
-    private function academicFingerprint(): string
+    public function academicFingerprint(): string
     {
         $hash = hash_init('sha256');
         foreach (['student_course_registrations', 'student_course_results', 'student_grade_components', 'grade_approvals', 'grade_part_approvals', 'grade_part_approval_events', 'grade_audit_logs',

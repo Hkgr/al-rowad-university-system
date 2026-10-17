@@ -493,3 +493,10 @@ No production connection, live preview/apply, deployment, frontend work, marks
 import, SQL, migration or permission change occurred. Keep PR #173 Draft, open
 and unmerged. Resolving remaining academic/source blockers is a separate reviewed
 operation, not permission to clear evidence or silently rerun writes.
+
+## Approved follow-up
+
+The subsequent missing-program/source-ownership increment is documented in
+[Approved student-completion follow-up](../../docs/student-completion-approved-followup.md).
+It requires a new v3 source bundle, fresh reviews and new operation UUIDs. Do not
+modify or reuse the historical operation described above.

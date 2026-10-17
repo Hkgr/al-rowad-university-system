@@ -8,7 +8,7 @@ use Illuminate\Console\Command;
 
 final class CompleteApprovedCatalog extends Command
 {
-    protected $signature = 'academic-catalog:complete {--actor=} {--manifest=} {--manifest-hash=} {--expected-revision=} {--operation-id=} {--apply} {--resume}';
+    protected $signature = 'academic-catalog:complete {--actor=} {--manifest=} {--manifest-hash=} {--expected-revision=} {--operation-id=} {--apply} {--resume} {--review=} {--review-hash=} {--output=}';
     protected $description = 'Preview the approved manifest, or explicitly apply/resume guarded catalog completion.';
 
     public function handle(CatalogCompletionService $service): int
@@ -19,8 +19,11 @@ final class CompleteApprovedCatalog extends Command
             }
             if ($this->option('resume') && !$this->option('apply')) throw new \InvalidArgumentException('--resume requires --apply and a newly reviewed revision.');
             $actor = User::findOrFail($this->option('actor'));
-            $manifest = new ApprovedCatalogManifest($this->option('manifest'), $this->option('manifest-hash'));
-            $result = $this->option('apply') ? $service->apply($actor, $manifest, (string) $this->option('expected-revision'), $this->option('operation-id'), (bool) $this->option('resume')) : $service->preview($actor, $manifest);
+            if(FollowupCatalogCommand::selected($this->option('manifest')))$result=FollowupCatalogCommand::run($this,'complete');
+            else {
+                $manifest = new ApprovedCatalogManifest($this->option('manifest'), $this->option('manifest-hash'));
+                $result = $this->option('apply') ? $service->apply($actor, $manifest, (string) $this->option('expected-revision'), $this->option('operation-id'), (bool) $this->option('resume')) : $service->preview($actor, $manifest);
+            }
             $this->line(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
             return in_array($result['status'] ?? null, ['PARTIAL', 'BLOCKED', 'IN_PROGRESS'], true) ? self::FAILURE : self::SUCCESS;
         } catch (\Throwable $e) {

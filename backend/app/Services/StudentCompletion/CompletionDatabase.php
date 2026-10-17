@@ -48,7 +48,7 @@ final class CompletionDatabase
         return CompletionData::hash($data);
     }
 
-    public function read(User $actor,?array $numbers=null): array
+    public function read(User $actor,?array $numbers=null,bool $followup=false): array
     {
         $scope=app(DataScopeService::class);
         $programIds=$scope->scopeProgramsForMutation(\App\Models\AcademicProgram::query(),$actor)->pluck('academic_program_id')->all();
@@ -64,7 +64,7 @@ final class CompletionDatabase
         $collegeIds=DB::table('departments')->whereIn('department_id',$departmentIds)->pluck('college_id')->unique()->all();
         $supplementaryIds=DB::table('supplementary_exam_registrations')->whereIn('student_id',$ids)->pluck('supplementary_exam_registration_id')->all();
         $state=[];
-        foreach (CompletionSnapshot::TABLES as $table) {
+        foreach (array_merge(CompletionSnapshot::TABLES,$followup?CompletionSnapshot::FOLLOWUP_TABLES:[]) as $table) {
             if (!Schema::hasTable($table)) throw new CompletionException('student_completion_schema_unavailable','Required academic table unavailable: '.$table,503);
             $q=DB::table($table);
             if ($table==='students') {$state[$table]=$students;continue;}
@@ -72,7 +72,9 @@ final class CompletionDatabase
             elseif($table==='supplementary_exam_materializations')$q->whereIn('supplementary_exam_registration_id',$supplementaryIds);
             elseif($table==='grade_approvals')$q->whereIn('course_offering_id',$offeringIds);
             elseif (Schema::hasColumn($table,'student_id')) $q->whereIn('student_id',$ids);
-            elseif (in_array($table,['academic_programs','academic_plan_versions'],true)) $q->whereIn('academic_program_id',$programIds);
+            elseif (in_array($table,['academic_programs','academic_plan_versions','academic_plan_events','academic_requirement_groups','program_courses'],true)) $q->whereIn('academic_program_id',$programIds);
+            elseif($table==='program_course_requirement_groups')$q->whereIn('program_course_id',DB::table('program_courses')->whereIn('academic_program_id',$programIds)->select('program_course_id'));
+            elseif($table==='course_prerequisites')$q->whereIn('course_id',DB::table('program_courses')->whereIn('academic_program_id',$programIds)->select('course_id'));
             elseif($table==='course_offerings')$q->whereIn('course_offering_id',$offeringIds);
             elseif($table==='courses')$q->whereIn('course_id',$courseIds);
             elseif($table==='departments')$q->whereIn('department_id',$departmentIds);

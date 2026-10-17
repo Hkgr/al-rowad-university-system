@@ -14,7 +14,7 @@ final class CompletionSources
             if (empty($config[$key])) throw new \InvalidArgumentException('Missing source: '.$key);
         $sources = []; $identities = []; $observations = []; $conflicts = []; $unidentified=[];
         $snapshot = $this->source($config['snapshot'], 'snapshot', $sources);
-        $tables = (new CompletionSnapshot)->read($snapshot['path']);
+        $tables = (new CompletionSnapshot)->read($snapshot['path'], isset($config['followup']));
         $roster = $this->source($config['roster'], 'roster', $sources);
         // Explicitly documented template example, not an arbitrary first data row.
         $skip = $roster['example_rows'] ?? [];
@@ -113,8 +113,17 @@ final class CompletionSources
                 'reference'=>$this->ref('conflicts',$sheet->getTitle(),$i),'cells'=>array_combine(['A','B','C','D','E'],array_map(fn($c)=>$this->cell($sheet,$c.$i),['A','B','C','D','E']))];
         }
         }
-        return (new CompletionResolutions)->compile(['contract'=>isset($config['resolution_policy'])?'student-completion.sources.v2':'student-completion.sources.v1','config'=>$config,'sources'=>$sources,
+        $handoff=null;
+        if(isset($config['followup'])) {
+            $input=$this->source($config['followup']['handoff'],'handoff',$sources);
+            $handoff=$this->handoff($input['path'], $config['followup']['catalog']['evidence_record_ids']??[]);
+        }
+        $bundle=(new CompletionResolutions)->compile(['contract'=>isset($config['resolution_policy'])?'student-completion.sources.v2':'student-completion.sources.v1','config'=>$config,'sources'=>$sources,
             'identities'=>$identities,'observations'=>$observations,'conflicts'=>$conflicts,'unidentified_source_rows'=>$unidentified,'snapshot'=>$tables]);
+        if($handoff===null)return $bundle;
+        $bundle=(new CompletionFollowup)->compile($bundle,$handoff);
+        if(isset($config['followup']['catalog']))$bundle['catalog_followup']=(new \App\Services\CatalogCompletion\ApprovedFollowupCatalog)->compile($bundle,$handoff);
+        return $bundle;
     }
 
     public function load(string $path, string $expectedHash): array
@@ -122,7 +131,7 @@ final class CompletionSources
         if (!preg_match('/^[a-f0-9]{64}$/',$expectedHash) || !hash_equals($expectedHash,hash_file('sha256',$path)))
             throw new \InvalidArgumentException('Source bundle fingerprint differs.');
         $bundle=json_decode(file_get_contents($path),true,flags:JSON_THROW_ON_ERROR);
-        if (!in_array($bundle['contract']??null,['student-completion.sources.v1','student-completion.sources.v2'],true)) throw new \InvalidArgumentException('Unsupported source contract.');
+        if (!in_array($bundle['contract']??null,['student-completion.sources.v1','student-completion.sources.v2','student-completion.sources.v3'],true)) throw new \InvalidArgumentException('Unsupported source contract.');
         $fresh=$this->prepare($bundle['config']);
         // Preserve read/replay of genuine pre-resolution bundles. Never strip arbitrary fields.
         if($bundle['contract']==='student-completion.sources.v1'&&!isset($bundle['config']['resolution_policy'])) {
@@ -139,6 +148,45 @@ final class CompletionSources
         $hash=hash_file('sha256',$input['path']);
         if (!hash_equals($input['sha256']??'', $hash)) throw new \InvalidArgumentException('Source fingerprint differs: '.$id);
         $sources[$id]=['name'=>basename($input['path']),'sha256'=>$hash]; return $input;
+    }
+    private function handoff(string $path,array $evidenceIds=[]): array
+    {
+        $out=[];
+        foreach(['Decisions'=>'decision_id','ExamOwners'=>'record_id','Programs'=>'program_key','Curriculum'=>'record_id','CourseMappings'=>'program_key'] as $name=>$first) {
+            $reader=new Xlsx;$reader->setReadDataOnly(true)->setLoadSheetsOnly([$name]);$book=$reader->load($path);
+            try {
+                $sheet=$book->getSheetByName($name);if(!$sheet||$this->cell($sheet,'A1')!==$first)throw new \InvalidArgumentException('Invalid handoff table: '.$name);
+                $headers=[];foreach($sheet->rangeToArray('A1:'.$sheet->getHighestDataColumn().'1',null,false,false)[0] as $header)$headers[]=$header;
+                if(count($headers)!==count(array_unique($headers)))throw new \InvalidArgumentException('Duplicate handoff headers.');
+                $rows=[];foreach($sheet->rangeToArray('A2:'.$sheet->getHighestDataColumn().$sheet->getHighestDataRow(),null,false,false) as $i=>$values) {
+                    if($values[0]===null||$values[0]==='')continue;
+                    $row=array_combine($headers,$values);$row['_row']=$i+2;$rows[]=$row;
+                }
+                $out[$name]=$rows;
+            } finally {$book->disconnectWorksheets();}
+        }
+        if($evidenceIds) {
+            // First locate exact evidence references using only the identifier column.
+            $filter=new class implements \PhpOffice\PhpSpreadsheet\Reader\IReadFilter {
+                public function readCell(string $columnAddress,int $row,string $worksheetName=''): bool {return $columnAddress==='A';}
+            };
+            $reader=new Xlsx;$reader->setReadDataOnly(true)->setLoadSheetsOnly(['SourceRows'])->setReadFilter($filter);
+            $book=$reader->load($path);$sheet=$book->getSheetByName('SourceRows');$selected=[1];
+            foreach($sheet->getRowIterator(2) as $row)if(in_array($this->cell($sheet,'A'.$row->getRowIndex()),$evidenceIds,true))$selected[]=$row->getRowIndex();
+            $book->disconnectWorksheets();
+            if(count($selected)!==count($evidenceIds)+1)throw new \InvalidArgumentException('Required extracted evidence is missing or duplicated.');
+            $filter=new class($selected) implements \PhpOffice\PhpSpreadsheet\Reader\IReadFilter {
+                public function __construct(private array $rows){}
+                public function readCell(string $columnAddress,int $row,string $worksheetName=''): bool {return in_array($row,$this->rows,true);}
+            };
+            $reader=new Xlsx;$reader->setReadDataOnly(true)->setLoadSheetsOnly(['SourceRows'])->setReadFilter($filter);$book=$reader->load($path);
+            try {
+                $sheet=$book->getSheetByName('SourceRows');$headers=$sheet->rangeToArray('A1:H1',null,false,false)[0];$rows=[];
+                foreach(array_slice($selected,1) as $i){$r=array_combine($headers,$sheet->rangeToArray('A'.$i.':H'.$i,null,false,false)[0]);$r['_row']=$i;$rows[]=$r;}
+                $out['SourceRows']=$rows;
+            } finally {$book->disconnectWorksheets();}
+        }
+        return $out;
     }
     private function sheets(string $path,string $name,int $first,array $columns): \Generator
     {

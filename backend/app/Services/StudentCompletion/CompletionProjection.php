@@ -23,7 +23,7 @@ final class CompletionProjection
         ksort($groups,SORT_STRING); $rows=[];
         foreach ($groups as $number=>$group) {
             if ($numbers!==null && !in_array((string)$number,$numbers,true)) continue;
-            $rows[]=$this->student((string)$number,$group,$existing[$number]??null,$state,$config,$bundle['conflicts'],$bundle['approved_identities'][$number]??null);
+            $rows[]=$this->student((string)$number,$group,$existing[$number]??null,$state,$config,$bundle['conflicts'],$bundle['approved_identities'][$number]??null,($bundle['completion_approvals']??[])+['catalog_profile'=>$bundle['catalog_followup']??null]);
         }
         $counts=['existing'=>0,'archived'=>0,'missing'=>0,'ready_create'=>0,'ready_status'=>0,'blocked_create'=>0];
         $classifications=[];$examinations=[];
@@ -50,7 +50,11 @@ final class CompletionProjection
         return ['contract'=>'student-completion.report.v1','basis'=>$basis,'writes_performed'=>false,
             'counts'=>$counts,'record_counts'=>$records,'classifications'=>$classifications,'examination_classifications'=>$examinations,
             'unidentified_source_rows'=>$bundle['unidentified_source_rows']??[],'unassigned_source_records'=>$bundle['unassigned_source_records']??[],
-            'resolution_controls'=>$bundle['resolution_controls']??null,'reconciliation'=>$this->summarize($rows),'students'=>$rows];
+            'resolution_controls'=>$bundle['resolution_controls']??null,'reconciliation'=>$this->summarize($rows),'students'=>$rows,
+            'followup_controls'=>$bundle['followup_controls']??null,
+            'population_groups'=>['missing_with_observations'=>count(array_filter($rows,fn($r)=>!$r['exists']&&$r['source_observation_count']>0)),
+                'missing_without_observations'=>count(array_filter($rows,fn($r)=>!$r['exists']&&$r['source_observation_count']===0)),
+                'existing_without_observations'=>count(array_filter($rows,fn($r)=>$r['exists']&&$r['source_observation_count']===0))]];
     }
 
     private function number(array $row,array $config): string
@@ -66,7 +70,7 @@ final class CompletionProjection
         return $original;
     }
 
-    private function student(string $number,array $group,?array $student,array $state,array $config,array $conflicts,?array $decision=null): array
+    private function student(string $number,array $group,?array $student,array $state,array $config,array $conflicts,?array $decision=null,array $followup=[]): array
     {
         $identities=$group['identities']??[]; $observations=$this->deduplicate($group['observations']??[]);
         $identityBlockers=[]; $approved=$config['approved_students'][$number]??[];
@@ -112,6 +116,19 @@ final class CompletionProjection
         $dateBlockers=count($dates)>1?['enrollment_dates_conflict']:[];
         if ($student && $dates && $enrollment && !in_array($enrollment,$dates,true)) $dateBlockers[]='existing_enrollment_date_differs';
         $years=array_values(array_unique(array_filter(array_map(fn($o)=>CompletionData::year($o['year']),$observations),fn($y)=>$y!==null)));
+        $dateAuthority=$enrollment?['kind'=>'documented','references'=>array_column(array_filter($identities,fn($r)=>CompletionData::date($r['enrollment_date']??null)===$enrollment),'reference')]:null;
+        if(!$student&&!$enrollment&&!$dateBlockers) {
+            $explicit=$followup['dates'][$number]??null;
+            $regular=array_values(array_filter($observations,fn($o)=>$o['kind']==='regular'));
+            $evidenced=array_values(array_unique(array_filter(array_map(fn($o)=>CompletionData::year($o['year']),$regular),fn($y)=>$y!==null)));
+            $ambiguous=array_filter($regular,fn($o)=>CompletionData::year($o['year'])===null);
+            if($explicit) {$enrollment=$explicit['value'];$dateAuthority=$explicit;}
+            elseif(isset($followup['missing_date'])&&$evidenced&&!$ambiguous) {
+                $earliest=min($evidenced);$enrollment=sprintf('%04d-09-01',$earliest);
+                $dateAuthority=['kind'=>'administratively_approved_estimate','value'=>$enrollment,'reference'=>$followup['missing_date']['reference'],
+                    'earliest_exam_year'=>$earliest,'supporting_examination_references'=>array_column(array_filter($regular,fn($o)=>CompletionData::year($o['year'])===$earliest),'references')];
+            } elseif(isset($followup['missing_date']))$dateBlockers[]=$ambiguous?'enrollment_estimate_exam_year_ambiguous':'enrollment_estimate_exam_year_missing';
+        }
         $cohorts=array_values(array_unique(array_filter(array_map(fn($r)=>CompletionData::year($r['cohort']??null),[...$identities,...$observations]),fn($y)=>$y!==null)));
         $enrollmentYears=$enrollment?array_values(array_filter($state['academic_years'],fn($y)=>$y['start_date']<=$enrollment&&$y['end_date']>=$enrollment)):[];
         $start=count($enrollmentYears)===1?CompletionData::year($enrollmentYears[0]['year_name']):(!$enrollment&&count($cohorts)===1?$cohorts[0]:null);
@@ -162,10 +179,14 @@ final class CompletionProjection
         }
         $sourceStatuses=array_values(array_unique(array_filter(array_column($identities,'status'))));
         $creationStatus=count($sourceStatuses)===1?$sourceStatuses[0]:null;
+        $statusAuthority=$creationStatus?['kind'=>'documented_source_status']:null;
+        if(!$student&&!$sourceStatuses&&isset($followup['missing_status'])) {$creationStatus='active';$statusAuthority=['kind'=>'administratively_approved_missing_default']+$followup['missing_status'];}
         if($administrative)$creationStatus='frozen';
+        if($administrative)$statusAuthority=['kind'=>'explicit_administrative_decision','decision'=>$decision['fields']['status']];
         $installedStatus=$creationStatus?$this->lookup($state['student_statuses'],'status_code',$creationStatus):null;
-        if ($installedStatus&&(!$administrative||count($frozen)===1)) $fields['student_status_id']=(int)$installedStatus['student_status_id'];
+        if ($installedStatus&&($installedStatus['is_active']??true)&&(!$administrative||count($frozen)===1)) $fields['student_status_id']=(int)$installedStatus['student_status_id'];
         $creationBlockers=array_merge($identityBlockers,$dateBlockers,$levelReasons);
+        if(count($sourceStatuses)>1&&!$administrative)$creationBlockers[]='creation_source_status_conflict';
         if($administrative&&count($frozen)!==1)$creationBlockers[]='discontinuation_status_unavailable';
         foreach(array_keys($decision['unresolved_fields']??[]) as $field)$creationBlockers[]='approved_field_unresolved:'.$field;
         foreach (['first_name','last_name','academic_program_id','enrollment_date','current_academic_level_id','student_status_id'] as $key)
@@ -175,7 +196,7 @@ final class CompletionProjection
         $creationName=CompletionData::text(($fields['first_name']??'').' '.($fields['last_name']??''));
         if(!$decision&&$creationName!==''&&!in_array($creationName,[...$names,...$accepted],true))$creationBlockers[]='creation_name_not_supported_by_evidence';
         if($program&&!empty($program['duration_years'])&&$derived!==null&&$derived>(int)$program['duration_years']) $creationBlockers[]='derived_level_exceeds_program_duration';
-        $plan=$program?$this->plan($program,$state):['ready'=>false,'version_id'=>null,'basis'=>null,'blockers'=>['program_missing_or_ambiguous']];
+        $plan=$program?$this->plan($program,$state,$followup['catalog_profile']??null):['ready'=>false,'version_id'=>null,'basis'=>null,'blockers'=>['program_missing_or_ambiguous']];
         $creationBlockers=array_merge($creationBlockers,$plan['blockers']);
         $corrections=[];
         if($student&&$decision)foreach(['first_name','last_name','father_name'] as $field)if(isset($approvedFields[$field])&&CompletionData::text($student[$field]??'')!==$approvedFields[$field])
@@ -195,7 +216,8 @@ final class CompletionProjection
             'derived_level'=>['value'=>$derived,'basis'=>$levelBasis,'reference_year'=>$reference,'blockers'=>array_values(array_unique($levelReasons))],
             'periods'=>$periods,'undated_supplementary_count'=>count($undated),'classification'=>$classification,'exam_classification'=>$examClassification,
             'historical_plan'=>$plan,'creation'=>['ready'=>!$student&&!$creationBlockers,'action'=>$student?'existing_noop':'create_historical',
-                'fields'=>$fields,'blockers'=>$student?[]:array_values(array_unique($creationBlockers))],
+                'fields'=>$fields,'blockers'=>$student?[]:array_values(array_unique($creationBlockers)),
+                'provenance'=>['enrollment_date'=>$dateAuthority,'status'=>$statusAuthority]],
             'approved_identity'=>$decision,'identity_correction'=>['ready'=>(bool)$corrections&&!$correctionBlockers,'changes'=>$corrections,'blockers'=>$correctionBlockers],
             'status_change'=>['authority'=>$administrative?'administrative':'examination','decision'=>$administrative?$decision['fields']['status']:null,
                 'ready'=>!$statusBlockers,'to_status_id'=>count($frozen)===1?(int)$frozen[0]['student_status_id']:null,
@@ -276,19 +298,34 @@ final class CompletionProjection
         return array_values($periods);
     }
 
-    private function plan(array $program,array $state): array
+    private function plan(array $program,array $state,?array $profile=null): array
     {
-        $blockers=[]; $version=null; $basis='legacy_current_context';
+        $blockers=[]; $version=null; $basis='legacy_current_context';$context=null;
         if (!empty($program['archived_at'])) $blockers[]='academic_program_archived';
         $status=$program['plan_state']??null;
         if ($status==='ready') {
             $default=$this->lookup($state['academic_plan_versions'],'academic_plan_version_id',$program['default_academic_plan_version_id']);
             if (!$default || $default['status']!=='approved' || empty($default['fixed_at'])) $blockers[]='current_admission_context_unavailable';
             $sources=array_values(array_filter($state['academic_plan_versions'],fn($v)=>(int)$v['academic_program_id']===(int)$program['academic_program_id'] && $v['status']==='transitional' && !empty($v['fixed_at'])));
-            if (count($sources)!==1) $blockers[]='historical_plan_context_unproven';
+            if (count($sources)!==1) {
+                $approved=$profile?collect($profile['programs'])->first(fn($p)=>$p['program_code']===$program['program_code']&&(int)$p['department_id']===(int)$program['department_id']):null;
+                $events=array_values(array_filter($state['academic_plan_events']??[],fn($e)=>(int)$e['academic_program_id']===(int)$program['academic_program_id']
+                    &&(int)$e['academic_plan_version_id']===(int)$program['default_academic_plan_version_id']&&$e['action']==='catalog_completion_published'));
+                foreach($events as $e) {
+                    $proof=json_decode($e['context'],true,flags:JSON_THROW_ON_ERROR);
+                    if($approved&&($proof['manifest_hash']??null)===$profile['hash']&&($proof['program_key']??null)===$approved['key']
+                        &&($proof['new_program_created']??false)===true&&($proof['source_version_id']??null)===null
+                        &&($proof['reference_kind']??null)==='approved_now_from_recorded_source_curriculum_not_historical_approval')
+                        $context=['kind'=>$proof['reference_kind'],'profile_hash'=>$profile['hash'],'program_key'=>$approved['key'],'event_id'=>(int)$e['academic_plan_event_id']];
+                }
+                if(!$context)$blockers[]='historical_plan_context_unproven';
+                else {$version=(int)$program['default_academic_plan_version_id'];$basis=$context['kind'];}
+            }
             else {$version=(int)$sources[0]['academic_plan_version_id'];$basis='fixed_transitional_reference_not_historical_approval';}
         } elseif ($status!=='legacy') $blockers[]='academic_plan_initialization_incomplete';
-        return ['ready'=>!$blockers,'version_id'=>$version,'basis'=>$basis,'blockers'=>$blockers];
+        $result=['ready'=>!$blockers,'version_id'=>$version,'basis'=>$basis,'blockers'=>$blockers];
+        if($context)$result['completion_context']=$context;
+        return $result;
     }
 
     private function operationBlockers(?array $student,array $state): array
@@ -340,10 +377,12 @@ final class CompletionProjection
     {
         $unique=[];
         foreach ($observations as $observation) {
-            $body=$observation;unset($body['reference'],$body['source_number'],$body['original']);$key=CompletionData::hash($body);
+            $body=$observation;unset($body['reference'],$body['source_number'],$body['original'],$body['ownership'],$body['ownership_history'],$body['approved_owner_mapping']);$key=CompletionData::hash($body);
             if (!isset($unique[$key])) $unique[$key]=$observation+['references'=>[],'original_copies'=>[],'duplicate_count'=>0];
             $unique[$key]['references'][]=$observation['reference']; $unique[$key]['duplicate_count']++;
-            $unique[$key]['original_copies'][]=['reference'=>$observation['reference'],'values'=>$observation['original']??$observation];
+            $copy=['reference'=>$observation['reference'],'values'=>$observation['original']??$observation];
+            foreach(['ownership','ownership_history','approved_owner_mapping'] as $provenance)if(isset($observation[$provenance]))$copy[$provenance]=$observation[$provenance];
+            $unique[$key]['original_copies'][]=$copy;
         }
         return array_values($unique);
     }
