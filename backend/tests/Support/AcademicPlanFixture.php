@@ -54,7 +54,7 @@ final class AcademicPlanFixture
                 'group_name' => $scope.' '.$type, 'requirement_scope' => $scope, 'requirement_type' => $type,
                 'required_credit_hours' => $scope === 'university' && $type === 'mandatory' ? 3 : 0], 'requirement_group_id');
             if ($scope === 'university' && $type === 'mandatory') {
-                $pc = DB::table('program_courses')->insertGetId(['academic_program_id' => 1, 'course_id' => 1, 'course_type' => 'mandatory'], 'program_course_id');
+                $pc = DB::table('program_courses')->insertGetId(['academic_program_id' => 1, 'course_id' => 1, 'course_type' => 'mandatory', 'academic_level_id' => 1, 'recommended_semester_id' => 1], 'program_course_id');
                 DB::table('program_course_requirement_groups')->insert(['program_course_id' => $pc, 'requirement_group_id' => $group]);
             }
         }

@@ -101,6 +101,7 @@ final class ScientificCourseDistribution
     {
         // Called only for a newly created Course under the outer catalog writer lock/transaction.
         if (DB::transactionLevel() < 1 || !$plan['can_apply']) $this->invalid('تعذر ربط جميع البرامج؛ راجع معاينة النطاق. لم يُحفظ أي تغيير.');
+        AcademicAdvisoryPlacement::validate(['course_type' => $plan['scope']['course_type']] + $advisory);
         $versioned = AcademicPlanContext::installed();
         foreach ($plan['targets'] as $target) {
             $pc = new ProgramCourse(['course_id' => $course->getKey(), 'academic_program_id' => $target['academic_program_id'],

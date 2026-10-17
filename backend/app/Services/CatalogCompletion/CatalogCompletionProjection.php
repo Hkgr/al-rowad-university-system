@@ -13,6 +13,7 @@ final class CatalogCompletionProjection
 
     public function build(ApprovedCatalogManifest $manifest): array
     {
+        $placement = \App\Services\AcademicPlacementSchema::inspect();
         $catalog = Course::orderBy('course_id')->get()->keyBy('course_id');
         $byCode = $catalog->keyBy('course_code');
         $origins = DB::table('user_activity_logs')->where('action_code', 'catalog_completion.origin')->get(['description'])
@@ -79,6 +80,8 @@ final class CatalogCompletionProjection
         foreach ($programs as &$p) $p['blockers'] = array_values(array_unique($p['blockers'])); unset($p);
         return ['manifest_id' => $manifest->data['manifest_id'], 'manifest_hash' => $manifest->hash, 'revision' => $this->transaction->revision(),
             'programs' => $programs, 'rows' => $rows, 'prerequisites' => $edges,
+            'schema_prerequisites' => ['elective_advisory_placement' => $placement], 'can_apply' => $placement['ready'],
+            'status' => $placement['ready'] ? 'PREVIEW' : 'BLOCKED',
             'baseline' => ['sql_sha256' => $manifest->data['baseline_sql_sha256'],
                 'expected_students' => array_sum(array_column($manifest->programs(), 'students_baseline')),
                 'actual_students' => array_sum(array_column($programs, 'student_count'))]];

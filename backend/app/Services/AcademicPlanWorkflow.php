@@ -150,6 +150,7 @@ final class AcademicPlanWorkflow
             'recommended_semester_id' => 'present|nullable|integer|exists:semesters,semester_id', 'is_active' => 'required|boolean']);
         return $this->write($actor, $programId, ScientificProgramAccess::PLANS, $v['revision'], function ($program) use ($actor, $versionId, $courseId, $v, $delete) {
             $version = $this->editable($program, $versionId);
+            if (!$delete) AcademicAdvisoryPlacement::validate($v);
             $course = app(\App\Support\ScientificCourseAccess::class)->courses($actor)->findOrFail($courseId);
             $rows = ProgramCourse::where('academic_plan_version_id', $versionId)->where('course_id', $courseId)->lockForUpdate()->get();
             if ($rows->count() > 1) $this->fail('academic_plan_membership_ambiguous', 'ارتباط المادة غير محدد بأمان.');

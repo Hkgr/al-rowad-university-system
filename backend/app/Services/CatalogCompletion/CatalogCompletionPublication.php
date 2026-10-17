@@ -13,6 +13,7 @@ final class CatalogCompletionPublication
 {
     public function assertTarget(User $actor, array $target, string $manifestHash): array
     {
+        \App\Services\AcademicPlacementSchema::assertReady();
         $programId = (int) $target['academic_program_id']; $versionId = (int) $target['academic_plan_version_id'];
         $program = app(ScientificProgramAccess::class)->programs($actor)->findOrFail($programId);
         $version = AcademicPlanVersion::where('academic_program_id', $programId)->find($versionId);
