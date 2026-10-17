@@ -63,8 +63,8 @@ final class CatalogEnvironment
     {
         $this->guard($p);
         if (!in_array($name, ['00_preflight.sql','01_apply.sql','02_verify.sql'], true)
-            && !($package === 'approved-catalog-completion' && $name === '03_rollback.sql')) throw new RuntimeException('Package allowlist');
-        if (!in_array($package, ['scientific-course-management', 'academic-program-management', 'approved-catalog-completion'], true)) throw new RuntimeException('Package directory allowlist');
+            && !(in_array($package, ['approved-catalog-completion', 'elective-advisory-placement'], true) && $name === '03_rollback.sql')) throw new RuntimeException('Package allowlist');
+        if (!in_array($package, ['scientific-course-management', 'academic-program-management', 'approved-catalog-completion', 'elective-advisory-placement'], true)) throw new RuntimeException('Package directory allowlist');
         $sql = file_get_contents(dirname(__DIR__, 2).'/database/sql/'.$package.'/'.$name);
         if (preg_match('/^\s*USE\s+(?!alrowad_uni_rust\b)/im', $sql)) throw new RuntimeException('Unexpected USE');
         $delimiter = ';'; $buffer = ''; $rows = [];

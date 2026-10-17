@@ -63,6 +63,7 @@ final class CatalogCompletionService
                 if (!$resume) return ['replay' => true, 'result' => $result['result'] ?? ['status' => 'IN_PROGRESS', 'operation_id' => $operationId]];
             }
             if ($this->transaction->revision() !== $revision) $this->fail('academic_catalog_stale', 'The reviewed catalog revision changed; preview again.');
+            \App\Services\AcademicPlacementSchema::assertReady();
             $report = $this->projection->build($manifest);
             $groups = $this->groups($report);
             if (!$existing) $this->receipt($actor, $manifest, 'started', $operationId, ['groups' => array_column($groups, 'program_ids'),
@@ -76,6 +77,7 @@ final class CatalogCompletionService
             try {
                 $outcome = $this->transaction->run(function () use ($actor, $manifest, $operationId, $groupId, $group, $nextRevision) {
                     $this->authorize($actor, $manifest);
+                    \App\Services\AcademicPlacementSchema::assertReady();
                     if ($saved = $this->find('group', $groupId)) {
                         $this->checkReceipt($actor, $manifest, $saved);
                         foreach ($saved['result']['targets'] ?? [] as $target) app(CatalogCompletionPublication::class)->assertTarget($actor, $target, $manifest->hash);
@@ -105,6 +107,7 @@ final class CatalogCompletionService
         }
         return $this->transaction->run(function () use ($actor, $manifest, $operationId, $outcomes, $students) {
             $this->authorize($actor, $manifest);
+            \App\Services\AcademicPlacementSchema::assertReady();
             $confirmed = $this->find('result', $operationId);
             if ($confirmed) $this->checkReceipt($actor, $manifest, $confirmed);
             $blocked = count(array_filter($outcomes, fn ($g) => $g['status'] === 'BLOCKED'));
@@ -184,7 +187,8 @@ final class CatalogCompletionService
                 }
             }
             return ['writes_performed' => false, 'manifest_hash' => $manifest->hash, 'revision' => $this->transaction->revision(), 'programs' => $result,
-                'status' => collect($result)->every(fn ($r) => $r['default_matches'] && $r['students_not_on_completed_plan'] === 0
+                'schema_prerequisites' => $report['schema_prerequisites'],
+                'status' => $report['can_apply'] && collect($result)->every(fn ($r) => $r['default_matches'] && $r['students_not_on_completed_plan'] === 0
                     && !$r['blockers'] && ($r['plan_content_matches'] ?? false) && ($r['historical_source_matches'] ?? false)) ? 'COMPLETE' : 'PARTIAL/BLOCKED'];
         });
     }

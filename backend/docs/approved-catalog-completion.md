@@ -67,6 +67,10 @@ only; its membership rows, program and student assignments are not rebuilt.
 
 ## Runtime contract and authorization
 
+For the subsequently identified NOT NULL elective-placement incident and explicit same-operation
+resumption, use [the guarded placement repair runbook](elective-advisory-placement.md) first.
+The original D05 package alone does not enable unplaced elective memberships.
+
 Commands are server-side maintenance operations, not new HTTP endpoints:
 
 - `academic-catalog:complete`: read-only preview by default, with actual before/proposed plans, row evidence,

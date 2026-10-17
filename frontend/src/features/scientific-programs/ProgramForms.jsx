@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { advisoryPlacementValid } from './advisoryPlacement'
 import { Button, CatalogLookup, Field, Input, Notice, Select } from '../scientific-courses/CatalogControls'
 import CatalogConflict from '../scientific-courses/CatalogConflict'
 import useCatalogMutation from '../scientific-courses/useCatalogMutation'
@@ -35,7 +36,7 @@ export default function ProgramForms({ editor, busy, onDirty, onBusy, onBlocked,
     if (disabled) return
     if (kind === 'requirements') mutation.write(`${versionPath}/requirements`, 'PUT', requirementsPayload(draft, baseline.revision))
     else if (kind === 'membership') {
-      if (!draft.course || !groupAvailable) return
+      if (!draft.course || !groupAvailable || !advisoryPlacementValid({ course_type: draft.course_type, academic_level_id: draft.level?.id ?? null, recommended_semester_id: draft.semester?.id ?? null })) return
       mutation.write(`${versionPath}/courses/${draft.course.id}`, 'PUT', { revision: baseline.revision, requirement_scope: draft.requirement_scope, course_type: draft.course_type,
         academic_level_id: draft.level?.id ?? null, recommended_semester_id: draft.semester?.id ?? null, is_active: draft.is_active })
     } else {
@@ -64,6 +65,6 @@ export default function ProgramForms({ editor, busy, onDirty, onBusy, onBlocked,
       {!groupAvailable && <Notice>لم تُعد مجموعة هذا التصنيف في الخطة. سيبقى اختيار المادة محفوظًا أثناء إعداد المتطلبات.<Button disabled={disabled} onClick={() => onConfigure(draft)}>إعداد متطلبات التخرج</Button></Notice>}
     </>}
     <CatalogConflict mutation={mutation} onRestart={onRestart} />
-    <Button primary type="submit" disabled={disabled || !groupAvailable || (kind === 'membership' && !draft.course)}>{busy ? 'جارٍ الحفظ…' : kind === 'requirements' ? 'حفظ متطلبات التخرج' : kind === 'membership' ? 'حفظ ارتباط المادة' : 'حفظ بيانات البرنامج'}</Button>
+    <Button primary type="submit" disabled={disabled || !groupAvailable || (kind === 'membership' && (!draft.course || !advisoryPlacementValid({ course_type: draft.course_type, academic_level_id: draft.level?.id ?? null, recommended_semester_id: draft.semester?.id ?? null })))}>{busy ? 'جارٍ الحفظ…' : kind === 'requirements' ? 'حفظ متطلبات التخرج' : kind === 'membership' ? 'حفظ ارتباط المادة' : 'حفظ بيانات البرنامج'}</Button>
   </form>
 }

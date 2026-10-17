@@ -147,14 +147,15 @@ final class ScientificCourseManagementService
             'prerequisites.*.prerequisite_course_id' => 'required|integer|min:1|distinct', 'prerequisites.*.minimum_result_status_id' => 'nullable|integer|exists:result_statuses,result_status_id',
             ...($id ? [] : ['distribution' => 'sometimes|array:scope,college_id,department_id,course_type,draft_version_ids,academic_program_ids',
                 'distribution_confirmed' => 'exclude_without:distribution|required|accepted',
-                'academic_level_id' => 'required_with:distribution|integer|exists:academic_levels,academic_level_id',
-                'recommended_semester_id' => 'required_with:distribution|integer|exists:semesters,semester_id']),
+                'academic_level_id' => 'present_with:distribution|nullable|integer|exists:academic_levels,academic_level_id',
+                'recommended_semester_id' => 'present_with:distribution|nullable|integer|exists:semesters,semester_id']),
         ]);
         return $this->transaction->run(function () use ($actor, $id, $v) {
             $this->access->authorize($actor, true);
             if (!$id) abort_unless($this->access->canCreateOrigin($actor), 403);
             $plan = isset($v['distribution']) ? app(ScientificCourseDistribution::class)->plan($actor, $v['distribution'], true) : null;
             if ($plan && !$plan['can_apply']) $this->invalid('distribution', 'تعذر ربط جميع البرامج؛ راجع معاينة النطاق. لم يُحفظ أي تغيير.');
+            if ($plan) AcademicAdvisoryPlacement::validate(['course_type' => $plan['scope']['course_type']] + $v);
             $course = $id ? $this->access->courses($actor)->lockForUpdate()->findOrFail($id) : new Course;
             $before = $id ? $course->only(['course_code', 'course_name', 'credit_hours', 'theoretical_hours', 'practical_hours', 'description', 'is_active']) : null;
             if ($id) abort_unless($this->access->canEditOrigin($actor, $course), 403);
@@ -243,12 +244,13 @@ final class ScientificCourseManagementService
     {
         $this->access->authorize($actor, true);
         $v = $this->validate($input, $delete ? ['revision' => 'required|string|regex:/^[0-9]+$/', 'confirmed' => 'required|accepted'] : [
-            'revision' => 'required|string|regex:/^[0-9]+$/', 'academic_level_id' => 'required|integer|exists:academic_levels,academic_level_id',
-            'recommended_semester_id' => 'required|integer|exists:semesters,semester_id', 'course_type' => 'required|in:mandatory,elective',
+            'revision' => 'required|string|regex:/^[0-9]+$/', 'academic_level_id' => 'present|nullable|integer|exists:academic_levels,academic_level_id',
+            'recommended_semester_id' => 'present|nullable|integer|exists:semesters,semester_id', 'course_type' => 'required|in:mandatory,elective',
             'requirement_scope' => 'required|in:university,college,department', 'requirement_group_id' => 'sometimes|integer|min:1', 'is_active' => 'required|boolean',
         ]);
         return $this->transaction->run(function () use ($actor, $programId, $courseId, $v, $delete) {
             $this->access->authorize($actor, true);
+            if (!$delete) AcademicAdvisoryPlacement::validate($v);
             $this->access->programs($actor)->lockForUpdate()->findOrFail($programId);
             $this->assertLegacyCurriculum($programId);
             $this->access->courses($actor)->findOrFail($courseId);

@@ -3,6 +3,7 @@ import { SCOPES, TYPES } from './catalog'
 import { Button, CatalogDialog, CatalogLookup, Field, Input, Notice, Select } from './CatalogControls'
 import CatalogConflict from './CatalogConflict'
 import useCatalogMutation from './useCatalogMutation'
+import { advisoryPlacementValid } from '../scientific-programs/advisoryPlacement'
 
 const scopes = Object.entries(SCOPES).filter(([key]) => key !== 'unclassified')
 const types = Object.entries(TYPES).filter(([key]) => key !== 'unclassified')
@@ -61,12 +62,14 @@ export function MembershipEditor({ baseline, course, onDirty, onBusy, onBlocked,
   function update(key, value) { setDraft(d => ({ ...d, [key]: value })); onDirty(true) }
   function save() {
     const action = confirm; setConfirm(null)
-    mutation.write(`${path}/courses/${course.course_id}`, action === 'unlink' ? 'DELETE' : 'PUT', action === 'unlink' ? { revision: baseline.revision, confirmed: true } : { revision: baseline.revision, course_type: draft.course_type, requirement_scope: draft.requirement_scope, academic_level_id: Number(draft.academic_level?.id), recommended_semester_id: Number(draft.semester?.id), is_active: !!draft.is_active })
+    if (action !== 'unlink' && !placementValid) return
+    mutation.write(`${path}/courses/${course.course_id}`, action === 'unlink' ? 'DELETE' : 'PUT', action === 'unlink' ? { revision: baseline.revision, confirmed: true } : { revision: baseline.revision, course_type: draft.course_type, requirement_scope: draft.requirement_scope, academic_level_id: draft.academic_level?.id ?? null, recommended_semester_id: draft.semester?.id ?? null, is_active: !!draft.is_active })
   }
+  const placementValid = advisoryPlacementValid({ course_type: draft.course_type, academic_level_id: draft.academic_level?.id ?? null, recommended_semester_id: draft.semester?.id ?? null })
   return <section className="space-y-4" aria-label="إضافة مادة للبرنامج">
     <div><h3 className="text-[14px] font-bold text-text-dark">{course.course_name} <span dir="ltr">({course.course_code})</span></h3><p>{baseline.data.program_name} · {course.credit_hours} ساعات معتمدة</p></div>
     <Notice>{baseline.capabilities.lock_reason}</Notice>
-    <form onSubmit={e => { e.preventDefault(); if (!disabled && matches.length === 1) setConfirm('save') }} className="space-y-4">
+    <form onSubmit={e => { e.preventDefault(); if (!disabled && placementValid && matches.length === 1) setConfirm('save') }} className="space-y-4">
       <fieldset disabled={disabled} className="grid gap-3 sm:grid-cols-2">
         <Field label="مستوى المتطلب"><Select value={draft.requirement_scope} onChange={e => update('requirement_scope', e.target.value)}>{scopes.map(([k, label]) => <option key={k} value={k}>{label}</option>)}</Select></Field>
         <Field label="نوع المتطلب"><Select value={draft.course_type} onChange={e => update('course_type', e.target.value)}>{types.map(([k, label]) => <option key={k} value={k}>{label}</option>)}</Select></Field>
@@ -76,7 +79,7 @@ export function MembershipEditor({ baseline, course, onDirty, onBusy, onBlocked,
       </fieldset>
       {matches.length !== 1 ? <Notice>إعداد هذا التصنيف غير مكتمل أو متعارض.{baseline.capabilities.edit_curriculum && <Button onClick={onRequirements}>إعداد متطلبات التخرج</Button>}</Notice> : <p className="text-[12px] text-text-light">{SCOPES[draft.requirement_scope]} — {TYPES[draft.course_type]}. يخص هذا التصنيف البرنامج المحدد فقط، ولا يغيّر ساعات التخرج المطلوبة.</p>}
       <CatalogConflict mutation={mutation} onRestart={onRestart} />
-      {baseline.capabilities.edit_curriculum && <div className="flex flex-wrap gap-2"><Button primary type="submit" disabled={disabled || !draft.academic_level || !draft.semester || matches.length !== 1}>{pc ? 'حفظ التصنيف' : 'إضافة للبرنامج'}</Button>{pc && <Button danger disabled={disabled} onClick={() => setConfirm('unlink')}>إزالة من البرنامج</Button>}</div>}
+      {baseline.capabilities.edit_curriculum && <div className="flex flex-wrap gap-2"><Button primary type="submit" disabled={disabled || !placementValid || matches.length !== 1}>{pc ? 'حفظ التصنيف' : 'إضافة للبرنامج'}</Button>{pc && <Button danger disabled={disabled} onClick={() => setConfirm('unlink')}>إزالة من البرنامج</Button>}</div>}
     </form>
     {confirm && <CatalogDialog title={confirm === 'unlink' ? 'إزالة من البرنامج' : 'تأكيد التصنيف'} onClose={() => setConfirm(null)}><p>{course.course_name} — {baseline.data.program_name}. لن تُحذف المادة من الدليل أو تتغير في البرامج الأخرى.</p><div className="flex gap-2"><Button primary onClick={save}>تأكيد</Button><Button onClick={() => setConfirm(null)}>إلغاء</Button></div></CatalogDialog>}
   </section>

@@ -86,10 +86,12 @@ if ($command === 'prepare') {
     }
     $db::table('departments')->insert(['department_id' => 27, 'college_id' => 13, 'department_name' => 'Synthetic excluded architecture']);
     $db::table('academic_programs')->insert(['academic_program_id' => 27, 'department_id' => 27, 'program_name' => 'Synthetic excluded architecture', 'total_credit_hours' => 165]);
-    foreach ([[27, 780], [28, 780], [28, 892]] as [$program, $course]) $db::table('program_courses')->insert(['academic_program_id' => $program, 'course_id' => $course, 'course_type' => 'mandatory', 'updated_at' => '2025-01-01 00:00:00']);
+    foreach ([[27, 780], [28, 780], [28, 892]] as [$program, $course]) $db::table('program_courses')->insert(['academic_program_id' => $program, 'course_id' => $course, 'course_type' => 'mandatory', 'academic_level_id' => 1, 'recommended_semester_id' => 1, 'updated_at' => '2025-01-01 00:00:00']);
     $group = $db::table('academic_requirement_groups')->insertGetId(['academic_program_id' => 41, 'group_code' => 'SYN-INCOMPLETE-41',
         'group_name' => 'Synthetic missing budget', 'requirement_scope' => 'university', 'requirement_type' => 'mandatory', 'required_credit_hours' => null, 'is_active' => false, 'updated_at' => '2025-01-01 00:00:00'], 'requirement_group_id');
-    $membership = $db::table('program_courses')->insertGetId(['academic_program_id' => 41, 'course_id' => 403, 'course_type' => 'mandatory', 'updated_at' => '2025-01-01 00:00:00'], 'program_course_id');
+    $membership = $db::table('program_courses')->insertGetId(['academic_program_id' => 41, 'course_id' => 403, 'course_type' => 'mandatory', 'academic_level_id' => 1, 'recommended_semester_id' => 1, 'updated_at' => '2025-01-01 00:00:00'], 'program_course_id');
+    // Match the supplied production incident contract BEFORE installing any repair: both placements NOT NULL.
+    $p->exec("ALTER TABLE program_courses MODIFY academic_program_id INT NOT NULL, MODIFY course_id INT NOT NULL, MODIFY course_type VARCHAR(50) NOT NULL COMMENT 'mandatory or elective', MODIFY academic_level_id INT NOT NULL, MODIFY recommended_semester_id INT NOT NULL");
     $db::table('program_course_requirement_groups')->insert(['program_course_id' => $membership, 'requirement_group_id' => $group]);
     foreach ($manifest->programs() as $row) $db::table('students')->insert(['student_id' => 1000 + (int) $row['program_id'], 'academic_program_id' => (int) $row['program_id']]);
     $db::table('students')->insert(['student_id' => 1027, 'academic_program_id' => 27]);

@@ -6,6 +6,7 @@ import useCatalogMutation from './useCatalogMutation'
 import useCatalogRead from './useCatalogRead'
 import { distributionScope, distributionPath, emptyDistribution } from './associations'
 import CourseDistributionFields from './CourseDistributionFields'
+import { advisoryPlacementValid } from '../scientific-programs/advisoryPlacement'
 
 export default function CourseEditor({ baseline, onDirty, onBusy, onBlocked, onSaved, onRestart, onUnauthorized, busy, allowDistribution = true }) {
   const [draft, setDraft] = useState(() => editableCourse(baseline)), [confirm, setConfirm] = useState(null)
@@ -15,10 +16,11 @@ export default function CourseEditor({ baseline, onDirty, onBusy, onBlocked, onS
   const [distribution, setDistribution] = useState(emptyDistribution), [previewEpoch, setPreviewEpoch] = useState(0)
   const preview = useCatalogRead(!id ? distributionPath(distribution) : null, { refresh: previewEpoch })
   const distributing = !id && !!distribution.scope
-  const distributionReady = !distributing || (preview.data?.can_apply && distribution.level && distribution.semester)
+  const distributionReady = !distributing || (preview.data?.can_apply && advisoryPlacementValid({ course_type: distribution.course_type,
+    academic_level_id: distribution.level?.id ?? null, recommended_semester_id: distribution.semester?.id ?? null }))
   function payload() {
     return { ...coursePayload(draft, baseline), ...(distributing ? { distribution: distributionScope(distribution), distribution_confirmed: true,
-      academic_level_id: Number(distribution.level.id), recommended_semester_id: Number(distribution.semester.id) } : {}) }
+      academic_level_id: distribution.level?.id ?? null, recommended_semester_id: distribution.semester?.id ?? null } : {}) }
   }
   function change(field, value) { setDraft(d => ({ ...d, [field]: value })); onDirty(true) }
   const lock = caps.origin_lock_reason || caps.academic_lock_reason
