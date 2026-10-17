@@ -71,7 +71,8 @@ final class MinistryStudentService
             ->join('semesters as sm', 'sm.semester_id', '=', 'co.semester_id')
             ->where('scr.student_id', $studentId)
             ->orderBy('y.start_date')->orderBy('sm.semester_order')->orderBy('crs.course_code')
-            ->get(['crs.course_id', 'crs.course_code', 'crs.course_name', 'crs.credit_hours', 'y.year_name', 'sm.semester_code', 'sm.semester_name', 'r.final_mark', 'rst.status_code']);
+            ->get(['scr.student_course_registration_id', 'crs.course_id', 'crs.course_code', 'crs.course_name', 'crs.credit_hours', 'y.year_name', 'sm.semester_code', 'sm.semester_name', 'r.final_mark', 'rst.status_code']);
+        $codeReferences = \App\Support\HistoricalCourseCode::index($results->pluck('student_course_registration_id'));
 
         $graduation = MinistryQueries::graduations()->where('g.student_id', $studentId)->orderByDesc('g.approved_at')
             ->first(['g.approved_at', 'g.cumulative_gpa_snapshot', 'g.earned_hours_snapshot']);
@@ -102,7 +103,7 @@ final class MinistryStudentService
             ])->values(),
             'official_results' => $results->map(fn ($x) => [
                 'course_id' => (int) $x->course_id,
-                'course_code' => $x->course_code,
+                ...($codeReferences[$x->student_course_registration_id] ?? ['course_code' => $x->course_code]),
                 'course_name' => $x->course_name,
                 'credit_hours' => (int) $x->credit_hours,
                 'term' => $x->year_name.' — '.MinistryLabels::semester($x->semester_code, $x->semester_name),

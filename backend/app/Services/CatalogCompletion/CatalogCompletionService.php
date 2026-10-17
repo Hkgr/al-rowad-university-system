@@ -26,7 +26,7 @@ final class CatalogCompletionService
                 if (!$program) continue;
                 try {
                     $context = AcademicPlanContext::forProgram($id);
-                    $current = $context->versionId ? $this->plans->version($actor, $id, $context->versionId) : $this->plans->currentPlanProjection($actor, $program);
+                    $current = $context->versionId ? $this->plans->versionProjection($actor, $program, AcademicPlanVersion::findOrFail($context->versionId)) : $this->plans->currentPlanProjection($actor, $program);
                     $p['before'] = $this->workspace->values($current);
                     $p['proposed'] = $this->target($manifest, $report, $id, fn ($identity) => str_starts_with($identity, 'id:') ? (int) substr($identity, 3) : $identity);
                     $p['academic_values_changed'] = !$this->sameValues($p['before'], $p['proposed']);
@@ -60,7 +60,7 @@ final class CatalogCompletionService
             if ($existing) {
                 $this->checkReceipt($actor, $manifest, $existing);
                 $result = $this->find('result', $operationId);
-                if (!$resume || ($result['result']['status'] ?? null) === 'COMPLETE') return ['replay' => true, 'result' => $result['result'] ?? ['status' => 'IN_PROGRESS', 'operation_id' => $operationId]];
+                if (!$resume) return ['replay' => true, 'result' => $result['result'] ?? ['status' => 'IN_PROGRESS', 'operation_id' => $operationId]];
             }
             if ($this->transaction->revision() !== $revision) $this->fail('academic_catalog_stale', 'The reviewed catalog revision changed; preview again.');
             $report = $this->projection->build($manifest);
@@ -76,7 +76,11 @@ final class CatalogCompletionService
             try {
                 $outcome = $this->transaction->run(function () use ($actor, $manifest, $operationId, $groupId, $group, $nextRevision) {
                     $this->authorize($actor, $manifest);
-                    if ($saved = $this->find('group', $groupId)) { $this->checkReceipt($actor, $manifest, $saved); return $saved['result'] + ['replayed_stage' => true]; }
+                    if ($saved = $this->find('group', $groupId)) {
+                        $this->checkReceipt($actor, $manifest, $saved);
+                        foreach ($saved['result']['targets'] ?? [] as $target) app(CatalogCompletionPublication::class)->assertTarget($actor, $target, $manifest->hash);
+                        return $saved['result'] + ['replayed_stage' => true];
+                    }
                     if ($this->transaction->revision() !== $nextRevision) $this->fail('academic_catalog_stale', 'Another writer changed the reviewed stage; explicitly review and resume.');
                     $report = $this->projection->build($manifest);
                     $current = collect($this->groups($report))->first(fn ($g) => $g['program_ids'] === $group['program_ids']);
@@ -102,16 +106,25 @@ final class CatalogCompletionService
         return $this->transaction->run(function () use ($actor, $manifest, $operationId, $outcomes, $students) {
             $this->authorize($actor, $manifest);
             $confirmed = $this->find('result', $operationId);
-            if (($confirmed['result']['status'] ?? null) === 'COMPLETE') { $this->checkReceipt($actor, $manifest, $confirmed); return $confirmed['result']; }
+            if ($confirmed) $this->checkReceipt($actor, $manifest, $confirmed);
             $blocked = count(array_filter($outcomes, fn ($g) => $g['status'] === 'BLOCKED'));
             $studentBlocked = array_sum(array_map(fn ($r) => count($r['blocked']), $students));
-            foreach ($outcomes as $outcome) foreach ($outcome['targets'] ?? [] as $target) {
+            foreach ($outcomes as &$outcome) foreach ($outcome['targets'] ?? [] as $index => $target) {
+                $outcome['targets'][$index]['context_valid_at_confirmation'] = true;
+                try { app(CatalogCompletionPublication::class)->assertTarget($actor, $target, $manifest->hash); }
+                catch (AcademicPlanException $e) {
+                    $outcome['targets'][$index]['context_valid_at_confirmation'] = false;
+                    $outcome['targets'][$index]['confirmation_blockers'] = [$e->errorCode];
+                    $students[$target['academic_program_id']]['context_blockers'] = [$e->errorCode];
+                    $studentBlocked++;
+                }
                 $pending = DB::table('students as s')->where('s.academic_program_id', $target['academic_program_id'])
                     ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('student_academic_plan_assignments as a')->whereColumn('a.student_id', 's.student_id')
                         ->where('a.current_slot', 1)->where('a.academic_plan_version_id', $target['academic_plan_version_id']))->count();
                 $students[$target['academic_program_id']]['remaining_count_at_confirmation'] = $pending;
                 $studentBlocked += $pending;
             }
+            unset($outcome);
             $result = ['operation_id' => $operationId, 'manifest_hash' => $manifest->hash, 'groups' => $outcomes, 'students' => $students,
                 'status' => $blocked || $studentBlocked ? (count(array_filter($outcomes, fn ($g) => isset($g['targets']))) ? 'PARTIAL' : 'BLOCKED') : 'COMPLETE',
                 'revision' => $this->transaction->revision()];
@@ -152,7 +165,15 @@ final class CatalogCompletionService
                 $result[$id] = ['academic_program_id' => $id, 'version_id' => $versionId, 'default_matches' => $versionId && (int) $p['default_version_id'] === (int) $versionId,
                     'students_not_on_completed_plan' => $students, 'student_count' => $p['student_count'], 'blockers' => $p['blockers']];
                 if ($saved) {
-                    $actual = $this->workspace->values($this->plans->version($actor, $id, (int) $versionId));
+                    try {
+                        app(CatalogCompletionPublication::class)->assertTarget($actor, ['academic_program_id' => $id, 'academic_plan_version_id' => $versionId], $manifest->hash);
+                        $result[$id]['publication_context_matches'] = true;
+                    } catch (AcademicPlanException $e) {
+                        $result[$id]['publication_context_matches'] = false;
+                        $result[$id]['blockers'][] = $e->errorCode;
+                    }
+                    $program = $this->access->programs($actor)->findOrFail($id);
+                    $actual = $this->workspace->values($this->plans->versionProjection($actor, $program, AcademicPlanVersion::findOrFail($versionId)));
                     $prior = $saved['before'] ?? $actual; // A no-op attestation has identical before/after values.
                     $result[$id]['before'] = ['memberships' => count($prior['courses']), 'requirement_groups' => count($prior['groups']), 'total_credit_hours' => $prior['total_credit_hours']];
                     $result[$id]['after'] = ['memberships' => count($actual['courses']), 'requirement_groups' => count($actual['groups']), 'total_credit_hours' => $actual['total_credit_hours']];
@@ -318,7 +339,11 @@ final class CatalogCompletionService
         $ids = DB::table('students')->where('academic_program_id', $id)->orderBy('student_id')->pluck('student_id')->map(fn ($id) => (int) $id)->all();
         $report = ['already_assigned' => [], 'transferred' => [], 'blocked' => []];
         foreach (array_chunk($ids, 50) as $chunk) {
-            $preview = $this->plans->previewCatalogCompletion($actor, $id, $version, $chunk, $manifest->hash);
+            try { $preview = $this->plans->previewCatalogCompletion($actor, $id, $version, $chunk, $manifest->hash); }
+            catch (AcademicPlanException $e) {
+                foreach ($chunk as $studentId) $report['blocked'][] = ['student_id' => $studentId, 'blockers' => [$e->errorCode]];
+                break; // Saved stages remain intact; an operator must review the changed context.
+            }
             $eligible = [];
             foreach ($preview['students'] as $student) {
                 if ($student['from_version_id'] === $version) $report['already_assigned'][] = $student['student_id'];
@@ -408,12 +433,7 @@ final class CatalogCompletionService
 
     private function sourceFingerprint(int $version): string
     {
-        return hash('sha256', json_encode([
-            DB::table('academic_requirement_groups')->where('academic_plan_version_id', $version)->orderBy('requirement_group_id')->get()->all(),
-            DB::table('program_courses')->where('academic_plan_version_id', $version)->orderBy('program_course_id')->get()->all(),
-            DB::table('program_course_requirement_groups as m')->join('program_courses as pc', 'pc.program_course_id', '=', 'm.program_course_id')
-                ->where('pc.academic_plan_version_id', $version)->orderBy('m.program_course_id')->select('m.*')->get()->all(),
-        ], JSON_THROW_ON_ERROR));
+        return CatalogCompletionPublication::sourceFingerprint($version);
     }
 
     private function academicFingerprint(): string

@@ -60,7 +60,7 @@ final class CatalogCompletionProjection
             if (!$reason && str_starts_with($from, 'id:')) {
                 $existing = DB::table('course_prerequisites')->where('course_id', substr($from, 3))->where('prerequisite_course_id', str_starts_with($to, 'id:') ? substr($to, 3) : -1)->exists();
                 // Existing minimum-result semantics stay exactly as stored. Never modify a fixed origin's graph.
-                if (!$existing && app(AcademicCatalogHistory::class)->courseUsed((int) substr($from, 3))) $reason = 'used_origin_prerequisite_change';
+                if (!$existing && app(AcademicCatalogHistory::class)->courseUsed((int) substr($from, 3), false)) $reason = 'used_origin_prerequisite_change';
             }
             if ($reason) $programs[$pid]['blockers'][] = 'Prerequisites:'.$edge['_row'].':'.$reason;
             $edges[] = ['from' => $from, 'to' => $to, 'source' => $edge, 'blocker' => $reason];

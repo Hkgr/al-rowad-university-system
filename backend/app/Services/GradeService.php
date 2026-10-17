@@ -68,6 +68,7 @@ class GradeService
         $registrations = $registrationsQuery
             ->orderBy('student_course_registration_id')
             ->get();
+        \App\Support\HistoricalCourseCode::attach($registrations);
         CourseRequirementClassification::hydrateOfferings(
             $registrations->map(fn (StudentCourseRegistration $registration) => $registration->courseOffering)->push($offering)
         );
@@ -429,7 +430,7 @@ class GradeService
                 $year = $first?->courseOffering?->academicYear;
                 $semester = $first?->courseOffering?->semester;
                 $courses = $termRegistrations
-                    ->sortBy(fn (StudentCourseRegistration $registration) => $registration->courseOffering?->course?->course_code ?? '')
+                    ->sortBy(fn (StudentCourseRegistration $registration) => \App\Support\HistoricalCourseCode::fields($registration)['course_code'] ?? '')
                     ->map(fn (StudentCourseRegistration $registration) => $this->formatTranscriptCourse($registration))
                     ->values();
 
@@ -867,7 +868,7 @@ class GradeService
             ] : null,
             'course' => $registration->courseOffering?->course ? [
                 'course_id' => $registration->courseOffering->course->course_id,
-                'course_code' => $registration->courseOffering->course->course_code,
+                ...\App\Support\HistoricalCourseCode::fields($registration),
                 'course_name' => $registration->courseOffering->course->course_name,
                 'credit_hours' => $registration->courseOffering->course->credit_hours,
                 'requirement_classification' => CourseRequirementClassification::forOffering($registration->courseOffering),
@@ -944,7 +945,7 @@ class GradeService
             'registration_id' => $registration->student_course_registration_id,
             'course_offering_id' => $registration->course_offering_id,
             'course_id' => $course?->course_id,
-            'course_code' => $course?->course_code,
+            ...\App\Support\HistoricalCourseCode::fields($registration),
             'course_name' => $course?->course_name,
             'credit_hours' => $course?->credit_hours,
             'requirement_classification' => CourseRequirementClassification::forStudent(
@@ -982,6 +983,7 @@ class GradeService
         ?int $semesterId = null,
         ?string $repeatedCoursesHandling = null
     ): array {
+        \App\Support\HistoricalCourseCode::attach($registrations);
         $included = [];
         $excluded = [];
         $totalWeightedPoints = 0.0;
@@ -1060,7 +1062,7 @@ class GradeService
 
         $base = [
             'course_id' => $course?->course_id,
-            'course_code' => $course?->course_code,
+            ...\App\Support\HistoricalCourseCode::fields($registration),
             'course_name' => $course?->course_name,
             'credit_hours' => $creditHours,
             'registration_id' => $registration->student_course_registration_id,
@@ -1138,6 +1140,7 @@ class GradeService
 
     private function selectBestAttempts(Collection $registrations): Collection
     {
+        \App\Support\HistoricalCourseCode::attach($registrations);
         return $registrations
             ->groupBy(fn (StudentCourseRegistration $registration) => $registration->courseOffering?->course_id)
             ->map(function (Collection $attempts) {
@@ -1205,6 +1208,7 @@ class GradeService
                 'courseOffering.gradeApprovals.approvalStatus', 'studentCourseResult.resultStatus', 'registrationStatus'])->get()
             ->filter(fn ($r) => $r->registrationStatus?->status_code === 'withdrawn' || $this->isOfficiallyVisibleAttempt($r))->values();
         IncompleteOutcomeGuard::attach($registrations);
+        \App\Support\HistoricalCourseCode::attach($registrations);
         $registrations->each(fn (StudentCourseRegistration $registration) => $registration->setRelation('student', $student));
 
         return $registrations;
@@ -1319,7 +1323,7 @@ class GradeService
             $row = [
                 'student_course_registration_id' => $registration->student_course_registration_id,
                 'course_id' => $courseId,
-                'course_code' => $course?->course_code,
+                ...\App\Support\HistoricalCourseCode::fields($registration),
                 'course_name' => $course?->course_name,
                 'credit_hours' => (int) ($course?->credit_hours ?? 0),
                 'result_status' => $statusCode,
@@ -1408,7 +1412,9 @@ class GradeService
         }
 
         $items = [];
-        foreach ($query->get() as $registration) {
+        $registrations = $query->get();
+        \App\Support\HistoricalCourseCode::attach($registrations);
+        foreach ($registrations as $registration) {
             if ($this->isOfficiallyVisibleAttempt($registration)) {
                 continue;
             }
@@ -1420,7 +1426,7 @@ class GradeService
                 'academic_year_id' => $offering?->academic_year_id,
                 'semester_id' => $offering?->semester_id,
                 'course_id' => $offering?->course_id ?? $offering?->course?->course_id,
-                'course_code' => $offering?->course?->course_code,
+                ...\App\Support\HistoricalCourseCode::fields($registration),
                 'registration_status' => $registration->registrationStatus?->status_code,
                 'has_result' => $registration->studentCourseResult !== null,
                 'reason' => $registration->studentCourseResult === null
@@ -1584,6 +1590,7 @@ class GradeService
 
     private function summarizeGpaCollection(Collection $registrations): array
     {
+        \App\Support\HistoricalCourseCode::attach($registrations);
         $totalWeightedPoints = 0.0;
         $totalCreditHours = 0;
         $includedCoursesCount = 0;
@@ -1996,6 +2003,7 @@ class GradeService
 
     private function gpaEligibleCourseRows(Collection $registrations): array
     {
+        \App\Support\HistoricalCourseCode::attach($registrations);
         $rows = [];
 
         foreach ($registrations as $registration) {
@@ -2008,7 +2016,7 @@ class GradeService
             $rows[] = [
                 'registration_id' => $course['registration_id'] ?? $registration->student_course_registration_id,
                 'course_id' => $course['course_id'] ?? null,
-                'course_code' => $course['course_code'] ?? null,
+                ...\App\Support\HistoricalCourseCode::fields($registration),
                 'course_name' => $course['course_name'] ?? null,
                 'credit_hours' => $course['credit_hours'] ?? 0,
                 'requirement_classification' => $course['requirement_classification'] ?? null,

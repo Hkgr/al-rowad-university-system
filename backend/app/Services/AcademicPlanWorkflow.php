@@ -229,7 +229,7 @@ final class AcademicPlanWorkflow
         AcademicPlanContext::assertReady();
         return $this->transaction->snapshot(function () use ($actor, $programId, $versionId, $studentIds, $manifestHash) {
             $this->access->programs($actor)->findOrFail($programId);
-            return $this->completionTransferProjection($programId, $versionId, $studentIds, $manifestHash);
+            return $this->completionTransferProjection($actor, $programId, $versionId, $studentIds, $manifestHash);
         });
     }
 
@@ -254,7 +254,7 @@ final class AcademicPlanWorkflow
             if ($this->transaction->revision() !== $v['revision']) $this->fail('academic_catalog_stale', 'Review the current catalog before assigning students.');
             $students = Student::withTrashed()->where('academic_program_id', $programId)->whereIn('student_id', $v['student_ids'])->orderBy('student_id')->lockForUpdate()->get();
             if ($students->count() !== count($v['student_ids'])) abort(404);
-            $preview = $this->completionTransferProjection($programId, $versionId, $v['student_ids'], $v['manifest_hash']);
+            $preview = $this->completionTransferProjection($actor, $programId, $versionId, $v['student_ids'], $v['manifest_hash']);
             if (!$preview['can_transfer']) $this->fail('academic_plan_transfer_blocked', 'Completion does not waive pending academic operations or final graduation.');
             $version = AcademicPlanVersion::findOrFail($versionId);
             foreach ($students as $student) {
@@ -273,21 +273,14 @@ final class AcademicPlanWorkflow
         });
     }
 
-    private function completionTransferProjection(int $programId, int $versionId, array $studentIds, string $manifestHash): array
+    private function completionTransferProjection(User $actor, int $programId, int $versionId, array $studentIds, string $manifestHash): array
     {
         if (count($studentIds) < 1 || count($studentIds) > 50 || count(array_unique($studentIds)) !== count($studentIds)
             || !hash_equals(\App\Services\CatalogCompletion\ApprovedCatalogManifest::SHA256, $manifestHash)) {
             $this->fail('catalog_completion_context_invalid', 'A verified completion manifest and bounded explicit student list are required.');
         }
-        $proof = DB::table('academic_plan_events')->where('academic_program_id', $programId)->where('academic_plan_version_id', $versionId)
-            ->where('action', 'catalog_completion_published')->where('context->manifest_hash', $manifestHash)->first();
-        $publication = $proof ? json_decode($proof->context, true, flags: JSON_THROW_ON_ERROR) : null;
-        if (!$publication) {
-            $attestation = UserActivityLog::where('action_code', 'catalog_completion.attested_plan')->where('description->manifest_hash', $manifestHash)
-                ->where('description->result->academic_program_id', $programId)->where('description->result->version_id', $versionId)->first();
-            if ($attestation) $publication = json_decode($attestation->description, true, flags: JSON_THROW_ON_ERROR)['result'];
-        }
-        if (!$publication) $this->fail('catalog_completion_context_invalid', 'The target is not a recorded completion plan.');
+        $publication = app(\App\Services\CatalogCompletion\CatalogCompletionPublication::class)->assertTarget($actor,
+            ['academic_program_id' => $programId, 'academic_plan_version_id' => $versionId], $manifestHash);
         $target = AcademicPlanVersion::where('academic_program_id', $programId)->where('status', 'approved')->whereNotNull('fixed_at')->findOrFail($versionId);
         $targetContext = AcademicPlanContext::forVersion($target);
         $students = Student::withTrashed()->where('academic_program_id', $programId)->whereIn('student_id', $studentIds)->orderBy('student_id')->get();

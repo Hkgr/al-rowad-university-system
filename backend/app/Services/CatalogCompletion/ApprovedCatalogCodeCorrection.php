@@ -33,6 +33,10 @@ final class ApprovedCatalogCodeCorrection
             'drawing_id' => $d->getKey(), 'chemistry_id' => $c->getKey(), 'drawing_code_before' => 'FE114', 'chemistry_code_before' => 'FE113',
             'before' => [$fields->fields($d), $fields->fields($c)],
             'affected_memberships' => DB::table('program_courses')->whereIn('course_id', $ids)->orderBy('program_course_id')->get()->all(),
+            // Exact existing identities/context, not a timestamp heuristic. Later registrations are not relabelled.
+            'recorded_registrations' => DB::table('student_course_registrations as r')->join('course_offerings as o', 'o.course_offering_id', '=', 'r.course_offering_id')
+                ->whereIn('o.course_id', $ids)->orderBy('r.student_course_registration_id')
+                ->get(['r.student_course_registration_id', 'o.course_id', 'r.academic_plan_version_id', 'r.plan_program_course_id'])->all(),
             'excluded_program_effect' => 'Shared drawing code changes in existing architecture references only; no architecture curriculum completion or reassignment.'];
         $event = DB::table('academic_plan_events')->insertGetId(['academic_program_id' => 28, 'academic_plan_version_id' => null,
             'action' => 'catalog_completion_code_permit', 'actor_user_id' => $actor->getKey(), 'context' => json_encode($context, JSON_THROW_ON_ERROR), 'created_at' => now()], 'academic_plan_event_id');

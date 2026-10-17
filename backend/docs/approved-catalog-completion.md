@@ -191,9 +191,9 @@ php artisan academic-catalog:verify-completion --actor=<same-user-id>
 php artisan academic-catalog:complete --apply --resume --actor=<same-user-id> --manifest=resources/academic-catalog/approved-2026-10.json --manifest-hash=2e97008596d48323c9280aad64b07f63e1af68ecda137149c4a1d65c2bd42238 --expected-revision=<newly-reviewed-epoch> --operation-id=<same-uuid>
 ```
 
-## Verification and remaining acceptance
+## Initial delivery verification and remaining acceptance
 
-Executed so far:
+Executed for reviewed head `d3825d3` (review-fix reruns are recorded separately below):
 
 - Manifest reproducibility, private-export aggregate/identity/before-image recheck, all 90 budgets.
 - 31 focused completion/plan/legacy-display PHPUnit tests: 501 assertions, passed, including actual console
@@ -241,3 +241,146 @@ Synthetic before/after highlights (not a university migration report):
 
 verify-completion emits actual before/after membership counts, group counts and totals for each recorded
 publication. It does not substitute workbook expectations for unexecuted database outcomes.
+
+## PR #170 review corrections (2026-10-17)
+
+### Historical civil codes
+
+The original code permutation kept academic IDs/results intact but registration readers still dereferenced
+the live `Course.course_code`. The shared `HistoricalCourseCode` projection now distinguishes evidence
+from the current catalog. The D05 applied event records the exact existing registration IDs, course IDs,
+and pinned version/membership references in its existing LONGTEXT context. It does not rewrite a
+registration, result, approval, announcement, decision, or stored transcript snapshot.
+
+Registration-level responses use these fields consistently:
+
+| Field | Meaning |
+| --- | --- |
+| `course_code` | Proven recorded registration code when the applied correction event captures that exact registration/context; otherwise the current catalog code. Existing transcript/PDF-data consumers therefore retain the original reference. |
+| `current_course_code` | Current approved catalog code, including corrected FE113 drawing / FE114 chemistry. |
+| `recorded_course_code` | Original registration code only with exact recorded-registration evidence; otherwise NULL, not an inferred historical label. |
+| `original_plan_course_code` | Original code proven by an affected pinned version/membership in the correction event; otherwise NULL. This does not assert that a later registration existed before correction. |
+| `course_code_reference` | `recorded_registration`, `corrected_catalog_with_pinned_original`, or `current_catalog`. |
+| `course_code_correction_event_id` | Applied correction evidence identifier, or NULL. No internal audit context/person data is serialized. |
+
+This covers canonical transcript/GPA course rows, academic-record/export data built from that transcript,
+registration/summary resources, manual-grade registration rows, Incomplete case/registration identities, executive performance detail rows,
+ministry official-result details and presidential result rows. Generic Course/catalog/plan responses
+remain current-code projections. The nested generic `course_offering.course` in a registration resource
+also remains the current catalog object; the registration-level fields above identify its recorded reference.
+Stored academic snapshots remain untouched. New registrations are never assigned an original recorded
+code merely because they use an old plan, share a subject name, or have an earlier-looking date.
+
+Older applied events without the new registration-ID evidence can still prove an original *pinned-plan*
+reference through `affected_memberships`; they cannot prove an individual registration's original code.
+In that case the current code and explicit original-plan reference are both exposed, without fabricating
+`recorded_course_code`. Unrelated courses receive no invented historical code. Evidence is loaded once
+per collection/page, with no per-row history query or process-wide stale cache. Transcript ordering uses
+the same projected code as its displayed rows. The exact SQL permit and ordinary guards are unchanged.
+
+### Read snapshots and lock order
+
+Completion reconciliation explicitly uses `courseUsed(..., false)`. Preview and verify use the existing
+`versionProjection` inside their authorized outer snapshot instead of the public `version` reader, whose
+nested snapshot branch is deliberately a catalog-locking writer projection. Student-readiness nested
+paths were inspected as well. The outer monotonic revision fence remains active; no global transaction,
+history predicate, or normal writer lock has been weakened. Mutation services still perform canonical
+authoritative checks under their catalog-first transaction.
+
+### Replay, resumption and final confirmation
+
+A pure identical request, including one with an old reviewed revision, returns its authorized original
+receipt without new writes. It is evidence of the recorded operation, not a fresh assertion about today's
+default; use verify-completion for current state. An explicit `--resume` is different: under the catalog
+lock it validates each saved target's program, approved/fixed state, exact current default, recorded content,
+source identity and source fingerprint. The same guard runs in every assignment preview and again
+inside the locked assignment writer before a new batch. Assignment idempotent replay still precedes
+current-revision checks and never repeats a write.
+
+Final confirmation revalidates every required target and checks remaining assignments. Target receipts
+include `context_valid_at_confirmation`; invalid targets include `confirmation_blockers`, and the student
+report includes `context_blockers`. A historical `PUBLISHED` stage is not a declaration that its context
+is still valid. A drifted default/content/source cannot produce `COMPLETE`, even if all assignments match
+the old target. Existing stage receipts are retained; there is no default restoration, target substitution,
+silent rebase or mutation retry.
+
+Safe operator recovery: retain the same operation UUID, inspect status plus a new preview/verification,
+and review the precise blocker. Leave the operation blocked if another writer's decision is intentional.
+Only an explicit, separately authorized canonical default-selection action may restore the required
+approved target if that is the reviewed academic decision; then preview and explicitly resume with the
+new revision. Do not patch immutable content/evidence or generate a new UUID to bypass the blocker.
+
+### Review validation record
+
+The review regression suite includes real before/after civil-reader checks and numerical GPA/result
+comparisons; a new registration using the same pinned plan; one history query for a collection;
+MySQL-grammar preview/verify queries with a complete fixture (including `user_roles.assigned_at`);
+interrupted resume/default drift, pre-assignment drift, post-assignment drift, exact stale replay,
+unchanged resume, and corrupted publication/source rejection. SQLite corruption probes exercise
+read validation only; MariaDB protection triggers are never disabled to manufacture those states.
+
+The MariaDB harness adds independent-process barriers for preview and verification against catalog,
+registration, grade and assignment writers, plus each publication/assignment/final-confirmation race.
+It retains the existing code-permit, rollback, reapply, unknown-trigger and ordinary-writer protection
+checks. New regression checks do not rely on the inherited incomplete-fixture failure above.
+
+The approved manifest fingerprint is unchanged:
+`2e97008596d48323c9280aad64b07f63e1af68ecda137149c4a1d65c2bd42238`.
+No additional SQL, migration, dependency, permission, UI or academic decision change is required.
+
+Executed review-fix verification:
+
+| Check | Actual result |
+| --- | --- |
+| Completion + canonical plan + legacy display PHPUnit | 37 passed / 12,145 assertions in the full run. The subsequently expanded civil-reader test was rerun separately: 1 passed / 31 assertions, including actual student transcript HTTP middleware and the real academic-record/export-data service. |
+| Affected result-symbols, manual-grade, academic-record, executive, ministry and president PHPUnit | 141 passed / 4,489 assertions. No intercepted application responses or mocked grade service in the new civil HTTP test. |
+| Broader scientific course/distribution/workspace/program PHPUnit | 58 tests: 57 passed, 1 inherited failure (780 assertions). Same missing `user_roles.assigned_at` fixture failure as initial delivery, reproduced again with the same installed dependencies on clean base `8b296a88796bf77a2bbd2524d79d76965b8e39aa`. Not fixed, skipped or hidden. |
+| Before-fix reproduction | Three new regressions executed against reviewed application code `d3825d3`, with only the new tests/complete fixture overlaid in an isolated worktree: civil FE114 incorrectly became FE113; resumed stage remained PUBLISHED rather than BLOCKED; read emitted `FOR UPDATE` and SQLite/MySQL grammar rejected it. All three pass on fixed code. The read regression does not rely on the inherited incomplete fixture. |
+| Isolated MariaDB completion harness | PASS, actual `10.11.18-MariaDB`, `REPEATABLE-READ`. Exact correction/one-shot repeat, historical drawing + chemistry readers and numerical results, fresh context, rollback, reapply, unknown trigger rejection, ordinary guards and history-safe rollback refusal. |
+| New independent-connection read races | All 16 passed: preview/verify × catalog/registration/grade/assignment × a writer held open / committed during the snapshot. Read-only queries had no write locks or mutations; old consistent snapshots or controlled stale fences, no inverse-lock deadlock. |
+| New independent-connection stage races | All four passed: interrupted stage + changed default; change before assignment; change after committed assignment before confirmation; unchanged explicit resume with no duplicate versions/origins/assignments/academic events. Exact stale-revision receipt replay remained write-free. Existing observed writer-lock/replay/admission races also passed. |
+| Static contracts | All six relevant PHP contracts passed; static/pure-logic evidence only. |
+| Syntax / Composer / diff | All 19 changed PHP files passed `php -l`; Composer validate --strict + check-platform-reqs passed; `git diff --check` passed. Installed nothing. |
+
+The first expanded MariaDB attempts exposed test-orchestration mistakes (setup transferring an already
+assigned student, and comparing pure replay with the receipt preceding the last explicit resume). Those
+fixtures/assertions were corrected; the final complete harness exited successfully and shut down only
+its verified disposable instance. Sequential SQLite tests are not the concurrency evidence.
+
+The earlier I MariaDB suite in the initial-delivery section was not rerun for this review; the affected
+current-head I HTTP/service tests are included in the 141-test run above. Browser recheck again returned
+no available surfaces and `Browser is not available: iab`. Live portal/browser integration, responsive
+visual checks, screenshots and actual PDF download/opening remain unexecuted. No production or live
+student acceptance, CI success, or migration of all 909 students is claimed.
+
+Identity/student blockers remain runtime decisions: the 19 initial unassigned identity candidates,
+changed before-images, unsafe used-origin prerequisites, ambiguous/cyclic graphs or existing drafts
+must be reviewed; pending academic operations and final graduation remain assignment blockers.
+Synthetic tests intentionally publish 40/41/42 while other programs are identity-blocked. No real student
+has been migrated by this work, and no blocker was guessed away to obtain a COMPLETE result.
+
+Review-fix changed files (relative to repository root):
+
+```text
+backend/app/Http/Resources/RegistrationSummaryItemResource.php
+backend/app/Http/Resources/StudentCourseRegistrationResource.php
+backend/app/Services/AcademicPlanWorkflow.php
+backend/app/Services/CatalogCompletion/ApprovedCatalogCodeCorrection.php
+backend/app/Services/CatalogCompletion/CatalogCompletionProjection.php
+backend/app/Services/CatalogCompletion/CatalogCompletionPublication.php
+backend/app/Services/CatalogCompletion/CatalogCompletionService.php
+backend/app/Services/Concerns/ExamManualGradeOperations.php
+backend/app/Services/ExecutiveReportQueryService.php
+backend/app/Services/GradeService.php
+backend/app/Services/IncompleteResultReadProjection.php
+backend/app/Services/IncompleteResultService.php
+backend/app/Services/Ministry/MinistryStudentService.php
+backend/app/Services/President/PresidentReadService.php
+backend/app/Support/CourseRequirementClassification.php
+backend/app/Support/HistoricalCourseCode.php
+backend/docs/approved-catalog-completion.md
+backend/tests/Feature/ApprovedCatalogCompletionTest.php
+backend/tests/Support/ApprovedCatalogFixture.php
+backend/tests/mariadb/approved-catalog-completion.ps1
+backend/tests/mariadb/catalog-completion.php
+```

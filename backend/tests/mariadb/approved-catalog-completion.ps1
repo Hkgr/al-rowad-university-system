@@ -11,7 +11,8 @@ try {
         @('academic-plans.php','complete-runtime-fixture'), @('academic-plans.php','complete-decision-fixture'),
         @('catalog-completion.php','prepare'), @('academic-plans.php','01_apply.sql'), @('academic-plans.php','02_verify.sql'),
         @('catalog-completion.php','00_preflight.sql'), @('catalog-completion.php','01_apply.sql'), @('catalog-completion.php','02_verify.sql'),
-        @('catalog-completion.php','runtime'), @('catalog-completion.php','code-permutation'), @('catalog-completion.php','package-negative'), @('catalog-completion.php','concurrency'))) {
+        @('catalog-completion.php','runtime'), @('catalog-completion.php','code-permutation'), @('catalog-completion.php','package-negative'),
+        @('catalog-completion.php','read-races'), @('catalog-completion.php','stage-races'), @('catalog-completion.php','concurrency'))) {
         & php (Join-Path $PSScriptRoot $step[0]) $step[1]
         if ($LASTEXITCODE -ne 0) { throw ('Failed guarded step: ' + ($step -join ' ')) }
     }

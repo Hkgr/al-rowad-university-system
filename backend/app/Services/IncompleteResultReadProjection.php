@@ -13,10 +13,11 @@ final class IncompleteResultReadProjection
     {
         $registration->loadMissing(self::RELATIONS);
         $offering = $registration->courseOffering;
+        $codes = \App\Support\HistoricalCourseCode::fields($registration);
         return [
             'student' => ['id' => (int) $registration->student_id, 'number' => $registration->student?->student_number,
                 'full_name' => trim(implode(' ', array_filter([$registration->student?->first_name, $registration->student?->last_name])))],
-            'course' => ['id' => (int) $offering->course_id, 'code' => $offering->course?->course_code, 'name' => $offering->course?->course_name],
+            'course' => ['id' => (int) $offering->course_id, 'code' => $codes['course_code'], 'name' => $offering->course?->course_name, ...$codes],
             'academic_year' => ['id' => (int) $offering->academic_year_id, 'name' => $offering->academicYear?->year_name],
             'semester' => ['id' => (int) $offering->semester_id, 'name' => $offering->semester?->semester_name],
             'offering' => ['id' => (int) $offering->getKey(), 'status' => $offering->status],

@@ -32,6 +32,7 @@ class StudentCourseRegistrationResource extends JsonResource
             'student_course_registration_id' => $this->student_course_registration_id,
             'student_id' => $this->student_id,
             'course_offering_id' => $this->course_offering_id,
+            ...\App\Support\HistoricalCourseCode::fields($this->resource),
             'registration_date' => $this->registration_date,
             'registered_by_user_id' => $this->registered_by_user_id,
             'advisor_user_id' => $this->advisor_user_id,

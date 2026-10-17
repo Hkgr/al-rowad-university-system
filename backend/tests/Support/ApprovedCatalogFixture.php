@@ -12,6 +12,8 @@ final class ApprovedCatalogFixture
     public static function initialize(): void
     {
         AcademicPlanFixture::initialize();
+        // effectiveRoles orders by this real column when the MySQL grammar is exercised.
+        Schema::table('user_roles', fn (Blueprint $t) => $t->timestamp('assigned_at')->nullable());
         Schema::table('academic_levels', fn (Blueprint $t) => $t->integer('level_order')->nullable());
         Schema::table('semesters', fn (Blueprint $t) => $t->integer('semester_order')->nullable());
         DB::table('academic_levels')->where('academic_level_id', 1)->update(['level_order' => 1]);

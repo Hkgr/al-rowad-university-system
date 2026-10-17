@@ -31,6 +31,7 @@ trait ExamManualGradeOperations
             'courseOffering.gradeComponents', 'courseOffering.gradeApprovals.approvalStatus',
             'studentGradeComponents' => fn ($q) => $q->withMax('gradeAuditLogs', 'grade_audit_log_id')]);
         IncompleteOutcomeGuard::attach($rows);
+        \App\Support\HistoricalCourseCode::attach($rows);
         $context = $this->supplementaryEligibility->evaluationContext(collect(), $rows);
         // Validate canonical fixed-roster schema before its bounded informational projection.
         $schemaError = null;
@@ -75,7 +76,7 @@ trait ExamManualGradeOperations
             'registration_id' => (int) $registration->getKey(), 'student_id' => (int) $registration->student_id,
             'registration_status' => $registration->registrationStatus?->status_code,
             'course_offering_id' => (int) $offering->getKey(), 'course_id' => (int) $offering->course_id,
-            'course_code' => $offering->course?->course_code, 'course_name' => $offering->course?->course_name,
+            ...\App\Support\HistoricalCourseCode::fields($registration), 'course_name' => $offering->course?->course_name,
             'academic_year_id' => (int) $offering->academic_year_id, 'academic_year' => $offering->academicYear?->year_name,
             'semester_id' => (int) $offering->semester_id, 'semester' => $offering->semester?->semester_name,
             'academic_program_id' => $offering->academic_program_id, 'program' => $program?->program_name,
