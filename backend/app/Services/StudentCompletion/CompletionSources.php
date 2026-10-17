@@ -10,7 +10,7 @@ final class CompletionSources
 {
     public function prepare(array $config): array
     {
-        if(($config['contract']??null)==='student-completion.consolidated-inputs.v1')return (new ConsolidatedCompletionSources)->prepare($config);
+        if(in_array($config['contract']??null,['student-completion.consolidated-inputs.v1','student-completion.consolidated-inputs.v2'],true))return (new ConsolidatedCompletionSources)->prepare($config);
         foreach (['snapshot','roster','conflicts','examinations'] as $key)
             if (empty($config[$key])) throw new \InvalidArgumentException('Missing source: '.$key);
         $sources = []; $identities = []; $observations = []; $conflicts = []; $unidentified=[];
@@ -132,7 +132,7 @@ final class CompletionSources
         if (!preg_match('/^[a-f0-9]{64}$/',$expectedHash) || !hash_equals($expectedHash,hash_file('sha256',$path)))
             throw new \InvalidArgumentException('Source bundle fingerprint differs.');
         $bundle=json_decode(file_get_contents($path),true,flags:JSON_THROW_ON_ERROR);
-        if (!in_array($bundle['contract']??null,['student-completion.sources.v1','student-completion.sources.v2','student-completion.sources.v3','student-completion.sources.v4'],true)) throw new \InvalidArgumentException('Unsupported source contract.');
+        if (!in_array($bundle['contract']??null,['student-completion.sources.v1','student-completion.sources.v2','student-completion.sources.v3','student-completion.sources.v4','student-completion.sources.v5'],true)) throw new \InvalidArgumentException('Unsupported source contract.');
         $fresh=$this->prepare($bundle['config']);
         // Preserve read/replay of genuine pre-resolution bundles. Never strip arbitrary fields.
         if($bundle['contract']==='student-completion.sources.v1'&&!isset($bundle['config']['resolution_policy'])) {

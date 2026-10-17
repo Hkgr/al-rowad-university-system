@@ -14,6 +14,10 @@ final class ApprovedFollowupCatalog
         $c=$bundle['config']['followup']['catalog'];
         foreach(['Programs','Curriculum','CourseMappings','SourceRows'] as $table)if(!hash_equals($c['table_hashes'][$table]??'',CompletionData::hash($handoff[$table]??[])))
             throw new \InvalidArgumentException('Catalog handoff table changed: '.$table);
+        if(isset($c['identity_mapping_revision'])) {
+            $verified=(new FollowupCourseIdentity)->revise($c,$bundle['snapshot'],$handoff);
+            if(!hash_equals(CompletionData::hash($c),CompletionData::hash($verified)))throw new \InvalidArgumentException('Follow-up course identity evidence differs from the source/snapshot. Prepare a new bundle.');
+        }
         $source=array_column($handoff['Curriculum'],null,'record_id');$programs=[];
         foreach($c['programs'] as $p) {
             $key=$p['key'];
@@ -63,6 +67,7 @@ final class ApprovedFollowupCatalog
         if(count($programs)!==4)throw new \InvalidArgumentException('All four approved program contexts must be reported.');
         $profile=['contract'=>'approved-catalog.followup.v1','source_hashes'=>$bundle['sources'],'programs'=>array_values($programs),
             'approvals'=>$c['approvals']??[],'historical_approval_claimed'=>false];
+        if(isset($c['identity_mapping_revision']))$profile['identity_mapping_revision']=$c['identity_mapping_revision'];
         $profile['hash']=CompletionData::hash($profile);return $profile;
     }
 }

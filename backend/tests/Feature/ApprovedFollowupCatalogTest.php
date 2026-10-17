@@ -46,6 +46,44 @@ final class ApprovedFollowupCatalogTest extends TestCase
         foreach(['students.view','students.manage','grades.view'] as $code)DB::table('role_permissions')->insert(['role_id'=>2,'permission_id'=>DB::table('permissions')->where('permission_code',$code)->value('permission_id')]);
         DB::table('user_access_scopes')->insert(['user_id'=>2,'scope_type'=>'program','scope_id'=>$programId]);return User::findOrFail(2);
     }
+    public function test_same_code_and_credits_do_not_authorize_reuse_of_a_different_subject(): void
+    {
+        $b=$this->bundle();$course=\App\Models\Course::findOrFail(1);
+        $b['catalog_followup']['programs'][0]['courses'][0]=array_replace($b['catalog_followup']['programs'][0]['courses'][0],[
+            'system_code'=>$course->course_code,'course_name'=>'Unrelated synthetic subject','existing'=>$course->only(['course_id','course_code','course_name','credit_hours','theoretical_hours','practical_hours','is_active'])]);
+        $b=$this->hash($b);$before=DB::table('courses')->orderBy('course_id')->get()->toJson();
+        $r=app(FollowupCatalogService::class)->preview(User::findOrFail(1),$b);
+        self::assertContains('course_identity_unverified:synthetic:0',$r['review']['programs'][0]['blockers']);
+        self::assertSame($before,DB::table('courses')->orderBy('course_id')->get()->toJson());
+    }
+    public function test_corrected_identities_publish_replay_resume_and_verify_without_touching_conflicting_academic_history(): void
+    {
+        foreach([856=>['CE211','مقاومة المواد (1)',3],857=>['CE212','علم التحريك- ديناميك',4],859=>['CE222','تصميم وإنشاء مباني',4]] as $id=>[$code,$name,$hours])
+            DB::table('courses')->insert(['course_id'=>$id,'course_code'=>$code,'course_name'=>$name,'credit_hours'=>$hours,'is_active'=>true]);
+        DB::table('course_prerequisites')->insert(['course_id'=>856,'prerequisite_course_id'=>1,'minimum_result_status_id'=>null]);
+        $before=DB::table('courses')->whereIn('course_id',[856,857,859])->orderBy('course_id')->get()->toJson();$edges=DB::table('course_prerequisites')->get()->toJson();$history=app(\App\Services\CatalogCompletion\CatalogCompletionService::class)->academicFingerprint();
+        $b=\Tests\Support\FollowupIdentityFixture::bundle([3,4,5,6],['INST-ENG','INST-ENG','INST-ENG','INST-CD']);$s=app(FollowupCatalogService::class);$a=User::findOrFail(1);$r=$s->preview($a,$b);self::assertSame('READY',$r['status'],json_encode($r));
+        self::assertSame($before,DB::table('courses')->whereIn('course_id',[856,857,859])->orderBy('course_id')->get()->toJson());$id=(string)Str::uuid();
+        $result=$s->apply($a,$b,$r['review'],$r['review_hash'],$id,$r['review']['revision']);self::assertSame('COMPLETE',$result['status'],json_encode($result));
+        self::assertSame($before,DB::table('courses')->whereIn('course_id',[856,857,859])->orderBy('course_id')->get()->toJson());self::assertSame($edges,DB::table('course_prerequisites')->get()->toJson());self::assertSame($history,app(\App\Services\CatalogCompletion\CatalogCompletionService::class)->academicFingerprint());
+        self::assertSame(['TI-CE-211','TI-CE-212','TI-CE-222'],DB::table('courses')->whereIn('course_code',['TI-CE-211','TI-CE-212','TI-CE-222'])->orderBy('course_code')->pluck('course_code')->all());
+        $audit=DB::table('user_activity_logs')->get()->toJson();self::assertSame($result,$s->apply($a,$b,$r['review'],$r['review_hash'],$id,'0'));self::assertSame($audit,DB::table('user_activity_logs')->get()->toJson());
+        self::assertSame('COMPLETE',$s->apply($a,$b,$r['review'],$r['review_hash'],$id,app(AcademicCatalogTransaction::class)->revision(),true)['status']);
+        self::assertSame('COMPLETE',$s->verify($a,$b)['status']);self::assertSame($edges,DB::table('course_prerequisites')->get()->toJson());
+    }
+    public function test_verified_shared_university_alias_is_reused_without_renaming_the_existing_origin(): void
+    {
+        DB::table('courses')->insert(['course_id'=>403,'course_code'=>'RU111','course_name'=>'لغة عربية (1)','credit_hours'=>2,'is_active'=>true]);
+        $membership=DB::table('program_courses')->insertGetId(['academic_program_id'=>1,'course_id'=>403,'course_type'=>'mandatory','academic_level_id'=>1,'recommended_semester_id'=>1],'program_course_id');
+        $group=DB::table('academic_requirement_groups')->where('academic_program_id',1)->where('requirement_scope','university')->where('requirement_type','mandatory')->value('requirement_group_id');
+        DB::table('program_course_requirement_groups')->insert(['program_course_id'=>$membership,'requirement_group_id'=>$group]);
+        $b=$this->bundle();$p=&$b['catalog_followup']['programs'][0];$p['total_credit_hours']=$p['requirements']['total_credit_hours']=2;
+        foreach($p['requirements']['groups'] as &$g)$g['required_credit_hours']=$g['requirement_scope']==='university'&&$g['requirement_type']==='mandatory'?2:0;unset($g);
+        $p['courses'][0]=array_replace($p['courses'][0],['system_code'=>'RU111','course_name'=>'اللغة العربية (1)','credit_hours'=>2,'requirement_scope'=>'university',
+            'existing'=>\App\Models\Course::findOrFail(403)->only(['course_id','course_code','course_name','credit_hours','theoretical_hours','practical_hours','is_active'])]);unset($p);$b=$this->hash($b);
+        $r=$this->apply($b);self::assertSame('COMPLETE',$r['status'],json_encode($r));self::assertSame('لغة عربية (1)',DB::table('courses')->where('course_id',403)->value('course_name'));
+        self::assertSame(1,DB::table('courses')->where('course_code','RU111')->count());
+    }
     public function test_student_affairs_operator_can_admit_with_publication_proof_without_scientific_capabilities(): void
     {
         $b=$this->bundle();$this->apply($b);$p=AcademicProgram::where('program_code','NEW-0')->sole();$a=$this->affairsOperator((int)$p->getKey());
