@@ -498,5 +498,8 @@ operation, not permission to clear evidence or silently rerun writes.
 
 The subsequent missing-program/source-ownership increment is documented in
 [Approved student-completion follow-up](../../docs/student-completion-approved-followup.md).
-It requires a new v3 source bundle, fresh reviews and new operation UUIDs. Do not
-modify or reuse the historical operation described above.
+Its original v3 bundles remain reconstructible and replayable. New two-file
+preparation uses the distinct v4 contract (handoff plus companion SQL only), fresh
+live reviews and new operation UUIDs. Do not modify or reuse the historical
+operation described above. See the follow-up guide for exact 768 MB preparation,
+catalog-first operating order, explicit resume and current verification commands.

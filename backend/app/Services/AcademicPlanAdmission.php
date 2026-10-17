@@ -19,6 +19,7 @@ final class AcademicPlanAdmission
         if (!\Ramsey\Uuid\Uuid::isValid($operationId)) throw new \InvalidArgumentException('Historical admission requires the reviewed operation UUID.');
         abort_unless(app(DataScopeService::class)->canMutateProgram($actor, (int) $fields['academic_program_id']), 403);
         if (DB::transactionLevel()<1) throw AcademicPlanException::conflict('academic_plan_transaction_required','Historical admission must be atomic.');
+        app(AcademicCatalogTransaction::class)->revision(true);
         AcademicPlanContext::assertReady();
         $program=self::assertAccepting((int)$fields['academic_program_id']);
         $historical=null;
@@ -38,7 +39,7 @@ final class AcademicPlanAdmission
                     ||($proof['reference_kind']??null)!==$completionContext['kind']||($proof['manifest_hash']??null)!==$completionContext['profile_hash']
                     ||($proof['program_key']??null)!==($completionContext['program_key']??null))
                     throw AcademicPlanException::conflict('historical_plan_context_unproven','The recorded completion source is missing or changed.');
-                app(\App\Services\CatalogCompletion\CatalogCompletionPublication::class)->assertTarget($actor,['academic_program_id'=>$program->getKey(),'academic_plan_version_id'=>$historicalVersionId],$completionContext['profile_hash']);
+                app(\App\Services\CatalogCompletion\CatalogCompletionPublication::class)->assertHistoricalAdmission($actor,$program,$historicalVersionId,$completionContext);
                 $historical=AcademicPlanVersion::findOrFail($historicalVersionId);
             }
         } elseif ($historicalVersionId!==null) throw AcademicPlanException::conflict('historical_plan_context_unproven','Legacy admission cannot select an unrelated plan.');

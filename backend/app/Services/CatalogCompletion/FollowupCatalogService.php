@@ -21,7 +21,7 @@ final class FollowupCatalogService
         foreach([ScientificProgramAccess::VIEW,ScientificProgramAccess::MANAGE,ScientificProgramAccess::PLANS,ScientificProgramAccess::APPROVE,ScientificProgramAccess::ASSIGN] as $p)$this->access->authorize($actor,$p);
         $this->courses->authorize($actor,true);AcademicPlanContext::assertReady();
         $profile=$bundle['catalog_followup']??[];
-        if(($bundle['contract']??null)!=='student-completion.sources.v3'||($profile['contract']??null)!=='approved-catalog.followup.v1'
+        if(!in_array($bundle['contract']??null,['student-completion.sources.v3','student-completion.sources.v4'],true)||($profile['contract']??null)!=='approved-catalog.followup.v1'
             ||!hash_equals($profile['hash']??'',CompletionData::hash(array_diff_key($profile,['hash'=>true]))))$this->fail('manifest_invalid');
         foreach($profile['programs'] as $p) {
             abort_unless($this->courses->departments($actor)->where('department_id',$p['department_id'])->whereHas('college',fn($q)=>$q->where('college_code',$p['college_code']))->exists(),403);
@@ -114,6 +114,12 @@ final class FollowupCatalogService
                 if(!$resume)return ['replay'=>$this->receipts->find('followup_catalog_result',$id)['value']['result']??['status'=>'INTERRUPTED','operation_id'=>$id]];
             } elseif($revision!==$review['revision'])$this->fail('stale');
             if($revision!==$this->tx->revision())$this->fail('stale');
+            if($old&&$resume)foreach($profile['programs'] as $p) {
+                $stage=(string)Uuid::uuid5(Uuid::NAMESPACE_URL,$id.'/'.$p['key']);
+                if($saved=$this->receipts->find('followup_catalog_program',$stage)) {
+                    $this->check($actor,$saved,$digest);$this->assertStage($actor,$saved['value']['result'],$p,$profile['hash']);
+                }
+            }
             if(!$old)$this->receipts->put($actor,'followup_catalog_started',$id,['digest'=>$digest,'profile_hash'=>$profile['hash'],'review'=>$review]);
             return ['revision'=>$this->tx->revision()];
         });
@@ -122,18 +128,23 @@ final class FollowupCatalogService
         foreach($profile['programs'] as $p) {
             $stage=(string)Uuid::uuid5(Uuid::NAMESPACE_URL,$id.'/'.$p['key']);
             try {
-                $result=$this->tx->run(function()use($actor,$bundle,$profile,$review,$id,$digest,$stage,$p,$next,$operationOrigins) {
+                $stageResult=$this->tx->run(function()use($actor,$bundle,$profile,$review,$id,$digest,$stage,$p,$next,$operationOrigins) {
                     $this->authorize($actor,$bundle);
-                    if($old=$this->receipts->find('followup_catalog_program',$stage)){$this->check($actor,$old,$digest);return $old['value']['result'];}
+                    if($old=$this->receipts->find('followup_catalog_program',$stage)) {
+                        $this->check($actor,$old,$digest);$this->assertStage($actor,$old['value']['result'],$p,$profile['hash']);
+                        if($next!==$this->tx->revision())$this->fail('stale');
+                        return ['result'=>$old['value']['result'],'revision'=>$this->tx->revision()];
+                    }
                     if($next!==$this->tx->revision())$this->fail('stale');
                     $current=$this->project($actor,$p,$profile['hash'],$operationOrigins);$approved=collect($review['programs'])->firstWhere('key',$p['key']);
                     if(!$approved||!hash_equals(CompletionData::hash($current),CompletionData::hash($approved)))$this->fail('review_changed');
-                    if($current['blockers'])return ['key'=>$p['key'],'status'=>'BLOCKED','blockers'=>$current['blockers']];
+                    if($current['blockers'])return ['result'=>['key'=>$p['key'],'status'=>'BLOCKED','blockers'=>$current['blockers']],'revision'=>$this->tx->revision()];
                     if($current['published_version_id'])$result=['key'=>$p['key'],'status'=>'UNCHANGED','academic_program_id'=>$current['program_id'],'academic_plan_version_id'=>$current['published_version_id']];
                     else $result=$this->publish($actor,$p,$current,$profile['hash'],$stage);
-                    $this->receipts->put($actor,'followup_catalog_program',$stage,['digest'=>$digest,'result'=>$result]);return $result;
+                    $this->receipts->put($actor,'followup_catalog_program',$stage,['digest'=>$digest,'result'=>$result]);
+                    return ['result'=>$result,'revision'=>$this->tx->revision()];
                 });
-                $outcomes[]=$result;$operationOrigins=array_replace($operationOrigins,$result['created_origins']??[]);$next=$this->tx->revision();
+                $result=$stageResult['result'];$outcomes[]=$result;$operationOrigins=array_replace($operationOrigins,$result['created_origins']??[]);$next=$stageResult['revision'];
             } catch(\Throwable $e) {
                 $outcomes[]=['key'=>$p['key'],'status'=>'BLOCKED','blockers'=>[$e->errorCode??'catalog_validation_failed'],'message'=>$e->getMessage()];
                 // A concurrent commit invalidates the remainder; never attach it to a new epoch.
@@ -141,7 +152,16 @@ final class FollowupCatalogService
             }
         }
         $result=CompletionData::canonical(['operation_id'=>$id,'profile_hash'=>$profile['hash'],'status'=>count($outcomes)===count($profile['programs'])&&!collect($outcomes)->contains(fn($r)=>$r['status']==='BLOCKED')?'COMPLETE':'PARTIAL','programs'=>$outcomes]);
-        $this->tx->run(function()use($actor,$bundle,$id,$digest,$result){$this->authorize($actor,$bundle);$this->receipts->put($actor,'followup_catalog_result',$id,['digest'=>$digest,'result'=>$result]);});
+        $this->tx->run(function()use($actor,$bundle,$profile,$id,$digest,$result,$next) {
+            $this->authorize($actor,$bundle);
+            if($next!==$this->tx->revision())$this->fail('stale');
+            if($result['status']==='COMPLETE')foreach($profile['programs'] as $p) {
+                $stage=(string)Uuid::uuid5(Uuid::NAMESPACE_URL,$id.'/'.$p['key']);$saved=$this->receipts->find('followup_catalog_program',$stage);
+                if(!$saved)$this->fail('publication_changed');
+                $this->check($actor,$saved,$digest);$this->assertStage($actor,$saved['value']['result'],$p,$profile['hash']);
+            }
+            $this->receipts->put($actor,'followup_catalog_result',$id,['digest'=>$digest,'result'=>$result]);
+        });
         return $result;
     }
 
@@ -204,6 +224,20 @@ final class FollowupCatalogService
             foreach($proof['created_origins']??[] as $code=>$origin)$out[$code]=$origin;
         }
         return $out;
+    }
+
+    private function assertStage(User $actor,array $saved,array $program,string $hash): void
+    {
+        if(($saved['key']??null)!==$program['key']||!in_array($saved['status']??null,['PUBLISHED','UNCHANGED'],true))$this->fail('publication_changed');
+        $proof=app(CatalogCompletionPublication::class)->assertTarget($actor,$saved,$hash);
+        if(($proof['program_key']??null)!==$program['key'])$this->fail('publication_changed');
+        $actualProgram=$this->access->programs($actor)->findOrFail($saved['academic_program_id']);
+        if((int)$actualProgram->department_id!==(int)$program['department_id'])$this->fail('publication_changed');
+        if(isset($saved['created_origins'])&&!hash_equals(CompletionData::hash($saved['created_origins']),CompletionData::hash($proof['created_origins']??[])))$this->fail('publication_changed');
+        foreach($proof['created_origins']??[] as $origin) {
+            $course=$this->courses->courses($actor)->find($origin['course_id']);
+            if(!$course||!hash_equals(CompletionData::hash($this->origin($origin)),CompletionData::hash($this->origin($course->only(array_keys($origin))))))$this->fail('created_origin_changed');
+        }
     }
 
     public function status(User $actor,array $bundle,string $id): array

@@ -14,7 +14,7 @@ final class FollowupCatalogCommand
     {
         if(!$path||!is_file($path))return false;
         $value=json_decode(file_get_contents($path),true,flags:JSON_THROW_ON_ERROR);
-        return ($value['contract']??null)==='student-completion.sources.v3';
+        return in_array($value['contract']??null,['student-completion.sources.v3','student-completion.sources.v4'],true);
     }
     public static function run(Command $command,string $action): array
     {
