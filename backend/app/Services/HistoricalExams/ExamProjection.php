@@ -25,6 +25,7 @@ final class ExamProjection
     }
     public function build(array $bundle,array $state,string $revision): array
     {
+        if(isset($bundle['approved_authority']))return (new ExamReconciliationProjection)->build($bundle,$state,$revision);
         $state=$this->index($state);$actions=[];$groups=[];
         foreach($bundle['rows'] as $row) {
             $a=$this->row($row,$state,$bundle['student_master']??[]);$a['references']=[$row['reference']+['row_hash'=>$row['row_hash']]];
@@ -54,7 +55,7 @@ final class ExamProjection
     }
     public function row(array $row,array $s,array $master=[]): array
     {
-        $v=$row['values'];$identity=new ExamIdentity;$owner=$identity->student($row,$s);$student=$owner['student'];$b=$owner['blockers'];
+        $v=$row['values'];$identity=new ExamIdentity;$owner=isset($s['_exam_approved'])?(new ExamApprovedIdentity)->student($row,$s):$identity->student($row,$s);$student=$owner['student'];$b=$owner['blockers'];
         $p=$identity->sourceProgram($row,$owner,$s,$master);
         // An existing uniquely identified registration may supply a missing source program, never the current/default plan.
         if(!$p['program_id']&&$student&&CompletionData::text($v['program'])===''&&!($p['evidence_conflict']??false)) {
@@ -85,7 +86,7 @@ final class ExamProjection
             }
         }
         $b=[...$b,...$p['blockers']];$program=$p['program_id']??null;
-        $c=$program?$identity->course($v,$program,$s,$student?(int)$student['student_id']:null):['course'=>null,'mapping'=>null,'blockers'=>['program_context_unresolved']];$b=[...$b,...$c['blockers']];$course=$c['course'];
+        $c=$program?(isset($s['_exam_approved'])?(new ExamApprovedIdentity)->course($row,$program,$s,$student?(int)$student['student_id']:null):$identity->course($v,$program,$s,$student?(int)$student['student_id']:null)):['course'=>null,'mapping'=>null,'blockers'=>['program_context_unresolved']];$b=[...$b,...$c['blockers']];$course=$c['course'];
         $year=CompletionData::year($v['year']??null);$years=array_values(array_filter($s['academic_years'],fn($y)=>CompletionData::year($y['year_name'])===$year));
         if($year===null||count($years)!==1)$b[]=$row['kind']==='regular'?'academic_year_unresolved':'supplementary_sitting_undated';$yearId=$year!==null&&count($years)===1?(int)$years[0]['academic_year_id']:null;
         $offerings=array_column($s['course_offerings'],null,'course_offering_id');$attempts=[];$otherPrograms=[];
@@ -175,6 +176,11 @@ final class ExamProjection
         }
         $assignments=$student?array_values(array_filter($s['student_academic_plan_assignments']??[],fn($x)=>(int)$x['student_id']===(int)$student['student_id'])):[];
         $baseline=['student'=>$student,'course'=>$course,'program_id'=>$program,'program_evidence'=>$p,'other_program_registrations'=>$otherPrograms,'assignments'=>$assignments,'memberships'=>$members,'period'=>$period,'offering'=>$offering,'registration'=>$reg,'result'=>$result,'components'=>$storedComponents,'marks'=>$marks,'approvals'=>$approvals,'parts'=>$parts,'lifecycle'=>$lifecycle,'policy'=>$policy];
+        if(isset($s['_exam_approved'])) {
+            $baseline['credit_evidence']=$reg?array_values(array_filter($s[\App\Support\HistoricalExamSchema::CREDITS]??[],fn($x)=>(int)$x['student_course_registration_id']===(int)$reg['student_course_registration_id'])):[];
+            $baseline['historical_outcomes']=$reg?array_values(array_filter($s[\App\Support\HistoricalExamSchema::OUTCOMES]??[],fn($x)=>(int)$x['student_course_registration_id']===(int)$reg['student_course_registration_id'])):[];
+            $baseline['plan_credit_evidence']=array_values(array_filter($s[\App\Support\HistoricalExamSchema::PLAN]??[],fn($x)=>in_array((int)$x['program_course_id'],array_map('intval',array_column($members,'program_course_id')),true)));
+        }
         return ['source_id'=>$row['id'],'source_values'=>$v,'owner'=>$owner,'program_evidence'=>$p,'course_mapping'=>$c['mapping'],'component_mapping'=>$componentMapping,'mutation_blockers'=>$mutationBlockers,'period'=>$period,'interpreted'=>$interpreted,
             'attempt_key'=>$student&&$course&&$yearId?implode('/',[$student['student_id'],$course['course_id'],$yearId,$semester??'unknown']):null,
             'classification'=>$classification,'eligible'=>!$b&&!$equivalent&&($writes!==[]||!$reg),'blockers'=>array_values(array_unique($b)),'possible_parent_contexts'=>$parents,

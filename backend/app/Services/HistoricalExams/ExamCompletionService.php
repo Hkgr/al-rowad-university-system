@@ -15,15 +15,23 @@ final class ExamCompletionService
     public function preview(User $actor,array $bundle): array
     {
         $this->access->authorize($actor);
-        return $this->tx->snapshot(fn()=>$this->projection->build($bundle,$this->db->read($actor),$this->tx->revision()));
+        return $this->tx->snapshot(function()use($actor,$bundle) {
+            $state=$this->db->read($actor);
+            if(isset($bundle['approved_authority'])) {
+                $state['_actor_id']=(int)$actor->getKey();
+                $state['_historical_exam_schema_ready']=\App\Support\HistoricalExamSchema::ready();
+            }
+            return $this->projection->build($bundle,$state,$this->tx->revision());
+        });
     }
-    private function authorizeReview(User $actor,array $review): void
+    public function authorizeReview(User $actor,array $review): void
     {
         $this->access->authorize($actor);
         $students=[];$offerings=[];$courses=[];
         foreach($review['actions'] as $a)if($id=$a['baseline']['student']['student_id']??null) {
             $student=$students[$id]??Student::findOrFail($id);if(!isset($students[$id])){$this->access->authorize($actor,$student);$students[$id]=$student;}
             if(($offering=$a['baseline']['offering']['course_offering_id']??null)&&!isset($offerings[$offering])){$this->access->authorizeOffering($actor,$student,CourseOffering::findOrFail($offering));$offerings[$offering]=true;}
+            if(!$offering && isset($a['baseline']['program_id']))abort_unless(app(\App\Services\DataScopeService::class)->scopeProgramsForMutation(\App\Models\AcademicProgram::query(),$actor)->whereKey($a['baseline']['program_id'])->exists(),403);
             $course=$a['baseline']['course']['course_id']??null;
             if($course&&!isset($courses[$course])){abort_unless(app(\App\Services\DataScopeService::class)->scopeManualGradeCourses(Course::query(),$actor)->whereKey($course)->exists(),403);$courses[$course]=true;}
         }
@@ -35,6 +43,7 @@ final class ExamCompletionService
     }
     public function apply(User $actor,array $bundle,array $review,string $hash,string $id,string $expected,bool $resume=false): array
     {
+        if(($review['contract']??null)===ExamReconciliationProjection::CONTRACT)return app(ExamApprovedCompletionService::class)->apply($actor,$bundle,$review,$hash,$id,$expected,$resume);
         if(!Uuid::isValid($id)||($review['contract']??null)!==ExamProjection::CONTRACT||!hash_equals(CompletionData::hash($review),$hash)||!hash_equals($review['bundle_digest'],CompletionData::hash($bundle)))$this->fail('review_invalid');
         $this->authorizeReview($actor,$review);$digest=CompletionData::hash([$hash,$bundle['sources'],(int)$actor->getKey()]);
         $old=$this->tx->run(function()use($actor,$review,$hash,$id,$digest,$expected,$resume,$bundle) {
@@ -102,7 +111,7 @@ final class ExamCompletionService
         $result=CompletionData::canonical(['operation_id'=>$id,'status'=>count($out)===count($review['actions'])&&!collect($out)->contains(fn($x)=>$x['status']==='BLOCKED')?'COMPLETE':'PARTIAL','actions'=>$out,'saved_pending_approval'=>collect($out)->where('status','SAVED_PENDING_APPROVAL')->count()]);
         $this->tx->run(function()use($actor,$bundle,$review,$id,$digest,$result,$next,$start){$this->authorizeReview($actor,$review);if($next!==$this->tx->revision())$this->fail('stale');if(!app(ExamEvidence::class)->verify($actor,$start['value']['preserved']))$this->fail('preserved_evidence_changed');$this->validateSavedActions($actor,$bundle,$review,$id,$digest,$result);$this->receipts->put($actor,'exam_result',$id,['digest'=>$digest,'result'=>$result]);});return $result;
     }
-    private function lock(array $a): void
+    public function lock(array $a): void
     {
         $id=$a['baseline']['offering']['course_offering_id']??null;if(!$id)return;
         DB::table('course_offerings')->where('course_offering_id',$id)->lockForUpdate()->get();
@@ -134,6 +143,12 @@ final class ExamCompletionService
     }
     public function status(User $actor,string $id): array
     {
+        $this->access->authorize($actor);
+        if($correction=$this->receipts->find('exam_correction',$id)) {
+            if($correction['actor_id']!==(int)$actor->getKey())$this->fail('operation_unavailable');
+            app(HistoricalExamWorkService::class)->find($actor,$correction['value']['result']['work_item_id']);
+            return $correction['value']['result'];
+        }
         $this->access->authorize($actor);$start=$this->receipts->find('exam_start',$id);if(!$start||$start['actor_id']!==(int)$actor->getKey())$this->fail('operation_unavailable');
         $this->authorizeReview($actor,$start['value']['review']);$r=$this->receipts->find('exam_result',$id);
         if($r)$this->check($actor,$r,$start['value']['digest']);
@@ -141,6 +156,10 @@ final class ExamCompletionService
     }
     public function verify(User $actor,array $bundle,string $id): array
     {
+        $this->access->authorize($actor);
+        if($this->receipts->find('exam_correction',$id))return app(HistoricalExamWorkService::class)->verifyCorrection($actor,$bundle,$id);
+        $start=$this->receipts->find('exam_start',$id);
+        if(($start['value']['review']['contract']??null)===ExamReconciliationProjection::CONTRACT)return app(ExamApprovedCompletionService::class)->verify($actor,$bundle,$id);
         $this->access->authorize($actor);
         return $this->tx->snapshot(function()use($actor,$bundle,$id){$status=$this->status($actor,$id);$start=$this->receipts->find('exam_start',$id);$review=$start['value']['review'];
             if(!hash_equals($review['bundle_digest'],CompletionData::hash($bundle)))$this->fail('bundle_changed');

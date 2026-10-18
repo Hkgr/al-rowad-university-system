@@ -11,6 +11,7 @@ import { searchPath } from '../lib/manualGradeEntry'
 import { studentSearchLifecycle } from '../lib/studentSearchLifecycle'
 import { caseStates, damascusTime, deadlineEvidence, expiryOutcomes, failedAttempt, freezeAttempt, hasRecoveryRead, incompleteError, incompleteLabels, incompletePage, incompleteRead, listQuery, newDraft, operationLabels, receiveDraft, registrationResultStates, reviewDraft, sendAttempt } from '../lib/incompleteResults'
 import { missingValue } from '../../academic-record/lib/resultSymbols'
+import { historicalNextAction, historicalWorkKinds, historicalWorkQuery, historicalWorkRead } from '../lib/historicalWork'
 
 const stamp = () => JSON.stringify(getIdentity())
 const authorized = () => canAccess(ACCESS.manualGradeEntry, getIdentity())
@@ -28,17 +29,17 @@ function useAuthorization() {
   return session
 }
 
-function useRead(path, identity, onDenied) {
+function useRead(path, identity, onDenied, reader = incompleteRead) {
   const [snapshot, setSnapshot] = useState(null), [version, setVersion] = useState(0)
   const key = `${path}:${version}`
   useEffect(() => {
     const abort = new AbortController()
     let active = true
     const current = () => active && !abort.signal.aborted && identity === stamp() && authorized()
-    incompleteRead(path, abort.signal).then(data => { if (current()) setSnapshot({ key, path, data, readKey: key, error: '' }) })
+    reader(path, abort.signal).then(data => { if (current()) setSnapshot({ key, path, data, readKey: key, error: '' }) })
       .catch(e => { if (current() && e.name !== 'AbortError') { setSnapshot(previous => ({ key, path, data: previous?.path === path ? previous.data : null, readKey: previous?.path === path ? previous.readKey : null, error: incompleteError(e) })); if ([401, 403].includes(e.status)) onDenied() } })
     return () => { active = false; abort.abort() }
-  }, [path, identity, key, onDenied])
+  }, [path, identity, key, onDenied, reader])
   return { data: snapshot?.path === path ? snapshot.data : null, readKey: snapshot?.path === path ? snapshot.readKey : null, error: snapshot?.key === key ? snapshot.error : '', loading: snapshot?.key !== key, reload: () => setVersion(value => value + 1) }
 }
 
@@ -76,7 +77,9 @@ export default function IncompleteResultsPage() {
   const [denied, setDenied] = useState(false)
   const deny = useCallback(() => setDenied(true), [])
   const { caseId, registrationId } = useParams()
+  const location = useLocation()
   if (!session.allowed || denied) return <p role="alert" dir="rtl">الوصول غير متاح. أعد تسجيل الدخول أو راجع المسؤول.</p>
+  if (!caseId && !registrationId && new URLSearchParams(location.search).get('view') === 'imported') return <HistoricalWorkWorkspace key={session.identity} identity={session.identity} onDenied={deny} />
   return caseId || registrationId
     ? <CaseWorkspace key={`${session.identity}:${caseId ? `case:${caseId}` : `registration:${registrationId}`}`} identity={session.identity} path={caseId ? `/${caseId}` : `/registrations/${registrationId}`} onDenied={deny} />
     : <CaseList key={session.identity} identity={session.identity} onDenied={deny} />
@@ -94,7 +97,7 @@ function CaseList({ identity, onDenied }) {
     return value && !options.some(option => String(option.value) === value) ? [...options, { value, label: `${name} المحدد (${value})` }] : options
   }
   return <main dir="rtl" className="min-w-0 space-y-5 text-[13px] text-text-gray">
-    <header><h1 className="text-[20px] font-black text-text-dark">النتائج غير المكتملة I</h1><p className="text-[12.5px] text-text-light">منح موثقة ومهل وتسويات فردية؛ حفظها لا يستبدل اعتماد الطرح.</p></header>
+    <header><h1 className="text-[20px] font-black text-text-dark">النتائج غير المكتملة I</h1><p className="text-[12.5px] text-text-light">منح موثقة ومهل وتسويات فردية؛ حفظها لا يستبدل اعتماد الطرح.</p><Link className={`${button} mt-3`} to={`${incompletePage}?view=imported`}>العمل المستورد غير المكتمل</Link></header>
     <section className={`${card} space-y-4 p-5`}><StudentFilter onSelect={id => change('student_id', id)} onDenied={onDenied} />
       {query.get('student_id') && <p>الطالب المحدد: {query.get('student_id')} <button className={button} onClick={() => change('student_id', '')}>إلغاء اختيار الطالب</button></p>}
       <FilterBar filters={[
@@ -113,6 +116,57 @@ function CaseList({ identity, onDenied }) {
       { key: 'open', header: 'التفاصيل', render: row => <Link className={button} to={`${incompletePage}/${row.incomplete_case_id}?${query}`}>فتح الحالة</Link> },
     ]} rows={data?.data || []} rowKey={row => row.incomplete_case_id} loading={loading} animationKey={path} emptyTitle="لا توجد حالات ضمن المرشحات" page={data?.current_page || 1} totalPages={data?.last_page || 1} onPageChange={page => { const next = listQuery(search.toString()); next.set('page', page); setSearch(next) }} />
     {data && <p className="text-[12px]">{data.total} حالة — القائمة ضمن نطاق الطالب والطرح المصرح بهما.</p>}
+  </main>
+}
+
+function HistoricalWorkWorkspace({ identity, onDenied }) {
+  const [search, setSearch] = useSearchParams(), query = historicalWorkQuery(search.toString())
+  const work = search.get('work'), path = work ? `/${work}` : `?${query}`
+  const { data, error, loading, reload } = useRead(path, identity, onDenied, historicalWorkRead)
+  const update = (key, value) => {
+    const next = historicalWorkQuery(search.toString()); next.delete('page')
+    if (value) next.set(key, value); else next.delete(key)
+    if (key === 'academic_year_id') next.delete('semester_id')
+    next.set('view', 'imported'); setSearch(next)
+  }
+  const link = id => `${incompletePage}?${new URLSearchParams({ ...Object.fromEntries(query), view: 'imported', ...(id ? { work: id } : {}) })}`
+  const terms = data?.filter_options?.terms || [], years = [...new Map(terms.map(term => [term.academic_year_id, term])).values()]
+  const semesters = [...new Map(terms.filter(term => !query.get('academic_year_id') || String(term.academic_year_id) === query.get('academic_year_id')).map(term => [term.semester_id, term])).values()]
+  return <main dir="rtl" className="min-w-0 space-y-5 text-[13px] text-text-gray">
+    <header className="space-y-3"><h1 className="text-[20px] font-black text-text-dark">العمل المستورد غير المكتمل</h1><p className="text-[12.5px] text-text-light">أدلة مصدرية محفوظة للمراجعة؛ ليست منح I موثقة أو نتائج معتمدة تلقائيًا.</p><div className="flex flex-wrap gap-2"><Link className={button} to={incompletePage}>منح I الموثقة</Link>{work && <Link className={button} to={link()}>العودة إلى العمل المستورد</Link>}<button className={button} disabled={loading} onClick={reload}>قراءة البيانات الحالية</button></div></header>
+    {error && <p role="alert">{error} <button className={button} onClick={reload}>إعادة المحاولة</button></p>}
+    {!work && <>
+      <section className={`${card} space-y-4 p-5`}><StudentFilter onSelect={id => update('student_id', id)} onDenied={onDenied} />
+        <FilterBar filters={[
+          { key: 'kind', value: query.get('kind') || '', onChange: value => update('kind', value), placeholder: 'جميع أنواع العمل', options: Object.entries(historicalWorkKinds).map(([value, text]) => ({ value, label: text })) },
+          { key: 'year', value: query.get('academic_year_id') || '', onChange: value => update('academic_year_id', value), placeholder: 'جميع السنوات', options: years.map(term => ({ value: term.academic_year_id, label: term.year_name })) },
+          { key: 'semester', value: query.get('semester_id') || '', onChange: value => update('semester_id', value), placeholder: 'جميع الفصول', options: semesters.map(term => ({ value: term.semester_id, label: term.semester_name })) },
+        ]} hasActiveFilters={query.toString() !== ''} onClear={() => setSearch({ view: 'imported' })} />
+      </section>
+      <DataTable columns={[
+        { key: 'student', header: 'الطالب', render: row => <><strong>{row.first_name} {row.last_name}</strong><p><bdi>{row.student_number}</bdi></p></> },
+        { key: 'course', header: 'المقرر والفترة', render: row => <><strong>{row.course_name} — <bdi>{row.course_code}</bdi></strong><p>{row.year_name} — {row.semester_name}</p></> },
+        { key: 'kind', header: 'نوع العمل', render: row => historicalWorkKinds[row.kind] || 'غير متاح' },
+        { key: 'current', header: 'النتيجة الحالية', render: row => <>{row.historical_outcome_id ? 'تمت تسويته بمراجعة مدققة' : row.is_official ? 'توجد نتيجة رسمية — لا تتغير بالاستعراض' : 'ليست نتيجة رسمية'}<p>{missingValue(row.final_mark)}</p></> },
+        { key: 'reference', header: 'مرجع المصدر', render: row => <bdi className="break-all">{row.source_reference}</bdi> },
+        { key: 'open', header: 'التفاصيل', render: row => <Link className={button} to={link(row.work_item_id)}>فتح العمل</Link> },
+      ]} rows={data?.items || []} rowKey={row => row.work_item_id} loading={loading} animationKey={path} emptyTitle="لا يوجد عمل مستورد ضمن المرشحات" page={data?.meta.current_page || 1} totalPages={data?.meta.last_page || 1} onPageChange={page => { const next = historicalWorkQuery(search.toString()); next.set('page', page); next.set('view', 'imported'); setSearch(next) }} />
+      {data && <p>{data.meta.total} سجل — ضمن نطاق الطالب والمقرر والطرح المصرح به.</p>}
+    </>}
+    {work && loading && <p role="status">جاري قراءة العمل…</p>}
+    {work && data && <section className={`${card} space-y-4 p-5`}>
+      <h2 className="text-[17px] font-black text-text-dark">{data.student.first_name} {data.student.last_name} — <bdi>{data.student.student_number}</bdi></h2>
+      <p>{data.course.course_name} — <bdi>{data.course.course_code}</bdi></p><p>{data.period.year_name} — {data.period.semester_name}</p><p>{historicalWorkKinds[data.kind]}</p>
+      <p>{data.is_official ? 'النتيجة الحالية رسمية؛ المقترح المستورد منفصل عنها.' : 'بانتظار المسار الأكاديمي والاعتمادات اللازمة.'} العلامة الحالية: {missingValue(data.current_result?.final_mark)}</p>
+      <p>{historicalNextAction(data)}</p><p>مرجع المصدر: <bdi className="break-all">{data.source_reference}</bdi></p>
+      <DataTable columns={[
+        { key: 'group', header: 'المجموعة', render: row => row.name },
+        { key: 'source', header: 'المجموع المرصود في المصدر', render: row => missingValue(row.source_value) },
+        { key: 'components', header: 'التفاصيل المطلوبة', render: row => <>{row.components.length ? row.components.map(component => <p key={component.grade_component_id}>{component.component_name} — {missingValue(component.stored_mark?.mark)} / {component.max_cents / 100}</p>) : 'تعريف التفاصيل غير متاح؛ لا يُفترض توزيع للمجموع.'}{row.missing_component_ids.length > 0 && <p>توجد علامات أنشطة غائبة؛ يلزم توثيقها من مصدرها.</p>}</> },
+      ]} rows={Object.entries(data.assessment_groups).map(([key, group]) => ({ ...group, key, name: key === 'coursework' ? 'أعمال الفصل' : 'الامتحان النهائي' }))} rowKey={row => row.key} emptyTitle="لا توجد تفاصيل معرّفة" />
+      {data.capabilities.can_open_manual_entry && <Link className={button} to={`/exam-board/manual-grade-entry/students/${data.student.student_id}`}>فتح الإدخال اليدوي للطالب — اختر المقرر والفترة المسجلين</Link>}
+      {!data.capabilities.can_open_manual_entry && <p>الإدخال العادي غير متاح لهذا السياق. يلزم الإجراء الأكاديمي المخوّل دون تجاوز النتيجة الرسمية أو دورة I أو التكميلي.</p>}
+    </section>}
   </main>
 }
 

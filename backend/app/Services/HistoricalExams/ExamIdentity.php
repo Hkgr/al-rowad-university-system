@@ -62,8 +62,35 @@ final class ExamIdentity
             $label=preg_replace('/^كلية\s+/u','',self::text($college['college_name']));
             foreach([$label,strtr($label,['أ'=>'ا','إ'=>'ا','آ'=>'ا'])] as $alias)if(!isset($aliases[$alias]))$aliases[$alias]=$college['college_code'];
         }
-        return (new CompletionProgramIdentity)->resolve(['value'=>self::text($v['program']),'contexts'=>[['college'=>self::text($v['college'])]]],$state,
-            ['program_aliases'=>$catalog->aliases(),'college_aliases'=>$aliases]);
+        if(isset($state['_exam_approved']))$aliases=array_replace($aliases,$state['_exam_approved']['authority']['documents']['course-identity-review.json']['college_aliases']);
+        $resolver=new CompletionProgramIdentity;
+        $config=['program_aliases'=>$catalog->aliases(),'college_aliases'=>$aliases];
+        if(isset($state['_exam_approved'])) {
+            // Typography is delegated, not program ownership. Retain all conflicting
+            // qualified aliases and let the resolver reject them rather than picking one.
+            $normalized=ExamApprovedAuthority::label(...);
+            foreach($aliases as $alias=>$target)if($normalized($alias)===$normalized($v['college']))$config['college_aliases'][self::text($v['college'])]=$target;
+            $programAliases=$config['program_aliases']+['قسم تربية الخاصة'=>'RU-FED-SPB'];
+            $matches=[];
+            foreach($programAliases as $alias=>$target) {
+                $parts=explode('|',$alias,2);
+                if(count($parts)===1 && $normalized($alias)===$normalized($v['program']))$matches[$target]=true;
+                if(count($parts)===2 && $normalized($parts[0])===$normalized($v['college']) && $normalized($parts[1])===$normalized($v['program']))$config['program_aliases'][self::text($v['college']).'|'.self::text($v['program'])]=$target;
+            }
+            if(count($matches)===1)$config['program_aliases'][self::text($v['program'])]=array_key_first($matches);
+        }
+        $field=['value'=>self::text($v['program']),'contexts'=>[['college'=>self::text($v['college'])]]];
+        $resolved=$resolver->resolve($field,$state,$config);
+        if(isset($state['_exam_approved'])&&$field['value']===''&&!$resolved['program_id']) {
+            $code=$aliases[$field['contexts'][0]['college']]??null;
+            $colleges=array_values(array_filter($state['colleges'],fn($c)=>($c['college_code']??null)===$code));
+            if($code!==null&&count($colleges)===1) {
+                $departments=array_column(array_filter($state['departments'],fn($d)=>(int)$d['college_id']===(int)$colleges[0]['college_id']),null,'department_id');
+                $programs=array_values(array_filter($state['academic_programs'],fn($p)=>isset($departments[$p['department_id']])));
+                if(count($programs)===1){$field['value']=$programs[0]['program_name'];$resolved=$resolver->resolve($field,$state,$config);$resolved['program_resolution_basis']='actual_college_has_exactly_one_program';}
+            }
+        }
+        return $resolved;
     }
     /** Number/person ownership is resolved BEFORE consulting Data. Names alone never select a master record. */
     public function sourceProgram(array $row,array $owner,array $state,array $master): array
@@ -72,7 +99,7 @@ final class ExamIdentity
         if($owner['student']&&!$owner['blockers'])foreach($master as $record) {
             $number=self::text($record['values']['number']);
             if($number===''||!in_array($number,[$owner['source_number'],$owner['number']],true))continue;
-            $person=$this->student($record,$state);$entry=['record'=>$record,'ownership'=>$person,'resolution'=>null];
+            $person=isset($state['_exam_approved'])?(new ExamApprovedIdentity)->student($record,$state):$this->student($record,$state);$entry=['record'=>$record,'ownership'=>$person,'resolution'=>null];
             if($person['student']&&(int)$person['student']['student_id']!==(int)$owner['student']['student_id']&&!$person['blockers']) {
                 $entry['basis']='different_original_number_owner_not_program_evidence';$evidence[]=$entry;continue;
             }

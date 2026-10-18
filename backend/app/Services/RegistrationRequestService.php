@@ -1216,7 +1216,7 @@ class RegistrationRequestService
                 $registeredOfferingIds,
                 true
             ))
-            ->sum(fn (StudentRegistrationRequestItem $item): int => (int) ($item->courseOffering?->course?->credit_hours ?? 0));
+            ->sum(fn (StudentRegistrationRequestItem $item): int => \App\Support\ApplicableCourseCredits::choiceHours($request->student,$item->courseOffering,$item->studentCourseRegistration));
     }
 
     private function requestOfferingIds(?StudentRegistrationRequest $request): array
@@ -1296,7 +1296,7 @@ class RegistrationRequestService
             }
 
             if (! in_array((int) $offering->course_offering_id, $registeredIds, true)) {
-                $runningRequestHours += (int) ($offering->course?->credit_hours ?? 0);
+                $runningRequestHours += \App\Support\ApplicableCourseCredits::candidateHours($student,$offering);
             }
         }
 
@@ -1345,7 +1345,7 @@ class RegistrationRequestService
             return 'missing_prerequisites';
         }
 
-        $courseHours = (int) ($offering->course?->credit_hours ?? 0);
+        $courseHours = \App\Support\ApplicableCourseCredits::candidateHours($student,$offering);
         if (((int) $hours['registered_hours'] + $runningRequestHours + $courseHours) > (int) $hours['max_allowed_hours']) {
             return 'credit_limit_exceeded';
         }
@@ -1528,6 +1528,7 @@ class RegistrationRequestService
                 $programId,
                 $courseMap,
                 $timetable,
+                $student,
             ): array {
                 $offering = $item->courseOffering;
                 $courseId = $offering?->course_id === null ? null : (int) $offering->course_id;
@@ -1537,7 +1538,7 @@ class RegistrationRequestService
                     'student_course_registration_id' => $item->student_course_registration_id,
                     'course_code' => $offering?->course?->course_code,
                     'course_name' => $offering?->course?->course_name,
-                    'credit_hours' => (int) ($offering?->course?->credit_hours ?? 0),
+                    'credit_hours' => \App\Support\ApplicableCourseCredits::choiceHours($student,$offering,$item->studentCourseRegistration),
                     'offering_status' => $offering?->status,
                     'requirement_classification' => CourseRequirementClassification::forStudentFromMap(
                         $programId,
@@ -1648,7 +1649,7 @@ class RegistrationRequestService
                 'course_offering_id' => $item->course_offering_id,
                 'course_code' => $item->courseOffering?->course?->course_code,
                 'course_name' => $item->courseOffering?->course?->course_name,
-                'credit_hours' => (int) ($item->courseOffering?->course?->credit_hours ?? 0),
+                'credit_hours' => \App\Support\ApplicableCourseCredits::choiceHours($student,$item->courseOffering,$item->studentCourseRegistration),
                 'student_course_registration_id' => $item->student_course_registration_id,
                 'requirement_classification' => CourseRequirementClassification::forStudentFromPairMap(
                     $programId,

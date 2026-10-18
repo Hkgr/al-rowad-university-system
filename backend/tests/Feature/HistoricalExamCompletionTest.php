@@ -36,6 +36,24 @@ class HistoricalExamCompletionTest extends ExamManualGradeGridBehaviorTest
     private function service(): ExamCompletionService {return app(ExamCompletionService::class);}
     private function preview(array $b): array {return $this->service()->preview(User::findOrFail(1),$b);}
     private function apply(array $b,array $p,?string $id=null,?string $revision=null,bool $resume=false): array {return $this->service()->apply(User::findOrFail(1),$b,$p['review'],$p['review_hash'],$id??(string)Str::uuid(),$revision??$p['review']['revision'],$resume);}
+    public function test_historical_T_is_an_exam_threshold_not_a_course_pass_and_failed_37_is_a_canonical_draft(): void
+    {
+        $bundle=$this->bundle(['coursework'=>'20','exam'=>'17','total'=>'37','condition'=>'T']);
+        $preview=$this->preview($bundle);
+        $action=$preview['review']['actions'][0];
+        self::assertSame('failed',$action['component_mapping']['canonical_outcome']);
+        self::assertNotContains('source_outcome_not_representable_by_current_policy',$action['blockers']);
+        self::assertTrue($action['eligible']);
+        $saved=$this->apply($bundle,$preview);
+        self::assertSame(1,$saved['saved_pending_approval']);
+        self::assertSame(['17','20'],DB::table('student_grade_components')->orderBy('grade_component_id')->pluck('mark')->map(fn($m)=>(string)(int)$m)->all());
+        self::assertSame(0,DB::table('student_course_results')->count());
+        self::assertSame(0,DB::table('grade_approvals')->count());
+        // F still asserts failure, and is not an authorization to turn a passing canonical outcome into failure.
+        $passing=$this->preview($this->bundle(['coursework'=>'30','exam'=>'50','total'=>'80','condition'=>'F']));
+        self::assertContains('source_outcome_not_representable_by_current_policy',$passing['review']['actions'][0]['blockers']);
+        self::assertFalse($passing['review']['actions'][0]['eligible']);
+    }
     public function test_historical_missing_components_save_as_drafts_and_original_uuid_replay_precedes_new_revision_check(): void
     {
         $b=$this->bundle();$p=$this->preview($b);self::assertTrue($p['review']['actions'][0]['eligible']);$id=(string)Str::uuid();$r=$this->apply($b,$p,$id);

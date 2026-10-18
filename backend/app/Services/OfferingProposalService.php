@@ -123,7 +123,7 @@ class OfferingProposalService
 
     public function approve(User $vicePresident, int $proposalId, ?string $note = null): array
     {
-        return DB::transaction(function () use ($vicePresident, $proposalId, $note): array {
+        return AcademicPlanContext::transaction(function () use ($vicePresident, $proposalId, $note): array {
             $proposal = OfferingProposal::query()->with('items')->lockForUpdate()->findOrFail($proposalId);
             $this->assertSubmitted($proposal);
 
@@ -193,15 +193,18 @@ class OfferingProposalService
 
     private function planCourses(int $departmentId): Collection
     {
-        return ProgramCourse::query()
+        $query = ProgramCourse::query()
             ->with(['course', 'academicProgram'])
             ->where('is_active', true)
             ->whereIn('course_type', [...self::MANDATORY_TYPES, 'elective'])
             ->whereHas('academicProgram', fn ($query) => $query
                 ->where('department_id', $departmentId)
                 ->where('is_active', true))
-            ->orderBy('program_course_id')
-            ->get();
+            ->orderBy('program_course_id');
+        AcademicPlanContext::constrainProgramProjection($query,AcademicProgram::where('department_id',$departmentId)->pluck('academic_program_id')->all());
+        $rows=$query->get();
+        \App\Support\ApplicableCourseCredits::attachMemberships($rows);
+        return $rows;
     }
 
     private function selectedElectives(Collection $plan, array $requested): array
@@ -300,7 +303,7 @@ class OfferingProposalService
             'course_id' => $plan->course_id,
             'course_code' => $plan->course?->course_code,
             'course_name' => $plan->course?->course_name,
-            'credit_hours' => $plan->course?->credit_hours,
+            'credit_hours' => \App\Support\ApplicableCourseCredits::planHours($plan),
             'academic_program_id' => $plan->academic_program_id,
             'program_name' => $plan->academicProgram?->program_name,
             'course_type' => $mandatory ? 'mandatory' : 'elective',

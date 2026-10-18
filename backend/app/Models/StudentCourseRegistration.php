@@ -16,7 +16,7 @@ class StudentCourseRegistration extends Model
     {
         static::updating(function (self $r): void {
             if ($r->isDirty(['result_status_id', 'course_offering_id', 'student_id'])) \App\Support\IncompleteOutcomeGuard::assertOrdinaryWrite((int) $r->getKey());
-            if ($r->isDirty('registration_status_id') && \App\Support\IncompleteOutcomeGuard::installed()) \App\Support\IncompleteOutcomeGuard::assertRegistrationTransition((int) $r->getKey(),
+            if ($r->isDirty('registration_status_id')) \App\Support\IncompleteOutcomeGuard::assertRegistrationTransition((int) $r->getKey(),
                 RegistrationStatus::query()->whereKey($r->registration_status_id)->value('status_code'),
                 RegistrationStatus::query()->whereKey($r->getOriginal('registration_status_id'))->value('status_code'));
         });
@@ -38,6 +38,7 @@ class StudentCourseRegistration extends Model
     protected $table = 'student_course_registrations';
 
     protected $primaryKey = 'student_course_registration_id';
+    protected $hidden = ['historicalOutcome', 'applicableCreditEvidence'];
 
     protected $fillable = [
         'student_id',

@@ -71,7 +71,7 @@ final class MinistryStudentService
             ->join('semesters as sm', 'sm.semester_id', '=', 'co.semester_id')
             ->where('scr.student_id', $studentId)
             ->orderBy('y.start_date')->orderBy('sm.semester_order')->orderBy('crs.course_code')
-            ->get(['scr.student_course_registration_id', 'crs.course_id', 'crs.course_code', 'crs.course_name', 'crs.credit_hours', 'y.year_name', 'sm.semester_code', 'sm.semester_name', 'r.final_mark', 'rst.status_code']);
+            ->get(['scr.student_course_registration_id', 'crs.course_id', 'crs.course_code', 'crs.course_name', DB::raw(\App\Support\ApplicableCourseCredits::sql('scr','crs').' AS credit_hours'), 'y.year_name', 'sm.semester_code', 'sm.semester_name', 'r.final_mark', 'rst.status_code']);
         $codeReferences = \App\Support\HistoricalCourseCode::index($results->pluck('student_course_registration_id'));
 
         $graduation = MinistryQueries::graduations()->where('g.student_id', $studentId)->orderByDesc('g.approved_at')

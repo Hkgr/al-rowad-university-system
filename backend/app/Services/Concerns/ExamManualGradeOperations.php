@@ -55,6 +55,7 @@ trait ExamManualGradeOperations
         $approvals = $offering->gradePartApprovals->keyBy('component_type');
         $blocked = $context['schema_error'];
         if (IncompleteOutcomeGuard::forRegistration($registration)) $blocked ??= 'incomplete_outcome_locked';
+        if (\App\Support\HistoricalOutcomeGuard::forRegistration($registration)) $blocked ??= 'historical_outcome_locked';
         if ($context['materialized_target_ids']->contains((int) $registration->getKey())) $blocked ??= 'supplementary_materialized_result_locked';
         if ($context['fixed_ids']->contains((int) $registration->getKey())) $blocked ??= 'supplementary_fixed_roster_target_locked';
         if (! $registration->allowsGradeEntry()) $blocked ??= 'grade_entry_not_allowed';
@@ -169,8 +170,9 @@ trait ExamManualGradeOperations
             $snapshot = $snapshots->get($row->getKey());
             $revisions[] = [$row->getKey(), $snapshot['revision']];
             $reason = $snapshot['parts'][$part]['blocked_reason'];
-            if (in_array($reason, ['deprived_student_grade_locked', 'supplementary_theoretical_deferred', 'incomplete_outcome_locked'], true)) {
+            if (in_array($reason, ['deprived_student_grade_locked', 'supplementary_theoretical_deferred', 'incomplete_outcome_locked', 'historical_outcome_locked'], true)) {
                 if ($reason === 'incomplete_outcome_locked') IncompleteOutcomeGuard::preservesOutcome($row);
+                if ($reason === 'historical_outcome_locked') \App\Support\HistoricalOutcomeGuard::preservesOutcome($row);
                 $counts['exempt']++;
             } else {
                 $counts['eligible']++;

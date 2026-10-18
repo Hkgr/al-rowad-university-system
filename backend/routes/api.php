@@ -188,6 +188,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
 
 // ConfineMinistryAccounts: the read-only ministry account reaches /api/v1/ministry only.
 Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::class, \App\Http\Middleware\ConfineMinistryAccounts::class])->prefix('v1')->group(function (): void {
+    Route::prefix('exams/historical-work')->controller(\App\Http\Controllers\Api\HistoricalExamWorkController::class)->group(function (): void {
+        Route::get('/', 'index');
+        Route::get('{work}', 'show')->whereUuid('work');
+    });
     Route::prefix('exams/incomplete-results')->controller(\App\Http\Controllers\Api\IncompleteResultController::class)->group(function (): void {
         Route::get('/', 'index');
         Route::get('registrations/{registration}', 'registration')->whereNumber('registration');

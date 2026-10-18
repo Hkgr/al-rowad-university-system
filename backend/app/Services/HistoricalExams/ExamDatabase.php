@@ -10,6 +10,7 @@ final class ExamDatabase
 {
     public function read(User $actor): array
     {
+        if(\App\Support\HistoricalExamSchema::installed())\App\Support\HistoricalExamSchema::requireReady();
         $scope=app(DataScopeService::class);
         $columns=array_values(array_intersect(['student_id','student_number','first_name','last_name','father_name','academic_program_id','current_academic_level_id','student_status_id','enrollment_date','deleted_at','updated_at'],Schema::getColumnListing('students')));
         $students=$scope->scopeManualGradeStudents(Student::query(),$actor)->select($columns)->orderBy('student_id')->get()->map->getAttributes()->all();
@@ -27,6 +28,14 @@ final class ExamDatabase
             elseif($table==='grade_audit_logs')$q->whereIn('student_grade_component_id',array_column($state['student_grade_components']??[],'student_grade_component_id'));
             elseif($table==='grade_part_approval_events')$q->whereIn('grade_part_approval_id',array_column($state['grade_part_approvals']??[],'grade_part_approval_id'));
             elseif(Schema::hasColumn($table,'student_id'))$q->whereIn('student_id',$studentIds);
+            $state[$table]=$q->orderByRaw('1')->get()->map(fn($r)=>(array)$r)->all();
+        }
+        foreach(array_keys(\App\Support\HistoricalExamSchema::columns()) as $table) {
+            if(!Schema::hasTable($table)){$state[$table]=[];continue;}
+            $q=DB::table($table);
+            if($table===\App\Support\HistoricalExamSchema::WORK)$q->whereIn('student_id',$studentIds)->whereIn('course_id',$courseIds)
+                ->where(fn($q)=>$q->whereNull('course_offering_id')->orWhereIn('course_offering_id',$offeringIds));
+            elseif(in_array($table,[\App\Support\HistoricalExamSchema::CREDITS,\App\Support\HistoricalExamSchema::OUTCOMES],true))$q->whereIn('student_course_registration_id',$regIds);
             $state[$table]=$q->orderByRaw('1')->get()->map(fn($r)=>(array)$r)->all();
         }
         return $state;
