@@ -299,6 +299,95 @@ class HistoricalExamCompletionTest extends ExamManualGradeGridBehaviorTest
         DB::table('student_course_results')->insert(['student_course_registration_id'=>1,'theoretical_total'=>30,'practical_total'=>20,'coursework_total'=>0,'final_mark'=>50,'result_status_id'=>1]);DB::table('grade_approvals')->insert(['course_offering_id'=>1,'approval_status_id'=>1]);
         $a=$this->preview($this->bundle(['exam'=>'20','total'=>'50']))['review']['actions'][0];self::assertSame('existing_equivalent',$a['classification']);self::assertSame(['theoretical'=>3000,'practical'=>2000],$a['component_mapping']['expected_aggregates']);
     }
+    private function detailedCoursework(): void
+    {
+        DB::table('grade_components')->where('grade_component_id',2)->update(['component_name'=>'امتحان عملي','max_mark'=>20,'weight_percentage'=>75]);
+        foreach([[3,'واجبات',10,12],[4,'اختبار قصير',10,13]] as [$id,$name,$max,$weight])DB::table('grade_components')->insert([
+            'grade_component_id'=>$id,'course_offering_id'=>1,'component_name'=>$name,'component_type'=>'practical','max_mark'=>$max,'weight_percentage'=>$weight,'is_required'=>true,'status'=>'active']);
+    }
+    public function test_historical_group_complete_activities_include_practical_and_use_canonical_raw_sum_not_weights(): void
+    {
+        $this->detailedCoursework();foreach([1=>50,2=>10,3=>8,4=>7] as $id=>$mark)DB::table('student_grade_components')->insert(['student_course_registration_id'=>1,'grade_component_id'=>$id,'mark'=>$mark,'grade_status'=>'approved']);
+        DB::table('student_course_results')->insert(['student_course_registration_id'=>1,'theoretical_total'=>50,'practical_total'=>25,'coursework_total'=>0,'final_mark'=>75,'result_status_id'=>1]);DB::table('grade_approvals')->insert(['course_offering_id'=>1,'approval_status_id'=>1]);
+        $before=app(ExamDatabase::class)->read(User::findOrFail(1));$b=$this->bundle(['coursework'=>'25','total'=>'75']);$p=$this->preview($b);$a=$p['review']['actions'][0];
+        self::assertSame('existing_equivalent',$a['classification']);self::assertSame([], $a['proposed_components']);self::assertSame(2500,$a['component_mapping']['groups']['coursework']['known_subtotal_cents']);
+        self::assertSame('required_component_raw_sum_weights_not_applied',$a['component_mapping']['aggregation_method']);self::assertCount(3,$a['component_mapping']['groups']['coursework']['components']);
+        $this->apply($b,$p);$after=app(ExamDatabase::class)->read(User::findOrFail(1));foreach(['grade_components','student_grade_components','student_course_results','grade_approvals'] as $table)self::assertSame($before[$table],$after[$table]);
+        $a=$this->preview($this->bundle(['coursework'=>'24','exam'=>'51','total'=>'75']))['review']['actions'][0];self::assertSame('existing_value_conflict',$a['classification']);self::assertNotEmpty($a['component_mapping']['conflicts']);
+    }
+    public function test_historical_group_known_aggregate_missing_breakdown_never_allocates_residual_or_zero(): void
+    {
+        $this->detailedCoursework();DB::table('student_grade_components')->insert(['student_course_registration_id'=>1,'grade_component_id'=>2,'mark'=>10,'grade_status'=>'draft']);
+        $b=$this->bundle(['coursework'=>'25','total'=>'75']);$p=$this->preview($b);$a=$p['review']['actions'][0];self::assertFalse($a['eligible']);self::assertContains('aggregate_known_component_breakdown_missing',$a['blockers']);
+        $group=$a['component_mapping']['groups']['coursework'];self::assertSame(2500,$group['source_aggregate_cents']);self::assertSame(1000,$group['known_subtotal_cents']);self::assertSame([3,4],$group['missing_component_ids']);
+        self::assertSame([],array_values(array_filter($a['proposed_components'],fn($x)=>in_array($x['key'],['2','3','4'],true))));$this->apply($b,$p);self::assertSame(1,DB::table('student_grade_components')->count());self::assertSame('10', (string)DB::table('student_grade_components')->value('mark'));
+        foreach([null,'0'] as $mark){DB::table('student_grade_components')->where('grade_component_id',2)->update(['mark'=>$mark]);$a=$this->preview($b)['review']['actions'][0];self::assertSame($mark===null?[2,3,4]:[3,4],$a['component_mapping']['groups']['coursework']['missing_component_ids']);}
+    }
+    public function test_historical_group_unconfigured_profile_is_shared_and_does_not_change_teaching_metadata(): void
+    {
+        DB::table('grade_components')->delete();DB::table('courses')->where('course_id',1)->update(['practical_hours'=>0]);$course=DB::table('courses')->where('course_id',1)->first();
+        $b=$this->bundle();$second=$b['rows'][0];$second['id']='exam1:OutcomeofMater:3';$second['reference']['row']=3;$second['values']['number']='S2';$second['values']['name']='Student 2';$second['row_hash']=CompletionData::hash($second['values']);$b['rows'][]=$second;
+        $p=$this->preview($b);self::assertSame(2,$p['counts']['eligible']);self::assertSame(1,$p['counts']['aggregate_initialization_contexts']);self::assertSame(0,DB::table('grade_components')->count());
+        $id=(string)Str::uuid();$r=$this->apply($b,$p,$id);self::assertSame(2,$r['saved_pending_approval']);self::assertSame(2,DB::table('grade_components')->count());self::assertSame(4,DB::table('student_grade_components')->count());self::assertEquals($course,DB::table('courses')->where('course_id',1)->first());
+        $work=DB::table('grade_components')->where('component_type','practical')->first();self::assertSame('إجمالي أعمال الفصل',$work->component_name);self::assertSame(40,(int)$work->max_mark);self::assertSame($r,$this->apply($b,$p,$id,'0'));self::assertSame('COMPLETE',$this->service()->verify(User::findOrFail(1),$b,$id)['status']);
+        self::assertSame('aggregate_coursework_internal_breakdown_unavailable',$r['actions'][0]['assessment_evidence']['coursework_representation']);self::assertSame(0,DB::table('student_course_results')->count());self::assertNull(app(\App\Services\GradeService::class)->calculateGpa(\App\Models\Student::findOrFail(1),1,1)['gpa']);
+    }
+    public function test_historical_group_profile_requires_both_numeric_groups_and_preserves_out_of_range_values(): void
+    {
+        foreach([['coursework'=>'41','exam'=>'39','total'=>'80'],['coursework'=>'20','exam'=>'61','total'=>'81'],['coursework'=>null],['coursework'=>'-']] as $values){$b=$this->bundle($values);$p=$this->preview($b);self::assertSame(0,$p['counts']['eligible']);foreach($values as $field=>$value)self::assertSame($value,$p['review']['actions'][0]['source_values'][$field]);self::assertNotEmpty($p['review']['actions'][0]['blockers']);}
+        $a=$this->preview($this->bundle(['coursework'=>'0','exam'=>'20','total'=>'20','condition'=>'F']))['review']['actions'][0];self::assertTrue($a['eligible']);self::assertSame('0.00',collect($a['proposed_components'])->firstWhere('key','2')['mark']);
+    }
+    public function test_historical_group_partial_submitted_or_protected_unconfigured_context_is_never_initialized(): void
+    {
+        DB::table('grade_components')->where('grade_component_id',2)->delete();$a=$this->preview($this->bundle())['review']['actions'][0];self::assertFalse($a['eligible']);self::assertFalse($a['component_mapping']['initialize_aggregate_profile']);self::assertSame(1,DB::table('grade_components')->count());
+        DB::table('grade_components')->delete();DB::table('grade_part_approvals')->insert(['course_offering_id'=>1,'component_type'=>'theoretical','status'=>'submitted']);$b=$this->bundle();$p=$this->preview($b);self::assertSame(0,$p['counts']['eligible']);$this->apply($b,$p);self::assertSame(0,DB::table('grade_components')->count());
+    }
+    public function test_historical_group_lost_response_resume_reuses_configuration_across_students(): void
+    {
+        DB::table('grade_components')->delete();$b=$this->bundle();$second=$b['rows'][0];$second['id']='exam1:OutcomeofMater:3';$second['reference']['row']=3;$second['values']['number']='S2';$second['values']['name']='Student 2';$second['row_hash']=CompletionData::hash($second['values']);$b['rows'][]=$second;
+        $p=$this->preview($b);$id=(string)Str::uuid();$armed=true;DB::listen(function($q)use(&$armed){if($armed&&str_starts_with(strtolower($q->sql),'insert into "user_activity_logs"')&&in_array('student_completion.exam_action',$q->bindings,true)){$armed=false;DB::afterCommit(fn()=>throw new \RuntimeException('Synthetic interrupted aggregate initialization'));}});
+        try{$this->apply($b,$p,$id);self::fail('Interrupted operation was reported complete');}catch(CompletionException $e){self::assertSame('historical_exam_stale',$e->errorCode);}
+        self::assertSame('INTERRUPTED',$this->service()->status(User::findOrFail(1),$id)['status']);self::assertSame(2,DB::table('grade_components')->count());self::assertSame(2,DB::table('student_grade_components')->count());
+        $r=$this->apply($b,$p,$id,app(\App\Services\AcademicCatalogTransaction::class)->revision(),true);self::assertSame(2,$r['saved_pending_approval']);self::assertSame(2,DB::table('grade_components')->count());self::assertSame(4,DB::table('student_grade_components')->count());self::assertSame('COMPLETE',$this->service()->verify(User::findOrFail(1),$b,$id)['status']);
+    }
+    public function test_historical_group_aggregate_drafts_complete_the_actual_canonical_approval_cycle(): void
+    {
+        DB::table('grade_components')->delete();DB::table('courses')->update(['practical_hours'=>0]);$b=$this->bundle();$second=$b['rows'][0];$second['id']='exam1:OutcomeofMater:3';$second['reference']['row']=3;$second['values']['number']='S2';$second['values']['name']='Student 2';$second['row_hash']=CompletionData::hash($second['values']);$b['rows'][]=$second;$this->apply($b,$this->preview($b));
+        $grades=app(\App\Services\GradeService::class);self::assertSame(0,$grades->officialAcademicAttempts(\App\Models\Student::findOrFail(1))->count());
+        foreach(['practical','theoretical'] as $part) {
+            $path='/api/v1/exams/manual-grade-entry/students/1/registrations/1/parts/'.$part;
+            $ready=$this->getJson($path.'/submission-readiness')->assertOk()->json('data');
+            $this->postJson($path.'/submit',['revision'=>$ready['revision'],'confirmed'=>true])->assertOk();
+            $id=DB::table('grade_part_approvals')->where('component_type',$part)->value('grade_part_approval_id');$this->postJson('/api/v1/grade-part-approvals/'.$id.'/approve')->assertOk();
+        }
+        self::assertSame(2,DB::table('student_course_results')->count());self::assertSame(1,$grades->officialAcademicAttempts(\App\Models\Student::findOrFail(1))->count());$r=DB::table('student_course_results')->where('student_course_registration_id',1)->first();self::assertSame(80,(int)$r->final_mark);self::assertSame(30,(int)$r->practical_total);self::assertSame(50,(int)$r->theoretical_total);self::assertSame(0,(int)$r->coursework_total);
+    }
+    public function test_historical_group_missing_definitions_with_retained_result_are_not_reinterpreted_by_a_virtual_profile(): void
+    {
+        DB::table('grade_components')->delete();DB::table('student_course_results')->insert(['student_course_registration_id'=>1,'theoretical_total'=>80,'practical_total'=>0,'coursework_total'=>0,'final_mark'=>80,'result_status_id'=>1]);$b=$this->bundle();$before=DB::table('student_course_results')->get()->toJson();$p=$this->preview($b);$a=$p['review']['actions'][0];
+        self::assertFalse($a['eligible']);self::assertFalse($a['component_mapping']['initialize_aggregate_profile']);self::assertNotSame('existing_value_conflict',$a['classification']);self::assertContains('historical_aggregate_initialization_existing_evidence',$a['blockers']);$this->apply($b,$p);self::assertSame($before,DB::table('student_course_results')->get()->toJson());self::assertSame(0,DB::table('grade_components')->count());
+    }
+    public function test_historical_group_detailed_weighted_metadata_uses_the_actual_official_raw_sum(): void
+    {
+        $this->detailedCoursework();$definitions=DB::table('grade_components')->get()->toJson();foreach([1,2] as $student)foreach([1=>50,2=>10,3=>8,4=>7] as $component=>$mark)DB::table('student_grade_components')->insert(['student_course_registration_id'=>$student,'grade_component_id'=>$component,'mark'=>$mark,'grade_status'=>'draft']);
+        $p=$this->preview($this->bundle(['coursework'=>'25','total'=>'75']));self::assertSame(0,$p['counts']['eligible']);self::assertSame(0,DB::table('student_course_results')->count());
+        foreach(['practical','theoretical'] as $part){$path='/api/v1/exams/manual-grade-entry/students/1/registrations/1/parts/'.$part;$ready=$this->getJson($path.'/submission-readiness')->assertOk()->json('data');$this->postJson($path.'/submit',['revision'=>$ready['revision'],'confirmed'=>true])->assertOk();$id=DB::table('grade_part_approvals')->where('component_type',$part)->value('grade_part_approval_id');$this->postJson('/api/v1/grade-part-approvals/'.$id.'/approve')->assertOk();}
+        $r=DB::table('student_course_results')->where('student_course_registration_id',1)->first();self::assertSame(75,(int)$r->final_mark);self::assertSame(25,(int)$r->practical_total);self::assertSame(50,(int)$r->theoretical_total);self::assertSame($definitions,DB::table('grade_components')->get()->toJson());self::assertSame(1,$this->preview($this->bundle(['coursework'=>'25','total'=>'75']))['counts']['no_op']);
+    }
+    public function test_historical_group_single_practical_activity_is_not_an_authorized_aggregate_assignment(): void
+    {
+        DB::table('grade_components')->where('grade_component_id',2)->update(['component_name'=>'الامتحان العملي']);$a=$this->preview($this->bundle())['review']['actions'][0];self::assertContains('aggregate_known_component_breakdown_missing',$a['blockers']);self::assertFalse($a['eligible']);self::assertNull(collect($a['proposed_components'])->firstWhere('key','2'));
+        DB::table('student_grade_components')->insert(['student_course_registration_id'=>1,'grade_component_id'=>2,'mark'=>30,'grade_status'=>'draft']);$a=$this->preview($this->bundle())['review']['actions'][0];self::assertTrue($a['eligible']);self::assertSame('detailed_assessments',$a['component_mapping']['groups']['coursework']['representation']);
+    }
+    public function test_historical_group_issued_v2_artifacts_are_rejected_without_reinterpretation(): void
+    {
+        $b=$this->bundle();$p=$this->preview($b);$p['review']['contract']='historical-exam-completion.review.v2';$p['review_hash']=CompletionData::hash($p['review']);
+        try{$this->apply($b,$p);self::fail('An issued v2 review was silently interpreted under v3');}catch(CompletionException $e){self::assertSame('historical_exam_review_invalid',$e->errorCode);}self::assertSame(0,DB::table('user_activity_logs')->count());
+        $dir=sys_get_temp_dir().'/historical-v2-contract-'.bin2hex(random_bytes(8));mkdir($dir,0700);$path=$dir.'/issued-v2.json';
+        try{\App\Services\StudentCompletion\CompletionFiles::write($path,['contract'=>'historical-exam-completion.sources.v2','interpretation_revision'=>'historical-exam-reconciliation.2026-10-18.v2']);$hash=hash_file('sha256',$path);
+            try{(new ExamSources)->load($path,$hash);self::fail('An issued v2 source was silently interpreted under v3');}catch(\InvalidArgumentException $e){self::assertStringContainsString('new bundle/review/UUID',$e->getMessage());}self::assertSame($hash,hash_file('sha256',$path));
+        }finally{unlink($path);rmdir($dir);}
+    }
     public function test_historical_review_old_bundle_and_review_contracts_are_rejected_without_changing_receipts(): void
     {
         $b=$this->bundle();$p=$this->preview($b);$id=(string)Str::uuid();$this->apply($b,$p,$id);$logs=DB::table('user_activity_logs')->get()->toJson();$p['review']['contract']='historical-exam-completion.review.v1';$p['review_hash']=CompletionData::hash($p['review']);

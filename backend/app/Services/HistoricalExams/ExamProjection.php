@@ -6,12 +6,16 @@ use App\Services\StudentCompletion\{CompletionData,CompletionProgramIdentity};
 /** Pure reconciliation shared by snapshot analysis, live preview and locked revalidation. */
 final class ExamProjection
 {
-    public const CONTRACT='historical-exam-completion.review.v2';
+    public const CONTRACT='historical-exam-completion.review.v3';
     public function index(array $state): array
     {
         foreach(['student_course_registrations'=>'student_id','student_course_results'=>'student_course_registration_id','grade_components'=>'course_offering_id','student_grade_components'=>'student_course_registration_id'] as $table=>$key) {
             $state['_'.$table]=[];foreach($state[$table]??[] as $row)$state['_'.$table][$row[$key]][]=$row;
         }
+        $state['_historical_configuration_evidence']=[];$offeringByRegistration=array_column($state['student_course_registrations'],'course_offering_id','student_course_registration_id');
+        foreach(['student_course_results','student_grade_components','student_course_incomplete_cases','supplementary_exam_registrations'] as $table)
+            foreach($state[$table]??[] as $e)if($id=$offeringByRegistration[$e['student_course_registration_id']??null]??null)$state['_historical_configuration_evidence'][$id]=true;
+        foreach(['grade_approvals','grade_part_approvals'] as $table)foreach($state[$table]??[] as $e)$state['_historical_configuration_evidence'][$e['course_offering_id']]=true;
         return $state;
     }
     public static function cents(mixed $v): ?int
@@ -41,6 +45,10 @@ final class ExamProjection
         }
         $counts=['observations'=>count($bundle['rows']),'actions'=>count($actions),'eligible'=>0,'no_op'=>0,'conflict'=>0,'deferred'=>0,'pending_approval'=>0,'classifications'=>[]];
         foreach($actions as $a){$counts['eligible']+=(int)$a['eligible'];$counts['no_op']+=(int)($a['classification']==='existing_equivalent'&&!$a['blockers']);$counts['conflict']+=(int)in_array($a['classification'],['source_conflict','existing_value_conflict'],true);$counts['deferred']+=(int)($a['classification']==='deferred_identity');$counts['pending_approval']+=(int)($a['classification']==='pending_approval');$counts['classifications'][$a['classification']]=($counts['classifications'][$a['classification']]??0)+1;}
+        $counts['aggregate_known_component_breakdown_missing']=collect($actions)->filter(fn($a)=>in_array('aggregate_known_component_breakdown_missing',$a['blockers'],true))->count();
+        $initializations=collect($actions)->filter(fn($a)=>$a['eligible']&&$a['component_mapping']['initialize_aggregate_profile']);
+        $counts['aggregate_initialization_actions']=$initializations->count();
+        $counts['aggregate_initialization_contexts']=$initializations->map(fn($a)=>implode('/',[$a['interpreted']['course_id'],$a['interpreted']['program_id'],$a['period']['academic_year_id'],$a['period']['semester_id']]))->unique()->count();
         $review=['contract'=>self::CONTRACT,'sources'=>$bundle['sources'],'bundle_file_hash'=>$bundle['artifact_file_sha256']??null,'bundle_digest'=>CompletionData::hash($bundle),'revision'=>$revision,'actions'=>$actions];
         return ['status'=>$counts['eligible']?'PARTIAL':($counts['no_op']===count($actions)?'COMPLETE':'BLOCKED'),'writes_performed'=>false,'counts'=>$counts,'review'=>$review,'review_hash'=>CompletionData::hash($review)];
     }
@@ -128,11 +136,16 @@ final class ExamProjection
         $components=$offering?array_values(array_filter($s['grade_components']??[],fn($x)=>(int)$x['course_offering_id']===(int)$offering['course_offering_id'])):[];$storedComponents=$components;
         $policies=array_values(array_filter($s['grading_policies']??[],fn($x)=>(bool)$x['is_active']));usort($policies,fn($a,$b)=>(int)$a['grading_policy_id']<=>(int)$b['grading_policy_id']);
         $defaults=array_values(array_filter($policies,fn($x)=>(bool)$x['is_default']));$policy=count($defaults)<=1?($defaults[0]??$policies[0]??null):null;
-        // Canonical theoretical-only preparation is representable only when the actual policy supports it.
-        if(!$components&&$course&&$policy&&(int)($course['theoretical_hours']??0)>0&&(string)($course['practical_hours']??'')==='0'&&self::cents($policy['practical_max_mark'])===0)
-            $components=[['grade_component_id'=>'new:theoretical','component_name'=>'الامتحان النظري','component_type'=>'theoretical','max_mark'=>$policy['theoretical_max_mark'],'is_required'=>true,'status'=>'active']];
+        $initialize=!$components&&$course&&$policy&&self::cents($policy['theoretical_max_mark'])===6000&&self::cents($policy['practical_max_mark'])===4000;
+        if($initialize) {
+            $evidence=$s['_historical_configuration_evidence']??$this->index($s)['_historical_configuration_evidence'];
+            if($offering&&isset($evidence[$offering['course_offering_id']]))$b[]='historical_aggregate_initialization_existing_evidence';
+            // A virtual profile cannot explain or contradict retained results when no actual definitions exist.
+            $initialize=!in_array('historical_aggregate_initialization_existing_evidence',$b,true);
+            if($initialize)$components=ExamComponentMapping::aggregateComponents();
+        } elseif(!$components&&$course&&$policy)$b[]='historical_aggregate_policy_incompatible';
         $marks=$reg?array_values(array_filter($s['student_grade_components']??[],fn($x)=>(int)$x['student_course_registration_id']===(int)$reg['student_course_registration_id'])):[];
-        $componentMapping=(new ExamComponentMapping)->inspect($v,$components,$marks,$policy,$result);$writes=$componentMapping['proposed_components'];$b=[...$b,...$componentMapping['blockers']];
+        $componentMapping=(new ExamComponentMapping)->inspect($v,$components,$marks,$policy,$result,(bool)$initialize);$writes=$componentMapping['proposed_components'];$b=[...$b,...$componentMapping['blockers']];
         if($componentMapping['conflict']||($result&&$componentMapping['canonical_outcome']!==null&&($status['status_code']??null)!==$componentMapping['canonical_outcome']))$conflict=true;
         if($result&&(bool)($result['is_deprived']??false)!==($sourceStatus==='deprived'))$conflict=true;
         if(in_array($sourceStatus,['deprived','withdrawn','incomplete'],true)||$condition==='معادلة')$b[]='symbol_requires_existing_authorized_workflow';

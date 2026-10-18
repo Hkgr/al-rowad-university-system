@@ -21,7 +21,13 @@ final class ExamManualGradePreparationService
         return $this->describe($resolved);
     }
 
-    private function resolve(User $actor, Student $student, Course $course, array $input): array
+    /** Not exposed by the HTTP controller and never selected by a client-controlled bypass flag. */
+    public function previewHistorical(User $actor, Student $student, Course $course, array $input): array
+    {
+        return $this->describe($this->resolve($actor,$student,$course,$input,true));
+    }
+
+    private function resolve(User $actor, Student $student, Course $course, array $input, bool $historical=false): array
     {
         $this->access->authorize($actor, $student);
         abort_unless($this->scope->scopeManualGradeCourses(Course::query(), $actor)->whereKey($course->getKey())->exists(), 403);
@@ -82,7 +88,7 @@ final class ExamManualGradePreparationService
             $context ??= $this->contexts->resolveManualRecordingIdentity($student, $course,
                 (int) $year->getKey(), (int) $semester->getKey(), $actor);
         }
-        $plan = $this->components->recordingComponentPlan($offering);
+        $plan = $historical ? $this->components->historicalRecordingComponentPlan($offering) : $this->components->recordingComponentPlan($offering);
         $snapshot = $registration ? $this->workflow->manualRegistration($registration) : null;
         if (isset($snapshot['blocked_reason']) && $snapshot['blocked_reason'] !== 'grade_part_not_required') {
             $this->fail('المحاولة مقفلة: '.$snapshot['blocked_reason'], $snapshot['blocked_reason']);
@@ -117,18 +123,29 @@ final class ExamManualGradePreparationService
 
     public function save(User $actor, Student $student, Course $course, array $input): array
     {
+        return $this->saveDraft($actor,$student,$course,$input,false);
+    }
+
+    /** Same canonical draft writer, locks and approvals; only the historical assessment plan differs. */
+    public function saveHistorical(User $actor, Student $student, Course $course, array $input): array
+    {
+        return $this->saveDraft($actor,$student,$course,$input,true);
+    }
+
+    private function saveDraft(User $actor, Student $student, Course $course, array $input, bool $historical): array
+    {
         $this->access->authorize($actor, $student);
         if (($input['confirmed'] ?? false) !== true || ($input['acknowledged'] ?? false) !== true || trim($input['reason'] ?? '') === '') {
             throw ValidationException::withMessages(['reason' => 'يلزم التأكيد والإقرار وسبب الإدخال.']);
         }
-        return AcademicPlanContext::transaction(function () use ($actor, $student, $course, $input) {
+        return AcademicPlanContext::transaction(function () use ($actor, $student, $course, $input, $historical) {
             // Canonical student -> offering -> approvals -> registration -> components order.
             // Course lock serializes absent-context creation across students without a new lock table.
             $student = Student::whereKey($student->getKey())->lockForUpdate()->firstOrFail();
             $course = Course::whereKey($course->getKey())->lockForUpdate()->firstOrFail();
             $offerings = CourseOffering::where('course_id', $course->getKey())->where('academic_year_id', $input['academic_year_id'])
                 ->where('semester_id', $input['semester_id'])->orderBy('course_offering_id')->lockForUpdate()->get();
-            $selection = $this->resolve($actor, $student, $course, $input);
+            $selection = $this->resolve($actor, $student, $course, $input, $historical);
             $selectedIds = $selection['offering']->exists ? [$selection['offering']->getKey()] : [];
             GradePartApproval::whereIn('course_offering_id', $selectedIds)->orderBy('course_offering_id')->orderBy('component_type')->lockForUpdate()->get();
             SupplementaryExamTargetGuard::assertCourseOfferingConfigurationsMutable($selectedIds);
@@ -136,7 +153,7 @@ final class ExamManualGradePreparationService
                 ->orderBy('student_course_registration_id')->lockForUpdate()->get();
             GradeComponent::whereIn('course_offering_id', $selectedIds)->orderBy('grade_component_id')->lockForUpdate()->get();
             $this->grades->lockDefaultGradingPolicy();
-            $r = $this->resolve($actor, $student, $course, $input);
+            $r = $this->resolve($actor, $student, $course, $input, $historical);
             $preview = $this->describe($r);
             if (!hash_equals($preview['revision'], $input['revision'])) $this->fail('تغير السياق؛ أعد معاينته قبل تأكيد المسودة.', 'manual_grade_entry_stale');
             $offering = $r['offering'];
@@ -168,6 +185,7 @@ final class ExamManualGradePreparationService
                     'academic_year_id' => $offering->academic_year_id, 'semester_id' => $offering->semester_id,
                     'created' => [$preview['create_offering'], $preview['create_registration'], $preview['create_components']],
                     'waived' => $preview['exemptions'], 'relationship_evidence' => $preview['relationship_evidence'],
+                    ...($historical ? ['historical_assessment_profile' => $r['plan']['historical_assessment_profile']] : []),
                     'reason' => trim($input['reason'])], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE)]);
             return $saved;
         }); // No automatic retry of a grade write. Any error rolls back the entire preparation and save.

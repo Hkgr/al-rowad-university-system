@@ -1,5 +1,7 @@
 # PR #177: historical examination comparison evidence
 
+**Latest: [clarified 40/60 group model (v3)](../../historical-examination-coursework-groups.md)**, with [new aggregate comparison](academic-groups-v3/comparison-summary.json) and [35 grouped blocker counts](academic-groups-v3/blocker-counts.json). The original v2 comparison files below are preserved as historical before-change evidence. v3 has 603 offline initialization candidates in 86 contexts; this is not live readiness or a real-data apply.
+
 These are non-identifying, aggregate extracts of the recalculated private report at code commit `c915ba2e60edd375d0cff99c1723f441e51afa1c`. They compare the reviewed implementation (`825745177a551c63a871b3ded2599128c02968a5`) with the three repaired interpretations. They are **offline snapshot analysis**, not a live preview, executable bundle/review, or authorization to apply data.
 
 ## Files and privacy
@@ -46,4 +48,4 @@ The preceding code repair at `c915ba2` passed 271 affected PHPUnit tests / 3,860
 
 For this artifact-only follow-up, JSON parsing, equality against an allowlisted extraction of the private report, classification/source-control sums, exclusion of per-record evidence, and `git diff --check` were checked. No source artifact or executable bundle/review was edited. No live database, production application, browser/native-Excel acceptance or full CI result is claimed.
 
-Use the existing v2 fresh-preparation/live-preview instructions in the operating guide for any separately authorized operation. Preserve old reports, receipts and UUIDs; do not use these aggregate comparison files as apply inputs or substitute an offline revision for a newly reviewed live revision. PR #177 remains Draft, open, unmerged and undeployed.
+For a separately authorized new operation, use the current **v3** fresh-preparation/live-preview instructions in the operating guide; the v2 figures above are historical comparison evidence only. Preserve old reports, receipts and UUIDs; do not use any aggregate comparison file as an apply input or substitute an offline revision for a newly reviewed live revision. PR #177 remains Draft, open, unmerged and undeployed.

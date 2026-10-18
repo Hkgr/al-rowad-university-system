@@ -7,8 +7,8 @@ use App\Services\StudentCompletion\{CompletionData,CompletionSnapshot};
 /** OOXML cached cells/formula text only. No calculation, VBA execution or database access. */
 final class ExamSources
 {
-    public const CONTRACT='historical-exam-completion.sources.v2';
-    public const INTERPRETATION='historical-exam-reconciliation.2026-10-18.v2';
+    public const CONTRACT='historical-exam-completion.sources.v3';
+    public const INTERPRETATION='historical-exam-reconciliation.2026-10-18.v3';
     public function prepare(array $inputs): array
     {
         $sources=[];
@@ -46,7 +46,12 @@ final class ExamSources
         }
         $observations=[];foreach($rows as $r){$key=$r['reference']['file'].'/'.$r['reference']['sheet'].'/'.(CompletionData::text($r['values']['number'])===''?'unnumbered':'numbered');$observations[$key]=($observations[$key]??0)+1;}
         $numbers=array_values(array_filter(array_map(fn($r)=>CompletionData::text($r['values']['number']),$master),fn($n)=>$n!==''));
-        return ['contract'=>self::CONTRACT,'interpretation_revision'=>self::INTERPRETATION,'interpretation'=>ExamIdentity::approvals(),'inputs'=>$inputs,'sources'=>$sources,'workbooks'=>$books,'rows'=>$rows,'student_master'=>$master,'snapshot'=>$state,
+        return ['contract'=>self::CONTRACT,'interpretation_revision'=>self::INTERPRETATION,'interpretation'=>ExamIdentity::approvals(),
+            'assessment_profile'=>['id'=>ExamComponentMapping::PROFILE,'group_caps_cents'=>ExamComponentMapping::CAPS,
+                'coursework'=>'J is aggregate coursework, including any practical examination and other assessed activities; no individual breakdown is supplied.',
+                'exam'=>'K is the original final-examination aggregate, not a reconstructed supplementary mark.',
+                'authority'=>'explicit_user_academic_clarification_2026-10-18'],
+            'inputs'=>$inputs,'sources'=>$sources,'workbooks'=>$books,'rows'=>$rows,'student_master'=>$master,'snapshot'=>$state,
             'source_controls'=>['examination_observations'=>count($rows),'observation_groups'=>$observations,'student_master_records'=>count($master),'student_master_numbered'=>count($numbers),'student_master_unique_numbers'=>count(array_unique($numbers))],
             'controls'=>['students'=>count($state['students']),'courses'=>count($state['courses']),'registrations'=>count($state['student_course_registrations']),'results'=>count($state['student_course_results'])]];
     }

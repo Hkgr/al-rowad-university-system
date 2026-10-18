@@ -81,8 +81,8 @@ final class ExamCompletionService
                     $input=['academic_year_id'=>$p['academic_year_id'],'semester_id'=>$p['semester_id']];
                     if($reg=$current['baseline']['registration'])$input['registration_id']=(int)$reg['student_course_registration_id'];
                     if($offering=$current['baseline']['offering'])$input['course_offering_id']=(int)$offering['course_offering_id'];
-                    $prepared=$service->preview($actor,$student,$course,$input);
-                    $saved=$service->save($actor,$student,$course,$input+['revision'=>$prepared['revision'],'confirmed'=>true,'acknowledged'=>true,'reason'=>'Reviewed historical examination completion: '.$a['action_id'],
+                    $prepared=$service->previewHistorical($actor,$student,$course,$input);
+                    $saved=$service->saveHistorical($actor,$student,$course,$input+['revision'=>$prepared['revision'],'confirmed'=>true,'acknowledged'=>true,'reason'=>'Reviewed historical examination completion: '.$a['action_id'],
                         'components'=>$current['proposed_components']]);
                     $after=$this->projection->row($row,$this->db->read($actor),$bundle['student_master']??[])['baseline'];
                     // The writer may fill missing marks only. Never rewrite an existing result, approval or lifecycle.
@@ -90,7 +90,8 @@ final class ExamCompletionService
                     $created=['course_offerings'=>[],'grade_components'=>[]];
                     if(!$current['baseline']['offering'])$created['course_offerings'][$after['offering']['course_offering_id']]=$after['offering'];
                     $oldIds=array_column($current['baseline']['components'],'grade_component_id');foreach($after['components'] as $c)if(!in_array($c['grade_component_id'],$oldIds,true))$created['grade_components'][$c['grade_component_id']]=$c;
-                    $result=['action_id'=>$a['action_id'],'source_row'=>$row,'registration_id'=>$saved['registration_id'],'status'=>'SAVED_PENDING_APPROVAL','official_result_created'=>false,'after'=>$after,'created'=>$created,'period_provenance'=>$a['period']];
+                    $result=['action_id'=>$a['action_id'],'source_row'=>$row,'registration_id'=>$saved['registration_id'],'status'=>'SAVED_PENDING_APPROVAL','official_result_created'=>false,'after'=>$after,'created'=>$created,'period_provenance'=>$a['period'],
+                        'assessment_evidence'=>$a['component_mapping']];
                     $this->receipts->put($actor,'exam_action',$stage,['digest'=>$digest,'result'=>$result]);return ['result'=>$result,'revision'=>$this->tx->revision()];
                 });$out[]=$done['result'];$owned[]=$done['result']['created'];$next=$done['revision'];
             } catch(\Throwable $e) {
@@ -114,6 +115,7 @@ final class ExamCompletionService
     private function assertAfter(User $actor,array $result,array $reviewed,array $bundle): void
     {
         $source=collect($bundle['rows'])->firstWhere('id',$reviewed['source_id']);$target=$reviewed['baseline'];$after=$result['after'];
+        if(isset($reviewed['component_mapping']['profile'])&&!hash_equals(CompletionData::hash($reviewed['component_mapping']),CompletionData::hash($result['assessment_evidence']??null)))$this->fail('receipt_assessment_changed');
         if(!$source||$result['action_id']!==$reviewed['action_id']||!hash_equals(CompletionData::hash($source),CompletionData::hash($result['source_row']))
             ||(int)$after['student']['student_id']!==(int)$target['student']['student_id']||(int)$after['course']['course_id']!==(int)$target['course']['course_id']
             ||(int)$after['offering']['academic_program_id']!==(int)$target['program_id']||(int)$after['offering']['academic_year_id']!==(int)$reviewed['period']['academic_year_id']
