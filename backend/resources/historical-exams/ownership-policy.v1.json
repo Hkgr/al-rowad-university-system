@@ -1,0 +1,206 @@
+{
+    "profile": "historical-exam-identities.2026-10-18.v1",
+    "authority": "explicit_user_historical_exam_request",
+    "number_person_rules": [
+        {
+            "decision": "approved_number_person_1",
+            "source_pair_hashes": [
+                "28e234303757abb925e9459c35fab0db83f2ce8de47a987ae68ebc9cb40c222a"
+            ],
+            "target_hash": "45576e98670d63ac3aeb3e9a887547a67c3b9b7dac5599cb45ea4b7b34e810ff"
+        },
+        {
+            "decision": "approved_number_person_2",
+            "source_pair_hashes": [
+                "f23af164bb81dc43f38343d9f35cfb7b84b5467002152cebf3ee076594ce9cce"
+            ],
+            "target_hash": "3cf9438ebd8c03ed2ff85af18e7f6439ddc65daf85ccdcc4222387750d609ffc"
+        },
+        {
+            "decision": "approved_number_person_3",
+            "source_pair_hashes": [
+                "6d3ec0f2ca0572ca85d601463cfb031966991029e702e4a278c2178914bee736"
+            ],
+            "target_hash": "f6011a1463417d6be46051e83d191a96bbaa473a709724031af6bd69f087d867"
+        },
+        {
+            "decision": "approved_number_person_4",
+            "source_pair_hashes": [
+                "1942d67a850249aa4cec8f0ac9f0c23b63d363e0d2c81572b809fe1abadf608f"
+            ],
+            "target_hash": "30ed0c6c114b65061c768443dacb1d4eda36c7b2b3d253bab38f296be7cc5aae"
+        },
+        {
+            "decision": "approved_number_person_5",
+            "source_pair_hashes": [
+                "056e85f56b25ee1fc8a514af224a83d7ece3500ff32001e252e69530fca5d2de",
+                "75051cb75b6963ebecf9350c34225e00d8293d17822b91054882c24061fb77db",
+                "8832ac91d41b3beb1a245b9c196bd92081e002583e3ea446247c16936150b1a5"
+            ],
+            "target_hash": "b8833c3437d8a50f415250cd41c00656838b042498896c3b9d73fd5a5e2a8e81"
+        },
+        {
+            "decision": "approved_number_person_6",
+            "source_pair_hashes": [
+                "e25d128d7dcb62e8a5f12847e17485804675a6a1c1a9c90da741ee77c25866b6"
+            ],
+            "target_hash": "f71deef633ac151ec97874ef9afa38d6cdbf7a58f9811ceec7dc1a7f85c70c65"
+        }
+    ],
+    "row_rules": [
+        {
+            "file": "exam2",
+            "sheet": "علامات",
+            "rows": [
+                72,
+                572,
+                1151,
+                2382,
+                3458,
+                3529,
+                3548,
+                3549,
+                3550,
+                3551,
+                3552,
+                3553
+            ],
+            "source_name_hash": "ac1f3ceac92c887e73f6609291a2182acb3c8e73fbc7c2c86f3e4506fac87cdb",
+            "target_hash": "f6011a1463417d6be46051e83d191a96bbaa473a709724031af6bd69f087d867",
+            "decision": "approved_exact_source_owner"
+        },
+        {
+            "file": "exam2",
+            "sheet": "تكميلي",
+            "rows": [
+                675
+            ],
+            "source_name_hash": "ac1f3ceac92c887e73f6609291a2182acb3c8e73fbc7c2c86f3e4506fac87cdb",
+            "target_hash": "f6011a1463417d6be46051e83d191a96bbaa473a709724031af6bd69f087d867",
+            "decision": "approved_exact_source_owner"
+        },
+        {
+            "file": "exam2",
+            "sheet": "علامات",
+            "rows": [
+                67,
+                745,
+                1229,
+                1998,
+                3408,
+                3486,
+                3641
+            ],
+            "source_name_hash": "26ba1d32d8d0822fb89e9e8a5402e839fb21c8e9be094738d7522fb7584df22e",
+            "target_hash": "8097e7e8d30cccc5f6dc7e494bfe7942d2138058d40a02623383beaa30d915d1",
+            "decision": "approved_exact_source_owner"
+        },
+        {
+            "file": "exam2",
+            "sheet": "علامات",
+            "rows": [
+                421
+            ],
+            "source_name_hash": "c3d3f79be1380c5d3151533ccf88b1187996775553ed4dcb05429b48c1cd1029",
+            "target_hash": "8097e7e8d30cccc5f6dc7e494bfe7942d2138058d40a02623383beaa30d915d1",
+            "decision": "approved_exact_source_owner",
+            "source_number_hash": "cec5b0705c0dc1f758d4718b325422b1930a9afbccfd01276c3699a34c0e0006",
+            "course_code": "TIF114",
+            "course_name": "الرياضيات المالية"
+        },
+        {
+            "file": "exam1",
+            "sheet": "supplementary",
+            "rows": [
+                1618,
+                1634
+            ],
+            "source_name_hash": "c981048a613ef6508db241f9f16e3b8e96edcbd24e1f21915089ca1d6b3f2b5f",
+            "target_hash": "b41051ca85fb4b575c133e0b36b4f9052d1993e5b39a2ad57e0a61f059e073b7",
+            "decision": "approved_exact_source_owner",
+            "source_number_hash": "a6fd845f41bb0601c5f54ad891f0da005f6fae9d108c6f6cf95dc1e694e1c99e"
+        },
+        {
+            "file": "exam2",
+            "sheet": "تكميلي",
+            "rows": [
+                306,
+                322
+            ],
+            "source_name_hash": "c981048a613ef6508db241f9f16e3b8e96edcbd24e1f21915089ca1d6b3f2b5f",
+            "target_hash": "b41051ca85fb4b575c133e0b36b4f9052d1993e5b39a2ad57e0a61f059e073b7",
+            "decision": "approved_exact_source_owner",
+            "source_number_hash": "a6fd845f41bb0601c5f54ad891f0da005f6fae9d108c6f6cf95dc1e694e1c99e"
+        },
+        {
+            "file": "exam1",
+            "sheet": "supplementary",
+            "rows": [
+                1619,
+                1635
+            ],
+            "source_name_hash": "34173449db577303e11948a3ee1edb84682cfbf1b78e3869d499534d6c19c888",
+            "target_hash": "4303ce2f0998777841c0d3516a15545e530c98b1f2cc82df0f9e3378df2031ad",
+            "decision": "approved_exact_source_owner",
+            "source_number_hash": "b41051ca85fb4b575c133e0b36b4f9052d1993e5b39a2ad57e0a61f059e073b7"
+        },
+        {
+            "file": "exam2",
+            "sheet": "تكميلي",
+            "rows": [
+                307,
+                323
+            ],
+            "source_name_hash": "34173449db577303e11948a3ee1edb84682cfbf1b78e3869d499534d6c19c888",
+            "target_hash": "4303ce2f0998777841c0d3516a15545e530c98b1f2cc82df0f9e3378df2031ad",
+            "decision": "approved_exact_source_owner",
+            "source_number_hash": "b41051ca85fb4b575c133e0b36b4f9052d1993e5b39a2ad57e0a61f059e073b7"
+        }
+    ],
+    "deferred": {
+        "file": "exam1",
+        "sheet": "OutcomeofMater",
+        "rows": [
+            4884,
+            5299,
+            5669
+        ]
+    },
+    "missing_number": {
+        "file": "exam1",
+        "sheet": "OutcomeofMater",
+        "rows": [
+            4885,
+            5300,
+            5670
+        ],
+        "source_name_hashes": [
+            "1bd65f0f6b34496f67836595293bd1f7b4de0cb2bca859b1864a4a63a43f8693",
+            "4abe76639f22b6ecc0904661faec83c9645e6fd6f07843258dd5fd4948b87358"
+        ],
+        "target_hash": "b642bc4e21d4496beb4c75bdc42d5ff4f610e732a12597ca57ab85b8eed626bb",
+        "target_identity_hash": "fb0fb5154ea52daaab836cbd2a5be6de1405ffcccf692bae43d9746fdec52c70",
+        "program_code": "RU2-FIE-BR"
+    },
+    "separation": {
+        "source_number_hash": "600286e6ef5d1497fd4ee6dce3d3b7b997f31b9473677e4fd1486f05b3b808fb",
+        "source_name_hashes": [
+            "ad7363c0954d0cddc7b502d5187ae2a422e3c0b2539b0c7323fea17d3ff770d3",
+            "8a833d80dfe48d90cb1f1d3aa7177ea269cb9a7d39094ae0ace1ecbec8a8a3f7"
+        ],
+        "target_hash": "2d6526a349721bed81912353855d550c7db5025f7143b5999e306cc133fb930b"
+    },
+    "target_name_hashes": {
+        "45576e98670d63ac3aeb3e9a887547a67c3b9b7dac5599cb45ea4b7b34e810ff": "d306ffcd88d66b74600ab7e46520b80e1b881fb5282af5d4053498fb17800a72",
+        "3cf9438ebd8c03ed2ff85af18e7f6439ddc65daf85ccdcc4222387750d609ffc": "0ab2f54f6ac1b09d79064fa39e1d4651cdc758fa3c2aa0e2db5ad43d12e8676b",
+        "f6011a1463417d6be46051e83d191a96bbaa473a709724031af6bd69f087d867": "4b09eb5b7c309aa05cd46ce1041a0cfae293a2bc62d5a423d6b6e0cd51bafb8c",
+        "30ed0c6c114b65061c768443dacb1d4eda36c7b2b3d253bab38f296be7cc5aae": "e89a2d639eed7426e92cc7baf2eb1ae1ba1d419228a7e912591a325389044520",
+        "b8833c3437d8a50f415250cd41c00656838b042498896c3b9d73fd5a5e2a8e81": "93e667dc8b39c2180738a1dcbc21ee671e222dad8712e27b5b068ededbf72780",
+        "f71deef633ac151ec97874ef9afa38d6cdbf7a58f9811ceec7dc1a7f85c70c65": "a5ac7a08733bfb18a440b9560670e84e0dd03daa050334061882f8b5161c0d08",
+        "8097e7e8d30cccc5f6dc7e494bfe7942d2138058d40a02623383beaa30d915d1": "a0d4394197ee8e2ac7ecd1e828ef6734e95af85a5627b852ea0fed79963b50c3",
+        "b41051ca85fb4b575c133e0b36b4f9052d1993e5b39a2ad57e0a61f059e073b7": "175abd502081a69e4cbe4120d4d21108b18586688a5cc85dfcd1483f607bac41",
+        "4303ce2f0998777841c0d3516a15545e530c98b1f2cc82df0f9e3378df2031ad": "97643d070b1936d59ea2caafd99729639c225d60e46f30e6936297bdd34807eb",
+        "2d6526a349721bed81912353855d550c7db5025f7143b5999e306cc133fb930b": "f6268b74ecbfe2b05210cf61b2aca8c04ceebc5ccbbd772d1920ac54f2c776e6"
+    },
+    "semester_authority": "Explicit administrative odd/even approved-guidance fallback; not an actual sitting date"
+}

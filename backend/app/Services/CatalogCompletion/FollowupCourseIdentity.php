@@ -36,6 +36,17 @@ final class FollowupCourseIdentity
         'RU123'=>['حضارة وثقافة','الحضارة والثقافة'],
     ];
 
+    /** Read-only reuse of the already approved subject/program-qualified identities by historical exam reconciliation. */
+    public function historicalMapping(string $programCode,string $code,string $name,int $credits): ?array
+    {
+        if($programCode==='RU1-TI-CE')foreach(self::CIVIL+self::APPROVED_CIVIL as $reference=>[$source,$subject,$hours,$target])
+            if($source===$code&&CompletionData::text($name)===$subject&&$credits===$hours)return ['source_reference'=>$reference,'system_code'=>$target,'authority'=>self::APPROVED_REVISION];
+        $key=array_search($programCode,['engineering_civil'=>'RU1-TI-CE','engineering_survey'=>'RU1-TI-E','engineering_drawing'=>'RU1-TI-AE'],true);
+        if($key!==false&&$code==='RUS111'&&CompletionData::text($name)==='مدخل إلى الحياة الجامعية'&&$credits===2)
+            return ['source_reference'=>self::UNIVERSITY_LIFE[$key],'system_code'=>'RUS211','course_id'=>409,'authority'=>self::APPROVED_REVISION];
+        return null;
+    }
+
     public function nameMatches(array $row,array $origin): bool
     {
         $source=CompletionData::text($row['course_name']);$actual=CompletionData::text($origin['course_name']);
