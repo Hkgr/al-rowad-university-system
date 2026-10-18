@@ -107,7 +107,7 @@ class HistoricalExamCompletionTest extends ExamManualGradeGridBehaviorTest
     {
         $dir=sys_get_temp_dir().'/historical-source-'.bin2hex(random_bytes(8));mkdir($dir,0700);$default=config('database.default');
         try {
-            $inputs=\Tests\Support\HistoricalExamSourceFixture::write($dir);$args=['--output'=>$dir.'/bundle.json'];foreach($inputs as $id=>$in){$args['--'.$id]=$in['path'];$args['--'.$id.'-hash']=$in['sha256'];}
+            $inputs=\Tests\Support\HistoricalExamSourceFixture::write($dir,'');$args=['--output'=>$dir.'/bundle.json'];foreach($inputs as $id=>$in){$args['--'.$id]=$in['path'];$args['--'.$id.'-hash']=$in['sha256'];}
             $queries=[];DB::listen(function($q)use(&$queries){$queries[]=$q->sql;});config(['database.default'=>'never_connect_during_source_preparation']);
             self::assertSame(0,Artisan::call('historical-exams:prepare',$args),Artisan::output());self::assertSame([],$queries);
             $hash=hash_file('sha256',$dir.'/bundle.json');$bundle=(new ExamSources)->load($dir.'/bundle.json',$hash);self::assertCount(2,$bundle['rows']);self::assertSame('80',$bundle['rows'][0]['values']['total']);self::assertSame('J2+K2',$bundle['rows'][0]['cells']['L']['formula']);self::assertSame('50',$bundle['rows'][0]['values']['exam']);self::assertSame($hash,hash_file('sha256',$dir.'/bundle.json'));
@@ -115,6 +115,7 @@ class HistoricalExamCompletionTest extends ExamManualGradeGridBehaviorTest
             config(['database.default'=>$default]);$queries=[];
             $args=['--actor'=>'1','--bundle'=>$dir.'/bundle.json','--bundle-hash'=>$hash,'--output'=>$dir.'/live.json'];
             self::assertSame(2,Artisan::call('historical-exams:preview',$args),Artisan::output());$report=json_decode(file_get_contents($dir.'/live.json'),true);self::assertSame(1,$report['counts']['eligible']);
+            self::assertSame('unique_qualified_student_master',$report['review']['actions'][0]['program_evidence']['basis']);self::assertSame(ExamProjection::CONTRACT,$report['review']['contract']);
             foreach($queries as $sql)self::assertDoesNotMatchRegularExpression('/for update|^\s*(insert|update|delete|create|alter|drop)\b/i',$sql);
             $operation=(string)Str::uuid();$args['--output']=$dir.'/saved.json';
             self::assertSame(0,Artisan::call('historical-exams:apply',$args+['--review'=>$dir.'/live.json.review.json','--review-hash'=>$report['review_hash'],'--expected-revision'=>$report['review']['revision'],'--operation-id'=>$operation]),Artisan::output());
@@ -216,5 +217,92 @@ class HistoricalExamCompletionTest extends ExamManualGradeGridBehaviorTest
         $b=$this->bundle();$p=$this->preview($b);$id=(string)Str::uuid();$this->apply($b,$p,$id);$student=\App\Models\Student::findOrFail(1);$grades=app(\App\Services\GradeService::class);$transcript=$grades->getTranscript($student);self::assertSame([],$transcript['terms']);self::assertNull($grades->calculateGpa($student,1,1)['gpa']);
         DB::table('user_activity_logs')->where('action_code','student_completion.exam_action')->delete(); // Deliberately tamper only with this synthetic receipt.
         try{$this->service()->verify(User::findOrFail(1),$b,$id);self::fail('Missing action receipt accepted');}catch(CompletionException $e){self::assertSame('historical_exam_completed_receipt_missing',$e->errorCode);}
+    }
+    public function test_historical_review_practical_coursework_is_not_a_separate_coursework_aggregate_conflict(): void
+    {
+        foreach([1=>20,2=>30] as $id=>$mark)DB::table('student_grade_components')->insert(['student_course_registration_id'=>1,'grade_component_id'=>$id,'mark'=>$mark,'grade_status'=>'approved']);
+        DB::table('student_course_results')->insert(['student_course_registration_id'=>1,'theoretical_total'=>20,'practical_total'=>30,'coursework_total'=>0,'final_mark'=>50,'result_status_id'=>1]);DB::table('grade_approvals')->insert(['course_offering_id'=>1,'approval_status_id'=>1]);
+        $p=$this->preview($this->bundle(['exam'=>'20','total'=>'50']));self::assertSame('existing_equivalent',$p['review']['actions'][0]['classification']);self::assertSame(1,$p['counts']['no_op']);self::assertFalse($p['review']['actions'][0]['eligible']);
+        self::assertSame(['official_or_submitted_result_locked'],$p['review']['actions'][0]['mutation_blockers']);$before=DB::table('student_course_results')->get()->toJson();$this->apply($this->bundle(['exam'=>'20','total'=>'50']),$p);self::assertSame($before,DB::table('student_course_results')->get()->toJson());
+        self::assertSame('existing_value_conflict',$this->preview($this->bundle(['exam'=>'21','total'=>'51']))['review']['actions'][0]['classification']);
+        self::assertSame('existing_value_conflict',$this->preview($this->bundle(['exam'=>'21','coursework'=>'29','total'=>'50']))['review']['actions'][0]['classification']); // Total/outcome still agree; the actual components do not.
+        self::assertSame('existing_value_conflict',$this->preview($this->bundle(['exam'=>'20','total'=>'51']))['review']['actions'][0]['classification']);
+        self::assertSame('existing_value_conflict',$this->preview($this->bundle(['exam'=>'20','total'=>'50','condition'=>'F']))['review']['actions'][0]['classification']);
+        DB::table('grade_components')->where('grade_component_id',2)->update(['component_name'=>'Unproven role']);$a=$this->preview($this->bundle(['exam'=>'20','total'=>'50']))['review']['actions'][0];self::assertNotSame('existing_value_conflict',$a['classification']);self::assertContains('component_semantics_not_faithfully_representable',$a['blockers']);self::assertNotContains('canonical_grading_policy_incompatible',$a['blockers']);
+    }
+    public function test_historical_review_preparation_retains_Data_as_non_observation_evidence(): void
+    {
+        $dir=sys_get_temp_dir().'/historical-data-'.bin2hex(random_bytes(8));mkdir($dir,0700);
+        try{$inputs=\Tests\Support\HistoricalExamSourceFixture::write($dir);$b=(new ExamSources)->prepare($inputs);self::assertCount(2,$b['rows']);self::assertCount(1,$b['student_master']);self::assertSame('exam1:Data:2',$b['student_master'][0]['id']);self::assertSame('Program',$b['student_master'][0]['values']['program']);}
+        finally{foreach(glob($dir.'/*') as $f)unlink($f);rmdir($dir);}
+    }
+    public function test_historical_review_previously_approved_TI_transformations_are_program_subject_credit_qualified(): void
+    {
+        $id=new \App\Services\CatalogCompletion\FollowupCourseIdentity;
+        foreach([['RU1-TI-CE','TI112','فيزياء عامة',4,'TI-CE-112'],['RU1-TI-CE','TI113','كيمياء للمهندسين',4,'TI-CE-113'],['RU1-TI-E','TI112','فيزياء عامة',3,'TI-E-112'],['RU1-TI-E','TI113','رسم هندسي',4,'TI-E-113']] as [$p,$code,$name,$hours,$target])self::assertSame($target,$id->historicalMapping($p,$code,$name,$hours)['system_code']??null);
+        self::assertNull($id->historicalMapping('RU1-TI-E','TI112','فيزياء عامة',4));self::assertNull($id->historicalMapping('RU1-TI-E','TI113','كيمياء للمهندسين',4));
+    }
+    public static function engineeringMappings(): array
+    {
+        return [['RU1-TI-CE','TI112','فيزياء عامة',4,'TI-CE-112',824],['RU1-TI-CE','TI113','كيمياء للمهندسين',4,'TI-CE-113',825],['RU1-TI-E','TI112','فيزياء عامة',3,'TI-E-112',853],['RU1-TI-E','TI113','رسم هندسي',4,'TI-E-113',854]];
+    }
+    #[\PHPUnit\Framework\Attributes\DataProvider('engineeringMappings')]
+    public function test_historical_review_TI_reuse_requires_unchanged_origin_and_scoped_evidence(string $program,string $code,string $name,int $hours,string $target,int $reference): void
+    {
+        $s=app(ExamDatabase::class)->read(User::findOrFail(1));$s['academic_programs'][0]['program_code']=$program;$s['courses']=[['course_id'=>1,'course_code'=>$target,'course_name'=>$name,'credit_hours'=>$hours,'is_active'=>true]];
+        $s['course_departments']=[['course_department_id'=>1,'course_id'=>1,'department_id'=>1]];$s['program_courses']=[];
+        $v=$this->bundle(['code'=>$code,'course'=>$name,'credits'=>(string)$hours])['rows'][0]['values'];$id=new ExamIdentity;$match=$id->course($v,1,$s,1);
+        self::assertSame(1,$match['course']['course_id']);self::assertSame('exam1:DBMater:'.$reference,$match['mapping']['catalog_approval']['source_reference']);
+        foreach([['course'=>'Different subject'],['credits'=>(string)($hours+1)]] as $change)self::assertNull($id->course(array_replace($v,$change),1,$s,1)['course']);
+        $other=$s;$other['academic_programs'][0]['program_code']='OTHER';self::assertNull($id->course($v,1,$other,1)['course']);
+        foreach([['course_name'=>'Changed origin'],['credit_hours'=>$hours+1],['is_active'=>false]] as $change){$other=$s;$other['courses'][0]=array_replace($other['courses'][0],$change);self::assertNull($id->course($v,1,$other,1)['course']);}
+        $other=$s;$other['course_departments'][0]['department_id']=2;self::assertNull($id->course($v,1,$other,1)['course']);
+        $other=$s;$other['courses'][]=['course_id'=>2,'course_code'=>$code,'course_name'=>'Other colliding origin','credit_hours'=>$hours+1,'is_active'=>true];self::assertNull($id->course(array_replace($v,['course'=>'Other colliding origin','credits'=>(string)($hours+1)]),1,$other,1)['course']);
+    }
+    private function master(array $values=[],int $row=2): array
+    {
+        $v=array_replace(['number'=>'S1','name'=>'Student 1','father'=>'','college'=>'College','program'=>'Program','enrollment_date'=>'2025-09-01'],$values);
+        return ['id'=>'exam1:Data:'.$row,'reference'=>['file'=>'exam1','sheet'=>'Data','row'=>$row],'values'=>$v,'row_hash'=>CompletionData::hash($v)];
+    }
+    public function test_historical_review_Data_resolves_missing_registration_and_retains_compatible_duplicate_provenance(): void
+    {
+        DB::table('student_course_registrations')->where('student_id',1)->delete();$b=$this->bundle(['program'=>'']);$b['student_master']=[$this->master(),$this->master([],3)];$p=$this->preview($b);$a=$p['review']['actions'][0];self::assertSame(1,$a['baseline']['program_id']);self::assertCount(2,$a['program_evidence']['student_master_evidence']);self::assertSame('unique_qualified_student_master',$a['program_evidence']['basis']);self::assertContains('approved_guidance_plan_missing_or_ambiguous',$a['blockers']);
+        DB::table('academic_plan_versions')->insert(['academic_plan_version_id'=>1,'academic_program_id'=>1,'status'=>'approved','fixed_at'=>'2026-01-01']);DB::table('academic_programs')->update(['default_academic_plan_version_id'=>1]);DB::table('program_courses')->update(['academic_plan_version_id'=>1,'academic_level_id'=>1,'recommended_semester_id'=>1]);$p=$this->preview($b);self::assertSame(1,$p['counts']['eligible']);$id=(string)Str::uuid();self::assertSame(1,$this->apply($b,$p,$id)['saved_pending_approval']);self::assertSame('COMPLETE',$this->service()->verify(User::findOrFail(1),$b,$id)['status']);
+    }
+    public function test_historical_review_Data_contradictions_never_override_explicit_program_or_registration_or_person(): void
+    {
+        DB::table('academic_programs')->insert(['academic_program_id'=>2,'department_id'=>1,'program_code'=>'OTHER','program_name'=>'Other program']);
+        foreach([
+            [$this->master(),$this->master(['program'=>'Other program'],3)],
+            [$this->master(['college'=>'Unknown college'])],
+            [$this->master(['name'=>'Other person'])],
+            [$this->master(['father'=>'Conflicting father'])],
+        ] as $master){$b=$this->bundle(['program'=>'']);$b['student_master']=$master;$a=$this->preview($b)['review']['actions'][0];self::assertFalse($a['eligible']);self::assertTrue($a['program_evidence']['evidence_conflict']);self::assertNull($a['baseline']['program_id']);}
+        $b=$this->bundle(['program'=>'Other program']);$b['student_master']=[$this->master()];self::assertContains('explicit_exam_and_student_master_program_conflict',$this->preview($b)['review']['actions'][0]['blockers']);
+        DB::table('colleges')->insert(['college_id'=>2,'college_name'=>'Other college','college_code'=>'OTHER']);DB::table('departments')->insert(['department_id'=>2,'college_id'=>2,'department_name'=>'Program']);DB::table('academic_programs')->insert(['academic_program_id'=>3,'department_id'=>2,'program_code'=>'OTHER-UNIT','program_name'=>'Program']);
+        $b=$this->bundle(['program'=>'']);$b['student_master']=[$this->master(['college'=>'Other college'])];self::assertContains('student_master_college_conflict',$this->preview($b)['review']['actions'][0]['blockers']);
+        $b=$this->bundle(['program'=>'']);$b['student_master']=[$this->master(['program'=>'Other program'])];$a=$this->preview($b)['review']['actions'][0];self::assertContains('student_master_existing_registration_context_conflict',$a['blockers']);self::assertSame(1,$a['baseline']['registration']['student_course_registration_id']);self::assertSame(1,$a['baseline']['program_id']);self::assertFalse($a['eligible']);
+        $b=$this->bundle(['program'=>'']);$a=$this->preview($b)['review']['actions'][0];self::assertSame('unique_existing_registration_program_not_student_default',$a['program_evidence']['basis']);self::assertSame('existing_registration_actual_period',$a['period']['basis']);
+        DB::table('student_course_registrations')->where('student_id',1)->delete();$a=$this->preview($b)['review']['actions'][0];self::assertFalse($a['eligible']);self::assertNull($a['baseline']['program_id']);
+        $b['student_master']=[$this->master(['number'=>'S2','name'=>'Student 1'])];self::assertNull($this->preview($b)['review']['actions'][0]['baseline']['program_id']); // A shared shortened name is not a number/person link.
+    }
+    public function test_historical_review_remapped_Data_uses_original_number_person_decision_without_changing_the_student(): void
+    {
+        $f=\Tests\Support\SyntheticExamOwnership::fixture();$case=$f['cases']['number'][0];$s=$case['target'];$state=app(ExamDatabase::class)->read(User::findOrFail(1));$state['students']=[$s];
+        $row=$this->bundle(['number'=>$case['source'],'name'=>$case['labels'][0],'program'=>''])['rows'][0];$owner=$f['resolver']->student($row,$state);$master=$this->master(['number'=>$case['source'],'name'=>$case['labels'][0],'father'=>$s['father_name']]);
+        $p=$f['resolver']->sourceProgram($row,$owner,$state,[$master]);self::assertSame(1,$p['program_id']);self::assertSame($case['source'],$p['student_master_evidence'][0]['record']['values']['number']);self::assertSame($s['student_number'],$owner['number']);self::assertSame($s,$state['students'][0]);
+    }
+    public function test_historical_review_component_types_not_source_field_names_determine_the_aggregate(): void
+    {
+        DB::table('grade_components')->where('grade_component_id',1)->update(['component_type'=>'practical','max_mark'=>40]);DB::table('grade_components')->where('grade_component_id',2)->update(['component_type'=>'theoretical','max_mark'=>60]);
+        foreach([1=>20,2=>30] as $id=>$mark)DB::table('student_grade_components')->insert(['student_course_registration_id'=>1,'grade_component_id'=>$id,'mark'=>$mark,'grade_status'=>'approved']);
+        DB::table('student_course_results')->insert(['student_course_registration_id'=>1,'theoretical_total'=>30,'practical_total'=>20,'coursework_total'=>0,'final_mark'=>50,'result_status_id'=>1]);DB::table('grade_approvals')->insert(['course_offering_id'=>1,'approval_status_id'=>1]);
+        $a=$this->preview($this->bundle(['exam'=>'20','total'=>'50']))['review']['actions'][0];self::assertSame('existing_equivalent',$a['classification']);self::assertSame(['theoretical'=>3000,'practical'=>2000],$a['component_mapping']['expected_aggregates']);
+    }
+    public function test_historical_review_old_bundle_and_review_contracts_are_rejected_without_changing_receipts(): void
+    {
+        $b=$this->bundle();$p=$this->preview($b);$id=(string)Str::uuid();$this->apply($b,$p,$id);$logs=DB::table('user_activity_logs')->get()->toJson();$p['review']['contract']='historical-exam-completion.review.v1';$p['review_hash']=CompletionData::hash($p['review']);
+        try{$this->apply($b,$p,$id);self::fail('Old interpretation accepted');}catch(CompletionException $e){self::assertSame('historical_exam_review_invalid',$e->errorCode);}self::assertSame($logs,DB::table('user_activity_logs')->get()->toJson());
+        $dir=sys_get_temp_dir().'/historical-old-'.bin2hex(random_bytes(8));mkdir($dir,0700);try{$path=$dir.'/old.json';\App\Services\StudentCompletion\CompletionFiles::write($path,['contract'=>'historical-exam-completion.sources.v1']);try{(new ExamSources)->load($path,hash_file('sha256',$path));self::fail('Old bundle accepted');}catch(\InvalidArgumentException $e){self::assertStringContainsString('new bundle/review/UUID',$e->getMessage());}}finally{unlink($path);rmdir($dir);}
     }
 }

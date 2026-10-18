@@ -35,7 +35,7 @@ final class ExamCompletionService
     }
     public function apply(User $actor,array $bundle,array $review,string $hash,string $id,string $expected,bool $resume=false): array
     {
-        if(!Uuid::isValid($id)||($review['contract']??null)!=='historical-exam-completion.review.v1'||!hash_equals(CompletionData::hash($review),$hash)||!hash_equals($review['bundle_digest'],CompletionData::hash($bundle)))$this->fail('review_invalid');
+        if(!Uuid::isValid($id)||($review['contract']??null)!==ExamProjection::CONTRACT||!hash_equals(CompletionData::hash($review),$hash)||!hash_equals($review['bundle_digest'],CompletionData::hash($bundle)))$this->fail('review_invalid');
         $this->authorizeReview($actor,$review);$digest=CompletionData::hash([$hash,$bundle['sources'],(int)$actor->getKey()]);
         $old=$this->tx->run(function()use($actor,$review,$hash,$id,$digest,$expected,$resume,$bundle) {
             $this->authorizeReview($actor,$review);
@@ -67,7 +67,7 @@ final class ExamCompletionService
                         return ['result'=>$r['value']['result'],'revision'=>$this->tx->revision()];
                     }
                     if($next!==$this->tx->revision())$this->fail('stale');
-                    $row=collect($bundle['rows'])->firstWhere('id',$a['source_id']);$current=$this->projection->row($row,$this->db->read($actor));
+                    $row=collect($bundle['rows'])->firstWhere('id',$a['source_id']);$current=$this->projection->row($row,$this->db->read($actor),$bundle['student_master']??[]);
                     $baseline=$current['baseline'];
                     foreach($owned as $created) {
                         if($baseline['offering']&&isset($created['course_offerings'][$baseline['offering']['course_offering_id']])) {
@@ -84,7 +84,7 @@ final class ExamCompletionService
                     $prepared=$service->preview($actor,$student,$course,$input);
                     $saved=$service->save($actor,$student,$course,$input+['revision'=>$prepared['revision'],'confirmed'=>true,'acknowledged'=>true,'reason'=>'Reviewed historical examination completion: '.$a['action_id'],
                         'components'=>$current['proposed_components']]);
-                    $after=$this->projection->row($row,$this->db->read($actor))['baseline'];
+                    $after=$this->projection->row($row,$this->db->read($actor),$bundle['student_master']??[])['baseline'];
                     // The writer may fill missing marks only. Never rewrite an existing result, approval or lifecycle.
                     foreach(['student','course','result','approvals','parts','lifecycle'] as $key)if(CompletionData::hash($after[$key])!==CompletionData::hash($current['baseline'][$key]))$this->fail('preserved_evidence_changed');
                     $created=['course_offerings'=>[],'grade_components'=>[]];
@@ -118,7 +118,7 @@ final class ExamCompletionService
             ||(int)$after['student']['student_id']!==(int)$target['student']['student_id']||(int)$after['course']['course_id']!==(int)$target['course']['course_id']
             ||(int)$after['offering']['academic_program_id']!==(int)$target['program_id']||(int)$after['offering']['academic_year_id']!==(int)$reviewed['period']['academic_year_id']
             ||(int)$after['offering']['semester_id']!==(int)$reviewed['period']['semester_id']||(int)$result['registration_id']!==(int)$after['registration']['student_course_registration_id'])$this->fail('receipt_target_changed');
-        $a=$this->projection->row($result['source_row'],$this->db->read($actor));
+        $a=$this->projection->row($result['source_row'],$this->db->read($actor),$bundle['student_master']??[]);
         if(!hash_equals(CompletionData::hash($result['after']),CompletionData::hash($a['baseline'])))$this->fail('completed_action_changed');
     }
     private function validateSavedActions(User $actor,array $bundle,array $review,string $id,string $digest,array $status): void

@@ -7,7 +7,8 @@ use App\Services\StudentCompletion\{CompletionData,CompletionSnapshot};
 /** OOXML cached cells/formula text only. No calculation, VBA execution or database access. */
 final class ExamSources
 {
-    public const CONTRACT='historical-exam-completion.sources.v1';
+    public const CONTRACT='historical-exam-completion.sources.v2';
+    public const INTERPRETATION='historical-exam-reconciliation.2026-10-18.v2';
     public function prepare(array $inputs): array
     {
         $sources=[];
@@ -16,9 +17,19 @@ final class ExamSources
             if(!is_file($in['path']??'')||!preg_match('/^[a-f0-9]{64}$/D',$in['sha256']??'')||!hash_equals($in['sha256'],hash_file('sha256',$in['path'])))throw new \InvalidArgumentException('Source missing or fingerprint differs: '.$id);
             $sources[$id]=['name'=>basename($in['path']),'sha256'=>$in['sha256']];
         }
-        $state=(new CompletionSnapshot)->read($inputs['snapshot']['path'],true,true,true);$rows=[];$books=[];
+        $state=(new CompletionSnapshot)->read($inputs['snapshot']['path'],true,true,true);$rows=[];$books=[];$master=[];
         foreach(['exam1'=>['OutcomeofMater','supplementary'],'exam2'=>['علامات','تكميلي']] as $id=>$sheets) {
             [$cells,$metadata]=$this->workbook($inputs[$id]['path']);$books[$id]=$metadata;
+            if($id==='exam1') {
+                $map=['name'=>'C','father'=>'D','enrollment_date'=>'L','number'=>'P','college'=>'Q','program'=>'R'];
+                foreach(['C'=>'الاسم والكنية','D'=>'اسم الأب','L'=>'تاريخ التسجيل','P'=>'الرقم الجامعي','Q'=>'اسم الكلية/المعهد','R'=>'القسم'] as $col=>$label)
+                    if(CompletionData::text($cells['Data'][1][$col]['value']??null)!==$label)throw new \InvalidArgumentException('Student-master layout changed: exam1/Data/'.$col.'1');
+                foreach($cells['Data'] as $n=>$c)if($n>1&&(CompletionData::text($c['P']['value']??null)!==''||CompletionData::text($c['C']['value']??null)!=='')) {
+                    $values=[];$original=[];foreach($map as $key=>$column){$values[$key]=$c[$column]['value']??null;if(isset($c[$column]))$original[$column]=$c[$column];}
+                    $master[]=['id'=>'exam1:Data:'.$n,'reference'=>['file'=>'exam1','sheet'=>'Data','row'=>$n,'columns'=>$map,'sha256'=>$sources[$id]['sha256']],
+                        'values'=>$values,'cells'=>$original,'row_hash'=>CompletionData::hash($original)];
+                }
+            }
             foreach($sheets as $index=>$sheet) {
                 if(!isset($cells[$sheet]))throw new \InvalidArgumentException('Required examination sheet missing: '.$sheet);
                 $headers=$index?['B'=>'رمز المقرر','F'=>'الرقم الجامعي','G'=>'الاسم','J'=>'الامتحان النهائي']:['E'=>'رمز المقرر','H'=>'الرقم الجامعي','I'=>'الاسم','K'=>'الامتحان النهائي','R'=>'العام الدراسي'];
@@ -33,7 +44,10 @@ final class ExamSources
                 }
             }
         }
-        return ['contract'=>self::CONTRACT,'interpretation'=>ExamIdentity::approvals(),'inputs'=>$inputs,'sources'=>$sources,'workbooks'=>$books,'rows'=>$rows,'snapshot'=>$state,
+        $observations=[];foreach($rows as $r){$key=$r['reference']['file'].'/'.$r['reference']['sheet'].'/'.(CompletionData::text($r['values']['number'])===''?'unnumbered':'numbered');$observations[$key]=($observations[$key]??0)+1;}
+        $numbers=array_values(array_filter(array_map(fn($r)=>CompletionData::text($r['values']['number']),$master),fn($n)=>$n!==''));
+        return ['contract'=>self::CONTRACT,'interpretation_revision'=>self::INTERPRETATION,'interpretation'=>ExamIdentity::approvals(),'inputs'=>$inputs,'sources'=>$sources,'workbooks'=>$books,'rows'=>$rows,'student_master'=>$master,'snapshot'=>$state,
+            'source_controls'=>['examination_observations'=>count($rows),'observation_groups'=>$observations,'student_master_records'=>count($master),'student_master_numbered'=>count($numbers),'student_master_unique_numbers'=>count(array_unique($numbers))],
             'controls'=>['students'=>count($state['students']),'courses'=>count($state['courses']),'registrations'=>count($state['student_course_registrations']),'results'=>count($state['student_course_results'])]];
     }
     public function load(string $path,string $hash): array

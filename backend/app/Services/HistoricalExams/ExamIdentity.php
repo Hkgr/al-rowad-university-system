@@ -65,17 +65,55 @@ final class ExamIdentity
         return (new CompletionProgramIdentity)->resolve(['value'=>self::text($v['program']),'contexts'=>[['college'=>self::text($v['college'])]]],$state,
             ['program_aliases'=>$catalog->aliases(),'college_aliases'=>$aliases]);
     }
+    /** Number/person ownership is resolved BEFORE consulting Data. Names alone never select a master record. */
+    public function sourceProgram(array $row,array $owner,array $state,array $master): array
+    {
+        $v=$row['values'];$explicit=self::text($v['program'])!=='';$resolved=$this->program($v,$state);$evidence=[];$ids=[];$errors=[];
+        if($owner['student']&&!$owner['blockers'])foreach($master as $record) {
+            $number=self::text($record['values']['number']);
+            if($number===''||!in_array($number,[$owner['source_number'],$owner['number']],true))continue;
+            $person=$this->student($record,$state);$entry=['record'=>$record,'ownership'=>$person,'resolution'=>null];
+            if($person['student']&&(int)$person['student']['student_id']!==(int)$owner['student']['student_id']&&!$person['blockers']) {
+                $entry['basis']='different_original_number_owner_not_program_evidence';$evidence[]=$entry;continue;
+            }
+            if(!$person['student']||$person['blockers']||(int)$person['student']['student_id']!==(int)$owner['student']['student_id']) {
+                $entry['basis']='student_master_ownership_unproven';$errors[]='student_master_ownership_unproven';$evidence[]=$entry;continue;
+            }
+            $father=self::text($record['values']['father']??null);
+            if($father!==''&&$this->name($father)!==$this->name($owner['student']['father_name']??'')) {
+                $entry['basis']='student_master_father_conflict';$errors[]='student_master_father_conflict';$evidence[]=$entry;continue;
+            }
+            $p=$this->program($record['values'],$state);$entry['resolution']=$p;$entry['basis']='number_person_and_college_qualified_Data';
+            if(!$p['program_id'])$errors[]='student_master_program_unresolved';
+            else {
+                $ids[$p['program_id']]=$p;
+                if(self::text($v['college'])!=='') {
+                    $qualified=$this->program(array_replace($record['values'],['college'=>$v['college']]),$state);
+                    if(!$qualified['program_id']||(int)$qualified['program_id']!==(int)$p['program_id']||(int)$qualified['college_id']!==(int)$p['college_id'])$errors[]='student_master_college_conflict';
+                }
+            }
+            $evidence[]=$entry;
+        }
+        if(count($ids)>1)$errors[]='student_master_program_conflict';
+        if($explicit&&$ids&&(!$resolved['program_id']||!isset($ids[$resolved['program_id']])))$errors[]='explicit_exam_and_student_master_program_conflict';
+        if(!$explicit&&count($ids)===1&&!$errors)$resolved=array_values($ids)[0];
+        return array_replace($resolved,['basis'=>$explicit?'explicit_qualified_examination_program':(count($ids)===1&&!$errors?'unique_qualified_student_master':'program_evidence_missing_or_conflicting'),
+            'student_master_evidence'=>$evidence,'evidence_conflict'=>$errors!==[],'blockers'=>array_values(array_unique([...($errors?[]:$resolved['blockers']),...$errors])),
+            'program_id'=>$errors?null:$resolved['program_id']]);
+    }
     public function course(array $v,int $program,array $state,?int $studentId=null): array
     {
         $identity=new FollowupCourseIdentity;$codes=[];$code=preg_replace('/\s+/u','',self::text($v['code']));$label=self::text($v['course']);$p=collect($state['academic_programs'])->firstWhere('academic_program_id',$program);
         // Reuse the catalog's exact approved facts, including original curriculum references and pinned origin 409.
         $approval=$identity->historicalMapping($p['program_code']??'',$code,$label,(int)$v['credits']);if($approval)$codes[]=$approval['system_code'];
+        if(!$approval&&in_array($p['program_code']??'', ['RU1-TI-CE','RU1-TI-E'],true)&&in_array($code,['TI112','TI113'],true))return ['course'=>null,'mapping'=>['original_code'=>$code,'program_id'=>$program,'catalog_approval'=>null],'blockers'=>['approved_course_subject_or_credits_conflict']];
         if(!$codes)$codes=[$code];$matches=[];
         foreach($state['courses'] as $c)if(in_array($c['course_code'],$codes,true)&&(string)$c['credit_hours']===(string)$v['credits']) {
             if(isset($approval['course_id'])&&(int)$c['course_id']!==$approval['course_id'])continue;
             $contexts=$identity->contexts($state,(int)$c['course_id']);$university=collect($contexts)->contains(fn($x)=>$x['kind']==='university_membership');
             // Pinned university reuse requires its approved active university scope even if an old registration exists.
             if(isset($approval['course_id'])&&(!$university||!(bool)($c['is_active']??false)))continue;
+            if(($approval['authority']??null)==='engineering-distinct-codes'&&(!(bool)($c['is_active']??false)||!collect($contexts)->contains(fn($x)=>(int)$x['department_id']===(int)$p['department_id'])))continue;
             $row=['system_code'=>$c['course_code'],'course_name'=>$label,'credit_hours'=>(int)$v['credits'],'requirement_scope'=>$university?'university':'college'];
             $historic=[];
             if($studentId!==null) {

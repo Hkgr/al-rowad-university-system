@@ -6,6 +6,7 @@ use App\Services\StudentCompletion\{CompletionData,CompletionProgramIdentity};
 /** Pure reconciliation shared by snapshot analysis, live preview and locked revalidation. */
 final class ExamProjection
 {
+    public const CONTRACT='historical-exam-completion.review.v2';
     public function index(array $state): array
     {
         foreach(['student_course_registrations'=>'student_id','student_course_results'=>'student_course_registration_id','grade_components'=>'course_offering_id','student_grade_components'=>'student_course_registration_id'] as $table=>$key) {
@@ -22,7 +23,7 @@ final class ExamProjection
     {
         $state=$this->index($state);$actions=[];$groups=[];
         foreach($bundle['rows'] as $row) {
-            $a=$this->row($row,$state);$a['references']=[$row['reference']+['row_hash'=>$row['row_hash']]];
+            $a=$this->row($row,$state,$bundle['student_master']??[]);$a['references']=[$row['reference']+['row_hash'=>$row['row_hash']]];
             $v=$row['values'];
             $key=$a['attempt_key']??('unresolved-source/'.CompletionData::hash([$a['owner']['number']??$v['number'],$row['kind'],CompletionData::text($v['college']),CompletionData::text($v['program']),preg_replace('/\s+/u','',CompletionData::text($v['code'])),CompletionData::text($v['course']),$v['credits'],$v['year']??null]));
             $groups[$key][]=$a;
@@ -40,15 +41,15 @@ final class ExamProjection
         }
         $counts=['observations'=>count($bundle['rows']),'actions'=>count($actions),'eligible'=>0,'no_op'=>0,'conflict'=>0,'deferred'=>0,'pending_approval'=>0,'classifications'=>[]];
         foreach($actions as $a){$counts['eligible']+=(int)$a['eligible'];$counts['no_op']+=(int)($a['classification']==='existing_equivalent'&&!$a['blockers']);$counts['conflict']+=(int)in_array($a['classification'],['source_conflict','existing_value_conflict'],true);$counts['deferred']+=(int)($a['classification']==='deferred_identity');$counts['pending_approval']+=(int)($a['classification']==='pending_approval');$counts['classifications'][$a['classification']]=($counts['classifications'][$a['classification']]??0)+1;}
-        $review=['contract'=>'historical-exam-completion.review.v1','sources'=>$bundle['sources'],'bundle_file_hash'=>$bundle['artifact_file_sha256']??null,'bundle_digest'=>CompletionData::hash($bundle),'revision'=>$revision,'actions'=>$actions];
+        $review=['contract'=>self::CONTRACT,'sources'=>$bundle['sources'],'bundle_file_hash'=>$bundle['artifact_file_sha256']??null,'bundle_digest'=>CompletionData::hash($bundle),'revision'=>$revision,'actions'=>$actions];
         return ['status'=>$counts['eligible']?'PARTIAL':($counts['no_op']===count($actions)?'COMPLETE':'BLOCKED'),'writes_performed'=>false,'counts'=>$counts,'review'=>$review,'review_hash'=>CompletionData::hash($review)];
     }
-    public function row(array $row,array $s): array
+    public function row(array $row,array $s,array $master=[]): array
     {
         $v=$row['values'];$identity=new ExamIdentity;$owner=$identity->student($row,$s);$student=$owner['student'];$b=$owner['blockers'];
-        $p=$identity->program($v,$s);
+        $p=$identity->sourceProgram($row,$owner,$s,$master);
         // An existing uniquely identified registration may supply a missing source program, never the current/default plan.
-        if(!$p['program_id']&&$student&&CompletionData::text($v['program'])==='') {
+        if(!$p['program_id']&&$student&&CompletionData::text($v['program'])===''&&!($p['evidence_conflict']??false)) {
             $os=array_column($s['course_offerings'],null,'course_offering_id');$cs=array_column($s['courses'],null,'course_id');$ys=array_column($s['academic_years'],null,'academic_year_id');$candidates=[];
             foreach($s['_student_course_registrations'][$student['student_id']]??$s['student_course_registrations'] as $rr)if((int)$rr['student_id']===(int)$student['student_id']) {
                 $oo=$os[$rr['course_offering_id']]??null;$cc=$oo?($cs[$oo['course_id']]??null):null;
@@ -56,7 +57,23 @@ final class ExamProjection
             }
             if(count($candidates)===1) {
                 $pp=collect($s['academic_programs'])->firstWhere('academic_program_id',array_key_first($candidates));
-                $p=$identity->program(array_replace($v,['program'=>$pp['program_name']]),$s);$p['basis']='unique_existing_registration_program_not_student_default';
+                $evidence=$p;$p=$identity->program(array_replace($v,['program'=>$pp['program_name']]),$s);$p['basis']='unique_existing_registration_program_not_student_default';$p['student_master_evidence']=$evidence['student_master_evidence'];
+            }
+        }
+        // Data is supplementary source evidence, never permission to move an already recorded attempt into another program.
+        if($student&&CompletionData::text($v['program'])===''&&$p['basis']==='unique_qualified_student_master') {
+            $contexts=[];$os=array_column($s['course_offerings'],null,'course_offering_id');$cs=array_column($s['courses'],null,'course_id');$ys=array_column($s['academic_years'],null,'academic_year_id');
+            foreach($s['_student_course_registrations'][$student['student_id']]??$s['student_course_registrations'] as $rr)if((int)$rr['student_id']===(int)$student['student_id']) {
+                $oo=$os[$rr['course_offering_id']]??null;$cc=$oo?($cs[$oo['course_id']]??null):null;$pp=$oo?collect($s['academic_programs'])->firstWhere('academic_program_id',$oo['academic_program_id']):null;
+                $approved=$pp?(new \App\Services\CatalogCompletion\FollowupCourseIdentity)->historicalMapping($pp['program_code']??'',preg_replace('/\s+/u','',CompletionData::text($v['code'])),CompletionData::text($v['course']),(int)$v['credits']):null;
+                if($cc&&in_array(preg_replace('/\s+/u','',$cc['course_code']),array_filter([preg_replace('/\s+/u','',CompletionData::text($v['code'])),$approved['system_code']??null]),true)
+                    &&($row['kind']==='undated_supplementary'||CompletionData::year($ys[$oo['academic_year_id']]['year_name'])===CompletionData::year($v['year']??null)))
+                    $contexts[(int)$oo['academic_program_id']][]=['registration_id'=>$rr['student_course_registration_id'],'offering_id'=>$oo['course_offering_id'],'program_id'=>$oo['academic_program_id']];
+            }
+            if(count($contexts)>1){$p['blockers'][]='student_master_existing_registration_context_ambiguous';$p['existing_registration_contexts']=$contexts;}
+            elseif(count($contexts)===1&&(int)array_key_first($contexts)!==(int)$p['program_id']) {
+                $evidence=$p;$pp=collect($s['academic_programs'])->firstWhere('academic_program_id',array_key_first($contexts));$p=$identity->program(array_replace($v,['program'=>$pp['program_name']]),$s);
+                $p['basis']='existing_registration_program_with_conflicting_student_master';$p['student_master_evidence']=$evidence['student_master_evidence'];$p['reviewed_data_program_id']=$evidence['program_id'];$p['existing_registration_contexts']=$contexts;$p['blockers'][]='student_master_existing_registration_context_conflict';
             }
         }
         $b=[...$b,...$p['blockers']];$program=$p['program_id']??null;
@@ -114,34 +131,10 @@ final class ExamProjection
         // Canonical theoretical-only preparation is representable only when the actual policy supports it.
         if(!$components&&$course&&$policy&&(int)($course['theoretical_hours']??0)>0&&(string)($course['practical_hours']??'')==='0'&&self::cents($policy['practical_max_mark'])===0)
             $components=[['grade_component_id'=>'new:theoretical','component_name'=>'الامتحان النظري','component_type'=>'theoretical','max_mark'=>$policy['theoretical_max_mark'],'is_required'=>true,'status'=>'active']];
-        $marks=$reg?array_values(array_filter($s['student_grade_components']??[],fn($x)=>(int)$x['student_course_registration_id']===(int)$reg['student_course_registration_id'])):[];$writes=[];$mapped=[];
-        foreach($components as $component) {
-            $label=CompletionData::text($component['component_name']);$field=match($label){'أعمال السنة','أعمال الفصل','أعمال فصلية','coursework','Coursework'=>'coursework','الامتحان النهائي','الامتحان النظري','Final examination'=>'exam',default=>null};
-            if(!$field||isset($mapped[$field])||!$component['is_required']){$b[]='component_semantics_not_faithfully_representable';continue;}
-            $mapped[$field]=true;$value=self::cents($v[$field]??null);$existing=collect($marks)->firstWhere('grade_component_id',$component['grade_component_id']);
-            if($value===null||$value>self::cents($component['max_mark'])){$b[]='source_mark_missing_symbolic_or_outside_component_limit';continue;}
-            if($existing&&$existing['mark']!==null&&self::cents($existing['mark'])!==$value)$conflict=true;
-            elseif(!$existing||$existing['mark']===null){$writes[]=['key'=>(string)$component['grade_component_id'],'mark'=>sprintf('%d.%02d',intdiv($value,100),$value%100)];if(($component['status']??'active')!=='active')$b[]='component_definition_not_editable';if($existing&&!in_array($existing['grade_status'],[null,'draft','returned'],true))$b[]='existing_component_submission_or_approval_protected';}
-        }
-        if(!$policy)$b[]='grading_policy_missing_or_ambiguous';
-        elseif($components) {
-            $totals=['theoretical'=>0,'practical'=>0];$limits=$totals;$complete=true;
-            foreach($components as $component) {
-                $part=$component['component_type'];if(!array_key_exists($part,$totals)){$b[]='component_type_not_supported_by_grade_parts';$complete=false;continue;}
-                $field=in_array(CompletionData::text($component['component_name']),['أعمال السنة','أعمال الفصل','أعمال فصلية','coursework','Coursework'],true)?'coursework':'exam';$n=self::cents($v[$field]??null);if($n===null)$complete=false;else $totals[$part]+=$n;$limits[$part]+=self::cents($component['max_mark'])??0;
-            }
-            foreach(['theoretical','practical'] as $part)if($limits[$part]!==self::cents($policy[$part.'_max_mark']))$b[]='canonical_grading_policy_incompatible';
-            if($complete) {
-                $failed=array_sum($totals)<self::cents($policy['minimum_final_mark']);foreach($limits as $part=>$max)if($max&&$totals[$part]<self::cents($policy['minimum_'.$part.'_mark']))$failed=true;
-                if($result&&($status['status_code']??null)!==($failed?'failed':'passed'))$conflict=true;
-                if($total!==null&&array_sum($totals)!==$total)$b[]='source_total_not_canonical_component_sum';
-                if(($condition==='F'&&!$failed)||($condition==='T'&&$failed))$b[]='source_outcome_not_representable_by_current_policy';
-            }
-        }
+        $marks=$reg?array_values(array_filter($s['student_grade_components']??[],fn($x)=>(int)$x['student_course_registration_id']===(int)$reg['student_course_registration_id'])):[];
+        $componentMapping=(new ExamComponentMapping)->inspect($v,$components,$marks,$policy,$result);$writes=$componentMapping['proposed_components'];$b=[...$b,...$componentMapping['blockers']];
+        if($componentMapping['conflict']||($result&&$componentMapping['canonical_outcome']!==null&&($status['status_code']??null)!==$componentMapping['canonical_outcome']))$conflict=true;
         if($result&&(bool)($result['is_deprived']??false)!==($sourceStatus==='deprived'))$conflict=true;
-        if($components===[])$b[]='component_definitions_require_canonical_preparation_preview';
-        if($work!==null&&!isset($mapped['coursework']))$b[]='coursework_has_no_explicit_component_mapping';
-        if($exam===null||!isset($mapped['exam']))$b[]='examination_not_representable';
         if(in_array($sourceStatus,['deprived','withdrawn','incomplete'],true)||$condition==='معادلة')$b[]='symbol_requires_existing_authorized_workflow';
         $lifecycle=$reg?array_values(array_filter($s['student_course_incomplete_cases']??[],fn($x)=>(int)$x['student_course_registration_id']===(int)$reg['student_course_registration_id'])):[];
         if($lifecycle)$b[]='incomplete_lifecycle_owned_all_states';
@@ -154,9 +147,8 @@ final class ExamProjection
         usort($approvals,fn($a,$b)=>(int)$b['grade_approval_id']<=>(int)$a['grade_approval_id']);$approval=$approvals[0]??null;
         $official=$approval&&(collect($s['approval_statuses'])->firstWhere('approval_status_id',$approval['approval_status_id'])['status_code']??null)==='approved';
         $parts=$offering?array_values(array_filter($s['grade_part_approvals']??[],fn($x)=>(int)$x['course_offering_id']===(int)$offering['course_offering_id'])):[];
-        if(($writes||!$result)&&($official||collect($parts)->contains(fn($x)=>!in_array($x['status'],['draft','returned'],true))))$b[]='official_or_submitted_result_locked';
-        if($result&&$work!==null&&self::cents($result['coursework_total']??null)!==$work)$conflict=true;
-        if($result&&$exam!==null&&self::cents($result['theoretical_total']??null)!==$exam)$conflict=true;
+        $mutationBlockers=$official||collect($parts)->contains(fn($x)=>!in_array($x['status'],['draft','returned'],true))?['official_or_submitted_result_locked']:[];
+        if(($writes||!$result)&&$mutationBlockers)$b=[...$b,...$mutationBlockers];
         $classification=$row['kind']!=='regular'?'unresolved_period':(!$student?'deferred_identity':($conflict?'existing_value_conflict':(!$course?'unresolved_course':(!$yearId||!$semester?'unresolved_period':($lifecycle?'protected_result':(!$reg?'missing_registration':(!$result?'missing_result':($writes?'missing_component':($official?'existing_equivalent':'pending_approval')))))))));
         if($conflict)$b[]='existing_values_require_separate_correction_review';
         $equivalent=$classification==='existing_equivalent'&&$b===[];
@@ -169,8 +161,8 @@ final class ExamProjection
             if((int)$rr['student_id']===(int)$student['student_id']&&$oo&&(int)$oo['course_id']===(int)$course['course_id'])$parents[]=['registration_id'=>$rr['student_course_registration_id'],'offering_id'=>$oo['course_offering_id'],'academic_year_id'=>$oo['academic_year_id'],'semester_id'=>$oo['semester_id'],'basis'=>'possible_parent_only_not_supplementary_sitting_date'];
         }
         $assignments=$student?array_values(array_filter($s['student_academic_plan_assignments']??[],fn($x)=>(int)$x['student_id']===(int)$student['student_id'])):[];
-        $baseline=['student'=>$student,'course'=>$course,'program_id'=>$program,'other_program_registrations'=>$otherPrograms,'assignments'=>$assignments,'memberships'=>$members,'period'=>$period,'offering'=>$offering,'registration'=>$reg,'result'=>$result,'components'=>$storedComponents,'marks'=>$marks,'approvals'=>$approvals,'parts'=>$parts,'lifecycle'=>$lifecycle,'policy'=>$policy];
-        return ['source_id'=>$row['id'],'source_values'=>$v,'owner'=>$owner,'course_mapping'=>$c['mapping'],'period'=>$period,'interpreted'=>$interpreted,
+        $baseline=['student'=>$student,'course'=>$course,'program_id'=>$program,'program_evidence'=>$p,'other_program_registrations'=>$otherPrograms,'assignments'=>$assignments,'memberships'=>$members,'period'=>$period,'offering'=>$offering,'registration'=>$reg,'result'=>$result,'components'=>$storedComponents,'marks'=>$marks,'approvals'=>$approvals,'parts'=>$parts,'lifecycle'=>$lifecycle,'policy'=>$policy];
+        return ['source_id'=>$row['id'],'source_values'=>$v,'owner'=>$owner,'program_evidence'=>$p,'course_mapping'=>$c['mapping'],'component_mapping'=>$componentMapping,'mutation_blockers'=>$mutationBlockers,'period'=>$period,'interpreted'=>$interpreted,
             'attempt_key'=>$student&&$course&&$yearId?implode('/',[$student['student_id'],$course['course_id'],$yearId,$semester??'unknown']):null,
             'classification'=>$classification,'eligible'=>!$b&&!$equivalent&&($writes!==[]||!$reg),'blockers'=>array_values(array_unique($b)),'possible_parent_contexts'=>$parents,
             'proposed_components'=>$writes,'baseline'=>$baseline,'baseline_hash'=>CompletionData::hash($baseline),'official'=>$official,
