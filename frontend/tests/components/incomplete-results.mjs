@@ -317,3 +317,58 @@ test('a malformed imported read is an error, not an empty successful list, and a
   assert.ok(container.textContent.includes('الوصول غير متاح')); assert.ok(!container.textContent.includes('طالبة'))
   assert.equal(requests.filter(request => request.method !== 'GET').length, 0)
 })
+
+for (const basePath of ['/exam-board/incomplete-results', '/vp/administrative/exams/incomplete-results']) {
+  const viewer = basePath.startsWith('/vp/') ? { roles: ['vice_president_administrative'], permissions: ['vice_presidency.administrative.access', 'exams.manage', 'grades.manage', 'students.view'], access_scopes: [{ type: 'university' }], administrative_offices: { role: 'vice_president_administrative', offices: ['735'], operator_roles: { exam_officer: '735' } } } : officer
+  test(`recorded aggregate correction details retain source groups without fictional activities at ${basePath}`, async () => {
+    const detail = { ...importedDetail(), kind: 'correction_review',
+      guidance: { correction_proposal: 'historical_source_aggregates', missing_activity_marks: false, unproven_examination_evidence: false },
+      required_next_action: 'PRIVATE_INTERNAL_ACTION', blockers: ['private_blocker'],
+      assessment_groups: { coursework: { source_value: '30', components: [], missing_component_ids: [], breakdown_complete: false }, exam: { source_value: '50', components: [], missing_component_ids: [], breakdown_complete: false } } }
+    api(request => ({ data: request.path.endsWith(importedId) ? detail : importedList() }))
+    const context = 'view=imported&student_id=1&academic_year_id=1&semester_id=2&kind=correction_review&page=3'
+    await mount(`${basePath}?${context}&work=${importedId}`, viewer)
+    assert.ok(container.textContent.includes('مجموعا أعمال الفصل والامتحان النهائي'))
+    assert.ok(container.textContent.includes('مراجعة مخوّلة جديدة ثم اعتماد صريح منفصل'))
+    assert.ok(container.textContent.includes('الاستعراض لا يغيّر النتيجة الحالية'))
+    assert.ok(container.textContent.includes('مجموع مصدري محفوظ دون تعريف أنشطة تفصيلية'))
+    assert.ok(container.textContent.includes('30')); assert.ok(container.textContent.includes('50'))
+    assert.ok(!container.textContent.includes('التفاصيل المطلوبة'))
+    assert.ok(!container.textContent.includes('تعريف التفاصيل غير متاح'))
+    assert.ok(!container.textContent.includes('دليل الامتحان غير مكتمل'))
+    assert.ok(!container.textContent.includes('PRIVATE_INTERNAL_ACTION')); assert.ok(!container.textContent.includes('private_blocker'))
+    assert.equal(nodes('button').some(node => /اعتماد|تثبيت/.test(node.textContent)), false)
+    assert.equal(named(container, 'a', 'فتح الإدخال اليدوي للطالب — اختر المقرر والفترة المسجلين')[0].getAttribute('href'), `${basePath.replace('/incomplete-results', '/manual-grade-entry')}/students/1`)
+    await click('قراءة البيانات الحالية'); assert.ok(container.textContent.includes('مراجعة مخوّلة جديدة'))
+    await click('العودة إلى العمل المستورد', 'a')
+    assert.equal(router.state.location.pathname, basePath)
+    for (const [key, value] of new URLSearchParams(context)) assert.equal(new URLSearchParams(router.state.location.search).get(key), value)
+    assert.equal(requests.filter(request => request.method !== 'GET').length, 0)
+  })
+
+  test(`ordinary correction, actual gaps, adopted, absence and ungraded details remain distinct at ${basePath}`, async () => {
+    let detail
+    api(() => ({ data: detail }))
+    const cases = [
+      { kind: 'correction_review', guidance: { correction_proposal: 'component_assessments' }, expected: 'مقترح تصحيح نتيجة' },
+      { kind: 'aggregate_incomplete_followup', guidance: { missing_activity_marks: true }, expected: 'علامات أنشطة فعلية غائبة' },
+      { kind: 'aggregate_incomplete_followup', guidance: { unproven_examination_evidence: true }, expected: 'دليل الامتحان النهائي غير مثبت' },
+      { adopted: true, expected: 'التعديل العادي مقفل' },
+      { kind: 'final_absence_review', expected: 'لا تُفترض علامة صفر' },
+      { kind: 'ungraded_followup', expected: 'هذه ليست منحة I' },
+    ]
+    for (const [index, { expected, ...state }] of cases.entries()) {
+      detail = { ...importedDetail(), ...state }
+      if (state.guidance?.correction_proposal === 'component_assessments') detail = { ...detail, is_official: true, current_result: { final_mark: 50 }, assessment_groups: {
+        coursework: { source_value: '30', missing_component_ids: [], components: [{ grade_component_id: 2, component_name: 'أعمال الفصل', max_cents: 4000, stored_mark: { mark: 30 } }] },
+        exam: { source_value: '50', missing_component_ids: [], components: [{ grade_component_id: 1, component_name: 'الامتحان النهائي', max_cents: 6000, stored_mark: { mark: 20 } }] },
+      } }
+      if (state.guidance?.missing_activity_marks) detail.assessment_groups.coursework = { source_value: '30', missing_component_ids: [7], components: [{ grade_component_id: 7, component_name: 'نشاط فعلي', max_cents: 2000, stored_mark: null }] }
+      if (index === 0) await mount(`${basePath}?view=imported&work=${importedId}&student_id=1`, viewer)
+      else await click('قراءة البيانات الحالية')
+      assert.ok(container.textContent.includes(expected), expected)
+      if (state.guidance?.missing_activity_marks) assert.ok(container.textContent.includes('نشاط فعلي'))
+    }
+    assert.equal(requests.filter(request => request.method !== 'GET').length, 0)
+  })
+}

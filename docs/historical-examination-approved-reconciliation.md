@@ -323,3 +323,46 @@ Early MariaDB execution correctly rejected an unsupported new work-kind value; i
 The permitted browser was retried: inventory `{"apps":[],"browsers":[]}`, then `Browser is not available: iab`. No bypass was used. **Live React with isolated Laravel, both portal contexts, 390/768/1440px reference comparison, and actual PDF generation/download/opening remain pending.** Workbook renderings are spreadsheet QA, not application screenshots.
 
 The updated encrypted PR delivery adds `reconciliation-v5-08.json`, `approved-exam-review-v5-08.xlsx`, the full fresh projection and typed row data, exact before/proposal/after case evidence, remaining blocker/context diagnostics, final verification ledger/logs, synthetic MariaDB evidence and reproduction helpers. All original v4 delivery assets, source/decision pins and issued hashes remain available. The new archive and a **freshly named** inventory are appended to the same unpublished draft carrier; no plaintext identifying report or decryption key is committed/uploaded publicly.
+
+## Guidance-only review follow-up (2026-10-19)
+
+Reviewed base: `4bee3d1aff00b3197bf61b06efe2310fad77bb17`. The final follow-up SHA is recorded in PR #179 and its separately named guidance verification evidence. No population reconciliation, source preparation, staging or university-data application was run for this follow-up. All **16,461** observations retain their existing classifications and deliverables. The unchanged immutable bundle still has SHA-256 `4053a7f87291e7e1f104b89c9e9f75a15dcec97bead486061757f22e36b01fae`.
+
+### Read contract and Arabic presentation
+
+The historical-work details GET now adds a private, authorized `guidance` object derived only from the immutable stored action. It performs no correction review, creates no evidence and changes no result. It adds no query or scope/permission requirement. It is **not** a current readiness or approval indicator.
+
+| Field | Meaning |
+| --- | --- |
+| `correction_proposal: historical_source_aggregates` | Stored historical-aggregate classification, no recorded blockers, and the recorded assessment exactly matches the existing pure aggregate inspector using its recorded source values and baseline. The technical `correction_review` work kind alone is insufficient. |
+| `correction_proposal: component_assessments` | Stored ordinary correction classification with a complete recorded component mapping and expected totals. |
+| `correction_proposal: null` | Neither representation has been established by that stored evidence. No missing fictional activity is inferred from the absence of definitions. |
+| `missing_activity_marks` | A real, explicitly mapped assessed activity occurs among the recorded missing component IDs. A missing definition is not an activity. |
+| `unproven_examination_evidence` | The observed examination aggregate is missing/unproven, excluding ordinary ungraded work and established final absence. |
+
+Adopted, final-absence and ordinary-ungraded instructions retain priority. Actual gaps receive separate Arabic activity/examination instructions; neither internal blockers nor the English `required_next_action` are rendered as instructions. Unknown/older presentation data receives a conservative context/evidence-review message, not a claim of approval or a request for fabricated activities.
+
+Complete historical-aggregate proposals now display:
+
+> مجموعا أعمال الفصل والامتحان النهائي المرصودان في المصدر محفوظان في مقترح تصحيح تاريخي، دون اختلاق علامات أنشطة. يلزم إجراء مراجعة مخوّلة جديدة ثم اعتماد صريح منفصل. الاستعراض لا يغيّر النتيجة الحالية، وحفظ المقترح لا يعني اعتماده.
+
+Ordinary correction proposals display:
+
+> مقترح تصحيح نتيجة محفوظ للمراجعة؛ يلزم إجراء مراجعة مخوّلة جديدة ثم اعتماد صريح منفصل. الاستعراض لا يغيّر النتيجة الحالية، وحفظ المقترح لا يعني اعتماده.
+
+The existing details table now labels its column **التقييمات المسجلة**. Supported no-definition aggregate rows say **مجموع مصدري محفوظ دون تعريف أنشطة تفصيلية؛ لا يلزم اختلاق علامات أنشطة.** Actual component names/marks, missing marks and source zeros remain visible. There is no adoption button or new mutation endpoint. Existing `IncompleteResultsPage.jsx`, `RegistrationGridRow.jsx` controls and `DataTable` remain the references/components; no layout, global styles or portal navigation were redesigned.
+
+### Actual focused and affected verification
+
+| Check | Result |
+| --- | --- |
+| Pre-fix reproduction | Existing presentation produced the wrong missing-evidence fallback: the new two guidance tests and four real ReactDOM/router synthetic-component regressions failed (**35/41 passed, 6 failed**). |
+| Laravel/service/HTTP historical suites | **230 tests, 6,828 assertions passed** across `HistoricalExamCompletionTest.php`, `ApprovedHistoricalExamReconciliationTest.php` and `HistoricalExamCatalogCreditTest.php`. Includes the actual details projection/HTTP response, all six evidence states, malformed recorded aggregate evidence, adopted detail, authorization/read-only coverage, unchanged result snapshots/approvals/work/bundle, and existing review/adoption/replay protections. |
+| Node and ReactDOM/router affected suites | **87 passed**, including both Exam Affairs and administrative VP routes, VP office identity, direct details, filter/page return context, manual-entry link context, no mutation requests, no raw internal instruction display, actual gap messages and existing uncertain-I recovery. Synthetic responses and a no-layout DOM do not prove live browser integration. |
+| Modified-file ESLint | Passed for both application files and both modified Node/component test files; no diagnostics. |
+| PHP syntax / Composer / diff | Both modified PHP files passed; `composer validate --strict --no-check-publish`, `composer check-platform-reqs` and `git diff --check` passed. |
+| Frontend production build | Passed, Vite **8.0.16**, **989** modules. The existing >500kB chunk-size warning remains; no new dependency or asset change. |
+
+Runtime: PHP **8.4.14**, PHPUnit **12.5.30**, Node **24.11.0**, PDO SQLite **3.49.2** with synthetic in-memory fixtures. These selected suites have no inherited failures; broader inherited diagnostics documented above were not rerun or represented as fixed. No MariaDB/concurrency rerun was performed for this read/presentation-only change; the earlier isolated MariaDB evidence remains separate and unchanged.
+
+The permitted browser inventory was retried and returned `{"apps":[],"browsers":[]}`. **Live React + isolated Laravel verification, 390/768/1440px desktop/mobile visual comparison, and actual PDF download/opening remain unexecuted.** No browser-policy bypass, production connection, SQL/migration, mark/selection/policy/credit change, permission change or real-data application occurred. Keep PR #179 Draft, open, unmerged and undeployed.

@@ -49,6 +49,65 @@ class ApprovedHistoricalExamReconciliationTest extends HistoricalExamCompletionT
         DB::table('grade_approvals')->insert(['course_offering_id'=>1,'approval_status_id'=>1]);
     }
 
+    public static function workGuidanceCases(): array
+    {
+        return [
+            'historical aggregates'=>['aggregate','historical_source_aggregates',false,false,'correction_review'],
+            'ordinary correction'=>['ordinary','component_assessments',false,false,'correction_review'],
+            'real missing activities'=>['activities',null,true,false,'aggregate_incomplete_followup'],
+            'unproven examination'=>['examination',null,false,true,'aggregate_incomplete_followup'],
+            'final absence'=>['absence',null,false,false,'final_absence_review'],
+            'ordinary ungraded'=>['ungraded',null,false,false,'ungraded_followup'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('workGuidanceCases')]
+    public function test_historical_approved_work_guidance_uses_the_actual_read_projection_without_mutation(string $scenario,?string $proposal,bool $activities,bool $examination,string $kind): void
+    {
+        if($scenario==='aggregate') {
+            DB::table('grade_components')->delete();DB::table('grade_approvals')->insert(['course_offering_id'=>1,'approval_status_id'=>1]);
+        } elseif($scenario==='ordinary') $this->official50();
+        elseif($scenario==='activities') {
+            DB::table('grade_components')->where('grade_component_id',2)->update(['component_name'=>'Quiz','max_mark'=>20]);
+            DB::table('grade_components')->insert(['course_offering_id'=>1,'component_name'=>'Assignments','component_type'=>'practical','max_mark'=>20,'weight_percentage'=>20,'is_required'=>true,'status'=>'active']);
+        }
+        $values=match($scenario) {
+            'examination'=>['coursework'=>'20','exam'=>'-','total'=>'70','condition'=>'F'],
+            'absence'=>['coursework'=>'20','exam'=>'-','total'=>'-','condition'=>'F'],
+            'ungraded'=>['coursework'=>'-','exam'=>'-','total'=>'-','condition'=>'غير مكتمل'],default=>[],
+        };
+        $bundle=$this->approvedBundle($values);$result=$this->approvedApply($bundle,$this->approvedPreview($bundle));
+        $work=collect($result['actions'])->firstWhere('status','STAGED_PENDING_REVIEW');self::assertNotNull($work);
+        $bundlePath=$bundle['inputs']['handoff']['path'].'/bundle.json';$bundleHash=hash_file('sha256',$bundlePath);
+        $before=HistoricalOutcomeGuard::snapshot(1);$stored=DB::table(HistoricalExamSchema::WORK)->get()->toJson();
+        $approvals=DB::table('grade_approvals')->get()->toJson();$queries=[];DB::listen(function($q)use(&$queries){$queries[]=$q->sql;});
+        $expected=['correction_proposal'=>$proposal,'missing_activity_marks'=>$activities,'unproven_examination_evidence'=>$examination];
+        $detail=app(HistoricalExamWorkService::class)->details(User::findOrFail(1),$work['work_item_id']);
+        self::assertSame($expected,$detail['guidance']);self::assertSame($kind,$detail['kind']);self::assertFalse($detail['adopted']);
+        $this->getJson('/api/v1/exams/historical-work/'.$work['work_item_id'])->assertOk()->assertJsonPath('data.guidance',$expected)
+            ->assertJsonPath('data.capabilities.can_adopt_from_this_read',false);
+        foreach($queries as $sql)self::assertDoesNotMatchRegularExpression('/for update|^\s*(insert|update|delete|create|alter|drop)\b/i',$sql);
+        self::assertSame($before,HistoricalOutcomeGuard::snapshot(1));self::assertSame($stored,DB::table(HistoricalExamSchema::WORK)->get()->toJson());
+        self::assertSame($approvals,DB::table('grade_approvals')->get()->toJson());
+        self::assertSame(0,DB::table(HistoricalExamSchema::OUTCOMES)->count());
+        self::assertSame($bundleHash,hash_file('sha256',$bundlePath));
+    }
+
+    public function test_historical_approved_work_kind_alone_does_not_certify_aggregate_evidence(): void
+    {
+        DB::table('grade_components')->delete();DB::table('grade_approvals')->insert(['course_offering_id'=>1,'approval_status_id'=>1]);
+        $bundle=$this->approvedBundle();$this->approvedApply($bundle,$this->approvedPreview($bundle));
+        $work=DB::table(HistoricalExamSchema::WORK)->first();$proposal=json_decode($work->proposal,true,flags:JSON_THROW_ON_ERROR);
+        self::assertSame('correction_review',$work->kind);
+        // Insert a distinct malformed synthetic read fixture; append-only records are never updated.
+        $proposal['action']['historical_assessment']['coursework_cents']=3100;
+        $id=(string)Str::uuid();DB::table(HistoricalExamSchema::WORK)->insert(array_replace((array)$work,[
+            'work_item_id'=>$id,'action_id'=>hash('sha256','synthetic-incomplete-proposal'),'proposal'=>json_encode($proposal,JSON_THROW_ON_ERROR)]));
+        $detail=app(HistoricalExamWorkService::class)->details(User::findOrFail(1),$id);
+        self::assertNull($detail['guidance']['correction_proposal']);self::assertFalse($detail['guidance']['missing_activity_marks']);
+        self::assertFalse($detail['capabilities']['can_adopt_from_this_read']);
+    }
+
     public static function equivalentAggregateCases(): array
     {
         return ['selected-58'=>[32,26,58], 'selected-72'=>[34,38,72], 'sequence-50'=>[29,21,50],
@@ -90,6 +149,8 @@ class ApprovedHistoricalExamReconciliationTest extends HistoricalExamCompletionT
         self::assertNull($review['review']['proposal']['result']['theoretical_total']);
         $approval=DB::table('grade_approvals')->get()->toJson();
         $service->adopt($actor,$bundle,$review['review'],$review['review_hash'],$request,$review['review']['revision'],'Synthetic aggregate evidence reviewed');
+        $detail=$service->details($actor,$work['work_item_id']);self::assertTrue($detail['adopted']);
+        self::assertSame('historical_source_aggregates',$detail['guidance']['correction_proposal']);self::assertFalse($detail['capabilities']['can_adopt_from_this_read']);
         self::assertSame(0,DB::table('grade_components')->count());self::assertSame(0,DB::table('student_grade_components')->count());
         self::assertNull(DB::table('student_course_results')->value('theoretical_total'));self::assertNull(DB::table('student_course_results')->value('practical_total'));
         self::assertNull(DB::table('student_course_results')->value('result_announced_at'));self::assertSame($approval,DB::table('grade_approvals')->get()->toJson());

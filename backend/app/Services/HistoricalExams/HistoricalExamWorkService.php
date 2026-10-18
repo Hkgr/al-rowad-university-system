@@ -94,6 +94,7 @@ final class HistoricalExamWorkService
             $current=$work->student_course_registration_id?app(\App\Services\GradePartWorkflowService::class)->manualSnapshots(collect([StudentCourseRegistration::findOrFail($work->student_course_registration_id)]))->first():null;
             return ['work_item_id'=>$id,'kind'=>$work->kind,'source_reference'=>$work->source_reference,'source_values'=>$a['source_values'],
                 'assessment_groups'=>$a['component_mapping']['groups'],'absence_evidence'=>$a['absence_evidence'],'effective_final_absence'=>$a['effective_final_absence'],'ordinary_ungraded'=>$a['ordinary_ungraded'],
+                'guidance'=>$this->guidance($a),
                 'student'=>array_intersect_key($a['baseline']['student'],array_flip(['student_id','student_number','first_name','last_name'])),
                 'course'=>array_intersect_key($a['baseline']['course'],array_flip(['course_id','course_code','course_name'])),
                 'period'=>$a['period']+['year_name'=>DB::table('academic_years')->where('academic_year_id',$work->academic_year_id)->value('year_name'),
@@ -104,6 +105,24 @@ final class HistoricalExamWorkService
                 'current_result'=>$work->student_course_registration_id?StudentCourseRegistration::with('studentCourseResult.resultStatus')->findOrFail($work->student_course_registration_id)->studentCourseResult?->only(['final_mark','result_status_id','result_announced_at']):null,
                 'is_official'=>$work->student_course_registration_id?app(GradeService::class)->isOfficiallyVisibleAttempt(StudentCourseRegistration::with('studentCourseResult','courseOffering')->findOrFail($work->student_course_registration_id)):false];
         });
+    }
+
+    /** Describe recorded evidence only. This is not a fresh correction review or permission to adopt. */
+    private function guidance(array $a): array
+    {
+        $mapping=$a['component_mapping'];$proposal=null;
+        if(($a['classification']??null)==='historical_aggregate_review' && ($a['blockers']??null)===[] && is_array($a['historical_assessment']??null)) {
+            $recorded=\App\Support\HistoricalAggregateAssessment::inspect($a['reconciled_values'],$a['baseline']);
+            if(!$recorded['blockers'] && hash_equals(CompletionData::hash($recorded),CompletionData::hash($a['historical_assessment']))) $proposal='historical_source_aggregates';
+        } elseif(($a['classification']??null)==='correction_review' && ($mapping['complete']??false)===true && !empty($mapping['expected_aggregates'])) $proposal='component_assessments';
+        $missingActivities=false;
+        foreach($mapping['groups'] as $group) foreach($group['components'] as $component) {
+            if(($component['academic_role']??null)==='assessed_activity_not_inferred_from_technical_part'
+                && in_array($component['grade_component_id'],$group['missing_component_ids'],true)) $missingActivities=true;
+        }
+        $unprovenExam=!$a['effective_final_absence'] && !$a['ordinary_ungraded']
+            && (($mapping['groups']['exam']['source_aggregate_cents']??null)===null || in_array('combined_outcome_exam_evidence_unproven',$a['blockers'],true));
+        return ['correction_proposal'=>$proposal,'missing_activity_marks'=>$missingActivities,'unproven_examination_evidence'=>$unprovenExam];
     }
 
     public function reviewCorrection(User $actor,array $bundle,string $id): array
