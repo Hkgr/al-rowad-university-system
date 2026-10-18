@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { createBrowserRouter, createRoutesFromElements, RouterProvider, Route, Navigate } from 'react-router-dom'
 
 import DashboardLayout from '../components/layout/DashboardLayout'
+import PortalReportsPage from '../features/portal-reports/PortalReportsPage'
+import { reportAccess, REPORT_PATHS } from '../features/portal-reports/reports'
 
 // ── Auth ────────────────────────────────────────────────────────────────────
 import LoginPage from '../features/auth/pages/LoginPage'
 import ForbiddenPage from '../features/auth/pages/ForbiddenPage'
-import { ACCESS, canAccess, clearIdentity, getIdentity, landingRoute, storeIdentity } from '../features/auth/auth'
+import { ACCESS, PERMISSIONS, ROLES, canAccess, clearIdentity, getIdentity, landingRoute, storeIdentity } from '../features/auth/auth'
 
 // ── شؤون الطلاب (Student Affairs) ──────────────────────────────────────────
-import studentAffairsNav    from '../features/student-affairs/nav'
+import studentAffairsNav from '../features/student-affairs/nav'
 import StudentAffairsHome   from '../features/student-affairs/pages/StudentAffairsHome'
 import StudentsPage         from '../features/student-affairs/pages/StudentsPage'
 import AddStudentPage       from '../features/student-affairs/pages/AddStudentPage'
@@ -17,14 +19,20 @@ import EditStudentPage      from '../features/student-affairs/pages/EditStudentP
 import StudentProfilePage   from '../features/student-affairs/pages/StudentProfilePage'
 import ArchivedStudentsPage from '../features/student-affairs/pages/ArchivedStudentsPage'
 import GraduatesPage       from '../features/student-affairs/pages/GraduatesPage'
+import SupplementaryExamRegistrations from '../features/student-affairs/pages/SupplementaryExamRegistrations'
+import MinistryPlacementsPage from '../features/student-affairs/pages/MinistryPlacementsPage'
 
 // ── بوابة الطالب (Student Dashboard) ────────────────────────────────────────
 import studentNav        from '../features/student-dashboard/nav'
 import StudentHome         from '../features/student-dashboard/pages/StudentHome'
+import StudentUniversityEmail from '../features/student-dashboard/pages/StudentUniversityEmail'
 import StudentTranscript  from '../features/student-dashboard/pages/StudentTranscript'
 import StudentGPA         from '../features/student-dashboard/pages/StudentGPA'
 import StudentAttendance  from '../features/student-dashboard/pages/StudentAttendance'
 import StudentRegistration from '../features/student-dashboard/pages/StudentRegistration'
+import StudentCalendar from '../features/student-dashboard/pages/StudentCalendar'
+import StudentRequirements from '../features/student-dashboard/pages/StudentRequirements'
+import StudentSupplementaryExams from '../features/student-dashboard/pages/StudentSupplementaryExams'
 
 // ── الموارد البشرية (HR) ────────────────────────────────────────────────────
 import hrNav                from '../features/hr-dashboard/nav'
@@ -46,7 +54,10 @@ import ProgramsPage          from '../features/academic-structure/pages/Programs
 import examBoardNav      from '../features/exam-board/nav'
 import ExamBoardHome     from '../features/exam-board/pages/ExamBoardHome'
 import GradeSheetPage    from '../features/exam-board/pages/GradeSheetPage'
-import GradeEntryPage    from '../features/exam-board/pages/GradeEntryPage'
+import ManualGradeEntryPage from '../features/exam-board/pages/ManualGradeEntryPage'
+import StudentManualGradePage from '../features/exam-board/pages/StudentManualGradePage'
+import IncompleteResultsPage from '../features/exam-board/pages/IncompleteResultsPage'
+import ExamStudentAcademicRecordPage from '../features/exam-board/pages/ExamStudentAcademicRecordPage'
 import ApprovalsPage     from '../features/exam-board/pages/ApprovalsPage'
 import DeprivationPage        from '../features/exam-board/pages/DeprivationPage'
 import CoursesPage            from '../features/exam-board/pages/CoursesPage'
@@ -54,18 +65,104 @@ import CourseRegistrationPage from '../features/exam-board/pages/CourseRegistrat
 import CourseOfferingsPage    from '../features/exam-board/pages/CourseOfferingsPage'
 import CourseTablePage        from '../features/exam-board/pages/CourseTablePage'
 import ExamPlaceholder        from '../features/exam-board/pages/ExamPlaceholder'
+import SupplementaryExamsPage from '../features/exam-board/pages/SupplementaryExamsPage'
+import ApprovedRegistrationRequestsPage from '../features/registration-requests/pages/ApprovedRegistrationRequestsPage'
 
 // ── بوابة الأستاذ (Professor Dashboard) ─────────────────────────────────────
 import professorNav             from '../features/professor-dashboard/nav'
 import ProfessorHome            from '../features/professor-dashboard/pages/ProfessorHome'
 import AttendanceDeprivationPage from '../features/professor-dashboard/pages/AttendanceDeprivationPage'
+import ProfessorGradesPage       from '../features/professor-dashboard/pages/ProfessorGradesPage'
+import ProfessorSupplementaryExams from '../features/professor-dashboard/pages/ProfessorSupplementaryExams'
+import SupplementaryGradesPage from '../features/exam-board/pages/SupplementaryGradesPage'
 
-import deanNav from '../features/dean-portal/nav'
 import DeanOfferingsPage from '../features/dean-portal/pages/DeanOfferingsPage'
-import vicePresidentNav from '../features/vice-president-portal/nav'
 import VicePresidentOfferingsPage from '../features/vice-president-portal/pages/VicePresidentOfferingsPage'
 
-function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [] }) {
+// ── بوابة عميد الكلية (Dean Dashboard) ─────────────────────────────────────
+import DeanLayout          from '../features/dean-dashboard/DeanLayout'
+import DeanHome            from '../features/dean-dashboard/pages/DeanHome'
+import DeanStudents        from '../features/dean-dashboard/pages/DeanStudents'
+import DeanStudentProfile  from '../features/dean-dashboard/pages/DeanStudentProfile'
+import DeanTeachers        from '../features/dean-dashboard/pages/DeanTeachers'
+import DeanTeacherProfile  from '../features/dean-dashboard/pages/DeanTeacherProfile'
+import DeanCourses         from '../features/dean-dashboard/pages/DeanCourses'
+import DeanCourseOfferingProfile from '../features/dean-dashboard/pages/DeanCourseOfferingProfile'
+import DeanRegistrationOfferings from '../features/dean-dashboard/pages/DeanRegistrationOfferings'
+import DeanSupplementaryExams from '../features/dean-dashboard/pages/DeanSupplementaryExams'
+import DeanRegistrationRequests from '../features/dean-dashboard/pages/DeanRegistrationRequests'
+import DeanRegistrationRequestDetail from '../features/dean-dashboard/pages/DeanRegistrationRequestDetail'
+import DeanRegistrationModificationDetail from '../features/dean-dashboard/pages/DeanRegistrationModificationDetail'
+import DeanRegistrationReplacementDetail from '../features/dean-dashboard/pages/DeanRegistrationReplacementDetail'
+import DeanReports         from '../features/dean-dashboard/pages/DeanReports'
+import DeanCalendar        from '../features/dean-dashboard/pages/DeanCalendar'
+import AcademicCalendarPage from '../features/academic-calendar/AcademicCalendarPage'
+
+// ── نيابة رئاسة الجامعة (Vice Presidency shells) ───────────────────────────
+import { administrativeVicePresidentNav, scientificVicePresidentNav } from '../features/vice-presidency/nav'
+import AdministrativeNavigation from '../features/vice-presidency/components/AdministrativeNavigation'
+import ScientificNavigation from '../features/vice-presidency/components/ScientificNavigation'
+import { ADMINISTRATIVE_OFFICE_ACCESS } from '../features/vice-presidency/utils/administrativeOfficePaths'
+import VicePresidentShell from '../features/vice-presidency/pages/VicePresidentShell'
+import TeachingAssignmentQueue from '../features/vice-presidency/pages/TeachingAssignmentQueue'
+import TeachingAssignmentDetail from '../features/vice-presidency/pages/TeachingAssignmentDetail'
+import AdministrativeFacultyPage from '../features/vice-presidency/pages/AdministrativeFacultyPage'
+import AdministrativeDeansPage from '../features/vice-presidency/pages/AdministrativeDeansPage'
+import { ADMINISTRATIVE_ACCESS } from '../features/vice-presidency/utils/administrativeAccess'
+import ExceptionalOpeningQueue from '../features/vice-presidency/pages/ExceptionalOpeningQueue'
+import ExceptionalOpeningDetail from '../features/vice-presidency/pages/ExceptionalOpeningDetail'
+import SupplementaryExamPeriodsPage from '../features/vice-presidency/pages/SupplementaryExamPeriods'
+import SemesterOfferingQueue from '../features/vice-presidency/pages/SemesterOfferingQueue'
+import AcademicEntitiesPage, { LegacyAcademicEntityRoute } from '../features/scientific-programs/AcademicEntitiesPage'
+import { WORKSPACE_ACCESS } from '../features/scientific-programs/workspace'
+import { CATALOG_ACCESS } from '../features/scientific-courses/catalog'
+import { PROGRAM_ACCESS } from '../features/scientific-programs/programs'
+import MinimumEnrollmentQueue from '../features/vice-presidency/pages/MinimumEnrollmentQueue'
+import SemesterOfferingDetail from '../features/vice-presidency/pages/SemesterOfferingDetail'
+import ExecutiveReportsPage from '../features/executive-reports/pages/ExecutiveReportsPage'
+import { reportAccessForOffice } from '../features/executive-reports/access'
+
+// ── المكتب التقني (Technical Office portal) ────────────────────────────────
+import technicalNav from '../features/technical-portal/nav'
+import TechnicalHome from '../features/technical-portal/pages/TechnicalHome'
+import UniversityEmailPage from '../features/technical-portal/pages/UniversityEmailPage'
+import AccountsPermissionsPage from '../features/technical-portal/pages/AccountsPermissionsPage'
+import ActivityLogPage from '../features/technical-portal/pages/ActivityLogPage'
+
+// ── وزارة التربية والتعليم (read-only ministry portal) ─────────────────────
+import ministryNav from '../features/ministry-portal/nav'
+import MinistryHome from '../features/ministry-portal/pages/MinistryHome'
+import MinistryDeans from '../features/ministry-portal/pages/MinistryDeans'
+import MinistryDeanDetail from '../features/ministry-portal/pages/MinistryDeanDetail'
+import MinistryStudents from '../features/ministry-portal/pages/MinistryStudents'
+import MinistryStudentDetail from '../features/ministry-portal/pages/MinistryStudentDetail'
+import MinistryColleges from '../features/ministry-portal/pages/MinistryColleges'
+import MinistryCollegeDetail from '../features/ministry-portal/pages/MinistryCollegeDetail'
+import MinistryCourses from '../features/ministry-portal/pages/MinistryCourses'
+import MinistryCourseDetail from '../features/ministry-portal/pages/MinistryCourseDetail'
+import MinistryFaculty from '../features/ministry-portal/pages/MinistryFaculty'
+import MinistryFacultyDetail from '../features/ministry-portal/pages/MinistryFacultyDetail'
+import MinistryLeadership from '../features/ministry-portal/pages/MinistryLeadership'
+import MinistryUnitDetail from '../features/ministry-portal/pages/MinistryUnitDetail'
+import presidentNav from '../features/president-portal/nav'
+import { presidentAccess, RESOURCES as presidentResources } from '../features/president-portal/president'
+import { PresidentHome, PresidentList, PresidentDetail, PresidentFollowup } from '../features/president-portal/PresidentPages'
+
+// ── بوابة مالك الجامعة (الرئيسية + الرواتب) ─────────────────────────────────
+import ownerNav from '../features/owner-portal/nav'
+import OwnerHome from '../features/owner-portal/pages/OwnerHome'
+import OwnerPayroll from '../features/owner-portal/pages/OwnerPayroll'
+import HrOfficePage from '../features/hr-office/pages/HrOfficePage'
+import WorkerFilePage from '../features/hr-office/pages/WorkerFilePage'
+import AdministrativePayroll from '../features/hr-office/pages/AdministrativePayroll'
+import { HR, hrAccess, payrollAccess } from '../features/hr-office/lib/hrOffice'
+
+// ── دليل الاستخدام (per-portal user guides) ─────────────────────────────────
+import UserGuidePage from '../features/user-guide/UserGuidePage'
+import GuideLayout from '../features/user-guide/GuideLayout'
+import { GUIDE_ACCESS } from '../features/user-guide/guideAccess'
+
+function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], actualUniversityScope = false, actualAcademicScope = false, studentIdentity = false, employeeIdentity = false, anyAccess = [] }) {
   const token = localStorage.getItem('token')
   const [identity, setIdentity] = useState(getIdentity())
   const [checking, setChecking] = useState(Boolean(token))
@@ -88,21 +185,29 @@ function ProtectedRoute({ children, permissions = [], allPermissions = [], roles
   if (!token) return <Navigate to="/login" replace />
   if (checking) return null
   if (!identity) return <Navigate to="/login" replace />
-  return canAccess({ permissions, allPermissions, roles }, identity) ? children : <Navigate to="/forbidden" replace />
+  const allowed = canAccess({ permissions, allPermissions, roles, allRoles, assignedPermissions, actualUniversityScope, actualAcademicScope, studentIdentity, employeeIdentity, anyAccess }, identity)
+  return allowed ? children : <Navigate to="/forbidden" replace />
 }
 
 const protect = (element, access) => <ProtectedRoute {...access}>{element}</ProtectedRoute>
 
-export default function App() {
-  return (
-    <BrowserRouter>
-      <Routes>
+// A data router enables useBlocker for SPA PUSH/REPLACE/POP navigation.
+// The existing route tree and every ProtectedRoute policy stay unchanged.
+const router = createBrowserRouter(createRoutesFromElements(
+      <>
 
         {/* Public */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/forbidden" element={<ForbiddenPage />} />
 
         {/* ── شؤون الطلاب dashboard ── */}
+        <Route element={<ProtectedRoute {...ACCESS.manualGradeEntry}><DashboardLayout nav={examBoardNav} appTitle="هيئة الامتحانات" /></ProtectedRoute>}>
+          <Route path="/exam-board/manual-grade-entry" element={<ManualGradeEntryPage />} />
+          <Route path="/exam-board/incomplete-results" element={<IncompleteResultsPage />} />
+          <Route path="/exam-board/incomplete-results/:caseId" element={<IncompleteResultsPage />} />
+          <Route path="/exam-board/incomplete-results/registrations/:registrationId" element={<IncompleteResultsPage />} />
+          <Route path="/exam-board/manual-grade-entry/students/:studentId" element={<StudentManualGradePage />} />
+        </Route>
         <Route
           element={
             <ProtectedRoute permissions={['students.view']}>
@@ -112,17 +217,46 @@ export default function App() {
         >
           <Route path="/student-affairs"                   element={<StudentAffairsHome />}   />
           <Route path="/student-affairs/students"          element={<StudentsPage />}          />
-          <Route path="/student-affairs/students/add"      element={protect(<AddStudentPage />, { permissions: ['students.manage'], roles: ['registration_officer'] })} />
-          <Route path="/student-affairs/students/archived" element={protect(<ArchivedStudentsPage />, { permissions: ['students.manage'], roles: ['registration_officer'] })} />
+          <Route path="/student-affairs/students/archived" element={protect(<ArchivedStudentsPage />, { permissions: ['students.manage'] })} />
           <Route path="/student-affairs/graduates"         element={<GraduatesPage />}         />
           <Route path="/student-affairs/students/:id"      element={<StudentProfilePage />}    />
-          <Route path="/student-affairs/students/:id/edit" element={protect(<EditStudentPage />, { permissions: ['students.manage'], roles: ['registration_officer'] })} />
+          <Route path="/student-affairs/students/:id/edit" element={protect(<EditStudentPage />, { permissions: ['students.manage'] })} />
+          <Route path="/student-affairs/supplementary-exams" element={protect(<SupplementaryExamRegistrations />, { allRoles: ['registration_officer'], assignedPermissions: ['supplementary_exams.registrations.view'] })} />
+          <Route path="/student-affairs/approved-registration-requests" element={protect(<ApprovedRegistrationRequestsPage />, { permissions: ['registration.view'] })} />
+          <Route path="/student-affairs/calendar" element={<AcademicCalendarPage />} />
+        </Route>
+
+        {/* ── دليل شؤون الطلاب: union of the three groups that render studentAffairsNav ── */}
+        <Route element={<ProtectedRoute {...GUIDE_ACCESS.studentAffairs}><GuideLayout nav={studentAffairsNav} guideId="studentAffairs" /></ProtectedRoute>}>
+          <Route path="/student-affairs/guide" element={<UserGuidePage guideId="studentAffairs" />} />
+        </Route>
+
+        {/* Add Student safely hosts the manual and Ministry entry paths without widening other Student Affairs pages. */}
+        <Route
+          element={
+            <ProtectedRoute {...ACCESS.studentAffairsAddStudent}>
+              <DashboardLayout nav={studentAffairsNav} appTitle="شؤون الطلاب" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/student-affairs/students/add" element={<AddStudentPage />} />
+        </Route>
+
+        {/* ── Ministry Placement dashboard: admissions authority with the normal Student Affairs shell ── */}
+        <Route
+          element={
+            <ProtectedRoute assignedPermissions={[PERMISSIONS.admissionsView]} actualUniversityScope>
+              <DashboardLayout nav={studentAffairsNav} appTitle="شؤون الطلاب" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/student-affairs/ministry-placements" element={<MinistryPlacementsPage />} />
         </Route>
 
         {/* ── بوابة الطالب dashboard ── */}
         <Route
           element={
-            <ProtectedRoute roles={['student']}>
+            <ProtectedRoute studentIdentity permissions={['registration.view', 'grades.view', 'attendance.view']}>
               <DashboardLayout nav={studentNav} appTitle="بوابة الطالب" />
             </ProtectedRoute>
           }
@@ -132,29 +266,52 @@ export default function App() {
           <Route path="/student/gpa"        element={<StudentGPA />}        />
           <Route path="/student/attendance"    element={<StudentAttendance />} />
           <Route path="/student/registration" element={<StudentRegistration />} />
+          <Route path="/student/requirements" element={<StudentRequirements />} />
+          <Route path="/student/calendar" element={<StudentCalendar />} />
+          <Route path="/student/guide" element={<UserGuidePage guideId="student" />} />
+          <Route path="/student/supplementary-exams" element={protect(<StudentSupplementaryExams />, { studentIdentity: true, allRoles: ['student'], assignedPermissions: ['supplementary_exams.deferrals.self', 'supplementary_exams.registrations.self'] })} />
         </Route>
 
         {/* ── هيئة الامتحانات dashboard ── */}
+        <Route element={<ProtectedRoute studentIdentity allRoles={['student']}><DashboardLayout nav={studentNav} appTitle="بوابة الطالب" /></ProtectedRoute>}>
+          <Route path="/student/university-email" element={<StudentUniversityEmail />} />
+        </Route>
         <Route
           element={
-            <ProtectedRoute permissions={['exams.view', 'grades.view', 'courses.view', 'registration.view']}>
+            <ProtectedRoute {...ACCESS.courseRegistration}>
+              <DashboardLayout nav={examBoardNav} appTitle="القبول والتسجيل" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/exam-board/course-registration" element={<CourseRegistrationPage />} />
+          <Route path="/exam-board/approved-registration-requests" element={<ApprovedRegistrationRequestsPage />} />
+        </Route>
+
+        <Route
+          element={
+            <ProtectedRoute allPermissions={['exams.view', 'exams.manage']}>
               <DashboardLayout nav={examBoardNav} appTitle="هيئة الامتحانات" />
             </ProtectedRoute>
           }
         >
-          <Route path="/exam-board"                element={protect(<ExamBoardHome />, { permissions: ['exams.view', 'grades.view'] })} />
-          <Route path="/exam-board/grade-entry"   element={protect(<GradeEntryPage />, { permissions: ['grades.manage'] })} />
+          <Route path="/exam-board"                element={protect(<ExamBoardHome />, { allPermissions: ['exams.view', 'exams.manage'] })} />
           <Route path="/exam-board/grade-sheet"   element={protect(<GradeSheetPage />, { permissions: ['grades.view'] })} />
+          <Route path="/exam-board/grade-sheet/:studentId" element={protect(<ExamStudentAcademicRecordPage />, { permissions: ['grades.view'] })} />
           <Route path="/exam-board/approvals"     element={protect(<ApprovalsPage />, { permissions: ['exams.manage'] })} />
           <Route path="/exam-board/deprivation"   element={protect(<DeprivationPage />, { permissions: ['exams.manage'] })} />
-          <Route path="/exam-board/supplementary" element={protect(<ExamPlaceholder title="الامتحانات التكميلية" en="Supplementary Exams" />, { permissions: ['exams.view'] })} />
-          <Route path="/exam-board/results"       element={protect(<ExamPlaceholder title="النتائج والتقارير" en="Results" />, { permissions: ['grades.view'] })} />
+          <Route path="/exam-board/supplementary" element={protect(<SupplementaryExamsPage />, { permissions: [PERMISSIONS.supplementaryExamsRegistrationsView] })} />
+          <Route path="/exam-board/supplementary-grades" element={protect(<SupplementaryGradesPage />, { allRoles: ['exam_officer'], assignedPermissions: ['supplementary_exams.grades.review'] })} />
           <Route path="/exam-board/courses"             element={protect(<CoursesPage />, ACCESS.courseManagement)} />
-          <Route path="/exam-board/course-registration" element={protect(<CourseRegistrationPage />, ACCESS.courseRegistration)} />
           <Route path="/exam-board/course-offerings"    element={protect(<CourseOfferingsPage />, ACCESS.courseManagement)} />
           <Route path="/exam-board/course-table"        element={protect(<CourseTablePage />, ACCESS.courseManagement)} />
+          <Route path="/exam-board/calendar" element={<AcademicCalendarPage />} />
           <Route path="/exam-board/appeals"          element={protect(<ExamPlaceholder title="التظلمات" en="Appeals" />, { permissions: ['exams.view'] })} />
           <Route path="/exam-board/settings"         element={protect(<ExamPlaceholder title="الإعدادات" en="Settings" />, { permissions: ['exams.view'] })} />
+        </Route>
+
+        {/* ── دليل هيئة الامتحانات / القبول والتسجيل / الإدخال اليدوي: union of the groups rendering examBoardNav ── */}
+        <Route element={<ProtectedRoute {...GUIDE_ACCESS.examBoard}><GuideLayout nav={examBoardNav} guideId="examBoard" /></ProtectedRoute>}>
+          <Route path="/exam-board/guide" element={<UserGuidePage guideId="examBoard" />} />
         </Route>
 
         {/* ── الهيكل الأكاديمي dashboard ── */}
@@ -169,6 +326,8 @@ export default function App() {
           <Route path="/academic-structure/colleges"      element={<CollegesPage />}          />
           <Route path="/academic-structure/departments"   element={<DepartmentsPage />}       />
           <Route path="/academic-structure/programs"      element={<ProgramsPage />}          />
+          <Route path="/academic-structure/calendar" element={<AcademicCalendarPage />} />
+          <Route path="/academic-structure/guide" element={<UserGuidePage guideId="academicStructure" />} />
         </Route>
 
         {/* ── الموارد البشرية dashboard ── */}
@@ -185,45 +344,227 @@ export default function App() {
           <Route path="/hr/employees/:id"      element={<EmployeeProfilePage />} />
           <Route path="/hr/faculty"            element={<FacultyPage />}         />
           <Route path="/hr/positions"          element={<PositionsPage />}       />
-        </Route>
-
-        <Route
-          element={
-            <ProtectedRoute roles={['dean']}>
-              <DashboardLayout nav={deanNav} appTitle="بوابة العميد" />
-            </ProtectedRoute>
-          }
-        >
-          <Route path="/dean" element={<DeanOfferingsPage />} />
-        </Route>
-
-        <Route
-          element={
-            <ProtectedRoute roles={['vice_president']}>
-              <DashboardLayout nav={vicePresidentNav} appTitle="النائب العلمي" />
-            </ProtectedRoute>
-          }
-        >
-          <Route path="/vice-president" element={<VicePresidentOfferingsPage />} />
+          <Route path="/hr/calendar" element={<AcademicCalendarPage />} />
+          <Route path="/hr/guide" element={<UserGuidePage guideId="hr" />} />
         </Route>
 
         {/* ── بوابة الأستاذ dashboard ── */}
         <Route
           element={
-            <ProtectedRoute roles={['doctor_instructor']}>
+            <ProtectedRoute employeeIdentity permissions={['grades.manage', 'attendance.manage', 'supplementary_exams.grades.view']}>
               <DashboardLayout nav={professorNav} appTitle="بوابة الأستاذ" />
             </ProtectedRoute>
           }
         >
           <Route path="/professor"             element={<ProfessorHome />}             />
           <Route path="/professor/attendance"  element={<AttendanceDeprivationPage />}  />
+          <Route path="/professor/grades" element={protect(<ProfessorGradesPage />, { employeeIdentity: true, permissions: ['grades.manage'] })} />
+          <Route path="/professor/supplementary-exams" element={protect(<ProfessorSupplementaryExams />, { employeeIdentity: true, allRoles: ['doctor_instructor'], assignedPermissions: ['supplementary_exams.grades.view'] })} />
+          <Route path="/professor/calendar" element={<AcademicCalendarPage />} />
+          <Route path="/professor/guide" element={<UserGuidePage guideId="professor" />} />
+        </Route>
+
+        {/* ── بوابة عميد الكلية dashboard ── */}
+        <Route
+          element={
+            <ProtectedRoute roles={['dean']}>
+              <DeanLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/dean"               element={<DeanHome />} />
+          <Route path="/dean/students"      element={<DeanStudents />} />
+          <Route path="/dean/students/:id"  element={<DeanStudentProfile />} />
+          <Route path="/dean/teachers"      element={<DeanTeachers />} />
+          <Route path="/dean/teachers/:id"  element={<DeanTeacherProfile />} />
+          <Route path="/dean/courses"       element={<DeanCourses />} />
+          <Route path="/dean/courses/:id"   element={<DeanCourseOfferingProfile />} />
+          <Route path="/dean/registration-offerings" element={protect(<DeanRegistrationOfferings />, { allRoles: [ROLES.dean], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView] })} />
+          <Route path="/dean/term-offerings" element={<DeanOfferingsPage />} />
+          <Route path="/dean/registration-requests" element={<DeanRegistrationRequests />} />
+          <Route path="/dean/registration-requests/:id" element={<DeanRegistrationRequestDetail />} />
+          <Route path="/dean/registration-modifications/:id" element={<DeanRegistrationModificationDetail />} />
+          <Route path="/dean/registration-replacements/:id" element={<DeanRegistrationReplacementDetail />} />
+          <Route path="/dean/supplementary-exams" element={protect(<DeanSupplementaryExams />, { allRoles: ['dean'], assignedPermissions: ['supplementary_exams.offerings.view'] })} />
+          <Route path="/dean/reports"       element={protect(<DeanReports />, reportAccess('dean'))} />
+          <Route path="/dean/calendar"      element={<DeanCalendar />} />
+          <Route path="/dean/guide"         element={<UserGuidePage guideId="dean" />} />
+        </Route>
+
+        {/* ── نيابة الشؤون العلمية ── */}
+        <Route
+          element={
+            <ProtectedRoute {...ACCESS.scientificVicePresident}>
+              <DashboardLayout nav={scientificVicePresidentNav} appTitle="الشؤون العلمية" Navigation={ScientificNavigation} portalClassName="scientific-portal" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/vp/scientific" element={<VicePresidentShell office="scientific" />} />
+          <Route path="/vp/scientific/programs-courses" element={protect(<AcademicEntitiesPage />, WORKSPACE_ACCESS)} />
+          <Route path="/vp/scientific/programs-courses/colleges" element={protect(<AcademicEntitiesPage kind="colleges" />, PROGRAM_ACCESS)} />
+          <Route path="/vp/scientific/programs-courses/colleges/:entityId" element={protect(<AcademicEntitiesPage kind="colleges" />, PROGRAM_ACCESS)} />
+          <Route path="/vp/scientific/programs-courses/departments" element={protect(<AcademicEntitiesPage kind="departments" />, PROGRAM_ACCESS)} />
+          <Route path="/vp/scientific/programs-courses/departments/:entityId" element={protect(<AcademicEntitiesPage kind="departments" />, PROGRAM_ACCESS)} />
+          <Route path="/vp/scientific/programs-courses/programs" element={protect(<AcademicEntitiesPage kind="programs" />, PROGRAM_ACCESS)} />
+          <Route path="/vp/scientific/programs-courses/programs/:entityId" element={protect(<AcademicEntitiesPage kind="programs" />, PROGRAM_ACCESS)} />
+          <Route path="/vp/scientific/programs-courses/courses" element={protect(<AcademicEntitiesPage kind="courses" />, CATALOG_ACCESS)} />
+          <Route path="/vp/scientific/programs-courses/courses/:entityId" element={protect(<AcademicEntitiesPage kind="courses" />, CATALOG_ACCESS)} />
+          <Route path="/vp/scientific/courses" element={protect(<LegacyAcademicEntityRoute kind="courses" />, CATALOG_ACCESS)} />
+          <Route path="/vp/scientific/programs" element={protect(<LegacyAcademicEntityRoute kind="programs" />, WORKSPACE_ACCESS)} />
+          <Route path="/vp/scientific/programs/:programId" element={protect(<LegacyAcademicEntityRoute kind="programs" />, WORKSPACE_ACCESS)} />
+          <Route path="/vp/scientific/reports" element={protect(<ExecutiveReportsPage office="scientific" />, reportAccessForOffice('scientific'))} />
+          <Route path="/vp/scientific/teaching-assignments" element={<TeachingAssignmentQueue office="scientific" />} />
+          <Route path="/vp/scientific/semester-offerings" element={protect(<SemesterOfferingQueue />, { allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView], actualUniversityScope: true })} />
+          <Route path="/vp/scientific/offering-proposals" element={<VicePresidentOfferingsPage />} />
+          <Route path="/vp/scientific/semester-offerings/minimum-enrollment" element={protect(<MinimumEnrollmentQueue />, { allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView], actualUniversityScope: true })} />
+          <Route path="/vp/scientific/semester-offerings/:id" element={protect(<SemesterOfferingDetail />, { allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView], actualUniversityScope: true })} />
+          <Route path="/vp/scientific/teaching-assignments/:id" element={<TeachingAssignmentDetail office="scientific" />} />
+          <Route path="/vp/scientific/exceptional-openings" element={<ExceptionalOpeningQueue office="scientific" />} />
+          <Route path="/vp/scientific/exceptional-openings/:id" element={<ExceptionalOpeningDetail office="scientific" />} />
+          <Route path="/vp/scientific/supplementary-exams" element={protect(<SupplementaryExamPeriodsPage />, { allRoles: ['vice_president_scientific'], assignedPermissions: [PERMISSIONS.supplementaryExamsPeriodsView] })} />
+          <Route path="/vp/scientific/calendar" element={<AcademicCalendarPage />} />
+          <Route path="/vp/scientific/guide" element={<UserGuidePage guideId="vpScientific" />} />
+        </Route>
+
+        {/* ── نيابة الشؤون الإدارية ── */}
+        <Route
+          element={
+            <ProtectedRoute {...ACCESS.administrativeVicePresident}>
+              <DashboardLayout nav={administrativeVicePresidentNav} appTitle="الشؤون الإدارية" Navigation={AdministrativeNavigation} portalClassName="administrative-portal" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/vp/administrative" element={<VicePresidentShell office="administrative" />} />
+          <Route path="/vp/administrative/reports" element={protect(<ExecutiveReportsPage office="administrative" />, reportAccessForOffice('administrative'))} />
+          <Route path="/vp/administrative/teaching-assignments" element={<TeachingAssignmentQueue office="administrative" />} />
+          <Route path="/vp/administrative/teaching-assignments/:id" element={<TeachingAssignmentDetail office="administrative" />} />
+          <Route path="/vp/administrative/faculty" element={protect(<AdministrativeFacultyPage />, ADMINISTRATIVE_ACCESS.facultyView)} />
+          <Route path="/vp/administrative/deans" element={protect(<AdministrativeDeansPage />, ADMINISTRATIVE_ACCESS.deansView)} />
+          <Route path="/vp/administrative/exceptional-openings" element={<ExceptionalOpeningQueue office="administrative" />} />
+          <Route path="/vp/administrative/exceptional-openings/:id" element={<ExceptionalOpeningDetail office="administrative" />} />
+          <Route path="/vp/administrative/calendar" element={<AcademicCalendarPage />} />
+          <Route path="/vp/administrative/guide" element={<UserGuidePage guideId="vpAdministrative" />} />
+        </Route>
+
+        {/* Existing office functions inside the VP shell. APIs and operation-specific guards are reused, not bypassed. */}
+        <Route element={<ProtectedRoute {...ADMINISTRATIVE_OFFICE_ACCESS}><DashboardLayout nav={administrativeVicePresidentNav} appTitle="الشؤون الإدارية" Navigation={AdministrativeNavigation} portalClassName="administrative-portal" /></ProtectedRoute>}>
+          <Route path="/vp/administrative/technical/accounts" element={protect(<AccountsPermissionsPage />, ACCESS.technicalAccounts)} />
+          <Route path="/vp/administrative/technical/activity" element={protect(<ActivityLogPage />, ACCESS.technicalActivity)} />
+          <Route path="/vp/administrative/technical/university-email" element={protect(<UniversityEmailPage />, ACCESS.universityEmail)} />
+          <Route path="/vp/administrative/technical/reports" element={protect(<PortalReportsPage portal="technical" />, reportAccess('technical'))} />
+          <Route path="/vp/administrative/student-affairs/students" element={protect(<StudentsPage />, ACCESS.studentAffairs)} />
+          <Route path="/vp/administrative/student-affairs/students/add" element={protect(<AddStudentPage />, ACCESS.studentAffairsAddStudent)} />
+          <Route path="/vp/administrative/student-affairs/students/archived" element={protect(<ArchivedStudentsPage />, ACCESS.studentAffairsArchivedStudents)} />
+          <Route path="/vp/administrative/student-affairs/graduates" element={protect(<GraduatesPage />, ACCESS.studentAffairs)} />
+          <Route path="/vp/administrative/student-affairs/students/:id" element={protect(<StudentProfilePage />, ACCESS.studentAffairs)} />
+          <Route path="/vp/administrative/student-affairs/students/:id/edit" element={protect(<EditStudentPage />, ACCESS.studentAffairsArchivedStudents)} />
+          <Route path="/vp/administrative/student-affairs/ministry-placements" element={protect(<MinistryPlacementsPage />, { assignedPermissions: ['admissions.view'], actualUniversityScope: true })} />
+          <Route path="/vp/administrative/student-affairs/supplementary-exams" element={protect(<SupplementaryExamRegistrations />, { allRoles: ['registration_officer'], assignedPermissions: ['supplementary_exams.registrations.view', 'students.view'] })} />
+          <Route path="/vp/administrative/student-affairs/approved-registration-requests" element={protect(<ApprovedRegistrationRequestsPage />, ACCESS.studentAffairsApprovedRegistrationRequests)} />
+          <Route path="/vp/administrative/student-affairs/reports" element={protect(<PortalReportsPage portal="student-affairs" />, reportAccess('student-affairs'))} />
+          <Route path="/vp/administrative/exams/manual-grade-entry" element={protect(<ManualGradeEntryPage />, ACCESS.manualGradeEntry)} />
+          <Route path="/vp/administrative/exams/incomplete-results" element={protect(<IncompleteResultsPage />, ACCESS.manualGradeEntry)} />
+          <Route path="/vp/administrative/exams/incomplete-results/:caseId" element={protect(<IncompleteResultsPage />, ACCESS.manualGradeEntry)} />
+          <Route path="/vp/administrative/exams/incomplete-results/registrations/:registrationId" element={protect(<IncompleteResultsPage />, ACCESS.manualGradeEntry)} />
+          <Route path="/vp/administrative/exams/manual-grade-entry/students/:studentId" element={protect(<StudentManualGradePage />, ACCESS.manualGradeEntry)} />
+          <Route path="/vp/administrative/exams/grade-sheet" element={protect(<GradeSheetPage />, { permissions: ['grades.view'] })} />
+          <Route path="/vp/administrative/exams/grade-sheet/:studentId" element={protect(<ExamStudentAcademicRecordPage />, { permissions: ['grades.view'] })} />
+          <Route path="/vp/administrative/exams/approvals" element={protect(<ApprovalsPage />, { permissions: ['exams.manage'] })} />
+          <Route path="/vp/administrative/exams/deprivation" element={protect(<DeprivationPage />, { permissions: ['exams.manage'] })} />
+          <Route path="/vp/administrative/exams/supplementary" element={protect(<SupplementaryExamsPage />, { permissions: ['supplementary_exams.registrations.view'] })} />
+          <Route path="/vp/administrative/exams/supplementary-grades" element={protect(<SupplementaryGradesPage />, { allRoles: ['exam_officer'], assignedPermissions: ['supplementary_exams.grades.review'] })} />
+          <Route path="/vp/administrative/exams/courses" element={protect(<CoursesPage />, ACCESS.courseManagement)} />
+          <Route path="/vp/administrative/exams/course-offerings" element={protect(<CourseOfferingsPage />, ACCESS.courseManagement)} />
+          <Route path="/vp/administrative/exams/course-table" element={protect(<CourseTablePage />, ACCESS.courseManagement)} />
+          <Route path="/vp/administrative/exams/course-registration" element={protect(<CourseRegistrationPage />, ACCESS.courseRegistration)} />
+          <Route path="/vp/administrative/exams/approved-registration-requests" element={protect(<ApprovedRegistrationRequestsPage />, ACCESS.courseRegistration)} />
+          <Route path="/vp/administrative/exams/results" element={protect(<PortalReportsPage portal="exam-board" />, reportAccess('exam-board'))} />
+          <Route path="/vp/administrative/exams/registration-reports" element={protect(<PortalReportsPage portal="admissions" />, reportAccess('admissions'))} />
+          <Route path="/vp/administrative/personnel/employees" element={protect(<EmployeesPage />, { permissions: ['hr.view'] })} />
+          <Route path="/vp/administrative/personnel/employees/add" element={protect(<AddEmployeePage />, { allPermissions: ['hr.view', 'hr.manage'] })} />
+          <Route path="/vp/administrative/personnel/employees/:id" element={protect(<EmployeeProfilePage />, { permissions: ['hr.view'] })} />
+          <Route path="/vp/administrative/personnel/positions" element={protect(<PositionsPage />, { permissions: ['hr.view'] })} />
+          <Route path="/vp/administrative/personnel/reports" element={protect(<PortalReportsPage portal="hr" />, reportAccess('hr'))} />
+        </Route>
+
+        {/* Ordinary office staff retain only their existing grants and scopes. */}
+        <Route element={<ProtectedRoute {...hrAccess(HR.view)}><DashboardLayout nav={administrativeVicePresidentNav} appTitle="الشؤون الإدارية" Navigation={AdministrativeNavigation} portalClassName="administrative-portal" /></ProtectedRoute>}>
+          <Route path="/vp/administrative/hr" element={<HrOfficePage />} />
+          <Route path="/vp/administrative/hr/workers/:employee" element={<WorkerFilePage />} />
+        </Route>
+        <Route element={<ProtectedRoute {...payrollAccess(PERMISSIONS.ownerPayrollView)}><DashboardLayout nav={administrativeVicePresidentNav} appTitle="الشؤون الإدارية" Navigation={AdministrativeNavigation} portalClassName="administrative-portal" /></ProtectedRoute>}>
+          <Route path="/vp/administrative/payroll" element={<AdministrativePayroll />} />
+          <Route path="/vp/administrative/payroll/workers/:employee" element={<AdministrativePayroll />} />
+          <Route path="/vp/administrative/payroll/link" element={<Navigate to="/vp/administrative/payroll" replace />} />
+        </Route>
+
+        {/* ── المكتب التقني: التبعية التنظيمية لا تمنح صلاحية؛ الوصول من صلاحيات الأدوار فقط ── */}
+        <Route
+          element={
+            <ProtectedRoute {...ACCESS.technicalPortal}>
+              <DashboardLayout nav={technicalNav} appTitle="المكتب التقني" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/technical" element={<TechnicalHome />} />
+          <Route path="/technical/accounts" element={protect(<AccountsPermissionsPage />, ACCESS.technicalAccounts)} />
+          <Route path="/technical/activity" element={protect(<ActivityLogPage />, ACCESS.technicalActivity)} />
+          <Route path="/technical/university-email" element={protect(<UniversityEmailPage />, ACCESS.universityEmail)} />
+          <Route path="/technical/guide" element={<UserGuidePage guideId="technical" />} />
+        </Route>
+
+        <Route element={<ProtectedRoute {...presidentAccess()}><DashboardLayout nav={presidentNav} appTitle="رئيس جامعة الروّاد للعلوم والتقانة" /></ProtectedRoute>}>
+          <Route path="/president" element={protect(<PresidentHome />, presidentAccess('dashboard'))} />
+          <Route path="/president/reports" element={protect(<PortalReportsPage portal="president" />, reportAccess('president'))} />
+          <Route path="/president/followup" element={protect(<PresidentFollowup />, presidentAccess('followup'))} />
+          <Route path="/president/followup/:source" element={protect(<PresidentFollowup />, presidentAccess('followup'))} />
+          <Route path="/president/followup/:source/:id" element={protect(<PresidentFollowup />, presidentAccess('followup'))} />
+          {Object.entries(presidentResources).map(([resource, config]) => <Route key={resource}>
+            <Route path={`/president/${resource}`} element={protect(<PresidentList resource={resource} />, presidentAccess(config[1]))} />
+            <Route path={`/president/${resource}/:id`} element={protect(<PresidentDetail resource={resource} />, presidentAccess(config[1]))} />
+          </Route>)}
+        </Route>
+
+        {Object.entries({ 'student-affairs':studentAffairsNav, admissions:examBoardNav, 'exam-board':examBoardNav, professor:professorNav, student:studentNav, hr:hrNav, 'academic-structure':academicStructureNav, technical:technicalNav, ministry:ministryNav }).map(([portal,nav]) => <Route key={'reports-'+portal} element={<ProtectedRoute {...reportAccess(portal)}><DashboardLayout nav={nav} appTitle="التقارير" /></ProtectedRoute>}><Route path={REPORT_PATHS[portal]} element={<PortalReportsPage portal={portal}/>} /></Route>)}
+
+        {/* ── وزارة التربية والتعليم: قراءة فقط؛ الخادم يحصر حساب الوزارة في /api/v1/ministry ── */}
+        <Route
+          element={
+            <ProtectedRoute {...ACCESS.ministryPortal}>
+              <DashboardLayout nav={ministryNav} appTitle="وزارة التربية والتعليم" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/ministry" element={protect(<MinistryHome />, ACCESS.ministryDashboard)} />
+          <Route path="/ministry/deans" element={protect(<MinistryDeans />, ACCESS.ministryDeans)} />
+          <Route path="/ministry/deans/:person" element={protect(<MinistryDeanDetail />, ACCESS.ministryDeans)} />
+          <Route path="/ministry/students" element={protect(<MinistryStudents />, ACCESS.ministryStudents)} />
+          <Route path="/ministry/students/:id" element={protect(<MinistryStudentDetail />, ACCESS.ministryStudents)} />
+          <Route path="/ministry/colleges" element={protect(<MinistryColleges />, ACCESS.ministryColleges)} />
+          <Route path="/ministry/colleges/:id" element={protect(<MinistryCollegeDetail />, ACCESS.ministryColleges)} />
+          <Route path="/ministry/courses" element={protect(<MinistryCourses />, ACCESS.ministryCourses)} />
+          <Route path="/ministry/courses/:id" element={protect(<MinistryCourseDetail />, ACCESS.ministryCourses)} />
+          <Route path="/ministry/faculty" element={protect(<MinistryFaculty />, ACCESS.ministryFaculty)} />
+          <Route path="/ministry/faculty/:id" element={protect(<MinistryFacultyDetail />, ACCESS.ministryFaculty)} />
+          <Route path="/ministry/leadership" element={protect(<MinistryLeadership />, ACCESS.ministryLeadership)} />
+          <Route path="/ministry/leadership/units/:id" element={protect(<MinistryUnitDetail />, ACCESS.ministryLeadership)} />
+          <Route path="/ministry/guide" element={<UserGuidePage guideId="ministry" />} />
+        </Route>
+
+        {/* ── مالك الجامعة: الرئيسية والرواتب فقط؛ الخادم يفرض الصلاحيات على كل واجهة ── */}
+        <Route element={<ProtectedRoute {...ACCESS.ownerPortal}><DashboardLayout nav={ownerNav} appTitle="مالك الجامعة" /></ProtectedRoute>}>
+          <Route path="/owner" element={protect(<OwnerHome />, ACCESS.ownerHome)} />
+          <Route path="/owner/payroll" element={protect(<OwnerPayroll />, ACCESS.ownerPayroll)} />
+          <Route path="/owner/payroll/workers/:employee" element={protect(<OwnerPayroll />, ACCESS.ownerPayroll)} />
         </Route>
 
         {/* Default redirect */}
         <Route path="/"  element={<Navigate to={landingRoute(getIdentity())} replace />} />
         <Route path="*"  element={<Navigate to={landingRoute(getIdentity())} replace />} />
 
-      </Routes>
-    </BrowserRouter>
-  )
+      </>
+))
+
+export default function App() {
+  return <RouterProvider router={router} />
 }

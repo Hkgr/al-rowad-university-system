@@ -6,6 +6,8 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Gate;
 use App\Services\ResourceAuthorizationService;
+use App\Services\DataScopeService;
+use App\Services\ResourceAuditService;
 
 trait HandlesApiCrud
 {
@@ -20,8 +22,12 @@ trait HandlesApiCrud
     public function index(): JsonResponse
     {
         $this->authorizeIfPolicyExists('viewAny', $this->modelClass());
-        $models = $this->modelClass()::query()
-            ->paginate(request()->integer('per_page', 15));
+        $perPage = \App\Support\AcademicQueuePagination::perPage(
+            request()->has('per_page') ? request()->integer('per_page') : null,
+            15
+        );
+        $models = app(DataScopeService::class)->scopeResourceQuery($this->modelClass()::query(), request()->user())
+            ->paginate($perPage);
 
         $payload = $this->resourceClass()::collection($models)
             ->response(request())
@@ -35,10 +41,15 @@ trait HandlesApiCrud
         $this->authorizeIfPolicyExists('create', $this->modelClass());
         /** @var FormRequest $request */
         $request = app($this->storeRequestClass());
+        app(DataScopeService::class)->assertPayloadScope(request()->user(), $request->validated());
+        if (method_exists($this, 'beforeStoreMutation')) {
+            $this->beforeStoreMutation($request->validated());
+        }
 
         $modelClass = $this->modelClass();
 
         $model = $modelClass::query()->create($request->validated());
+        app(ResourceAuditService::class)->record(request()->user()?->getKey(), 'created', $model, array_keys($request->validated()));
 
         $resourceClass = $this->resourceClass();
 
@@ -55,7 +66,7 @@ trait HandlesApiCrud
     {
         $modelClass = $this->modelClass();
 
-        $model = $modelClass::query()->findOrFail($id);
+        $model = app(DataScopeService::class)->scopeResourceQuery($modelClass::query(), request()->user())->findOrFail($id);
         $this->authorizeIfPolicyExists('view', $model);
 
         $resourceClass = $this->resourceClass();
@@ -72,10 +83,15 @@ trait HandlesApiCrud
 
         $modelClass = $this->modelClass();
 
-        $model = $modelClass::query()->findOrFail($id);
+        $model = app(DataScopeService::class)->scopeResourceQuery($modelClass::query(), request()->user())->findOrFail($id);
         $this->authorizeIfPolicyExists('update', $model);
+        app(DataScopeService::class)->assertPayloadScope(request()->user(), $request->validated());
+        if (method_exists($this, 'beforeUpdateMutation')) {
+            $this->beforeUpdateMutation($model, $request->validated());
+        }
 
         $model->update($request->validated());
+        app(ResourceAuditService::class)->record(request()->user()?->getKey(), 'updated', $model, array_keys($model->getChanges()));
 
         $resourceClass = $this->resourceClass();
 
@@ -88,10 +104,14 @@ trait HandlesApiCrud
     {
         $modelClass = $this->modelClass();
 
-        $model = $modelClass::query()->findOrFail($id);
+        $model = app(DataScopeService::class)->scopeResourceQuery($modelClass::query(), request()->user())->findOrFail($id);
         $this->authorizeIfPolicyExists('delete', $model);
+        if (method_exists($this, 'beforeDestroyMutation')) {
+            $this->beforeDestroyMutation($model);
+        }
 
         $model->delete();
+        app(ResourceAuditService::class)->record(request()->user()?->getKey(), 'deleted', $model);
 
         return $this->successResponse(
             [],

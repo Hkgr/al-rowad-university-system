@@ -10,6 +10,7 @@ class GradeException extends Exception
         string $message,
         public readonly array $errors = [],
         public readonly int $status = 422,
+        public readonly ?string $errorCode = null,
     ) {
         parent::__construct($message);
     }

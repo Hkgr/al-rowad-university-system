@@ -7,10 +7,31 @@ use App\Http\Requests\Department\UpdateDepartmentRequest;
 use App\Http\Resources\AcademicProgramResource;
 use App\Http\Resources\DepartmentResource;
 use App\Models\Department;
+use App\Services\GradeService;
+use App\Services\DataScopeService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class DepartmentController extends ApiController
 {
+    public function store(): JsonResponse
+    {
+        $entity = app(\App\Services\AcademicStructureEntityService::class)->save(request()->user(), 'departments', null, request()->all());
+        return $this->successResponse((new DepartmentResource($entity))->resolve(request()), status: 201);
+    }
+
+    public function update($id): JsonResponse
+    {
+        $entity = app(\App\Services\AcademicStructureEntityService::class)->save(request()->user(), 'departments', (int) $id, request()->all());
+        return $this->successResponse((new DepartmentResource($entity))->resolve(request()));
+    }
+
+    public function destroy($id): JsonResponse
+    {
+        app(\App\Services\AcademicStructureEntityService::class)->delete(request()->user(), 'departments', (int) $id);
+        return $this->successResponse();
+    }
+
     protected function modelClass(): string
     {
         return Department::class;
@@ -33,12 +54,32 @@ class DepartmentController extends ApiController
 
     public function programs(Department $department): JsonResponse
     {
-        $programs = $department->academicPrograms()
+        abort_unless(app(DataScopeService::class)->canAccessDepartment(request()->user(), $department->department_id), 403);
+        $programs = app(DataScopeService::class)->scopePrograms($department->academicPrograms(), request()->user())
             ->orderBy('program_name')
             ->paginate(request()->integer('per_page', 15));
 
         return $this->successResponse(
             AcademicProgramResource::collection($programs)->response(request())->getData(true)
         );
+    }
+
+    public function statistics(int $id, Request $request, GradeService $service): JsonResponse
+    {
+        abort_unless($request->user()->hasPermission('grades.view'), 403);
+        abort_unless(app(\App\Services\DataScopeService::class)->canAccessDepartment($request->user(), $id), 403);
+        $validated = $request->validate([
+            'academic_year_id' => ['sometimes', 'nullable', 'integer', 'exists:academic_years,academic_year_id'],
+            'semester_id' => ['sometimes', 'nullable', 'integer', 'exists:semesters,semester_id'],
+        ]);
+
+        $statistics = $service->getDepartmentStatistics(
+            $id,
+            $validated['academic_year_id'] ?? null,
+            $validated['semester_id'] ?? null,
+            $request->user(),
+        );
+
+        return $this->successResponse($statistics);
     }
 }

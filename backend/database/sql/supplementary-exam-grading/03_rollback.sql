@@ -1,0 +1,33 @@
+-- Emergency only. Optional objects are guarded dynamically; no intermediate result sets are emitted.
+SET @a_any := (SELECT COUNT(*)=1 FROM information_schema.tables WHERE table_schema='alrowad_uni_rust' AND table_name='supplementary_exam_grader_assignments');
+SET @r_any := (SELECT COUNT(*)=1 FROM information_schema.tables WHERE table_schema='alrowad_uni_rust' AND table_name='supplementary_exam_grade_results');
+SET @s_any := (SELECT COUNT(*)=1 FROM information_schema.tables WHERE table_schema='alrowad_uni_rust' AND table_name='supplementary_exam_grade_submissions');
+SET @e_any := (SELECT COUNT(*)=1 FROM information_schema.tables WHERE table_schema='alrowad_uni_rust' AND table_name='supplementary_exam_grade_events');
+SET @a_exists := (SELECT COUNT(*)=1 FROM information_schema.tables WHERE table_schema='alrowad_uni_rust' AND table_name='supplementary_exam_grader_assignments' AND table_type='BASE TABLE');
+SET @r_exists := (SELECT COUNT(*)=1 FROM information_schema.tables WHERE table_schema='alrowad_uni_rust' AND table_name='supplementary_exam_grade_results' AND table_type='BASE TABLE');
+SET @s_exists := (SELECT COUNT(*)=1 FROM information_schema.tables WHERE table_schema='alrowad_uni_rust' AND table_name='supplementary_exam_grade_submissions' AND table_type='BASE TABLE');
+SET @e_exists := (SELECT COUNT(*)=1 FROM information_schema.tables WHERE table_schema='alrowad_uni_rust' AND table_name='supplementary_exam_grade_events' AND table_type='BASE TABLE');
+SET @a_rows := 0; SET @r_rows := 0; SET @s_rows := 0; SET @e_rows := 0; SET @phase5_noop := 0;
+SET @sql := IF(@a_exists,'SELECT COUNT(*) INTO @a_rows FROM `alrowad_uni_rust`.`supplementary_exam_grader_assignments`','SET @phase5_noop := @phase5_noop'); PREPARE phase5_count_a FROM @sql; EXECUTE phase5_count_a; DEALLOCATE PREPARE phase5_count_a;
+SET @sql := IF(@r_exists,'SELECT COUNT(*) INTO @r_rows FROM `alrowad_uni_rust`.`supplementary_exam_grade_results`','SET @phase5_noop := @phase5_noop'); PREPARE phase5_count_r FROM @sql; EXECUTE phase5_count_r; DEALLOCATE PREPARE phase5_count_r;
+SET @sql := IF(@s_exists,'SELECT COUNT(*) INTO @s_rows FROM `alrowad_uni_rust`.`supplementary_exam_grade_submissions`','SET @phase5_noop := @phase5_noop'); PREPARE phase5_count_s FROM @sql; EXECUTE phase5_count_s; DEALLOCATE PREPARE phase5_count_s;
+SET @sql := IF(@e_exists,'SELECT COUNT(*) INTO @e_rows FROM `alrowad_uni_rust`.`supplementary_exam_grade_events`','SET @phase5_noop := @phase5_noop'); PREPARE phase5_count_e FROM @sql; EXECUTE phase5_count_e; DEALLOCATE PREPARE phase5_count_e;
+SET @in_use := @a_rows + @r_rows + @s_rows + @e_rows;
+SET @owned_tables := (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='alrowad_uni_rust' AND table_name IN ('supplementary_exam_grader_assignments','supplementary_exam_grade_results','supplementary_exam_grade_submissions','supplementary_exam_grade_events') AND table_type='BASE TABLE' AND table_comment='owned:supplementary-exam-grading-phase5');
+SET @present_tables := @a_any + @r_any + @s_any + @e_any;
+SET @adopted_tables := @present_tables - @owned_tables;
+SET @owned_permissions := (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code IN ('supplementary_exams.grades.view','supplementary_exams.grades.assign','supplementary_exams.grades.enter','supplementary_exams.grades.review','supplementary_exams.grades.publish') AND description='owned:supplementary-exam-grading-phase5');
+SET @present_permissions := (SELECT COUNT(*) FROM `alrowad_uni_rust`.`permissions` WHERE permission_code IN ('supplementary_exams.grades.view','supplementary_exams.grades.assign','supplementary_exams.grades.enter','supplementary_exams.grades.review','supplementary_exams.grades.publish'));
+SET @adopted_permissions := @present_permissions - @owned_permissions;
+SET @blocked_adopted := @adopted_tables > 0 OR @adopted_permissions > 0;
+SET @can_rollback := @in_use=0 AND NOT @blocked_adopted AND (@owned_tables>0 OR @owned_permissions>0);
+START TRANSACTION;
+DELETE rp FROM `alrowad_uni_rust`.`role_permissions` rp JOIN `alrowad_uni_rust`.`permissions` p ON p.permission_id=rp.permission_id WHERE @can_rollback AND p.description='owned:supplementary-exam-grading-phase5' AND p.permission_code IN ('supplementary_exams.grades.view','supplementary_exams.grades.assign','supplementary_exams.grades.enter','supplementary_exams.grades.review','supplementary_exams.grades.publish');
+DELETE FROM `alrowad_uni_rust`.`permissions` WHERE @can_rollback AND description='owned:supplementary-exam-grading-phase5' AND permission_code IN ('supplementary_exams.grades.view','supplementary_exams.grades.assign','supplementary_exams.grades.enter','supplementary_exams.grades.review','supplementary_exams.grades.publish');
+COMMIT;
+SET @sql := IF(@can_rollback AND @e_exists,'DROP TABLE `alrowad_uni_rust`.`supplementary_exam_grade_events`','SET @phase5_noop := @phase5_noop'); PREPARE phase5_drop_e FROM @sql; EXECUTE phase5_drop_e; DEALLOCATE PREPARE phase5_drop_e;
+SET @sql := IF(@can_rollback AND @r_exists,'DROP TABLE `alrowad_uni_rust`.`supplementary_exam_grade_results`','SET @phase5_noop := @phase5_noop'); PREPARE phase5_drop_r FROM @sql; EXECUTE phase5_drop_r; DEALLOCATE PREPARE phase5_drop_r;
+SET @sql := IF(@can_rollback AND @s_exists,'DROP TABLE `alrowad_uni_rust`.`supplementary_exam_grade_submissions`','SET @phase5_noop := @phase5_noop'); PREPARE phase5_drop_s FROM @sql; EXECUTE phase5_drop_s; DEALLOCATE PREPARE phase5_drop_s;
+SET @sql := IF(@can_rollback AND @a_exists,'DROP TABLE `alrowad_uni_rust`.`supplementary_exam_grader_assignments`','SET @phase5_noop := @phase5_noop'); PREPARE phase5_drop_a FROM @sql; EXECUTE phase5_drop_a; DEALLOCATE PREPARE phase5_drop_a;
+-- This is the only visible operator report and must remain the final statement.
+SELECT 'ROLLBACK_RESULT' AS report_section, IF(@in_use>0,'BLOCKED_IN_USE',IF(@blocked_adopted,'BLOCKED_ADOPTED',IF(@can_rollback,'ROLLED_BACK','NOTHING_TO_DO'))) AS result;

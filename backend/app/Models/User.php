@@ -2,6 +2,7 @@
 
 namespace App\Models;
 use Laravel\Sanctum\HasApiTokens;
+use App\Support\VicePresidency;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -22,9 +23,6 @@ class User extends Authenticatable implements MustVerifyEmail
         'email',
         'password_hash',
         'account_status_id',
-        'student_id',
-        'employee_id',
-        'board_member_id',
         'last_login_at',
         'email_verified_at',
         'failed_login_attempts',
@@ -193,10 +191,17 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(UserRole::class, 'user_id', 'user_id');
     }
 
+    public function accessScopes(): HasMany
+    {
+        return $this->hasMany(UserAccessScope::class, 'user_id', 'user_id');
+    }
+
     public function effectiveRoles(): Collection
     {
         return $this->userRoleRecords()
             ->where('is_active', true)
+            ->where(fn ($q) => $q->whereHas('role', fn ($r) => $r->where('role_code', '<>', \App\Support\AdministrativeOfficeAccess::ROLE))
+                ->orWhere(fn ($assignment) => $assignment->whereNull('assigned_at')->orWhere('assigned_at', '<=', now())))
             ->whereHas('role', fn ($query) => $query->where('is_active', true))
             ->with('role')
             ->get()
@@ -208,11 +213,13 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function effectivePermissions(): Collection
     {
+        $administrativeOfficeAuthority = \App\Support\AdministrativeOfficeAccess::hasAuthority($this);
         return \App\Models\Permission::query()
             ->where('is_active', true)
             ->whereHas('rolePermissions', fn ($rolePermissions) => $rolePermissions
                 ->whereHas('role', fn ($roles) => $roles
                     ->where('is_active', true)
+                    ->when(! $administrativeOfficeAuthority, fn ($q) => $q->where('role_code', '<>', \App\Support\AdministrativeOfficeAccess::ROLE))
                     ->whereHas('userRoles', fn ($userRoles) => $userRoles
                         ->where('user_id', $this->user_id)
                         ->where('user_roles.is_active', true))))
@@ -223,8 +230,64 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function hasPermission(string $permission): bool
     {
-        return $this->effectivePermissions()->contains($permission)
-            || $this->effectiveRoles()->contains('super_admin');
+        return $this->isSuperAdmin() || $this->effectivePermissions()->contains($permission);
+    }
+
+    /** Administrative authority only; never manufactures personal identity or assigned roles/scopes. */
+    public function isSuperAdmin(): bool
+    {
+        return $this->accountStatus?->status_code === 'active' && $this->hasRoleCode('super_admin');
+    }
+
+    private function canActAs(string $administrativeRole): bool
+    {
+        return $this->isSuperAdmin() || $this->hasRoleCode($administrativeRole)
+            || \App\Support\AdministrativeOfficeAccess::actsForOffice($this, $administrativeRole);
+    }
+
+    public function hasRoleCode(string $roleCode): bool
+    {
+        return $this->effectiveRoles()->contains($roleCode);
+    }
+
+    public function isDean(): bool
+    {
+        return $this->canActAs('dean');
+    }
+
+    public function isStudent(): bool
+    {
+        return $this->student_id !== null && $this->hasRoleCode('student');
+    }
+
+    public function isAcademicAdvisor(): bool
+    {
+        return $this->canActAs('academic_advisor');
+    }
+
+    public function isRegistrationOfficer(): bool
+    {
+        return $this->canActAs('registration_officer');
+    }
+
+    public function isProfessor(): bool
+    {
+        return $this->employee_id !== null && $this->hasRoleCode('doctor_instructor');
+    }
+
+    public function isExamOfficer(): bool
+    {
+        return $this->canActAs('exam_officer');
+    }
+
+    public function isScientificVicePresident(): bool
+    {
+        return $this->canActAs(VicePresidency::ROLE_SCIENTIFIC);
+    }
+
+    public function isAdministrativeVicePresident(): bool
+    {
+        return $this->canActAs(VicePresidency::ROLE_ADMINISTRATIVE);
     }
 
 }

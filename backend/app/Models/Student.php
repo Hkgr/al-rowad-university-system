@@ -14,6 +14,13 @@ class Student extends Model
 
     protected $primaryKey = 'student_id';
 
+    protected static function booted(): void
+    {
+        static::creating(fn (self $student) => \App\Services\AcademicPlanAdmission::beforeStudentCreate($student));
+        static::created(fn (self $student) => \App\Services\AcademicPlanAdmission::afterStudentCreate($student));
+        static::updating(fn (self $student) => \App\Services\AcademicPlanAdmission::beforeStudentUpdate($student));
+    }
+
     protected $fillable = [
         'student_number',
         'admission_application_id',
@@ -91,6 +98,11 @@ class Student extends Model
         return $this->hasMany(StudentCourseRegistration::class, 'student_id', 'student_id');
     }
 
+    public function studentDisciplinaryCases(): HasMany
+    {
+        return $this->hasMany(StudentDisciplinaryCase::class, 'student_id', 'student_id');
+    }
+
     public function studentCreditLimits(): HasMany
     {
         return $this->hasMany(StudentCreditLimit::class, 'student_id', 'student_id');
@@ -99,6 +111,16 @@ class Student extends Model
     public function studentDocuments(): HasMany
     {
         return $this->hasMany(StudentDocument::class, 'student_id', 'student_id');
+    }
+
+    public function progressionDecisions(): HasMany
+    {
+        return $this->hasMany(StudentProgressionDecision::class, 'student_id', 'student_id');
+    }
+
+    public function graduationDecisions(): HasMany
+    {
+        return $this->hasMany(StudentGraduationDecision::class, 'student_id', 'student_id');
     }
 
     public function users(): HasMany

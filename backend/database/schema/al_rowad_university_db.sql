@@ -1117,6 +1117,50 @@ CREATE TABLE `grade_approvals` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `grade_part_approvals`
+--
+CREATE TABLE `grade_part_approvals` (
+  `grade_part_approval_id` bigint NOT NULL AUTO_INCREMENT,
+  `course_offering_id` int(11) NOT NULL,
+  `component_type` enum('practical','theoretical') NOT NULL,
+  `status` enum('draft','submitted','returned','approved') NOT NULL DEFAULT 'draft',
+  `submission_version` int unsigned NOT NULL DEFAULT 0,
+  `submitted_by_user_id` int(11) DEFAULT NULL,
+  `submitted_at` datetime DEFAULT NULL,
+  `reviewed_by_user_id` int(11) DEFAULT NULL,
+  `reviewed_at` datetime DEFAULT NULL,
+  `review_notes` text DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`grade_part_approval_id`),
+  UNIQUE KEY `uq_grade_part_approvals_offering_type` (`course_offering_id`,`component_type`),
+  KEY `idx_grade_part_approvals_queue` (`status`,`submitted_at`),
+  KEY `idx_grade_part_approvals_submitter` (`submitted_by_user_id`),
+  KEY `idx_grade_part_approvals_reviewer` (`reviewed_by_user_id`),
+  CONSTRAINT `fk_grade_part_approvals_offering` FOREIGN KEY (`course_offering_id`) REFERENCES `course_offerings` (`course_offering_id`),
+  CONSTRAINT `fk_grade_part_approvals_submitter` FOREIGN KEY (`submitted_by_user_id`) REFERENCES `users` (`user_id`),
+  CONSTRAINT `fk_grade_part_approvals_reviewer` FOREIGN KEY (`reviewed_by_user_id`) REFERENCES `users` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `grade_part_approval_events` (
+  `grade_part_approval_event_id` bigint NOT NULL AUTO_INCREMENT,
+  `grade_part_approval_id` bigint NOT NULL,
+  `submission_version` int unsigned NOT NULL,
+  `action` varchar(30) NOT NULL,
+  `old_values` json DEFAULT NULL,
+  `new_values` json NOT NULL,
+  `performed_by_user_id` int(11) NOT NULL,
+  `performed_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`grade_part_approval_event_id`),
+  KEY `idx_grade_part_approval_events_version` (`grade_part_approval_id`,`submission_version`),
+  KEY `idx_grade_part_approval_events_user` (`performed_by_user_id`),
+  CONSTRAINT `fk_grade_part_approval_events_approval` FOREIGN KEY (`grade_part_approval_id`) REFERENCES `grade_part_approvals` (`grade_part_approval_id`),
+  CONSTRAINT `fk_grade_part_approval_events_user` FOREIGN KEY (`performed_by_user_id`) REFERENCES `users` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `grade_audit_logs`
 --
 
@@ -1375,16 +1419,23 @@ CREATE TABLE `organizational_units` (
 INSERT INTO `organizational_units` (`organizational_unit_id`, `unit_code`, `unit_name`, `unit_type_id`, `parent_unit_id`, `description`, `is_active`, `created_at`, `updated_at`) VALUES
 (1, 'BOT', 'Board of Trustees', 1, NULL, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
 (2, 'UC', 'University Council', 2, NULL, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
-(3, 'PRES', 'University President', 3, NULL, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
-(4, 'VP_ADMIN', 'Vice President for Administrative Affairs', 4, 3, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(3, 'PRES', 'رئيس الجامعة', 3, NULL, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(4, '7', 'نائب رئيس الجامعة للشؤون الإدارية', 4, 3, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
 (5, 'VP_SCI', 'Vice President for Scientific Affairs', 4, 3, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
 (6, 'VP_COMM', 'Vice President for Community Affairs', 4, 3, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
-(7, 'REG_OFFICE', 'Admissions and Registration Office', 7, 4, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
-(8, 'EXAM_OFFICE', 'Exam Office', 7, 4, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(7, '732', 'مكتب القبول والتسجيل', 7, 15, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(8, '735', 'إدارة الامتحانات', 5, 15, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
 (9, 'HR_OFFICE', 'HR Office', 7, 4, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
 (10, 'LIBRARY', 'University Library', 8, 4, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
 (11, 'ECON_COL', 'College of Economics', 10, 5, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
-(12, 'STAT_DEPT', 'Department of Statistics', 11, 11, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57');
+(12, 'STAT_DEPT', 'Department of Statistics', 11, 11, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(13, '71', 'مديرية الشؤون الإدارية', 6, 4, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(14, '72', 'مديرية الشؤون المالية', 6, 4, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(15, '73', 'مديرية شؤون الطلاب', 6, 4, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(16, '731', 'مكتب الإرشاد والتوجيه', 7, 15, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(17, '733', 'مكتب الخدمات الطلابية', 7, 15, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(18, '734', 'مكتب المنح والإيفاد والتبادل الطلابي', 7, 15, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57'),
+(19, '736', 'مكتب التوثيق والتدقيق', 7, 15, NULL, 1, '2026-05-24 12:41:57', '2026-05-24 12:41:57');
 
 -- --------------------------------------------------------
 
@@ -3333,7 +3384,7 @@ ALTER TABLE `meeting_attendees`
 -- AUTO_INCREMENT for table `organizational_units`
 --
 ALTER TABLE `organizational_units`
-  MODIFY `organizational_unit_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=13;
+  MODIFY `organizational_unit_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=20;
 
 --
 -- AUTO_INCREMENT for table `organizational_unit_types`
@@ -3859,3 +3910,22 @@ COMMIT;
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+
+-- P0-1 identity uniqueness and explicit access scopes (production is applied via manual SQL runbook).
+ALTER TABLE `users`
+  ADD UNIQUE KEY `uq_users_student_identity` (`student_id`),
+  ADD UNIQUE KEY `uq_users_employee_identity` (`employee_id`);
+
+CREATE TABLE `user_access_scopes` (
+  `user_access_scope_id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `scope_type` enum('university','college','department','program','section') NOT NULL,
+  `scope_id` int(11) NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`user_access_scope_id`),
+  UNIQUE KEY `user_scope_unique` (`user_id`,`scope_type`,`scope_id`),
+  KEY `active_scope_lookup` (`scope_type`,`scope_id`,`is_active`),
+  CONSTRAINT `fk_user_access_scopes_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

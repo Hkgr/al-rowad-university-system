@@ -1,0 +1,49 @@
+Creating my.ini file
+Creation of the database was successful
+DATABASE | 10.11.18-MariaDB | REPEATABLE-READ
+UPGRADE | PASS | populated states preserved; original revision triggers preserved; idempotent
+HTTP_LIFECYCLE | PASS | GET no writes; strict input; original/terminal replay; completed settlement; pending/official; officer/VP/super-admin/scope denial
+CALENDAR | PASS | Damascus inclusive boundary; non-enforcement; summer/year rollover; cancellation/replacement; frozen acceptance
+CALCULATIONS | PASS | B+F/Z=1.50; missing/high Z marks; I/W exclusion; withdrawal visibility; eligible repeats
+HTTP_CALCULATION_CALENDAR | PASS | real kernel/middleware; synthetic records; no browser acceptance
+CONCURRENT | fallback-expire-expire | two independent student lock waiters observed | [{"ok":true,"changed":false},{"ok":true,"changed":true}]
+CONCURRENT | fallback-extension-expiry | two independent student lock waiters observed | [{"ok":false,"code":"incomplete_stale"},{"ok":true,"changed":true}]
+CONCURRENT | fallback-resolution-extension | two independent student lock waiters observed | [{"ok":true,"changed":true},{"ok":false,"code":"incomplete_stale"}]
+CONCURRENT | fallback-resolution-expiry | two independent student lock waiters observed | [{"ok":false,"code":"incomplete_stale"},{"ok":true,"changed":true}]
+CONCURRENT | fallback-finalization-expiry | two independent offering lock waiters observed | [{"ok":true,"changed":true},{"ok":true,"changed":true}]
+CONCURRENT | fallback-grant-ordinary-save | two independent offering lock waiters observed | [{"ok":true,"changed":true},{"ok":false,"code":"manual_grade_entry_stale"}]
+Z_SETTLEMENT | fallback | PASS | preserved announcement and completed practical; canonical finalization
+CONCURRENT | fallback-grant-drop | two independent student lock waiters observed | [{"ok":false,"code":"incomplete_registration_not_eligible"},{"ok":true,"changed":true}]
+CONCURRENT | fallback-grant-withdraw | two independent student lock waiters observed | [{"ok":false,"code":"incomplete_registration_not_eligible"},{"ok":true,"changed":true}]
+CONCURRENT | fallback-grant-cancel | two independent student lock waiters observed | [{"ok":false,"code":"incomplete_registration_not_eligible"},{"ok":true,"changed":true}]
+ORDERED_CONCURRENT | fallback | grant-first | independent held lock / in-flight FOR UPDATE PASS
+ORDERED_CONCURRENT | fallback | drop-first | independent held lock / in-flight FOR UPDATE PASS
+CONCURRENT | installed-expire-expire | two independent catalog lock waiters observed | [{"ok":true,"changed":true},{"ok":true,"changed":false}]
+CONCURRENT | installed-extension-expiry | two independent catalog lock waiters observed | [{"ok":false,"code":"incomplete_stale"},{"ok":true,"changed":true}]
+CONCURRENT | installed-resolution-extension | two independent catalog lock waiters observed | [{"ok":true,"changed":true},{"ok":false,"code":"incomplete_stale"}]
+CONCURRENT | installed-resolution-expiry | two independent catalog lock waiters observed | [{"ok":false,"code":"incomplete_stale"},{"ok":true,"changed":true}]
+CONCURRENT | installed-finalization-expiry | two independent catalog lock waiters observed | [{"ok":true,"changed":true},{"ok":true,"changed":true}]
+CONCURRENT | installed-grant-ordinary-save | two independent catalog lock waiters observed | [{"ok":true,"changed":true},{"ok":false,"code":"manual_grade_entry_stale"}]
+Z_SETTLEMENT | installed | PASS | preserved announcement and completed practical; canonical finalization
+CONCURRENT | installed-grant-drop | two independent catalog lock waiters observed | [{"ok":false,"code":"incomplete_registration_not_eligible"},{"ok":true,"changed":true}]
+CONCURRENT | installed-grant-withdraw | two independent catalog lock waiters observed | [{"ok":false,"code":"incomplete_registration_not_eligible"},{"ok":true,"changed":true}]
+CONCURRENT | installed-grant-cancel | two independent catalog lock waiters observed | [{"ok":false,"code":"incomplete_registration_not_eligible"},{"ok":true,"changed":true}]
+ORDERED_CONCURRENT | installed | grant-first | independent held lock / in-flight FOR UPDATE PASS
+ORDERED_CONCURRENT | installed | drop-first | independent held lock / in-flight FOR UPDATE PASS
+INSTALLED_CATALOG | PASS | approved plan assignments, real reference revision triggers and catalog-row contention
+COMPATIBLE_RESUME | PASS | populated rows and existing trigger definitions/timestamps preserved
+NEGATIVE_SCHEMA | deadline-type | BLOCKED/FAIL/503; installer and data unchanged
+NEGATIVE_SCHEMA | text-capacity | BLOCKED/FAIL/503; installer and data unchanged
+NEGATIVE_SCHEMA | nullability | BLOCKED/FAIL/503; installer and data unchanged
+NEGATIVE_SCHEMA | uuid-unique-sequence | BLOCKED/FAIL/503; installer and data unchanged
+NEGATIVE_SCHEMA | revision-index-order | BLOCKED/FAIL/503; installer and data unchanged
+NEGATIVE_SCHEMA | fk-target | BLOCKED/FAIL/503; installer and data unchanged
+NEGATIVE_SCHEMA | fk-rule | BLOCKED/FAIL/503; installer and data unchanged
+NEGATIVE_SCHEMA | required-check | BLOCKED/FAIL/503; installer and data unchanged
+NEGATIVE_SCHEMA | no-op-trigger | BLOCKED/FAIL/503; installer and data unchanged
+NEGATIVE_SCHEMA | trigger-timing | BLOCKED/FAIL/503; installer and data unchanged
+NEGATIVE_SCHEMA | trigger-target | BLOCKED/FAIL/503; installer and data unchanged
+EXPIRATION_PROGRESS | PASS | batch=1, three independent processes, persistent file cursor; blocked history unchanged
+CONSTRAINTS | PASS | append-only events; restrictive FKs; rollback refusal
+OVERALL | PASS
+Guarded isolated shutdown.

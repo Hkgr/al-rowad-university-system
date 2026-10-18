@@ -19,8 +19,11 @@ export default function FilterBar({ search, filters = [], hasActiveFilters, onCl
           />
           {search.value && (
             <button
+              type="button"
               className="absolute right-3.5 top-1/2 -translate-y-1/2 bg-transparent border-none text-[18px] text-text-light cursor-pointer leading-none w-6 h-6 flex items-center justify-center rounded-full transition-all duration-200 hover:bg-red-500/8 hover:text-red-500"
               onClick={() => search.onChange('')}
+              aria-label="مسح البحث"
+              title="مسح البحث"
             >×</button>
           )}
         </div>
@@ -52,9 +55,12 @@ export default function FilterBar({ search, filters = [], hasActiveFilters, onCl
 
           {hasActiveFilters && (
             <button
+              type="button"
               className="flex items-center gap-1.5 py-2 px-3 border-[1.5px] border-red-400/30 rounded-[10px] bg-red-50 text-red-500 text-[12.5px] font-semibold cursor-pointer transition-all duration-200 hover:bg-red-100"
               onClick={onClear}
               dir="rtl"
+              aria-label="مسح الفلاتر"
+              title="مسح الفلاتر"
             >
               <FaTimes className="text-[10px]" />
               <span>مسح الفلاتر</span>

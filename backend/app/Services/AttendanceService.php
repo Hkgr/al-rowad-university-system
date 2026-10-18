@@ -11,13 +11,17 @@ use App\Models\Student;
 use App\Models\StudentAttendance;
 use App\Models\StudentCourseRegistration;
 use App\Models\StudentCourseResult;
+use App\Support\CourseRequirementClassification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class AttendanceService
 {
     public const DEPRIVATION_THRESHOLD = 15;
+
+    public function __construct(private readonly GradeService $grades) {}
 
     public function getCourseOfferingSessions(int $courseOfferingId): array
     {
@@ -106,7 +110,7 @@ class AttendanceService
 
     public function recordSessionAttendance(int $sessionId, array $records): array
     {
-        return DB::transaction(function () use ($sessionId, $records): array {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($sessionId, $records): array {
             $session = AttendanceSession::query()->findOrFail($sessionId);
             $saved = [];
 
@@ -166,7 +170,7 @@ class AttendanceService
         });
     }
 
-    public function getStudentAttendance(Student $student, ?int $academicYearId = null, ?int $semesterId = null, ?int $courseOfferingId = null): array
+    public function getStudentAttendance(Student $student, ?int $academicYearId = null, ?int $semesterId = null, ?int $courseOfferingId = null, ?\App\Models\User $user = null): array
     {
         $registrationsQuery = StudentCourseRegistration::query()
             ->where('student_id', $student->student_id)
@@ -176,6 +180,10 @@ class AttendanceService
                 'courseOffering.semester',
                 'studentCourseResult.resultStatus',
             ]);
+
+        if ($user !== null) {
+            $registrationsQuery = app(DataScopeService::class)->scopeRegistrations($registrationsQuery, $user);
+        }
 
         if ($courseOfferingId !== null) {
             $registrationsQuery->where('course_offering_id', $courseOfferingId);
@@ -195,7 +203,13 @@ class AttendanceService
             );
         }
 
+        $hideInternalNotes = $user !== null
+            && app(AcademicAuthorizationService::class)->isRestrictedToOfficialStudentGrades($user);
+
         $registrations = $registrationsQuery->orderBy('student_course_registration_id')->get();
+        $registrations->each(fn (StudentCourseRegistration $registration) => $registration->setRelation('student', $student));
+        CourseRequirementClassification::attachStudentProgramCourses($registrations);
+        CourseRequirementClassification::hydrateOfferings($registrations->map(fn (StudentCourseRegistration $registration) => $registration->courseOffering));
 
         return [
             'student' => [
@@ -208,7 +222,94 @@ class AttendanceService
                 'semester_id' => $semesterId,
                 'course_offering_id' => $courseOfferingId,
             ],
-            'courses' => $registrations->map(fn (StudentCourseRegistration $registration) => $this->formatStudentCourseAttendance($registration))->values()->all(),
+            'courses' => $registrations
+                ->map(fn (StudentCourseRegistration $registration) => $this->formatStudentCourseAttendance(
+                    $registration,
+                    includeInternalNotes: ! $hideInternalNotes
+                ))
+                ->values()
+                ->all(),
+        ];
+    }
+
+    public function getStudentAttendanceOverview(Student $student): array
+    {
+        $registrations = StudentCourseRegistration::query()
+            ->where('student_id', $student->student_id)
+            ->with([
+                'courseOffering.course',
+                'courseOffering.academicYear',
+                'courseOffering.semester',
+                'studentCourseResult.resultStatus',
+                'resultStatus',
+                'registrationStatus',
+            ])
+            ->orderByDesc('student_course_registration_id')
+            ->get()
+            ->unique('course_offering_id')
+            ->values();
+        $registrations->each(fn (StudentCourseRegistration $registration) => $registration->setRelation('student', $student));
+        CourseRequirementClassification::attachStudentProgramCourses($registrations);
+
+        $offeringIds = $registrations
+            ->pluck('course_offering_id')
+            ->filter()
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values();
+
+        $sessions = $offeringIds->isEmpty()
+            ? collect()
+            : AttendanceSession::query()
+                ->whereIn('course_offering_id', $offeringIds)
+                ->orderBy('session_date')
+                ->orderBy('attendance_session_id')
+                ->get();
+
+        $sessionsByOffering = $sessions->groupBy(fn (AttendanceSession $session): string => (string) $session->course_offering_id);
+        $sessionIds = $sessions->pluck('attendance_session_id');
+
+        $attendancesBySessionId = $sessionIds->isEmpty()
+            ? collect()
+            : StudentAttendance::query()
+                ->where('student_id', $student->student_id)
+                ->whereIn('attendance_session_id', $sessionIds)
+                ->with('attendanceStatus')
+                ->get()
+                ->keyBy(fn (StudentAttendance $attendance): int => (int) $attendance->attendance_session_id);
+
+        $courseRows = $registrations
+            ->map(function (StudentCourseRegistration $registration) use ($sessionsByOffering, $attendancesBySessionId): array {
+                $offeringId = (int) $registration->course_offering_id;
+
+                return $this->formatStudentAttendanceOverviewCourse(
+                    $registration,
+                    $sessionsByOffering->get((string) $offeringId, collect()),
+                    $attendancesBySessionId
+                );
+            })
+            ->sortBy(fn (array $course): string => $course['course']['course_code'] ?? '')
+            ->sortBy('_sort_semester')
+            ->sortBy('_sort_year')
+            ->values();
+
+        return [
+            'student' => [
+                'student_id' => $student->student_id,
+                'student_number' => $student->student_number,
+                'full_name' => trim($student->first_name.' '.$student->last_name),
+            ],
+            'deprivation_threshold' => self::DEPRIVATION_THRESHOLD,
+            'summary' => $this->summarizeStudentAttendanceOverview($courseRows),
+            'years' => $this->attendanceOverviewYears($courseRows),
+            'courses' => $courseRows
+                ->map(function (array $course): array {
+                    unset($course['_sort_year'], $course['_sort_semester']);
+
+                    return $course;
+                })
+                ->values()
+                ->all(),
         ];
     }
 
@@ -219,6 +320,9 @@ class AttendanceService
             ->findOrFail($courseOfferingId);
 
         $stats = $this->calculateAbsenceStats($student->student_id, $courseOfferingId);
+        $programId = $student->academic_program_id === null ? null : (int) $student->academic_program_id;
+        $courseId = $offering->course_id === null ? null : (int) $offering->course_id;
+        $courseMap = CourseRequirementClassification::indexActiveForProgram($programId, [$courseId]);
 
         return [
             'student' => [
@@ -230,6 +334,11 @@ class AttendanceService
                 'course_offering_id' => $offering->course_offering_id,
                 'course_code' => $offering->course?->course_code,
                 'course_name' => $offering->course?->course_name,
+                'requirement_classification' => CourseRequirementClassification::forStudentFromMap(
+                    $programId,
+                    $courseId,
+                    $courseMap
+                ),
                 'academic_year' => $this->compactYear($offering->academicYear),
                 'semester' => $this->compactSemester($offering->semester),
             ],
@@ -279,6 +388,7 @@ class AttendanceService
                 'course_offering_id' => $offering->course_offering_id,
                 'course_code' => $offering->course?->course_code,
                 'course_name' => $offering->course?->course_name,
+                'requirement_classification' => CourseRequirementClassification::forOffering($offering),
                 'academic_year' => $this->compactYear($offering->academicYear),
                 'semester' => $this->compactSemester($offering->semester),
             ],
@@ -289,7 +399,7 @@ class AttendanceService
 
     public function applyDeprivation(int $courseOfferingId, ?int $userId = null): array
     {
-        return DB::transaction(function () use ($courseOfferingId, $userId): array {
+        return \App\Services\AcademicPlanContext::transaction(function () use ($courseOfferingId, $userId): array {
             $deprivedStatusId = $this->deprivedResultStatusId();
             $deprivationNote = 'Deprived due to absence percentage greater than '.self::DEPRIVATION_THRESHOLD.'%.';
 
@@ -298,6 +408,7 @@ class AttendanceService
 
             $registrations = $this->activeRegistrationsQuery($courseOfferingId)
                 ->with(['student', 'studentCourseResult.resultStatus'])
+                ->lockForUpdate()
                 ->get();
 
             foreach ($registrations as $registration) {
@@ -323,6 +434,9 @@ class AttendanceService
                     continue;
                 }
 
+                $this->grades->assertNotSupplementaryMaterialized(
+                    (int) $registration->student_course_registration_id
+                );
                 $existingResult = $registration->studentCourseResult;
 
                 if ($existingResult === null) {
@@ -399,7 +513,231 @@ class AttendanceService
         ];
     }
 
-    private function formatStudentCourseAttendance(StudentCourseRegistration $registration): array
+    private function formatStudentAttendanceOverviewCourse(
+        StudentCourseRegistration $registration,
+        Collection $sessions,
+        Collection $attendancesBySessionId
+    ): array {
+        $offering = $registration->courseOffering;
+        $year = $offering?->academicYear;
+        $semester = $offering?->semester;
+        $counts = [
+            'present' => 0,
+            'absent' => 0,
+            'excused' => 0,
+            'late' => 0,
+        ];
+        $countedAsAbsent = 0;
+        $recorded = 0;
+        $theoretical = ['recorded' => 0, 'present' => 0, 'absent' => 0, 'excused' => 0, 'late' => 0];
+        $practical = ['recorded' => 0, 'present' => 0, 'absent' => 0, 'excused' => 0, 'late' => 0];
+
+        $relevantSessions = $this->relevantSessionsForStudentRegistration(
+            $sessions,
+            $registration,
+            $attendancesBySessionId
+        );
+
+        $sessionPayload = $relevantSessions->map(function (AttendanceSession $session) use (
+            $attendancesBySessionId,
+            &$counts,
+            &$countedAsAbsent,
+            &$recorded,
+            &$theoretical,
+            &$practical
+        ): array {
+            $attendance = $attendancesBySessionId->get((int) $session->attendance_session_id);
+            $status = $attendance?->attendanceStatus;
+            $recordedState = $attendance !== null;
+            $sessionType = $session->session_type === 'lecture' ? 'theoretical' : ($session->session_type ?? 'theoretical');
+            $bucket = $sessionType === 'practical' ? 'practical' : 'theoretical';
+
+            if ($recordedState) {
+                $recorded++;
+                $code = $status?->status_code;
+                if (array_key_exists((string) $code, $counts)) {
+                    $counts[$code]++;
+                }
+                if ((bool) $status?->counts_as_absent) {
+                    $countedAsAbsent++;
+                }
+                if ($bucket === 'practical') {
+                    $practical['recorded']++;
+                    if (array_key_exists((string) $code, $practical)) {
+                        $practical[$code]++;
+                    }
+                } else {
+                    $theoretical['recorded']++;
+                    if (array_key_exists((string) $code, $theoretical)) {
+                        $theoretical[$code]++;
+                    }
+                }
+            }
+
+            return [
+                'attendance_session_id' => $session->attendance_session_id,
+                'session_date' => $session->session_date?->format('Y-m-d'),
+                'session_type' => $sessionType,
+                'start_time' => $this->compactSessionTime($session->start_time),
+                'end_time' => $this->compactSessionTime($session->end_time),
+                'topic' => $session->notes,
+                'record_state' => $recordedState ? 'recorded' : 'not_recorded',
+                'attendance_status' => $status ? [
+                    'status_code' => $status->status_code,
+                    'status_name' => $status->status_name,
+                    'counts_as_absent' => (bool) $status->counts_as_absent,
+                ] : null,
+            ];
+        })->values()->all();
+
+        $absencePercentage = $recorded > 0
+            ? round(($countedAsAbsent / $recorded) * 100, 2)
+            : null;
+        $isDeprived = $this->isDeprived($registration);
+        $isCandidate = ! $isDeprived
+            && $recorded > 0
+            && $absencePercentage !== null
+            && $absencePercentage > self::DEPRIVATION_THRESHOLD;
+
+        return [
+            'course_offering_id' => $registration->course_offering_id,
+            'course' => [
+                'course_id' => $offering?->course?->course_id,
+                'course_code' => $offering?->course?->course_code,
+                'course_name' => $offering?->course?->course_name,
+            ],
+            'requirement_classification' => CourseRequirementClassification::forStudent(
+                $registration->student?->academic_program_id === null ? null : (int) $registration->student->academic_program_id,
+                $offering?->course?->course_id === null ? null : (int) $offering->course->course_id,
+                $registration->relationLoaded('studentProgramCourse') ? $registration->getRelation('studentProgramCourse') : null
+            ),
+            'academic_year' => $this->compactYear($year),
+            'semester' => $this->compactSemester($semester),
+            'created_sessions_count' => $relevantSessions->count(),
+            'recorded_sessions_count' => $recorded,
+            'unrecorded_sessions_count' => max($relevantSessions->count() - $recorded, 0),
+            'present_count' => $counts['present'],
+            'absent_count' => $counts['absent'],
+            'excused_count' => $counts['excused'],
+            'late_count' => $counts['late'],
+            'absence_percentage' => $absencePercentage,
+            'deprivation_threshold' => self::DEPRIVATION_THRESHOLD,
+            'deprivation_status' => $isDeprived ? 'deprived' : ($isCandidate ? 'candidate' : 'normal'),
+            'theoretical' => $theoretical,
+            'practical' => $practical,
+            'sessions' => $sessionPayload,
+            '_sort_year' => $year?->start_date?->format('Y-m-d') ?? '9999-99-99',
+            '_sort_semester' => (int) ($semester?->semester_order ?? 9999),
+        ];
+    }
+
+    private function summarizeStudentAttendanceOverview(Collection $courses): array
+    {
+        return [
+            'courses_count' => $courses->count(),
+            'recorded_sessions_count' => $courses->sum('recorded_sessions_count'),
+            'present_count' => $courses->sum('present_count'),
+            'absent_count' => $courses->sum('absent_count'),
+            'excused_count' => $courses->sum('excused_count'),
+            'late_count' => $courses->sum('late_count'),
+            'candidate_courses_count' => $courses->where('deprivation_status', 'candidate')->count(),
+            'deprived_courses_count' => $courses->where('deprivation_status', 'deprived')->count(),
+        ];
+    }
+
+    private function attendanceOverviewYears(Collection $courses): array
+    {
+        return $courses
+            ->filter(fn (array $course): bool => ($course['academic_year']['academic_year_id'] ?? null) !== null)
+            ->groupBy(fn (array $course): int => (int) $course['academic_year']['academic_year_id'])
+            ->map(function (Collection $yearCourses): array {
+                $year = $yearCourses->first()['academic_year'];
+                $semesters = $yearCourses
+                    ->filter(fn (array $course): bool => ($course['semester']['semester_id'] ?? null) !== null)
+                    ->unique(fn (array $course): int => (int) $course['semester']['semester_id'])
+                    ->sortBy(fn (array $course): int => (int) ($course['semester']['semester_order'] ?? 9999))
+                    ->map(fn (array $course): array => [
+                        'semester_id' => $course['semester']['semester_id'],
+                        'semester_code' => $course['semester']['semester_code'] ?? null,
+                        'semester_name' => $course['semester']['semester_name'],
+                        'semester_order' => $course['semester']['semester_order'] ?? null,
+                    ])
+                    ->values()
+                    ->all();
+
+                return [
+                    'academic_year_id' => $year['academic_year_id'],
+                    'year_name' => $year['year_name'],
+                    'semesters' => $semesters,
+                    '_sort' => $yearCourses->first()['_sort_year'] ?? '9999-99-99',
+                ];
+            })
+            ->sortBy('_sort')
+            ->map(function (array $year): array {
+                unset($year['_sort']);
+
+                return $year;
+            })
+            ->values()
+            ->all();
+    }
+
+    private function compactSessionTime(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('H:i');
+        }
+
+        $time = substr((string) $value, 0, 5);
+
+        return $time !== '' ? $time : null;
+    }
+
+    private function relevantSessionsForStudentRegistration(
+        Collection $sessions,
+        StudentCourseRegistration $registration,
+        Collection $attendancesBySessionId
+    ): Collection {
+        $statusCode = $registration->registrationStatus?->status_code;
+        $canShowUnrecorded = $statusCode === null
+            || in_array($statusCode, StudentCourseRegistration::HISTORICAL_ATTEMPT_STATUSES, true);
+
+        return $sessions
+            ->filter(function (AttendanceSession $session) use ($registration, $attendancesBySessionId, $canShowUnrecorded): bool {
+                if ($attendancesBySessionId->has((int) $session->attendance_session_id)) {
+                    return true;
+                }
+
+                if (! $canShowUnrecorded) {
+                    return false;
+                }
+
+                return $this->sessionIsOnOrAfterRegistration($session, $registration);
+            })
+            ->values();
+    }
+
+    private function sessionIsOnOrAfterRegistration(AttendanceSession $session, StudentCourseRegistration $registration): bool
+    {
+        $sessionDate = $session->session_date?->format('Y-m-d');
+        $registrationDate = $registration->registration_date?->format('Y-m-d');
+
+        if ($sessionDate === null) {
+            return false;
+        }
+
+        if ($registrationDate === null) {
+            return true;
+        }
+
+        return $sessionDate >= $registrationDate;
+    }
+
+    private function formatStudentCourseAttendance(StudentCourseRegistration $registration, bool $includeInternalNotes = true): array
     {
         $offering = $registration->courseOffering;
         $stats = $this->calculateAbsenceStats($registration->student_id, (int) $registration->course_offering_id);
@@ -409,17 +747,24 @@ class AttendanceService
             ->whereHas('attendanceSession', fn (Builder $query) => $query->where('course_offering_id', $registration->course_offering_id))
             ->with(['attendanceSession', 'attendanceStatus'])
             ->get()
-            ->map(fn (StudentAttendance $attendance) => [
-                'student_attendance_id' => $attendance->student_attendance_id,
-                'attendance_session_id' => $attendance->attendance_session_id,
-                'session_date' => $attendance->attendanceSession?->session_date,
-                'session_type' => $attendance->attendanceSession?->session_type,
-                'attendance_status' => [
-                    'status_code' => $attendance->attendanceStatus?->status_code,
-                    'status_name' => $attendance->attendanceStatus?->status_name,
-                ],
-                'notes' => $attendance->notes,
-            ])
+            ->map(function (StudentAttendance $attendance) use ($includeInternalNotes): array {
+                $payload = [
+                    'student_attendance_id' => $attendance->student_attendance_id,
+                    'attendance_session_id' => $attendance->attendance_session_id,
+                    'session_date' => $attendance->attendanceSession?->session_date,
+                    'session_type' => $attendance->attendanceSession?->session_type,
+                    'attendance_status' => [
+                        'status_code' => $attendance->attendanceStatus?->status_code,
+                        'status_name' => $attendance->attendanceStatus?->status_name,
+                    ],
+                ];
+
+                if ($includeInternalNotes) {
+                    $payload['notes'] = $attendance->notes;
+                }
+
+                return $payload;
+            })
             ->values()
             ->all();
 
@@ -427,6 +772,19 @@ class AttendanceService
             'course_offering_id' => $registration->course_offering_id,
             'course_code' => $offering?->course?->course_code,
             'course_name' => $offering?->course?->course_name,
+            'requirement_classification' => $offering
+                ? CourseRequirementClassification::forStudent(
+                    $registration->student?->academic_program_id === null
+                        ? null
+                        : (int) $registration->student->academic_program_id,
+                    ($offering->course_id ?? $offering->course?->course_id) === null
+                        ? null
+                        : (int) ($offering->course_id ?? $offering->course?->course_id),
+                    $registration->relationLoaded('studentProgramCourse')
+                        ? $registration->getRelation('studentProgramCourse')
+                        : null
+                )
+                : null,
             'academic_year' => $this->compactYear($offering?->academicYear),
             'semester' => $this->compactSemester($offering?->semester),
             'total_sessions' => $stats['total_sessions'],
@@ -517,6 +875,7 @@ class AttendanceService
             'semester_id' => $semester->semester_id,
             'semester_code' => $semester->semester_code,
             'semester_name' => $semester->semester_name,
+            'semester_order' => $semester->semester_order,
         ];
     }
 

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { FaClipboardList, FaCheckDouble, FaExclamationTriangle, FaCalendarAlt, FaLockOpen, FaBookOpen, FaTable } from 'react-icons/fa'
+import { ACCESS, canAccess, hasPermission, PERMISSIONS } from '../../auth/auth'
 
 const API = 'https://rust.alrowaduni.edu.sy/api/v1'
 
@@ -40,14 +41,18 @@ export default function ExamBoardHome() {
       {/* Quick access cards */}
       <div className="grid grid-cols-2 max-[600px]:grid-cols-1 gap-4 mb-6">
         {[
+          { Icon: FaClipboardList, color: '#569933', ar: 'إدخال العلامات اليدوي', en: 'Manual grade entry', to: '/exam-board/manual-grade-entry', access: ACCESS.manualGradeEntry },
           { Icon: FaClipboardList,       color: '#569933', ar: 'كشوف الدرجات',         en: 'Grade Sheets',       to: '/exam-board/grade-sheet'   },
           { Icon: FaCheckDouble,         color: '#3b82f6', ar: 'اعتماد الدرجات',       en: 'Grade Approvals',    to: '/exam-board/approvals'      },
           { Icon: FaExclamationTriangle, color: '#f59e0b', ar: 'الحضور والحرمان',       en: 'Deprivation',        to: '/exam-board/deprivation'    },
-          { Icon: FaCalendarAlt,         color: '#8b5cf6', ar: 'الامتحانات التكميلية', en: 'Supplementary Exams', to: '/exam-board/supplementary'  },
-          { Icon: FaLockOpen,            color: '#22c55e', ar: 'فتح المواد',           en: 'Course Offerings',   to: '/exam-board/course-offerings'    },
+          { Icon: FaCalendarAlt,         color: '#8b5cf6', ar: 'الامتحانات التكميلية', en: 'Supplementary Exams', to: '/exam-board/supplementary', permission: PERMISSIONS.supplementaryExamsRegistrationsView },
+          { Icon: FaLockOpen,            color: '#22c55e', ar: 'الطروحات الأكاديمية', en: 'Course Offerings', to: '/exam-board/course-offerings', access: ACCESS.courseManagement },
           { Icon: FaBookOpen,            color: '#ec4899', ar: 'تسجيل المواد',         en: 'Course Registration', to: '/exam-board/course-registration' },
           { Icon: FaTable,               color: '#0ea5e9', ar: 'جدول المواد',          en: 'Course Table',       to: '/exam-board/course-table'        },
-        ].map(({ Icon, color, ar, en, to }) => (
+        ].filter(({ permission, access }) => (
+          (!permission || hasPermission(permission, user))
+          && (!access || canAccess(access, user))
+        )).map(({ Icon, color, ar, en, to }) => (
           <Link
             key={ar}
             to={to}

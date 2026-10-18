@@ -1,0 +1,5 @@
+# Filled rosters and credentials must never be committed.
+*
+!.gitignore
+!roster-template.csv
+!verify.sql

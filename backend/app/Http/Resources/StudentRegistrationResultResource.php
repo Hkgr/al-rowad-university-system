@@ -23,7 +23,6 @@ class StudentRegistrationResultResource extends JsonResource
             'registered_hours' => $this->resource['registered_hours'],
             'max_allowed_hours' => $this->resource['max_allowed_hours'],
             'remaining_hours' => $this->resource['remaining_hours'],
-            'available_seats' => $this->resource['available_seats'],
         ];
     }
 }

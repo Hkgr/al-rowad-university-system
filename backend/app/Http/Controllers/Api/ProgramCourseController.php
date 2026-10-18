@@ -7,7 +7,7 @@ use App\Http\Requests\ProgramCourse\UpdateProgramCourseRequest;
 use App\Http\Resources\ProgramCourseResource;
 use App\Models\ProgramCourse;
 
-class ProgramCourseController extends ApiController
+class ProgramCourseController extends CatalogCrudController
 {
     protected function modelClass(): string
     {

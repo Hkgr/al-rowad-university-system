@@ -1,14 +1,13 @@
 <?php
 
-use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use App\Services\UserIdentityService;
 
 use App\Http\Controllers\Api\AcademicLevelController;
 use App\Http\Controllers\Api\AcademicProgramController;
 use App\Http\Controllers\Api\AcademicYearController;
+use App\Http\Controllers\Api\AcademicCalendarController;
 use App\Http\Controllers\Api\AccountStatusController;
 use App\Http\Controllers\Api\AdmissionApplicationController;
 use App\Http\Controllers\Api\AppealStatusController;
@@ -23,25 +22,41 @@ use App\Http\Controllers\Api\BoardDecisionAttachmentController;
 use App\Http\Controllers\Api\BoardMeetingController;
 use App\Http\Controllers\Api\BoardMemberController;
 use App\Http\Controllers\Api\CollegeController;
+use App\Http\Controllers\Api\LoginController;
 use App\Http\Controllers\Api\CourseController;
 use App\Http\Controllers\Api\CourseDepartmentController;
 use App\Http\Controllers\Api\CourseInstructorController;
 use App\Http\Controllers\Api\CourseOfferingController;
 use App\Http\Controllers\Api\CourseOfferingInstructorController;
+use App\Http\Controllers\Api\DeanCourseOfferingController;
+use App\Http\Controllers\Api\DeanDashboardController;
+use App\Http\Controllers\Api\DeanRegistrationOfferingController;
+use App\Http\Controllers\Api\DeanSupplementaryExamOfferingController;
+use App\Http\Controllers\Api\StudentSupplementaryExamRegistrationController;
+use App\Http\Controllers\Api\SupplementaryExamRegistrationOfficeController;
+use App\Http\Controllers\Api\SupplementaryExamOverviewController;
 use App\Http\Controllers\Api\CoursePrerequisiteController;
 use App\Http\Controllers\Api\DepartmentController;
+use App\Http\Controllers\Api\DisciplinaryCaseAppealController;
+use App\Http\Controllers\Api\DisciplinaryCaseController;
 use App\Http\Controllers\Api\DocumentTypeController;
 use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\EmployeePositionController;
 use App\Http\Controllers\Api\EmployeeStatusController;
 use App\Http\Controllers\Api\EmployeeTypeController;
 use App\Http\Controllers\Api\EmployeeUnitAssignmentController;
+use App\Http\Controllers\Api\ExecutiveReportController;
+use App\Http\Controllers\Api\ExamStudentAcademicRecordController;
 use App\Http\Controllers\Api\FacultyMemberController;
 use App\Http\Controllers\Api\GradeAppealController;
 use App\Http\Controllers\Api\GradeApprovalController;
 use App\Http\Controllers\Api\GradeAuditLogController;
 use App\Http\Controllers\Api\GradeComponentController;
 use App\Http\Controllers\Api\GradeController;
+use App\Http\Controllers\Api\GradeWorkflowController;
+use App\Http\Controllers\Api\GradePartWorkflowController;
+use App\Http\Controllers\Api\ProfessorCourseOfferingController;
+use App\Http\Controllers\Api\GradePartApprovalController;
 use App\Http\Controllers\Api\GradingPolicyController;
 use App\Http\Controllers\Api\LibraryAuthorController;
 use App\Http\Controllers\Api\LibraryBookController;
@@ -65,6 +80,21 @@ use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\RolePermissionController;
 use App\Http\Controllers\Api\SemesterController;
 use App\Http\Controllers\Api\StudentController;
+use App\Http\Controllers\Api\StudentSelfRegistrationController;
+use App\Http\Controllers\Api\StudentSelfAttendanceController;
+use App\Http\Controllers\Api\StudentSelfGpaController;
+use App\Http\Controllers\Api\StudentSelfGraduationEligibilityController;
+use App\Http\Controllers\Api\StudentSelfRequirementController;
+use App\Http\Controllers\Api\StudentSelfTranscriptController;
+use App\Http\Controllers\Api\StudentSelfAcademicRecordController;
+use App\Http\Controllers\Api\AcademicAdvisingRegistrationRequestController;
+use App\Http\Controllers\Api\AcademicAdvisingRegistrationModificationController;
+use App\Http\Controllers\Api\AcademicAdvisingRegistrationWithdrawalController;
+use App\Http\Controllers\Api\AcademicProgressionController;
+use App\Http\Controllers\Api\AcademicRecordTermController;
+use App\Http\Controllers\Api\ApprovedRegistrationRequestController;
+use App\Http\Controllers\Api\StudentRegistrationModificationController;
+use App\Http\Controllers\Api\GraduationDecisionController;
 use App\Http\Controllers\Api\StudentAcademicTermController;
 use App\Http\Controllers\Api\StudentCourseRegistrationController;
 use App\Http\Controllers\Api\StudentCourseResultController;
@@ -72,11 +102,35 @@ use App\Http\Controllers\Api\StudentCreditLimitController;
 use App\Http\Controllers\Api\StudentAffairsDashboardController;
 use App\Http\Controllers\Api\StudentDocumentController;
 use App\Http\Controllers\Api\StudentStatusController;
+use App\Http\Controllers\Api\ScientificVicePresidentSupplementaryExamPeriodController;
+use App\Http\Controllers\Api\ScientificVicePresidentAcademicCalendarController;
+use App\Http\Controllers\Api\ScientificSemesterOfferingController;
+use App\Http\Controllers\Api\DeanMinimumEnrollmentController;
+use App\Http\Controllers\Api\ScientificMinimumEnrollmentController;
+use App\Http\Controllers\Api\StudentRegistrationReplacementController;
+use App\Http\Controllers\Api\AcademicAdvisingRegistrationReplacementController;
 use App\Http\Controllers\Api\SupplementaryExamPeriodController;
 use App\Http\Controllers\Api\SystemModuleController;
+use App\Http\Controllers\Api\DeanTeachingAssignmentController;
+use App\Http\Controllers\Api\DeanCourseOfferingClosureController;
+use App\Http\Controllers\Api\DeanCourseOfferingExceptionController;
+use App\Http\Controllers\Api\TeachingStaffAssignmentOfferingController;
+use App\Http\Controllers\Api\TeachingStaffController;
+use App\Http\Controllers\Api\VicePresidencyTeachingAssignmentController;
+use App\Http\Controllers\Api\VicePresidencyCourseOfferingClosureController;
+use App\Http\Controllers\Api\VicePresidencyCourseOfferingExceptionController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\UserActivityLogController;
+use App\Http\Controllers\Api\MinistryPlacementController;
+use App\Http\Controllers\Api\MinistryPlacementApplicantConversionController;
+use App\Http\Controllers\Api\MinistryPlacementStudentEnrollmentController;
+use App\Http\Controllers\Api\MinistryPlacementReconciliationController;
 use App\Http\Controllers\Api\UserRoleController;
+use App\Http\Controllers\Api\StudentSupplementaryExamController;
+use App\Http\Controllers\Api\SupplementaryExamEligibilityController;
+use App\Http\Controllers\Api\SupplementaryExamGradingController;
+use App\Http\Controllers\Api\SupplementaryExamMaterializationController;
+use App\Http\Controllers\Api\SupplementaryExamReconciliationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -87,43 +141,8 @@ use App\Http\Controllers\Api\UserRoleController;
 |--------------------------------------------------------------------------
 */
 
-Route::post('login', function (Request $request, UserIdentityService $identity) {
-    $validated = $request->validate([
-        'email' => ['required', 'email'],
-        'password' => ['required', 'string'],
-    ]);
-
-    $user = User::query()->where('email', $validated['email'])->first();
-
-    if (! $user || ! Hash::check($validated['password'], $user->password_hash)) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Invalid email or password',
-            'errors' => ['email' => ['The provided credentials are incorrect.']],
-        ], 422);
-    }
-
-    if ($user->accountStatus?->status_code !== 'active') {
-        return response()->json([
-            'success' => false,
-            'message' => 'This account is disabled or inactive.',
-            'error_code' => 'account_inactive',
-            'errors' => [],
-        ], 403);
-    }
-
-    $token = $user->createToken('api-token')->plainTextToken;
-
-    return response()->json([
-        'success' => true,
-        'message' => 'Login successful',
-        'data' => [
-            'user' => $identity->payload($user),
-            'token' => $token,
-            'token_type' => 'Bearer',
-        ],
-    ]);
-});
+Route::post('login', [LoginController::class, 'login'])
+    ->middleware('throttle:login');
 
 /*
 |--------------------------------------------------------------------------
@@ -143,10 +162,11 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
         ]);
     });
 
-    Route::post('logout', function (Request $request) {
+    Route::post('logout', function (Request $request, \App\Services\LoginAuditService $loginAudit) {
         $token = $request->user()?->currentAccessToken();
         if ($token !== null && method_exists($token, 'delete')) {
             $token->delete();
+            $loginAudit->record($request, $request->user(), \App\Services\LoginAuditService::STATUS_LOGOUT);
         }
 
         return response()->json([
@@ -166,7 +186,51 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
 |--------------------------------------------------------------------------
 */
 
-Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::class])->prefix('v1')->group(function (): void {
+// ConfineMinistryAccounts: the read-only ministry account reaches /api/v1/ministry only.
+Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::class, \App\Http\Middleware\ConfineMinistryAccounts::class])->prefix('v1')->group(function (): void {
+    Route::prefix('exams/incomplete-results')->controller(\App\Http\Controllers\Api\IncompleteResultController::class)->group(function (): void {
+        Route::get('/', 'index');
+        Route::get('registrations/{registration}', 'registration')->whereNumber('registration');
+        Route::post('registrations/{registration}', 'grant')->whereNumber('registration');
+        Route::get('{case}', 'show')->whereNumber('case');
+        Route::patch('{case}/deadline', 'deadline')->whereNumber('case');
+        Route::post('{case}/resolve', 'resolve')->whereNumber('case');
+    });
+    Route::prefix('exams/manual-grade-entry')->controller(\App\Http\Controllers\Api\ExamManualGradeEntryController::class)->group(function (): void {
+        Route::get('students/{student}/catalog', 'catalog');
+        Route::get('students/{student}/periods', 'periods');
+        Route::get('students/{student}/courses/{course}/context-preview', 'contextPreview');
+        Route::post('students/{student}/courses/{course}/context-save', 'contextSave');
+        Route::get('students/{student}/offerings/{offering}/component-preview', 'componentPreview');
+        Route::post('students/{student}/offerings/{offering}/components', 'prepareComponents');
+        Route::post('students/{student}/offerings/{offering}/registration', 'prepareRegistration');
+        Route::get('students', 'students');
+        Route::get('students/{student}/registrations', 'registrations');
+        Route::put('students/{student}/registrations/{registration}/marks', 'save');
+        Route::get('students/{student}/registrations/{registration}/parts/{part}/submission-readiness', 'readiness');
+        Route::post('students/{student}/registrations/{registration}/parts/{part}/submit', 'submit');
+    });
+    Route::get('vice-presidency/reports/definitions', [ExecutiveReportController::class, 'definitions']);
+    Route::get('vice-presidency/reports/filters', [ExecutiveReportController::class, 'filters']);
+    Route::post('vice-presidency/reports/query', [ExecutiveReportController::class, 'query']);
+    Route::get('vice-presidency/analytics/overview', [ExecutiveReportController::class, 'overview']);
+    Route::get('student/supplementary-exams/eligibility', [StudentSupplementaryExamController::class, 'eligibility']);
+    Route::get('student/supplementary-exams/deferrals', [StudentSupplementaryExamController::class, 'deferrals']);
+    Route::post('student/supplementary-exams/deferrals', [StudentSupplementaryExamController::class, 'declare']);
+    Route::post('student/supplementary-exams/deferrals/{deferral}/cancel', [StudentSupplementaryExamController::class, 'cancel']);
+    Route::get('supplementary-exam-eligibility', [SupplementaryExamEligibilityController::class, 'index']);
+    Route::get('student/supplementary-exams/registrations', [StudentSupplementaryExamRegistrationController::class, 'index']);
+    Route::post('student/supplementary-exams/registrations', [StudentSupplementaryExamRegistrationController::class, 'store']);
+    Route::post('student/supplementary-exams/registrations/{registration}/cancel', [StudentSupplementaryExamRegistrationController::class, 'cancel']);
+    Route::post('registration-office/supplementary-exam-periods/{period}/open-registration', [SupplementaryExamRegistrationOfficeController::class, 'open']);
+    Route::get('supplementary-exam-registration-periods', [SupplementaryExamRegistrationOfficeController::class, 'periods']);
+    Route::post('registration-office/supplementary-exam-periods/{period}/close-registration', [SupplementaryExamRegistrationOfficeController::class, 'close']);
+    Route::get('registration-office/supplementary-exam-periods/{period}/registrations', [SupplementaryExamRegistrationOfficeController::class, 'index']);
+    Route::get('supplementary-exam-periods/{period}/registrations', [SupplementaryExamRegistrationOfficeController::class, 'index']);
+    Route::post('registration-office/supplementary-exam-registrations', [SupplementaryExamRegistrationOfficeController::class, 'store']);
+    Route::post('registration-office/supplementary-exam-registrations/{registration}/cancel', [SupplementaryExamRegistrationOfficeController::class, 'cancel']);
+    Route::put('users/{user}/identity', [UserController::class, 'linkIdentity'])
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':users_permissions.manage');
 
     /*
     |--------------------------------------------------------------------------
@@ -178,6 +242,23 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
 
     Route::get('academic-years/current', [AcademicYearController::class, 'current']);
     Route::get('semesters/active', [SemesterController::class, 'active']);
+    Route::get('academic-calendar/catalog', [AcademicCalendarController::class, 'catalog']);
+    Route::get('academic-calendar/events', [AcademicCalendarController::class, 'events']);
+
+    Route::prefix('vice-presidency/scientific/academic-calendar')->group(function (): void {
+        Route::get('catalog', [ScientificVicePresidentAcademicCalendarController::class, 'catalog']);
+        Route::get('events', [ScientificVicePresidentAcademicCalendarController::class, 'index']);
+        Route::post('events', [ScientificVicePresidentAcademicCalendarController::class, 'store']);
+        Route::put('events/{event}/drafts/{version}', [ScientificVicePresidentAcademicCalendarController::class, 'updateDraft']);
+        Route::post('events/{event}/replacement-drafts', [ScientificVicePresidentAcademicCalendarController::class, 'replacementDraft']);
+        Route::post('events/{event}/drafts/{version}/publish', [ScientificVicePresidentAcademicCalendarController::class, 'publish']);
+        Route::delete('events/{event}/drafts/{version}', [ScientificVicePresidentAcademicCalendarController::class, 'destroyDraft']);
+        Route::post('events/{event}/cancel', [ScientificVicePresidentAcademicCalendarController::class, 'cancel']);
+        Route::get('events/{event}/history', [ScientificVicePresidentAcademicCalendarController::class, 'history']);
+        Route::post('academic-years/{year}/activate', [ScientificVicePresidentAcademicCalendarController::class, 'activateYear']);
+        Route::post('academic-years/{year}/reopen', [ScientificVicePresidentAcademicCalendarController::class, 'reopenYear']);
+        Route::post('academic-years/{year}/close', [ScientificVicePresidentAcademicCalendarController::class, 'closeYear']);
+    });
 
     Route::get('offering-proposals/preview', [OfferingProposalController::class, 'preview']);
     Route::get('offering-proposals', [OfferingProposalController::class, 'index']);
@@ -195,6 +276,27 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('student-affairs/dashboard-stats', [StudentAffairsDashboardController::class, 'dashboardStats'])
         ->middleware(\App\Http\Middleware\RequirePermission::class.':students.view');
 
+    Route::post('ministry-placements/preview', [MinistryPlacementController::class, 'preview']);
+    Route::post('ministry-placements/import', [MinistryPlacementController::class, 'import']);
+    Route::get('ministry-placement-academic-years', [MinistryPlacementController::class, 'academicYears']);
+    Route::get('ministry-placement-programs', [MinistryPlacementController::class, 'programs']);
+    Route::get('ministry-placements', [MinistryPlacementController::class, 'index']);
+    Route::get('ministry-placements/{batch}', [MinistryPlacementController::class, 'show'])->whereNumber('batch');
+    Route::get('ministry-placements/{batch}/records', [MinistryPlacementController::class, 'records'])->whereNumber('batch');
+    Route::get('ministry-placements/{batch}/program-matching', [MinistryPlacementController::class, 'programMatching'])->whereNumber('batch');
+    Route::post('ministry-placements/{batch}/program-matching/apply-group', [MinistryPlacementController::class, 'applyProgramGroup'])->whereNumber('batch');
+    Route::put('ministry-placement-records/{record}/program-match', [MinistryPlacementController::class, 'matchProgram'])->whereNumber('record');
+    Route::delete('ministry-placement-records/{record}/program-match', [MinistryPlacementController::class, 'unmatchProgram'])->whereNumber('record');
+    Route::get('ministry-placements/{batch}/applicant-conversion', [MinistryPlacementApplicantConversionController::class, 'summary'])->whereNumber('batch');
+    Route::post('ministry-placement-records/{record}/convert-to-applicant', [MinistryPlacementApplicantConversionController::class, 'convert'])->whereNumber('record');
+    Route::post('ministry-placements/{batch}/applicant-conversion/convert-all', [MinistryPlacementApplicantConversionController::class, 'convertAll'])->whereNumber('batch');
+    Route::get('ministry-placement-academic-levels', [MinistryPlacementStudentEnrollmentController::class, 'academicLevels']);
+    Route::get('ministry-placements/{batch}/student-enrollment', [MinistryPlacementStudentEnrollmentController::class, 'summary'])->whereNumber('batch');
+    Route::post('ministry-placement-records/{record}/enroll-student', [MinistryPlacementStudentEnrollmentController::class, 'enroll'])->whereNumber('record');
+    Route::post('ministry-placements/{batch}/student-enrollment/enroll-all', [MinistryPlacementStudentEnrollmentController::class, 'enrollAll'])->whereNumber('batch');
+    Route::get('ministry-placement-reconciliation', [MinistryPlacementReconciliationController::class, 'index']);
+    Route::get('ministry-placements/{batch}/reconciliation', [MinistryPlacementReconciliationController::class, 'batch'])->whereNumber('batch');
+
     /*
     |--------------------------------------------------------------------------
     | Student Profile / Student Dashboard
@@ -210,8 +312,71 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('students/{student}/available-courses', [StudentController::class, 'availableCourses']);
     Route::get('students/{student}/registered-hours', [StudentController::class, 'registeredHours']);
     Route::get('students/{student}/registration-summary', [StudentController::class, 'registrationSummary']);
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':registration.view')->group(function (): void {
+        Route::get('student/registration', [StudentSelfRegistrationController::class, 'show']);
+        Route::post('student/registration/request/items/{courseOffering}', [StudentSelfRegistrationController::class, 'addItem']);
+        Route::delete('student/registration/request/items/{requestItem}', [StudentSelfRegistrationController::class, 'removeItem']);
+        Route::patch('student/registration/request', [StudentSelfRegistrationController::class, 'updateRequest']);
+        Route::post('student/registration/request/submit', [StudentSelfRegistrationController::class, 'submit']);
+        Route::post('student/registration/{registration}/drop', [StudentSelfRegistrationController::class, 'drop']);
+        Route::post('student/registration/{registration}/withdrawal', [StudentSelfRegistrationController::class, 'submitWithdrawal']);
+        Route::post('student/registration/withdrawals/{withdrawalRequest}/resubmit', [StudentSelfRegistrationController::class, 'resubmitWithdrawal']);
+        Route::get('student/registration/withdrawals', [StudentSelfRegistrationController::class, 'withdrawals']);
+        Route::post('student/registration/modification', [StudentRegistrationModificationController::class, 'store']);
+        Route::patch('student/registration/modification', [StudentRegistrationModificationController::class, 'update']);
+        Route::patch('student/registration/modification/items/{modificationItem}', [StudentRegistrationModificationController::class, 'updateItem']);
+        Route::post('student/registration/modification/items/{courseOffering}', [StudentRegistrationModificationController::class, 'addItem']);
+        Route::delete('student/registration/modification/items/{modificationItem}', [StudentRegistrationModificationController::class, 'removeItem']);
+        Route::post('student/registration/modification/submit', [StudentRegistrationModificationController::class, 'submit']);
+        Route::post('student/registration/replacement', [StudentRegistrationReplacementController::class, 'store']);
+        Route::patch('student/registration/replacement', [StudentRegistrationReplacementController::class, 'update']);
+        Route::post('student/registration/replacement/items', [StudentRegistrationReplacementController::class, 'addItem']);
+        Route::patch('student/registration/replacement/items/{replacementItem}', [StudentRegistrationReplacementController::class, 'updateItem']);
+        Route::delete('student/registration/replacement/items/{replacementItem}', [StudentRegistrationReplacementController::class, 'removeItem']);
+        Route::post('student/registration/replacement/submit', [StudentRegistrationReplacementController::class, 'submit']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':registration_requests.view')->group(function (): void {
+        Route::get('academic-advising/registration-requests', [AcademicAdvisingRegistrationRequestController::class, 'index']);
+        Route::get('academic-advising/registration-requests/{registrationRequest}', [AcademicAdvisingRegistrationRequestController::class, 'show']);
+        Route::get('academic-advising/registration-modifications', [AcademicAdvisingRegistrationModificationController::class, 'index']);
+        Route::get('academic-advising/registration-modifications/{modification}', [AcademicAdvisingRegistrationModificationController::class, 'show']);
+        Route::get('academic-advising/registration-replacements', [AcademicAdvisingRegistrationReplacementController::class, 'index']);
+        Route::get('academic-advising/registration-replacements/{replacement}', [AcademicAdvisingRegistrationReplacementController::class, 'show']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':registration_requests.review')->group(function (): void {
+        Route::post('academic-advising/registration-requests/{registrationRequest}/return', [AcademicAdvisingRegistrationRequestController::class, 'returnForModification']);
+        Route::post('academic-advising/registration-requests/{registrationRequest}/approve', [AcademicAdvisingRegistrationRequestController::class, 'approve']);
+        Route::post('academic-advising/registration-modifications/{modification}/return', [AcademicAdvisingRegistrationModificationController::class, 'returnForModification']);
+        Route::post('academic-advising/registration-modifications/{modification}/approve', [AcademicAdvisingRegistrationModificationController::class, 'approve']);
+        Route::post('academic-advising/registration-replacements/{replacement}/return', [AcademicAdvisingRegistrationReplacementController::class, 'returnForModification']);
+        Route::post('academic-advising/registration-replacements/{replacement}/approve', [AcademicAdvisingRegistrationReplacementController::class, 'approve']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':registration_withdrawals.view')->group(function (): void {
+        Route::get('academic-advising/registration-withdrawals', [AcademicAdvisingRegistrationWithdrawalController::class, 'index']);
+        Route::get('academic-advising/registration-withdrawals/{withdrawalRequest}', [AcademicAdvisingRegistrationWithdrawalController::class, 'show']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':registration_withdrawals.review')->group(function (): void {
+        Route::post('academic-advising/registration-withdrawals/{withdrawalRequest}/return', [AcademicAdvisingRegistrationWithdrawalController::class, 'returnForModification']);
+        Route::post('academic-advising/registration-withdrawals/{withdrawalRequest}/approve', [AcademicAdvisingRegistrationWithdrawalController::class, 'approve']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':registration.view')->group(function (): void {
+        Route::get('registration-requests/approved', [ApprovedRegistrationRequestController::class, 'index']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':grades.view')->group(function (): void {
+        Route::get('student/academic-record', [StudentSelfAcademicRecordController::class, 'show']);
+        Route::get('student/transcript', [StudentSelfTranscriptController::class, 'show']);
+        Route::get('student/gpa-overview', [StudentSelfGpaController::class, 'show']);
+        Route::get('student/requirements', [StudentSelfRequirementController::class, 'show']);
+        Route::get('student/graduation-eligibility', [StudentSelfGraduationEligibilityController::class, 'show']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':attendance.view')->group(function (): void {
+        Route::get('student/attendance-overview', [StudentSelfAttendanceController::class, 'show']);
+    });
     Route::get('students/{student}/profile', [StudentController::class, 'profile']);
     Route::get('students/{student}/academic-info', [StudentController::class, 'academicInfo']);
+    Route::get('students/{student}/requirements', [StudentController::class, 'requirements']);
+    Route::get('students/{student}/graduation-eligibility', [StudentController::class, 'graduationEligibility']);
+    Route::get('students/{student}/academic-record', [ExamStudentAcademicRecordController::class, 'show']);
     Route::get('students/{student}/documents', [StudentController::class, 'documents']);
     Route::post('students/{student}/documents', [StudentDocumentController::class, 'upload']);
     Route::get('students/{student}/registrations', [StudentController::class, 'registrations']);
@@ -220,6 +385,33 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('students/{student}/cgpa', [StudentController::class, 'cgpa']);
     Route::get('students/{student}/attendance', [StudentController::class, 'attendance']);
     Route::get('students/{student}/absence-percentage', [StudentController::class, 'absencePercentage']);
+
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':academic_records.view')->group(function (): void {
+        Route::get('academic-records/students/{student}/terms', [AcademicRecordTermController::class, 'index']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':academic_records.finalize')->group(function (): void {
+        Route::post('academic-records/students/{student}/terms/{academicYear}/{semester}/recalculate', [AcademicRecordTermController::class, 'recalculate']);
+        Route::post('academic-records/students/{student}/terms/{academicYear}/{semester}/finalize', [AcademicRecordTermController::class, 'finalize']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':academic_progression.view')->group(function (): void {
+        Route::get('academic-progression/students/{student}/evaluate', [AcademicProgressionController::class, 'evaluate']);
+        Route::get('academic-progression', [AcademicProgressionController::class, 'index']);
+        Route::get('academic-progression/{progressionDecision}', [AcademicProgressionController::class, 'show']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':academic_progression.review')->group(function (): void {
+        Route::post('academic-progression/{student}/submit', [AcademicProgressionController::class, 'submit']);
+        Route::post('academic-progression/{progressionDecision}/return', [AcademicProgressionController::class, 'returnForModification']);
+        Route::post('academic-progression/{progressionDecision}/approve', [AcademicProgressionController::class, 'approve']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':graduation_decisions.view')->group(function (): void {
+        Route::get('graduation-decisions', [GraduationDecisionController::class, 'index']);
+        Route::get('graduation-decisions/{graduationDecision}', [GraduationDecisionController::class, 'show']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':graduation_decisions.review')->group(function (): void {
+        Route::post('graduation-decisions/{student}/submit', [GraduationDecisionController::class, 'submit']);
+        Route::post('graduation-decisions/{graduationDecision}/return', [GraduationDecisionController::class, 'returnForModification']);
+        Route::post('graduation-decisions/{graduationDecision}/approve', [GraduationDecisionController::class, 'approve']);
+    });
 
     /*
     |--------------------------------------------------------------------------
@@ -231,6 +423,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
 
     Route::get('colleges/{college}/departments', [CollegeController::class, 'departments'])->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.view');
     Route::get('departments/{department}/programs', [DepartmentController::class, 'programs'])->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.view');
+    Route::get('departments/{id}/statistics', [DepartmentController::class, 'statistics']);
     Route::get('programs/{academic_program}/students', [AcademicProgramController::class, 'students'])->middleware(\App\Http\Middleware\RequirePermission::class.':students.view');
     Route::get('programs/{academic_program}/courses', [AcademicProgramController::class, 'courses'])->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.view');
     Route::get('programs/{id}/mandatory-courses', [AcademicProgramController::class, 'mandatoryCourses'])->middleware(\App\Http\Middleware\RequirePermission::class.':academic_structure.view');
@@ -249,6 +442,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('courses/{id}/programs', [CourseController::class, 'programs']);
     Route::get('courses/{id}/prerequisites', [CourseController::class, 'prerequisites']);
     Route::get('courses/{id}/instructors', [CourseController::class, 'instructors']);
+    Route::get('courses/{id}/statistics', [CourseController::class, 'statistics']);
 
     /*
     |--------------------------------------------------------------------------
@@ -264,18 +458,28 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('course-offerings/{id}/capacity', [CourseOfferingController::class, 'capacity']);
     Route::get('course-offerings/by-semester', [CourseOfferingController::class, 'bySemester']);
     Route::get('course-offerings/{id}/grade-sheet', [CourseOfferingController::class, 'gradeSheet']);
+    Route::get('professor/course-offerings', [ProfessorCourseOfferingController::class, 'index']);
+    Route::get('professor/supplementary-exams', [SupplementaryExamGradingController::class, 'professorIndex']);
+    Route::get('professor/supplementary-exams/{offering}/grades', [SupplementaryExamGradingController::class, 'professorGrades']);
+    Route::put('professor/supplementary-exams/{offering}/grades', [SupplementaryExamGradingController::class, 'save']);
+    Route::post('professor/supplementary-exams/{offering}/submit', [SupplementaryExamGradingController::class, 'submit']);
+    Route::post('professor/supplementary-exams/{offering}/resubmit', [SupplementaryExamGradingController::class, 'resubmit']);
+    Route::get('course-offerings/{offering}/grade-parts-workflow', [GradePartWorkflowController::class, 'show']);
+    Route::put('registrations/{registration}/grade-parts/{part}', [GradePartWorkflowController::class, 'update']);
+    Route::post('course-offerings/{offering}/grade-parts/submit-my-parts', [GradePartWorkflowController::class, 'submitMyParts']);
+    Route::post('course-offerings/{offering}/grade-parts/{part}/submit', [GradePartWorkflowController::class, 'submit']);
+    Route::get('course-offerings/{courseOffering}/grade-workflow', [GradeWorkflowController::class, 'show']);
+    Route::post('course-offerings/{courseOffering}/submit-grades', [GradeWorkflowController::class, 'submit']);
     Route::get('course-offerings/{id}/results-summary', [CourseOfferingController::class, 'resultsSummary']);
     Route::get('course-offerings/{id}/attendance-sessions', [CourseOfferingController::class, 'attendanceSessions']);
     Route::post('course-offerings/{id}/attendance-sessions', [CourseOfferingController::class, 'storeAttendanceSession']);
     Route::get('course-offerings/{id}/deprived-students', [CourseOfferingController::class, 'deprivedStudents']);
     Route::post('course-offerings/{id}/apply-deprivation', [CourseOfferingController::class, 'applyDeprivation']);
     Route::get('course-offerings/by-program/{program_id}', [CourseOfferingController::class, 'byProgram']);
-    Route::middleware(\App\Http\Middleware\RequireModuleAccess::class.':courses')->group(function (): void {
-        Route::get('course-offerings/{courseOffering}/instructors', [CourseOfferingInstructorController::class, 'index']);
-        Route::post('course-offerings/{courseOffering}/instructors', [CourseOfferingInstructorController::class, 'store']);
-        Route::patch('course-offering-instructors/{courseOfferingInstructor}', [CourseOfferingInstructorController::class, 'update']);
-        Route::delete('course-offering-instructors/{courseOfferingInstructor}', [CourseOfferingInstructorController::class, 'destroy']);
-    });
+    Route::get('course-offerings/{courseOffering}/instructors', [CourseOfferingInstructorController::class, 'index']);
+    Route::post('course-offerings/{courseOffering}/instructors', [CourseOfferingInstructorController::class, 'store']);
+    Route::patch('course-offering-instructors/{courseOfferingInstructor}', [CourseOfferingInstructorController::class, 'update']);
+    Route::delete('course-offering-instructors/{courseOfferingInstructor}', [CourseOfferingInstructorController::class, 'destroy']);
 
     /*
     |--------------------------------------------------------------------------
@@ -357,7 +561,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     */
 
     Route::apiResource('students', StudentController::class);
-    Route::apiResource('student-academic-terms', StudentAcademicTermController::class);
+    Route::apiResource('student-academic-terms', StudentAcademicTermController::class)
+        ->only(['index', 'show', 'store', 'update', 'destroy']);
     Route::apiResource('student-course-registrations', StudentCourseRegistrationController::class)
         ->only(['index', 'show']);
     // Result mutations must go through GradeController/GradeService so registration
@@ -393,10 +598,22 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     */
 
     Route::apiResource('grade-appeals', GradeAppealController::class);
-    Route::apiResource('grade-approvals', GradeApprovalController::class);
+    Route::get('grade-part-approvals', [GradePartApprovalController::class, 'index']);
+    Route::get('grade-part-approvals/{approval}', [GradePartApprovalController::class, 'show']);
+    Route::post('grade-part-approvals/{approval}/approve', [GradePartApprovalController::class, 'approve']);
+    Route::post('grade-part-approvals/{approval}/return-for-correction', [GradePartApprovalController::class, 'returnForCorrection']);
+    Route::post('grade-approvals/{gradeApproval}/approve', [GradeApprovalController::class, 'approve']);
+    Route::post('grade-approvals/{gradeApproval}/return-for-correction', [GradeApprovalController::class, 'returnForCorrection']);
+    Route::apiResource('grade-approvals', GradeApprovalController::class)->only(['index', 'show']);
     Route::apiResource('grade-audit-logs', GradeAuditLogController::class);
     Route::apiResource('grade-components', GradeComponentController::class);
     Route::apiResource('grading-policies', GradingPolicyController::class);
+    Route::apiResource('disciplinary-cases', DisciplinaryCaseController::class)
+        ->only(['index', 'show', 'store']);
+    Route::apiResource('disciplinary-case-appeals', DisciplinaryCaseAppealController::class)
+        ->only(['index', 'show', 'store']);
+    Route::post('disciplinary-case-appeals/{id}/decide', [DisciplinaryCaseAppealController::class, 'decide']);
+    Route::get('students/{student}/disciplinary-cases', [DisciplinaryCaseController::class, 'forStudent']);
 
     /*
     |--------------------------------------------------------------------------
@@ -406,7 +623,18 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     |--------------------------------------------------------------------------
     */
 
-    Route::apiResource('supplementary-exam-periods', SupplementaryExamPeriodController::class);
+    Route::get('supplementary-exam-periods', [SupplementaryExamPeriodController::class, 'index']);
+    Route::get('supplementary-exam-periods/{period}', [SupplementaryExamPeriodController::class, 'show']);
+    Route::get('exams/supplementary-grades', [SupplementaryExamGradingController::class, 'queue']);
+    Route::get('exams/supplementary-overview', SupplementaryExamOverviewController::class);
+    Route::post('exams/supplementary-grades/{submission}/return', [SupplementaryExamGradingController::class, 'return']);
+    Route::post('exams/supplementary-grades/{submission}/approve', [SupplementaryExamGradingController::class, 'approve']);
+    Route::post('exams/supplementary-grades/{submission}/publish', [SupplementaryExamGradingController::class, 'publish']);
+    Route::post('exams/supplementary-offerings/{offering}/materialize', [SupplementaryExamMaterializationController::class, 'store']);
+    Route::get('exams/supplementary-periods/{period}/reconciliation', [SupplementaryExamReconciliationController::class, 'show']);
+    Route::get('exams/supplementary-offerings/{offering}/graders', [SupplementaryExamGradingController::class, 'graders']);
+    Route::post('exams/supplementary-offerings/{offering}/grader', [SupplementaryExamGradingController::class, 'assign']);
+    Route::post('exams/supplementary-periods/{period}/open-grading', [SupplementaryExamGradingController::class, 'open']);
 
     /*
     |--------------------------------------------------------------------------
@@ -421,7 +649,128 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::apiResource('employee-statuses', EmployeeStatusController::class);
     Route::apiResource('employee-types', EmployeeTypeController::class);
     Route::apiResource('employee-unit-assignments', EmployeeUnitAssignmentController::class);
+    Route::get('faculty-members/me', [FacultyMemberController::class, 'me']);
     Route::apiResource('faculty-members', FacultyMemberController::class);
+    Route::get('dean/dashboard', [DeanDashboardController::class, 'show'])
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':dashboards.view');
+    Route::get('dean/course-offerings', [DeanCourseOfferingController::class, 'index']);
+    Route::get('dean/course-offerings/{courseOffering}/students', [DeanCourseOfferingController::class, 'students']);
+    Route::get('dean/course-offerings/{courseOffering}/sessions', [DeanCourseOfferingController::class, 'sessions']);
+    Route::get('dean/course-offerings/{courseOffering}', [DeanCourseOfferingController::class, 'show']);
+    Route::get('dean/registration-offerings', [DeanRegistrationOfferingController::class, 'index']);
+    Route::post('dean/registration-offerings/open', [DeanRegistrationOfferingController::class, 'open']);
+    Route::post('dean/registration-offerings/bulk-prepare', [DeanRegistrationOfferingController::class, 'bulkPrepare']);
+    Route::post('dean/registration-offerings/{courseOffering}/open', [DeanRegistrationOfferingController::class, 'reopen']);
+    Route::post('dean/registration-offerings/{courseOffering}/close', [DeanRegistrationOfferingController::class, 'close']);
+    Route::put('dean/registration-offerings/{courseOffering}/proposal', [DeanRegistrationOfferingController::class, 'updateProposal']);
+    Route::post('dean/registration-offerings/{courseOffering}/submit', [DeanRegistrationOfferingController::class, 'submit']);
+    Route::put('dean/registration-offerings/{courseOffering}/timetable', [DeanRegistrationOfferingController::class, 'replaceTimetable']);
+    Route::get('dean/registration-offerings/minimum-enrollment', [DeanMinimumEnrollmentController::class, 'index']);
+    Route::post('dean/registration-offerings/minimum-enrollment/{review}/recommend', [DeanMinimumEnrollmentController::class, 'recommend']);
+    Route::get('vice-presidency/scientific/semester-offerings/minimum-enrollment', [ScientificMinimumEnrollmentController::class, 'index']);
+    Route::get('vice-presidency/scientific/semester-offerings/minimum-enrollment/{review}', [ScientificMinimumEnrollmentController::class, 'show']);
+    Route::post('vice-presidency/scientific/semester-offerings/minimum-enrollment/{review}/decide', [ScientificMinimumEnrollmentController::class, 'decide']);
+    Route::get('vice-presidency/scientific/semester-offerings', [ScientificSemesterOfferingController::class, 'index']);
+    Route::get('vice-presidency/scientific/semester-offerings/{semesterOfferingRequest}', [ScientificSemesterOfferingController::class, 'show']);
+    Route::post('vice-presidency/scientific/semester-offerings/{semesterOfferingRequest}/approve', [ScientificSemesterOfferingController::class, 'approve']);
+    Route::post('vice-presidency/scientific/semester-offerings/{semesterOfferingRequest}/return', [ScientificSemesterOfferingController::class, 'returnForEditing']);
+    Route::get('dean/supplementary-exam-offerings/context', [DeanSupplementaryExamOfferingController::class, 'context']);
+    Route::get('dean/supplementary-exam-offerings/catalog', [DeanSupplementaryExamOfferingController::class, 'catalog']);
+    Route::get('dean/supplementary-exam-offerings', [DeanSupplementaryExamOfferingController::class, 'index']);
+    Route::post('dean/supplementary-exam-offerings', [DeanSupplementaryExamOfferingController::class, 'store']);
+    Route::get('dean/supplementary-exam-offerings/{offering}', [DeanSupplementaryExamOfferingController::class, 'show']);
+    Route::post('dean/supplementary-exam-offerings/{offering}/close', [DeanSupplementaryExamOfferingController::class, 'close']);
+    Route::post('dean/supplementary-exam-offerings/{offering}/reopen', [DeanSupplementaryExamOfferingController::class, 'reopen']);
+    Route::get('dean/teaching-assignments', [DeanTeachingAssignmentController::class, 'index']);
+    Route::post('dean/teaching-assignments', [DeanTeachingAssignmentController::class, 'store']);
+    Route::post('dean/teaching-assignments/removals', [DeanTeachingAssignmentController::class, 'requestRemoval']);
+    Route::post('dean/teaching-assignments/{teachingAssignmentRequest}/resubmit', [DeanTeachingAssignmentController::class, 'resubmit']);
+    Route::post('dean/teaching-assignments/{teachingAssignmentRequest}/replace', [DeanTeachingAssignmentController::class, 'replace']);
+    Route::post('dean/teaching-assignments/{teachingAssignmentRequest}/withdraw-removal', [DeanTeachingAssignmentController::class, 'withdrawRemoval']);
+    Route::get('dean/course-offering-exceptions', [DeanCourseOfferingExceptionController::class, 'index']);
+    Route::post('dean/course-offering-exceptions', [DeanCourseOfferingExceptionController::class, 'store']);
+    Route::get('dean/course-offering-exceptions/{courseOfferingExceptionRequest}', [DeanCourseOfferingExceptionController::class, 'show']);
+    Route::post('dean/course-offering-exceptions/{courseOfferingExceptionRequest}/resubmit', [DeanCourseOfferingExceptionController::class, 'resubmit']);
+    Route::get('dean/course-offering-closures', [DeanCourseOfferingClosureController::class, 'index']);
+    Route::post('dean/course-offering-closures', [DeanCourseOfferingClosureController::class, 'store']);
+    Route::get('dean/course-offering-closures/{courseOfferingClosureRequest}', [DeanCourseOfferingClosureController::class, 'show']);
+    Route::post('dean/course-offering-closures/{courseOfferingClosureRequest}/resubmit', [DeanCourseOfferingClosureController::class, 'resubmit']);
+    Route::get('vice-presidency/teaching-assignments', [VicePresidencyTeachingAssignmentController::class, 'index']);
+    Route::get('vice-presidency/teaching-assignments/{teachingAssignmentRequest}', [VicePresidencyTeachingAssignmentController::class, 'show']);
+    Route::post('vice-presidency/teaching-assignments/{teachingAssignmentRequest}/scientific/approve', [VicePresidencyTeachingAssignmentController::class, 'approveScientific']);
+    Route::post('vice-presidency/teaching-assignments/{teachingAssignmentRequest}/scientific/return', [VicePresidencyTeachingAssignmentController::class, 'returnScientific']);
+    Route::post('vice-presidency/teaching-assignments/{teachingAssignmentRequest}/administrative/approve', [VicePresidencyTeachingAssignmentController::class, 'approveAdministrative']);
+    Route::post('vice-presidency/teaching-assignments/{teachingAssignmentRequest}/administrative/return', [VicePresidencyTeachingAssignmentController::class, 'returnAdministrative']);
+    Route::get('vice-presidency/course-offering-exceptions', [VicePresidencyCourseOfferingExceptionController::class, 'index']);
+    Route::get('vice-presidency/course-offering-exceptions/{courseOfferingExceptionRequest}', [VicePresidencyCourseOfferingExceptionController::class, 'show']);
+    Route::post('vice-presidency/course-offering-exceptions/{courseOfferingExceptionRequest}/scientific/approve', [VicePresidencyCourseOfferingExceptionController::class, 'approveScientific']);
+    Route::post('vice-presidency/course-offering-exceptions/{courseOfferingExceptionRequest}/scientific/return', [VicePresidencyCourseOfferingExceptionController::class, 'returnScientific']);
+    Route::post('vice-presidency/course-offering-exceptions/{courseOfferingExceptionRequest}/administrative/approve', [VicePresidencyCourseOfferingExceptionController::class, 'approveAdministrative']);
+    Route::post('vice-presidency/course-offering-exceptions/{courseOfferingExceptionRequest}/administrative/return', [VicePresidencyCourseOfferingExceptionController::class, 'returnAdministrative']);
+    Route::get('vice-presidency/course-offering-closures', [VicePresidencyCourseOfferingClosureController::class, 'index']);
+    Route::get('vice-presidency/course-offering-closures/{courseOfferingClosureRequest}', [VicePresidencyCourseOfferingClosureController::class, 'show']);
+    Route::post('vice-presidency/course-offering-closures/{courseOfferingClosureRequest}/scientific/approve', [VicePresidencyCourseOfferingClosureController::class, 'approveScientific']);
+    Route::post('vice-presidency/course-offering-closures/{courseOfferingClosureRequest}/scientific/return', [VicePresidencyCourseOfferingClosureController::class, 'returnScientific']);
+    Route::post('vice-presidency/course-offering-closures/{courseOfferingClosureRequest}/administrative/approve', [VicePresidencyCourseOfferingClosureController::class, 'approveAdministrative']);
+    Route::post('vice-presidency/course-offering-closures/{courseOfferingClosureRequest}/administrative/return', [VicePresidencyCourseOfferingClosureController::class, 'returnAdministrative']);
+    Route::get('vice-presidency/scientific/supplementary-exam-periods', [ScientificVicePresidentSupplementaryExamPeriodController::class, 'index']);
+    Route::get('vice-presidency/scientific/supplementary-exam-periods/{period}', [ScientificVicePresidentSupplementaryExamPeriodController::class, 'show']);
+    Route::post('vice-presidency/scientific/supplementary-exam-periods', [ScientificVicePresidentSupplementaryExamPeriodController::class, 'store']);
+    Route::prefix('vice-presidency/scientific/program-management/entities')->controller(\App\Http\Controllers\Api\ScientificAcademicEntityController::class)->group(function () {
+        Route::get('organizational-units', 'units');
+        Route::get('{kind}', 'index')->whereIn('kind', ['colleges', 'departments']);
+        Route::post('{kind}', 'store')->whereIn('kind', ['colleges', 'departments']);
+        Route::get('{kind}/{entity}', 'show')->whereIn('kind', ['colleges', 'departments'])->whereNumber('entity');
+        Route::patch('{kind}/{entity}', 'update')->whereIn('kind', ['colleges', 'departments'])->whereNumber('entity');
+        Route::delete('{kind}/{entity}', 'destroy')->whereIn('kind', ['colleges', 'departments'])->whereNumber('entity');
+    });
+    Route::prefix('vice-presidency/scientific/program-management')->controller(\App\Http\Controllers\Api\ScientificProgramManagementController::class)->group(function () {
+        Route::get('workspace', 'workspace');
+        Route::post('plan-changes', 'saveChanges');
+        Route::get('plan-changes/{requestId}', 'changeResult')->whereUuid('requestId');
+        Route::get('{program}/history', 'history')->whereNumber('program');
+        Route::get('/', 'index');
+        Route::post('/', 'createProgram');
+        Route::get('options', 'options');
+        Route::get('{program}', 'show')->whereNumber('program');
+        Route::patch('{program}', 'updateProgram')->whereNumber('program');
+        Route::get('{program}/deletion-preview', 'impact');
+        Route::delete('{program}', 'deleteProgram')->whereNumber('program');
+        Route::post('{program}/archive', 'archive');
+        Route::post('{program}/restore', 'restore');
+        Route::post('{program}/initialization', 'begin');
+        Route::get('{program}/transition-preview', 'previewTransition');
+        Route::post('{program}/transition', 'fixTransition');
+        Route::get('{program}/versions/{version}', 'version');
+        Route::post('{program}/versions/{version}/copy', 'copy');
+        Route::put('{program}/versions/{version}/requirements', 'requirements');
+        Route::match(['put', 'delete'], '{program}/versions/{version}/courses/{course}', 'membership');
+        Route::post('{program}/versions/{version}/approve', 'approve');
+        Route::post('{program}/versions/{version}/default', 'setDefault');
+        Route::post('{program}/versions/{version}/transfer-preview', 'previewTransfer');
+        Route::post('{program}/versions/{version}/transfer', 'transfer');
+    });
+
+    Route::prefix('vice-presidency/scientific/course-management')->controller(\App\Http\Controllers\Api\ScientificCourseManagementController::class)->group(function () {
+        Route::get('options', 'options');
+        Route::get('distribution-preview', 'distribution');
+        Route::get('courses', 'index');
+        Route::post('courses', 'createCourse');
+        Route::get('courses/{course}', 'show')->whereNumber('course');
+        Route::put('courses/{course}', 'updateCourse')->whereNumber('course');
+        Route::delete('courses/{course}', 'deleteCourse')->whereNumber('course');
+        Route::get('programs/{program}', 'program')->whereNumber('program');
+        Route::put('programs/{program}/requirement-groups', 'groups')->whereNumber('program');
+        Route::match(['put', 'delete'], 'programs/{program}/courses/{course}', 'membership')->whereNumber(['program', 'course']);
+    });
+    Route::get('teaching-staff', [TeachingStaffController::class, 'index']);
+    Route::get('teaching-staff/assignment-instructors', [TeachingStaffAssignmentOfferingController::class, 'instructors']);
+    Route::get('teaching-staff/assignment-offerings', [TeachingStaffAssignmentOfferingController::class, 'index']);
+    Route::get('teaching-staff/assignment-offerings/{courseOffering}', [TeachingStaffAssignmentOfferingController::class, 'show']);
+    Route::put('teaching-staff/assignment-offerings/{courseOffering}/slots', [TeachingStaffAssignmentOfferingController::class, 'updateSlots']);
+    Route::get('teaching-staff/{facultyMember}/assignments', [TeachingStaffController::class, 'assignments']);
+    Route::get('teaching-staff/{facultyMember}/sessions', [TeachingStaffController::class, 'sessions']);
+    Route::get('teaching-staff/{facultyMember}', [TeachingStaffController::class, 'show']);
     Route::apiResource('organizational-units', OrganizationalUnitController::class);
     Route::apiResource('organizational-unit-types', OrganizationalUnitTypeController::class);
     Route::apiResource('positions', PositionController::class);
@@ -464,11 +813,262 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     |--------------------------------------------------------------------------
     */
 
-    Route::apiResource('users', UserController::class);
-    Route::apiResource('roles', RoleController::class);
-    Route::apiResource('permissions', PermissionController::class);
-    Route::apiResource('user-roles', UserRoleController::class);
-    Route::apiResource('role-permissions', RolePermissionController::class);
+    // Accounts, role assignments and account status are written only through
+    // the audited account-administration service below. The generic users and
+    // user-roles resources are read-only for everyone, including super_admin.
+    Route::apiResource('users', UserController::class)->only(['index', 'show']);
+    Route::apiResource('user-roles', UserRoleController::class)->only(['index', 'show']);
+    Route::apiResource('roles', RoleController::class)->only(['index', 'show']);
+    Route::apiResource('permissions', PermissionController::class)->only(['index', 'show']);
+    Route::apiResource('role-permissions', RolePermissionController::class)->only(['index', 'show']);
+    // Role definitions (including system roles) are reserved to super_admin.
+    Route::middleware(\App\Http\Middleware\RequireSystemAdministrator::class)->group(function (): void {
+        Route::apiResource('roles', RoleController::class)->only(['store', 'update', 'destroy']);
+        Route::apiResource('permissions', PermissionController::class)->only(['store', 'update', 'destroy']);
+        Route::apiResource('role-permissions', RolePermissionController::class)->only(['store', 'update', 'destroy']);
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Technical Office portal — الحسابات والصلاحيات
+    |--------------------------------------------------------------------------
+    | Organizational placement grants nothing; access comes from role permissions.
+    | Finer rules (allowlisted roles, self-change, last super_admin) are enforced
+    | by AccountAdministrationService on every request.
+    |--------------------------------------------------------------------------
+    */
+
+    /*
+    |--------------------------------------------------------------------------
+    | Administrative Vice-Presidency — home indicators, teachers, college deans
+    |--------------------------------------------------------------------------
+    | Authorization lives in App\Support\AdministrativeGovernance (role +
+    | assigned permission + actual university scope, or super_admin + scope).
+    |--------------------------------------------------------------------------
+    */
+
+    Route::prefix('vice-presidency/administrative')->controller(\App\Http\Controllers\Api\AdministrativeGovernanceController::class)->group(function (): void {
+        Route::get('dashboard', 'dashboard');
+        Route::get('faculty', 'facultyIndex');
+        Route::get('faculty/employee-lookup', 'employeeLookup');
+        Route::post('faculty', 'facultyStore');
+        Route::get('faculty/{facultyMember}', 'facultyShow')->whereNumber('facultyMember');
+        Route::patch('faculty/{facultyMember}', 'facultyUpdate')->whereNumber('facultyMember');
+        Route::post('faculty/{facultyMember}/affiliation', 'facultyAffiliation')->whereNumber('facultyMember');
+        Route::get('deans', 'deansIndex');
+        Route::get('deans/account-lookup', 'accountLookup');
+        Route::post('deans', 'deansAppoint');
+        Route::post('deans/{college}/transfer', 'deansTransfer')->whereNumber('college');
+        Route::post('deans/{college}/end', 'deansEnd')->whereNumber('college');
+    });
+
+    Route::prefix('technical/university-email')->controller(\App\Http\Controllers\Api\UniversityEmailController::class)->group(function (): void {
+        Route::get('students', 'index');
+        Route::get('students/{student}', 'show')->whereNumber('student');
+        Route::put('students/{student}/draft', 'save')->whereNumber('student');
+        Route::get('connection', 'check')->middleware('throttle:10,1');
+    });
+    Route::prefix('technical/university-email/students/{student}')->whereNumber('student')
+        ->controller(\App\Http\Controllers\Api\UniversityEmailProvisioningController::class)->group(function (): void {
+            Route::post('create', 'create')->middleware('throttle:10,1');
+            Route::post('recreate', 'recreate')->middleware('throttle:10,1');
+            Route::post('reset-password-now', 'resetNow')->middleware('throttle:10,1');
+            Route::post('account-action', 'accountAction')->middleware('throttle:10,1');
+            Route::post('delete-mailbox', 'deleteMailbox')->middleware('throttle:10,1');
+            Route::post('retry-create', 'retryCreate')->middleware('throttle:10,1');
+            Route::post('creation-check', 'checkCreation')->middleware('throttle:10,1');
+            Route::get('provisioning', 'state');
+            Route::post('provisioning/password', 'password')->middleware('throttle:10,1');
+            Route::post('provisioning/reissue', 'reissue')->middleware('throttle:10,1');
+            Route::post('provisioning/execute', 'execute')->middleware('throttle:10,1');
+            Route::post('provisioning/reconcile', 'reconcile')->middleware('throttle:10,1');
+            Route::post('provisioning/cancel', 'cancel')->middleware('throttle:10,1');
+            Route::post('provisioning/refresh-account', 'refreshAccount')->middleware('throttle:20,1');
+            Route::post('provisioning/reset-password', 'resetPassword')->middleware('throttle:10,1');
+            Route::post('provisioning/preview-link', 'previewLink')->middleware('throttle:20,1');
+            Route::post('provisioning/prepare-account', 'prepareAccount')->middleware('throttle:10,1');
+            Route::post('provisioning/execute-account', 'executeAccount')->middleware('throttle:10,1');
+            Route::post('provisioning/receipt', 'receipt')->middleware('throttle:10,1');
+        });
+    Route::get('student/university-email', [\App\Http\Controllers\Api\UniversityEmailProvisioningController::class, 'selfEmail']);
+
+    Route::prefix('technical/accounts')->controller(\App\Http\Controllers\Api\AccountAdministrationController::class)->group(function (): void {
+        Route::middleware(\App\Http\Middleware\RequirePermission::class.':user_accounts.view')->group(function (): void {
+            Route::get('/', 'index');
+            Route::get('options', 'options');
+            Route::get('{user}', 'show')->whereNumber('user');
+        });
+        Route::middleware(\App\Http\Middleware\RequirePermission::class.':user_accounts.manage')->group(function (): void {
+            Route::post('/', 'store');
+            Route::post('{user}/roles', 'assignRole')->whereNumber('user');
+            Route::delete('{user}/roles/{role}', 'revokeRole')->whereNumber(['user', 'role']);
+            Route::put('{user}/status', 'updateStatus')->whereNumber('user');
+            Route::patch('{user}/login', 'updateLogin')->whereNumber('user');
+            Route::put('{user}/password', 'resetPassword')->whereNumber('user');
+        });
+        // Separate from login management: corrects the linked employee/student name only.
+        Route::patch('{user}/holder-name', 'correctHolderName')->whereNumber('user')
+            ->middleware(\App\Http\Middleware\RequirePermission::class.':user_accounts.holder_name.manage');
+    });
+
+    /*
+    | Ministry of Education follow-up portal: read-only, GET only. Each route carries its own
+    | ministry_portal.* permission, checked server-side (RequireMinistryPortal); no write route exists.
+    */
+    // Read-only role reports: every report rechecks its own source permission and actual scope.
+    Route::get('portal-reports/{portal}', [\App\Http\Controllers\Api\PortalReportController::class, 'definitions']);
+    Route::get('portal-reports/{portal}/{report}', [\App\Http\Controllers\Api\PortalReportController::class, 'show']);
+    // Ministry identities are intentionally confined to their existing URL namespace.
+    Route::get('ministry/reports', [\App\Http\Controllers\Api\PortalReportController::class, 'definitions'])->defaults('portal','ministry');
+    Route::get('ministry/reports/{report}', [\App\Http\Controllers\Api\PortalReportController::class, 'show'])->defaults('portal','ministry');
+
+    // University president: independent assigned read permissions and actual PRES scope.
+    Route::prefix('president')->controller(\App\Http\Controllers\Api\PresidentPortalController::class)->group(function (): void {
+        $guard = fn ($section) => \App\Http\Middleware\RequirePresidentPortal::class.':'.$section;
+        Route::get('filters', 'filters')->middleware($guard('access'));
+        Route::get('dashboard', 'dashboard')->middleware($guard('dashboard'));
+        Route::get('reports', 'dashboard')->middleware($guard('reports'));
+        Route::get('followup', 'followup')->middleware($guard('followup'));
+        Route::get('followup/{source}', 'workflow')->middleware($guard('followup'));
+        Route::get('followup/{source}/{id}', 'workflowRecord')->whereNumber('id')->middleware($guard('followup'));
+        foreach (\App\Http\Controllers\Api\PresidentPortalController::RESOURCES as $resource => $section) {
+            Route::get($resource, 'index')->defaults('resource', $resource)->middleware($guard($section));
+            $route = Route::get($resource.'/{id}', 'show')->defaults('resource', $resource)->middleware($guard($section));
+            if ($resource === 'deans') $route->where('id', '(employee|account)-[0-9]+');
+            else $route->whereNumber('id');
+        }
+    });
+
+    Route::prefix('ministry')->controller(\App\Http\Controllers\Api\MinistryPortalController::class)->group(function (): void {
+        $guard = fn (string $permission) => \App\Http\Middleware\RequireMinistryPortal::class.':'.$permission;
+        Route::get('filters', 'filters')->middleware($guard(\App\Support\MinistryPortal::ACCESS));
+        Route::get('dashboard', 'dashboard')->middleware($guard(\App\Support\MinistryPortal::DASHBOARD));
+        Route::get('students', 'students')->middleware($guard(\App\Support\MinistryPortal::STUDENTS));
+        Route::get('students/{student}', 'student')->whereNumber('student')->middleware($guard(\App\Support\MinistryPortal::STUDENTS));
+        Route::get('colleges', 'colleges')->middleware($guard(\App\Support\MinistryPortal::COLLEGES));
+        Route::get('colleges/{college}', 'college')->whereNumber('college')->middleware($guard(\App\Support\MinistryPortal::COLLEGES));
+        Route::get('courses', 'courses')->middleware($guard(\App\Support\MinistryPortal::COURSES));
+        Route::get('courses/{course}', 'course')->whereNumber('course')->middleware($guard(\App\Support\MinistryPortal::COURSES));
+        Route::get('faculty', 'faculty')->middleware($guard(\App\Support\MinistryPortal::FACULTY));
+        Route::get('faculty/{facultyMember}', 'facultyMember')->whereNumber('facultyMember')->middleware($guard(\App\Support\MinistryPortal::FACULTY));
+        Route::get('deans', 'deans')->middleware($guard(\App\Support\MinistryPortal::DEANS));
+        Route::get('deans/{person}', 'dean')->where('person', '(employee|account)-[0-9]+')->middleware($guard(\App\Support\MinistryPortal::DEANS));
+        Route::get('leadership', 'leadership')->middleware($guard(\App\Support\MinistryPortal::LEADERSHIP));
+        Route::get('leadership/units/{unit}', 'unit')->whereNumber('unit')->middleware($guard(\App\Support\MinistryPortal::LEADERSHIP));
+    });
+
+    /*
+    | University-owner portal (Home + Payroll). Each route carries its own owner_* permission, checked
+    | server-side by RequireOwnerPortal. Payroll data lives in isolated payroll_* tables only.
+    */
+    Route::prefix('vice-presidency/administrative/hr')->controller(\App\Http\Controllers\Api\HrOfficeController::class)->group(function (): void {
+        Route::get('options', 'options');
+        Route::get('workers/{employee}', 'worker')->whereNumber('employee');
+        Route::get('workers/{employee}/file', 'workerFile')->whereNumber('employee');
+        Route::get('workers/{employee}/pdf', 'workerPdf')->whereNumber('employee');
+        Route::post('workers/{employee}/classification', 'classify')->whereNumber('employee');
+        Route::post('workers/{employee}/work-time', 'workTime')->whereNumber('employee');
+        Route::post('needs', 'storeNeed');
+        Route::patch('needs/{need}', 'updateNeed')->whereNumber('need');
+        Route::post('candidates', 'storeCandidate');
+        Route::get('candidates/{candidate}', 'candidate')->whereNumber('candidate');
+        Route::patch('candidates/{candidate}', 'updateCandidate')->whereNumber('candidate');
+        Route::post('candidates/{candidate}/decline', 'decline')->whereNumber('candidate');
+        Route::post('candidates/{candidate}/interviews', 'interview')->whereNumber('candidate');
+        Route::patch('candidates/{candidate}/interviews/{interview}', 'interview')->whereNumber('candidate')->whereNumber('interview');
+        Route::post('requests', 'storeRequest');
+        Route::get('requests/{request}', 'detail')->whereNumber('request');
+        Route::patch('requests/{request}', 'updateRequest')->whereNumber('request');
+        Route::post('requests/{request}/submit', 'submit')->whereNumber('request');
+        Route::post('requests/{request}/decide', 'decide')->whereNumber('request');
+        Route::post('requests/{request}/cancel', 'cancelRequest')->whereNumber('request');
+        Route::post('relationships/{relationship}/action', 'relationshipAction')->whereNumber('relationship');
+        Route::get('{section}', 'index')->whereIn('section', ['workers', 'needs', 'candidates', 'requests', 'relationships', 'classification']);
+    });
+
+    // Explicit disbursement/receipt ledger; route grants never create owner-portal or HR access.
+    foreach (['vice-presidency/administrative/payroll' => \App\Http\Middleware\RequireAdministrativePayroll::class, 'owner/payroll' => \App\Http\Middleware\RequireOwnerPortal::class] as $prefix => $middleware) {
+        Route::prefix($prefix)->controller(\App\Http\Controllers\Api\PayrollPaymentController::class)->group(function () use ($middleware): void {
+            $read = $middleware.':'.\App\Support\OwnerPortal::PAYROLL_VIEW;
+            $write = $middleware.':'.\App\Support\OwnerPortal::PAYMENTS_MANAGE;
+            Route::get('employees/{employee}/payments', 'index')->whereNumber('employee')->middleware($read);
+            Route::post('employees/{employee}/payments', 'record')->whereNumber('employee')->middleware($write);
+            Route::post('payments/{payment}/receive', 'receive')->whereNumber('payment')->middleware($write);
+            Route::post('payments/{payment}/cancel', 'cancel')->whereNumber('payment')->middleware($write);
+        });
+    }
+
+    foreach (['vice-presidency/administrative/payroll' => \App\Http\Middleware\RequireAdministrativePayroll::class, 'owner/payroll' => \App\Http\Middleware\RequireOwnerPortal::class] as $prefix => $middleware) {
+        Route::prefix($prefix.'/months')->controller(\App\Http\Controllers\Api\MonthlyPayrollController::class)->group(function () use ($middleware): void {
+            $guard = fn ($p) => $middleware.':'.$p;
+            Route::get('options', 'options')->middleware($guard(\App\Support\OwnerPortal::PAYROLL_VIEW));
+            Route::get('report', 'report')->middleware($guard(\App\Support\OwnerPortal::PAYROLL_VIEW));
+            Route::post('prepare', 'prepare')->middleware($guard(\App\Support\OwnerPortal::PERIODS_MANAGE));
+            Route::post('save', 'save')->middleware($guard(\App\Support\OwnerPortal::AMOUNTS_EDIT));
+            Route::post('approve', 'approve')->middleware($guard(\App\Support\OwnerPortal::PERIODS_MANAGE));
+            Route::get('results/{uuid}', 'result')->whereUuid('uuid')->middleware($guard(\App\Support\OwnerPortal::PAYROLL_VIEW));
+            Route::get('config', 'configuration')->middleware($guard(\App\Support\OwnerPortal::PAYROLL_VIEW));
+            Route::post('config/preview', 'previewConfiguration')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::post('config/save', 'saveConfiguration')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::get('export/{kind}', 'export')->whereIn('kind', ['pdf', 'xlsx'])->middleware($guard(\App\Support\OwnerPortal::EXPORT));
+        });
+    }
+
+    // Reuses the owner payroll controller, calculations and tables; a separate entry guard
+    // requires actual office role, university scope, explicit access and the SAME financial action permission.
+    Route::prefix('vice-presidency/administrative/payroll')->controller(\App\Http\Controllers\Api\OwnerPayrollController::class)->group(function (): void {
+        $guard = fn (string $p) => \App\Http\Middleware\RequireAdministrativePayroll::class.':'.$p;
+        $view = $guard(\App\Support\OwnerPortal::PAYROLL_VIEW);
+        Route::get('options', 'options')->middleware($view);
+        Route::get('sheet', 'sheet')->middleware($view);
+        Route::get('bodies', 'bodies')->middleware($view);
+        Route::post('bodies', 'storeBody')->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
+        Route::patch('bodies/{body}', 'updateBody')->whereNumber('body')->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
+        Route::post('bodies/{body}/{state}', 'setBodyActive')->whereNumber('body')->whereIn('state', ['activate', 'deactivate'])->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
+        Route::delete('bodies/{body}', 'destroyBody')->whereNumber('body')->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
+        Route::get('config', 'config')->middleware($view);
+        Route::post('config/preview', 'previewConfig')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+        Route::post('config/columns', 'storeColumn')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+        Route::patch('config/columns/{column}', 'updateColumn')->where('column', '[a-z][a-z0-9_]{1,40}')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+        Route::post('config/columns/{column}/restore-formula', 'restoreColumnFormula')->where('column', '[a-z][a-z0-9_]{1,40}')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+        Route::delete('config/columns/{column}', 'destroyColumn')->where('column', '[a-z][a-z0-9_]{1,40}')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+        Route::put('config/layout', 'saveLayout')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+        Route::patch('config/settings', 'updateSettings')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+        Route::get('export/xlsx', 'exportXlsx')->middleware($guard(\App\Support\OwnerPortal::EXPORT));
+        Route::get('export/pdf', 'exportPdf')->middleware($guard(\App\Support\OwnerPortal::EXPORT));
+    });
+
+    Route::prefix('owner')->controller(\App\Http\Controllers\Api\OwnerPayrollController::class)->group(function (): void {
+        $guard = fn (string $permission) => \App\Http\Middleware\RequireOwnerPortal::class.':'.$permission;
+        Route::get('home', 'home')->middleware($guard(\App\Support\OwnerPortal::HOME_VIEW));
+        Route::prefix('payroll')->group(function () use ($guard): void {
+            Route::get('options', 'options')->middleware($guard(\App\Support\OwnerPortal::PAYROLL_VIEW));
+            Route::get('sheet', 'sheet')->middleware($guard(\App\Support\OwnerPortal::PAYROLL_VIEW));
+            Route::get('bodies', 'bodies')->middleware($guard(\App\Support\OwnerPortal::PAYROLL_VIEW));
+            Route::post('bodies', 'storeBody')->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
+            Route::patch('bodies/{body}', 'updateBody')->whereNumber('body')->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
+            Route::post('bodies/{body}/{state}', 'setBodyActive')->whereNumber('body')->whereIn('state', ['activate', 'deactivate'])->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
+            Route::delete('bodies/{body}', 'destroyBody')->whereNumber('body')->middleware($guard(\App\Support\OwnerPortal::BODIES_MANAGE));
+            Route::get('config', 'config')->middleware($guard(\App\Support\OwnerPortal::PAYROLL_VIEW));
+            Route::post('config/preview', 'previewConfig')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::post('config/columns', 'storeColumn')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::patch('config/columns/{column}', 'updateColumn')->where('column', '[a-z][a-z0-9_]{1,40}')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::post('config/columns/{column}/restore-formula', 'restoreColumnFormula')->where('column', '[a-z][a-z0-9_]{1,40}')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::delete('config/columns/{column}', 'destroyColumn')->where('column', '[a-z][a-z0-9_]{1,40}')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::put('config/layout', 'saveLayout')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::patch('config/settings', 'updateSettings')->middleware($guard(\App\Support\OwnerPortal::CONFIG_MANAGE));
+            Route::get('export/xlsx', 'exportXlsx')->middleware($guard(\App\Support\OwnerPortal::EXPORT));
+            Route::get('export/pdf', 'exportPdf')->middleware($guard(\App\Support\OwnerPortal::EXPORT));
+        });
+    });
+
+    Route::prefix('technical/activity')->controller(\App\Http\Controllers\Api\SystemActivityController::class)
+        ->middleware(\App\Http\Middleware\RequirePermission::class.':system_activity.view')
+        ->group(function (): void {
+            Route::get('/', 'index');
+            Route::get('options', 'options');
+            Route::get('{source}/{id}', 'show')->whereIn('source', ['activity', 'login'])->whereNumber('id');
+        });
 
     /*
     |--------------------------------------------------------------------------
@@ -481,7 +1081,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::apiResource('login-audit-logs', LoginAuditLogController::class)
         ->only(['index', 'show'])
         ->middleware(\App\Http\Middleware\RequireSystemAdministrator::class);
-    Route::apiResource('user-activity-logs', UserActivityLogController::class);
+    // Audit trail is append-only through services; the API exposes reads only.
+    Route::apiResource('user-activity-logs', UserActivityLogController::class)
+        ->only(['index', 'show'])
+        ->middleware(\App\Http\Middleware\RequireSystemAdministrator::class);
     Route::apiResource('system-modules', SystemModuleController::class);
     Route::apiResource('password-reset-tokens', PasswordResetTokenController::class)
         ->only(['index', 'show'])

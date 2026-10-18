@@ -16,7 +16,6 @@ class AcademicYear extends Model
         'year_name',
         'start_date',
         'end_date',
-        'is_current',
         'is_active',
         'created_at',
         'updated_at',
@@ -29,6 +28,7 @@ class AcademicYear extends Model
             'end_date' => 'date',
             'is_current' => 'boolean',
             'is_active' => 'boolean',
+            'calendar_lifecycle_status' => 'string',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
         ];
@@ -57,6 +57,16 @@ class AcademicYear extends Model
     public function supplementaryExamPeriods(): HasMany
     {
         return $this->hasMany(SupplementaryExamPeriod::class, 'academic_year_id', 'academic_year_id');
+    }
+
+    public function academicCalendarEvents(): HasMany
+    {
+        return $this->hasMany(AcademicCalendarEvent::class, 'academic_year_id', 'academic_year_id');
+    }
+
+    public function academicCalendarLifecycleEvents(): HasMany
+    {
+        return $this->hasMany(AcademicCalendarYearLifecycleEvent::class, 'academic_year_id', 'academic_year_id');
     }
 
 }

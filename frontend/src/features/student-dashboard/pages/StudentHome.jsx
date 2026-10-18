@@ -26,6 +26,7 @@ export default function StudentHome() {
   const [profile,    setProfile]    = useState(null)
   const [cgpa,       setCgpa]       = useState(null)
   const [attendance, setAttendance] = useState(null)
+  const [eligibility, setEligibility] = useState(null)
   const [loading,    setLoading]    = useState(true)
 
   useEffect(() => {
@@ -35,10 +36,12 @@ export default function StudentHome() {
       fetch(`${API}/students/${id}/profile`,    { headers: authHeaders() }).then(r => r.json()),
       fetch(`${API}/students/${id}/cgpa`,       { headers: authHeaders() }).then(r => r.json()),
       fetch(`${API}/students/${id}/attendance`, { headers: authHeaders() }).then(r => r.json()),
-    ]).then(([prof, cgpaRes, attRes]) => {
+      fetch(`${API}/student/graduation-eligibility`, { headers: authHeaders() }).then(r => r.json()).catch(() => null),
+    ]).then(([prof, cgpaRes, attRes, eligRes]) => {
       if (prof.success)    setProfile(prof.data)
       if (cgpaRes.success) setCgpa(cgpaRes.data)
       if (attRes.success)  setAttendance(attRes.data)
+      if (eligRes?.success) setEligibility(eligRes.data)
     }).finally(() => setLoading(false))
   }, [])
 
@@ -49,6 +52,12 @@ export default function StudentHome() {
 
   const totalCourses  = attendance?.courses?.length ?? 0
   const deprivedCount = attendance?.courses?.filter(c => c.deprivation_status === 'deprived').length ?? 0
+  const requiredHours = Number(eligibility?.total_required_hours)
+  const countedHours = Number(eligibility?.graduation_counted_hours) || 0
+  const hasGraduationPlan = Boolean(eligibility?.academic_program_id) && Number.isFinite(requiredHours) && requiredHours > 0
+  const graduationPct = hasGraduationPlan
+    ? Math.min(100, Math.max(0, Math.round((countedHours / requiredHours) * 100)))
+    : null
 
   if (loading) {
     return (
@@ -149,6 +158,36 @@ export default function StudentHome() {
           </div>
         </motion.div>
       </div>
+
+      <motion.div
+        className="bg-white border border-primary/12 rounded-[16px] px-5 py-4 mb-6 shadow-[0_2px_12px_rgba(26,46,16,0.05)]"
+        initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.26 }}
+        dir="rtl"
+      >
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+          <h3 className="text-[15px] font-black text-text-dark">التقدم نحو التخرج</h3>
+          <Link to="/student/requirements" className="text-[12.5px] font-bold text-primary-dark no-underline hover:underline">
+            عرض الخطة والتقدم
+          </Link>
+        </div>
+        {hasGraduationPlan ? (
+          <>
+            <p className="text-[13px] font-black text-text-dark tabular-nums mb-2">
+              {countedHours} من {requiredHours} ساعة
+            </p>
+            <div
+              className="h-2.5 rounded-full bg-primary/10 overflow-hidden"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={graduationPct}
+              aria-label="نسبة الساعات المحتسبة للتخرج"
+            >
+              <div className="h-full rounded-full bg-primary" style={{ width: `${graduationPct}%` }} aria-hidden="true" />
+            </div>
+          </>
+        ) : null}
+      </motion.div>
 
       {/* Quick links */}
       <motion.div

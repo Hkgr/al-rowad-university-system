@@ -17,7 +17,7 @@ class StoreGradeAuditLogRequest extends FormRequest
             'student_grade_component_id' => 'required|integer|exists:student_grade_components,student_grade_component_id',
             'old_mark' => 'nullable|numeric',
             'new_mark' => 'nullable|numeric',
-            'changed_by_user_id' => 'required|integer|exists:users,user_id',
+            'changed_by_user_id' => 'prohibited',
             'change_reason' => 'required|string',
             'changed_at' => 'nullable|date',
         ];

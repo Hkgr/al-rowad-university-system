@@ -1,17 +1,18 @@
 import { useState, useEffect, useRef } from 'react'
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
+import { useOfficeNavigate as useNavigate } from '../../vice-presidency/utils/administrativeOfficePaths'
 import { motion } from 'framer-motion'
-import html2canvas from 'html2canvas-pro'
-import jsPDF from 'jspdf'
 import {
   FaArrowRight, FaEdit, FaSpinner, FaUser,
   FaGraduationCap, FaChartBar, FaCalendarCheck, FaCheckCircle, FaFolderOpen, FaCamera,
-  FaDownload,
 } from 'react-icons/fa'
+import TranscriptPdfExportAction from '../../academic-record/components/TranscriptPdfExportAction'
 import StudentDocuments from '../components/StudentDocuments'
 import { canAccess } from '../../auth/auth'
+import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 
-const API = 'https://rust.alrowaduni.edu.sy/api/v1'
+import { API_BASE_URL } from '../../../services/apiClient'
+const API = `${API_BASE_URL}/v1`
 
 function authHeaders() {
   return {
@@ -136,6 +137,7 @@ function SemesterTable({ courses, accentKey }) {
           <thead>
             <tr className="bg-[#fafaf9]">
               <th className="px-4 py-2.5 text-right  text-[11px] font-bold text-text-light" dir="rtl">المقرر</th>
+              <th className="px-4 py-2.5 text-right  text-[11px] font-bold text-text-light" dir="rtl">التصنيف الأكاديمي</th>
               <th className="px-4 py-2.5 text-center text-[11px] font-bold text-text-light">الساعات</th>
               <th className="px-4 py-2.5 text-center text-[11px] font-bold text-text-light">نظري</th>
               <th className="px-4 py-2.5 text-center text-[11px] font-bold text-text-light">عملي</th>
@@ -150,6 +152,9 @@ function SemesterTable({ courses, accentKey }) {
                 <td className="px-4 py-3" dir="rtl">
                   <div className="font-semibold text-text-dark text-[13.5px]">{c.course_name}</div>
                   <div className="text-[11px] text-text-light font-mono mt-0.5">{c.course_code}</div>
+                </td>
+                <td className="px-4 py-3" dir="rtl">
+                  <CourseRequirementBadges classification={c.requirement_classification} compact />
                 </td>
                 <td className="px-4 py-3 text-center font-bold text-text-dark">{c.credit_hours}</td>
                 <td className="px-4 py-3 text-center text-text-gray">{c.theoretical_mark ?? '—'}</td>
@@ -181,6 +186,7 @@ function SemesterTable({ courses, accentKey }) {
               <td className="px-4 py-2.5 text-[11.5px] font-bold text-text-gray" dir="rtl">
                 الإجمالي — {courses.length} مقرر
               </td>
+              <td />
               <td className="px-4 py-2.5 text-center text-[12px] font-extrabold text-primary-dark">{totalHours}</td>
               <td colSpan={5} />
             </tr>
@@ -451,6 +457,9 @@ function AttendanceTab({ attendance }) {
                 <div className="text-[11.5px] text-text-light font-mono mt-0.5">
                   {c.course_code} — {c.academic_year?.year_name} / {c.semester?.semester_name}
                 </div>
+                <div className="mt-1.5">
+                  <CourseRequirementBadges classification={c.requirement_classification} compact />
+                </div>
               </div>
               {deprived && (
                 <span className="flex-shrink-0 px-2.5 py-1 bg-red-500/10 border border-red-500/25 text-red-600 text-[11px] font-bold rounded-full">محروم</span>
@@ -511,9 +520,6 @@ export default function StudentProfilePage() {
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [avatarError,    setAvatarError]    = useState('')
   const avatarInputRef = useRef(null)
-  const [pdfLoading,     setPdfLoading]     = useState(false)
-  const [pdfError,       setPdfError]       = useState('')
-  const pdfContentRef = useRef(null)
 
   useEffect(() => {
     let objectUrl = null
@@ -609,40 +615,6 @@ export default function StudentProfilePage() {
     }
     load()
   }, [id])
-
-  async function handleDownloadTranscriptPdf() {
-    const el = pdfContentRef.current
-    if (!el) return
-    setPdfLoading(true)
-    setPdfError('')
-    try {
-      const canvas = await html2canvas(el, { scale: 1.5, backgroundColor: '#ffffff', useCORS: true })
-      const imgData = canvas.toDataURL('image/jpeg', 0.92)
-      const pdf = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4', compress: true })
-      const pageWidth  = pdf.internal.pageSize.getWidth()
-      const pageHeight = pdf.internal.pageSize.getHeight()
-      const imgWidth  = pageWidth
-      const imgHeight = (canvas.height * imgWidth) / canvas.width
-
-      let heightLeft = imgHeight
-      let position = 0
-      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight)
-      heightLeft -= pageHeight
-      while (heightLeft > 0) {
-        position -= pageHeight
-        pdf.addPage()
-        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight)
-        heightLeft -= pageHeight
-      }
-
-      pdf.save(`كشف_الدرجات_${profile?.student_number || id}.pdf`)
-    } catch (e) {
-      console.error('PDF export failed:', e)
-      setPdfError('تعذّر إنشاء ملف PDF. يرجى المحاولة مجددًا')
-    } finally {
-      setPdfLoading(false)
-    }
-  }
 
   if (loading) {
     return (
@@ -811,18 +783,8 @@ export default function StudentProfilePage() {
             <>
               <div className="flex items-center justify-between mb-5 gap-3 flex-wrap" dir="rtl">
                 <p className="text-[12px] text-text-light">السجل الأكاديمي الكامل للطالب، مرتّب حسب السنة والفصل الدراسي</p>
-                <button
-                  className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-[10px] text-[13px] font-bold hover:enabled:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  onClick={handleDownloadTranscriptPdf}
-                  disabled={pdfLoading || !transcript?.terms?.length}
-                >
-                  {pdfLoading ? <FaSpinner className="animate-spin text-[12px]" /> : <FaDownload className="text-[12px]" />}
-                  <span>{pdfLoading ? 'جارٍ التجهيز…' : 'تحميل PDF'}</span>
-                </button>
+                {transcript ? <TranscriptPdfExportAction endpoint={`/v1/students/${id}/academic-record`} /> : null}
               </div>
-              {pdfError && (
-                <p className="mb-4 text-[12.5px] text-red-600" dir="rtl">⚠ {pdfError}</p>
-              )}
               <TranscriptTab transcript={transcript} cgpa={cgpa} />
             </>
           )}
@@ -831,30 +793,6 @@ export default function StudentProfilePage() {
           {activeTab === 'documents'  && <StudentDocuments studentId={id} />}
         </motion.div>
       </div>
-
-      {/* Off-screen printable transcript document, captured for PDF export */}
-      {profile && (
-        <div style={{ position: 'fixed', left: '-10000px', top: 0, width: '794px', zIndex: -1 }} aria-hidden="true">
-          <div ref={pdfContentRef} className="bg-white p-10">
-            <div className="flex items-center justify-between border-b-2 border-primary pb-4 mb-6" dir="rtl">
-              <div>
-                <h1 className="text-[22px] font-black text-text-dark">كشف الدرجات الأكاديمي</h1>
-                <p className="text-[12px] text-text-light mt-1">Academic Transcript</p>
-              </div>
-              <p className="text-[11px] text-text-light">تاريخ الإصدار: {fmt(new Date().toISOString())}</p>
-            </div>
-            <div className="grid grid-cols-2 gap-x-8 gap-y-3 mb-7 text-[12.5px]" dir="rtl">
-              <div><span className="font-bold text-text-dark">الاسم: </span>{profile.full_name}</div>
-              <div><span className="font-bold text-text-dark">الرقم الجامعي: </span>{profile.student_number}</div>
-              <div><span className="font-bold text-text-dark">البرنامج: </span>{profile.program?.program_name || '—'}</div>
-              <div><span className="font-bold text-text-dark">الكلية: </span>{profile.college?.college_name || '—'}</div>
-              <div><span className="font-bold text-text-dark">القسم: </span>{profile.department?.department_name || '—'}</div>
-              <div><span className="font-bold text-text-dark">المستوى الدراسي: </span>{profile.academic_level?.level_name || '—'}</div>
-            </div>
-            <TranscriptTab transcript={transcript} cgpa={cgpa} />
-          </div>
-        </div>
-      )}
     </>
   )
 }

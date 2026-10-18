@@ -1,0 +1,24 @@
+/* Literal content metrics extracted from approved Superdesign HR draft v2. Scoped; shared tables/shell untouched. */
+.office-surface { color: #1a2e10; font-size: 12px; }
+.office-frame { border: 1px solid #56993320; border-radius: 16px; background: white; box-shadow: 0 1px 2px #00000008; overflow: hidden; }
+.office-heading { display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:20px; }
+.office-heading h1 { font-size:22px; font-weight:900; }
+.office-code { display:inline-flex; align-items:center; gap:5px; border:1px solid #56993326; border-radius:6px; background:#5699330f; padding:2px 7px; color:#417327; font-size:10px; font-weight:700; }
+.office-code b { direction:ltr; unicode-bidi:isolate; font-size:11px; font-weight:800; }
+.office-surface .hr-tab { white-space:nowrap; padding:12px 15px; font-size:12px; font-weight:700; color:#5a6b4e; border-bottom:2px solid transparent; }
+.office-surface .hr-tab[aria-selected="true"] { color:#417327; background:#5699330d; border-bottom-color:#569933; }
+.office-surface .hr-btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:8px 12px; border-radius:9px; font-size:11px; font-weight:700; border:1px solid #56993333; background:white; color:#417327; }
+.office-surface .hr-btn.primary { background:#569933; color:white; border-color:#569933; }
+.office-surface .hr-btn:disabled { opacity:.5; cursor:not-allowed; }
+.office-surface .hr-btn:focus-visible { outline:2px solid #56993360; outline-offset:2px; }
+.office-surface .office-input { border:1.5px solid #56993333; border-radius:10px; background:white; padding:10px 12px; font-size:12px; }
+.office-surface .office-toolbar { display:flex; flex-wrap:wrap; gap:12px; padding:16px; align-items:center; border-bottom:1px solid #56993318; }
+.office-surface table { font-size:12px; }
+.office-surface table th { color:#ffffffdf; background:#1a2e10; background-image:none; padding:14px 16px; white-space:nowrap; }
+.office-surface table td { padding:14px 16px; line-height:1.9; }
+.office-surface table tbody tr { border-top:1px solid #56993312; }
+.office-surface table tbody tr:hover { background:#56993308; }
+.office-surface .hr-status { display:inline-flex; padding:3px 8px; border-radius:20px; font-size:10px; font-weight:700; }
+.office-surface [role="dialog"] { max-width:min(780px,calc(100vw - 28px)); max-height:calc(100vh - 32px); border:1px solid #56993333; border-radius:16px; box-shadow:0 20px 60px #1a2e1030; }
+.office-surface [role="dialog"] input:not([type="checkbox"]), .office-surface [role="dialog"] select { border:1.5px solid #56993333; border-radius:10px; padding:10px 12px; font-size:12px; }
+@media(max-width:639px) { .office-surface .hr-tab { padding-inline:10px; } .office-surface .office-toolbar { align-items:stretch; } .office-surface .office-toolbar > input { width:100%; } }

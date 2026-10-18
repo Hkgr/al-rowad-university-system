@@ -1,0 +1,1265 @@
+{
+    "columns": [
+        {
+            "key": "a",
+            "label": "أ",
+            "value_type": "amount",
+            "blank_as_zero": false
+        },
+        {
+            "key": "b",
+            "label": "ب",
+            "value_type": "amount",
+            "blank_as_zero": false
+        },
+        {
+            "key": "z",
+            "label": "اختياري",
+            "value_type": "amount",
+            "blank_as_zero": true
+        },
+        {
+            "key": "n",
+            "label": "عدد",
+            "value_type": "number",
+            "blank_as_zero": true
+        },
+        {
+            "key": "t",
+            "label": "نص",
+            "value_type": "text",
+            "blank_as_zero": true
+        }
+    ],
+    "settings": [
+        {
+            "key": "rate",
+            "label": "النسبة",
+            "value_type": "percent",
+            "value": "0.07"
+        },
+        {
+            "key": "floor",
+            "label": "الحد",
+            "value_type": "amount",
+            "value": "12560"
+        }
+    ],
+    "cases": [
+        {
+            "name": "precedence",
+            "formula": "[أ] + [ب] * 2",
+            "value_type": "amount",
+            "inputs": {
+                "a": "10",
+                "b": "5"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "+",
+                "l": {
+                    "t": "ref",
+                    "k": "a",
+                    "src": "column"
+                },
+                "r": {
+                    "t": "bin",
+                    "op": "*",
+                    "l": {
+                        "t": "ref",
+                        "k": "b",
+                        "src": "column"
+                    },
+                    "r": {
+                        "t": "num",
+                        "v": "2"
+                    }
+                }
+            },
+            "state": "ok",
+            "value": "20.00"
+        },
+        {
+            "name": "parentheses",
+            "formula": "([أ] + [ب]) * 2",
+            "value_type": "amount",
+            "inputs": {
+                "a": "10",
+                "b": "5"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "*",
+                "l": {
+                    "t": "bin",
+                    "op": "+",
+                    "l": {
+                        "t": "ref",
+                        "k": "a",
+                        "src": "column"
+                    },
+                    "r": {
+                        "t": "ref",
+                        "k": "b",
+                        "src": "column"
+                    }
+                },
+                "r": {
+                    "t": "num",
+                    "v": "2"
+                }
+            },
+            "state": "ok",
+            "value": "30.00"
+        },
+        {
+            "name": "left associative subtraction",
+            "formula": "[أ] - [ب] - 1",
+            "value_type": "amount",
+            "inputs": {
+                "a": "10",
+                "b": "5"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "-",
+                "l": {
+                    "t": "bin",
+                    "op": "-",
+                    "l": {
+                        "t": "ref",
+                        "k": "a",
+                        "src": "column"
+                    },
+                    "r": {
+                        "t": "ref",
+                        "k": "b",
+                        "src": "column"
+                    }
+                },
+                "r": {
+                    "t": "num",
+                    "v": "1"
+                }
+            },
+            "state": "ok",
+            "value": "4.00"
+        },
+        {
+            "name": "unary minus",
+            "formula": "-[أ] + 3",
+            "value_type": "amount",
+            "inputs": {
+                "a": "10",
+                "b": "0"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "+",
+                "l": {
+                    "t": "neg",
+                    "a": {
+                        "t": "ref",
+                        "k": "a",
+                        "src": "column"
+                    }
+                },
+                "r": {
+                    "t": "num",
+                    "v": "3"
+                }
+            },
+            "state": "ok",
+            "value": "-7.00"
+        },
+        {
+            "name": "percent literal",
+            "formula": "[أ] * 15%",
+            "value_type": "amount",
+            "inputs": {
+                "a": "200",
+                "b": "0"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "*",
+                "l": {
+                    "t": "ref",
+                    "k": "a",
+                    "src": "column"
+                },
+                "r": {
+                    "t": "pct",
+                    "a": {
+                        "t": "num",
+                        "v": "15"
+                    }
+                }
+            },
+            "state": "ok",
+            "value": "30.00"
+        },
+        {
+            "name": "setting reference",
+            "formula": "[أ] * [النسبة]",
+            "value_type": "amount",
+            "inputs": {
+                "a": "96600",
+                "b": "0"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "*",
+                "l": {
+                    "t": "ref",
+                    "k": "a",
+                    "src": "column"
+                },
+                "r": {
+                    "t": "ref",
+                    "k": "rate",
+                    "src": "setting"
+                }
+            },
+            "state": "ok",
+            "value": "6762.00"
+        },
+        {
+            "name": "setting amount",
+            "formula": "[أ] - [الحد]",
+            "value_type": "amount",
+            "inputs": {
+                "a": "10000",
+                "b": "0"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "-",
+                "l": {
+                    "t": "ref",
+                    "k": "a",
+                    "src": "column"
+                },
+                "r": {
+                    "t": "ref",
+                    "k": "floor",
+                    "src": "setting"
+                }
+            },
+            "state": "ok",
+            "value": "-2560.00"
+        },
+        {
+            "name": "half up positive",
+            "formula": "[أ] * [النسبة]",
+            "value_type": "amount",
+            "inputs": {
+                "a": "12345.67",
+                "b": "0"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "*",
+                "l": {
+                    "t": "ref",
+                    "k": "a",
+                    "src": "column"
+                },
+                "r": {
+                    "t": "ref",
+                    "k": "rate",
+                    "src": "setting"
+                }
+            },
+            "state": "ok",
+            "value": "864.20"
+        },
+        {
+            "name": "half up at exactly .005",
+            "formula": "[أ] / 200",
+            "value_type": "amount",
+            "inputs": {
+                "a": "1",
+                "b": "0"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "/",
+                "l": {
+                    "t": "ref",
+                    "k": "a",
+                    "src": "column"
+                },
+                "r": {
+                    "t": "num",
+                    "v": "200"
+                }
+            },
+            "state": "ok",
+            "value": "0.01"
+        },
+        {
+            "name": "half away from zero negative",
+            "formula": "[أ] / 200",
+            "value_type": "amount",
+            "inputs": {
+                "a": "-1",
+                "b": "0"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "/",
+                "l": {
+                    "t": "ref",
+                    "k": "a",
+                    "src": "column"
+                },
+                "r": {
+                    "t": "num",
+                    "v": "200"
+                }
+            },
+            "state": "ok",
+            "value": "-0.01"
+        },
+        {
+            "name": "division keeps precision",
+            "formula": "[أ] / 3 * 3",
+            "value_type": "amount",
+            "inputs": {
+                "a": "100",
+                "b": "0"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "*",
+                "l": {
+                    "t": "bin",
+                    "op": "/",
+                    "l": {
+                        "t": "ref",
+                        "k": "a",
+                        "src": "column"
+                    },
+                    "r": {
+                        "t": "num",
+                        "v": "3"
+                    }
+                },
+                "r": {
+                    "t": "num",
+                    "v": "3"
+                }
+            },
+            "state": "ok",
+            "value": "100.00"
+        },
+        {
+            "name": "division by zero",
+            "formula": "[أ] / [ب]",
+            "value_type": "amount",
+            "inputs": {
+                "a": "5",
+                "b": "0"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "/",
+                "l": {
+                    "t": "ref",
+                    "k": "a",
+                    "src": "column"
+                },
+                "r": {
+                    "t": "ref",
+                    "k": "b",
+                    "src": "column"
+                }
+            },
+            "state": "error",
+            "value": null
+        },
+        {
+            "name": "division by blank optional zero",
+            "formula": "[أ] / [اختياري]",
+            "value_type": "amount",
+            "inputs": {
+                "a": "5"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "/",
+                "l": {
+                    "t": "ref",
+                    "k": "a",
+                    "src": "column"
+                },
+                "r": {
+                    "t": "ref",
+                    "k": "z",
+                    "src": "column"
+                }
+            },
+            "state": "error",
+            "value": null
+        },
+        {
+            "name": "guarded division",
+            "formula": "IF([ب] = 0, 0, [أ] / [ب])",
+            "value_type": "amount",
+            "inputs": {
+                "a": "5",
+                "b": "0"
+            },
+            "ast": {
+                "t": "call",
+                "f": "IF",
+                "args": [
+                    {
+                        "t": "cmp",
+                        "op": "=",
+                        "l": {
+                            "t": "ref",
+                            "k": "b",
+                            "src": "column"
+                        },
+                        "r": {
+                            "t": "num",
+                            "v": "0"
+                        }
+                    },
+                    {
+                        "t": "num",
+                        "v": "0"
+                    },
+                    {
+                        "t": "bin",
+                        "op": "/",
+                        "l": {
+                            "t": "ref",
+                            "k": "a",
+                            "src": "column"
+                        },
+                        "r": {
+                            "t": "ref",
+                            "k": "b",
+                            "src": "column"
+                        }
+                    }
+                ]
+            },
+            "state": "ok",
+            "value": "0.00"
+        },
+        {
+            "name": "guarded division other branch",
+            "formula": "IF([ب] = 0, 0, [أ] / [ب])",
+            "value_type": "amount",
+            "inputs": {
+                "a": "5",
+                "b": "2"
+            },
+            "ast": {
+                "t": "call",
+                "f": "IF",
+                "args": [
+                    {
+                        "t": "cmp",
+                        "op": "=",
+                        "l": {
+                            "t": "ref",
+                            "k": "b",
+                            "src": "column"
+                        },
+                        "r": {
+                            "t": "num",
+                            "v": "0"
+                        }
+                    },
+                    {
+                        "t": "num",
+                        "v": "0"
+                    },
+                    {
+                        "t": "bin",
+                        "op": "/",
+                        "l": {
+                            "t": "ref",
+                            "k": "a",
+                            "src": "column"
+                        },
+                        "r": {
+                            "t": "ref",
+                            "k": "b",
+                            "src": "column"
+                        }
+                    }
+                ]
+            },
+            "state": "ok",
+            "value": "2.50"
+        },
+        {
+            "name": "comparison gt",
+            "formula": "IF([أ] > 50000, 1, 2)",
+            "value_type": "number",
+            "inputs": {
+                "a": "60000",
+                "b": "0"
+            },
+            "ast": {
+                "t": "call",
+                "f": "IF",
+                "args": [
+                    {
+                        "t": "cmp",
+                        "op": ">",
+                        "l": {
+                            "t": "ref",
+                            "k": "a",
+                            "src": "column"
+                        },
+                        "r": {
+                            "t": "num",
+                            "v": "50000"
+                        }
+                    },
+                    {
+                        "t": "num",
+                        "v": "1"
+                    },
+                    {
+                        "t": "num",
+                        "v": "2"
+                    }
+                ]
+            },
+            "state": "ok",
+            "value": "1"
+        },
+        {
+            "name": "comparison gte",
+            "formula": "IF([أ] >= 50000, 1, 2)",
+            "value_type": "number",
+            "inputs": {
+                "a": "50000",
+                "b": "0"
+            },
+            "ast": {
+                "t": "call",
+                "f": "IF",
+                "args": [
+                    {
+                        "t": "cmp",
+                        "op": ">=",
+                        "l": {
+                            "t": "ref",
+                            "k": "a",
+                            "src": "column"
+                        },
+                        "r": {
+                            "t": "num",
+                            "v": "50000"
+                        }
+                    },
+                    {
+                        "t": "num",
+                        "v": "1"
+                    },
+                    {
+                        "t": "num",
+                        "v": "2"
+                    }
+                ]
+            },
+            "state": "ok",
+            "value": "1"
+        },
+        {
+            "name": "comparison neq",
+            "formula": "IF([أ] <> [ب], 1, 2)",
+            "value_type": "number",
+            "inputs": {
+                "a": "1",
+                "b": "1"
+            },
+            "ast": {
+                "t": "call",
+                "f": "IF",
+                "args": [
+                    {
+                        "t": "cmp",
+                        "op": "<>",
+                        "l": {
+                            "t": "ref",
+                            "k": "a",
+                            "src": "column"
+                        },
+                        "r": {
+                            "t": "ref",
+                            "k": "b",
+                            "src": "column"
+                        }
+                    },
+                    {
+                        "t": "num",
+                        "v": "1"
+                    },
+                    {
+                        "t": "num",
+                        "v": "2"
+                    }
+                ]
+            },
+            "state": "ok",
+            "value": "2"
+        },
+        {
+            "name": "text comparison",
+            "formula": "IF([نص] = \"ممتاز\", 100, 0)",
+            "value_type": "amount",
+            "inputs": {
+                "a": "1",
+                "b": "1",
+                "t": "ممتاز"
+            },
+            "ast": {
+                "t": "call",
+                "f": "IF",
+                "args": [
+                    {
+                        "t": "cmp",
+                        "op": "=",
+                        "l": {
+                            "t": "ref",
+                            "k": "t",
+                            "src": "column"
+                        },
+                        "r": {
+                            "t": "str",
+                            "v": "ممتاز"
+                        }
+                    },
+                    {
+                        "t": "num",
+                        "v": "100"
+                    },
+                    {
+                        "t": "num",
+                        "v": "0"
+                    }
+                ]
+            },
+            "state": "ok",
+            "value": "100.00"
+        },
+        {
+            "name": "blank text equals empty",
+            "formula": "IF([نص] = \"\", 1, 2)",
+            "value_type": "number",
+            "inputs": {
+                "a": "1",
+                "b": "1"
+            },
+            "ast": {
+                "t": "call",
+                "f": "IF",
+                "args": [
+                    {
+                        "t": "cmp",
+                        "op": "=",
+                        "l": {
+                            "t": "ref",
+                            "k": "t",
+                            "src": "column"
+                        },
+                        "r": {
+                            "t": "str",
+                            "v": ""
+                        }
+                    },
+                    {
+                        "t": "num",
+                        "v": "1"
+                    },
+                    {
+                        "t": "num",
+                        "v": "2"
+                    }
+                ]
+            },
+            "state": "ok",
+            "value": "1"
+        },
+        {
+            "name": "max min",
+            "formula": "MAX([أ], [ب]) - MIN([أ], [ب])",
+            "value_type": "amount",
+            "inputs": {
+                "a": "3",
+                "b": "10"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "-",
+                "l": {
+                    "t": "call",
+                    "f": "MAX",
+                    "args": [
+                        {
+                            "t": "ref",
+                            "k": "a",
+                            "src": "column"
+                        },
+                        {
+                            "t": "ref",
+                            "k": "b",
+                            "src": "column"
+                        }
+                    ]
+                },
+                "r": {
+                    "t": "call",
+                    "f": "MIN",
+                    "args": [
+                        {
+                            "t": "ref",
+                            "k": "a",
+                            "src": "column"
+                        },
+                        {
+                            "t": "ref",
+                            "k": "b",
+                            "src": "column"
+                        }
+                    ]
+                }
+            },
+            "state": "ok",
+            "value": "7.00"
+        },
+        {
+            "name": "sum many",
+            "formula": "SUM([أ], [ب], [اختياري], 1.5)",
+            "value_type": "amount",
+            "inputs": {
+                "a": "3",
+                "b": "10"
+            },
+            "ast": {
+                "t": "call",
+                "f": "SUM",
+                "args": [
+                    {
+                        "t": "ref",
+                        "k": "a",
+                        "src": "column"
+                    },
+                    {
+                        "t": "ref",
+                        "k": "b",
+                        "src": "column"
+                    },
+                    {
+                        "t": "ref",
+                        "k": "z",
+                        "src": "column"
+                    },
+                    {
+                        "t": "num",
+                        "v": "1.5"
+                    }
+                ]
+            },
+            "state": "ok",
+            "value": "14.50"
+        },
+        {
+            "name": "round zero digits",
+            "formula": "ROUND([أ] / 3, 0)",
+            "value_type": "amount",
+            "inputs": {
+                "a": "100",
+                "b": "0"
+            },
+            "ast": {
+                "t": "call",
+                "f": "ROUND",
+                "args": [
+                    {
+                        "t": "bin",
+                        "op": "/",
+                        "l": {
+                            "t": "ref",
+                            "k": "a",
+                            "src": "column"
+                        },
+                        "r": {
+                            "t": "num",
+                            "v": "3"
+                        }
+                    },
+                    {
+                        "t": "num",
+                        "v": "0"
+                    }
+                ]
+            },
+            "state": "ok",
+            "value": "33.00"
+        },
+        {
+            "name": "round half up",
+            "formula": "ROUND([أ], 0)",
+            "value_type": "amount",
+            "inputs": {
+                "a": "2.5",
+                "b": "0"
+            },
+            "ast": {
+                "t": "call",
+                "f": "ROUND",
+                "args": [
+                    {
+                        "t": "ref",
+                        "k": "a",
+                        "src": "column"
+                    },
+                    {
+                        "t": "num",
+                        "v": "0"
+                    }
+                ]
+            },
+            "state": "ok",
+            "value": "3.00"
+        },
+        {
+            "name": "round negative half away",
+            "formula": "ROUND([أ], 0)",
+            "value_type": "amount",
+            "inputs": {
+                "a": "-2.5",
+                "b": "0"
+            },
+            "ast": {
+                "t": "call",
+                "f": "ROUND",
+                "args": [
+                    {
+                        "t": "ref",
+                        "k": "a",
+                        "src": "column"
+                    },
+                    {
+                        "t": "num",
+                        "v": "0"
+                    }
+                ]
+            },
+            "state": "ok",
+            "value": "-3.00"
+        },
+        {
+            "name": "number output six decimals",
+            "formula": "[أ] / 7",
+            "value_type": "number",
+            "inputs": {
+                "a": "1",
+                "b": "0"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "/",
+                "l": {
+                    "t": "ref",
+                    "k": "a",
+                    "src": "column"
+                },
+                "r": {
+                    "t": "num",
+                    "v": "7"
+                }
+            },
+            "state": "ok",
+            "value": "0.142857"
+        },
+        {
+            "name": "percent output",
+            "formula": "[أ] / [ب]",
+            "value_type": "percent",
+            "inputs": {
+                "a": "1",
+                "b": "3"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "/",
+                "l": {
+                    "t": "ref",
+                    "k": "a",
+                    "src": "column"
+                },
+                "r": {
+                    "t": "ref",
+                    "k": "b",
+                    "src": "column"
+                }
+            },
+            "state": "ok",
+            "value": "0.333333"
+        },
+        {
+            "name": "optional blank counts as zero",
+            "formula": "[أ] + [اختياري]",
+            "value_type": "amount",
+            "inputs": {
+                "a": "5"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "+",
+                "l": {
+                    "t": "ref",
+                    "k": "a",
+                    "src": "column"
+                },
+                "r": {
+                    "t": "ref",
+                    "k": "z",
+                    "src": "column"
+                }
+            },
+            "state": "ok",
+            "value": "5.00"
+        },
+        {
+            "name": "required blank is missing",
+            "formula": "[أ] + [ب]",
+            "value_type": "amount",
+            "inputs": {
+                "a": "5"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "+",
+                "l": {
+                    "t": "ref",
+                    "k": "a",
+                    "src": "column"
+                },
+                "r": {
+                    "t": "ref",
+                    "k": "b",
+                    "src": "column"
+                }
+            },
+            "state": "missing",
+            "value": null
+        },
+        {
+            "name": "missing is static: dead branch still counts",
+            "formula": "IF([أ] > 0, 1, [ب])",
+            "value_type": "amount",
+            "inputs": {
+                "a": "5"
+            },
+            "ast": {
+                "t": "call",
+                "f": "IF",
+                "args": [
+                    {
+                        "t": "cmp",
+                        "op": ">",
+                        "l": {
+                            "t": "ref",
+                            "k": "a",
+                            "src": "column"
+                        },
+                        "r": {
+                            "t": "num",
+                            "v": "0"
+                        }
+                    },
+                    {
+                        "t": "num",
+                        "v": "1"
+                    },
+                    {
+                        "t": "ref",
+                        "k": "b",
+                        "src": "column"
+                    }
+                ]
+            },
+            "state": "missing",
+            "value": null
+        },
+        {
+            "name": "missing beats nothing: all blank",
+            "formula": "[أ] * [ب]",
+            "value_type": "amount",
+            "inputs": {},
+            "ast": {
+                "t": "bin",
+                "op": "*",
+                "l": {
+                    "t": "ref",
+                    "k": "a",
+                    "src": "column"
+                },
+                "r": {
+                    "t": "ref",
+                    "k": "b",
+                    "src": "column"
+                }
+            },
+            "state": "missing",
+            "value": null
+        },
+        {
+            "name": "no floor on negative",
+            "formula": "[أ] - [ب]",
+            "value_type": "amount",
+            "inputs": {
+                "a": "1",
+                "b": "5"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "-",
+                "l": {
+                    "t": "ref",
+                    "k": "a",
+                    "src": "column"
+                },
+                "r": {
+                    "t": "ref",
+                    "k": "b",
+                    "src": "column"
+                }
+            },
+            "state": "ok",
+            "value": "-4.00"
+        },
+        {
+            "name": "large value",
+            "formula": "[أ] * 1000",
+            "value_type": "amount",
+            "inputs": {
+                "a": "999999999.99",
+                "b": "0"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "*",
+                "l": {
+                    "t": "ref",
+                    "k": "a",
+                    "src": "column"
+                },
+                "r": {
+                    "t": "num",
+                    "v": "1000"
+                }
+            },
+            "state": "ok",
+            "value": "999999999990.00"
+        },
+        {
+            "name": "overflow is an error",
+            "formula": "[أ] * 10000000",
+            "value_type": "amount",
+            "inputs": {
+                "a": "999999999.99",
+                "b": "0"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "*",
+                "l": {
+                    "t": "ref",
+                    "k": "a",
+                    "src": "column"
+                },
+                "r": {
+                    "t": "num",
+                    "v": "10000000"
+                }
+            },
+            "state": "error",
+            "value": null
+        },
+        {
+            "name": "arabic digits in formula",
+            "formula": "[أ] * ٢ + ١٫٥",
+            "value_type": "amount",
+            "inputs": {
+                "a": "10",
+                "b": "0"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "+",
+                "l": {
+                    "t": "bin",
+                    "op": "*",
+                    "l": {
+                        "t": "ref",
+                        "k": "a",
+                        "src": "column"
+                    },
+                    "r": {
+                        "t": "num",
+                        "v": "2"
+                    }
+                },
+                "r": {
+                    "t": "num",
+                    "v": "1.5"
+                }
+            },
+            "state": "ok",
+            "value": "21.50"
+        },
+        {
+            "name": "semicolon argument separators",
+            "formula": "MAX([أ]؛ [ب]) + SUM(1; 2)",
+            "value_type": "amount",
+            "inputs": {
+                "a": "3",
+                "b": "10"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "+",
+                "l": {
+                    "t": "call",
+                    "f": "MAX",
+                    "args": [
+                        {
+                            "t": "ref",
+                            "k": "a",
+                            "src": "column"
+                        },
+                        {
+                            "t": "ref",
+                            "k": "b",
+                            "src": "column"
+                        }
+                    ]
+                },
+                "r": {
+                    "t": "call",
+                    "f": "SUM",
+                    "args": [
+                        {
+                            "t": "num",
+                            "v": "1"
+                        },
+                        {
+                            "t": "num",
+                            "v": "2"
+                        }
+                    ]
+                }
+            },
+            "state": "ok",
+            "value": "13.00"
+        },
+        {
+            "name": "nested functions",
+            "formula": "ROUND(MAX([أ] * [النسبة], 100), 1)",
+            "value_type": "amount",
+            "inputs": {
+                "a": "96600",
+                "b": "0"
+            },
+            "ast": {
+                "t": "call",
+                "f": "ROUND",
+                "args": [
+                    {
+                        "t": "call",
+                        "f": "MAX",
+                        "args": [
+                            {
+                                "t": "bin",
+                                "op": "*",
+                                "l": {
+                                    "t": "ref",
+                                    "k": "a",
+                                    "src": "column"
+                                },
+                                "r": {
+                                    "t": "ref",
+                                    "k": "rate",
+                                    "src": "setting"
+                                }
+                            },
+                            {
+                                "t": "num",
+                                "v": "100"
+                            }
+                        ]
+                    },
+                    {
+                        "t": "num",
+                        "v": "1"
+                    }
+                ]
+            },
+            "state": "ok",
+            "value": "6762.00"
+        },
+        {
+            "name": "comparison result used in arithmetic via IF",
+            "formula": "[أ] + IF([أ] > [ب], [ب], 0)",
+            "value_type": "amount",
+            "inputs": {
+                "a": "9",
+                "b": "4"
+            },
+            "ast": {
+                "t": "bin",
+                "op": "+",
+                "l": {
+                    "t": "ref",
+                    "k": "a",
+                    "src": "column"
+                },
+                "r": {
+                    "t": "call",
+                    "f": "IF",
+                    "args": [
+                        {
+                            "t": "cmp",
+                            "op": ">",
+                            "l": {
+                                "t": "ref",
+                                "k": "a",
+                                "src": "column"
+                            },
+                            "r": {
+                                "t": "ref",
+                                "k": "b",
+                                "src": "column"
+                            }
+                        },
+                        {
+                            "t": "ref",
+                            "k": "b",
+                            "src": "column"
+                        },
+                        {
+                            "t": "num",
+                            "v": "0"
+                        }
+                    ]
+                }
+            },
+            "state": "ok",
+            "value": "13.00"
+        }
+    ]
+}

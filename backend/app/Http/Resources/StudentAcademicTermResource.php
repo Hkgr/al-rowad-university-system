@@ -19,6 +19,11 @@ class StudentAcademicTermResource extends JsonResource
             'term_gpa' => $this->term_gpa,
             'cumulative_gpa' => $this->cumulative_gpa,
             'total_registered_hours' => $this->total_registered_hours,
+            'attempted_hours' => $this->attempted_hours,
+            'earned_hours' => $this->earned_hours,
+            'is_finalized' => (bool) $this->is_finalized,
+            'finalized_at' => $this->finalized_at,
+            'finalized_by_user_id' => $this->finalized_by_user_id,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

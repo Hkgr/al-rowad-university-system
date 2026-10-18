@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { findMyFacultyMember, getMyOpenOfferings } from '../lib/professorApi'
+import { getMyCourseOfferings } from '../lib/professorApi'
 
 export default function useMyOfferings() {
   const [facultyMember, setFacultyMember] = useState(null)
@@ -10,13 +10,13 @@ export default function useMyOfferings() {
   const load = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const user = JSON.parse(localStorage.getItem('user') || '{}')
-      const fm = await findMyFacultyMember(user.employee_id)
-      setFacultyMember(fm)
-      if (!fm) { setOfferings([]); return }
-      setOfferings(await getMyOpenOfferings(fm.faculty_member_id))
+      const data = await getMyCourseOfferings()
+      setFacultyMember(data?.faculty_member ?? null)
+      setOfferings(Array.isArray(data?.offerings) ? data.offerings : [])
     } catch {
       setError('تعذّر الاتصال بالخادم')
+      setFacultyMember(null)
+      setOfferings([])
     } finally {
       setLoading(false)
     }

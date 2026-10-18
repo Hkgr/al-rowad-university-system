@@ -4,9 +4,13 @@ namespace App\Services;
 
 use App\Exceptions\GradeException;
 use App\Models\AcademicYear;
+use App\Models\Course;
 use App\Models\CourseOffering;
+use App\Models\Department;
 use App\Models\GradeAuditLog;
 use App\Models\GradeComponent;
+use App\Models\GradeApproval;
+use App\Models\GradePartApproval;
 use App\Models\GradingPolicy;
 use App\Models\ResultStatus;
 use App\Models\Semester;
@@ -14,6 +18,10 @@ use App\Models\Student;
 use App\Models\StudentCourseRegistration;
 use App\Models\StudentCourseResult;
 use App\Models\StudentGradeComponent;
+use App\Support\CourseRequirementClassification;
+use App\Support\OfficialGradeScale;
+use App\Support\IncompleteOutcomeGuard;
+use App\Support\SupplementaryExamTargetGuard;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
@@ -21,21 +29,36 @@ use Illuminate\Support\Facades\DB;
 
 class GradeService
 {
-    private const EXCLUDED_RESULT_STATUSES = ['incomplete', 'deprived', 'withdrawn'];
-
     private ?GradingPolicy $defaultPolicy = null;
+
+    /** Canonical limits used by isolated supplementary previews and validation. */
+    public function gradingPolicyLimits(): array
+    {
+        $policy = $this->defaultGradingPolicy();
+
+        return [
+            'theoretical_max_mark' => (float) $policy->theoretical_max_mark,
+            'practical_max_mark' => (float) $policy->practical_max_mark,
+            'minimum_theoretical_mark' => (float) $policy->minimum_theoretical_mark,
+            'minimum_practical_mark' => (float) $policy->minimum_practical_mark,
+            'minimum_final_mark' => (float) $policy->minimum_final_mark,
+        ];
+    }
 
     public function getGradeSheet(int $courseOfferingId, bool $includeInactive = false): array
     {
         $offering = CourseOffering::query()
             ->with(['course', 'academicYear', 'semester'])
             ->findOrFail($courseOfferingId);
+        CourseRequirementClassification::hydrateOfferings([$offering]);
 
         $registrationsQuery = $offering->studentCourseRegistrations()
             ->with([
                 'student',
                 'registrationStatus',
                 'studentCourseResult.resultStatus',
+                'courseOffering.course',
+                'courseOffering.gradeComponents',
             ]);
 
         if (! $includeInactive) {
@@ -45,14 +68,34 @@ class GradeService
         $registrations = $registrationsQuery
             ->orderBy('student_course_registration_id')
             ->get();
+        \App\Support\HistoricalCourseCode::attach($registrations);
+        CourseRequirementClassification::hydrateOfferings(
+            $registrations->map(fn (StudentCourseRegistration $registration) => $registration->courseOffering)->push($offering)
+        );
+
+        $approval = GradeApproval::query()
+            ->where('course_offering_id', $courseOfferingId)
+            ->with('approvalStatus')
+            ->orderByDesc('grade_approval_id')
+            ->first();
+        $workflowEditable = $approval === null || $approval->allowsGradeEditing();
+        $officiallyVisible = $approval?->approvalStatus?->status_code === 'approved';
 
         return [
             'course_offering_id' => $offering->course_offering_id,
             'course_code' => $offering->course?->course_code,
             'course_name' => $offering->course?->course_name,
+            'requirement_classification' => CourseRequirementClassification::forOffering($offering),
             'academic_year' => $this->compactAcademicYear($offering->academicYear),
             'semester' => $this->compactSemester($offering->semester),
-            'students' => $registrations->map(fn (StudentCourseRegistration $registration) => $this->formatGradeSheetRow($registration))->values()->all(),
+            'students' => $registrations
+                ->map(fn (StudentCourseRegistration $registration) => $this->formatGradeSheetRow(
+                    $registration,
+                    $workflowEditable,
+                    $officiallyVisible,
+                ))
+                ->values()
+                ->all(),
         ];
     }
 
@@ -67,6 +110,7 @@ class GradeService
 
         $withResults = $registrations->filter(fn (StudentCourseRegistration $registration) => $registration->studentCourseResult !== null);
         $finalMarks = $withResults
+            ->filter(fn ($r) => $r->studentCourseResult->final_mark !== null && !in_array($this->resolveEffectiveResultStatusCode($r), ['incomplete', 'pending_approval', 'withdrawn'], true))
             ->map(fn (StudentCourseRegistration $registration) => (float) $registration->studentCourseResult->final_mark)
             ->values();
 
@@ -104,6 +148,151 @@ class GradeService
         ];
     }
 
+    public function getCourseStatistics(int $courseId, ?int $academicYearId = null, ?int $semesterId = null, ?\App\Models\User $user = null): array
+    {
+        $course = Course::query()->findOrFail($courseId);
+
+        $offeringQuery = CourseOffering::query();
+        if ($user !== null) $offeringQuery = app(DataScopeService::class)->scopeOfferings($offeringQuery, $user);
+        $offeringIds = $offeringQuery
+            ->where('course_id', $courseId)
+            ->when($academicYearId, fn (Builder $query) => $query->where('academic_year_id', $academicYearId))
+            ->when($semesterId, fn (Builder $query) => $query->where('semester_id', $semesterId))
+            ->pluck('course_offering_id');
+
+        $registrations = $this->loadActiveRegistrationsForOfferings($offeringIds);
+
+        return array_merge([
+            'course_id' => $course->course_id,
+            'course_code' => $course->course_code,
+            'course_name' => $course->course_name,
+            'program_requirement_classifications' => CourseRequirementClassification::programClassificationsForCourse(
+                tap($course, function (Course $model) use ($user): void {
+                    if ($user !== null) {
+                        CourseRequirementClassification::hydrateCoursesForUser([$model], $user);
+
+                        return;
+                    }
+
+                    CourseRequirementClassification::hydrateCourses([$model]);
+                })
+            ),
+            'academic_year_id' => $academicYearId,
+            'semester_id' => $semesterId,
+            'offerings_count' => $offeringIds->count(),
+        ], $this->buildStatistics($registrations));
+    }
+
+    public function getDepartmentStatistics(int $departmentId, ?int $academicYearId = null, ?int $semesterId = null, ?\App\Models\User $user = null): array
+    {
+        $department = Department::query()->findOrFail($departmentId);
+
+        $offeringQuery = CourseOffering::query();
+        if ($user !== null) $offeringQuery = app(DataScopeService::class)->scopeOfferings($offeringQuery, $user);
+        $offeringIds = $offeringQuery
+            ->where('department_id', $departmentId)
+            ->when($academicYearId, fn (Builder $query) => $query->where('academic_year_id', $academicYearId))
+            ->when($semesterId, fn (Builder $query) => $query->where('semester_id', $semesterId))
+            ->pluck('course_offering_id');
+
+        $registrations = $this->loadActiveRegistrationsForOfferings($offeringIds, withCourse: true);
+
+        $byCourse = $registrations
+            ->groupBy(fn (StudentCourseRegistration $registration) => $registration->courseOffering?->course_id)
+            ->map(function (Collection $courseRegistrations) {
+                $course = $courseRegistrations->first()?->courseOffering?->course;
+
+                return array_merge([
+                    'course_id' => $course?->course_id,
+                    'course_code' => $course?->course_code,
+                    'course_name' => $course?->course_name,
+                ], $this->buildStatistics($courseRegistrations));
+            })
+            ->values()
+            ->all();
+
+        return array_merge([
+            'department_id' => $department->department_id,
+            'department_name' => $department->department_name,
+            'academic_year_id' => $academicYearId,
+            'semester_id' => $semesterId,
+            'offerings_count' => $offeringIds->count(),
+            'courses_count' => count($byCourse),
+        ], $this->buildStatistics($registrations), [
+            'by_course' => $byCourse,
+        ]);
+    }
+
+    /**
+     * Load active/historical registrations (with results) for a set of
+     * course_offering_ids. Reuses the SAME currentOrHistoricalWithResult()
+     * scope that getResultsSummary() and getGradeSheet() already use —
+     * does not touch or duplicate their logic differently.
+     */
+    private function loadActiveRegistrationsForOfferings(Collection $offeringIds, bool $withCourse = false): Collection
+    {
+        if ($offeringIds->isEmpty()) {
+            return collect();
+        }
+
+        $with = ['studentCourseResult.resultStatus', 'registrationStatus'];
+        if ($withCourse) {
+            $with[] = 'courseOffering.course';
+        }
+
+        return StudentCourseRegistration::query()
+            ->whereIn('course_offering_id', $offeringIds)
+            ->with($with)
+            ->currentOrHistoricalWithResult()
+            ->get();
+    }
+
+    /**
+     * Compute pass/fail/mark statistics for an arbitrary collection of
+     * student_course_registrations. Independent copy of the same logic used
+     * inside getResultsSummary() — does not call or modify getResultsSummary().
+     */
+    private function buildStatistics(Collection $registrations): array
+    {
+        $withResults = $registrations->filter(fn (StudentCourseRegistration $registration) => $registration->studentCourseResult !== null);
+        $finalMarks = $withResults
+            ->filter(fn ($r) => $r->studentCourseResult->final_mark !== null && !in_array($this->resolveEffectiveResultStatusCode($r), ['incomplete', 'pending_approval', 'withdrawn'], true))
+            ->map(fn (StudentCourseRegistration $registration) => (float) $registration->studentCourseResult->final_mark)
+            ->values();
+
+        $statusCounts = [
+            'passed' => 0,
+            'failed' => 0,
+            'incomplete' => 0,
+            'deprived' => 0,
+            'withdrawn' => 0,
+        ];
+
+        foreach ($withResults as $registration) {
+            $statusCode = $this->resolveEffectiveResultStatusCode($registration);
+            if (array_key_exists($statusCode, $statusCounts)) {
+                $statusCounts[$statusCode]++;
+            }
+        }
+
+        $passedCount = $statusCounts['passed'];
+        $studentsWithResults = $withResults->count();
+
+        return [
+            'total_registered_students' => $registrations->count(),
+            'total_students_with_results' => $studentsWithResults,
+            'passed_count' => $passedCount,
+            'failed_count' => $statusCounts['failed'],
+            'incomplete_count' => $statusCounts['incomplete'],
+            'deprived_count' => $statusCounts['deprived'],
+            'withdrawn_count' => $statusCounts['withdrawn'],
+            'average_final_mark' => $finalMarks->isNotEmpty() ? round($finalMarks->avg(), 2) : null,
+            'highest_final_mark' => $finalMarks->isNotEmpty() ? round($finalMarks->max(), 2) : null,
+            'lowest_final_mark' => $finalMarks->isNotEmpty() ? round($finalMarks->min(), 2) : null,
+            'pass_rate' => $studentsWithResults > 0 ? round(($passedCount / $studentsWithResults) * 100, 2) : 0,
+        ];
+    }
+
     public function getRegistrationGrades(int $registrationId): array
     {
         $registration = $this->loadRegistration($registrationId);
@@ -113,15 +302,20 @@ class GradeService
 
     public function createRegistrationGrades(int $registrationId, array $data, ?int $userId = null): array
     {
-        return DB::transaction(function () use ($registrationId, $data, $userId): array {
-            $registration = $this->loadRegistration($registrationId, lock: true);
+        return \App\Services\AcademicPlanContext::transaction(function () use ($registrationId, $data, $userId): array {
+            $registration = $this->lockRegistrationWorkflow($registrationId);
+            $this->assertNotSupplementaryMaterialized($registrationId);
+            IncompleteOutcomeGuard::assertOrdinaryWrite($registrationId);
+            $this->assertLegacyGradeWorkflowAllowed((int) $registration->course_offering_id);
             $this->assertRegistrationAllowsGrading($registration);
+            $this->assertOfferingGradesEditable((int) $registration->course_offering_id);
 
             if ($registration->studentCourseResult !== null) {
                 throw new GradeException('Grades already exist for this registration. Use update endpoint instead.');
             }
 
-            $result = $this->persistGrades($registration, $data, $userId, isUpdate: false);
+            $this->assertRequestedGradePartsEditable((int) $registration->course_offering_id, $data);
+            $result = $this->persistGrades($registration, $data, $userId, isUpdate: false, changedParts: ['theoretical', 'practical']);
 
             return $this->formatRegistrationGrades($registration->fresh()->load($this->registrationRelations()));
         });
@@ -129,27 +323,36 @@ class GradeService
 
     public function updateRegistrationGrades(int $registrationId, array $data, ?int $userId = null): array
     {
-        return DB::transaction(function () use ($registrationId, $data, $userId): array {
-            $registration = $this->loadRegistration($registrationId, lock: true);
+        return \App\Services\AcademicPlanContext::transaction(function () use ($registrationId, $data, $userId): array {
+            $registration = $this->lockRegistrationWorkflow($registrationId);
+            $this->assertNotSupplementaryMaterialized($registrationId);
+            IncompleteOutcomeGuard::assertOrdinaryWrite($registrationId);
+            $this->assertLegacyGradeWorkflowAllowed((int) $registration->course_offering_id);
             $this->assertRegistrationAllowsGrading($registration);
+            $this->assertOfferingGradesEditable((int) $registration->course_offering_id);
 
             if ($registration->studentCourseResult === null) {
                 throw new GradeException('No grades found for this registration. Use create endpoint first.');
             }
 
+            $changedParts = collect(['theoretical', 'practical'])
+                ->filter(fn (string $part): bool => array_key_exists($part.'_mark', $data))->values()->all();
+            if ($changedParts === []) {
+                throw new GradeException('At least one grade part must be provided.', status: 422, errorCode: 'invalid_grade_part');
+            }
+            $this->assertRequestedGradePartsEditable((int) $registration->course_offering_id, $data);
+
             $oldTheoretical = (float) $registration->studentCourseResult->theoretical_total;
             $oldPractical = (float) $registration->studentCourseResult->practical_total;
+            $data['theoretical_mark'] ??= $oldTheoretical;
+            $data['practical_mark'] ??= $oldPractical;
 
-            $this->persistGrades($registration, $data, $userId, isUpdate: true);
+            $this->persistGrades($registration, $data, $userId, isUpdate: true, changedParts: $changedParts);
 
             $this->createAuditLogs(
-                $registration,
-                $oldTheoretical,
-                $oldPractical,
-                (float) $data['theoretical_mark'],
-                (float) $data['practical_mark'],
-                $userId,
-                $data['notes'] ?? 'Grade update'
+                $registration, $oldTheoretical, $oldPractical,
+                (float) $data['theoretical_mark'], (float) $data['practical_mark'],
+                $userId, $data['notes'] ?? 'Grade update', $changedParts
             );
 
             return $this->formatRegistrationGrades($registration->fresh()->load($this->registrationRelations()));
@@ -158,9 +361,13 @@ class GradeService
 
     public function calculateRegistrationResult(int $registrationId, ?int $userId = null): array
     {
-        return DB::transaction(function () use ($registrationId, $userId): array {
-            $registration = $this->loadRegistration($registrationId, lock: true);
+        return \App\Services\AcademicPlanContext::transaction(function () use ($registrationId, $userId): array {
+            $registration = $this->lockRegistrationWorkflow($registrationId);
+            $this->assertNotSupplementaryMaterialized($registrationId);
+            IncompleteOutcomeGuard::assertOrdinaryWrite($registrationId);
+            $this->assertLegacyGradeWorkflowAllowed((int) $registration->course_offering_id);
             $this->assertRegistrationAllowsGrading($registration);
+            $this->assertOfferingGradesEditable((int) $registration->course_offering_id);
             $result = $registration->studentCourseResult;
 
             if ($result === null) {
@@ -202,63 +409,63 @@ class GradeService
 
     public function getTranscript(Student $student): array
     {
-        $student->load([
-            'currentAcademicLevel',
-            'academicProgram.department.college',
-            'studentCourseRegistrations' => function ($query): void {
-                $query->with([
-                    'courseOffering.course',
-                    'courseOffering.academicYear',
-                    'courseOffering.semester',
-                    'studentCourseResult.resultStatus',
-                    'registrationStatus',
-                ])->academicAttempts()->orderBy('student_course_registration_id');
-            },
-        ]);
+        $student->load(['currentAcademicLevel', 'academicProgram.department.college']);
 
-        $grouped = $student->studentCourseRegistrations
-            ->groupBy(fn (StudentCourseRegistration $registration) => $registration->courseOffering?->academic_year_id.'-'.$registration->courseOffering?->semester_id)
-            ->map(function (Collection $registrations) {
-                $first = $registrations->first();
+        $registrations = $this->loadOfficialVisibleAttempts($student);
+        $registrations->each(fn (StudentCourseRegistration $registration) => $registration->setRelation('student', $student));
+        CourseRequirementClassification::attachStudentProgramCourses($registrations);
+
+        // Withdrawal is a registration fact, not an inference from only the
+        // officially visible subset (which can omit another pending attempt).
+        $termStates = DB::table('student_course_registrations as withdrawal_scr')
+            ->join('course_offerings as withdrawal_co', 'withdrawal_co.course_offering_id', '=', 'withdrawal_scr.course_offering_id')
+            ->join('registration_statuses as withdrawal_rs', 'withdrawal_rs.registration_status_id', '=', 'withdrawal_scr.registration_status_id')
+            ->where('withdrawal_scr.student_id', $student->getKey())->whereIn('withdrawal_rs.status_code', ['registered', 'completed', 'withdrawn'])
+            ->get(['withdrawal_co.academic_year_id', 'withdrawal_co.semester_id', 'withdrawal_rs.status_code'])
+            ->groupBy(fn ($row) => $row->academic_year_id.'-'.$row->semester_id);
+        $terms = $registrations
+            ->groupBy(fn (StudentCourseRegistration $registration) => ($registration->courseOffering?->academic_year_id ?? 'none').'-'.($registration->courseOffering?->semester_id ?? 'none'))
+            ->map(function (Collection $termRegistrations, string $key) use ($termStates) {
+                $first = $termRegistrations->first();
+                $year = $first?->courseOffering?->academicYear;
+                $semester = $first?->courseOffering?->semester;
+                $courses = $termRegistrations
+                    ->sortBy(fn (StudentCourseRegistration $registration) => \App\Support\HistoricalCourseCode::fields($registration)['course_code'] ?? '')
+                    ->map(fn (StudentCourseRegistration $registration) => $this->formatTranscriptCourse($registration))
+                    ->values();
+
+                $gpaEvaluation = $this->summarizeGpaCollection($termRegistrations);
 
                 return [
-                    'academic_year' => $this->compactAcademicYear($first?->courseOffering?->academicYear),
-                    'semester' => $this->compactSemester($first?->courseOffering?->semester),
-                    'courses' => $registrations->map(fn (StudentCourseRegistration $registration) => $this->formatTranscriptCourse($registration))->values()->all(),
+                    'academic_year' => $this->compactAcademicYear($year),
+                    'semester' => $this->compactSemester($semester),
+                    'term_gpa' => $gpaEvaluation['gpa'],
+                    'included_credit_hours' => $gpaEvaluation['included_credit_hours'],
+                    'withdrawal_status' => $termStates->get($key, collect())->isNotEmpty() && $termStates[$key]->every(fn ($r) => $r->status_code === 'withdrawn') ? 'full_withdrawal' : 'not_full_withdrawal',
+                    'counts_towards_maximum_study_duration' => true,
+                    'courses' => $courses->all(),
+                    '_sort_start' => $year?->start_date?->format('Y-m-d') ?? '9999-99-99',
+                    '_sort_order' => (int) ($semester?->semester_order ?? 9999),
                 ];
+            })
+            ->sortBy(fn (array $term): string => $term['_sort_start'].'-'.str_pad((string) $term['_sort_order'], 4, '0', STR_PAD_LEFT))
+            ->map(function (array $term): array {
+                unset($term['_sort_start'], $term['_sort_order']);
+
+                return $term;
             })
             ->values()
             ->all();
 
-        $program = $student->academicProgram;
-        $department = $program?->department;
+        $identity = $this->officialStudentIdentity($student);
+        $cgpaEvaluation = $this->summarizeGpaCollection($this->selectBestAttempts($registrations));
+        $summary = $this->officialTranscriptSummary($registrations, $cgpaEvaluation['gpa']);
 
-        return [
-            'student_id' => $student->student_id,
-            'student_number' => $student->student_number,
-            'full_name' => trim($student->first_name.' '.$student->last_name),
-            'program' => $program ? [
-                'academic_program_id' => $program->academic_program_id,
-                'program_code' => $program->program_code,
-                'program_name' => $program->program_name,
-            ] : null,
-            'department' => $department ? [
-                'department_id' => $department->department_id,
-                'department_code' => $department->department_code,
-                'department_name' => $department->department_name,
-            ] : null,
-            'college' => $department?->college ? [
-                'college_id' => $department->college->college_id,
-                'college_code' => $department->college->college_code,
-                'college_name' => $department->college->college_name,
-            ] : null,
-            'academic_level' => $student->currentAcademicLevel ? [
-                'academic_level_id' => $student->currentAcademicLevel->academic_level_id,
-                'level_code' => $student->currentAcademicLevel->level_code,
-                'level_name' => $student->currentAcademicLevel->level_name,
-            ] : null,
-            'terms' => $grouped,
-        ];
+        return array_merge($identity, [
+            'student' => $identity,
+            'summary' => $summary,
+            'terms' => $terms,
+        ]);
     }
 
     public function calculateGpa(Student $student, int $academicYearId, int $semesterId): array
@@ -292,6 +499,172 @@ class GradeService
             $registrations,
             repeatedCoursesHandling: 'highest_attempt_only'
         );
+    }
+
+    public function getGpaOverview(Student $student): array
+    {
+        $student->load(['currentAcademicLevel', 'academicProgram.department.college']);
+
+        $registrations = $this->officialAcademicAttempts($student)
+            ->get()
+            ->filter(fn (StudentCourseRegistration $registration): bool => $this->isOfficiallyVisibleAttempt($registration))
+            ->values();
+        $registrations->each(fn (StudentCourseRegistration $registration) => $registration->setRelation('student', $student));
+        CourseRequirementClassification::attachStudentProgramCourses($registrations);
+
+        $termGroups = $registrations
+            ->groupBy(function (StudentCourseRegistration $registration): string {
+                $offering = $registration->courseOffering;
+
+                return ($offering?->academic_year_id ?? 'none').'-'.($offering?->semester_id ?? 'none');
+            })
+            ->map(function (Collection $termRegistrations): array {
+                $first = $termRegistrations->first();
+                $year = $first?->courseOffering?->academicYear;
+                $semester = $first?->courseOffering?->semester;
+                $summary = $this->summarizeGpaCollection($termRegistrations);
+
+                return [
+                    'academic_year_id' => $year?->academic_year_id,
+                    'year_name' => $year?->year_name,
+                    'semester_id' => $semester?->semester_id,
+                    'semester_code' => $semester?->semester_code,
+                    'semester_name' => $semester?->semester_name,
+                    'semester_order' => $semester?->semester_order,
+                    'term_gpa' => $summary['gpa'],
+                    'included_credit_hours' => $summary['included_credit_hours'],
+                    'included_courses_count' => $summary['included_courses_count'],
+                    'courses' => $this->gpaEligibleCourseRows($termRegistrations),
+                    'registrations' => $termRegistrations,
+                    '_sort' => $this->officialTermChronologyKey($year, $semester),
+                ];
+            })
+            ->sortBy('_sort')
+            ->values();
+
+        $attemptsThroughTerm = collect();
+        $timeline = [];
+        $years = [];
+
+        foreach ($termGroups as $term) {
+            $attemptsThroughTerm = $attemptsThroughTerm->concat($term['registrations']);
+            $cumulative = $this->summarizeGpaCollection($this->selectBestAttempts($attemptsThroughTerm));
+            $yearKey = $term['academic_year_id'] ?? 'none';
+
+            if (! isset($years[$yearKey])) {
+                $years[$yearKey] = [
+                    'academic_year_id' => $term['academic_year_id'],
+                    'year_name' => $term['year_name'],
+                    'semesters' => [],
+                    '_registrations' => collect(),
+                    '_sort' => $term['_sort'],
+                ];
+            }
+
+            $years[$yearKey]['_registrations'] = $years[$yearKey]['_registrations']->concat($term['registrations']);
+            $years[$yearKey]['semesters'][] = [
+                'semester_id' => $term['semester_id'],
+                'semester_code' => $term['semester_code'],
+                'semester_name' => $term['semester_name'],
+                'semester_order' => $term['semester_order'],
+                'term_gpa' => $term['term_gpa'],
+                'cumulative_gpa_after_term' => $cumulative['gpa'],
+                'included_credit_hours' => $term['included_credit_hours'],
+                'included_courses_count' => $term['included_courses_count'],
+                'courses' => $term['courses'],
+            ];
+
+            $timeline[] = [
+                'academic_year_id' => $term['academic_year_id'],
+                'year_name' => $term['year_name'],
+                'semester_id' => $term['semester_id'],
+                'semester_code' => $term['semester_code'],
+                'semester_name' => $term['semester_name'],
+                'semester_order' => $term['semester_order'],
+                'label' => trim(($term['year_name'] ?? '').' · '.($term['semester_name'] ?? ''), ' ·'),
+                'term_gpa' => $term['term_gpa'],
+                'cumulative_gpa' => $cumulative['gpa'],
+                'included_credit_hours' => $term['included_credit_hours'],
+                'included_courses_count' => $term['included_courses_count'],
+            ];
+        }
+
+        $yearPayload = collect($years)
+            ->sortBy('_sort')
+            ->map(function (array $year): array {
+                $summary = $this->summarizeGpaCollection($year['_registrations']);
+
+                return [
+                    'academic_year_id' => $year['academic_year_id'],
+                    'year_name' => $year['year_name'],
+                    'year_gpa' => $summary['gpa'],
+                    'included_credit_hours' => $summary['included_credit_hours'],
+                    'semesters' => $year['semesters'],
+                ];
+            })
+            ->values()
+            ->all();
+
+        $cgpaEvaluation = $this->summarizeGpaCollection($this->selectBestAttempts($registrations));
+        $termPoints = collect($timeline)->filter(fn (array $point): bool => $point['term_gpa'] !== null);
+        $highest = $termPoints->sortByDesc('term_gpa')->first();
+        $lowest = $termPoints->sortBy('term_gpa')->first();
+
+        return [
+            'student' => $this->officialStudentIdentity($student),
+            'scale' => [
+                'maximum' => 4.0,
+            ],
+            'summary' => [
+                'cgpa' => $cgpaEvaluation['gpa'],
+                'total_included_credit_hours' => $cgpaEvaluation['included_credit_hours'],
+                'approved_courses_count' => $registrations->count(),
+                'completed_terms_count' => $termPoints->count(),
+                'highest_term_gpa' => is_array($highest) ? $highest['term_gpa'] : null,
+                'lowest_term_gpa' => is_array($lowest) ? $lowest['term_gpa'] : null,
+                'highest_term' => $this->compactGpaTermHighlight($highest),
+                'lowest_term' => $this->compactGpaTermHighlight($lowest),
+                'repeated_courses_handling' => 'highest_attempt_only',
+            ],
+            'years' => $yearPayload,
+            'timeline' => $timeline,
+        ];
+    }
+
+    public function assertRequiredPartsPolicyCompatible(bool $requiresTheoretical, bool $requiresPractical, float $theoreticalMax, float $practicalMax): GradingPolicy
+    {
+        $policy = $this->defaultGradingPolicy();
+        $requiredMaximum = ($requiresTheoretical ? $theoreticalMax : 0) + ($requiresPractical ? $practicalMax : 0);
+        $policyMaximum = ($requiresTheoretical ? (float) $policy->theoretical_max_mark : 0)
+            + ($requiresPractical ? (float) $policy->practical_max_mark : 0);
+        $partMaximumsMatch = (! $requiresTheoretical || abs($theoreticalMax - (float) $policy->theoretical_max_mark) <= 0.001)
+            && (! $requiresPractical || abs($practicalMax - (float) $policy->practical_max_mark) <= 0.001);
+        if (! $partMaximumsMatch
+            || abs($requiredMaximum - $policyMaximum) > 0.001
+            || (float) $policy->minimum_final_mark > $requiredMaximum) {
+            throw new GradeException('The grading policy is incompatible with the required grade parts.', status: 409, errorCode: 'grading_policy_incompatible');
+        }
+        return $policy;
+    }
+
+    public function buildCalculationForRequiredParts(?float $theoretical, ?float $practical, bool $requiresTheoretical, bool $requiresPractical, float $theoreticalMax, float $practicalMax, ?string $existingStatusCode = null, bool $isDeprived = false): array
+    {
+        if (($requiresTheoretical && $theoretical === null) || ($requiresPractical && $practical === null)) {
+            throw new GradeException('All required grade parts must be present before final calculation.', status: 409, errorCode: 'grade_part_incomplete');
+        }
+
+        $policy = $this->assertRequiredPartsPolicyCompatible($requiresTheoretical, $requiresPractical, $theoreticalMax, $practicalMax);
+        $finalMark = round(($requiresTheoretical ? $theoretical : 0) + ($requiresPractical ? $practical : 0), 2);
+        $failed = ($requiresTheoretical && $theoretical < (float) $policy->minimum_theoretical_mark)
+            || ($requiresPractical && $practical < (float) $policy->minimum_practical_mark)
+            || $finalMark < (float) $policy->minimum_final_mark;
+        $status = ($existingStatusCode === 'deprived' || $isDeprived) ? 'deprived' : ($failed ? 'failed' : 'passed');
+        $letterGrade = $status === 'deprived' ? 'Z' : ($failed ? 'F' : $this->letterGradeFromFinalMark($finalMark));
+
+        return ['theoretical_mark' => $theoretical, 'practical_mark' => $practical, 'final_mark' => $finalMark,
+            'result_status_code' => $status, 'letter_grade' => $letterGrade,
+            'grade_points' => $this->resolveGradePoints($letterGrade, $status),
+            'calculation_details' => ['requires_theoretical' => $requiresTheoretical, 'requires_practical' => $requiresPractical]];
     }
 
     public function buildCalculation(?float $theoretical, ?float $practical, ?string $existingStatusCode = null, bool $isDeprived = false): array
@@ -331,7 +704,7 @@ class GradeService
         ];
     }
 
-    private function persistGrades(StudentCourseRegistration $registration, array $data, ?int $userId, bool $isUpdate): StudentCourseResult
+    private function persistGrades(StudentCourseRegistration $registration, array $data, ?int $userId, bool $isUpdate, array $changedParts): StudentCourseResult
     {
         $theoretical = round((float) $data['theoretical_mark'], 2);
         $practical = round((float) $data['practical_mark'], 2);
@@ -339,18 +712,16 @@ class GradeService
 
         $resultStatusId = $this->resultStatusId($calculation['result_status_code']);
 
+        $resultValues = [
+            'final_mark' => $calculation['final_mark'], 'result_status_id' => $resultStatusId,
+            'is_deprived' => $calculation['result_status_code'] === 'deprived',
+            'calculated_at' => now(), 'calculated_by_user_id' => $userId,
+        ];
+        if (! $isUpdate || in_array('theoretical', $changedParts, true)) $resultValues['theoretical_total'] = $theoretical;
+        if (! $isUpdate || in_array('practical', $changedParts, true)) $resultValues['practical_total'] = $practical;
+        if (! $isUpdate) $resultValues['coursework_total'] = 0;
         $result = StudentCourseResult::query()->updateOrCreate(
-            ['student_course_registration_id' => $registration->student_course_registration_id],
-            [
-                'theoretical_total' => $theoretical,
-                'practical_total' => $practical,
-                'coursework_total' => 0,
-                'final_mark' => $calculation['final_mark'],
-                'result_status_id' => $resultStatusId,
-                'is_deprived' => $calculation['result_status_code'] === 'deprived',
-                'calculated_at' => now(),
-                'calculated_by_user_id' => $userId,
-            ]
+            ['student_course_registration_id' => $registration->student_course_registration_id], $resultValues
         );
 
         $registration->update([
@@ -358,7 +729,7 @@ class GradeService
             'notes' => $data['notes'] ?? $registration->notes,
         ]);
 
-        $this->syncGradeComponents($registration, $theoretical, $practical, $userId, $isUpdate);
+        $this->syncGradeComponents($registration, $theoretical, $practical, $userId, $isUpdate, $changedParts);
 
         return $result;
     }
@@ -368,7 +739,8 @@ class GradeService
         float $theoretical,
         float $practical,
         ?int $userId,
-        bool $isUpdate
+        bool $isUpdate,
+        array $changedParts
     ): void {
         $components = GradeComponent::query()
             ->where('course_offering_id', $registration->course_offering_id)
@@ -377,11 +749,11 @@ class GradeService
         $theoreticalComponent = $components->where('component_type', 'theoretical')->sortByDesc('max_mark')->first();
         $practicalComponent = $components->where('component_type', 'practical')->sortByDesc('max_mark')->first();
 
-        if ($theoreticalComponent) {
+        if ($theoreticalComponent && in_array('theoretical', $changedParts, true)) {
             $this->upsertStudentGradeComponent($registration, $theoreticalComponent, $theoretical, $userId, $isUpdate);
         }
 
-        if ($practicalComponent) {
+        if ($practicalComponent && in_array('practical', $changedParts, true)) {
             $this->upsertStudentGradeComponent($registration, $practicalComponent, $practical, $userId, $isUpdate);
         }
     }
@@ -400,7 +772,7 @@ class GradeService
             ],
             [
                 'mark' => $mark,
-                'grade_status' => 'submitted',
+                'grade_status' => 'draft',
                 'entered_by_user_id' => $userId,
                 'entered_at' => now(),
             ]
@@ -414,7 +786,8 @@ class GradeService
         float $newTheoretical,
         float $newPractical,
         ?int $userId,
-        string $reason
+        string $reason,
+        array $changedParts
     ): void {
         if ($userId === null) {
             return;
@@ -424,6 +797,7 @@ class GradeService
 
         foreach ($components as $component) {
             $type = $component->gradeComponent?->component_type;
+            if (! in_array($type, $changedParts, true)) continue;
             $oldMark = $type === 'theoretical' ? $oldTheoretical : ($type === 'practical' ? $oldPractical : null);
             $newMark = $type === 'theoretical' ? $newTheoretical : ($type === 'practical' ? $newPractical : null);
 
@@ -442,18 +816,40 @@ class GradeService
         }
     }
 
-    private function formatRegistrationGrades(StudentCourseRegistration $registration): array
+    private function formatRegistrationGrades(
+        StudentCourseRegistration $registration,
+        ?bool $officiallyVisible = null,
+    ): array
     {
         $result = $registration->studentCourseResult;
         $theoretical = $result?->theoretical_total !== null ? (float) $result->theoretical_total : null;
         $practical = $result?->practical_total !== null ? (float) $result->practical_total : null;
         $statusCode = $this->resolveEffectiveResultStatusCode($registration);
-        $calculation = $this->buildCalculation(
-            $theoretical,
-            $practical,
-            $statusCode,
-            (bool) ($result?->is_deprived ?? false)
-        );
+        $officiallyVisible ??= $this->isOfficiallyVisibleAttempt($registration);
+        $lifecycle = IncompleteOutcomeGuard::readState($registration);
+        if ($result !== null && ($officiallyVisible || $lifecycle['case_id'] !== null) && $statusCode !== null) {
+            $finalMark = $result->final_mark === null ? null : (float) $result->final_mark;
+            $letterGrade = $this->letterGradeFromOfficialResult(
+                $theoretical,
+                $practical,
+                $finalMark,
+                $statusCode,
+                $this->officialComponentVisibility($registration->courseOffering),
+            );
+            $calculation = [
+                'final_mark' => $finalMark,
+                'letter_grade' => $letterGrade,
+                'grade_points' => $this->resolveGradePoints($letterGrade, $statusCode),
+                'result_status_code' => $statusCode,
+            ];
+        } else {
+            $calculation = $this->buildCalculation(
+                $theoretical,
+                $practical,
+                $statusCode,
+                (bool) ($result?->is_deprived ?? false)
+            );
+        }
 
         return [
             'registration' => [
@@ -472,58 +868,111 @@ class GradeService
             ] : null,
             'course' => $registration->courseOffering?->course ? [
                 'course_id' => $registration->courseOffering->course->course_id,
-                'course_code' => $registration->courseOffering->course->course_code,
+                ...\App\Support\HistoricalCourseCode::fields($registration),
                 'course_name' => $registration->courseOffering->course->course_name,
                 'credit_hours' => $registration->courseOffering->course->credit_hours,
+                'requirement_classification' => CourseRequirementClassification::forOffering($registration->courseOffering),
             ] : null,
             'theoretical_mark' => $theoretical,
             'practical_mark' => $practical,
-            'final_mark' => $calculation['final_mark'],
-            'letter_grade' => $calculation['letter_grade'],
-            'grade_points' => $calculation['grade_points'],
+            'final_mark' => in_array($statusCode, ['incomplete', 'withdrawn'], true) ? null : $calculation['final_mark'],
+            'letter_grade' => $result === null && $statusCode !== 'withdrawn' ? null : $calculation['letter_grade'],
+            'grade_points' => in_array($statusCode, ['incomplete', 'withdrawn'], true) || $result === null ? null : $calculation['grade_points'],
+            'result_lifecycle' => $lifecycle,
             'result_status' => $this->compactResultStatus($calculation['result_status_code']),
             'notes' => $registration->notes,
         ];
     }
 
-    private function formatGradeSheetRow(StudentCourseRegistration $registration): array
+    private function formatGradeSheetRow(
+        StudentCourseRegistration $registration,
+        bool $workflowEditable,
+        bool $officiallyVisible,
+    ): array
     {
-        $grades = $this->formatRegistrationGrades($registration);
+        $grades = $this->formatRegistrationGrades($registration, $officiallyVisible);
+        $registrationAllowsGradeEntry = $registration->allowsGradeEntry();
+        $gradeEntryAllowed = $registrationAllowsGradeEntry && $workflowEditable && $grades['result_lifecycle']['ordinary_grade_edit_allowed'];
 
         return [
             'student_course_registration_id' => $registration->student_course_registration_id,
             'student_id' => $registration->student_id,
             'student_number' => $registration->student?->student_number,
             'full_name' => $registration->student ? trim($registration->student->first_name.' '.$registration->student->last_name) : null,
+            'has_existing_grade' => $registration->studentCourseResult !== null,
             'theoretical_mark' => $grades['theoretical_mark'],
             'practical_mark' => $grades['practical_mark'],
             'final_mark' => $grades['final_mark'],
             'letter_grade' => $grades['letter_grade'],
             'grade_points' => $grades['grade_points'],
             'result_status' => $grades['result_status'],
+            'is_deprived' => (bool) ($registration->studentCourseResult?->is_deprived
+                || $registration->studentCourseResult?->resultStatus?->status_code === 'deprived'),
             'registration_status' => $grades['registration']['registration_status'],
-            'grade_entry_allowed' => $registration->allowsGradeEntry(),
-            'grade_entry_blocked_reason' => $registration->allowsGradeEntry()
-                ? null
-                : 'Historical or inactive registrations are read-only.',
+            'grade_entry_allowed' => $gradeEntryAllowed,
+            'grade_entry_blocked_reason' => match (true) {
+                $gradeEntryAllowed => null,
+                !$grades['result_lifecycle']['ordinary_grade_edit_allowed'] => 'incomplete_outcome_locked',
+                ! $registrationAllowsGradeEntry => 'Historical or inactive registrations are read-only.',
+                default => 'Grades have been submitted for approval and are currently locked.',
+            },
             'notes' => $grades['notes'],
         ];
     }
 
     private function formatTranscriptCourse(StudentCourseRegistration $registration): array
     {
-        $grades = $this->formatRegistrationGrades($registration);
+        $offering = $registration->courseOffering;
+        $course = $offering?->course;
+        $result = $registration->studentCourseResult;
+        $visibility = $this->officialComponentVisibility($offering);
+        $statusCode = $this->resolveEffectiveResultStatusCode($registration) ?? 'incomplete';
+        $isDeprived = (bool) ($result?->is_deprived || $statusCode === 'deprived');
+        $theoretical = $result?->theoretical_total !== null ? (float) $result->theoretical_total : null;
+        $practical = $result?->practical_total !== null ? (float) $result->practical_total : null;
+        $finalMark = $result?->final_mark !== null ? (float) $result->final_mark : null;
+        if (in_array($statusCode, ['incomplete', 'withdrawn'], true)) $finalMark = null;
+        $letterGrade = $this->letterGradeFromOfficialResult(
+            $theoretical,
+            $practical,
+            $finalMark,
+            $statusCode,
+            $visibility
+        );
+        $loadedStatus = $result?->resultStatus;
 
         return [
-            'course_code' => $grades['course']['course_code'] ?? null,
-            'course_name' => $grades['course']['course_name'] ?? null,
-            'credit_hours' => $grades['course']['credit_hours'] ?? null,
-            'theoretical_mark' => $grades['theoretical_mark'],
-            'practical_mark' => $grades['practical_mark'],
-            'final_mark' => $grades['final_mark'],
-            'letter_grade' => $grades['letter_grade'],
-            'grade_points' => $grades['grade_points'],
-            'result_status' => $grades['result_status'],
+            'registration_id' => $registration->student_course_registration_id,
+            'course_offering_id' => $registration->course_offering_id,
+            'course_id' => $course?->course_id,
+            ...\App\Support\HistoricalCourseCode::fields($registration),
+            'course_name' => $course?->course_name,
+            'credit_hours' => $course?->credit_hours,
+            'requirement_classification' => CourseRequirementClassification::forStudent(
+                $registration->student?->academic_program_id === null ? null : (int) $registration->student->academic_program_id,
+                $course?->course_id === null ? null : (int) $course->course_id,
+                $registration->relationLoaded('studentProgramCourse') ? $registration->getRelation('studentProgramCourse') : null
+            ),
+            'academic_year' => $this->compactAcademicYear($offering?->academicYear),
+            'semester' => $this->compactSemester($offering?->semester),
+            'grades' => [
+                'theoretical_mark' => $visibility['theoretical'] ? $theoretical : null,
+                'practical_mark' => $visibility['practical'] ? $practical : null,
+                'final_mark' => $finalMark,
+                'letter_grade' => $letterGrade,
+                'grade_points' => in_array($statusCode, ['incomplete', 'withdrawn'], true) ? null : $this->resolveGradePoints($letterGrade, $statusCode),
+            ],
+            'theoretical_mark' => $visibility['theoretical'] ? $theoretical : null,
+            'practical_mark' => $visibility['practical'] ? $practical : null,
+            'final_mark' => $finalMark,
+            'letter_grade' => $letterGrade,
+            'grade_points' => in_array($statusCode, ['incomplete', 'withdrawn'], true) ? null : $this->resolveGradePoints($letterGrade, $statusCode),
+            'result_lifecycle' => IncompleteOutcomeGuard::readState($registration),
+            'is_deprived' => $isDeprived,
+            'result_status' => [
+                'status_code' => $statusCode,
+                'status_name' => $loadedStatus?->status_name ?? ucfirst($statusCode),
+            ],
         ];
     }
 
@@ -534,6 +983,7 @@ class GradeService
         ?int $semesterId = null,
         ?string $repeatedCoursesHandling = null
     ): array {
+        \App\Support\HistoricalCourseCode::attach($registrations);
         $included = [];
         $excluded = [];
         $totalWeightedPoints = 0.0;
@@ -551,7 +1001,7 @@ class GradeService
             }
         }
 
-        $gpa = $totalCreditHours > 0 ? round($totalWeightedPoints / $totalCreditHours, 2) : 0.00;
+        $gpa = $totalCreditHours > 0 ? round($totalWeightedPoints / $totalCreditHours, 2) : null;
 
         $academicYear = null;
         $semester = null;
@@ -612,10 +1062,15 @@ class GradeService
 
         $base = [
             'course_id' => $course?->course_id,
-            'course_code' => $course?->course_code,
+            ...\App\Support\HistoricalCourseCode::fields($registration),
             'course_name' => $course?->course_name,
             'credit_hours' => $creditHours,
             'registration_id' => $registration->student_course_registration_id,
+            'requirement_classification' => CourseRequirementClassification::forStudent(
+                $registration->student?->academic_program_id === null ? null : (int) $registration->student->academic_program_id,
+                $course?->course_id === null ? null : (int) $course->course_id,
+                $registration->relationLoaded('studentProgramCourse') ? $registration->getRelation('studentProgramCourse') : null
+            ),
         ];
 
         if (in_array($registrationStatus, StudentCourseRegistration::EXCLUDED_STATUSES, true)) {
@@ -636,7 +1091,11 @@ class GradeService
             ];
         }
 
-        if ($result->theoretical_total === null || $result->practical_total === null) {
+        $statusCode = $this->resolveEffectiveResultStatusCode($registration);
+        $visibility = $this->officialComponentVisibility($registration->courseOffering);
+        if (!OfficialGradeScale::isFailure($statusCode) && (($visibility['theoretical'] && $result->theoretical_total === null)
+            || ($visibility['practical'] && $result->practical_total === null)
+            || $result->final_mark === null)) {
             return [
                 'included' => false,
                 'course' => array_merge($base, ['exclusion_reason' => 'missing_marks']),
@@ -645,9 +1104,7 @@ class GradeService
             ];
         }
 
-        $statusCode = $this->resolveEffectiveResultStatusCode($registration);
-
-        if (in_array($statusCode, self::EXCLUDED_RESULT_STATUSES, true)) {
+        if (!in_array($statusCode, ['passed', 'failed', 'deprived'], true)) {
             return [
                 'included' => false,
                 'course' => array_merge($base, ['exclusion_reason' => $statusCode]),
@@ -656,28 +1113,34 @@ class GradeService
             ];
         }
 
-        $calculation = $this->buildCalculation(
-            (float) $result->theoretical_total,
-            (float) $result->practical_total,
-            $statusCode,
-            (bool) $result->is_deprived
+        $theoretical = $result->theoretical_total === null ? null : (float) $result->theoretical_total;
+        $practical = $result->practical_total === null ? null : (float) $result->practical_total;
+        $finalMark = $result->final_mark === null ? null : (float) $result->final_mark;
+        $letterGrade = $this->letterGradeFromOfficialResult(
+            $theoretical,
+            $practical,
+            $finalMark,
+            (string) $statusCode,
+            $visibility,
         );
+        $gradePoints = $this->resolveGradePoints($letterGrade, (string) $statusCode);
 
         return [
             'included' => true,
             'course' => array_merge($base, [
-                'final_mark' => $calculation['final_mark'],
-                'letter_grade' => $calculation['letter_grade'],
-                'grade_points' => $calculation['grade_points'],
+                'final_mark' => $finalMark,
+                'letter_grade' => $letterGrade,
+                'grade_points' => $gradePoints,
                 'result_status' => $statusCode,
             ]),
-            'grade_points' => $calculation['grade_points'],
+            'grade_points' => $gradePoints,
             'credit_hours' => $creditHours,
         ];
     }
 
     private function selectBestAttempts(Collection $registrations): Collection
     {
+        \App\Support\HistoricalCourseCode::attach($registrations);
         return $registrations
             ->groupBy(fn (StudentCourseRegistration $registration) => $registration->courseOffering?->course_id)
             ->map(function (Collection $attempts) {
@@ -707,16 +1170,537 @@ class GradeService
 
     private function gpaEligibleRegistrations(Student $student): Builder
     {
+        return $this->officialAcademicAttempts($student);
+    }
+
+    public function officialAcademicAttempts(Student $student): Builder
+    {
         return StudentCourseRegistration::query()
             ->where('student_id', $student->student_id)
             ->academicAttempts()
+            ->whereHas('studentCourseResult')
+            ->whereIn('course_offering_id', function ($subquery): void {
+                $this->constrainAuthoritativeApprovedGradeApproval($subquery);
+            })
             ->with([
                 'courseOffering.course',
                 'courseOffering.academicYear',
                 'courseOffering.semester',
+                'courseOffering.gradeComponents',
+                'courseOffering.gradeApprovals.approvalStatus',
                 'studentCourseResult.resultStatus',
                 'registrationStatus',
             ]);
+    }
+
+    /**
+     * Official academic attempts that are visible on the canonical transcript.
+     *
+     * @return Collection<int, StudentCourseRegistration>
+     */
+    public function loadOfficialVisibleAttempts(Student $student): Collection
+    {
+        $student->loadMissing(['academicProgram']);
+
+        $registrations = StudentCourseRegistration::query()->where('student_id', $student->getKey())
+            ->where(function ($q): void { $q->academicAttempts()->orWhereHas('registrationStatus', fn ($s) => $s->where('status_code', 'withdrawn')); })
+            ->with(['courseOffering.course', 'courseOffering.academicYear', 'courseOffering.semester', 'courseOffering.gradeComponents',
+                'courseOffering.gradeApprovals.approvalStatus', 'studentCourseResult.resultStatus', 'registrationStatus'])->get()
+            ->filter(fn ($r) => $r->registrationStatus?->status_code === 'withdrawn' || $this->isOfficiallyVisibleAttempt($r))->values();
+        IncompleteOutcomeGuard::attach($registrations);
+        \App\Support\HistoricalCourseCode::attach($registrations);
+        $registrations->each(fn (StudentCourseRegistration $registration) => $registration->setRelation('student', $student));
+
+        return $registrations;
+    }
+
+    /**
+     * Term GPA / hours from the same official-attempt and GPA path as the transcript.
+     *
+     * @return array{
+     *     term_gpa: ?float,
+     *     cumulative_gpa: ?float,
+     *     total_registered_hours: int,
+     *     attempted_hours: int,
+     *     earned_hours: int,
+     *     included_credit_hours: int,
+     *     official_attempts_count: int
+     * }
+     */
+    public function officialTermMetrics(Student $student, int $academicYearId, int $semesterId): array
+    {
+        $all = $this->loadOfficialVisibleAttempts($student);
+        $term = $all->filter(function (StudentCourseRegistration $registration) use ($academicYearId, $semesterId): bool {
+            $offering = $registration->courseOffering;
+
+            return (int) ($offering?->academic_year_id ?? 0) === $academicYearId
+                && (int) ($offering?->semester_id ?? 0) === $semesterId;
+        })->values();
+
+        $termSummary = $this->summarizeGpaCollection($term);
+        $academicYear = AcademicYear::query()->find($academicYearId);
+        $semester = Semester::query()->find($semesterId);
+        $termKey = $this->officialTermChronologyKey($academicYear, $semester);
+        $throughTerm = $all->filter(function (StudentCourseRegistration $registration) use ($termKey): bool {
+            $offering = $registration->courseOffering;
+
+            return $this->officialTermChronologyKey($offering?->academicYear, $offering?->semester) <= $termKey;
+        });
+        $cumulative = $this->summarizeGpaCollection($this->selectBestAttempts($throughTerm));
+
+        $attemptedHours = 0;
+        $earnedHours = 0;
+        foreach ($term as $registration) {
+            $hours = (int) ($registration->courseOffering?->course?->credit_hours ?? 0);
+            if ($registration->registrationStatus?->status_code === 'withdrawn') continue;
+            $attemptedHours += $hours;
+            if ($this->isOfficiallyPassedAttempt($registration)) {
+                $earnedHours += $hours;
+            }
+        }
+
+        return [
+            'term_gpa' => $termSummary['gpa'],
+            'cumulative_gpa' => $cumulative['gpa'],
+            'total_registered_hours' => $attemptedHours,
+            'attempted_hours' => $attemptedHours,
+            'earned_hours' => $earnedHours,
+            'included_credit_hours' => $termSummary['included_credit_hours'],
+            'gpa_denominator_credit_hours' => $termSummary['included_credit_hours'],
+            'registration_workload_hours' => $this->registrationWorkloadHours($student, $academicYearId, $semesterId),
+            'official_attempts_count' => $term->filter(fn ($r) => $r->registrationStatus?->status_code !== 'withdrawn')->count(),
+        ];
+    }
+
+    /**
+     * Latest official academic semester in a year, using transcript chronology.
+     *
+     * Official attempts are ordered by officialTermChronologyKey()
+     * (academic year start_date, then semester_order). This is independent of
+     * student_academic_terms row presence.
+     */
+    public function latestOfficialSemesterIdForYear(Student $student, int $academicYearId): ?int
+    {
+        $latestSemesterId = null;
+        $latestKey = null;
+
+        foreach ($this->loadOfficialVisibleAttempts($student) as $registration) {
+            if ($registration->registrationStatus?->status_code === 'withdrawn') continue;
+            $offering = $registration->courseOffering;
+            if ((int) ($offering?->academic_year_id ?? 0) !== $academicYearId) {
+                continue;
+            }
+
+            $key = $this->officialTermChronologyKey($offering?->academicYear, $offering?->semester);
+            if ($latestKey === null || $key > $latestKey) {
+                $latestKey = $key;
+                $latestSemesterId = $offering?->semester_id === null ? null : (int) $offering->semester_id;
+            }
+        }
+
+        return $latestSemesterId;
+    }
+
+    /**
+     * Cumulative official metrics reused by progression and graduation.
+     *
+     * @return array<string, mixed>
+     */
+    public function officialCumulativeMetrics(Student $student): array
+    {
+        $all = $this->loadOfficialVisibleAttempts($student);
+        $cgpaEvaluation = $this->summarizeGpaCollection($this->selectBestAttempts($all));
+        $summary = $this->officialTranscriptSummary($all, $cgpaEvaluation['gpa']);
+
+        $completed = [];
+        $failed = [];
+        $failedCourseIds = [];
+
+        foreach ($all as $registration) {
+            $course = $registration->courseOffering?->course;
+            $courseId = $course?->course_id === null ? null : (int) $course->course_id;
+            $statusCode = $this->resolveEffectiveResultStatusCode($registration);
+            $row = [
+                'student_course_registration_id' => $registration->student_course_registration_id,
+                'course_id' => $courseId,
+                ...\App\Support\HistoricalCourseCode::fields($registration),
+                'course_name' => $course?->course_name,
+                'credit_hours' => (int) ($course?->credit_hours ?? 0),
+                'result_status' => $statusCode,
+                'final_mark' => $registration->studentCourseResult?->final_mark !== null
+                    ? (float) $registration->studentCourseResult->final_mark
+                    : null,
+            ];
+
+            if ($this->isOfficiallyPassedAttempt($registration) && $courseId !== null && ! isset($completed[$courseId])) {
+                $completed[$courseId] = $row;
+            }
+
+            if (OfficialGradeScale::isFailure($statusCode)) {
+                $failed[] = $row;
+                if ($courseId !== null) {
+                    $failedCourseIds[$courseId] = true;
+                }
+            }
+        }
+
+        return [
+            'scale' => [
+                'maximum' => 4.0,
+            ],
+            'cumulative_gpa' => $cgpaEvaluation['gpa'],
+            'earned_hours' => (int) ($summary['total_passed_credit_hours'] ?? 0),
+            'attempted_hours' => (int) ($summary['total_attempted_credit_hours'] ?? 0),
+            'failed_courses_count' => count($failedCourseIds),
+            'official_completed_courses' => array_values($completed),
+            'failed_courses' => $failed,
+            'repeated_courses_handling' => 'highest_attempt_only',
+            'summary' => $summary,
+        ];
+    }
+
+    /**
+     * Current or historical academic work that is not yet an official visible attempt.
+     *
+     * Academic attempts are the existing HISTORICAL_ATTEMPT_STATUSES
+     * (`registered` / `completed`). Dropped and withdrawn registrations are
+     * excluded by that canonical scope and do not require a final result.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function unfinalizedAcademicWork(Student $student): array
+    {
+        return $this->collectUnfinalizedAcademicWork($student);
+    }
+
+    /**
+     * Unfinalized academic attempts for one student/year/semester.
+     *
+     * Reuses the same official-result definition as unfinalizedAcademicWork().
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function unfinalizedAcademicWorkForTerm(Student $student, int $academicYearId, int $semesterId): array
+    {
+        return $this->collectUnfinalizedAcademicWork($student, $academicYearId, $semesterId);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function collectUnfinalizedAcademicWork(
+        Student $student,
+        ?int $academicYearId = null,
+        ?int $semesterId = null
+    ): array {
+        $query = StudentCourseRegistration::query()
+            ->where('student_id', $student->student_id)
+            ->academicAttempts(requireResult: false)
+            ->with([
+                'courseOffering.course',
+                'courseOffering.gradeApprovals.approvalStatus',
+                'studentCourseResult.resultStatus',
+                'registrationStatus',
+            ])
+            ->orderBy('student_course_registration_id');
+
+        if ($academicYearId !== null && $semesterId !== null) {
+            $query->whereHas('courseOffering', function ($offering) use ($academicYearId, $semesterId): void {
+                $offering->where('academic_year_id', $academicYearId)
+                    ->where('semester_id', $semesterId);
+            });
+        }
+
+        $items = [];
+        $registrations = $query->get();
+        \App\Support\HistoricalCourseCode::attach($registrations);
+        foreach ($registrations as $registration) {
+            if ($this->isOfficiallyVisibleAttempt($registration)) {
+                continue;
+            }
+
+            $offering = $registration->courseOffering;
+            $items[] = [
+                'student_course_registration_id' => $registration->student_course_registration_id,
+                'course_offering_id' => $registration->course_offering_id,
+                'academic_year_id' => $offering?->academic_year_id,
+                'semester_id' => $offering?->semester_id,
+                'course_id' => $offering?->course_id ?? $offering?->course?->course_id,
+                ...\App\Support\HistoricalCourseCode::fields($registration),
+                'registration_status' => $registration->registrationStatus?->status_code,
+                'has_result' => $registration->studentCourseResult !== null,
+                'reason' => $registration->studentCourseResult === null
+                    ? 'no_official_result'
+                    : 'grade_approval_not_approved',
+            ];
+        }
+
+        return $items;
+    }
+
+    /**
+     * Offering ids that must be locked before re-reading official results.
+     *
+     * @return list<int>
+     */
+    public function officialLockOfferingIds(Student $student): array
+    {
+        return StudentCourseRegistration::query()
+            ->where('student_id', $student->student_id)
+            ->academicAttempts(requireResult: false)
+            ->orderBy('course_offering_id')
+            ->pluck('course_offering_id')
+            ->unique()
+            ->filter()
+            ->map(fn ($id): int => (int) $id)
+            ->values()
+            ->all();
+    }
+
+    private function constrainAuthoritativeApprovedGradeApproval($subquery): void
+    {
+        $subquery->from('grade_approvals')
+            ->join('approval_statuses', 'approval_statuses.approval_status_id', '=', 'grade_approvals.approval_status_id')
+            ->select('grade_approvals.course_offering_id')
+            ->where('approval_statuses.status_code', 'approved')
+            ->whereRaw(
+                'grade_approvals.grade_approval_id = (
+                    SELECT MAX(latest_grade_approvals.grade_approval_id)
+                    FROM grade_approvals AS latest_grade_approvals
+                    WHERE latest_grade_approvals.course_offering_id = grade_approvals.course_offering_id
+                )'
+            );
+    }
+
+    public function isOfficiallyVisibleAttempt(StudentCourseRegistration $registration): bool
+    {
+        return $registration->studentCourseResult !== null
+            && $this->isOfficiallyApprovedOffering($registration->courseOffering);
+    }
+
+    public function isOfficiallyPassedAttempt(StudentCourseRegistration $registration): bool
+    {
+        return $this->isOfficiallyVisibleAttempt($registration)
+            && $this->resolveEffectiveResultStatusCode($registration) === 'passed';
+    }
+
+    public function officialAttemptResultStatus(StudentCourseRegistration $registration): ?string
+    {
+        if (! $this->isOfficiallyVisibleAttempt($registration)) {
+            return null;
+        }
+
+        return $this->resolveEffectiveResultStatusCode($registration);
+    }
+
+    public function isOfficiallyApprovedOffering(?CourseOffering $offering): bool
+    {
+        if ($offering === null || $offering->course_offering_id === null) {
+            return false;
+        }
+
+        if ($offering->relationLoaded('gradeApprovals')) {
+            return $this->latestApprovalIsApproved($offering->gradeApprovals);
+        }
+
+        return CourseOffering::query()
+            ->whereKey($offering->course_offering_id)
+            ->whereIn('course_offering_id', function ($subquery): void {
+                $this->constrainAuthoritativeApprovedGradeApproval($subquery);
+            })
+            ->exists();
+    }
+
+    public function scopeOfficialApprovedResults(Builder $query, ?int $studentId = null): Builder
+    {
+        return $query->whereHas('studentCourseRegistration', function (Builder $registration) use ($studentId): void {
+            if ($studentId !== null) {
+                $registration->where('student_id', $studentId);
+            }
+
+            $registration->whereIn('course_offering_id', function ($subquery): void {
+                $this->constrainAuthoritativeApprovedGradeApproval($subquery);
+            });
+        });
+    }
+
+    private function officialComponentVisibility(?CourseOffering $offering): array
+    {
+        $required = $offering?->gradeComponents
+            ? $offering->gradeComponents
+                ->where('is_required', true)
+                ->pluck('component_type')
+                ->unique()
+                ->values()
+            : collect();
+
+        if ($required->isNotEmpty()) {
+            return [
+                'theoretical' => $required->contains('theoretical'),
+                'practical' => $required->contains('practical'),
+            ];
+        }
+
+        $theoryHours = (float) ($offering?->course?->theoretical_hours ?? 0);
+        $practicalHours = (float) ($offering?->course?->practical_hours ?? 0);
+
+        if ($theoryHours > 0 && $practicalHours <= 0) {
+            return ['theoretical' => true, 'practical' => false];
+        }
+
+        if ($practicalHours > 0 && $theoryHours <= 0) {
+            return ['theoretical' => false, 'practical' => true];
+        }
+
+        return ['theoretical' => true, 'practical' => true];
+    }
+
+    private function letterGradeFromOfficialResult(
+        ?float $theoretical,
+        ?float $practical,
+        ?float $finalMark,
+        string $statusCode,
+        array $visibility
+    ): string {
+        // Official reads consume the persisted official outcome. Reapplying
+        // today's default policy would rewrite historical transcript/GPA
+        // meaning after a legitimate policy change.
+        return match ($statusCode) {
+            'deprived' => 'Z',
+            'withdrawn' => 'W',
+            'incomplete' => 'I',
+            'failed' => 'F',
+            default => $finalMark === null ? 'F' : $this->letterGradeFromFinalMark($finalMark),
+        };
+    }
+
+    private function latestApprovalIsApproved(Collection $approvals): bool
+    {
+        if ($approvals->isEmpty()) {
+            return false;
+        }
+
+        $latest = $approvals
+            ->sortByDesc(fn (GradeApproval $approval): int => (int) $approval->grade_approval_id)
+            ->first();
+        if ($latest !== null && ! $latest->relationLoaded('approvalStatus')) {
+            $latest->loadMissing('approvalStatus');
+        }
+
+        return $latest?->approvalStatus?->status_code === 'approved';
+    }
+
+    private function summarizeGpaCollection(Collection $registrations): array
+    {
+        \App\Support\HistoricalCourseCode::attach($registrations);
+        $totalWeightedPoints = 0.0;
+        $totalCreditHours = 0;
+        $includedCoursesCount = 0;
+
+        foreach ($registrations as $registration) {
+            $evaluation = $this->evaluateGpaCourse($registration);
+            if (! $evaluation['included']) {
+                continue;
+            }
+
+            $totalWeightedPoints += $evaluation['grade_points'] * $evaluation['credit_hours'];
+            $totalCreditHours += $evaluation['credit_hours'];
+            $includedCoursesCount++;
+        }
+
+        return [
+            'gpa' => $totalCreditHours > 0 ? round($totalWeightedPoints / $totalCreditHours, 2) : null,
+            'included_credit_hours' => $totalCreditHours,
+            'included_courses_count' => $includedCoursesCount,
+        ];
+    }
+
+    private function officialTranscriptSummary(Collection $registrations, ?float $cgpa): array
+    {
+        $passed = 0;
+        $failed = 0;
+        $deprived = 0;
+        $attemptedHours = 0;
+        $passedHours = 0;
+        $failedHours = 0;
+        $historyHours = 0;
+
+        foreach ($registrations as $registration) {
+            $hours = (int) ($registration->courseOffering?->course?->credit_hours ?? 0);
+            $statusCode = $this->resolveEffectiveResultStatusCode($registration);
+            $historyHours += $hours;
+            if ($statusCode === 'withdrawn') continue;
+            if ($statusCode !== 'withdrawn') $attemptedHours += $hours;
+            $isDeprived = (bool) ($registration->studentCourseResult?->is_deprived || $statusCode === 'deprived');
+
+            if ($isDeprived) {
+                $deprived++;
+                continue;
+            }
+
+            if ($statusCode === 'passed') {
+                $passed++;
+                $passedHours += $hours;
+            } elseif ($statusCode === 'failed') {
+                $failed++;
+                $failedHours += $hours;
+            }
+        }
+
+        return [
+            'approved_courses_count' => $registrations->count(),
+            'passed_courses_count' => $passed,
+            'failed_courses_count' => $failed,
+            'deprived_courses_count' => $deprived,
+            'total_attempted_credit_hours' => $attemptedHours,
+            'historical_credit_hours' => $historyHours,
+            'gpa_denominator_credit_hours' => $this->summarizeGpaCollection($this->selectBestAttempts($registrations))['included_credit_hours'],
+            'total_passed_credit_hours' => $passedHours,
+            'total_failed_credit_hours' => $failedHours,
+            'cgpa' => $cgpa,
+        ];
+    }
+
+    private function officialStudentIdentity(Student $student): array
+    {
+        $program = $student->academicProgram;
+        $department = $program?->department;
+
+        return [
+            'student_id' => $student->student_id,
+            'student_number' => $student->student_number,
+            'full_name' => trim($student->first_name.' '.$student->last_name),
+            'program' => $program ? [
+                'academic_program_id' => $program->academic_program_id,
+                'program_code' => $program->program_code,
+                'program_name' => $program->program_name,
+            ] : null,
+            'department' => $department ? [
+                'department_id' => $department->department_id,
+                'department_code' => $department->department_code,
+                'department_name' => $department->department_name,
+            ] : null,
+            'college' => $department?->college ? [
+                'college_id' => $department->college->college_id,
+                'college_code' => $department->college->college_code,
+                'college_name' => $department->college->college_name,
+            ] : null,
+            'academic_level' => $student->currentAcademicLevel ? [
+                'academic_level_id' => $student->currentAcademicLevel->academic_level_id,
+                'level_code' => $student->currentAcademicLevel->level_code,
+                'level_name' => $student->currentAcademicLevel->level_name,
+            ] : null,
+        ];
+    }
+
+    /** Current workload is not official-attempt hours, earned hours, or a GPA denominator. */
+    private function registrationWorkloadHours(Student $student, ?int $year = null, ?int $semester = null): int
+    {
+        return (int) StudentCourseRegistration::query()->where('student_course_registrations.student_id', $student->getKey())->current()
+            ->join('course_offerings as workload_co', 'workload_co.course_offering_id', '=', 'student_course_registrations.course_offering_id')
+            ->join('courses as workload_c', 'workload_c.course_id', '=', 'workload_co.course_id')
+            ->when($year !== null, fn ($q) => $q->where('workload_co.academic_year_id', $year))
+            ->when($semester !== null, fn ($q) => $q->where('workload_co.semester_id', $semester))->sum('workload_c.credit_hours');
     }
 
     private function loadRegistration(int $registrationId, bool $lock = false): StudentCourseRegistration
@@ -730,16 +1714,91 @@ class GradeService
         return $query->findOrFail($registrationId);
     }
 
+    private function lockRegistrationWorkflow(int $registrationId): StudentCourseRegistration
+    {
+        $offeringId = StudentCourseRegistration::query()
+            ->whereKey($registrationId)
+            ->value('course_offering_id');
+
+        if ($offeringId !== null) {
+            CourseOffering::query()->whereKey($offeringId)->lockForUpdate()->first();
+        }
+
+        return $this->loadRegistration($registrationId, lock: true);
+    }
+
+    private function assertOfferingGradesEditable(int $courseOfferingId): void
+    {
+        $approval = GradeApproval::query()
+            ->where('course_offering_id', $courseOfferingId)
+            ->with('approvalStatus')
+            ->orderByDesc('grade_approval_id')
+            ->first();
+
+        if ($approval !== null && ! $approval->allowsGradeEditing()) {
+            throw new GradeException(
+                'Grades have been submitted and cannot be modified.',
+                status: 409,
+                errorCode: 'grades_locked'
+            );
+        }
+    }
+
     private function registrationRelations(): array
     {
         return [
             'student',
             'registrationStatus',
             'courseOffering.course',
+            'courseOffering.gradeComponents',
             'courseOffering.academicYear',
             'courseOffering.semester',
             'studentCourseResult.resultStatus',
         ];
+    }
+
+    public function assertLegacyGradeWorkflowAllowed(int $offeringId): void
+    {
+        $usesGradeParts = GradeComponent::query()->where('course_offering_id', $offeringId)
+            ->where('is_required', true)->whereIn('component_type', GradePartApproval::PARTS)->exists();
+        if ($usesGradeParts) {
+            throw new GradeException(
+                'This course offering must use the grade-parts workflow.',
+                status: 409,
+                errorCode: 'legacy_grade_workflow_disabled'
+            );
+        }
+    }
+
+    public function assertNotSupplementaryMaterialized(int $registrationId): void
+    {
+        try {
+            SupplementaryExamTargetGuard::assertOrdinaryMutationAvailable($registrationId);
+        } catch (GradeException $exception) {
+            if ($exception->errorCode !== SupplementaryExamTargetGuard::ERROR_CODE) {
+                throw $exception;
+            }
+
+            throw new GradeException(
+                'A materialized supplementary result is locked against ordinary grade recalculation.',
+                status: 409,
+                errorCode: 'supplementary_materialized_result_locked',
+            );
+        }
+    }
+
+    private function assertRequestedGradePartsEditable(int $offeringId, array $data): void
+    {
+        $requested = collect(GradePartApproval::PARTS)
+            ->filter(fn (string $part): bool => array_key_exists($part.'_mark', $data))->values();
+        if ($requested->isEmpty()) return;
+
+        $locked = GradePartApproval::query()->where('course_offering_id', $offeringId)
+            ->whereIn('component_type', $requested)->whereIn('status', ['submitted', 'approved'])
+            ->lockForUpdate()->pluck('component_type')->values()->all();
+        if ($locked !== []) {
+            throw new GradeException('One or more requested grade parts are locked.', ['parts' => $locked], 409, 'grade_part_locked');
+        }
     }
 
     private function assertRegistrationAllowsGrading(StudentCourseRegistration $registration): void
@@ -754,6 +1813,8 @@ class GradeService
         if ($registration->registrationStatus?->status_code === 'withdrawn') {
             return 'withdrawn';
         }
+
+        if ($registration->studentCourseResult?->is_deprived) return 'deprived';
 
         return $registration->studentCourseResult?->resultStatus?->status_code
             ?? $registration->resultStatus?->status_code;
@@ -813,42 +1874,17 @@ class GradeService
             return 'F';
         }
 
-        return match (true) {
-            $finalMark >= 98 => 'A+',
-            $finalMark >= 95 => 'A',
-            $finalMark >= 90 => 'A-',
-            $finalMark >= 85 => 'B+',
-            $finalMark >= 80 => 'B',
-            $finalMark >= 75 => 'B-',
-            $finalMark >= 70 => 'C+',
-            $finalMark >= 65 => 'C',
-            $finalMark >= 60 => 'C-',
-            $finalMark >= 55 => 'D+',
-            $finalMark >= 50 => 'D',
-            default => 'F',
-        };
+        return $this->letterGradeFromFinalMark($finalMark);
+    }
+
+    private function letterGradeFromFinalMark(float $finalMark): string
+    {
+        return OfficialGradeScale::letter($finalMark);
     }
 
     private function resolveGradePoints(string $letterGrade, string $resultStatusCode): float
     {
-        if (in_array($letterGrade, ['Z', 'W', 'I'], true) || in_array($resultStatusCode, self::EXCLUDED_RESULT_STATUSES, true)) {
-            return 0.00;
-        }
-
-        return match ($letterGrade) {
-            'A+' => 4.00,
-            'A' => 3.75,
-            'A-' => 3.50,
-            'B+' => 3.25,
-            'B' => 3.00,
-            'B-' => 2.75,
-            'C+' => 2.50,
-            'C' => 2.25,
-            'C-' => 2.00,
-            'D+' => 1.75,
-            'D' => 1.50,
-            default => 0.00,
-        };
+        return OfficialGradeScale::points($letterGrade, $resultStatusCode);
     }
 
     private function resultStatusId(string $statusCode): int
@@ -866,19 +1902,55 @@ class GradeService
         return (int) $statusId;
     }
 
-    private function defaultGradingPolicy(): GradingPolicy
+    public function defaultGradingPolicy(): GradingPolicy
     {
         if ($this->defaultPolicy === null) {
-            $this->defaultPolicy = GradingPolicy::query()
-                ->where('is_default', true)
+            $policies = GradingPolicy::query()
                 ->where('is_active', true)
-                ->first()
-                ?? GradingPolicy::query()->where('is_active', true)->first();
+                ->orderBy('grading_policy_id')
+                ->get();
 
-            if ($this->defaultPolicy === null) {
+            if ($policies->isEmpty()) {
                 throw new ModelNotFoundException('No active grading policy was found.');
             }
+            $defaults = $policies->where('is_default', true);
+            if ($defaults->count() > 1) {
+                throw new GradeException(
+                    'More than one active default grading policy was found.',
+                    status: 409,
+                    errorCode: 'grading_policy_ambiguous',
+                );
+            }
+
+            $this->defaultPolicy = $defaults->first() ?? $policies->first();
         }
+
+        return $this->defaultPolicy;
+    }
+
+    /** Lock the exact canonical policy used by a high-risk official-result write. */
+    public function lockDefaultGradingPolicy(): GradingPolicy
+    {
+        $policies = GradingPolicy::query()
+            ->where('is_active', true)
+            ->orderBy('grading_policy_id')
+            ->lockForUpdate()
+            ->get();
+
+        if ($policies->isEmpty()) {
+            throw new ModelNotFoundException('No active grading policy was found.');
+        }
+
+        $defaults = $policies->where('is_default', true);
+        if ($defaults->count() > 1) {
+            throw new GradeException(
+                'More than one active default grading policy was found.',
+                status: 409,
+                errorCode: 'grading_policy_ambiguous',
+            );
+        }
+
+        $this->defaultPolicy = $defaults->first() ?? $policies->first();
 
         return $this->defaultPolicy;
     }
@@ -905,6 +1977,7 @@ class GradeService
             'semester_id' => $semester->semester_id,
             'semester_code' => $semester->semester_code,
             'semester_name' => $semester->semester_name,
+            'semester_order' => $semester->semester_order,
         ];
     }
 
@@ -927,6 +2000,56 @@ class GradeService
         return [
             'status_code' => $statusCode,
             'status_name' => $statusName,
+        ];
+    }
+
+    private function gpaEligibleCourseRows(Collection $registrations): array
+    {
+        \App\Support\HistoricalCourseCode::attach($registrations);
+        $rows = [];
+
+        foreach ($registrations as $registration) {
+            $evaluation = $this->evaluateGpaCourse($registration);
+            if (! $evaluation['included']) {
+                continue;
+            }
+
+            $course = $evaluation['course'];
+            $rows[] = [
+                'registration_id' => $course['registration_id'] ?? $registration->student_course_registration_id,
+                'course_id' => $course['course_id'] ?? null,
+                ...\App\Support\HistoricalCourseCode::fields($registration),
+                'course_name' => $course['course_name'] ?? null,
+                'credit_hours' => $course['credit_hours'] ?? 0,
+                'requirement_classification' => $course['requirement_classification'] ?? null,
+                'final_mark' => $course['final_mark'] ?? null,
+                'letter_grade' => $course['letter_grade'] ?? null,
+                'grade_points' => $course['grade_points'] ?? $evaluation['grade_points'],
+            ];
+        }
+
+        return $rows;
+    }
+
+    private function officialTermChronologyKey($year, $semester): string
+    {
+        return ($year?->start_date?->format('Y-m-d') ?? '9999-99-99')
+            .'-'.str_pad((string) ($semester?->semester_order ?? 9999), 4, '0', STR_PAD_LEFT);
+    }
+
+    private function compactGpaTermHighlight(?array $point): ?array
+    {
+        if ($point === null) {
+            return null;
+        }
+
+        return [
+            'academic_year_id' => $point['academic_year_id'] ?? null,
+            'year_name' => $point['year_name'] ?? null,
+            'semester_id' => $point['semester_id'] ?? null,
+            'semester_name' => $point['semester_name'] ?? null,
+            'term_gpa' => $point['term_gpa'] ?? null,
+            'label' => $point['label'] ?? null,
         ];
     }
 }

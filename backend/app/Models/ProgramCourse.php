@@ -4,7 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 
 class ProgramCourse extends Model
 {
@@ -26,6 +27,7 @@ class ProgramCourse extends Model
     protected function casts(): array
     {
         return [
+            'academic_plan_version_id' => 'integer',
             'is_active' => 'boolean',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
@@ -50,6 +52,27 @@ class ProgramCourse extends Model
     public function recommendedSemester(): BelongsTo
     {
         return $this->belongsTo(Semester::class, 'recommended_semester_id', 'semester_id');
+    }
+
+    public function requirementMapping(): HasOne
+    {
+        return $this->hasOne(
+            ProgramCourseRequirementGroup::class,
+            'program_course_id',
+            'program_course_id'
+        );
+    }
+
+    public function requirementGroup(): HasOneThrough
+    {
+        return $this->hasOneThrough(
+            AcademicRequirementGroup::class,
+            ProgramCourseRequirementGroup::class,
+            'program_course_id',
+            'requirement_group_id',
+            'program_course_id',
+            'requirement_group_id'
+        );
     }
 
 }

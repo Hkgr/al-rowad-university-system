@@ -1,0 +1,226 @@
+{
+  "head": "c2330f98d89b96393eeaa0bf40f8171b0294bb73",
+  "transaction_service_sha256": "42febcbd3d9a4b33732312e64e12061f0a1564a2b3d6146780ccc6f8055057e9",
+  "mariadb": "10.11.18-MariaDB",
+  "initial_session_isolation": "REPEATABLE-READ",
+  "final_session_isolation": "READ-COMMITTED",
+  "package": {
+    "preflight": "READY",
+    "interrupted_after": "sc_cat_courses_u",
+    "unready_direct_and_application_writes": "rejected",
+    "resume": "APPLIED",
+    "verify": "PASS",
+    "reapply": "APPLIED",
+    "reverify": "PASS",
+    "academic_snapshot": "unchanged",
+    "database_name_rewrite": false
+  },
+  "scenarios": [
+    {
+      "scenario": "safety guard rejects wrong server port/version/marker before SQL",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "scenario": "definitions: all 57 trigger bodies and four routines match installed package",
+      "passed": true,
+      "detail": 62
+    },
+    {
+      "scenario": "real Laravel list/detail GET",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "scenario": "old CRUD ABA invalidates editor",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "scenario": "real trigger used course textual correction allowed; academic change blocked",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "scenario": "course vs first student: edit-first",
+      "passed": true,
+      "detail": {
+        "order": "A locked/wrote; B observed waiting at control locking statement; A committed; B completed",
+        "second": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "scenario": "course vs first student: student-first",
+      "passed": true,
+      "detail": {
+        "order": "A locked/wrote; B observed waiting at control locking statement; A committed; B completed",
+        "second": {
+          "ok": false,
+          "class": "App\\Exceptions\\AcademicCatalogException",
+          "message": "هذه البيانات مرتبطة بتاريخ أكاديمي؛ يسمح بالتصحيح النصي فقط.",
+          "code": "academic_catalog_history_locked"
+        }
+      }
+    },
+    {
+      "scenario": "curriculum vs first student: edit-first",
+      "passed": true,
+      "detail": {
+        "order": "A locked/wrote; B observed waiting at control locking statement; A committed; B completed",
+        "second": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "scenario": "curriculum vs first student: student-first",
+      "passed": true,
+      "detail": {
+        "order": "A locked/wrote; B observed waiting at control locking statement; A committed; B completed",
+        "second": {
+          "ok": false,
+          "class": "App\\Exceptions\\AcademicCatalogException",
+          "message": "هذه البيانات مرتبطة بتاريخ أكاديمي؛ يسمح بالتصحيح النصي فقط.",
+          "code": "academic_catalog_history_locked"
+        }
+      }
+    },
+    {
+      "scenario": "curriculum vs course_offerings: edit-first",
+      "passed": true,
+      "detail": {
+        "order": "A locked/wrote; B observed waiting at control locking statement; A committed; B completed",
+        "second": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "scenario": "curriculum vs course_offerings: offering-first",
+      "passed": true,
+      "detail": {
+        "order": "A locked/wrote; B observed waiting at control locking statement; A committed; B completed",
+        "second": {
+          "ok": false,
+          "class": "App\\Exceptions\\AcademicCatalogException",
+          "message": "هذه البيانات مرتبطة بتاريخ أكاديمي؛ يسمح بالتصحيح النصي فقط.",
+          "code": "academic_catalog_history_locked"
+        }
+      }
+    },
+    {
+      "scenario": "curriculum vs supplementary_exam_offerings: edit-first",
+      "passed": true,
+      "detail": {
+        "order": "A locked/wrote; B observed waiting at control locking statement; A committed; B completed",
+        "second": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "scenario": "curriculum vs supplementary_exam_offerings: offering-first",
+      "passed": true,
+      "detail": {
+        "order": "A locked/wrote; B observed waiting at control locking statement; A committed; B completed",
+        "second": {
+          "ok": false,
+          "class": "App\\Exceptions\\AcademicCatalogException",
+          "message": "هذه البيانات مرتبطة بتاريخ أكاديمي؛ يسمح بالتصحيح النصي فقط.",
+          "code": "academic_catalog_history_locked"
+        }
+      }
+    },
+    {
+      "scenario": "destination offering identity vs destination curriculum",
+      "passed": true,
+      "detail": {
+        "order": "A locked/wrote; B observed waiting at control locking statement; A committed; B completed",
+        "second": {
+          "ok": false,
+          "class": "App\\Exceptions\\AcademicCatalogException",
+          "message": "هذه البيانات مرتبطة بتاريخ أكاديمي؛ يسمح بالتصحيح النصي فقط.",
+          "code": "academic_catalog_history_locked"
+        }
+      }
+    },
+    {
+      "scenario": "concurrent duplicate code: one winner, controlled validation loser",
+      "passed": true,
+      "detail": {
+        "order": "A locked/wrote; B observed waiting at control locking statement; A committed; B completed",
+        "second": {
+          "ok": false,
+          "class": "Illuminate\\Validation\\ValidationException",
+          "message": "رمز المادة مستخدم بالفعل؛ أدخل رمزًا آخر",
+          "code": null
+        }
+      }
+    },
+    {
+      "scenario": "concurrent opposite prerequisite edges: cycle rolled back",
+      "passed": true,
+      "detail": {
+        "order": "A locked/wrote; B observed waiting at control locking statement; A committed; B completed",
+        "second": {
+          "ok": false,
+          "class": "Illuminate\\Validation\\ValidationException",
+          "message": "لا يسمح بمتطلب سابق ذاتي أو دورة في المتطلبات السابقة.",
+          "code": null
+        }
+      }
+    },
+    {
+      "scenario": "failed multiwrite: course relationship and audit rolled back",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "scenario": "lock timeout: controlled conflict, no automatic retry or partial write",
+      "passed": true,
+      "detail": {
+        "ok": false,
+        "class": "App\\Exceptions\\AcademicCatalogException",
+        "message": "تزامنت العملية مع تعديل آخر؛ أعد تحميل البيانات وراجعها قبل المحاولة.",
+        "code": "academic_catalog_stale"
+      }
+    },
+    {
+      "scenario": "forced row-first legacy deadlock: controlled victim and full rollback",
+      "passed": true,
+      "detail": {
+        "parent_committed": false,
+        "worker": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "scenario": "legacy CRUD Course/AcademicProgram/ProgramCourse/CourseDepartment/CoursePrerequisite",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "scenario": "canonical offering create and stale identity context proof",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "scenario": "real HTTP ordinary offering create and identity update with installed triggers",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "scenario": "nonlocking list/detail read fence: REPEATABLE READ",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "scenario": "nonlocking list/detail read fence: READ COMMITTED",
+      "passed": true,
+      "detail": null
+    }
+  ]
+}

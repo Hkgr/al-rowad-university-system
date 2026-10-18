@@ -173,7 +173,7 @@ class DataStatusPhase2Test extends TestCase
         $this->actingAs($registrar, 'sanctum')
             ->putJson('/api/v1/students/'.$this->student->student_id, ['student_status_code' => 'graduated'])
             ->assertStatus(409)
-            ->assertJsonPath('error_code', 'graduation_eligibility_not_implemented');
+            ->assertJsonPath('error_code', 'graduation_decision_workflow_required');
 
         $approved = ApprovalStatus::query()->create(['status_code' => 'approved', 'status_name' => 'Approved', 'is_active' => true]);
         $exam = $this->userWithRole('exam_officer');

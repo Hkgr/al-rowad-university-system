@@ -1,20 +1,135 @@
 const IDENTITY_KEY = 'user'
 
+export const ROLES = Object.freeze({
+  dean: 'dean',
+  examOfficer: 'exam_officer',
+  registrationOfficer: 'registration_officer',
+  vicePresidentScientific: 'vice_president_scientific',
+  vicePresidentAdministrative: 'vice_president_administrative',
+  vicePresidentLegacy: 'vice_president',
+  technicalTeam: 'technical_team',
+  ministryObserver: 'ministry_observer',
+  universityOwner: 'university_owner',
+})
+
 export const PERMISSIONS = Object.freeze({
   registrationView: 'registration.view',
   registrationManage: 'registration.manage',
   coursesView: 'courses.view',
   coursesManage: 'courses.manage',
+  courseOfferingsManage: 'course_offerings.manage',
   academicStructureView: 'academic_structure.view',
   academicStructureManage: 'academic_structure.manage',
   studentsView: 'students.view',
+  studentsManage: 'students.manage',
   hrView: 'hr.view',
+  teachingStaffManage: 'teaching_staff.manage',
+  teachingStaffView: 'teaching_staff.view',
+  gradesView: 'grades.view',
+  attendanceView: 'attendance.view',
+  dashboardsView: 'dashboards.view',
   systemSettingsView: 'system_settings.view',
+  vicePresidencyScientificAccess: 'vice_presidency.scientific.access',
+  vicePresidencyAdministrativeAccess: 'vice_presidency.administrative.access',
+  teachingAssignmentsView: 'teaching_assignments.view',
+  teachingAssignmentsManage: 'teaching_assignments.manage',
+  teachingAssignmentsReviewScientific: 'teaching_assignments.review_scientific',
+  teachingAssignmentsReviewAdministrative: 'teaching_assignments.review_administrative',
+  exceptionalOpenView: 'course_offerings.exceptional_open.view',
+  exceptionalOpenRequest: 'course_offerings.exceptional_open.request',
+  exceptionalOpenReviewScientific: 'course_offerings.exceptional_open.review_scientific',
+  exceptionalOpenReviewAdministrative: 'course_offerings.exceptional_open.review_administrative',
+  closureView: 'course_offerings.closure.view',
+  closureRequest: 'course_offerings.closure.request',
+  supplementaryExamsPeriodsView: 'supplementary_exams.periods.view',
+  supplementaryExamsPeriodsDecide: 'supplementary_exams.periods.decide',
+  supplementaryExamsOfferingsView: 'supplementary_exams.offerings.view',
+  supplementaryExamsOfferingsManage: 'supplementary_exams.offerings.manage',
+  supplementaryExamsRegistrationsView: 'supplementary_exams.registrations.view',
+  supplementaryExamsGradesReview: 'supplementary_exams.grades.review',
+  academicCalendarManage: 'academic_calendar.manage',
+  semesterOfferingGovernanceView: 'course_offerings.semester_governance.view',
+  semesterOfferingGovernanceManage: 'course_offerings.semester_governance.manage',
+  semesterOfferingGovernanceReviewScientific: 'course_offerings.semester_governance.review_scientific',
+  admissionsView: 'admissions.view',
+  admissionsManage: 'admissions.manage',
+  technicalPortalAccess: 'technical_portal.access',
+  userAccountsView: 'user_accounts.view',
+  userAccountsManage: 'user_accounts.manage',
+  userAccountsHolderNameManage: 'user_accounts.holder_name.manage',
+  systemActivityView: 'system_activity.view',
+  // نيابة الشؤون الإدارية: ملفات المدرسين وعمداء الكليات
+  vpAdministrativeFacultyView: 'vice_presidency.administrative.faculty.view',
+  vpAdministrativeFacultyManage: 'vice_presidency.administrative.faculty.manage',
+  vpAdministrativeDeansView: 'vice_presidency.administrative.deans.view',
+  vpAdministrativeDeansManage: 'vice_presidency.administrative.deans.manage',
+  // بوابة وزارة التربية والتعليم: اطلاع للقراءة فقط
+  ministryPortalAccess: 'ministry_portal.access',
+  ministryDashboardView: 'ministry_portal.dashboard.view',
+  ministryDeansView: 'ministry_portal.deans.view',
+  ministryStudentsView: 'ministry_portal.students.view',
+  ministryCollegesView: 'ministry_portal.colleges.view',
+  ministryCoursesView: 'ministry_portal.courses.view',
+  ministryFacultyView: 'ministry_portal.faculty.view',
+  ministryLeadershipView: 'ministry_portal.leadership.view',
+  // بوابة مالك الجامعة: الرئيسية والرواتب (صلاحيات مخصّصة، لا تُمنح لأي مكتب آخر افتراضيًا)
+  ownerPortalAccess: 'owner_portal.access',
+  ownerHomeView: 'owner_portal.home.view',
+  ownerPayrollView: 'owner_payroll.view',
+  ownerPayrollEmployeesManage: 'owner_payroll.employees.manage',
+  ownerPayrollBodiesManage: 'owner_payroll.bodies.manage',
+  ownerPayrollAmountsEdit: 'owner_payroll.amounts.edit',
+  ownerPayrollExport: 'owner_payroll.export',
+  ownerPayrollConfigManage: 'owner_payroll.config.manage',
 })
 
+// Ministry portal: assigned role and permission for ordinary accounts; administrative authority is centralized below.
+// mirroring App\Support\MinistryPortal on the server.
+// Owner portal: the dedicated role AND assigned permissions (the central administrator keeps its existing authority).
+const owner = permission => Object.freeze({ allRoles: [ROLES.universityOwner], assignedPermissions: [PERMISSIONS.ownerPortalAccess, permission] })
+
+const ministry = permission => Object.freeze({ allRoles: [ROLES.ministryObserver], assignedPermissions: [PERMISSIONS.ministryPortalAccess, permission] })
+
 export const ACCESS = Object.freeze({
+  manualGradeEntry: { allRoles: ['exam_officer'], assignedPermissions: ['exams.manage', 'grades.manage'], permissions: ['students.view'] },
   courseRegistration: { allPermissions: [PERMISSIONS.registrationView, PERMISSIONS.studentsView, PERMISSIONS.academicStructureView, PERMISSIONS.coursesView, PERMISSIONS.systemSettingsView] },
   courseManagement: { allPermissions: [PERMISSIONS.coursesView, PERMISSIONS.academicStructureView, PERMISSIONS.systemSettingsView] },
+  studentAffairs: { allPermissions: [PERMISSIONS.studentsView] },
+  studentAffairsAddStudent: { anyAccess: [
+    { allPermissions: [PERMISSIONS.studentsView, PERMISSIONS.studentsManage] },
+    { assignedPermissions: [PERMISSIONS.admissionsManage], actualUniversityScope: true },
+  ] },
+  studentAffairsArchivedStudents: { allPermissions: [PERMISSIONS.studentsView, PERMISSIONS.studentsManage] },
+  studentAffairsApprovedRegistrationRequests: { allPermissions: [PERMISSIONS.studentsView, PERMISSIONS.registrationView] },
+  scientificVicePresident: { permissions: [PERMISSIONS.vicePresidencyScientificAccess] },
+  administrativeVicePresident: { allRoles: [ROLES.vicePresidentAdministrative], assignedPermissions: [PERMISSIONS.vicePresidencyAdministrativeAccess], actualUniversityScope: true },
+  // المكتب التقني: organizational placement grants nothing; access comes from role permissions only.
+  technicalPortal: { allPermissions: [PERMISSIONS.technicalPortalAccess] },
+  technicalAccounts: { allPermissions: [PERMISSIONS.technicalPortalAccess, PERMISSIONS.userAccountsView] },
+  technicalAccountsManage: { allPermissions: [PERMISSIONS.technicalPortalAccess, PERMISSIONS.userAccountsManage] },
+  technicalActivity: { allPermissions: [PERMISSIONS.technicalPortalAccess, PERMISSIONS.systemActivityView] },
+  universityEmail: { allRoles: [ROLES.technicalTeam], assignedPermissions: [PERMISSIONS.technicalPortalAccess, 'university_email.view'] },
+  universityEmailManage: { allRoles: [ROLES.technicalTeam], assignedPermissions: [PERMISSIONS.technicalPortalAccess, 'university_email.view', 'university_email.manage'] },
+  universityEmailCheck: { allRoles: [ROLES.technicalTeam], assignedPermissions: [PERMISSIONS.technicalPortalAccess, 'university_email.check_connection'] },
+  universityEmailCreate: { allRoles: [ROLES.technicalTeam], assignedPermissions: [PERMISSIONS.technicalPortalAccess, 'university_email.view', 'university_email.provision'] },
+  universityEmailReceipt: { allRoles: [ROLES.technicalTeam], assignedPermissions: [PERMISSIONS.technicalPortalAccess, 'university_email.view', 'university_email.issue_receipt'] },
+  universityEmailRecover: { allRoles: [ROLES.technicalTeam], assignedPermissions: [PERMISSIONS.technicalPortalAccess, 'university_email.view', 'university_email.reissue_initial_password'] },
+  universityEmailReset: { allRoles: [ROLES.technicalTeam], assignedPermissions: [PERMISSIONS.technicalPortalAccess, 'university_email.view', 'university_email.reset_password'] },
+  universityEmailSuspend: { allRoles: [ROLES.technicalTeam], assignedPermissions: [PERMISSIONS.technicalPortalAccess, 'university_email.view', 'university_email.suspend'] },
+  universityEmailActivate: { allRoles: [ROLES.technicalTeam], assignedPermissions: [PERMISSIONS.technicalPortalAccess, 'university_email.view', 'university_email.activate'] },
+  universityEmailLink: { allRoles: [ROLES.technicalTeam], assignedPermissions: [PERMISSIONS.technicalPortalAccess, 'university_email.view', 'university_email.link_existing'] },
+  universityEmailDelete: { allRoles: [ROLES.technicalTeam], assignedPermissions: [PERMISSIONS.technicalPortalAccess, 'university_email.view', 'university_email.delete'] },
+  ministryPortal: { allRoles: [ROLES.ministryObserver], assignedPermissions: [PERMISSIONS.ministryPortalAccess] },
+  ministryDashboard: ministry(PERMISSIONS.ministryDashboardView),
+  ministryDeans: ministry(PERMISSIONS.ministryDeansView),
+  ministryStudents: ministry(PERMISSIONS.ministryStudentsView),
+  ministryColleges: ministry(PERMISSIONS.ministryCollegesView),
+  ministryCourses: ministry(PERMISSIONS.ministryCoursesView),
+  ministryFaculty: ministry(PERMISSIONS.ministryFacultyView),
+  ministryLeadership: ministry(PERMISSIONS.ministryLeadershipView),
+  ownerPortal: { allRoles: [ROLES.universityOwner], assignedPermissions: [PERMISSIONS.ownerPortalAccess] },
+  ownerHome: owner(PERMISSIONS.ownerHomeView),
+  ownerPayroll: owner(PERMISSIONS.ownerPayrollView),
 })
 
 export function getIdentity() {
@@ -29,25 +144,88 @@ export function clearIdentity() {
   localStorage.removeItem(IDENTITY_KEY)
 }
 export function hasRole(role, user = getIdentity()) { return user?.roles?.includes(role) ?? false }
-export function hasPermission(permission, user = getIdentity()) {
-  return hasRole('super_admin', user) || (user?.permissions?.includes(permission) ?? false)
+export function isSuperAdmin(user = getIdentity()) {
+  return hasRole('super_admin', user) && user?.is_super_admin !== false
 }
-export function canAccess({ permissions = [], allPermissions = [], roles = [] } = {}, user = getIdentity()) {
-  if (!user) return false
+export function hasPermission(permission, user = getIdentity()) {
+  return isSuperAdmin(user) || (user?.permissions?.includes(permission) ?? false)
+}
+export function hasAssignedPermission(permission, user = getIdentity()) {
+  return user?.permissions?.includes(permission) ?? false
+}
+export function hasActualUniversityScope(user = getIdentity()) {
+  return user?.access_scopes?.some(scope => scope?.type === 'university') ?? false
+}
+// Server-declared implemented-office authority, not a new assigned role or permission bypass.
+export function hasAdministrativeOfficeRole(role, user = getIdentity()) {
+  const offices = user?.administrative_offices
+  return !!(hasRole(ROLES.vicePresidentAdministrative, user) && hasActualUniversityScope(user)
+    && offices?.role === ROLES.vicePresidentAdministrative && offices?.operator_roles?.[role]
+    && offices.offices?.includes(offices.operator_roles[role]))
+}
+export function can(permission, user = getIdentity()) { return hasPermission(permission, user) }
+export function canAny(permissions, user = getIdentity()) { return permissions.some(permission => can(permission, user)) }
+export function canAll(permissions, user = getIdentity()) { return permissions.every(permission => can(permission, user)) }
+export function canAccess({ permissions = [], allPermissions = [], roles = [], allRoles = [], assignedPermissions = [], actualUniversityScope = false, actualAcademicScope = false, actualScopeTypes = [], studentIdentity = false, employeeIdentity = false, anyAccess = [], denied = false } = {}, user = getIdentity()) {
+  if (!user || denied) return false
+  if (anyAccess.length > 0) return anyAccess.some(access => canAccess(access, user))
+  if (studentIdentity && !user.student_id) return false
+  if (employeeIdentity && !user.employee_id) return false
+  // Personal identity gates are never manufactured by administrative access.
+  if (isSuperAdmin(user) && !studentIdentity && !employeeIdentity) return true
+  if (actualUniversityScope && !hasActualUniversityScope(user)) return false
+  if (actualScopeTypes.length && !user.access_scopes?.some(scope => actualScopeTypes.includes(scope?.type) && Number(scope.id) > 0)) return false
+  if (actualAcademicScope && !user.access_scopes?.some(scope => ['university', 'college', 'department', 'program'].includes(scope?.type) && Number(scope.id) > 0)) return false
   const hasEveryRequiredPermission = allPermissions.every(permission => hasPermission(permission, user))
+  const hasEveryRequiredRole = allRoles.every(role => hasRole(role, user) || hasAdministrativeOfficeRole(role, user))
+  const hasEveryAssignedPermission = assignedPermissions.every(permission => hasAssignedPermission(permission, user))
   const hasAnyAlternative = permissions.some(permission => hasPermission(permission, user))
-    || roles.some(role => hasRole(role, user))
+    || roles.some(role => hasRole(role, user) || hasAdministrativeOfficeRole(role, user))
     || (permissions.length === 0 && roles.length === 0)
 
-  return hasEveryRequiredPermission && hasAnyAlternative
+  return hasEveryRequiredPermission && hasEveryRequiredRole && hasEveryAssignedPermission && hasAnyAlternative
 }
 export function landingRoute(user) {
-  if (hasRole('student', user)) return '/student'
-  if (hasRole('dean', user)) return '/dean'
-  if (hasRole('vice_president', user)) return '/vice-president'
-  if (hasRole('exam_officer', user)) return '/exam-board'
-  if (hasRole('doctor_instructor', user)) return '/professor'
+  if (!user) return '/login'
+  if (isSuperAdmin(user)) return '/technical'
+
+  // The ministry account is confined to its read-only portal on the server; it lands there first.
+  // No existing account holds this role, so the precedence of existing roles is unchanged.
+  if (hasRole(ROLES.ministryObserver, user)) return canAccess(ACCESS.ministryPortal, user) ? '/ministry' : '/forbidden'
+
+  // The university owner lands on the owner portal. Only an account holding this dedicated role is affected.
+  if (hasRole(ROLES.universityOwner, user)) return canAccess(ACCESS.ownerPortal, user) ? '/owner' : '/forbidden'
+
+  // President portal is independent of VP/dean permissions and super-admin virtual grants.
+  // Ministry confinement remains first for mixed ministry identities.
+  if (hasRole('university_president', user) && hasActualUniversityScope(user) && hasAssignedPermission('president_portal.access', user)) {
+    const pages = [['dashboard', ''], ['colleges', '/colleges'], ['students', '/students'], ['exams', '/exams'], ['staff', '/faculty'], ['leadership', '/leadership'], ['followup', '/followup'], ['reports', '/reports']]
+    const landing = pages.find(([section]) => hasAssignedPermission(`president_portal.${section}.view`, user))
+    if (landing) return '/president' + landing[1]
+  }
+
+  // Portal roles take precedence over permission-based staff landing pages.
+  if (hasRole(ROLES.dean, user)) return '/dean'
+  if (hasRole(ROLES.vicePresidentScientific, user)) return '/vp/scientific'
+  if (hasRole(ROLES.vicePresidentAdministrative, user)) return '/vp/administrative'
+  if (hasRole(ROLES.examOfficer, user)) return '/exam-board'
+  if (hasRole(ROLES.registrationOfficer, user)) return '/student-affairs'
+  if (hasRole(ROLES.technicalTeam, user) && canAccess(ACCESS.technicalPortal, user)) return '/technical'
+  if (canAll(['exams.view', 'exams.manage'], user)) return '/exam-board'
+  if (canAccess(ACCESS.courseRegistration, user) && hasPermission('registration.manage', user)) return '/exam-board/course-registration'
+  if (canAny(['attendance.manage', 'grades.manage'], user) && user?.employee_id) return '/professor'
+  if (hasPermission('supplementary_exams.grades.view', user) && user?.employee_id) return '/professor/supplementary-exams'
   if (hasPermission('hr.view', user)) return '/hr'
+  if (hasRole('hr_officer', user) && canAccess({ assignedPermissions: ['administrative_hr.view'], actualScopeTypes: ['university', 'college'] }, user)) return '/vp/administrative/hr'
+  if (hasRole('finance_officer', user) && canAccess({ assignedPermissions: ['administrative_hr.payroll.access', PERMISSIONS.ownerPayrollView], actualUniversityScope: true }, user)) return '/vp/administrative/payroll'
+  if (user?.student_id && canAny(['registration.view', 'grades.view', 'attendance.view'], user)) return '/student'
   if (hasPermission('academic_structure.view', user)) return '/academic-structure'
-  return '/student-affairs'
+  if (canAccess({ assignedPermissions: [PERMISSIONS.admissionsManage], actualUniversityScope: true }, user)) return '/student-affairs/students/add'
+  if (hasPermission('students.view', user)) return '/student-affairs'
+  if (canAccess({ assignedPermissions: [PERMISSIONS.admissionsView], actualUniversityScope: true }, user)) return '/student-affairs/ministry-placements'
+  // Permission fallback for VP-only identities. Exclude super_admin so existing
+  // staff landings (exam board, HR, …) are not redirected to the VP shell.
+  if (!hasRole('super_admin', user) && hasPermission(PERMISSIONS.vicePresidencyScientificAccess, user)) return '/vp/scientific'
+  if (!hasRole('super_admin', user) && hasPermission(PERMISSIONS.vicePresidencyAdministrativeAccess, user)) return '/vp/administrative'
+  return '/forbidden'
 }

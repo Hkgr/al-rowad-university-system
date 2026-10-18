@@ -1,0 +1,499 @@
+{
+  "base": "65bb4f499f439f4c5a49c9de55579a721e8a7a23",
+  "application_source": "Unchanged from base",
+  "normalization": "Worktree path, generated Mockery class serial and the two SQL fixture now() timestamps only. Test names and error/assertion causes compared, not counts alone.",
+  "php_expanded": {
+    "tests": 211,
+    "passed": 148,
+    "failures": [
+      {
+        "test": "Tests\\Feature\\AcademicCalendarPhase2ServiceTest::test_activation_preserves_exactly_one_lifecycle_active_and_current_year_with_audit",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "SQLSTATE[HY000]: General error: 1 table users has no column named username (Connection: sqlite, Database: :memory:, SQL: insert into \"users\" (\"user_id\", \"username\") values (1, vp), (2, ordinary))"
+      },
+      {
+        "test": "Tests\\Feature\\AcademicCalendarPhase2ServiceTest::test_authenticated_read_returns_published_and_never_draft_or_superseded_content",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "SQLSTATE[HY000]: General error: 1 table users has no column named username (Connection: sqlite, Database: :memory:, SQL: insert into \"users\" (\"user_id\", \"username\") values (1, vp), (2, ordinary))"
+      },
+      {
+        "test": "Tests\\Feature\\AcademicCalendarPhase2ServiceTest::test_cancellation_requires_reason_conflicts_with_pending_draft_and_remains_public",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "SQLSTATE[HY000]: General error: 1 table users has no column named username (Connection: sqlite, Database: :memory:, SQL: insert into \"users\" (\"user_id\", \"username\") values (1, vp), (2, ordinary))"
+      },
+      {
+        "test": "Tests\\Feature\\AcademicCalendarPhase2ServiceTest::test_closed_year_blocks_mutation_and_reopen_requires_reason_without_becoming_current",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "SQLSTATE[HY000]: General error: 1 table users has no column named username (Connection: sqlite, Database: :memory:, SQL: insert into \"users\" (\"user_id\", \"username\") values (1, vp), (2, ordinary))"
+      },
+      {
+        "test": "Tests\\Feature\\AcademicCalendarPhase2ServiceTest::test_manager_can_create_and_initially_publish_a_draft",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "SQLSTATE[HY000]: General error: 1 table users has no column named username (Connection: sqlite, Database: :memory:, SQL: insert into \"users\" (\"user_id\", \"username\") values (1, vp), (2, ordinary))"
+      },
+      {
+        "test": "Tests\\Feature\\AcademicCalendarPhase2ServiceTest::test_never_published_only_draft_deletion_removes_logical_event",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "SQLSTATE[HY000]: General error: 1 table users has no column named username (Connection: sqlite, Database: :memory:, SQL: insert into \"users\" (\"user_id\", \"username\") values (1, vp), (2, ordinary))"
+      },
+      {
+        "test": "Tests\\Feature\\AcademicCalendarPhase2ServiceTest::test_only_actual_scientific_vp_with_assigned_permission_can_mutate",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "SQLSTATE[HY000]: General error: 1 table users has no column named username (Connection: sqlite, Database: :memory:, SQL: insert into \"users\" (\"user_id\", \"username\") values (1, vp), (2, ordinary))"
+      },
+      {
+        "test": "Tests\\Feature\\AcademicCalendarPhase2ServiceTest::test_published_logical_academic_context_is_immutable",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "SQLSTATE[HY000]: General error: 1 table users has no column named username (Connection: sqlite, Database: :memory:, SQL: insert into \"users\" (\"user_id\", \"username\") values (1, vp), (2, ordinary))"
+      },
+      {
+        "test": "Tests\\Feature\\AcademicCalendarPhase2ServiceTest::test_published_revision_cannot_be_deleted_but_replacement_draft_can",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "SQLSTATE[HY000]: General error: 1 table users has no column named username (Connection: sqlite, Database: :memory:, SQL: insert into \"users\" (\"user_id\", \"username\") values (1, vp), (2, ordinary))"
+      },
+      {
+        "test": "Tests\\Feature\\AcademicCalendarPhase2ServiceTest::test_replacement_draft_preserves_public_v1_until_transactional_publish",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "SQLSTATE[HY000]: General error: 1 table users has no column named username (Connection: sqlite, Database: :memory:, SQL: insert into \"users\" (\"user_id\", \"username\") values (1, vp), (2, ordinary))"
+      },
+      {
+        "test": "Tests\\Feature\\AcademicCalendarPhase2ServiceTest::test_same_type_overlap_warns_without_blocking_and_different_type_does_not",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "SQLSTATE[HY000]: General error: 1 table users has no column named username (Connection: sqlite, Database: :memory:, SQL: insert into \"users\" (\"user_id\", \"username\") values (1, vp), (2, ordinary))"
+      },
+      {
+        "test": "Tests\\Feature\\AcademicCalendarPhase2ServiceTest::test_scientific_vp_role_without_assigned_permission_cannot_mutate",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "SQLSTATE[HY000]: General error: 1 table users has no column named username (Connection: sqlite, Database: :memory:, SQL: insert into \"users\" (\"user_id\", \"username\") values (1, vp), (2, ordinary))"
+      },
+      {
+        "test": "Tests\\Feature\\AcademicCalendarPhase2ServiceTest::test_stale_replacement_publication_returns_conflict",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "SQLSTATE[HY000]: General error: 1 table users has no column named username (Connection: sqlite, Database: :memory:, SQL: insert into \"users\" (\"user_id\", \"username\") values (1, vp), (2, ordinary))"
+      },
+      {
+        "test": "Tests\\Feature\\AcademicCalendarPhase2ServiceTest::test_unauthorized_role_cannot_use_lifecycle_actions",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "SQLSTATE[HY000]: General error: 1 table users has no column named username (Connection: sqlite, Database: :memory:, SQL: insert into \"users\" (\"user_id\", \"username\") values (1, vp), (2, ordinary))"
+      },
+      {
+        "test": "Tests\\Feature\\AcademicCalendarPhase2ServiceTest::test_year_wide_overlap_is_a_semester_wildcard",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "SQLSTATE[HY000]: General error: 1 table users has no column named username (Connection: sqlite, Database: :memory:, SQL: insert into \"users\" (\"user_id\", \"username\") values (1, vp), (2, ordinary))"
+      },
+      {
+        "test": "Tests\\Feature\\SemesterRegistrationEligibilityPhase3GradeBoundaryTest::test_highest_attempt_only_cgpa_semantics_are_reused_for_repeated_course",
+        "kind": "failure",
+        "identical_on_clean_base": true,
+        "cause": "Failed asserting that 3.5 is identical to 4.0."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilityPartialTheoryBehaviorTest::test_first_of_two_theoretical_marks_blocks_declaration",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "SQLSTATE[HY000]: General error: 1 table student_grade_components has no column named updated_at (Connection: sqlite, Database: :memory:, SQL: insert into \"student_grade_components\" (\"student_course_registration_id\", \"grade_component_id\", \"mark\", \"updated_at\", \"created_at\") values (30, 1, 15, <fixture now>, <fixture now>))"
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilityPartialTheoryBehaviorTest::test_second_of_two_theoretical_marks_blocks_declaration",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "SQLSTATE[HY000]: General error: 1 table student_grade_components has no column named updated_at (Connection: sqlite, Database: :memory:, SQL: insert into \"student_grade_components\" (\"student_course_registration_id\", \"grade_component_id\", \"mark\", \"updated_at\", \"created_at\") values (30, 2, 15, <fixture now>, <fixture now>))"
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilitySchemaReadyRuntimeTest::test_phase4_cancellation_frees_summer_slot_and_preserves_history",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "مخطط التسجيل التكميلي غير جاهز."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilitySchemaReadyRuntimeTest::test_phase4_closed_window_blocks_cancellation",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "مخطط التسجيل التكميلي غير جاهز."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilitySchemaReadyRuntimeTest::test_phase4_eligible_student_registration_persists_current_row_and_event",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "مخطط التسجيل التكميلي غير جاهز."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilitySchemaReadyRuntimeTest::test_phase4_full_runtime_contract_is_ready",
+        "kind": "failure",
+        "identical_on_clean_base": true,
+        "cause": "Failed asserting that false is true."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilitySchemaReadyRuntimeTest::test_phase4_ineligible_student_registration_is_rejected_without_row",
+        "kind": "failure",
+        "identical_on_clean_base": true,
+        "cause": "Failed asserting that two strings are identical.\n--- Expected\n+++ Actual\n@@ @@\n-'supplementary_exam_registration_not_eligible'\n+'supplementary_exam_registration_schema_not_ready'"
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilitySchemaReadyRuntimeTest::test_phase4_missing_cancel_actor_fk_fails",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "This database driver does not support dropping foreign keys by name."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilitySchemaReadyRuntimeTest::test_phase4_missing_event_actor_fk_fails",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "This database driver does not support dropping foreign keys by name."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilitySchemaReadyRuntimeTest::test_phase4_missing_offering_fk_fails",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "This database driver does not support dropping foreign keys by name."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilitySchemaReadyRuntimeTest::test_phase4_missing_registered_actor_fk_fails",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "This database driver does not support dropping foreign keys by name."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilitySchemaReadyRuntimeTest::test_phase4_missing_registration_fk_fails",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "This database driver does not support dropping foreign keys by name."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilitySchemaReadyRuntimeTest::test_phase4_missing_source_fk_fails",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "This database driver does not support dropping foreign keys by name."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilitySchemaReadyRuntimeTest::test_phase4_missing_student_fk_fails",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "This database driver does not support dropping foreign keys by name."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilitySchemaReadyRuntimeTest::test_phase4_second_period_close_rejects_target_already_fixed_in_another_period_atomically",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "Received Mockery_N_App_Services_DataScopeService::canAdministerUniversity(), but no expectations were specified"
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilitySchemaReadyRuntimeTest::test_phase4_summer_fourth_registration_is_rejected_and_count_remains_three",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "مخطط التسجيل التكميلي غير جاهز."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilitySchemaReadyRuntimeTest::test_phase4_window_close_persists_transition_and_audit_event",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "Received Mockery_N_App_Services_DataScopeService::canAdministerUniversity(), but no expectations were specified"
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilitySchemaReadyRuntimeTest::test_phase4_window_close_rejects_duplicate_target_within_current_roster_atomically",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "Received Mockery_N_App_Services_DataScopeService::canAdministerUniversity(), but no expectations were specified"
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilitySchemaReadyRuntimeTest::test_phase4_window_close_rejects_empty_current_roster_atomically",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "Received Mockery_N_App_Services_DataScopeService::canAdministerUniversity(), but no expectations were specified"
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilitySchemaReadyRuntimeTest::test_phase4_window_open_persists_transition_and_audit_event",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "Received Mockery_N_App_Services_DataScopeService::canAdministerUniversity(), but no expectations were specified"
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilitySchemaReadyRuntimeTest::test_phase4_window_open_without_university_scope_is_rejected_atomically",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "Received Mockery_N_App_Services_DataScopeService::canAdministerUniversity(), but no expectations were specified"
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamEligibilitySchemaReadyRuntimeTest::test_phase4_wrong_source_is_rejected_without_registration",
+        "kind": "failure",
+        "identical_on_clean_base": true,
+        "cause": "Failed asserting that two strings are identical.\n--- Expected\n+++ Actual\n@@ @@\n-'supplementary_exam_registration_source_invalid'\n+'supplementary_exam_registration_schema_not_ready'"
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamPhase7LifecycleHardeningTest::duplicate_targets_and_official_mutation_paths_are_guarded",
+        "kind": "failure",
+        "identical_on_clean_base": true,
+        "cause": "Failed asserting that 3 is identical to 2."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamPhase7LifecycleHardeningTest::grading_guards_scope_roster_versions_and_assignment_state",
+        "kind": "failure",
+        "identical_on_clean_base": true,
+        "cause": "Failed asserting that '<?php\\n\n\\n\nnamespace App\\Services;\\n\n\\n\nuse App\\Exceptions\\GradeException;\\n\nuse App\\Models\\CourseOffering;\\n\nuse App\\Models\\Fa … [long source assertion omitted] …       'actor_user_id' => $actor->user_id,\\n\n            'notes' => $notes,\\n\n            'created_at' => now(),\\n\n        ]);\\n\n    }\\n\n\\n\n    private function fail(string $message, string $code, int $status): never\\n\n    {\\n\n        throw new GradeException($message, status: $status, errorCode: $code);\\n\n    }\\n\n}\\n\n' [ASCII](length: 61973) contains \"hasActualUniversityScope\" [ASCII](length: 24)."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::grading_journey_uses_public_services_from_assignment_through_publication",
+        "kind": "failure",
+        "identical_on_clean_base": true,
+        "cause": "Failed asserting that false is true."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::public_grading_boundaries_reject_program_and_university_scope_gaps_atomically",
+        "kind": "failure",
+        "identical_on_clean_base": true,
+        "cause": "Failed asserting that two strings are identical.\n--- Expected\n+++ Actual\n@@ @@\n-'supplementary_grade_out_of_scope'\n+'supplementary_grading_schema_not_ready'"
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::review_approve_and_publish_fail_closed_when_latest_version_is_ambiguous",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "The supplementary grading schema is not ready."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::test_phase4_cancellation_frees_summer_slot_and_preserves_history",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "مخطط التسجيل التكميلي غير جاهز."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::test_phase4_closed_window_blocks_cancellation",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "مخطط التسجيل التكميلي غير جاهز."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::test_phase4_eligible_student_registration_persists_current_row_and_event",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "مخطط التسجيل التكميلي غير جاهز."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::test_phase4_full_runtime_contract_is_ready",
+        "kind": "failure",
+        "identical_on_clean_base": true,
+        "cause": "Failed asserting that false is true."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::test_phase4_ineligible_student_registration_is_rejected_without_row",
+        "kind": "failure",
+        "identical_on_clean_base": true,
+        "cause": "Failed asserting that two strings are identical.\n--- Expected\n+++ Actual\n@@ @@\n-'supplementary_exam_registration_not_eligible'\n+'supplementary_exam_registration_schema_not_ready'"
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::test_phase4_missing_cancel_actor_fk_fails",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "This database driver does not support dropping foreign keys by name."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::test_phase4_missing_event_actor_fk_fails",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "This database driver does not support dropping foreign keys by name."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::test_phase4_missing_offering_fk_fails",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "This database driver does not support dropping foreign keys by name."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::test_phase4_missing_registered_actor_fk_fails",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "This database driver does not support dropping foreign keys by name."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::test_phase4_missing_registration_fk_fails",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "This database driver does not support dropping foreign keys by name."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::test_phase4_missing_source_fk_fails",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "This database driver does not support dropping foreign keys by name."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::test_phase4_missing_student_fk_fails",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "This database driver does not support dropping foreign keys by name."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::test_phase4_second_period_close_rejects_target_already_fixed_in_another_period_atomically",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "Received Mockery_N_App_Services_DataScopeService::canAdministerUniversity(), but no expectations were specified"
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::test_phase4_summer_fourth_registration_is_rejected_and_count_remains_three",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "مخطط التسجيل التكميلي غير جاهز."
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::test_phase4_window_close_persists_transition_and_audit_event",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "Received Mockery_N_App_Services_DataScopeService::canAdministerUniversity(), but no expectations were specified"
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::test_phase4_window_close_rejects_duplicate_target_within_current_roster_atomically",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "Received Mockery_N_App_Services_DataScopeService::canAdministerUniversity(), but no expectations were specified"
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::test_phase4_window_close_rejects_empty_current_roster_atomically",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "Received Mockery_N_App_Services_DataScopeService::canAdministerUniversity(), but no expectations were specified"
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::test_phase4_window_open_persists_transition_and_audit_event",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "Received Mockery_N_App_Services_DataScopeService::canAdministerUniversity(), but no expectations were specified"
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::test_phase4_window_open_without_university_scope_is_rejected_atomically",
+        "kind": "error",
+        "identical_on_clean_base": true,
+        "cause": "Received Mockery_N_App_Services_DataScopeService::canAdministerUniversity(), but no expectations were specified"
+      },
+      {
+        "test": "Tests\\Feature\\SupplementaryExamRegistrationBehaviorTest::test_phase4_wrong_source_is_rejected_without_registration",
+        "kind": "failure",
+        "identical_on_clean_base": true,
+        "cause": "Failed asserting that two strings are identical.\n--- Expected\n+++ Actual\n@@ @@\n-'supplementary_exam_registration_source_invalid'\n+'supplementary_exam_registration_schema_not_ready'"
+      }
+    ],
+    "errors": 52,
+    "assertions": 452
+  },
+  "node_full": {
+    "tests": 422,
+    "passed": 408,
+    "failed": 14,
+    "failures": [
+      {
+        "test": "static integration is isolated, reuses existing authorization and metrics, and adds no data fetch",
+        "identical_on_clean_base": true,
+        "cause": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  \n  4 !== 3\n  \n      at TestContext.<anonymous> (file:///<repo>/frontend/tests/administrativeOrganization.test.mjs:50:10)\n      at Test.runInAsyncScope (node:async_hooks:214:14)\n      at Test.run (node:internal/test_runner/test:1106:25)\n      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)\n      at Test.postRun (node:internal/test_runner/test:1235:19)\n      at Test.run (node:internal/test_runner/test:1163:12)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: 4,\n    expected: 3,\n    operator: 'strictEqual',\n    diff: 'simple'\n  }\n\ntest at tests\\examBoardSupplementaryOverview.test.mjs:1:1"
+      },
+      {
+        "test": "tests\\examBoardSupplementaryOverview.test.mjs",
+        "identical_on_clean_base": true,
+        "cause": "'test failed'\n\ntest at tests\\ownerPortal.test.mjs:50:1"
+      },
+      {
+        "test": "payroll data is isolated: the owner feature only talks to /v1/owner",
+        "identical_on_clean_base": true,
+        "cause": "AssertionError [ERR_ASSERTION]: The input did not match the regular expression /const BASE = '\\/v1\\/owner'/. Input:\n  \n  \"import { apiDownload, apiRequest } from '../../../services/apiClient'\\r\\n\" +\n    '\\r\\n' +\n    \"export function createPayrollApi(BASE = '/v1/owner') {\\r\\n\" +\n    'const json = (method, path, body) => apiRequest(`${BASE}/${path}`, … [long source assertion omitted] … rollOptions, fetchPayrollBodies, fetchPayrollSheet, createPayrollBody, renamePayrollBody, setPayrollBodyActive, deletePayrollBody, createPayrollEmployee, updatePayrollEmployee, saveValueChanges, fetchPayrollConfig, previewPayrollConfig, createPayrollColumn, updatePayrollColumn, restorePayrollColumnFormula, deletePayrollColumn, savePayrollLayout, savePayrollSettings, downloadPayrollExport } = createPayrollApi()\\r\\n\",\n    expected: /const BASE = '\\/v1\\/owner'/,\n    operator: 'match',\n    diff: 'simple'\n  }\n\ntest at tests\\ownerPortal.test.mjs:70:1"
+      },
+      {
+        "test": "the exports describe the dataset on screen, wait for pending saves, and the page labels its scope",
+        "identical_on_clean_base": true,
+        "cause": "AssertionError [ERR_ASSERTION]: The input did not match the regular expression /await controller\\.flush\\(\\)/. Input:\n  \n  \"import MonthlyPayroll from './MonthlyPayroll'\\r\\n\" +\n    '\\r\\n' +\n    '// Both existing entry routes now use one monthly accounting implementation and the original server guards.\\r\\n' +\n    'export default function OwnerPayroll({ authorize }) {\\r\\n' +\n    '  return <MonthlyPayroll authorize={authorize} />\\r\\n' +\n    '}\\r\\n'\n  \n      at TestContext.<anonymous> (file:///<repo>/frontend/tests/ownerPortal.test.mjs:72:10)\n      at async Test.run (node:internal/test_runner/test:1113:7)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: \"import MonthlyPayroll from './MonthlyPayroll'\\r\\n\\r\\n// Both existing entry routes now use one monthly accounting implementation and the original server guards.\\r\\nexport default function OwnerPayroll({ authorize }) {\\r\\n  return <MonthlyPayroll authorize={authorize} />\\r\\n}\\r\\n\",\n    expected: /await controller\\.flush\\(\\)/,\n    operator: 'match',\n    diff: 'simple'\n  }\n\ntest at tests\\ownerPortal.test.mjs:82:1"
+      },
+      {
+        "test": "review: filter/sort changes made while a save is unresolved are applied after resolution, not dropped or half-applied",
+        "identical_on_clean_base": true,
+        "cause": "AssertionError [ERR_ASSERTION]: The input did not match the regular expression /const \\[desired, setDesired\\]/. Input:\n  \n  \"import MonthlyPayroll from './MonthlyPayroll'\\r\\n\" +\n    '\\r\\n' +\n    '// Both existing entry routes now use one monthly accounting implementation and the original server guards.\\r\\n' +\n    'export default function OwnerPayroll({ authorize }) {\\r\\n' +\n    '  return <MonthlyPayroll authorize={authorize} />\\r\\n' +\n    '}\\r\\n'\n  \n      at TestContext.<anonymous> (file:///<repo>/frontend/tests/ownerPortal.test.mjs:84:10)\n      at async Test.run (node:internal/test_runner/test:1113:7)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: \"import MonthlyPayroll from './MonthlyPayroll'\\r\\n\\r\\n// Both existing entry routes now use one monthly accounting implementation and the original server guards.\\r\\nexport default function OwnerPayroll({ authorize }) {\\r\\n  return <MonthlyPayroll authorize={authorize} />\\r\\n}\\r\\n\",\n    expected: /const \\[desired, setDesired\\]/,\n    operator: 'match',\n    diff: 'simple'\n  }\n\ntest at tests\\ownerPortal.test.mjs:98:1"
+      },
+      {
+        "test": "Home is an overview: one principal figure, deep links into the filtered payroll, no new sidebar items or invented metrics",
+        "identical_on_clean_base": true,
+        "cause": "AssertionError [ERR_ASSERTION]: The input did not match the regular expression /\\/owner\\/payroll\\?\\$\\{param\\}=/. Input:\n  \n  \"import { Link } from 'react-router-dom'\\r\\n\" +\n    \"import { FaArrowLeft } from 'react-icons/fa'\\r\\n\" +\n    \"import { StatePanel } from '../../ministry-portal/components/MinistryUi'\\r\\n\" +\n    \"import { useMinistryResource } … [long source assertion omitted] … .join(\\' · \\')}</span>\\r\\n                    </span>\\r\\n                  </li>\\r\\n                ))}\\r\\n              </ul>\\r\\n            )}\\r\\n            {d.attention.total > d.attention.items.length && <p className=\"mt-2 text-[11.5px] text-text-light\">تُعرض أول {d.attention.items.length} من {count(d.attention.total)}.</p>}\\r\\n          </section>\\r\\n        </div>\\r\\n      )}\\r\\n    </>\\r\\n  )\\r\\n}\\r\\n',\n    expected: /\\/owner\\/payroll\\?\\$\\{param\\}=/,\n    operator: 'match',\n    diff: 'simple'\n  }\n\ntest at tests\\ownerPortal.test.mjs:113:1"
+      },
+      {
+        "test": "the formula manager has the required controls and a separate permission",
+        "identical_on_clean_base": true,
+        "cause": "AssertionError [ERR_ASSERTION]: The input did not match the regular expression /canManage=\\{canConfig\\}/. Input:\n  \n  \"import MonthlyPayroll from './MonthlyPayroll'\\r\\n\" +\n    '\\r\\n' +\n    '// Both existing entry routes now use one monthly accounting implementation and the original server guards.\\r\\n' +\n    'export default function OwnerPayroll({ authorize }) {\\r\\n' +\n    '  return <MonthlyPayroll authorize={authorize} />\\r\\n' +\n    '}\\r\\n'\n  \n      at TestContext.<anonymous> (file:///<repo>/frontend/tests/ownerPortal.test.mjs:119:10)\n      at async Test.run (node:internal/test_runner/test:1113:7)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: \"import MonthlyPayroll from './MonthlyPayroll'\\r\\n\\r\\n// Both existing entry routes now use one monthly accounting implementation and the original server guards.\\r\\nexport default function OwnerPayroll({ authorize }) {\\r\\n  return <MonthlyPayroll authorize={authorize} />\\r\\n}\\r\\n\",\n    expected: /canManage=\\{canConfig\\}/,\n    operator: 'match',\n    diff: 'simple'\n  }\n\ntest at tests\\ownerPortal.test.mjs:122:1"
+      },
+      {
+        "test": "the final formula is editable through the manager with a restore action; the default is never duplicated in the UI",
+        "identical_on_clean_base": true,
+        "cause": "AssertionError [ERR_ASSERTION]: الصافي المستحق المعتمد\n      at TestContext.<anonymous> (file:///<repo>/frontend/tests/ownerPortal.test.mjs:125:147)\n      at async Test.run (node:internal/test_runner/test:1113:7)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {\n    generatedMessage: false,\n    code: 'ERR_ASSERTION',\n    actual: false,\n    expected: true,\n    operator: '==',\n    diff: 'simple'\n  }\n\ntest at tests\\ownerPortal.test.mjs:132:1"
+      },
+      {
+        "test": "the legend is fed the very column list the grid renders (no separate visibility model)",
+        "identical_on_clean_base": true,
+        "cause": "AssertionError [ERR_ASSERTION]: The input did not match the regular expression /<PayrollLegend columns=\\{columns\\} canEdit=\\{canEdit\\} \\/>/. Input:\n  \n  \"import MonthlyPayroll from './MonthlyPayroll'\\r\\n\" +\n    '\\r\\n' +\n    '// Both existing entry routes now use one monthly accounting implementation and the original server guards.\\r\\n' +\n    'export default function OwnerPayroll({ authorize }) {\\r\\n' +\n    '  return <MonthlyPayroll authorize={authorize} />\\r\\n' +\n    '}\\r\\n'\n  \n      at TestContext.<anonymous> (file:///<repo>/frontend/tests/ownerPortal.test.mjs:135:10)\n      at async Test.run (node:internal/test_runner/test:1113:7)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: \"import MonthlyPayroll from './MonthlyPayroll'\\r\\n\\r\\n// Both existing entry routes now use one monthly accounting implementation and the original server guards.\\r\\nexport default function OwnerPayroll({ authorize }) {\\r\\n  return <MonthlyPayroll authorize={authorize} />\\r\\n}\\r\\n\",\n    expected: /<PayrollLegend columns=\\{columns\\} canEdit=\\{canEdit\\} \\/>/,\n    operator: 'match',\n    diff: 'simple'\n  }\n\ntest at tests\\scientificCourses.test.mjs:54:1"
+      },
+      {
+        "test": "route, navigation and home entry share the same actual Scientific authorization",
+        "identical_on_clean_base": true,
+        "cause": "AssertionError [ERR_ASSERTION]: The input did not match the regular expression /office === 'scientific' && \\(canViewPrograms\\(identity\\) \\|\\| canViewCatalog\\(identity\\)\\).*programs-courses/. Input:\n  \n  \"import { getIdentity } from '../../auth/auth'\\r\\n\" +\n    \"import { canAccessExecutiveReports } from '../../executive-reports/access'\\r\\n\" +\n    \"i … [long source assertion omitted] … \\r\\n\\r\\n  return (\\r\\n    <ScientificHome identity={identity}>\\r\\n      <p className=\"text-[13px] text-text-light\">نطاق العمل: الجامعة كاملة. الصلاحيات تُحدد لكل إجراء على حدة.</p>\\r\\n      {reportsAllowed && <ExecutiveOverview office={office} />}\\r\\n      {identityDetails}\\r\\n    </ScientificHome>\\r\\n  )\\r\\n}\\r\\n`,\n    expected: /office === 'scientific' && \\(canViewPrograms\\(identity\\) \\|\\| canViewCatalog\\(identity\\)\\).*programs-courses/,\n    operator: 'match',\n    diff: 'simple'\n  }\n\ntest at tests\\supplementaryEndToEndHardening.test.mjs:118:1"
+      },
+      {
+        "test": "supplementary route and navigation gates require backend-matching authority",
+        "identical_on_clean_base": true,
+        "cause": "AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:\n  \n    assert.ok(vpHome.includes('canAccess({ allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.supplementaryExamsPeriodsView] }, identity)'))\n  \n      at TestContext.<anonymous> (file:///<repo>/frontend/tests/supplementaryEndToEndHardening.test.mjs:140:10)\n      at Test.runInAsyncScope (node:async_hooks:214:14)\n      at Test.run (node:internal/test_runner/test:1106:25)\n      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)\n      at Test.postRun (node:internal/test_runner/test:1235:19)\n      at Test.run (node:internal/test_runner/test:1163:12)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: false,\n    expected: true,\n    operator: '==',\n    diff: 'simple'\n  }\n\ntest at tests\\userGuides.test.mjs:88:1"
+      },
+      {
+        "test": "every portal sidebar has exactly one guide item with its portal label, path and access",
+        "identical_on_clean_base": true,
+        "cause": "AssertionError [ERR_ASSERTION]: vpScientific guide item\n  \n  0 !== 1\n  \n      at TestContext.<anonymous> (file:///<repo>/frontend/tests/userGuides.test.mjs:95:12)\n      at async Test.run (node:internal/test_runner/test:1113:7)\n      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {\n    generatedMessage: false,\n    code: 'ERR_ASSERTION',\n    actual: 0,\n    expected: 1,\n    operator: 'strictEqual',\n    diff: 'simple'\n  }\n\ntest at tests\\userGuides.test.mjs:205:1"
+      },
+      {
+        "test": "every guide link targets an existing route the viewer can open",
+        "identical_on_clean_base": true,
+        "cause": "AssertionError [ERR_ASSERTION]: vpAdministrative/hr-recruitment main page is reachable for vpAdministrative\n      at TestContext.<anonymous> (file:///<repo>/frontend/tests/userGuides.test.mjs:229:32)\n      at async Test.run (node:internal/test_runner/test:1113:7)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {\n    generatedMessage: false,\n    code: 'ERR_ASSERTION',\n    actual: null,\n    expected: true,\n    operator: '==',\n    diff: 'simple'\n  }\n\ntest at tests\\userGuides.test.mjs:238:1"
+      },
+      {
+        "test": "diagrams are well-formed and cite the real states and labels in the code",
+        "identical_on_clean_base": true,
+        "cause": "AssertionError [ERR_ASSERTION]: closure-review: الموافقة العلمية على إغلاق الشعب\n      at TestContext.<anonymous> (file:///<repo>/frontend/tests/userGuides.test.mjs:266:77)\n      at async Test.run (node:internal/test_runner/test:1113:7)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {\n    generatedMessage: false,\n    code: 'ERR_ASSERTION',\n    actual: false,\n    expected: true,\n    operator: '==',\n    diff: 'simple'\n  }"
+      }
+    ]
+  },
+  "php_phase6": {
+    "tests": 15,
+    "passed": 11,
+    "failed": 1,
+    "errors": 3,
+    "assertions": 77,
+    "identities_and_causes_match": true,
+    "failures": [
+      {
+        "test": "Tests\\Feature\\SemesterRegistrationMinimumCancellationReplacementPhase6BehaviorTest::test_full_minimum_cancellation_bridge_requires_both_vps_and_cancels_only_on_administrative_materialization",
+        "kind": "error",
+        "cause": "Received Mockery_N_App_Services_DataScopeService::canAdministerUniversity(), but no expectations were specified"
+      },
+      {
+        "test": "Tests\\Feature\\SemesterRegistrationMinimumCancellationReplacementPhase6BehaviorTest::test_minimum_comparison_handles_above_equal_and_below_and_is_idempotent",
+        "kind": "failure",
+        "cause": "Failed asserting that two arrays are identical.\n--- Expected\n+++ Actual\n@@ @@\n     0 => Array &1 [\n         'minimum_enrollment_snapshot' => 2,\n         'enrolled_count_snapshot' => 3,\n-        'finalized_at' => Illuminate\\Support\\Carbon Object #N (\n+        'finalized_at' => Illuminate\\Support\\Carbon Object #N (\n             'endOfTime' => false,\n             'startOfTime' => false,\n-            'constructedObjectId' => '<object identity>',\n+            'constructedObjectId' => '<object identity>',\n             'clock' => null,\n             'localMonthsOverflow' => null,\n             'localYearsOverflow' => null,\n@@ @@\n     1 => Array &3 [\n         'minimum_enrollment_snapshot' => 2,\n         'enrolled_count_snapshot' => 2,\n-        'finalized_at' => Illuminate\\Support\\Carbon Object #N (\n+        'finalized_at' => Illuminate\\Support\\Carbon Object #N (\n             'endOfTime' => false,\n             'startOfTime' => false,\n-            'constructedObjectId' => '<object identity>',\n+            'constructedObjectId' => '<object identity>',\n             'clock' => null,\n             'localMonthsOverflow' => null,\n             'localYearsOverflow' => null,\n@@ @@\n     2 => Array &5 [\n         'minimum_enrollment_snapshot' => 3,\n         'enrolled_count_snapshot' => 2,\n-        'finalized_at' => Illuminate\\Support\\Carbon Object #N (\n+        'finalized_at' => Illuminate\\Support\\Carbon Object #N (\n             'endOfTime' => false,\n             'startOfTime' => false,\n-            'constructedObjectId' => '<object identity>',\n+            'constructedObjectId' => '<object identity>',\n             'clock' => null,\n             'localMonthsOverflow' => null,\n             'localYearsOverflow' => null,"
+      },
+      {
+        "test": "Tests\\Feature\\SemesterRegistrationMinimumCancellationReplacementPhase6BehaviorTest::test_multi_target_replacement_rolls_back_first_materialization_when_second_target_fails_inside_trusted_boundary",
+        "kind": "error",
+        "cause": "Forbidden."
+      },
+      {
+        "test": "Tests\\Feature\\SemesterRegistrationMinimumCancellationReplacementPhase6BehaviorTest::test_trusted_boundary_revalidates_complete_request_and_materializes_nothing_when_aggregate_exceeds_cap",
+        "kind": "error",
+        "cause": "Mockery_N_App_Services_SemesterOfferingGovernanceService::assertFinallyApprovedForReplacement(): Return value must be of type App\\Models\\SemesterOfferingRequest, null returned"
+      }
+    ],
+    "normalization": "Worktree paths, Mockery serials and Carbon object/constructedObjectId identities; identical values and assertion cause retained."
+  }
+}

@@ -1,16 +1,41 @@
 <?php
 
+use App\Exceptions\AcademicCalendarException;
+use App\Exceptions\AccountAdministrationException;
+use App\Support\AdministrativeGovernanceException;
+use App\Exceptions\AcademicRecordException;
+use App\Exceptions\AcademicRequirementConfigurationException;
 use App\Exceptions\AttendanceException;
+use App\Exceptions\CourseOfferingContextException;
+use App\Exceptions\CourseOfferingScheduleException;
+use App\Exceptions\DisciplinaryCaseException;
 use App\Exceptions\GradeException;
+use App\Exceptions\CourseOfferingClosureException;
+use App\Exceptions\ExceptionalOpeningException;
+use App\Exceptions\GraduationEligibilityException;
+use App\Exceptions\OfferingInstructorCoverageException;
 use App\Exceptions\OfferingProposalException;
 use App\Exceptions\RegistrationException;
+use App\Exceptions\RegistrationRequestException;
+use App\Exceptions\SemesterOfferingGovernanceException;
+use App\Exceptions\SemesterRegistrationPhase6Exception;
+use App\Exceptions\MinistryPlacementException;
+use App\Exceptions\SupplementaryExamOfferingException;
+use App\Exceptions\SupplementaryExamPeriodGovernanceException;
+use App\Exceptions\TeachingAssignmentException;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -20,9 +45,15 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // The ministry account is confined before route-model binding, so it gets a
+        // uniform 403 on every non-ministry route (never a 404 revealing existence).
+        $middleware->prependToPriorityList(
+            \Illuminate\Routing\Middleware\SubstituteBindings::class,
+            \App\Http\Middleware\ConfineMinistryAccounts::class,
+        );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->dontFlash(['password', 'password_confirmation', 'current_password', 'password2', 'credential_proof']);
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*'),
         );
@@ -39,6 +70,58 @@ return Application::configure(basePath: dirname(__DIR__))
             ], 422);
         });
 
+        $exceptions->render(function (AdministrativeGovernanceException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (AccountAdministrationException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (AcademicCalendarException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (MinistryPlacementException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+            ], $exception->status);
+        });
+
         $exceptions->render(function (AttendanceException $exception, Request $request) {
             if (! $request->is('api/*')) {
                 return null;
@@ -52,6 +135,46 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->render(function (GradeException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (CourseOfferingContextException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (CourseOfferingScheduleException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+                'data' => $exception->data,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (DisciplinaryCaseException $exception, Request $request) {
             if (! $request->is('api/*')) {
                 return null;
             }
@@ -83,8 +206,206 @@ return Application::configure(basePath: dirname(__DIR__))
             return response()->json([
                 'success' => false,
                 'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+                'data' => $exception->data,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (RegistrationRequestException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+                'item_failures' => $exception->itemFailures,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (AcademicRequirementConfigurationException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->context,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (TeachingAssignmentException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
                 'errors' => $exception->errors,
             ], $exception->status);
+        });
+
+        $exceptions->render(function (OfferingInstructorCoverageException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+                'coverage' => $exception->coverage,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (SemesterOfferingGovernanceException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (SemesterRegistrationPhase6Exception $exception, Request $request) {
+            if (! $request->is('api/*')) return null;
+            return response()->json(['success'=>false,'message'=>$exception->getMessage(),'error_code'=>$exception->errorCode,'errors'=>$exception->errors], $exception->status);
+        });
+
+        $exceptions->render(function (ExceptionalOpeningException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (SupplementaryExamPeriodGovernanceException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (SupplementaryExamOfferingException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            $payload = [
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+            ];
+            if ($exception->data !== []) {
+                $payload['data'] = $exception->data;
+            }
+
+            return response()->json($payload, $exception->status);
+        });
+
+        $exceptions->render(function (CourseOfferingClosureException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (GraduationEligibilityException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (AcademicRecordException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'error_code' => $exception->errorCode,
+                'errors' => $exception->errors,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (AuthenticationException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated',
+                'error_code' => 'unauthenticated',
+                'errors' => [],
+            ], 401);
+        });
+
+        $exceptions->render(function (AuthorizationException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Forbidden',
+                'error_code' => 'forbidden',
+                'errors' => [],
+            ], 403);
+        });
+
+        $exceptions->render(function (ThrottleRequestsException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            $retryAfter = $exception->getHeaders()['Retry-After'] ?? null;
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Too many requests. Please try again later.',
+                'error_code' => 'too_many_requests',
+                'errors' => [],
+            ], 429)->withHeaders($retryAfter !== null ? ['Retry-After' => $retryAfter] : []);
         });
 
         $exceptions->render(function (ModelNotFoundException $exception, Request $request) {
@@ -95,6 +416,20 @@ return Application::configure(basePath: dirname(__DIR__))
             return response()->json([
                 'success' => false,
                 'message' => 'Resource not found',
+                'error_code' => 'not_found',
+                'errors' => [],
+            ], 404);
+        });
+
+        $exceptions->render(function (NotFoundHttpException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Resource not found',
+                'error_code' => 'not_found',
                 'errors' => [],
             ], 404);
         });
@@ -112,6 +447,60 @@ return Application::configure(basePath: dirname(__DIR__))
             ], 403);
         });
 
+        $exceptions->render(function (ConflictHttpException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage() ?: 'Conflict',
+                'error_code' => 'conflict',
+                'errors' => [],
+            ], 409);
+        });
+
+        $exceptions->render(function (HttpExceptionInterface $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            $status = $exception->getStatusCode();
+            $errorCode = match ($status) {
+                401 => 'unauthenticated',
+                403 => 'forbidden',
+                404 => 'not_found',
+                409 => 'conflict',
+                429 => 'too_many_requests',
+                default => 'http_error',
+            };
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage() !== '' ? $exception->getMessage() : 'Request failed',
+                'error_code' => $errorCode,
+                'errors' => [],
+            ], $status);
+        });
+
+        $exceptions->render(function (\Illuminate\Database\QueryException $exception, Request $request) {
+            if (!$request->is('api/*')) return null;
+            $message = $exception->getMessage();
+            $code = str_contains($message, 'academic_catalog_schema_not_ready') ? 'academic_catalog_schema_not_ready'
+                : (str_contains($message, 'academic_catalog_history_locked') ? 'academic_catalog_history_locked' : null);
+            // Other canonical writers retain their lock ordering. InnoDB may select
+            // either transaction as a deadlock victim; never replay or expose raw SQL.
+            if ($code === null && in_array((int) ($exception->errorInfo[1] ?? 0), [1205, 1213], true)
+                && preg_match('/\b(courses|program_courses|academic_programs|academic_requirement_groups|program_course_requirement_groups|course_departments|course_prerequisites|departments|colleges|academic_levels|semesters|result_statuses|course_instructors|course_offerings|students|supplementary_exam_offerings|admission_applications|ministry_placement_records|student_graduation_decisions|student_progression_decisions)\b/i', $exception->getSql())) {
+                $code = 'academic_catalog_concurrent_write';
+            }
+            if ($code === null) return null;
+            return response()->json(['success' => false, 'error_code' => $code,
+                'message' => $code === 'academic_catalog_schema_not_ready' ? 'حماية الدليل الأكاديمي غير جاهزة؛ راجع مسؤول النظام.'
+                    : ($code === 'academic_catalog_history_locked' ? 'البيانات مستخدمة أكاديميًا ولا يسمح بإعادة تفسير التاريخ.' : 'تزامنت العملية مع تعديل أكاديمي آخر؛ حدّث البيانات وراجعها قبل المحاولة.')],
+                $code === 'academic_catalog_schema_not_ready' ? 503 : 409);
+        });
+
         $exceptions->render(function (Throwable $exception, Request $request) {
             if (! $request->is('api/*')) {
                 return null;
@@ -120,6 +509,7 @@ return Application::configure(basePath: dirname(__DIR__))
             return response()->json([
                 'success' => false,
                 'message' => config('app.debug') ? $exception->getMessage() : 'Unexpected error occurred',
+                'error_code' => 'unexpected_error',
                 'errors' => config('app.debug') ? ['exception' => $exception::class] : [],
             ], 500);
         });

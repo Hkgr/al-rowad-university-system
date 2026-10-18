@@ -11,6 +11,24 @@ use Illuminate\Http\JsonResponse;
 
 class CollegeController extends ApiController
 {
+    public function store(): JsonResponse
+    {
+        $entity = app(\App\Services\AcademicStructureEntityService::class)->save(request()->user(), 'colleges', null, request()->all());
+        return $this->successResponse((new CollegeResource($entity))->resolve(request()), status: 201);
+    }
+
+    public function update($id): JsonResponse
+    {
+        $entity = app(\App\Services\AcademicStructureEntityService::class)->save(request()->user(), 'colleges', (int) $id, request()->all());
+        return $this->successResponse((new CollegeResource($entity))->resolve(request()));
+    }
+
+    public function destroy($id): JsonResponse
+    {
+        app(\App\Services\AcademicStructureEntityService::class)->delete(request()->user(), 'colleges', (int) $id);
+        return $this->successResponse();
+    }
+
     protected function modelClass(): string
     {
         return College::class;

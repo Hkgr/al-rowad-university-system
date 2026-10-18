@@ -1,0 +1,311 @@
+{
+  "scope": "private export evidence, not a production inspection or execution list",
+  "sql_sha256": "bb75f4674616ed872ac8f25c2b37821654d764f5961a1f2cf97a59bcb0cc8dd9",
+  "workbook_sha256": "3a2d8c3c395d8ede3bfb8dc2225bc7e8b2e3fe34aa81603368ec7faf534b18bd",
+  "programs": [
+    {
+      "academic_program_id": 18,
+      "program_name": "برنامج الإجازة في إدارة الأعمال",
+      "identity_matches": true,
+      "students": 119,
+      "student_count_matches": true,
+      "memberships": 61,
+      "requirement_groups": 6,
+      "legacy_total": 151,
+      "approved_target_total": 151
+    },
+    {
+      "academic_program_id": 19,
+      "program_name": "برنامج الإجازة في الاقتصاد",
+      "identity_matches": true,
+      "students": 13,
+      "student_count_matches": true,
+      "memberships": 61,
+      "requirement_groups": 6,
+      "legacy_total": 151,
+      "approved_target_total": 151
+    },
+    {
+      "academic_program_id": 20,
+      "program_name": "برنامج الإجازة في المحاسبة والتمويل",
+      "identity_matches": true,
+      "students": 19,
+      "student_count_matches": true,
+      "memberships": 61,
+      "requirement_groups": 6,
+      "legacy_total": 151,
+      "approved_target_total": 151
+    },
+    {
+      "academic_program_id": 28,
+      "program_name": "برنامج الإجازة في الهندسة المدنية والمشروعات العامة",
+      "identity_matches": true,
+      "students": 82,
+      "student_count_matches": true,
+      "memberships": 66,
+      "requirement_groups": 6,
+      "legacy_total": 165,
+      "approved_target_total": 165
+    },
+    {
+      "academic_program_id": 29,
+      "program_name": "برنامج الإجازة في هندسة الحواسيب والذكاء الصنعي",
+      "identity_matches": true,
+      "students": 26,
+      "student_count_matches": true,
+      "memberships": 69,
+      "requirement_groups": 6,
+      "legacy_total": 164,
+      "approved_target_total": 164
+    },
+    {
+      "academic_program_id": 30,
+      "program_name": "برنامج الإجازة في هندسة البرمجيات",
+      "identity_matches": true,
+      "students": 171,
+      "student_count_matches": true,
+      "memberships": 63,
+      "requirement_groups": 6,
+      "legacy_total": 165,
+      "approved_target_total": 165
+    },
+    {
+      "academic_program_id": 31,
+      "program_name": "برنامج الإجازة في معلم صف",
+      "identity_matches": true,
+      "students": 33,
+      "student_count_matches": true,
+      "memberships": 63,
+      "requirement_groups": 6,
+      "legacy_total": 146,
+      "approved_target_total": 146
+    },
+    {
+      "academic_program_id": 32,
+      "program_name": "برنامج الإجازة في رياض الأطفال",
+      "identity_matches": true,
+      "students": 17,
+      "student_count_matches": true,
+      "memberships": 62,
+      "requirement_groups": 6,
+      "legacy_total": 150,
+      "approved_target_total": 150
+    },
+    {
+      "academic_program_id": 33,
+      "program_name": "برنامج الإجازة في الإرشاد النفسي",
+      "identity_matches": true,
+      "students": 79,
+      "student_count_matches": true,
+      "memberships": 65,
+      "requirement_groups": 6,
+      "legacy_total": 159,
+      "approved_target_total": 159
+    },
+    {
+      "academic_program_id": 34,
+      "program_name": "برنامج الإجازة في التربية الخاصة",
+      "identity_matches": true,
+      "students": 22,
+      "student_count_matches": true,
+      "memberships": 64,
+      "requirement_groups": 6,
+      "legacy_total": 156,
+      "approved_target_total": 156
+    },
+    {
+      "academic_program_id": 38,
+      "program_name": "برنامج الإجازة في الإعلام والاتصال",
+      "identity_matches": true,
+      "students": 65,
+      "student_count_matches": true,
+      "memberships": 64,
+      "requirement_groups": 6,
+      "legacy_total": 147,
+      "approved_target_total": 147
+    },
+    {
+      "academic_program_id": 39,
+      "program_name": "برنامج الإجازة في الحقوق",
+      "identity_matches": true,
+      "students": 141,
+      "student_count_matches": true,
+      "memberships": 58,
+      "requirement_groups": 6,
+      "legacy_total": 149,
+      "approved_target_total": 149
+    },
+    {
+      "academic_program_id": 40,
+      "program_name": "برنامج الإجازة في التربية الرياضية",
+      "identity_matches": true,
+      "students": 76,
+      "student_count_matches": true,
+      "memberships": 0,
+      "requirement_groups": 0,
+      "legacy_total": 147,
+      "approved_target_total": 141
+    },
+    {
+      "academic_program_id": 41,
+      "program_name": "برنامج المعهد المتوسط في إدارة الأعمال",
+      "identity_matches": true,
+      "students": 42,
+      "student_count_matches": true,
+      "memberships": 0,
+      "requirement_groups": 0,
+      "legacy_total": 82,
+      "approved_target_total": 82
+    },
+    {
+      "academic_program_id": 42,
+      "program_name": "برنامج المعهد المتوسط في المحاسبة والتمويل",
+      "identity_matches": true,
+      "students": 4,
+      "student_count_matches": true,
+      "memberships": 0,
+      "requirement_groups": 0,
+      "legacy_total": 82,
+      "approved_target_total": 82
+    }
+  ],
+  "included_students": 909,
+  "catalog_before_image_mismatches": [],
+  "saved_plan_versions_in_export": 0,
+  "saved_assignments_in_export": 0,
+  "unresolved_candidate_rows": [
+    {
+      "row_key": "P29-R0001",
+      "target_code": "CEAI111",
+      "target_name": "البرمجة (1)",
+      "candidates": "476:CEAI111 برمجة 1 [4h]",
+      "reason": "No approved candidate ID; runtime requires exact subject identity and program evidence or reports BLOCKED"
+    },
+    {
+      "row_key": "P29-R0009",
+      "target_code": "CEAI121",
+      "target_name": "البرمجة (2)",
+      "candidates": "477:CEAI121 برمجة 2 [4h]",
+      "reason": "No approved candidate ID; runtime requires exact subject identity and program evidence or reports BLOCKED"
+    },
+    {
+      "row_key": "P29-R0020",
+      "target_code": "FIE211",
+      "target_name": "التحليل الرياضي 3",
+      "candidates": "461:FIE211 تحليل رياضي (3) [3h]",
+      "reason": "No approved candidate ID; runtime requires exact subject identity and program evidence or reports BLOCKED"
+    },
+    {
+      "row_key": "P29-R0021",
+      "target_code": "FIE212",
+      "target_name": "الاحتمالات والإحصاء",
+      "candidates": null,
+      "reason": "No approved candidate ID; runtime requires exact subject identity and program evidence or reports BLOCKED"
+    },
+    {
+      "row_key": "P29-R0030",
+      "target_code": "FIE222",
+      "target_name": "تحليل عددي وأمثلة",
+      "candidates": null,
+      "reason": "No approved candidate ID; runtime requires exact subject identity and program evidence or reports BLOCKED"
+    },
+    {
+      "row_key": "P30-R0059",
+      "target_code": "FIE113",
+      "target_name": "الفيزياء العامة  (1)",
+      "candidates": null,
+      "reason": "No approved candidate ID; runtime requires exact subject identity and program evidence or reports BLOCKED"
+    },
+    {
+      "row_key": "P30-R0067",
+      "target_code": "FIE123",
+      "target_name": "الفيزياء العامة  (2)",
+      "candidates": null,
+      "reason": "No approved candidate ID; runtime requires exact subject identity and program evidence or reports BLOCKED"
+    },
+    {
+      "row_key": "P30-R0072",
+      "target_code": "BR211",
+      "target_name": "برمجة (3) غرضية التوجه",
+      "candidates": "415:BR211 برمجة (3) غرضية التوجه - جافا [4h]",
+      "reason": "No approved candidate ID; runtime requires exact subject identity and program evidence or reports BLOCKED"
+    },
+    {
+      "row_key": "P30-R0076",
+      "target_code": "FIE212",
+      "target_name": "احتمال وإحصاء",
+      "candidates": null,
+      "reason": "No approved candidate ID; runtime requires exact subject identity and program evidence or reports BLOCKED"
+    },
+    {
+      "row_key": "P30-R0079",
+      "target_code": "BR221",
+      "target_name": "برمجة (4) غرضية بايثون",
+      "candidates": "420:BR223 برمجة (4) بايثون [4h]",
+      "reason": "No approved candidate ID; runtime requires exact subject identity and program evidence or reports BLOCKED"
+    },
+    {
+      "row_key": "P30-R0082",
+      "target_code": "BR224",
+      "target_name": "النظم المنطقية والدارات الرقمية",
+      "candidates": "418:BR221 النظم الرقمية والدارات المنطقية [3h]",
+      "reason": "No approved candidate ID; runtime requires exact subject identity and program evidence or reports BLOCKED"
+    },
+    {
+      "row_key": "P30-R0087",
+      "target_code": "BR312",
+      "target_name": "معالجة الإشارة",
+      "candidates": null,
+      "reason": "No approved candidate ID; runtime requires exact subject identity and program evidence or reports BLOCKED"
+    },
+    {
+      "row_key": "P30-R0088",
+      "target_code": "BR313",
+      "target_name": "الرسوميات حاسوبية وتطوير الألعاب",
+      "candidates": "425:BR313 رسوميات حاسوبية وتطوير الألعاب [3h]",
+      "reason": "No approved candidate ID; runtime requires exact subject identity and program evidence or reports BLOCKED"
+    },
+    {
+      "row_key": "P30-R0097",
+      "target_code": "BR325",
+      "target_name": "بنية ونظم تشغيل الحاسب",
+      "candidates": null,
+      "reason": "No approved candidate ID; runtime requires exact subject identity and program evidence or reports BLOCKED"
+    },
+    {
+      "row_key": "P28-R0128",
+      "target_code": "FE212",
+      "target_name": "لغة إنكليزية هندسية",
+      "candidates": "782:FE212 اللغة الإنجليزية - هندسية [3h]",
+      "reason": "No approved candidate ID; runtime requires exact subject identity and program evidence or reports BLOCKED"
+    },
+    {
+      "row_key": "P28-R0155",
+      "target_code": "CE411",
+      "target_name": "هندسة الأساسيات(1)",
+      "candidates": "872:CE411 هندسة الأساسات (1) [3h] | 875:CE421 هندسة الأساسات (2) [3h]",
+      "reason": "No approved candidate ID; runtime requires exact subject identity and program evidence or reports BLOCKED"
+    },
+    {
+      "row_key": "P28-R0162",
+      "target_code": "CE421",
+      "target_name": "هندسة الأساسيات(2)",
+      "candidates": "875:CE421 هندسة الأساسات (2) [3h] | 872:CE411 هندسة الأساسات (1) [3h]",
+      "reason": "No approved candidate ID; runtime requires exact subject identity and program evidence or reports BLOCKED"
+    },
+    {
+      "row_key": "P18-R0312",
+      "target_code": "MAN313",
+      "target_name": "الإدارة مالية (2)",
+      "candidates": "380:MAN313 الإدارة المالية (2) [3h] | 371:FMF225 الإدارة المالية (1) [3h]",
+      "reason": "No approved candidate ID; runtime requires exact subject identity and program evidence or reports BLOCKED"
+    },
+    {
+      "row_key": "P39-R0441",
+      "target_code": "FL112",
+      "target_name": "العلاقات الدولية والدبلوماسية",
+      "candidates": "981:FL112 العلاقات القنصلية والدبلوماسية [3h]",
+      "reason": "No approved candidate ID; runtime requires exact subject identity and program evidence or reports BLOCKED"
+    }
+  ]
+}

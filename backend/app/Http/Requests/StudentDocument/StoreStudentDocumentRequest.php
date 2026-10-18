@@ -21,8 +21,8 @@ class StoreStudentDocumentRequest extends FormRequest
             'file_name' => 'required|string|max:255',
             'file_url' => 'required|string|max:500',
             'verification_status' => 'nullable|string|max:50',
-            'verified_by_user_id' => 'nullable|integer|exists:users,user_id',
-            'verified_at' => 'nullable|date',
+            'verified_by_user_id' => 'prohibited',
+            'verified_at' => 'prohibited',
             'verification_notes' => 'nullable|string|max:255',
             'uploaded_at' => 'nullable|date',
         ];

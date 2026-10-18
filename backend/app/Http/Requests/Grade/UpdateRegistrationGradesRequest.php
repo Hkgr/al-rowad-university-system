@@ -23,8 +23,8 @@ class UpdateRegistrationGradesRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'theoretical_mark' => ['required', 'numeric', 'min:0', 'max:60'],
-            'practical_mark' => ['required', 'numeric', 'min:0', 'max:40'],
+            'theoretical_mark' => ['sometimes', 'required', 'numeric', 'min:0', 'max:60'],
+            'practical_mark' => ['sometimes', 'required', 'numeric', 'min:0', 'max:40'],
             'notes' => ['nullable', 'string'],
         ];
     }

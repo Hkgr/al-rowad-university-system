@@ -4,8 +4,11 @@ import {
   FaPlus, FaMinus, FaBookOpen, FaExchangeAlt,
 } from 'react-icons/fa'
 import { hasPermission, PERMISSIONS } from '../../auth/auth'
+import CourseRequirementBadges, { pickRequirementClassification } from '../../../components/academic/CourseRequirementBadges'
 
-const API = 'https://rust.alrowaduni.edu.sy/api/v1'
+import { API_BASE_URL } from '../../../services/apiClient'
+import { incompleteLabels } from '../lib/incompleteResults'
+const API = `${API_BASE_URL}/v1`
 
 function authHeaders() {
   return { Authorization: `Bearer ${localStorage.getItem('token')}`, Accept: 'application/json' }
@@ -44,14 +47,8 @@ async function searchStudents(query) {
 const REASON_LABELS = {
   already_registered:    { ar: 'مسجل مسبقاً',         color: 'bg-blue-100 text-blue-700'    },
   missing_prerequisites:  { ar: 'متطلبات سابقة ناقصة',  color: 'bg-red-100 text-red-700'      },
-  no_available_seats:     { ar: 'لا توجد مقاعد',        color: 'bg-orange-100 text-orange-700'},
+  course_already_passed:  { ar: 'تم اجتياز المقرر سابقاً', color: 'bg-blue-100 text-blue-700' },
   credit_limit_exceeded:  { ar: 'تجاوز الحد الأقصى',    color: 'bg-yellow-100 text-yellow-700'},
-}
-
-const COURSE_TYPE_LABELS = {
-  mandatory: { ar: 'إجباري',  color: 'bg-indigo-100 text-indigo-700'  },
-  elective:  { ar: 'اختياري', color: 'bg-purple-100 text-purple-700'  },
-  shared:    { ar: 'مشتركة',  color: 'bg-teal-100 text-teal-700'      },
 }
 
 // ── Student search ─────────────────────────────────────────────────────────────
@@ -181,6 +178,9 @@ function RegisteredPanel({ registrations, onDrop, dropping, canManage }) {
           <div key={r.registration_id} className="flex items-center justify-between gap-3 px-5 py-3.5" dir="rtl">
             <div className="flex-1 min-w-0">
               <div className="font-semibold text-[13px] text-text-dark truncate">{r.course_name}</div>
+              <div className="mt-1">
+                <CourseRequirementBadges classification={pickRequirementClassification(r)} compact />
+              </div>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-[11px] text-text-light font-mono">{r.course_code}</span>
                 <span className="text-[10.5px] text-primary font-bold">{r.credit_hours} ساعات</span>
@@ -206,11 +206,8 @@ function RegisteredPanel({ registrations, onDrop, dropping, canManage }) {
   )
 }
 
-// ── Available courses panel ───────────────────────────────────────────────────
-// Courses are grouped by the academic level they belong to (Year 1..5, per the
-// program_courses curriculum mapping) purely for organization — a course from
-// any year can be registered for any student as long as it has no missing
-// prerequisites. Courses with no curriculum mapping show under "مشتركة".
+// Courses are grouped by advisory academic level (program_courses) for display only.
+// A course from any advisory year can be registered if genuine eligibility rules pass.
 function AvailablePanel({ courses, levels, programCourseMap, currentLevelId, onRegister, registering, canManage }) {
   const groups = useMemo(() => {
     const byLevel = new Map()
@@ -220,9 +217,15 @@ function AvailablePanel({ courses, levels, programCourseMap, currentLevelId, onR
       const pc = programCourseMap.get(courseId)
       if (pc) {
         if (!byLevel.has(pc.academic_level_id)) byLevel.set(pc.academic_level_id, [])
-        byLevel.get(pc.academic_level_id).push({ ...c, _courseType: pc.course_type })
+        byLevel.get(pc.academic_level_id).push({
+          ...c,
+          requirement_classification: pc.requirement_classification || c.requirement_classification,
+        })
       } else {
-        shared.push({ ...c, _courseType: 'shared' })
+        shared.push({
+          ...c,
+          requirement_classification: c.requirement_classification || { status: 'not_linked_to_program' },
+        })
       }
     })
     return { byLevel, shared }
@@ -243,13 +246,16 @@ function AvailablePanel({ courses, levels, programCourseMap, currentLevelId, onR
   return (
     <div className="bg-white border border-primary/12 rounded-[16px] overflow-hidden shadow-[0_2px_10px_rgba(26,46,16,0.05)]">
       <PanelHeader title="المواد المتاحة للتسجيل" count={courses.length} />
+      <p className="px-5 py-2 text-[11.5px] leading-6 text-text-light border-b border-primary/8" dir="rtl">
+        التجميع حسب السنة الإرشادية للخطة فقط. لا يمنع تسجيل مقرر من سنة إرشادية مختلفة إذا استوفيت المتطلبات.
+      </p>
       <div className="max-h-[600px] overflow-y-auto">
         {orderedLevels.map(level => (
           <div key={level.academic_level_id}>
             <div className="flex items-center gap-2 px-5 py-2 bg-gray-50 border-b border-t border-primary/6 first:border-t-0" dir="rtl">
-              <span className="text-[11.5px] font-extrabold text-text-dark">{level.level_name}</span>
+              <span className="text-[11.5px] font-extrabold text-text-dark">الخطة الإرشادية — {level.level_name}</span>
               {String(level.academic_level_id) === String(currentLevelId) && (
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary-dark">سنة الطالب الحالية</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary-dark">السنة الإرشادية الحالية للطالب</span>
               )}
             </div>
             <div className="divide-y divide-primary/6">
@@ -278,10 +284,7 @@ function AvailablePanel({ courses, levels, programCourseMap, currentLevelId, onR
 
 function CourseRow({ course, onRegister, registering, canManage }) {
   const eligible = course.eligibility_status === 'eligible'
-  const reasons  = course.reasons ?? []
-  const seats    = course.available_seats ?? 0
-  const capacity = course.capacity ?? 0
-  const typeInfo = COURSE_TYPE_LABELS[course._courseType]
+  const reasons  = course.eligibility_reasons ?? []
 
   return (
     <div className={`flex items-start justify-between gap-3 px-5 py-3.5 transition-colors ${eligible ? 'hover:bg-primary/[0.02]' : 'opacity-70'}`} dir="rtl">
@@ -297,14 +300,7 @@ function CourseRow({ course, onRegister, registering, canManage }) {
           <span className="text-[10.5px] text-primary font-bold">{course.credit_hours} ساعات</span>
         </div>
         <div className="flex items-center gap-2 mt-1 flex-wrap">
-          {typeInfo && (
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${typeInfo.color}`}>
-              {typeInfo.ar}
-            </span>
-          )}
-          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${seats > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
-            {seats}/{capacity} مقعد
-          </span>
+          <CourseRequirementBadges classification={pickRequirementClassification(course)} compact />
           {reasons.map(r => {
             const info = REASON_LABELS[r] ?? { ar: r, color: 'bg-gray-100 text-text-light' }
             return (
@@ -470,7 +466,7 @@ export default function CourseRegistrationPage() {
         showToast(`تم حذف "${name}" من قائمة التسجيل`)
         loadData(selectedStudent.student_id, yearId, semId)
       } else {
-        setErr(json.message || 'فشل الحذف')
+        setErr(incompleteLabels[json.error_code] || json.message || 'فشل الحذف')
       }
     } catch {
       setErr('تعذّر الاتصال بالخادم')

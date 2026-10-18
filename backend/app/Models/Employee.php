@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use App\Models\Payroll\PayrollEmployee;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Employee extends Model
 {
@@ -67,6 +69,11 @@ class Employee extends Model
         return $this->hasMany(EmployeeUnitAssignment::class, 'employee_id', 'employee_id');
     }
 
+    public function facultyMember(): HasOne
+    {
+        return $this->hasOne(FacultyMember::class, 'employee_id', 'employee_id');
+    }
+
     public function facultyMembers(): HasMany
     {
         return $this->hasMany(FacultyMember::class, 'employee_id', 'employee_id');
@@ -82,4 +89,13 @@ class Employee extends Model
         return $this->hasMany(User::class, 'employee_id', 'employee_id');
     }
 
+    public function employmentRelationships(): HasMany
+    {
+        return $this->hasMany(EmploymentRelationship::class, 'employee_id', 'employee_id');
+    }
+
+    public function payrollProfile(): HasOne
+    {
+        return $this->hasOne(PayrollEmployee::class, 'employee_id', 'employee_id');
+    }
 }

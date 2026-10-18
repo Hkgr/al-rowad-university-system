@@ -26,8 +26,8 @@ class UpdateStudentDocumentRequest extends FormRequest
             'file_name' => 'sometimes|nullable|string|max:255',
             'file_url' => 'sometimes|nullable|string|max:500',
             'verification_status' => 'sometimes|nullable|string|max:50',
-            'verified_by_user_id' => 'sometimes|nullable|integer|exists:users,user_id',
-            'verified_at' => 'sometimes|nullable|date',
+            'verified_by_user_id' => 'prohibited',
+            'verified_at' => 'prohibited',
             'verification_notes' => 'sometimes|nullable|string|max:255',
             'uploaded_at' => 'sometimes|nullable|date',
         ];

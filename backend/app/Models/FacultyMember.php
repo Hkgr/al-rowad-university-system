@@ -51,4 +51,9 @@ class FacultyMember extends Model
         return $this->hasMany(CourseOffering::class, 'faculty_member_id', 'faculty_member_id');
     }
 
+    public function offeringInstructors(): HasMany
+    {
+        return $this->hasMany(CourseOfferingInstructor::class, 'faculty_member_id', 'faculty_member_id');
+    }
+
 }

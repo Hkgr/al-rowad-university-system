@@ -8,20 +8,23 @@ class UpdateSupplementaryExamPeriodRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        return false;
     }
 
     public function rules(): array
     {
         return [
-            'academic_year_id' => 'sometimes|nullable|integer|exists:academic_years,academic_year_id',
-            'semester_id' => 'sometimes|nullable|integer|exists:semesters,semester_id',
-            'period_name' => 'sometimes|nullable|string|max:150',
-            'start_date' => 'sometimes|nullable|date',
-            'end_date' => 'sometimes|nullable|date',
-            'is_active' => 'sometimes|nullable|integer',
-            'created_at' => 'sometimes|nullable|date',
-            'updated_at' => 'sometimes|nullable|date',
+            'academic_year_id' => 'prohibited',
+            'semester_id' => 'prohibited',
+            'period_name' => 'prohibited',
+            'start_date' => 'prohibited',
+            'end_date' => 'prohibited',
+            'is_active' => 'prohibited',
+            'status' => 'prohibited',
+            'opened_by_user_id' => 'prohibited',
+            'opened_at' => 'prohibited',
+            'created_at' => 'prohibited',
+            'updated_at' => 'prohibited',
         ];
     }
 }

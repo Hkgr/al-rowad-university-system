@@ -55,6 +55,15 @@ class AcademicProgram extends Model
         return $this->hasMany(ProgramCourse::class, 'academic_program_id', 'academic_program_id');
     }
 
+    public function requirementGroups(): HasMany
+    {
+        return $this->hasMany(
+            AcademicRequirementGroup::class,
+            'academic_program_id',
+            'academic_program_id'
+        );
+    }
+
     public function students(): HasMany
     {
         return $this->hasMany(Student::class, 'academic_program_id', 'academic_program_id');

@@ -2,22 +2,33 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\AcademicRecordException;
 use App\Http\Requests\Student\StoreStudentRequest;
 use App\Http\Requests\Student\UpdateStudentRequest;
 use App\Http\Resources\AvailableCourseOfferingResource;
+use App\Http\Resources\GraduationEligibilityResource;
 use App\Http\Resources\StudentAcademicInfoResource;
 use App\Http\Resources\StudentCourseRegistrationResource;
 use App\Http\Resources\StudentDocumentResource;
 use App\Http\Resources\StudentProfileResource;
+use App\Http\Resources\StudentRequirementProgressResource;
 use App\Http\Resources\StudentResource;
 use App\Http\Resources\StudentRegistrationSummaryResource;
 use App\Http\Resources\StudentTranscriptResource;
 use App\Models\Student;
 use App\Models\StudentStatus;
+use App\Services\AcademicRequirementService;
 use App\Services\AttendanceService;
 use App\Services\GradeService;
+use App\Services\AcademicProgressionService;
+use App\Services\GraduationDecisionService;
+use App\Services\GraduationEligibilityService;
+use App\Support\AcademicRecordWorkflow;
 use App\Services\RegistrationService;
 use App\Services\AcademicAuthorizationService;
+use App\Services\DataScopeService;
+use App\Services\StudentPermanentDeleteGuard;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -25,28 +36,90 @@ use Illuminate\Support\Facades\Gate;
 
 class StudentController extends ApiController
 {
+    public function store(): JsonResponse
+    {
+        Gate::authorize('create', Student::class);
+        $request = app($this->storeRequestClass());
+        $data = $request->validated();
+        abort_unless(app(DataScopeService::class)->canAccessProgram($request->user(), (int) $data['academic_program_id']), 403);
+        $student = \App\Services\AcademicPlanContext::transaction(fn () => Student::query()->create($data));
+
+        return $this->successResponse((new StudentResource($student))->resolve($request), 'Operation completed successfully', 201);
+    }
+
     public function update($id): JsonResponse
     {
         $student = Student::query()->findOrFail($id);
         Gate::authorize('update', $student);
-        $statusCode = request()->input('student_status_code');
+        $request = app($this->updateRequestClass());
+        $data = $request->validated();
 
-        if ($statusCode === null && request()->filled('student_status_id')) {
-            $statusCode = StudentStatus::query()
-                ->whereKey(request()->integer('student_status_id'))
-                ->value('status_code');
+        if (array_key_exists('academic_program_id', $data)) {
+            abort_unless(app(DataScopeService::class)->canAccessProgram($request->user(), (int) $data['academic_program_id']), 403);
         }
 
-        if ($statusCode === 'graduated') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Graduation is temporarily unavailable until institutional eligibility rules are implemented.',
-                'error_code' => 'graduation_eligibility_not_implemented',
-                'errors' => [],
-            ], 409);
-        }
+        return \App\Services\AcademicPlanContext::transaction(function () use ($student, $data, $request): JsonResponse {
+            $locked = Student::query()
+                ->whereKey($student->student_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $locked->loadMissing('studentStatus');
 
-        return parent::update($id);
+            if (array_key_exists('current_academic_level_id', $data)
+                && (int) $data['current_academic_level_id'] !== (int) $locked->current_academic_level_id) {
+                throw AcademicRecordException::academicLevelProgressionWorkflowRequired();
+            }
+
+            $targetStatusCode = null;
+            if (array_key_exists('student_status_id', $data)) {
+                $targetStatusCode = StudentStatus::query()
+                    ->whereKey((int) $data['student_status_id'])
+                    ->value('status_code');
+            }
+
+            $currentStatusCode = $locked->studentStatus?->status_code;
+            if ($targetStatusCode !== null && $targetStatusCode !== $currentStatusCode) {
+                if ($targetStatusCode === AcademicRecordWorkflow::GRADUATED_STATUS
+                    || $currentStatusCode === AcademicRecordWorkflow::GRADUATED_STATUS) {
+                    throw AcademicRecordException::graduationDecisionWorkflowRequired();
+                }
+            }
+
+            $programChanged = array_key_exists('academic_program_id', $data)
+                && (int) $data['academic_program_id'] !== (int) $locked->academic_program_id;
+            $levelUnchanged = ! array_key_exists('current_academic_level_id', $data)
+                || (int) $data['current_academic_level_id'] === (int) $locked->current_academic_level_id;
+
+            $locked->update($data);
+
+            if ($programChanged && $levelUnchanged) {
+                app(AcademicProgressionService::class)->supersedeCurrentForStudent(
+                    $request->user(),
+                    $locked,
+                    'academic_program_changed'
+                );
+                app(GraduationDecisionService::class)->supersedeCurrentForStudent(
+                    $request->user(),
+                    $locked,
+                    'academic_program_changed'
+                );
+            }
+
+            return $this->successResponse(
+                (new StudentResource($locked->fresh()))->resolve($request)
+            );
+        });
+    }
+
+    public function graduationEligibility(Student $student, GraduationEligibilityService $graduation): JsonResponse
+    {
+        Gate::authorize('view', $student);
+
+        return $this->successResponse(
+            (new GraduationEligibilityResource(
+                $graduation->evaluate($student)
+            ))->resolve(request())
+        );
     }
 
     protected function modelClass(): string
@@ -84,7 +157,7 @@ class StudentController extends ApiController
             'page' => ['sometimes', 'integer', 'min:1'],
         ]);
 
-        $query = Student::query();
+        $query = app(DataScopeService::class)->scopeStudents(Student::query(), $request->user());
 
         if (isset($validated['student_status_id'])) {
             $query->where('student_status_id', $validated['student_status_id']);
@@ -135,7 +208,7 @@ class StudentController extends ApiController
     public function deleted(Request $request): JsonResponse
     {
         Gate::authorize('viewAny', Student::class);
-        $students = Student::onlyTrashed()
+        $students = app(DataScopeService::class)->scopeStudents(Student::onlyTrashed(), $request->user())
             ->orderBy('student_number')
             ->paginate($request->integer('per_page', 15));
 
@@ -159,61 +232,53 @@ class StudentController extends ApiController
         return $this->successResponse(new \stdClass, 'Student restored successfully.');
     }
 
-    public function forceDestroy(int $id): JsonResponse
+    public function forceDestroy(int $id, StudentPermanentDeleteGuard $guard): JsonResponse
     {
-        $student = Student::withTrashed()->findOrFail($id);
-        Gate::authorize('forceDelete', $student);
-        $relatedRecords = $this->getBlockingRelatedRecords($student);
+        return \App\Services\AcademicPlanContext::transaction(function () use ($id, $guard): JsonResponse {
+            $student = Student::withTrashed()
+                ->whereKey($id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            Gate::authorize('forceDelete', $student);
 
-        if ($relatedRecords !== []) {
-            return $this->errorResponse(
-                'Student cannot be permanently deleted because academic records exist.',
-                ['related_records' => $relatedRecords],
-                409
-            );
-        }
-
-        $student->forceDelete();
-
-        return $this->successResponse(null, 'Student permanently deleted successfully.');
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function getBlockingRelatedRecords(Student $student): array
-    {
-        $related = [];
-
-        if ($student->studentCourseRegistrations()->exists()) {
-            $related[] = 'student_course_registrations';
-        }
-
-        if ($student->studentAttendances()->exists()) {
-            $related[] = 'student_attendance';
-        }
-
-        if ($student->studentDocuments()->exists()) {
-            $related[] = 'student_documents';
-        }
-
-        if ($student->studentAcademicTerms()->exists()) {
-            $related[] = 'student_academic_terms';
-        }
-
-        $registrationIds = $student->studentCourseRegistrations()->pluck('student_course_registration_id');
-
-        if ($registrationIds->isNotEmpty()) {
-            if (DB::table('student_course_results')->whereIn('student_course_registration_id', $registrationIds)->exists()) {
-                $related[] = 'student_course_results';
+            if (! $student->trashed()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'A student must be archived before permanent deletion.',
+                    'error_code' => StudentPermanentDeleteGuard::REQUIRES_ARCHIVE,
+                    'errors' => [],
+                ], 409);
             }
 
-            if (DB::table('student_grade_components')->whereIn('student_course_registration_id', $registrationIds)->exists()) {
-                $related[] = 'student_grade_components';
+            $blockingCategories = $guard->blockingCategories($student);
+            if ($blockingCategories !== []) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Student cannot be permanently deleted because academic or workflow history exists.',
+                    'error_code' => StudentPermanentDeleteGuard::ERROR_CODE,
+                    'blocking_categories' => $blockingCategories,
+                    'errors' => ['blocking_categories' => $blockingCategories],
+                ], 409);
             }
-        }
 
-        return array_values(array_unique($related));
+            try {
+                $student->forceDelete();
+            } catch (QueryException $exception) {
+                if (! $guard->isRestrictedForeignKey($exception)) {
+                    throw $exception;
+                }
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Student cannot be permanently deleted because academic or workflow history exists.',
+                    'error_code' => StudentPermanentDeleteGuard::ERROR_CODE,
+                    'blocking_categories' => ['related_history'],
+                    'errors' => ['blocking_categories' => ['related_history']],
+                ], 409);
+            }
+
+            return $this->successResponse(null, 'Student permanently deleted successfully.');
+        });
     }
 
     public function search(Request $request): JsonResponse
@@ -226,7 +291,7 @@ class StudentController extends ApiController
 
         $query = $validated['q'];
 
-        $students = Student::query()
+        $students = app(DataScopeService::class)->scopeStudents(Student::query(), $request->user())
             ->where(function ($builder) use ($query): void {
                 $builder->where('student_number', 'like', "%{$query}%")
                     ->orWhere('first_name', 'like', "%{$query}%")
@@ -266,6 +331,17 @@ class StudentController extends ApiController
         );
     }
 
+    public function requirements(Student $student, AcademicRequirementService $requirements): JsonResponse
+    {
+        Gate::authorize('view', $student);
+
+        return $this->successResponse(
+            (new StudentRequirementProgressResource(
+                $requirements->getStudentRequirementProgress($student)
+            ))->resolve(request())
+        );
+    }
+
     public function documents(Student $student): JsonResponse
     {
         Gate::authorize('view', $student);
@@ -281,16 +357,30 @@ class StudentController extends ApiController
 
     public function registrations(Student $student): JsonResponse
     {
-        Gate::authorize('view', $student);
-        $registrations = $student->studentCourseRegistrations()
+        abort_unless(request()->user()->hasPermission('registration.view'), 403);
+        $user = request()->user();
+        $registrationsQuery = app(DataScopeService::class)->scopeRegistrations($student->studentCourseRegistrations(), $user)
             ->with([
+                'student',
                 'courseOffering.course',
                 'courseOffering.academicYear',
                 'courseOffering.semester',
                 'registrationStatus',
                 'resultStatus',
-                'studentCourseResult.resultStatus',
-            ])
+            ]);
+
+        if (app(AcademicAuthorizationService::class)->isRestrictedToOfficialStudentGrades($user)) {
+            $registrationsQuery->with([
+                'studentCourseResult' => function ($query) use ($user): void {
+                    app(GradeService::class)->scopeOfficialApprovedResults($query, (int) $user->student_id);
+                    $query->with('resultStatus');
+                },
+            ]);
+        } else {
+            $registrationsQuery->with('studentCourseResult.resultStatus');
+        }
+
+        $registrations = $registrationsQuery
             ->latest('student_course_registration_id')
             ->paginate(request()->integer('per_page', 15));
 
@@ -301,13 +391,15 @@ class StudentController extends ApiController
 
     public function transcript(Student $student, GradeService $gradeService): JsonResponse
     {
-        app(AcademicAuthorizationService::class)->assertStudentRecord(request()->user(), $student);
+        abort_unless(request()->user()->hasPermission('grades.view'), 403);
+        app(AcademicAuthorizationService::class)->assertCanAccessStudent(request()->user(), $student);
         return $this->successResponse($gradeService->getTranscript($student));
     }
 
     public function gpa(Student $student, Request $request, GradeService $gradeService): JsonResponse
     {
-        app(AcademicAuthorizationService::class)->assertStudentRecord($request->user(), $student);
+        abort_unless($request->user()->hasPermission('grades.view'), 403);
+        app(AcademicAuthorizationService::class)->assertCanAccessStudent($request->user(), $student);
         $validated = $request->validate([
             'academic_year_id' => ['required', 'integer', 'exists:academic_years,academic_year_id'],
             'semester_id' => ['required', 'integer', 'exists:semesters,semester_id'],
@@ -324,13 +416,15 @@ class StudentController extends ApiController
 
     public function cgpa(Student $student, GradeService $gradeService): JsonResponse
     {
-        app(AcademicAuthorizationService::class)->assertStudentRecord(request()->user(), $student);
+        abort_unless(request()->user()->hasPermission('grades.view'), 403);
+        app(AcademicAuthorizationService::class)->assertCanAccessStudent(request()->user(), $student);
         return $this->successResponse($gradeService->calculateCgpa($student));
     }
 
     public function attendance(Student $student, Request $request, AttendanceService $service): JsonResponse
     {
-        app(AcademicAuthorizationService::class)->assertStudentRecord($request->user(), $student);
+        abort_unless($request->user()->hasPermission('attendance.view'), 403);
+        app(AcademicAuthorizationService::class)->assertCanAccessStudent($request->user(), $student);
         $validated = $request->validate([
             'academic_year_id' => ['sometimes', 'integer', 'exists:academic_years,academic_year_id'],
             'semester_id' => ['sometimes', 'integer', 'exists:semesters,semester_id'],
@@ -342,17 +436,22 @@ class StudentController extends ApiController
                 $student,
                 $validated['academic_year_id'] ?? null,
                 $validated['semester_id'] ?? null,
-                $validated['course_offering_id'] ?? null
+                $validated['course_offering_id'] ?? null,
+                $request->user()
             )
         );
     }
 
     public function absencePercentage(Student $student, Request $request, AttendanceService $service): JsonResponse
     {
-        app(AcademicAuthorizationService::class)->assertStudentRecord($request->user(), $student);
+        abort_unless($request->user()->hasPermission('attendance.view'), 403);
+        app(AcademicAuthorizationService::class)->assertCanAccessStudent($request->user(), $student);
         $validated = $request->validate([
             'course_offering_id' => ['required', 'integer', 'exists:course_offerings,course_offering_id'],
         ]);
+        abort_unless(app(DataScopeService::class)->scopeRegistrations(
+            $student->studentCourseRegistrations(), $request->user()
+        )->where('course_offering_id', $validated['course_offering_id'])->exists(), 403);
 
         return $this->successResponse(
             $service->getStudentAbsencePercentage($student, (int) $validated['course_offering_id'])

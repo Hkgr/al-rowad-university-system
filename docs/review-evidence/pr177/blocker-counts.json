@@ -1,0 +1,171 @@
+{
+  "schema": "historical-exam-review-blockers.aggregate.v1",
+  "code_commit": "c915ba2e60edd375d0cff99c1723f441e51afa1c",
+  "scope": "Read-only offline snapshot analysis; not a live preview, executable review, or authorization to apply.",
+  "counting": "Reasons overlap. Do not sum blocker counts or interpret review units as unique students, courses or proven distinct attempts.",
+  "review_units": 15885,
+  "source_observations": 16461,
+  "blockers": [
+    {
+      "reason": "examination_not_representable",
+      "review_units": 14630,
+      "source_observations": 15206
+    },
+    {
+      "reason": "component_definitions_require_canonical_preparation_preview",
+      "review_units": 14363,
+      "source_observations": 14939
+    },
+    {
+      "reason": "coursework_has_no_explicit_component_mapping",
+      "review_units": 11398,
+      "source_observations": 11421
+    },
+    {
+      "reason": "program_context_unresolved",
+      "review_units": 4755,
+      "source_observations": 4969
+    },
+    {
+      "reason": "course_subject_credit_context_unresolved",
+      "review_units": 2942,
+      "source_observations": 3016
+    },
+    {
+      "reason": "cached_supplementary_effect_requires_dated_sitting",
+      "review_units": 2380,
+      "source_observations": 2380
+    },
+    {
+      "reason": "supplementary_sitting_undated",
+      "review_units": 2239,
+      "source_observations": 2791
+    },
+    {
+      "reason": "approved_program_missing_or_ambiguous_in_college",
+      "review_units": 1984,
+      "source_observations": 2188
+    },
+    {
+      "reason": "student_number_person_conflict",
+      "review_units": 1703,
+      "source_observations": 1739
+    },
+    {
+      "reason": "student_master_college_conflict",
+      "review_units": 1600,
+      "source_observations": 1601
+    },
+    {
+      "reason": "explicit_exam_and_student_master_program_conflict",
+      "review_units": 1451,
+      "source_observations": 1452
+    },
+    {
+      "reason": "cached_total_inconsistent_or_folded_supplementary",
+      "review_units": 1365,
+      "source_observations": 1365
+    },
+    {
+      "reason": "approved_program_college_missing_or_ambiguous",
+      "review_units": 852,
+      "source_observations": 861
+    },
+    {
+      "reason": "approved_guidance_plan_missing_or_ambiguous",
+      "review_units": 538,
+      "source_observations": 538
+    },
+    {
+      "reason": "source_condition_not_supported_by_ordinary_completion",
+      "review_units": 431,
+      "source_observations": 432
+    },
+    {
+      "reason": "conflicting_observations_not_distinct_attempt_evidence",
+      "review_units": 330,
+      "source_observations": 330
+    },
+    {
+      "reason": "source_mark_missing_symbolic_or_outside_component_limit",
+      "review_units": 306,
+      "source_observations": 306
+    },
+    {
+      "reason": "source_outcome_not_representable_by_current_policy",
+      "review_units": 229,
+      "source_observations": 229
+    },
+    {
+      "reason": "student_master_ownership_unproven",
+      "review_units": 227,
+      "source_observations": 227
+    },
+    {
+      "reason": "existing_values_require_separate_correction_review",
+      "review_units": 201,
+      "source_observations": 201
+    },
+    {
+      "reason": "symbol_requires_existing_authorized_workflow",
+      "review_units": 186,
+      "source_observations": 186
+    },
+    {
+      "reason": "source_total_not_canonical_component_sum",
+      "review_units": 142,
+      "source_observations": 142
+    },
+    {
+      "reason": "official_or_submitted_result_locked",
+      "review_units": 131,
+      "source_observations": 131
+    },
+    {
+      "reason": "student_master_father_conflict",
+      "review_units": 72,
+      "source_observations": 72
+    },
+    {
+      "reason": "student_master_existing_registration_context_conflict",
+      "review_units": 64,
+      "source_observations": 64
+    },
+    {
+      "reason": "historical_program_registration_requires_review",
+      "review_units": 38,
+      "source_observations": 38
+    },
+    {
+      "reason": "approved_course_subject_or_credits_conflict",
+      "review_units": 34,
+      "source_observations": 34
+    },
+    {
+      "reason": "component_definition_not_editable",
+      "review_units": 30,
+      "source_observations": 30
+    },
+    {
+      "reason": "existing_registration_other_program_requires_review",
+      "review_units": 14,
+      "source_observations": 14
+    },
+    {
+      "reason": "repeated_attempt_semester_not_proven",
+      "review_units": 4,
+      "source_observations": 4
+    },
+    {
+      "reason": "approved_program_context_missing",
+      "review_units": 3,
+      "source_observations": 3
+    },
+    {
+      "reason": "deferred_identity",
+      "review_units": 3,
+      "source_observations": 3
+    }
+  ],
+  "privacy": "Only reason-level counts are retained. The three individually deferred source references are grouped as deferred_identity; all per-record examples and references are excluded."
+}

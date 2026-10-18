@@ -1,0 +1,4 @@
+.monthly-accounting-expanded { position: fixed; inset: 0; z-index: 100; overflow: auto; padding: 20px; background: #f4fbee; }
+.monthly-accounting-expanded .payroll-grid { height: max(400px, calc(100dvh - 380px)); }
+.monthly-accounting-expanded:fullscreen { overflow: auto; }
+@media (max-width: 640px) { .monthly-accounting-expanded { padding: 10px; } }

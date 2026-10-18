@@ -8,33 +8,27 @@ use App\Models\College;
 use App\Models\Department;
 use App\Models\Student;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Schema;
+use App\Services\DataScopeService;
+use App\Models\CourseOffering;
+use App\Models\StudentCourseRegistration;
 
 class StudentAffairsDashboardController extends Controller
 {
     public function dashboardStats(): JsonResponse
     {
+        $scope = app(DataScopeService::class);
+        $user = request()->user();
         return $this->successResponse([
-            'total_students' => Student::query()->count(),
-            'graduates_count' => Student::query()
+            'total_students' => $scope->scopeStudents(Student::query(), $user)->count(),
+            'graduates_count' => $scope->scopeStudents(Student::query(), $user)
                 ->whereHas('studentStatus', fn ($status) => $status->where('status_code', 'graduated'))
                 ->count(),
-            'colleges_count' => $this->countActiveIfSupported(College::class),
-            'departments_count' => $this->countActiveIfSupported(Department::class),
-            'programs_count' => $this->countActiveIfSupported(AcademicProgram::class),
+            'registrations_count' => $scope->scopeRegistrations(StudentCourseRegistration::query(), $user)->count(),
+            'course_offerings_count' => $scope->scopeOfferings(CourseOffering::query(), $user)->count(),
+            'colleges_count' => $scope->scopeColleges(College::query(), $user)->count(),
+            'departments_count' => $scope->scopeDepartments(Department::query(), $user)->count(),
+            'programs_count' => $scope->scopePrograms(AcademicProgram::query(), $user)->count(),
         ]);
-    }
-
-    private function countActiveIfSupported(string $modelClass): int
-    {
-        $query = $modelClass::query();
-        $model = new $modelClass();
-
-        if (Schema::hasColumn($model->getTable(), 'is_active')) {
-            $query->where('is_active', true);
-        }
-
-        return $query->count();
     }
 
     protected function successResponse(mixed $data = [], string $message = 'Operation completed successfully', int $status = 200): JsonResponse

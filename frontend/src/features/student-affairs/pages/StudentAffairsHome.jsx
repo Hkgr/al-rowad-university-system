@@ -31,7 +31,6 @@ const STATUS_CONFIG = {
 
 export default function StudentAffairsHome() {
   const navigate = useNavigate()
-  const user     = JSON.parse(localStorage.getItem('user') || '{}')
 
   const [stats,    setStats]    = useState({ total: 0, programs: 0, colleges: 0, graduates: 0 })
   const [colleges, setColleges] = useState([])
@@ -100,10 +99,6 @@ export default function StudentAffairsHome() {
     return () => { cancelled = true }
   }, [navigate])
 
-  const dateStr = new Date().toLocaleDateString('ar-SY', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-  })
-
   const TOP_STATS = [
     { Icon: FaUsers,         ar: 'إجمالي الطلاب',     en: 'Total Students',    value: stats.total,     color: '#569933', bg: 'rgba(86,153,51,0.1)'  },
     { Icon: FaUserGraduate,  ar: 'الخريجون',           en: 'Graduates',         value: stats.graduates, color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
@@ -113,34 +108,6 @@ export default function StudentAffairsHome() {
 
   return (
     <>
-      {/* Welcome banner */}
-      <motion.div
-        className="flex items-center justify-between gap-4 bg-white border border-primary/15 rounded-[18px] px-7 py-[22px] mb-7 relative overflow-hidden shadow-[0_4px_24px_rgba(86,153,51,0.08)]"
-        initial={{ opacity: 0, y: -14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.45 }}
-      >
-        <div className="absolute top-0 left-0 right-0 h-1 animate-[barFlow_4s_linear_infinite]"
-          style={{ background: 'linear-gradient(90deg, #569933, #7ab356, #a8d68a, #7ab356, #417327, #569933)', backgroundSize: '250% 100%' }}
-        />
-        <div dir="rtl">
-          <h2 className="text-[21px] font-black text-text-dark mb-1">
-            شؤون الطلاب
-            <span className="text-[14px] font-medium text-text-light mr-2">Student Affairs</span>
-          </h2>
-          <p className="text-[12.5px] text-text-light">{dateStr}</p>
-        </div>
-        <div className="flex items-center gap-2 py-2 px-4 rounded-[12px] bg-primary/7 border border-primary/16 flex-shrink-0" dir="rtl">
-          <div className="w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-black text-white" style={{ background: 'linear-gradient(135deg, #569933, #2d5c18)' }}>
-            {(user.username?.[0] ?? 'U').toUpperCase()}
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[12px] font-bold text-primary-dark">{user.username}</span>
-            <span className="text-[9px] text-text-light">موظف شؤون الطلاب</span>
-          </div>
-        </div>
-      </motion.div>
-
       {/* Error */}
       {error && (
         <div className="flex items-center gap-3 bg-red-500/6 border border-red-500/25 rounded-[12px] px-5 py-3.5 mb-6 text-[13.5px] text-red-600" dir="rtl">

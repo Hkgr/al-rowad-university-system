@@ -102,14 +102,14 @@ class OfferingProposalController extends Controller
 
     private function assertVicePresident(User $user): void
     {
-        if (! $user->effectiveRoles()->intersect(['vice_president', 'super_admin'])->isNotEmpty()) {
+        if (! $user->effectiveRoles()->intersect(['vice_president', 'vice_president_scientific', 'super_admin'])->isNotEmpty()) {
             throw new AccessDeniedHttpException('اعتماد الطرح متاح لحساب النائب العلمي.');
         }
     }
 
     private function assertDeanOrVicePresident(User $user): void
     {
-        if (! $user->effectiveRoles()->intersect(['dean', 'vice_president', 'super_admin'])->isNotEmpty()) {
+        if (! $user->effectiveRoles()->intersect(['dean', 'vice_president', 'vice_president_scientific', 'super_admin'])->isNotEmpty()) {
             throw new AccessDeniedHttpException('عرض الطروحات متاح للعميد والنائب العلمي.');
         }
     }
