@@ -51,6 +51,7 @@ use App\Http\Controllers\Api\LibraryBorrowingController;
 use App\Http\Controllers\Api\LibraryCategoryController;
 use App\Http\Controllers\Api\LoginAuditLogController;
 use App\Http\Controllers\Api\MeetingAttendeeController;
+use App\Http\Controllers\Api\OfferingProposalController;
 use App\Http\Controllers\Api\OrganizationalUnitController;
 use App\Http\Controllers\Api\OrganizationalUnitTypeController;
 use App\Http\Controllers\Api\PasswordResetTokenController;
@@ -177,6 +178,13 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
 
     Route::get('academic-years/current', [AcademicYearController::class, 'current']);
     Route::get('semesters/active', [SemesterController::class, 'active']);
+
+    Route::get('offering-proposals/preview', [OfferingProposalController::class, 'preview']);
+    Route::get('offering-proposals', [OfferingProposalController::class, 'index']);
+    Route::post('offering-proposals', [OfferingProposalController::class, 'store']);
+    Route::get('offering-proposals/{id}', [OfferingProposalController::class, 'show']);
+    Route::post('offering-proposals/{id}/approve', [OfferingProposalController::class, 'approve']);
+    Route::post('offering-proposals/{id}/reject', [OfferingProposalController::class, 'reject']);
 
     /*
     |--------------------------------------------------------------------------

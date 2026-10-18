@@ -60,6 +60,11 @@ import professorNav             from '../features/professor-dashboard/nav'
 import ProfessorHome            from '../features/professor-dashboard/pages/ProfessorHome'
 import AttendanceDeprivationPage from '../features/professor-dashboard/pages/AttendanceDeprivationPage'
 
+import deanNav from '../features/dean-portal/nav'
+import DeanOfferingsPage from '../features/dean-portal/pages/DeanOfferingsPage'
+import vicePresidentNav from '../features/vice-president-portal/nav'
+import VicePresidentOfferingsPage from '../features/vice-president-portal/pages/VicePresidentOfferingsPage'
+
 function ProtectedRoute({ children, permissions = [], allPermissions = [], roles = [] }) {
   const token = localStorage.getItem('token')
   const [identity, setIdentity] = useState(getIdentity())
@@ -180,6 +185,26 @@ export default function App() {
           <Route path="/hr/employees/:id"      element={<EmployeeProfilePage />} />
           <Route path="/hr/faculty"            element={<FacultyPage />}         />
           <Route path="/hr/positions"          element={<PositionsPage />}       />
+        </Route>
+
+        <Route
+          element={
+            <ProtectedRoute roles={['dean']}>
+              <DashboardLayout nav={deanNav} appTitle="بوابة العميد" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/dean" element={<DeanOfferingsPage />} />
+        </Route>
+
+        <Route
+          element={
+            <ProtectedRoute roles={['vice_president']}>
+              <DashboardLayout nav={vicePresidentNav} appTitle="النائب العلمي" />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/vice-president" element={<VicePresidentOfferingsPage />} />
         </Route>
 
         {/* ── بوابة الأستاذ dashboard ── */}

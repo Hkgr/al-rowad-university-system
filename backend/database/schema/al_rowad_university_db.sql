@@ -818,6 +818,47 @@ INSERT INTO `course_offerings` (`course_offering_id`, `course_id`, `academic_yea
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `offering_proposals`
+--
+
+CREATE TABLE `offering_proposals` (
+  `offering_proposal_id` int(11) NOT NULL,
+  `academic_year_id` int(11) NOT NULL,
+  `semester_id` int(11) NOT NULL,
+  `department_id` int(11) NOT NULL,
+  `submitted_by_user_id` int(11) NOT NULL,
+  `status` varchar(30) NOT NULL,
+  `submitted_at` timestamp NULL DEFAULT NULL,
+  `decided_by_user_id` int(11) DEFAULT NULL,
+  `decided_at` timestamp NULL DEFAULT NULL,
+  `decision_note` text DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `offering_proposal_items`
+--
+
+CREATE TABLE `offering_proposal_items` (
+  `offering_proposal_item_id` int(11) NOT NULL,
+  `offering_proposal_id` int(11) NOT NULL,
+  `course_id` int(11) NOT NULL,
+  `academic_program_id` int(11) DEFAULT NULL,
+  `course_type` varchar(30) NOT NULL,
+  `faculty_member_id` int(11) DEFAULT NULL,
+  `instructor_exception` tinyint(1) NOT NULL DEFAULT 0,
+  `exception_reason` varchar(255) DEFAULT NULL,
+  `capacity` int(11) NOT NULL DEFAULT 40,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `course_prerequisites`
 --
 
@@ -2597,6 +2638,27 @@ ALTER TABLE `course_offerings`
   ADD KEY `idx_offering_status` (`status`);
 
 --
+-- Indexes for table `offering_proposals`
+--
+ALTER TABLE `offering_proposals`
+  ADD PRIMARY KEY (`offering_proposal_id`),
+  ADD KEY `idx_offering_proposals_term` (`department_id`,`academic_year_id`,`semester_id`),
+  ADD KEY `fk_offering_proposals_year` (`academic_year_id`),
+  ADD KEY `fk_offering_proposals_semester` (`semester_id`),
+  ADD KEY `fk_offering_proposals_submitter` (`submitted_by_user_id`),
+  ADD KEY `fk_offering_proposals_decider` (`decided_by_user_id`);
+
+--
+-- Indexes for table `offering_proposal_items`
+--
+ALTER TABLE `offering_proposal_items`
+  ADD PRIMARY KEY (`offering_proposal_item_id`),
+  ADD KEY `fk_proposal_items_proposal` (`offering_proposal_id`),
+  ADD KEY `fk_proposal_items_course` (`course_id`),
+  ADD KEY `fk_proposal_items_program` (`academic_program_id`),
+  ADD KEY `fk_proposal_items_faculty` (`faculty_member_id`);
+
+--
 -- Indexes for table `course_prerequisites`
 --
 ALTER TABLE `course_prerequisites`
@@ -3124,6 +3186,18 @@ ALTER TABLE `course_offerings`
   MODIFY `course_offering_id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `offering_proposals`
+--
+ALTER TABLE `offering_proposals`
+  MODIFY `offering_proposal_id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `offering_proposal_items`
+--
+ALTER TABLE `offering_proposal_items`
+  MODIFY `offering_proposal_item_id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `course_prerequisites`
 --
 ALTER TABLE `course_prerequisites`
@@ -3501,6 +3575,25 @@ ALTER TABLE `course_offerings`
   ADD CONSTRAINT `fk_offering_program` FOREIGN KEY (`academic_program_id`) REFERENCES `academic_programs` (`academic_program_id`),
   ADD CONSTRAINT `fk_offering_semester` FOREIGN KEY (`semester_id`) REFERENCES `semesters` (`semester_id`),
   ADD CONSTRAINT `fk_offering_year` FOREIGN KEY (`academic_year_id`) REFERENCES `academic_years` (`academic_year_id`);
+
+--
+-- Constraints for table `offering_proposals`
+--
+ALTER TABLE `offering_proposals`
+  ADD CONSTRAINT `fk_offering_proposals_year` FOREIGN KEY (`academic_year_id`) REFERENCES `academic_years` (`academic_year_id`),
+  ADD CONSTRAINT `fk_offering_proposals_semester` FOREIGN KEY (`semester_id`) REFERENCES `semesters` (`semester_id`),
+  ADD CONSTRAINT `fk_offering_proposals_dept` FOREIGN KEY (`department_id`) REFERENCES `departments` (`department_id`),
+  ADD CONSTRAINT `fk_offering_proposals_submitter` FOREIGN KEY (`submitted_by_user_id`) REFERENCES `users` (`user_id`),
+  ADD CONSTRAINT `fk_offering_proposals_decider` FOREIGN KEY (`decided_by_user_id`) REFERENCES `users` (`user_id`);
+
+--
+-- Constraints for table `offering_proposal_items`
+--
+ALTER TABLE `offering_proposal_items`
+  ADD CONSTRAINT `fk_proposal_items_proposal` FOREIGN KEY (`offering_proposal_id`) REFERENCES `offering_proposals` (`offering_proposal_id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_proposal_items_course` FOREIGN KEY (`course_id`) REFERENCES `courses` (`course_id`),
+  ADD CONSTRAINT `fk_proposal_items_program` FOREIGN KEY (`academic_program_id`) REFERENCES `academic_programs` (`academic_program_id`),
+  ADD CONSTRAINT `fk_proposal_items_faculty` FOREIGN KEY (`faculty_member_id`) REFERENCES `faculty_members` (`faculty_member_id`);
 
 --
 -- Constraints for table `course_prerequisites`

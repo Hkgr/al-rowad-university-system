@@ -2,6 +2,7 @@
 
 use App\Exceptions\AttendanceException;
 use App\Exceptions\GradeException;
+use App\Exceptions\OfferingProposalException;
 use App\Exceptions\RegistrationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
@@ -51,6 +52,18 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->render(function (GradeException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'errors' => $exception->errors,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (OfferingProposalException $exception, Request $request) {
             if (! $request->is('api/*')) {
                 return null;
             }

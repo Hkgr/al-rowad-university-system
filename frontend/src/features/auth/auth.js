@@ -43,6 +43,8 @@ export function canAccess({ permissions = [], allPermissions = [], roles = [] } 
 }
 export function landingRoute(user) {
   if (hasRole('student', user)) return '/student'
+  if (hasRole('dean', user)) return '/dean'
+  if (hasRole('vice_president', user)) return '/vice-president'
   if (hasRole('exam_officer', user)) return '/exam-board'
   if (hasRole('doctor_instructor', user)) return '/professor'
   if (hasPermission('hr.view', user)) return '/hr'
