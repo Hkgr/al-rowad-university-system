@@ -1,0 +1,90 @@
+{
+  "schema": "historical-exam-review-comparison.aggregate.v2",
+  "scope": "offline snapshot only; no live authorization or real-data apply",
+  "source_contract": "historical-exam-completion.sources.v3",
+  "review_contract": "historical-exam-completion.review.v3",
+  "interpretation": "historical-exam-reconciliation.2026-10-18.v3",
+  "assessment_profile": "historical-coursework40-final60.v1",
+  "source_controls": {
+    "examination_observations": 16461,
+    "observation_groups": {
+      "exam1/OutcomeofMater/numbered": 9308,
+      "exam1/OutcomeofMater/unnumbered": 6,
+      "exam1/supplementary/numbered": 2044,
+      "exam2/تكميلي/numbered": 747,
+      "exam2/علامات/numbered": 4356
+    },
+    "student_master_numbered": 295,
+    "student_master_records": 295,
+    "student_master_unique_numbers": 295
+  },
+  "previous_counts": {
+    "actions": 15885,
+    "classifications": {
+      "ambiguous_attempt": 4,
+      "deferred_identity": 3,
+      "existing_equivalent": 649,
+      "existing_value_conflict": 166,
+      "missing_registration": 1475,
+      "protected_result": 4430,
+      "source_conflict": 330,
+      "unresolved_course": 6623,
+      "unresolved_period": 2205
+    },
+    "conflict": 496,
+    "deferred": 3,
+    "eligible": 0,
+    "no_op": 649,
+    "observations": 16461,
+    "pending_approval": 0
+  },
+  "counts": {
+    "actions": 15885,
+    "observations": 16461,
+    "eligible": 603,
+    "no_op": 649,
+    "conflict": 496,
+    "deferred": 3,
+    "pending_approval": 0,
+    "classifications": {
+      "unresolved_course": 6623,
+      "existing_value_conflict": 166,
+      "protected_result": 4430,
+      "missing_registration": 1475,
+      "source_conflict": 330,
+      "existing_equivalent": 649,
+      "deferred_identity": 3,
+      "ambiguous_attempt": 4,
+      "unresolved_period": 2205
+    },
+    "aggregate_initialization_actions": 603,
+    "aggregate_initialization_contexts": 86,
+    "aggregate_known_component_breakdown_missing": 0
+  },
+  "eligible_initialization": {
+    "review_units": 603,
+    "source_observations": 603,
+    "contexts": 86,
+    "students": 87,
+    "courses": 69,
+    "registrations_created_in_this_analysis": 0
+  },
+  "source_observation_classification_changes": {},
+  "source_observation_eligibility_changes": {
+    "false -> true": 603
+  },
+  "all_seven_F_passed_investigations_preserved": true,
+  "provenance": {
+    "previous_code_commit": "4aeaf4855087d0f8ddd1354cf3f7b49848f1ee86",
+    "bundle_sha256": "e96dc1e8c632ca75b35ba9150c339b2c61055c8b69773999d5056c2f31a0accf",
+    "snapshot_report_sha256": "8c1e7b7c716e44a58a0da0f25bcdf46c1aacb9358a3c4a9ea162a3a165d698e0",
+    "private_summary_sha256": "77c4440fa5e696eeac40eef191dc238c4d119e5ea1dd4697369c886253fe3253"
+  },
+  "limitations": [
+    "Offline candidate eligibility is not live readiness or authorization to apply.",
+    "Eligible initialization actions are a subset of missing-registration review units, not an extra classification.",
+    "Zero known-aggregate/missing-breakdown blockers means zero verified detailed configurations with missing marks in this snapshot. It does not mean all source activity detail is known.",
+    "Wholly undefined contexts may use an explicitly labeled aggregate; existing detailed/partial/protected definitions are not replaced.",
+    "No identifying examples, marks, row references, paths, bundles or immutable reviews are included."
+  ]
+}

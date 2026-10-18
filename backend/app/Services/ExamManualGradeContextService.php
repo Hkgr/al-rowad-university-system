@@ -149,6 +149,36 @@ final class ExamManualGradeContextService
         }, 3);
     }
 
+    /** Historical CLI domain boundary only: assessment groups do not derive from course contact hours. */
+    public function historicalRecordingComponentPlan(CourseOffering $offering): array
+    {
+        $existing=$offering->exists?$offering->gradeComponents()->orderBy('grade_component_id')->get():collect();
+        $limits=$this->grades->gradingPolicyLimits();
+        if($existing->isEmpty()) {
+            if($offering->exists) {
+                $registrations=StudentCourseRegistration::where('course_offering_id',$offering->getKey())->pluck('student_course_registration_id');
+                if(DB::table('student_grade_components')->whereIn('student_course_registration_id',$registrations)->exists()
+                    || DB::table('student_course_results')->whereIn('student_course_registration_id',$registrations)->exists()
+                    || $offering->gradePartApprovals()->exists() || $offering->gradeApprovals()->exists())
+                    throw new GradeException('Historical aggregate initialization requires a wholly unconfigured context without retained assessment evidence.',status:409,errorCode:'historical_aggregate_initialization_existing_evidence');
+            }
+            if($limits['theoretical_max_mark']!==60.0||$limits['practical_max_mark']!==40.0)
+                throw new GradeException('The current canonical policy does not support the approved 40/60 historical assessment groups.',status:409,errorCode:'historical_aggregate_policy_incompatible');
+            $components=collect(\App\Services\HistoricalExams\ExamComponentMapping::aggregateComponents())->map(function($c){$key=$c['grade_component_id'];unset($c['grade_component_id']);return ['key'=>$key]+$c;});
+        } else {
+            // Optional definitions are retained untouched; the canonical finalizer sums REQUIRED definitions only.
+            $components=$existing->where('is_required',true)->map(function($c){
+                if($c->status!=='active'||!in_array($c->component_type,GradePartApproval::PARTS,true)||$c->max_mark<=0)$this->incompatible();
+                return ['key'=>(string)$c->getKey()]+$c->getAttributes();
+            });
+            if($components->isEmpty())$this->incompatible();
+        }
+        $this->grades->assertRequiredPartsPolicyCompatible($components->contains('component_type','theoretical'),$components->contains('component_type','practical'),
+            (float)$components->where('component_type','theoretical')->sum('max_mark'),(float)$components->where('component_type','practical')->sum('max_mark'));
+        return ['create'=>$existing->isEmpty(),'components'=>$components->values()->all(),'policy'=>$limits,
+            'historical_assessment_profile'=>\App\Services\HistoricalExams\ExamComponentMapping::PROFILE];
+    }
+
     private function incompatible(): never
     {
         throw new GradeException('Existing configuration is partial or incompatible; no components were changed.', status: 409, errorCode: 'manual_components_incompatible');
