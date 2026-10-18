@@ -112,6 +112,7 @@ class AcademicProgramController extends CatalogCrudController
             'programCourses.requirementMapping.requirementGroup',
         ])->findOrFail($id);
 
+        \App\Support\ApplicableCourseCredits::attachMemberships($program->programCourses);
         $studyPlan = $program->programCourses
             ->sortBy([
                 ['academic_level_id', 'asc'],
@@ -138,7 +139,7 @@ class AcademicProgramController extends CatalogCrudController
                             'course_id' => $programCourse->course_id,
                             'course_code' => $programCourse->course?->course_code,
                             'course_name' => $programCourse->course?->course_name,
-                            'credit_hours' => $programCourse->course?->credit_hours,
+                            'credit_hours' => \App\Support\ApplicableCourseCredits::planHours($programCourse),
                             'course_type' => $programCourse->course_type,
                             'requirement_classification' => CourseRequirementClassification::fromProgramCourse($programCourse),
                         ];

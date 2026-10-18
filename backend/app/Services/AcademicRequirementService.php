@@ -215,6 +215,7 @@ class AcademicRequirementService
 
         $registrations = $this->loadStudentRegistrations($student);
         $pendingItems = $this->loadOpenRequestItems($student);
+        [$earnedCreditHours,$registeredCreditHours,$bestPassedIds]=$this->registrationCreditMaps($registrations);
 
         $earnedCourseIds = [];
         $registeredCourseIds = [];
@@ -240,9 +241,10 @@ class AcademicRequirementService
             $groupId = (int) $classified['requirement_group']->requirement_group_id;
             $course = $classified['program_course']->course;
 
-            if ($this->grades->isOfficiallyPassedAttempt($registration) && ! isset($earnedCourseIds[$courseId])) {
+            if ($this->grades->isOfficiallyPassedAttempt($registration) && ($bestPassedIds[$courseId]??null)===(int)$registration->getKey() && ! isset($earnedCourseIds[$courseId])) {
                 $earnedCourseIds[$courseId] = true;
                 $passedCoursesByGroup[$groupId][] = $this->formatProgressCourse($course, [
+                    'credit_hours'=>$earnedCreditHours[$courseId],
                     'student_course_registration_id' => $registration->student_course_registration_id,
                     'course_offering_id' => $registration->course_offering_id,
                     'registration_status' => $registration->registrationStatus?->status_code,
@@ -270,6 +272,7 @@ class AcademicRequirementService
             $groupId = (int) $classified['requirement_group']->requirement_group_id;
             $registeredCourseIds[$courseId] = true;
             $registeredCoursesByGroup[$groupId][] = $this->formatProgressCourse($classified['program_course']->course, [
+                ...\App\Support\ApplicableCourseCredits::fields($registration),
                 'student_course_registration_id' => $registration->student_course_registration_id,
                 'course_offering_id' => $registration->course_offering_id,
                 'registration_status' => $registration->registrationStatus?->status_code,
@@ -294,6 +297,7 @@ class AcademicRequirementService
             $groupId = (int) $classified['requirement_group']->requirement_group_id;
             $pendingCourseIds[$courseId] = true;
             $pendingCoursesByGroup[$groupId][] = $this->formatProgressCourse($classified['program_course']->course, [
+                'credit_hours'=>\App\Support\ApplicableCourseCredits::planHours($classified['program_course']),
                 'student_registration_request_id' => $item->student_registration_request_id,
                 'student_registration_request_item_id' => $item->student_registration_request_item_id,
                 'course_offering_id' => $item->course_offering_id,
@@ -303,6 +307,8 @@ class AcademicRequirementService
         }
 
         $groupPayloads = $groups->map(function (AcademicRequirementGroup $group) use (
+            $earnedCreditHours,
+            $registeredCreditHours,
             $curriculumByGroup,
             $earnedCourseIds,
             $registeredCourseIds,
@@ -314,8 +320,8 @@ class AcademicRequirementService
             $mappedCourses = $curriculumByGroup->get((int) $group->requirement_group_id, collect());
             $requiredHours = (int) $group->required_credit_hours;
             $poolHours = $this->poolCreditHours($mappedCourses);
-            $earnedHours = $this->hoursForCourseIds($mappedCourses, $earnedCourseIds);
-            $registeredHours = $this->hoursForCourseIds($mappedCourses, $registeredCourseIds);
+            $earnedHours = $this->hoursForCourseIds($mappedCourses, $earnedCourseIds,$earnedCreditHours);
+            $registeredHours = $this->hoursForCourseIds($mappedCourses, $registeredCourseIds,$registeredCreditHours);
             $pendingHours = $this->hoursForCourseIds($mappedCourses, $pendingCourseIds);
             $committedHours = $earnedHours + $registeredHours + $pendingHours;
             $remainingHours = max($requiredHours - $earnedHours, 0);
@@ -383,6 +389,7 @@ class AcademicRequirementService
 
         $registrations = $this->loadStudentRegistrations($student, $projection);
         $pendingItems = $this->loadOpenRequestItems($student);
+        [$earnedCreditHours,$registeredCreditHours]=$this->registrationCreditMaps($registrations);
 
         $earnedCourseIds = [];
         $registeredCourseIds = [];
@@ -425,7 +432,7 @@ class AcademicRequirementService
 
             $classified = $curriculumByCourseId[$courseId];
             $group = $classified['requirement_group'];
-            $hours = (int) ($classified['program_course']->course?->credit_hours ?? $course->credit_hours ?? 0);
+            $hours = \App\Support\ApplicableCourseCredits::planHours($classified['program_course']);
             $pendingItemSnapshots[] = [
                 'request_id' => (int) $item->student_registration_request_id,
                 'course_id' => $courseId,
@@ -462,8 +469,8 @@ class AcademicRequirementService
         foreach ($groups as $group) {
             $mappedCourses = $curriculumByGroup->get((int) $group->requirement_group_id, collect());
             $requiredHours = (int) $group->required_credit_hours;
-            $earnedHours = $this->hoursForCourseIds($mappedCourses, $earnedCourseIds);
-            $registeredHours = $this->hoursForCourseIds($mappedCourses, $registeredCourseIds);
+            $earnedHours = $this->hoursForCourseIds($mappedCourses, $earnedCourseIds,$earnedCreditHours);
+            $registeredHours = $this->hoursForCourseIds($mappedCourses, $registeredCourseIds,$registeredCreditHours);
             $pendingHours = $this->hoursForCourseIds($mappedCourses, $pendingCourseIds);
             $committedHours = $earnedHours + $registeredHours + $pendingHours;
             $groupId = (int) $group->requirement_group_id;
@@ -527,7 +534,7 @@ class AcademicRequirementService
         $group = $classified['requirement_group'];
         $groupId = (int) $group->requirement_group_id;
         $groupState = $context['groups'][$groupId] ?? null;
-        $candidateHours = (int) ($programCourse->course?->credit_hours ?? $this->candidateCreditHours($candidate, $programCourse->course));
+        $candidateHours = \App\Support\ApplicableCourseCredits::planHours($programCourse);
         $alreadyCommitted = isset($context['earned_course_ids'][$courseId])
             || isset($context['registered_course_ids'][$courseId])
             || isset($context['pending_course_ids'][$courseId]);
@@ -670,6 +677,7 @@ class AcademicRequirementService
             ->where('is_active', true)
             ->with(['course', 'requirementMapping.requirementGroup'])
             ->get();
+        \App\Support\ApplicableCourseCredits::attachMemberships($programCourses);
 
         $byCourseId = [];
         $byGroupId = [];
@@ -739,6 +747,7 @@ class AcademicRequirementService
             ->with([
                 'courseOffering.course',
                 'courseOffering.gradeApprovals.approvalStatus',
+                'courseOffering.gradeComponents',
                 'studentCourseResult.resultStatus',
                 'resultStatus',
                 'registrationStatus',
@@ -748,8 +757,9 @@ class AcademicRequirementService
                 ->whereNotIn('course_offering_id', $projection->excludedOfferingIds());
         }
 
-        return $query->orderBy('student_course_registration_id')
-            ->get();
+        $registrations=$query->orderBy('student_course_registration_id')->get();
+        \App\Support\ApplicableCourseCredits::attach($registrations);
+        return $registrations;
     }
 
     private function loadOpenRequestItems(Student $student): Collection
@@ -903,6 +913,7 @@ class AcademicRequirementService
      */
     private function formatMappedCourses(Collection $mappedCourses): Collection
     {
+        \App\Support\ApplicableCourseCredits::attachMemberships($mappedCourses);
         return $mappedCourses->map(function (ProgramCourse $programCourse): array {
             $course = $programCourse->course;
 
@@ -911,7 +922,7 @@ class AcademicRequirementService
                 'course_id' => $programCourse->course_id,
                 'course_code' => $course?->course_code,
                 'course_name' => $course?->course_name,
-                'credit_hours' => (int) ($course?->credit_hours ?? 0),
+                'credit_hours' => \App\Support\ApplicableCourseCredits::planHours($programCourse),
                 'course_type' => $programCourse->course_type,
                 'requirement_classification' => CourseRequirementClassification::fromProgramCourse($programCourse),
             ];
@@ -923,8 +934,9 @@ class AcademicRequirementService
      */
     private function poolCreditHours(Collection $mappedCourses): int
     {
+        \App\Support\ApplicableCourseCredits::attachMemberships($mappedCourses);
         return (int) $mappedCourses->sum(
-            fn (ProgramCourse $programCourse): int => (int) ($programCourse->course?->credit_hours ?? 0)
+            fn (ProgramCourse $programCourse): int => \App\Support\ApplicableCourseCredits::planHours($programCourse)
         );
     }
 
@@ -932,11 +944,12 @@ class AcademicRequirementService
      * @param  Collection<int, ProgramCourse>  $mappedCourses
      * @param  array<int, true>  $courseIds
      */
-    private function hoursForCourseIds(Collection $mappedCourses, array $courseIds): int
+    private function hoursForCourseIds(Collection $mappedCourses, array $courseIds,array $actualHours=[]): int
     {
+        \App\Support\ApplicableCourseCredits::attachMemberships($mappedCourses);
         return (int) $mappedCourses
             ->filter(fn (ProgramCourse $programCourse): bool => isset($courseIds[(int) $programCourse->course_id]))
-            ->sum(fn (ProgramCourse $programCourse): int => (int) ($programCourse->course?->credit_hours ?? 0));
+            ->sum(fn (ProgramCourse $programCourse): int => $actualHours[(int)$programCourse->course_id]??\App\Support\ApplicableCourseCredits::planHours($programCourse));
     }
 
     /**
@@ -974,7 +987,7 @@ class AcademicRequirementService
             'course_id' => $course?->course_id,
             'course_code' => $course?->course_code,
             'course_name' => $course?->course_name,
-            'credit_hours' => (int) ($course?->credit_hours ?? 0),
+            ...\App\Support\ApplicableCourseCredits::fields($registration),
             'registration_status' => $registration->registrationStatus?->status_code,
             'result_status' => $this->officialResultStatus($registration),
             'final_mark' => $this->officialFinalMark($registration),
@@ -1133,6 +1146,20 @@ class AcademicRequirementService
         }
 
         return (int) ($fallback?->credit_hours ?? 0);
+    }
+
+    private function registrationCreditMaps(Collection $registrations): array
+    {
+        $earned=[];$registered=[];$best=[];
+        $passed=$registrations->filter(fn($r)=>$this->grades->isOfficiallyPassedAttempt($r))->values();
+        foreach($this->grades->selectOfficialBestAttempts($passed) as $r) {
+            $earned[(int)$r->courseOffering->course_id]=(int)\App\Support\ApplicableCourseCredits::hours($r);
+            $best[(int)$r->courseOffering->course_id]=(int)$r->getKey();
+        }
+        foreach($registrations as $r)if($r->registrationStatus?->status_code===StudentCourseRegistration::CURRENT_STATUS) {
+            $registered[(int)$r->courseOffering->course_id]??=(int)\App\Support\ApplicableCourseCredits::hours($r);
+        }
+        return [$earned,$registered,$best];
     }
 
     private function candidateEvaluationPayload(

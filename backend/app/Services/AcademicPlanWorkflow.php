@@ -80,15 +80,23 @@ final class AcademicPlanWorkflow
                 $copy->group_code = 'PLAN-'.$version->getKey().'-'.$old->getKey();
                 $copy->save(); $groups[$old->getKey()] = $copy->getKey();
             }
+            $creditCopies=[];
             foreach (ProgramCourse::where('academic_plan_version_id', $sourceId)->with('requirementMapping')->orderBy('program_course_id')->get() as $old) {
                 $copy = $old->replicate(['plan_scope_key']); $copy->academic_plan_version_id = $version->getKey(); $copy->save();
+                $creditCopies[(int)$old->getKey()]=(int)$copy->getKey();
                 if ($old->requirementMapping !== null) {
                     $group = $groups[$old->requirementMapping->requirement_group_id] ?? null;
                     if ($group === null) $this->fail('academic_plan_transition_invalid', 'مجموعة المادة لا تتبع الخطة المصدر.');
                     ProgramCourseRequirementGroup::create(['program_course_id' => $copy->getKey(), 'requirement_group_id' => $group]);
                 }
             }
-            $this->event($actor, $program, $version, 'draft_created', ['source_version_id' => $sourceId]);
+            $event=$this->event($actor, $program, $version, 'draft_created', ['source_version_id' => $sourceId]);
+            if(\App\Support\HistoricalExamSchema::installed()) {
+                \App\Support\HistoricalExamSchema::requireReady();
+                $credits=DB::table(\App\Support\HistoricalExamSchema::PLAN)->whereIn('program_course_id',array_keys($creditCopies))->orderBy('revision')->get()->keyBy('program_course_id');
+                foreach($credits as $oldId=>$credit)DB::table(\App\Support\HistoricalExamSchema::PLAN)->insert(['program_course_id'=>$creditCopies[$oldId],'revision'=>1,
+                    'credit_hours'=>$credit->credit_hours,'academic_plan_event_id'=>$event,'created_at'=>now('UTC')->format('Y-m-d H:i:s')]);
+            }
             return $this->version($actor, (int) $program->getKey(), (int) $version->getKey());
         });
     }
@@ -444,6 +452,7 @@ final class AcademicPlanWorkflow
         $context = $version === null ? new AcademicPlanContext($programId, null) : AcademicPlanContext::forVersion($version);
         $courses = $context->courses()->with(['course', 'requirementMapping.requirementGroup', 'academicLevel', 'recommendedSemester'])
             ->orderBy('course_id')->orderBy('program_course_id')->get();
+        \App\Support\ApplicableCourseCredits::projectMemberships($courses);
         $groups = $context->constrain(AcademicRequirementGroup::query())->orderBy('requirement_scope')->orderBy('requirement_type')->orderBy('requirement_group_id')->get();
         try {
             $pools = ['available' => true, 'groups' => app(AcademicRequirementService::class)->forPlanContext($context)->getProgramRequirements($programId)];
@@ -543,13 +552,14 @@ final class AcademicPlanWorkflow
         }, $revision);
     }
 
-    private function event(User $actor, AcademicProgram $program, ?AcademicPlanVersion $version, string $action, array $context): void
+    private function event(User $actor, AcademicProgram $program, ?AcademicPlanVersion $version, string $action, array $context): int
     {
         $safe = ['academic_program_id' => $program->getKey(), 'academic_plan_version_id' => $version?->getKey()] + $context;
-        DB::table('academic_plan_events')->insert(['academic_program_id' => $program->getKey(), 'academic_plan_version_id' => $version?->getKey(),
-            'action' => $action, 'actor_user_id' => $actor->getKey(), 'context' => json_encode($safe, JSON_THROW_ON_ERROR), 'created_at' => now()]);
+        $id=DB::table('academic_plan_events')->insertGetId(['academic_program_id' => $program->getKey(), 'academic_plan_version_id' => $version?->getKey(),
+            'action' => $action, 'actor_user_id' => $actor->getKey(), 'context' => json_encode($safe, JSON_THROW_ON_ERROR), 'created_at' => now()],'academic_plan_event_id');
         UserActivityLog::create(['user_id' => $actor->getKey(), 'module_code' => 'academic_structure', 'action_code' => 'academic_plan.'.$action,
             'description' => json_encode($safe, JSON_THROW_ON_ERROR)]);
+        return (int)$id;
     }
 
     private function groupName(array $row): string

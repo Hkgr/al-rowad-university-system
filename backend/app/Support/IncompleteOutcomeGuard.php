@@ -41,6 +41,7 @@ final class IncompleteOutcomeGuard
     }
     public static function attach(Collection $registrations): void
     {
+        HistoricalOutcomeGuard::attach($registrations);
         $cases = collect();
         if (self::installed()) {
             self::assertReady();
@@ -54,6 +55,7 @@ final class IncompleteOutcomeGuard
     }
     public static function assertOrdinaryWrite(int $registrationId): void
     {
+        HistoricalOutcomeGuard::assertOrdinaryWrite($registrationId);
         if (self::caseFor($registrationId, DB::transactionLevel() > 0)) {
             throw new GradeException('This result belongs to an audited Incomplete lifecycle; ordinary grade writes cannot replace it.', status: 409, errorCode: 'incomplete_outcome_locked');
         }
@@ -61,6 +63,7 @@ final class IncompleteOutcomeGuard
     /** Called by canonical locked transitions, with a model backstop for other writers. */
     public static function assertRegistrationTransition(int $registrationId, ?string $target, ?string $source = 'registered'): void
     {
+        HistoricalOutcomeGuard::assertRegistrationTransition($registrationId,$target,$source);
         if (self::caseFor($registrationId, DB::transactionLevel() > 0)
             && (!in_array($target, ['registered', 'completed'], true) || !in_array($source, ['registered', 'completed'], true))) {
             throw new GradeException('This registration belongs to an Incomplete lifecycle; withdrawal, drop and cancellation are not supported.', status: 409, errorCode: 'incomplete_registration_transition_locked');
@@ -68,11 +71,13 @@ final class IncompleteOutcomeGuard
     }
     public static function ordinaryComponents($query)
     {
+        $query=HistoricalOutcomeGuard::ordinaryComponents($query);
         if (self::installed()) { self::assertReady(); $query->whereNotIn('student_course_registration_id', CourseIncompleteCase::query()->select('student_course_registration_id')); }
         return $query;
     }
     public static function assertConfigurationMutable(iterable $offeringIds): void
     {
+        HistoricalOutcomeGuard::assertConfigurationMutable($offeringIds);
         if (!self::installed()) return;
         self::assertReady();
         if (CourseIncompleteCase::query()->whereIn('student_course_registration_id', StudentCourseRegistration::query()
@@ -82,6 +87,8 @@ final class IncompleteOutcomeGuard
     }
     public static function readState(StudentCourseRegistration $r): array
     {
+        if(HistoricalOutcomeGuard::forRegistration($r))return ['state'=>'historical_reconciled','case_id'=>null,'revision'=>null,'deadline_at'=>null,
+            'expiry_outcome'=>null,'ordinary_grade_edit_allowed'=>false,'blocking_code'=>'historical_outcome_locked'];
         $case = self::forRegistration($r);
         $status = $r->studentCourseResult?->resultStatus?->status_code;
         return ['state' => $case ? 'incomplete_'.$case->state : (!$r->studentCourseResult ? 'no_result' : ($status === 'incomplete' ? 'ordinary_missing_components' : ($status === 'pending_approval' ? 'pending_approval' : 'ordinary_result'))),
@@ -92,6 +99,7 @@ final class IncompleteOutcomeGuard
     /** Completeness/finalization exemption requires a real case AND matching persisted evidence. */
     public static function preservesOutcome(StudentCourseRegistration $registration, bool $lock = false): bool
     {
+        if(HistoricalOutcomeGuard::preservesOutcome($registration,$lock))return true;
         $case = $lock ? self::caseFor((int) $registration->getKey(), true) : self::forRegistration($registration);
         if (!$case) return false;
         $offering = $registration->courseOffering;

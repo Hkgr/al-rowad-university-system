@@ -126,7 +126,10 @@ final class ExamComponentMapping
                 $failed=array_sum($totals)<ExamProjection::cents($policy['minimum_final_mark']);
                 foreach($required as $type=>$needed)if($needed&&$totals[$type]<ExamProjection::cents($policy['minimum_'.$type.'_mark']))$failed=true;
                 $outcome=$failed?'failed':'passed';$condition=CompletionData::text($values['condition']??null);
-                if(($condition==='F'&&!$failed)||($condition==='T'&&$failed))$blockers[]='source_outcome_not_representable_by_current_policy';
+                // The source macro writes T when the selected examination reaches 15,
+                // not when the course passes. Canonical minima still determine the outcome.
+                // F is separate source evidence of failure and must not become a pass.
+                if($condition==='F'&&!$failed)$blockers[]='source_outcome_not_representable_by_current_policy';
             }
         }
         return ['profile'=>self::PROFILE,'groups'=>$groups,'mapping'=>$mapping,'proposed_components'=>$writes,

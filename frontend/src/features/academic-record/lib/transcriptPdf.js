@@ -7,7 +7,7 @@ import {
 import { paginateMeasuredSections } from '../../../utils/pdfPagination'
 import { escapeHtml, exportPagedHtmlToPdf, PDF_PAGE_CONFIGS } from '../../../utils/pdfExport'
 import { transcriptGenerationMetadata } from './academicRecordPresentation'
-import { resultDescription, resultSymbol, termWithdrawalText } from './resultSymbols'
+import { historicalAssessmentText, resultDescription, resultSymbol, termWithdrawalText } from './resultSymbols'
 
 const DISCLAIMER = 'تنبيه: هذا الكشف مُولّد إلكترونيًا من نظام جامعة الرواد، ولا يُعد وثيقة رسمية أو مصدقة، ولا يكتسب الحجية إلا بعد استكمال التواقيع والأختام الرسمية المعتمدة.'
 
@@ -83,8 +83,9 @@ function statusText(course) {
 function courseRow(course, index) {
   const classification = classificationPlainText(course?.requirement_classification)
   const secondary = classification ? `<div style="font-size:7px;color:#6b7280;margin-top:2px;line-height:1.4;">${escapeHtml(classification)}</div>` : ''
+  const assessment = historicalAssessmentText(course)
   const cells = [
-    `<div style="font-weight:700;line-height:1.45;">${escapeHtml(value(course?.course_name))}</div><div dir="ltr" style="font-size:7.5px;color:#6b7280;text-align:right;">${escapeHtml(value(course?.course_code))}</div>${secondary}`,
+    `<div style="font-weight:700;line-height:1.45;">${escapeHtml(value(course?.course_name))}</div><div dir="ltr" style="font-size:7.5px;color:#6b7280;text-align:right;">${escapeHtml(value(course?.course_code))}</div>${secondary}${assessment ? `<div style="font-size:7px;line-height:1.4;">${escapeHtml(assessment)}</div>` : ''}`,
     escapeHtml(value(course?.credit_hours)), escapeHtml(value(course?.practical_mark)), escapeHtml(value(course?.theoretical_mark)),
     escapeHtml(value(course?.final_mark)), escapeHtml(resultSymbol(course)), escapeHtml(statusText(course)),
   ]

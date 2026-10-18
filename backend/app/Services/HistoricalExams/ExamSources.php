@@ -9,6 +9,8 @@ final class ExamSources
 {
     public const CONTRACT='historical-exam-completion.sources.v3';
     public const INTERPRETATION='historical-exam-reconciliation.2026-10-18.v3';
+    public const APPROVED_CONTRACT='historical-exam-completion.sources.v4';
+    public function __construct(private readonly ?ExamApprovedAuthority $authorityReader = null) {}
     public function prepare(array $inputs): array
     {
         $sources=[];
@@ -17,7 +19,8 @@ final class ExamSources
             if(!is_file($in['path']??'')||!preg_match('/^[a-f0-9]{64}$/D',$in['sha256']??'')||!hash_equals($in['sha256'],hash_file('sha256',$in['path'])))throw new \InvalidArgumentException('Source missing or fingerprint differs: '.$id);
             $sources[$id]=['name'=>basename($in['path']),'sha256'=>$in['sha256']];
         }
-        $state=(new CompletionSnapshot)->read($inputs['snapshot']['path'],true,true,true);$rows=[];$books=[];$master=[];
+        $authority=isset($inputs['handoff'])?($this->authorityReader??new ExamApprovedAuthority)->read($inputs['handoff']['path'],$sources):null;
+        $state=(new CompletionSnapshot)->read($inputs['snapshot']['path'],true,true,true,$authority!==null);$rows=[];$books=[];$master=[];
         foreach(['exam1'=>['OutcomeofMater','supplementary'],'exam2'=>['علامات','تكميلي']] as $id=>$sheets) {
             [$cells,$metadata]=$this->workbook($inputs[$id]['path']);$books[$id]=$metadata;
             if($id==='exam1') {
@@ -46,7 +49,7 @@ final class ExamSources
         }
         $observations=[];foreach($rows as $r){$key=$r['reference']['file'].'/'.$r['reference']['sheet'].'/'.(CompletionData::text($r['values']['number'])===''?'unnumbered':'numbered');$observations[$key]=($observations[$key]??0)+1;}
         $numbers=array_values(array_filter(array_map(fn($r)=>CompletionData::text($r['values']['number']),$master),fn($n)=>$n!==''));
-        return ['contract'=>self::CONTRACT,'interpretation_revision'=>self::INTERPRETATION,'interpretation'=>ExamIdentity::approvals(),
+        $bundle=['contract'=>$authority?self::APPROVED_CONTRACT:self::CONTRACT,'interpretation_revision'=>$authority?ExamApprovedAuthority::REVISION:self::INTERPRETATION,'interpretation'=>ExamIdentity::approvals(),
             'assessment_profile'=>['id'=>ExamComponentMapping::PROFILE,'group_caps_cents'=>ExamComponentMapping::CAPS,
                 'coursework'=>'J is aggregate coursework, including any practical examination and other assessed activities; no individual breakdown is supplied.',
                 'exam'=>'K is the original final-examination aggregate, not a reconstructed supplementary mark.',
@@ -54,12 +57,14 @@ final class ExamSources
             'inputs'=>$inputs,'sources'=>$sources,'workbooks'=>$books,'rows'=>$rows,'student_master'=>$master,'snapshot'=>$state,
             'source_controls'=>['examination_observations'=>count($rows),'observation_groups'=>$observations,'student_master_records'=>count($master),'student_master_numbered'=>count($numbers),'student_master_unique_numbers'=>count(array_unique($numbers))],
             'controls'=>['students'=>count($state['students']),'courses'=>count($state['courses']),'registrations'=>count($state['student_course_registrations']),'results'=>count($state['student_course_results'])]];
+        if($authority)$bundle['approved_authority']=$authority;
+        return $bundle;
     }
     public function load(string $path,string $hash): array
     {
         if(!preg_match('/^[a-f0-9]{64}$/D',$hash)||!hash_equals($hash,hash_file('sha256',$path)))throw new \InvalidArgumentException('Bundle fingerprint differs.');
         $b=json_decode(file_get_contents($path),true,flags:JSON_THROW_ON_ERROR);
-        if(($b['contract']??null)!==self::CONTRACT||!hash_equals(CompletionData::hash($b),CompletionData::hash($this->prepare($b['inputs']))))throw new \InvalidArgumentException('Bundle/source interpretation changed; prepare a new bundle/review/UUID.');
+        if(!in_array($b['contract']??null,[self::CONTRACT,self::APPROVED_CONTRACT],true)||!hash_equals(CompletionData::hash($b),CompletionData::hash($this->prepare($b['inputs']))))throw new \InvalidArgumentException('Bundle/source interpretation changed; prepare a new bundle/review/UUID.');
         $b['artifact_file_sha256']=$hash;return $b;
     }
     private function xml(string $text): \SimpleXMLElement

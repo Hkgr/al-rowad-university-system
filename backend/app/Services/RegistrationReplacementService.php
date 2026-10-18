@@ -247,7 +247,7 @@ class RegistrationReplacementService
             'incomplete_timetable_sources'=>$evaluation['incomplete_timetable_sources']??[],
         ];
         $hours=$this->registration->hoursSnapshot($student,(int)$request->academic_year_id,(int)$request->semester_id);
-        $replacementHours=(int)$targets->sum(fn(CourseOffering $offering)=>(int)($offering->course?->credit_hours??0));
+        $replacementHours=(int)$targets->sum(fn(CourseOffering $offering)=>\App\Support\ApplicableCourseCredits::candidateHours($student,$offering));
         $projected=(int)$hours['registered_hours']+$replacementHours;
         if($projected>(int)$hours['max_allowed_hours'])$failures[]=['reason'=>'credit_hours_exceeded'];
         $allFailures=collect([...$failures,...$requirementFailures])->unique(fn(array $failure)=>(string)($failure['student_registration_replacement_item_id']??$failure['course_offering_id']??'term').':'.($failure['reason']??'unknown'))->values()->all();
@@ -344,12 +344,12 @@ class RegistrationReplacementService
             'student'=>$student?->only(['student_id','student_number','full_name']),'academic_year'=>$request->academicYear?->only(['academic_year_id','year_name']),
             'semester'=>$request->semester?->only(['semester_id','semester_name']),
             'hours'=>$request->status==='approved'?$this->approvalSnapshot($request):($presentation['hours']??null),'failures'=>$presentation['failures']??[],
-            'items'=>$full?$request->items->map(function(StudentRegistrationReplacementItem $item)use($presentation,$terminalSchedules){$targetId=(int)$item->replacement_course_offering_id;
+            'items'=>$full?$request->items->map(function(StudentRegistrationReplacementItem $item)use($presentation,$terminalSchedules,$student){$targetId=(int)$item->replacement_course_offering_id;
                 return ['student_registration_replacement_item_id'=>(int)$item->getKey(),'source_minimum_enrollment_review_id'=>(int)$item->source_minimum_enrollment_review_id,
                     'source_student_course_registration_id'=>(int)$item->source_student_course_registration_id,'replacement_course_offering_id'=>$targetId,
                     'source_consumed_slot'=>$item->source_consumed_slot,'materialized_student_course_registration_id'=>$item->materialized_student_course_registration_id,
-                    'source_course'=>$item->sourceRegistration?->courseOffering?->course?->only(['course_code','course_name','credit_hours']),
-                    'target_course'=>$item->replacementOffering?->course?->only(['course_code','course_name','credit_hours']),
+                    'source_course'=>$this->creditCourse($item->sourceRegistration?->courseOffering,$student,$item->sourceRegistration),
+                    'target_course'=>$this->creditCourse($item->replacementOffering,$student,$item->materializedRegistration),
                     'target_phase1_approved'=>!collect($presentation['failures']??[])->contains(fn($failure)=>(int)($failure['course_offering_id']??0)===$targetId&&($failure['reason']??null)==='replacement_target_not_finally_approved'),
                     'official_timetable'=>$presentation['schedules'][$targetId]['schedule']??($terminalSchedules[$targetId]??null),'timetable_conflicts'=>$presentation['schedules'][$targetId]['conflicts']??[],
                     'eligibility_failures'=>collect($presentation['failures']??[])->filter(fn($failure)=>(int)($failure['course_offering_id']??0)===$targetId)->values()->all()];
@@ -365,14 +365,19 @@ class RegistrationReplacementService
         try{$this->governance->assertFinallyApprovedForReplacement($offering);}catch(SemesterRegistrationPhase6Exception $e){$phase1Approved=false;$failures[]=['reason'=>$e->errorCode];}
         try{$request=new StudentRegistrationReplacementRequest(['academic_year_id'=>$offering->academic_year_id,'semester_id'=>$offering->semester_id]);$this->assertTarget($student,$request,$offering);}
         catch(SemesterRegistrationPhase6Exception $e){if(!collect($failures)->contains(fn($failure)=>$failure['reason']===$e->errorCode))$failures[]=['reason'=>$e->errorCode];}
-        return ['course_offering_id'=>(int)$offering->getKey(),'course'=>$offering->course?->only(['course_code','course_name','credit_hours']),
+        return ['course_offering_id'=>(int)$offering->getKey(),'course'=>$this->creditCourse($offering,$student),
             'phase1_finally_approved'=>$phase1Approved,'official_timetable'=>$this->schedules->describe($offering),'eligibility_failures'=>$failures];
     }
 
     private function sourcePayload(StudentCourseRegistration $registration): array
     {
         return ['student_course_registration_id'=>(int)$registration->getKey(),'minimum_review_id'=>(int)$registration->minimum_review_id,
-            'course'=>$registration->courseOffering?->course?->only(['course_code','course_name','credit_hours'])];
+            'course'=>$this->creditCourse($registration->courseOffering,$registration->student,$registration)];
+    }
+
+    private function creditCourse(?CourseOffering $offering,?Student $student,?StudentCourseRegistration $registration=null): ?array
+    {
+        return $offering?->course ? $offering->course->only(['course_code','course_name'])+['credit_hours'=>\App\Support\ApplicableCourseCredits::choiceHours($student,$offering,$registration)] : null;
     }
 
     private function staleReason(StudentRegistrationReplacementRequest $request, Student $student, CourseRegistrationDeadlineResult $deadline, bool $lock=false): ?string

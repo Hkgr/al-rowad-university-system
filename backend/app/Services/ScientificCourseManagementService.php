@@ -66,7 +66,8 @@ final class ScientificCourseManagementService
             ->whereIn('pc.program_course_id', clone $visibleMemberships);
         if (isset($v['course_type'])) $groups->where('pc.course_type', $v['course_type']);
         if (isset($v['requirement_scope'])) $groups->where('g.requirement_scope', $v['requirement_scope']);
-        $summary = $groups->selectRaw('g.requirement_scope, g.requirement_type AS course_type, COUNT(*) AS membership_count, SUM(c.credit_hours) AS available_credit_hours')
+        $credit=\App\Support\ApplicableCourseCredits::planSql('pc','c');
+        $summary = $groups->selectRaw("g.requirement_scope, g.requirement_type AS course_type, COUNT(*) AS membership_count, SUM($credit) AS available_credit_hours")
             ->groupBy('g.requirement_scope', 'g.requirement_type')->orderBy('g.requirement_scope')->orderBy('g.requirement_type')->get();
         // Filters choose courses; association counts still cover every visible link of each course.
         $rows = $q->with(['courseDepartments' => fn ($d) => $d->whereIn('department_id', $this->access->departments($actor)->select('department_id')), 'courseDepartments.department.college', 'programCourses' => fn ($p) => $p->whereIn('program_course_id', clone $visibleMemberships), 'programCourses.academicProgram.department.college', 'programCourses.academicLevel', 'programCourses.recommendedSemester', 'programCourses.requirementMapping.requirementGroup'])
@@ -219,10 +220,11 @@ final class ScientificCourseManagementService
             $locked = $versioned || $this->history->programUsed($id, false);
             $context = AcademicPlanContext::forProgram($id);
             $groups = $context->constrain(AcademicRequirementGroup::where('academic_program_id', $id))->orderBy('requirement_scope')->orderBy('requirement_type')->get();
+            $credit=\App\Support\ApplicableCourseCredits::planSql('pc','c');
             $pools = DB::table('program_courses as pc')->join('courses as c', 'c.course_id', '=', 'pc.course_id')
                 ->join('program_course_requirement_groups as m', 'm.program_course_id', '=', 'pc.program_course_id')
                 ->where('pc.academic_program_id', $id)->where('pc.is_active', true)->where('c.is_active', true)
-                ->selectRaw('m.requirement_group_id, COUNT(*) AS course_count, SUM(c.credit_hours) AS available_credit_hours')->groupBy('m.requirement_group_id')->get()->keyBy('requirement_group_id');
+                ->selectRaw("m.requirement_group_id, COUNT(*) AS course_count, SUM($credit) AS available_credit_hours")->groupBy('m.requirement_group_id')->get()->keyBy('requirement_group_id');
             try {
                 app(AcademicRequirementService::class)->assertProgramGraduationConfiguration($p);
                 $configuration = ['available' => true, 'message' => null];
@@ -351,12 +353,14 @@ final class ScientificCourseManagementService
         $data = $course->only(['course_id', 'course_code', 'course_name', 'credit_hours', 'theoretical_hours', 'practical_hours', 'description', 'is_active']);
         $data['course_departments'] = $course->courseDepartments->map(fn ($d) => [...$d->only(['course_department_id', 'department_id', 'is_primary']),
             'department' => ($d->department?->only(['department_id', 'department_name', 'college_id']) ?? []) + ['college' => $d->department?->college?->only(['college_id', 'college_name'])]]);
-        $data['program_courses'] = $course->programCourses->map(function ($pc) {
+        \App\Support\ApplicableCourseCredits::attachMemberships($course->programCourses);
+        $data['program_courses'] = $course->programCourses->map(function ($pc) use ($course) {
             $group = $pc->requirementMapping?->requirementGroup;
             $sameProgram = $group && (int) $group->academic_program_id === (int) $pc->academic_program_id;
             $classification = \App\Support\CourseRequirementClassification::fromProgramCourse($pc);
             if (!$sameProgram) $classification['requirement_group_id'] = null;
             return [...$pc->only(['program_course_id', 'academic_program_id', 'course_id', 'academic_level_id', 'recommended_semester_id', 'course_type', 'is_active']),
+                'credit_hours' => \App\Support\ApplicableCourseCredits::planHours($pc,$course),
                 'academic_program' => $pc->academicProgram ? $pc->academicProgram->only(['academic_program_id', 'program_name']) + [
                     'department' => $pc->academicProgram->department ? $pc->academicProgram->department->only(['department_id', 'department_name', 'college_id']) + [
                         'college' => $pc->academicProgram->department->college?->only(['college_id', 'college_name'])] : null] : null,

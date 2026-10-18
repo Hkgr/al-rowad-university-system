@@ -15,7 +15,7 @@ import CourseRequirementBadges from '../../../components/academic/CourseRequirem
 import { apiRequest } from '../../../services/apiClient'
 import { ACCESS, canAccess } from '../../auth/auth'
 import { OfficeLink as Link } from '../../vice-presidency/utils/administrativeOfficeNavigation'
-import { resultDescription, resultSymbol, termWithdrawalText } from '../../academic-record/lib/resultSymbols'
+import { historicalAssessmentText, resultDescription, resultSymbol, termWithdrawalText } from '../../academic-record/lib/resultSymbols'
 
 function value(item) {
   return item === null || item === undefined || item === '' ? '—' : item
@@ -110,7 +110,7 @@ function TranscriptTable({ courses }) {
             const code = course.result_status?.status_code
             return (
               <tr key={course.registration_id} className="border-t border-primary/8">
-                <td className="px-4 py-3"><p className="font-bold text-text-dark">{value(course.course_name)}</p><p className="mt-0.5 font-mono text-[11px] text-text-light">{value(course.course_code)}</p>{canAccess(ACCESS.manualGradeEntry) && <Link className="mt-1 inline-block text-[11px] text-primary underline" to={`/exam-board/incomplete-results/registrations/${course.registration_id}`}>حالة I لهذا التسجيل</Link>}</td>
+                <td className="px-4 py-3"><p className="font-bold text-text-dark">{value(course.course_name)}</p><p className="mt-0.5 font-mono text-[11px] text-text-light">{value(course.course_code)}</p>{historicalAssessmentText(course) && <p className="text-xs text-text-gray">{historicalAssessmentText(course)}</p>}{canAccess(ACCESS.manualGradeEntry) && <Link className="mt-1 inline-block text-[11px] text-primary underline" to={`/exam-board/incomplete-results/registrations/${course.registration_id}`}>حالة I لهذا التسجيل</Link>}</td>
                 <td className="px-3 py-3"><CourseRequirementBadges classification={course.requirement_classification} compact /></td>
                 <td className="px-3 py-3 text-center font-bold">{value(course.credit_hours)}</td>
                 <td className="px-3 py-3 text-center">{formatMark(course.practical_mark)}</td>

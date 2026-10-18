@@ -4,7 +4,7 @@ import { FaGraduationCap } from 'react-icons/fa'
 import TranscriptPdfExportAction from '../../academic-record/components/TranscriptPdfExportAction'
 import { apiRequest } from '../../../services/apiClient'
 import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
-import { resultDescription, resultSymbol, termWithdrawalText } from '../../academic-record/lib/resultSymbols'
+import { historicalAssessmentText, resultDescription, resultSymbol, termWithdrawalText } from '../../academic-record/lib/resultSymbols'
 
 const STATUS_LABELS = {
   passed: { ar: 'ناجح', className: 'bg-green-100 text-green-800 border-green-200' },
@@ -110,6 +110,7 @@ function CourseTable({ courses }) {
                 <tr key={course.registration_id} className="border-t border-primary/8">
                   <td className="px-4 py-3">
                     <div className="font-semibold text-text-dark">{course.course_name}</div>
+                    {historicalAssessmentText(course) && <p className="text-xs text-text-gray">{historicalAssessmentText(course)}</p>}
                     <div className="text-[11px] text-text-light font-mono mt-0.5">{course.course_code}</div>
                   </td>
                   <td className="px-3 py-3">
@@ -139,6 +140,7 @@ function CourseTable({ courses }) {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h4 className="font-bold text-[14px] text-text-dark">{course.course_name}</h4>
+                  {historicalAssessmentText(course) && <p className="text-xs text-text-gray">{historicalAssessmentText(course)}</p>}
                   <p className="text-[11.5px] text-text-light font-mono mt-0.5">{course.course_code}</p>
                   <div className="mt-1.5">
                     <CourseRequirementBadges classification={course.requirement_classification} compact />
