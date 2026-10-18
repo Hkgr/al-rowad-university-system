@@ -13,8 +13,12 @@ try {
         @('elective-placement.php','install'),@('historical-exams.php','run'),@('approved-exam-reconciliation.php','run'),
         @('supplementary-import-race.php','run'))
     foreach($step in $steps) {
+        # Preserve the complete native stack before failing; Stop used to truncate it at stderr's first line.
+        $ErrorActionPreference='Continue'
         & php (Join-Path $PSScriptRoot $step[0]) $step[1]
-        if($LASTEXITCODE -ne 0){throw ('Failed isolated step: '+($step -join ' '))}
+        $stepExit=$LASTEXITCODE
+        $ErrorActionPreference='Stop'
+        if($stepExit -ne 0){throw ('Failed isolated step: '+($step -join ' '))}
     }
 } finally {
     & php (Join-Path $PSScriptRoot 'catalog.php') shutdown

@@ -142,7 +142,7 @@ An official result remains unchanged during staging/review. Missing activities, 
 
 The existing `/exam-board/incomplete-results?view=imported` and `/vp/administrative/exams/incomplete-results?view=imported` switch between documented formal I and imported ordinary work. `work=<uuid>` opens scoped details and preserves local portal context. This is not a new automatic I workflow or a correction-approval button. References: `IncompleteResultsPage`'s existing filter/table/detail branches, existing manual-entry links, `DashboardLayout`, `DataTable`, `FilterBar`, current alerts/pagination/Cairo/RTL. The existing approved Incomplete draft was inspected as a reference; no new portal design was generated. Saved context/abort/late-read handling and authorization purge are retained.
 
-## Full offline reconciliation
+## Archived offline reconciliation (v4-04; superseded below)
 
 The private JSON and two-tab workbook account for **all 16,461 observations**, including six unnumbered observations. They retain original cells/hashes, complete source references, identity/period/selection evidence, proposed stage, every overlapping blocker and its concrete missing evidence. The fresh `reconciliation-v4-04.json` adds explicit per-blocker and per-observation resolution categories. The workbook preserves the existing review layout and adds filterable column R, **Required resolution**. No identifying rows are committed. Public aggregates are in [the de-identified summary](reports/historical-examination-approved-reconciliation.json).
 
@@ -162,7 +162,7 @@ The explicit deferral union is 367 (not a sum of overlapping categories): course
 
 Most remaining work needs real component/activity definitions or independent person/program/period evidence. Known aggregate evidence is staged, not hidden or allocated. Supplementary chronology remains specifically blocked where unproved. Local candidate staging counts do not assert write readiness, approval, a current production revision or complete adoption. No real results were applied.
 
-Resolution categories distinguish **source evidence**, **academic decision**, **existing authorized workflow**, and **implementation fix**. Each blocked observation has at least one explicit category, alongside all of its original blocker codes and concrete evidence/action. Categories overlap: 13,340 observations require source evidence, 8,374 reference an existing workflow, and six blocker-bearing observations require a new scoped academic decision. Existing explicit deferrals remain separately recorded; these overlapping counts do not replace or add to the 6,501 exclusive blocked observations. No remaining source blocker was identified as an uncorrected implementation defect. This does not imply completed live/visual acceptance or authorize any new academic decision. The original v4 bundle and original files have not been regenerated or edited for this report-only enrichment.
+The archived v4-04 report mislabeled six observations as new academic decisions: three already deferred identity observations and three observations linked to deferred equivalency evidence. That interpretation is withdrawn. Their exact deferrals remain binding; no alternate can evade them. The aggregate representation and historical-context implementation gaps are addressed by the v5 increment below, not by requesting those decisions again. Preserve the archived report and hashes as review history, not current operating guidance.
 
 ## Verification record
 
@@ -232,3 +232,94 @@ gpg --output '<new-private-review-directory>/review.zip' --decrypt '<downloaded-
 ```
 
 Preserve all earlier artifacts and receipts. Review the archive's source pins and blockers. The immutable bundle embeds the original preparation paths; a different operating environment must use a **fresh** preparation with its actual local pinned paths, never hand-edit an issued bundle. Then run a fresh authorized **read-only live preview** to a new filename. Only a later separately reviewed application may use its actual current hash/revision and a newly persisted UUID. Neither this offline report nor installing the guarded schema applies academic data or proves live readiness.
+
+## v5 implementation follow-up: historical assessment representation
+
+This is an implementation increment, not another report-only reclassification. Source bundle **v4 remains byte-identical** (`4053a7f87291e7e1f104b89c9e9f75a15dcec97bead486061757f22e36b01fae`). New proposals use `historical-exam-completion.review.v5`. Issued v3 and v4 reviews, stored work, receipts and explicit resume/replay retain their original interpretation; a regression specifically reconstructs v4's folded-absence staging while v5 preserves its already equivalent official result. No original source, decision/profile hash, review or receipt is edited.
+
+### Representation and adoption boundary
+
+`HistoricalAggregateAssessment` distinguishes a genuinely undefined assessment from real required activities. Only an independently identified, registered/completed actual attempt with **no definitions and no component marks**, complete approved J/40 + K/60 + L evidence, a compatible canonical policy, and no conflicting lifecycle/supplementary/identity evidence can produce the new aggregate proposal. Policy minima still determine pass/fail; T is not a course pass. F and a missing final examination retain their separate existing handling. No weighting or retained `coursework_total` is added.
+
+- An already approved, matching final/status is an academic **no-op**, including every result timestamp and existing legacy part value. Missing assessment detail is not permission to rewrite it.
+- A missing/conflicting result becomes `historical_aggregate_review` in the **v5 projection**. Durable work uses the installed **`correction_review`** kind; the versioned JSON carries the representation. The unchanged package CHECK/trigger definitions remain enforced. No new SQL or migration is necessary.
+- Existing correction review and explicit adoption run under the same authorization, catalog-first locks, immutable baseline, revision/UUID checks, exact replay, audit and preservation receipts. Staging does not adopt, approve or announce a result.
+- Adopted JSON retains both sourced aggregates, original/reconciled values, row reference/hash, source decisions, authority hashes and accepted policy; the immutable work also retains the complete original source cells. No activities are fabricated. Legacy theoretical/practical/coursework totals are retained unchanged, not re-labelled. Only the explicitly reviewed final/status is corrected.
+- Current PHP GPA, transcript, applicable-credit and SQL readers recognize the validated representation. SQL cents comparisons are numeric, including **100**, not lexicographic JSON-string comparisons. Existing offering approval remains mandatory. Ordinary/legacy recalculation cannot replace adoption; an undefined offering cannot bypass normal finalization's configuration checks. A later credit-only correction retains the adopted assessment evidence.
+- Student/exam transcript/PDF share explicit coursework/final labels through the existing presentation helper. Unknown legacy parts display as missing instead of being mislabelled. Public summaries omit original cells, internal decisions/reasons/actors and hashes. The existing shared table/card/PDF layout is retained, not redesigned. References: `StudentTranscript.jsx`, `ExamStudentAcademicRecordPage.jsx`, `resultSymbols.js`, and `transcriptPdf.js`.
+
+Real detailed activities with missing marks still require their exact component IDs/marks; the new path cannot flatten them. This negative case is exercised synthetically even though the established contexts of this supplied snapshot contain no such missing detailed-activity observations. An absent registration or unestablished period remains a context problem, not a request for fictional activities. The remaining imported-work descriptions now state this distinction explicitly.
+
+### Historical program context
+
+A blank examination program may use the unique actual historical attempt **only after** exact person ownership, source-college qualification, actual year, unique registration, and subject/credits are independently verified. A conflicting roster observation remains in the proposal/baseline with its source reference and former resolved program. Multiple attempts, changed subjects/credits, or other unresolved context still block. No current-program default, old numeric ID, student transfer, ownership change or registration relink is used.
+
+The requested conflicting-roster case now produces a separate authorized correction review for the approved **29 + 30 = 59**; its incomplete alternate remains source history. An executed synthetic equivalent proves result correction without changing the person, registration/offering/plan context or announcement time. The actual university snapshot remains unchanged.
+
+### Recomputed complete population (v5-08, offline only)
+
+| Exclusive operational disposition | Observations |
+| --- | ---: |
+| Equivalent official outcome, no rewrite | 5,881 |
+| Canonical draft candidate, normal approval still required | 1,854 |
+| Stage only, not adoption | 1,235 |
+| Reviewable historical aggregate proposal, not adopted | 174 |
+| Retained source history | 478 |
+| Previously approved explicit deferral union | 367 |
+| Linked to deferred evidence | 3 |
+| Blocked | 6,469 |
+| **Total** | **16,461** |
+
+There are **15,937** attempt review units, **821** candidate / **747** independently resolved students, **270** candidate course identities and **674** period contexts. No real result is adopted by this analysis. The three deferred identities and three linked equivalency attempts are **not six new questions**. The report has no newly classified academic-decision observations; it does not waive the existing deferrals or evidence/workflow requirements.
+
+The previous **4,909** aggregate-follow-up observations reconcile exactly: **4,663** undefined-assessment official equivalents, **4** equivalent results with retained actual definitions, **174** reviewable aggregate proposals, and **68** still staged (**58** undefined actual offerings; **10** unestablished assessment contexts). Of those 68, 57 overlap an official/submitted offering lock, 47 lack approved guidance context, one requires historical-program review, and one has unproved combined-examination evidence. These are overlapping reasons, not 116 additional observations. A verified actual registration/context or independently sourced final exam is still needed; no missing fictional activities are requested.
+
+| Assessment/context evidence across all observations | Observations | Distinct recorded registrations |
+| --- | ---: | ---: |
+| Actual offering, absent definitions | 6,366 | 5,995 |
+| Real aggregate definitions, missing required marks | 51 | 8 |
+| Actual definitions with retained marks | 1,795 | 1,719 |
+| Assessment context not established | 8,249 | Not established |
+| Genuine detailed activities missing marks, among established contexts | **0** | **0** |
+
+The separate identity/context diagnostic covers **4,812** observations / **553 candidate registrations** with unresolved exact owner, qualified program/course/period, or ambiguous actual attempt. It overlaps retained/deferred evidence; it is not a count of newly authorized student transfers. Official equivalents cover **5,881 distinct registrations**. The full private JSON retains every blocker/reference and the complete old-to-new disposition/reason map; the de-identified public summary is not a substitute for that evidence.
+
+The nine specified matching outcomes (**58**, **72**, and **50/51/65/57/75/62/78**) are exact no-ops in the supplied snapshot. Nine executed synthetic before/proposal/after demonstrations preserve result rows/timestamps. The private case report retains their nine competing observations, including the old all-dash sources, and the separately selected 18/61 alternatives. No source observation was deleted or used to evade a deferral.
+
+### Read-only-first operating instructions
+
+Keep the existing immutable bundle and all old preview/receipt files. If it reconstructs from the unchanged pinned local sources, **do not edit or regenerate it for this projection-only change**. Different local source paths require a new preparation through the existing command, not hand editing. This increment adds no schema/permission deployment step beyond the original guarded package and existing runtime prerequisites.
+
+```powershell
+# Template only; no university/production operation was executed in this follow-up.
+php artisan historical-exams:preview --actor=<authorized-actor> `
+  --bundle='<existing-immutable-bundle>' --bundle-hash=<actual-existing-file-hash> `
+  --output='<private-fresh-directory>/live-examination-v5-01.json'
+```
+
+Inspect the **actual** blockers, actor, schema readiness, current revision and new review hash. Offline snapshot artifacts have no write authorization. A later explicitly reviewed staging/draft application needs a **new persisted UUID**, its reviewed revision/hash and the unchanged bundle; never reuse an old production revision or invent a resume operation. Old aggregate-follow-up work remains immutable: only a fresh v5 review may create the new correction proposal.
+
+After authorized staging, use the existing `historical-exams:review-correction` read command with the exact work ID and a fresh output file. Only a separate deliberate `historical-exams:adopt-correction --confirmed` with that review hash, expected revision, new persisted UUID and nonempty reason may adopt. Afterwards use `historical-exams:verify --operation-id=<adoption-UUID>` with the actor, unchanged bundle/hash and a fresh output; the command detects the correction receipt. Do not repeat a write to check whether it succeeded. Parent staging verification separately reports currently adopted work. For an uncertain response, read the stored operation first; explicit exact replay/resume is not a replacement UUID or automatic retry.
+
+### Actual verification of the implementation follow-up
+
+| Check | Actual result |
+| --- | --- |
+| Six-file historical/catalog/plan/workspace/offering-proposal PHPUnit run | **261 executions, 5,088 assertions passed**; includes the new equivalent/no-op, absent-vs-detailed, stale coursework, numeric 100/minima, GPA/transcript/SQL, explicit adoption, stale/auth/replay, legacy-v4 and historical-context cases |
+| Node/ReactDOM/router/manual-entry/shared PDF HTML semantics | **81 passed**; deterministic measurement is not a PDF download or visual/layout acceptance |
+| Full isolated approved MariaDB runner | **Passed on `10.11.18-MariaDB`**, installed plan/catalog revision triggers, two independent aggregate adopters/one outcome/replay, numeric 100 PHP-GPA/SQL parity, previous competing writers/lifecycle/publication/registration checks, preserved timestamps/approvals and package negative/reapply checks |
+| Actual supplementary materialization/import | **Both observed independent engine-wait orders passed**, retained completed/practical components, outcomes and receipts; the existing dedicated test remains in the runner |
+| Broader seven-file affected PHPUnit | **155/180 passed**, same inherited 5 failures/20 errors and methods as the earlier clean-base comparison |
+| Additional affected contracts | **33/39 passed** across the two groups; six inherited source-string/count failures, not hidden or changed |
+| PHP syntax / Composer / schema-render contract / diff | **Passed**; no dependencies, schema package or migrations added/changed |
+| Changed-file lint | One existing `react-hooks/set-state-in-effect` error in `ExamStudentAcademicRecordPage.jsx` and one existing `react-hooks/exhaustive-deps` warning in `StudentTranscript.jsx`, reproduced against exact pre-follow-up `f80315a`; no new lint diagnostic |
+| Production frontend build | **Passed**, 989 modules; existing >500kB chunk warning |
+| Complete private workbook | **16,461 unique references**, 20 filterable columns, summary formulas and typed zero/dash/NULL samples checked, all references/resolution/assessment/change columns reopened; both tabs rendered and inspected; no native Excel claim |
+
+The two additional inherited progression contracts are `StudentAcademicProgressionContractTest::test_canonical_calculators_are_reused_not_duplicated` and `::test_review_requires_actual_registration_officer_role_and_assigned_permission`. The same 22-test group produced 20 passes and the identical two failures on clean base `39dece16e71cee586d8bac9b8cd87d2f84bf8557`. Together with the four previously documented materialization/withdrawal contracts, these explain the six failures; no historical assertion was weakened.
+
+Early MariaDB execution correctly rejected an unsupported new work-kind value; implementation now uses the existing `correction_review` CHECK value instead of changing SQL or weakening readiness. An initial private offline helper lacked Laravel's path-only application binding, and an intermediate workbook builder spent excessive time recalculating dependencies before case population; neither was counted as acceptance. Corrected private tooling produced the final complete immutable outputs and successful rechecks.
+
+The permitted browser was retried: inventory `{"apps":[],"browsers":[]}`, then `Browser is not available: iab`. No bypass was used. **Live React with isolated Laravel, both portal contexts, 390/768/1440px reference comparison, and actual PDF generation/download/opening remain pending.** Workbook renderings are spreadsheet QA, not application screenshots.
+
+The updated encrypted PR delivery adds `reconciliation-v5-08.json`, `approved-exam-review-v5-08.xlsx`, the full fresh projection and typed row data, exact before/proposal/after case evidence, remaining blocker/context diagnostics, final verification ledger/logs, synthetic MariaDB evidence and reproduction helpers. All original v4 delivery assets, source/decision pins and issued hashes remain available. The new archive and a **freshly named** inventory are appended to the same unpublished draft carrier; no plaintext identifying report or decryption key is committed/uploaded publicly.

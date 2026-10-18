@@ -23,7 +23,7 @@ final class ExamApprovedCompletionService
 
     public function apply(User $actor,array $bundle,array $review,string $hash,string $id,string $expected,bool $resume): array
     {
-        if(!Uuid::isValid($id)||($review['actor_id']??null)!==(int)$actor->getKey()||!($review['schema_readiness_checked']??false)||($bundle['contract']??null)!==ExamSources::APPROVED_CONTRACT||($review['contract']??null)!==ExamReconciliationProjection::CONTRACT
+        if(!Uuid::isValid($id)||($review['actor_id']??null)!==(int)$actor->getKey()||!($review['schema_readiness_checked']??false)||($bundle['contract']??null)!==ExamSources::APPROVED_CONTRACT||!ExamReconciliationProjection::supports($review['contract']??null)
             ||!hash_equals(CompletionData::hash($review),$hash)||!hash_equals($review['bundle_digest'],CompletionData::hash($bundle))
             ||!hash_equals(CompletionData::hash($review['authority_hashes']),CompletionData::hash($bundle['approved_authority']['document_hashes'])))$this->fail('review_invalid');
         $this->authorize($actor,$review);$digest=CompletionData::hash([$hash,$bundle['sources'],(int)$actor->getKey()]);
@@ -35,7 +35,7 @@ final class ExamApprovedCompletionService
             else {
                 if($resume)$this->fail('no_operation_to_resume');
                 if($expected!==$review['revision']||$expected!==$this->tx->revision())$this->fail('stale');
-                $fresh=app(ExamCompletionService::class)->preview($actor,$bundle);
+                $fresh=app(ExamCompletionService::class)->preview($actor,$bundle,$review['contract']);
                 if(!hash_equals($hash,$fresh['review_hash']))$this->fail('review_changed');
                 $this->receipts->put($actor,'exam_start',$id,['digest'=>$digest,'review'=>$review,'preserved'=>app(ExamEvidence::class)->capture($actor,$review)]);
             }
@@ -60,11 +60,11 @@ final class ExamApprovedCompletionService
                     $course=Course::whereKey($a['baseline']['course']['course_id'])->lockForUpdate()->firstOrFail();
                     app(ExamCompletionService::class)->lock($a);
                     if($r=$this->receipts->find('exam_action',$stage)) {
-                        $this->identity($r,$actor,$digest);$this->assertAfter($actor,$bundle,$a,$r['value']['result']);
+                        $this->identity($r,$actor,$digest);$this->assertAfter($actor,$bundle,$a,$r['value']['result'],$review['contract']);
                         return ['result'=>$r['value']['result'],'revision'=>$this->tx->revision()];
                     }
                     if($next!==$this->tx->revision())$this->fail('stale');
-                    $state=(new ExamReconciliationProjection)->state($bundle,$this->db->read($actor));
+                    $state=(new ExamReconciliationProjection($review['contract']))->state($bundle,$this->db->read($actor));
                     $source=$a['original_source'];$row=$source;$row['values']=$a['reconciled_values'];
                     $current=(new ExamProjection)->row($row,$state,$bundle['student_master']??[]);
                     $baseline=$current['baseline'];
@@ -93,7 +93,7 @@ final class ExamApprovedCompletionService
                         $saved=$service->saveHistorical($actor,$student,$course,$input+['revision'=>$prepared['revision'],'confirmed'=>true,'acknowledged'=>true,
                             'reason'=>'Reviewed approved historical draft: '.$a['action_id'],'components'=>$current['proposed_components']]);
                         $this->recordCredits($actor,(int)$saved['registration_id'],(int)$a['source_credits'],$id,$a['action_id'],$source['reference']['sha256']);
-                        $after=(new ExamProjection)->row($row,(new ExamReconciliationProjection)->state($bundle,$this->db->read($actor)),$bundle['student_master']??[])['baseline'];
+                        $after=(new ExamProjection)->row($row,(new ExamReconciliationProjection($review['contract']))->state($bundle,$this->db->read($actor)),$bundle['student_master']??[])['baseline'];
                         foreach(['student','course','result','approvals','parts','lifecycle','historical_outcomes'] as $key)if(CompletionData::hash($after[$key])!==CompletionData::hash($current['baseline'][$key]))$this->fail('preserved_evidence_changed');
                         $created=['course_offerings'=>[],'grade_components'=>[]];
                         if(!$current['baseline']['offering'])$created['course_offerings'][$after['offering']['course_offering_id']]=$after['offering'];
@@ -136,7 +136,7 @@ final class ExamApprovedCompletionService
             'basis'=>'approved_source_attempt','work_item_id'=>$work,'operation_id'=>$operation,'action_id'=>$action,'source_hash'=>$sourceHash,'actor_user_id'=>$actor->getKey(),'created_at'=>now('UTC')->format('Y-m-d H:i:s')]);
     }
 
-    private function assertAfter(User $actor,array $bundle,array $a,array $result): void
+    private function assertAfter(User $actor,array $bundle,array $a,array $result,string $contract): void
     {
         if($result['action_id']!==$a['action_id']||$result['source_id']!==$a['source_id'])$this->fail('receipt_target_changed');
         if($result['status']==='STAGED_PENDING_REVIEW') {
@@ -144,7 +144,7 @@ final class ExamApprovedCompletionService
             if(!hash_equals($result['work_item_hash'],CompletionData::hash((array)$work)))$this->fail('work_item_changed');
         } else {
             $row=$a['original_source'];$row['values']=$a['reconciled_values'];
-            $current=(new ExamProjection)->row($row,(new ExamReconciliationProjection)->state($bundle,$this->db->read($actor)),$bundle['student_master']??[])['baseline'];
+            $current=(new ExamProjection)->row($row,(new ExamReconciliationProjection($contract))->state($bundle,$this->db->read($actor)),$bundle['student_master']??[])['baseline'];
             if(!hash_equals(CompletionData::hash($result['after']),CompletionData::hash($current)))$this->fail('completed_action_changed');
         }
     }
@@ -155,7 +155,7 @@ final class ExamApprovedCompletionService
         foreach($review['actions'] as $a)if($a['eligible']) {
             $stage=(string)Uuid::uuid5(Uuid::NAMESPACE_URL,$id.'/'.$a['action_id']);$r=$this->receipts->find('exam_action',$stage);
             if(!$r){if(isset($saved[$a['action_id']]))$this->fail('completed_receipt_missing');continue;}
-            $this->identity($r,$actor,$digest);$this->assertAfter($actor,$bundle,$a,$r['value']['result']);
+            $this->identity($r,$actor,$digest);$this->assertAfter($actor,$bundle,$a,$r['value']['result'],$review['contract']);
         }
     }
 

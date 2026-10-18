@@ -831,6 +831,7 @@ class GradeService
         $statusCode = $this->resolveEffectiveResultStatusCode($registration);
         $officiallyVisible ??= $this->isOfficiallyVisibleAttempt($registration);
         $lifecycle = IncompleteOutcomeGuard::readState($registration);
+        $assessmentSummary = \App\Support\HistoricalOutcomeGuard::aggregateSummary($registration);
         if ($result !== null && ($officiallyVisible || $lifecycle['case_id'] !== null || $lifecycle['state']==='historical_reconciled') && $statusCode !== null) {
             $finalMark = $result->final_mark === null ? null : (float) $result->final_mark;
             $letterGrade = $this->letterGradeFromOfficialResult(
@@ -877,12 +878,13 @@ class GradeService
                 ...\App\Support\ApplicableCourseCredits::fields($registration),
                 'requirement_classification' => CourseRequirementClassification::forOffering($registration->courseOffering),
             ] : null,
-            'theoretical_mark' => $theoretical,
-            'practical_mark' => $practical,
+            'theoretical_mark' => $assessmentSummary ? null : $theoretical,
+            'practical_mark' => $assessmentSummary ? null : $practical,
             'final_mark' => in_array($statusCode, ['incomplete', 'withdrawn'], true) ? null : $calculation['final_mark'],
             'letter_grade' => $result === null && $statusCode !== 'withdrawn' ? null : $calculation['letter_grade'],
             'grade_points' => in_array($statusCode, ['incomplete', 'withdrawn'], true) || $result === null ? null : $calculation['grade_points'],
             'result_lifecycle' => $lifecycle,
+            'assessment_summary' => $assessmentSummary,
             'result_status' => $this->compactResultStatus($calculation['result_status_code']),
             'notes' => $registration->notes,
         ];
@@ -926,6 +928,7 @@ class GradeService
 
     private function formatTranscriptCourse(StudentCourseRegistration $registration): array
     {
+        $assessmentSummary = \App\Support\HistoricalOutcomeGuard::aggregateSummary($registration);
         $offering = $registration->courseOffering;
         $course = $offering?->course;
         $result = $registration->studentCourseResult;
@@ -946,6 +949,7 @@ class GradeService
         $loadedStatus = $result?->resultStatus;
 
         return [
+            'assessment_summary' => $assessmentSummary,
             'registration_id' => $registration->student_course_registration_id,
             'course_offering_id' => $registration->course_offering_id,
             'course_id' => $course?->course_id,
@@ -960,14 +964,14 @@ class GradeService
             'academic_year' => $this->compactAcademicYear($offering?->academicYear),
             'semester' => $this->compactSemester($offering?->semester),
             'grades' => [
-                'theoretical_mark' => $visibility['theoretical'] ? $theoretical : null,
-                'practical_mark' => $visibility['practical'] ? $practical : null,
+                'theoretical_mark' => !$assessmentSummary && $visibility['theoretical'] ? $theoretical : null,
+                'practical_mark' => !$assessmentSummary && $visibility['practical'] ? $practical : null,
                 'final_mark' => $finalMark,
                 'letter_grade' => $letterGrade,
                 'grade_points' => in_array($statusCode, ['incomplete', 'withdrawn'], true) ? null : $this->resolveGradePoints($letterGrade, $statusCode),
             ],
-            'theoretical_mark' => $visibility['theoretical'] ? $theoretical : null,
-            'practical_mark' => $visibility['practical'] ? $practical : null,
+            'theoretical_mark' => !$assessmentSummary && $visibility['theoretical'] ? $theoretical : null,
+            'practical_mark' => !$assessmentSummary && $visibility['practical'] ? $practical : null,
             'final_mark' => $finalMark,
             'letter_grade' => $letterGrade,
             'grade_points' => in_array($statusCode, ['incomplete', 'withdrawn'], true) ? null : $this->resolveGradePoints($letterGrade, $statusCode),
@@ -1099,7 +1103,7 @@ class GradeService
 
         $statusCode = $this->resolveEffectiveResultStatusCode($registration);
         $visibility = $this->officialComponentVisibility($registration->courseOffering);
-        if (!OfficialGradeScale::isFailure($statusCode) && (($visibility['theoretical'] && $result->theoretical_total === null)
+        if (!OfficialGradeScale::isFailure($statusCode) && !\App\Support\HistoricalOutcomeGuard::aggregateSummary($registration) && (($visibility['theoretical'] && $result->theoretical_total === null)
             || ($visibility['practical'] && $result->practical_total === null)
             || $result->final_mark === null)) {
             return [

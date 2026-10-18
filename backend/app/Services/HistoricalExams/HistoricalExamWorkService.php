@@ -39,6 +39,7 @@ final class HistoricalExamWorkService
         app(ExamCompletionService::class)->authorizeReview($actor,['actions'=>[$action]]);
         $proposal=CompletionData::canonical(['contract'=>'historical-exam-work.v1','bundle_digest'=>$review['bundle_digest'],
             'bundle_file_hash'=>$review['bundle_file_hash'],'sources'=>$bundle['sources'],'authority_hashes'=>$review['authority_hashes'],'action'=>$action]);
+        if ($review['contract'] === ExamReconciliationProjection::CONTRACT) $proposal['projection_contract'] = $review['contract'];
         $work=DB::table(Tables::WORK)->where('action_id',$action['action_id'])->where('baseline_hash',$action['baseline_hash'])->first();
         if($work) {
             if(!hash_equals(CompletionData::hash($proposal),CompletionData::hash(json_decode($work->proposal,true,flags:JSON_THROW_ON_ERROR))))$this->fail('staged_intent_changed');
@@ -48,7 +49,9 @@ final class HistoricalExamWorkService
                 'student_id'=>$base['student']['student_id'],'course_id'=>$base['course']['course_id'],'academic_program_id'=>$base['program_id'],
                 'academic_year_id'=>$action['period']['academic_year_id'],'semester_id'=>$action['period']['semester_id'],
                 'course_offering_id'=>$base['offering']['course_offering_id']??null,'student_course_registration_id'=>$base['registration']['student_course_registration_id']??null,
-                'kind'=>$action['classification'],'source_reference'=>$action['source_id'],'baseline_hash'=>$action['baseline_hash'],'proposal'=>CompletionData::json($proposal),'created_at'=>now('UTC')->format('Y-m-d H:i:s')]);
+                // The installed package already has correction_review; the versioned JSON describes the representation.
+                'kind'=>$action['classification']==='historical_aggregate_review'?'correction_review':$action['classification'],
+                'source_reference'=>$action['source_id'],'baseline_hash'=>$action['baseline_hash'],'proposal'=>CompletionData::json($proposal),'created_at'=>now('UTC')->format('Y-m-d H:i:s')]);
             $work=DB::table(Tables::WORK)->where('work_item_id',$id)->first();
         }
         return ['action_id'=>$action['action_id'],'source_id'=>$action['source_id'],'status'=>'STAGED_PENDING_REVIEW',
@@ -64,7 +67,7 @@ final class HistoricalExamWorkService
                 ->whereIn('w.course_id',$this->scope->scopeManualGradeCourses(Course::query(),$actor)->select('course_id'))
                 ->where(fn($q)=>$q->where(fn($none)=>$none->whereNull('w.course_offering_id')->whereIn('w.academic_program_id',$this->scope->scopeProgramsForMutation(\App\Models\AcademicProgram::query(),$actor)->select('academic_program_id')))
                     ->orWhereIn('w.course_offering_id',$this->scope->scopeManualGradeOfferings(CourseOffering::query(),$actor)->select('course_offering_id')))
-                ->whereIn('w.kind',['ungraded_followup','aggregate_incomplete_followup','final_absence_review'])
+                ->whereIn('w.kind',['ungraded_followup','aggregate_incomplete_followup','correction_review','final_absence_review'])
                 ->join('students as s','s.student_id','=','w.student_id')->join('courses as c','c.course_id','=','w.course_id')
                 ->join('academic_years as y','y.academic_year_id','=','w.academic_year_id')->join('semesters as t','t.semester_id','=','w.semester_id')
                 ->leftJoin('student_course_results as result','result.student_course_registration_id','=','w.student_course_registration_id')
@@ -108,7 +111,7 @@ final class HistoricalExamWorkService
         return $this->tx->snapshot(function()use($actor,$bundle,$id) {
             $work=$this->find($actor,$id);$stored=json_decode($work->proposal,true,flags:JSON_THROW_ON_ERROR);
             if(!hash_equals($stored['bundle_digest'],CompletionData::hash($bundle)))$this->fail('bundle_changed');
-            $state=(new ExamReconciliationProjection)->state($bundle,app(ExamDatabase::class)->read($actor));
+            $state=(new ExamReconciliationProjection($stored['projection_contract'] ?? ExamReconciliationProjection::LEGACY_CONTRACT))->state($bundle,app(ExamDatabase::class)->read($actor));
             $a=$stored['action'];$row=$a['original_source'];$row['values']=$a['reconciled_values'];
             $fresh=(new ExamProjection)->row($row,$state,$bundle['student_master']??[]);
             if(!hash_equals($work->baseline_hash,$fresh['baseline_hash']))$this->fail('correction_baseline_changed');
@@ -139,6 +142,20 @@ final class HistoricalExamWorkService
     {
         $base=$a['baseline'];$old=$base['result'];$marks=[];
         if($a['classification']==='credit_context_review')return ['result'=>null,'marks'=>[],'credit_hours'=>$a['source_credits'],'outcome'=>'retain_equivalent_result'];
+        if ($a['classification'] === 'historical_aggregate_review') {
+            $assessment = \App\Support\HistoricalAggregateAssessment::inspect($a['reconciled_values'], $base);
+            if ($assessment['blockers'] || !hash_equals(CompletionData::hash($assessment), CompletionData::hash($a['historical_assessment'] ?? null))) $this->fail('aggregate_evidence_changed');
+            $status = DB::table('result_statuses')->where('status_code', $assessment['canonical_outcome'])->where('is_active', 1)->value('result_status_id');
+            if (!$status) $this->fail('result_status_missing');
+            $assessment['result_status_id'] = (int)$status;
+            $assessment['provenance'] = ['source_reference' => $a['original_source']['reference'], 'source_row_hash' => $a['original_source']['row_hash'],
+                'original_values' => $a['original_source']['values'], 'reconciled_values' => $a['reconciled_values'],
+                'source_decisions' => $a['source_decisions'], 'authority_hashes' => $a['aggregate_authority_hashes'], 'policy' => $base['policy']];
+            return ['result' => ['theoretical_total' => $old['theoretical_total'] ?? null, 'practical_total' => $old['practical_total'] ?? null,
+                'coursework_total' => $old['coursework_total'] ?? '0.00', 'final_mark' => sprintf('%d.%02d', intdiv($assessment['total_cents'], 100), $assessment['total_cents'] % 100),
+                'result_status_id' => (int)$status, 'is_deprived' => false], 'marks' => [], 'credit_hours' => $a['source_credits'],
+                'outcome' => $assessment['canonical_outcome'], 'assessment_representation' => $assessment];
+        }
         if($a['effective_final_absence']) {
             // Absence is not an observed zero. Retained components remain evidence, not a new examination sitting.
             $status=DB::table('result_statuses')->where('status_code','failed')->where('is_active',1)->value('result_status_id');
@@ -192,6 +209,8 @@ final class HistoricalExamWorkService
             $preserved=app(ExamEvidence::class)->capture($actor,['actions'=>[]]);
             $before=['snapshot'=>HistoricalOutcomeGuard::snapshot((int)$work->student_course_registration_id),'context'=>$a['baseline'],
                 'registration_full'=>(array)DB::table('student_course_registrations')->where('student_course_registration_id',$work->student_course_registration_id)->first()];
+            $previous=HistoricalOutcomeGuard::forRegistration(StudentCourseRegistration::findOrFail($work->student_course_registration_id),true);
+            $retainedAssessment=$previous?json_decode($previous->after_values,true,flags:JSON_THROW_ON_ERROR)['assessment_representation']??null:null;
             $now=now('UTC')->format('Y-m-d H:i:s');$proposal=$review['proposal'];
             foreach($proposal['marks'] as $input) {
                 $oldMark=DB::table('student_grade_components')->where('student_course_registration_id',$work->student_course_registration_id)->where('grade_component_id',$input['grade_component_id'])->first();
@@ -218,11 +237,14 @@ final class HistoricalExamWorkService
             if(isset($preserved['student_course_registrations'][$work->student_course_registration_id]))$preserved['student_course_registrations'][$work->student_course_registration_id]=CompletionData::hash($registration);
             if(!app(ExamEvidence::class)->verify($actor,$preserved))$this->fail('preserved_evidence_changed');
             $revision=1+(int)DB::table(Tables::OUTCOMES)->where('student_course_registration_id',$work->student_course_registration_id)->max('revision');
+            $after = ['snapshot'=>$snapshot,'registration_full'=>$registration];
+            if (isset($proposal['assessment_representation'])) $after['assessment_representation'] = $proposal['assessment_representation'];
+            elseif ($proposal['result']===null && $retainedAssessment!==null) $after['assessment_representation']=$retainedAssessment;
             $outcome=DB::table(Tables::OUTCOMES)->insertGetId(['student_course_registration_id'=>$work->student_course_registration_id,'work_item_id'=>$work->work_item_id,'revision'=>$revision,
                 'request_id'=>$requestId,'request_hash'=>$digest,'actor_user_id'=>$actor->getKey(),'reason'=>$reason,'before_values'=>CompletionData::json($before),
-                'after_values'=>CompletionData::json(['snapshot'=>$snapshot,'registration_full'=>$registration]),'created_at'=>$now],'historical_outcome_id');
+                'after_values'=>CompletionData::json($after),'created_at'=>$now],'historical_outcome_id');
             $response=['work_item_id'=>$work->work_item_id,'historical_outcome_id'=>$outcome,'status'=>'ADOPTED','replayed'=>false];
-            app(CompletionReceipts::class)->put($actor,'exam_correction',$requestId,['digest'=>$digest,'result'=>$response,'before'=>$before,'after'=>['snapshot'=>$snapshot,'registration_full'=>$registration],
+            app(CompletionReceipts::class)->put($actor,'exam_correction',$requestId,['digest'=>$digest,'result'=>$response,'before'=>$before,'after'=>$after,
                 'reason'=>$reason,'source_authority'=>$stored['authority_hashes'],'review_hash'=>$hash]);
             return $response;
         });

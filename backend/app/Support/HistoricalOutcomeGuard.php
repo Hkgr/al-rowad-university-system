@@ -33,12 +33,13 @@ final class HistoricalOutcomeGuard
         $marks=DB::table('student_grade_components')->whereIn('student_course_registration_id',$ids)->orderBy('student_grade_component_id')->get()->groupBy('student_course_registration_id');
         $credits=DB::table(HistoricalExamSchema::CREDITS)->whereIn('student_course_registration_id',$ids)->orderBy('revision')->get()->keyBy('student_course_registration_id');
         $statuses=DB::table('registration_statuses')->whereIn('registration_status_id',$owned->pluck('registration_status_id'))->pluck('status_code','registration_status_id');
+        $definitions = DB::table('grade_components')->whereIn('course_offering_id', $owned->pluck('course_offering_id'))->pluck('course_offering_id')->flip();
         if(IncompleteOutcomeGuard::installed()) {
             IncompleteOutcomeGuard::assertReady();
             if(DB::table(IncompleteOutcomeGuard::CASES)->whereIn('student_course_registration_id',$ids)->exists())self::readConflict();
         }
         foreach($owned as $r) {
-            $event=$r->getRelation('historicalOutcome');$expected=json_decode($event->after_values,true,flags:JSON_THROW_ON_ERROR)['snapshot'];
+            $event=$r->getRelation('historicalOutcome');$stored=json_decode($event->after_values,true,flags:JSON_THROW_ON_ERROR);$expected=$stored['snapshot'];
             $resultRows=$results->get($r->getKey(),collect())->map(fn($x)=>(array)$x)->all();
             $actual=['registration'=>array_intersect_key($r->getAttributes(),array_flip(['student_course_registration_id','student_id','course_offering_id','result_status_id','academic_plan_version_id','plan_program_course_id'])),
                 'results'=>$resultRows,'marks'=>$marks->get($r->getKey(),collect())->map(fn($x)=>(array)$x)->all(),
@@ -46,6 +47,8 @@ final class HistoricalOutcomeGuard
             if(!in_array($statuses->get($r->registration_status_id),['registered','completed'],true)
                 ||!hash_equals(CompletionData::hash($expected),CompletionData::hash($actual))
                 ||($r->relationLoaded('studentCourseResult')&&!hash_equals(CompletionData::hash($r->getRelation('studentCourseResult')?->getAttributes()),CompletionData::hash($resultRows[0]??null))))self::readConflict();
+            if (isset($stored['assessment_representation']) && ($definitions->has($r->course_offering_id) || !HistoricalAggregateAssessment::valid($stored['assessment_representation'], $actual))) self::readConflict();
+            $r->setRelation('historicalAggregateSummary', isset($stored['assessment_representation']) ? HistoricalAggregateAssessment::summary($stored['assessment_representation']) : null);
         }
     }
 
@@ -80,7 +83,38 @@ final class HistoricalOutcomeGuard
         if (! hash_equals(CompletionData::hash($expected), CompletionData::hash($actual))) {
             throw new GradeException('Historical settlement evidence conflicts with the current result; explicit review is required.', status:409, errorCode:'historical_outcome_conflict');
         }
+        if (isset($stored['assessment_representation']) && (DB::table('grade_components')->where('course_offering_id', $r->course_offering_id)->exists()
+            || !HistoricalAggregateAssessment::valid($stored['assessment_representation'], $actual))) self::readConflict();
         return true;
+    }
+
+    public static function aggregateSummary(StudentCourseRegistration $r): ?array
+    {
+        if ($r->relationLoaded('historicalAggregateSummary')) return $r->getRelation('historicalAggregateSummary');
+        $event = self::forRegistration($r);
+        if (!$event) return null;
+        $stored = json_decode($event->after_values, true, flags: JSON_THROW_ON_ERROR);
+        if (!isset($stored['assessment_representation'])) return null;
+        self::preservesOutcome($r);
+        return HistoricalAggregateAssessment::summary($stored['assessment_representation']);
+    }
+
+    /** Server-owned identifiers only. Immutable adoption + current exact outcome, without invented part marks. */
+    public static function aggregateEligibilitySql(string $registration, string $final, string $status): string
+    {
+        if (!HistoricalExamSchema::installed()) return '0';
+        HistoricalExamSchema::requireReady();
+        $json = fn($path) => DB::connection()->getDriverName() === 'sqlite' ? "json_extract(hao.after_values,'$.assessment_representation.$path')" : "JSON_UNQUOTE(JSON_EXTRACT(hao.after_values,'$.assessment_representation.$path'))";
+        $number = fn($path) => 'CAST('.$json($path).' AS DECIMAL(12,0))';
+        $contract = $json('contract'); $outcome = $json('canonical_outcome'); $total = $number('total_cents');
+        $j=$number('coursework_cents');$k=$number('examination_cents');$mt=$number('minima_cents.theoretical');$mp=$number('minima_cents.practical');$mf=$number('minima_cents.final');
+        return "EXISTS (SELECT 1 FROM ".HistoricalExamSchema::OUTCOMES." hao WHERE hao.student_course_registration_id={$registration} AND hao.revision=(SELECT MAX(last_hao.revision) FROM ".HistoricalExamSchema::OUTCOMES." last_hao WHERE last_hao.student_course_registration_id={$registration})"
+            ." AND $contract='".HistoricalAggregateAssessment::CONTRACT."' AND $outcome={$status} AND $total=ROUND({$final}*100)"
+            ." AND ".$json('profile')."='".\App\Services\HistoricalExams\ExamComponentMapping::PROFILE."' AND $mt BETWEEN 0 AND 6000 AND $mp BETWEEN 0 AND 4000 AND $mf BETWEEN 0 AND 10000"
+            ." AND $outcome=CASE WHEN $j<$mp OR $k<$mt OR $total<$mf THEN 'failed' ELSE 'passed' END"
+            ." AND ".$json('coursework_cents')."+".$json('examination_cents')."=$total AND ".$json('coursework_cents')." BETWEEN 0 AND 4000 AND ".$json('examination_cents')." BETWEEN 0 AND 6000"
+            ." AND NOT EXISTS (SELECT 1 FROM student_grade_components ham WHERE ham.student_course_registration_id={$registration})"
+            ." AND NOT EXISTS (SELECT 1 FROM grade_components had JOIN student_course_registrations har ON har.course_offering_id=had.course_offering_id WHERE har.student_course_registration_id={$registration}))";
     }
 
     /** Result/marks are exact; supported registered/completed transitions do not rewrite settlement ownership. */

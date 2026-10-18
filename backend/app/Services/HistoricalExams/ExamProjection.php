@@ -12,10 +12,15 @@ final class ExamProjection
         foreach(['student_course_registrations'=>'student_id','student_course_results'=>'student_course_registration_id','grade_components'=>'course_offering_id','student_grade_components'=>'student_course_registration_id'] as $table=>$key) {
             $state['_'.$table]=[];foreach($state[$table]??[] as $row)$state['_'.$table][$row[$key]][]=$row;
         }
-        $state['_historical_configuration_evidence']=[];$offeringByRegistration=array_column($state['student_course_registrations'],'course_offering_id','student_course_registration_id');
+        $state['_historical_configuration_evidence']=[];$state['_historical_configuration_references']=[];$offeringByRegistration=array_column($state['student_course_registrations'],'course_offering_id','student_course_registration_id');
         foreach(['student_course_results','student_grade_components','student_course_incomplete_cases','supplementary_exam_registrations'] as $table)
             foreach($state[$table]??[] as $e)if($id=$offeringByRegistration[$e['student_course_registration_id']??null]??null)$state['_historical_configuration_evidence'][$id]=true;
         foreach(['grade_approvals','grade_part_approvals'] as $table)foreach($state[$table]??[] as $e)$state['_historical_configuration_evidence'][$e['course_offering_id']]=true;
+        foreach (['student_course_results'=>'student_course_result_id','student_grade_components'=>'student_grade_component_id','student_course_incomplete_cases'=>'incomplete_case_id',
+            'supplementary_exam_registrations'=>'supplementary_exam_registration_id','grade_approvals'=>'grade_approval_id','grade_part_approvals'=>'grade_part_approval_id'] as $table=>$key) {
+            foreach ($state[$table]??[] as $e) if ($offering=$e['course_offering_id']??$offeringByRegistration[$e['student_course_registration_id']??null]??null)
+                $state['_historical_configuration_references'][$offering][]=['table'=>$table,'id'=>$e[$key]??null,'row_hash'=>CompletionData::hash($e)];
+        }
         return $state;
     }
     public static function cents(mixed $v): ?int
@@ -98,6 +103,17 @@ final class ExamProjection
         }
         if(!$attempts&&$otherPrograms)$b[]='existing_registration_other_program_requires_review';
         if(count($attempts)>1)$b[]='repeated_attempt_semester_not_proven';$reg=count($attempts)===1?$attempts[0]:null;$offering=$reg?$offerings[$reg['course_offering_id']]:null;
+        if (($s['_historical_aggregate_review'] ?? false) && $reg && !$otherPrograms && !$owner['blockers'] && !$c['blockers']
+            && $p['basis'] === 'existing_registration_program_with_conflicting_student_master'
+            && $p['blockers'] === ['student_master_existing_registration_context_conflict']
+            && ExamApprovedAuthority::label($course['course_name']) === ExamApprovedAuthority::label($v['course'])
+            && (int)$course['credit_hours'] === (int)$v['credits']) {
+            // Qualified college + verified subject + exact person/year + unique actual attempt wins over a contradictory roster label.
+            // The full roster observation and old program remain evidence, never a transfer or a registration relink.
+            $p['basis'] = 'independently_verified_historical_attempt_with_retained_roster_conflict';
+            $p['blockers'] = []; $p['retained_context_conflict'] = 'student_master_existing_registration_context_conflict';
+            $b = array_values(array_diff($b, ['student_master_existing_registration_context_conflict']));
+        }
         $semester=$offering?(int)$offering['semester_id']:null;$period=['basis'=>$semester?'existing_registration_actual_period':null,'academic_year_id'=>$yearId,'semester_id'=>$semester];
         $term=filter_var($v['term'],FILTER_VALIDATE_INT);$members=$program&&$course?array_values(array_filter($s['program_courses']??[],fn($m)=>(int)$m['academic_program_id']===$program&&(int)$m['course_id']===(int)$course['course_id'])):[];
         if(!$reg&&$course&&$student&&$yearId) {
@@ -181,7 +197,12 @@ final class ExamProjection
             $baseline['historical_outcomes']=$reg?array_values(array_filter($s[\App\Support\HistoricalExamSchema::OUTCOMES]??[],fn($x)=>(int)$x['student_course_registration_id']===(int)$reg['student_course_registration_id'])):[];
             $baseline['plan_credit_evidence']=array_values(array_filter($s[\App\Support\HistoricalExamSchema::PLAN]??[],fn($x)=>in_array((int)$x['program_course_id'],array_map('intval',array_column($members,'program_course_id')),true)));
         }
+        $extra = ($s['_historical_aggregate_review'] ?? false) ? ['current_result_status_code' => $status['status_code'] ?? null,
+            'assessment_evidence' => ['definition_ids'=>array_column($storedComponents,'grade_component_id'),'mark_ids'=>array_column($marks,'student_grade_component_id'),
+                'configuration_guard_references'=>$s['_historical_configuration_references'][$offering['course_offering_id']??null]??[],
+                'missing_activity_ids'=>array_values(array_unique(array_merge(...array_column($componentMapping['groups'],'missing_component_ids'))))]] : [];
         return ['source_id'=>$row['id'],'source_values'=>$v,'owner'=>$owner,'program_evidence'=>$p,'course_mapping'=>$c['mapping'],'component_mapping'=>$componentMapping,'mutation_blockers'=>$mutationBlockers,'period'=>$period,'interpreted'=>$interpreted,
+            ...$extra,
             'attempt_key'=>$student&&$course&&$yearId?implode('/',[$student['student_id'],$course['course_id'],$yearId,$semester??'unknown']):null,
             'classification'=>$classification,'eligible'=>!$b&&!$equivalent&&($writes!==[]||!$reg),'blockers'=>array_values(array_unique($b)),'possible_parent_contexts'=>$parents,
             'proposed_components'=>$writes,'baseline'=>$baseline,'baseline_hash'=>CompletionData::hash($baseline),'official'=>$official,

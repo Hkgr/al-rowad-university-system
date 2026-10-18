@@ -4,21 +4,27 @@ namespace App\Services\HistoricalExams;
 
 use App\Services\StudentCompletion\CompletionData;
 
-/** v4 only. Source facts, value evidence and sitting chronology remain distinct. */
+/** Versioned v4/v5 reviews. Source facts, value evidence and sitting chronology remain distinct. */
 final class ExamReconciliationProjection
 {
-    public const CONTRACT = 'historical-exam-completion.review.v4';
+    public const LEGACY_CONTRACT = 'historical-exam-completion.review.v4';
+    public const CONTRACT = 'historical-exam-completion.review.v5';
+    private array $authorityHashes = [];
+    public function __construct(private string $contract = self::CONTRACT) {}
+    public static function supports(?string $contract): bool { return in_array($contract, [self::LEGACY_CONTRACT, self::CONTRACT], true); }
 
     public function state(array $bundle, array $state): array
     {
         $state = (new ExamProjection)->index($state);
         $state['_exam_approved'] = (new ExamApprovedAuthority)->index($bundle['approved_authority']);
         $state['_exam_snapshot_programs'] = array_column($bundle['snapshot']['academic_programs'] ?? [], null, 'academic_program_id');
+        $state['_historical_aggregate_review'] = $this->contract === self::CONTRACT;
         return $state;
     }
 
     public function build(array $bundle, array $state, string $revision): array
     {
+        $this->authorityHashes = $bundle['approved_authority']['document_hashes'];
         $state = $this->state($bundle, $state);
         $rows = array_column($bundle['rows'], null, 'id');
         $projector = new ExamProjection;
@@ -136,7 +142,7 @@ final class ExamReconciliationProjection
                     $a['eligible']=false;$a['blockers'][]='historical_exam_schema_not_ready';
                 }
                 $a['references'] = [$rows[$id]['reference'] + ['row_hash' => $rows[$id]['row_hash']]];
-                $a['action_id'] = CompletionData::hash([self::CONTRACT, $key, $a['references'], $a['reconciled_values'] ?? $a['source_values'], $a['source_decisions']]);
+                $a['action_id'] = CompletionData::hash([$this->contract, $key, $a['references'], $a['reconciled_values'] ?? $a['source_values'], $a['source_decisions']]);
                 $a['blockers'] = array_values(array_unique($a['blockers']));
                 $actions[] = $a;
             }
@@ -154,7 +160,7 @@ final class ExamReconciliationProjection
             'classifications' => $primary, 'overlapping_blockers' => $blockers, 'explicit_deferral_union' => count($deferredUnion),
             'students' => count(array_unique(array_filter(array_map(fn($a) => $a['baseline']['student']['student_id'] ?? null, $actions)))),
             'courses' => count(array_unique(array_filter(array_map(fn($a) => $a['baseline']['course']['course_id'] ?? null, $actions))))];
-        $review = ['contract' => self::CONTRACT, 'actor_id'=>$state['_actor_id']??null,'schema_readiness_checked'=>array_key_exists('_historical_exam_schema_ready',$state),
+        $review = ['contract' => $this->contract, 'actor_id'=>$state['_actor_id']??null,'schema_readiness_checked'=>array_key_exists('_historical_exam_schema_ready',$state),
             'sources' => $bundle['sources'], 'authority_hashes' => $bundle['approved_authority']['document_hashes'],
             'bundle_file_hash' => $bundle['artifact_file_sha256'] ?? null, 'bundle_digest' => CompletionData::hash($bundle), 'revision' => $revision, 'actions' => $actions];
 
@@ -196,6 +202,26 @@ final class ExamReconciliationProjection
         $protected = array_intersect($a['blockers'], ['incomplete_lifecycle_owned_all_states','registration_status_protected','symbol_requires_existing_authorized_workflow','supplementary_registration_requires_review',
             'repeated_attempt_semester_not_proven','offering_ambiguous','existing_registration_other_program_requires_review','approved_selected_source_values_changed']);
         if ($protected) {$a['required_next_action'] = 'Use the existing dedicated lifecycle/registration/supplementary authorization; no reconciliation bypass.';return $a;}
+        if ($this->contract === self::CONTRACT && $base['registration'] && !$base['components'] && !$base['marks'] && $this->intact($a)) {
+            $assessment = \App\Support\HistoricalAggregateAssessment::inspect($a['reconciled_values'], $base);
+            $a['historical_assessment'] = $assessment;
+            $a['blockers'] = array_values(array_unique([...$a['blockers'], ...$assessment['blockers']]));
+            $a['aggregate_authority_hashes'] = $this->authorityHashes;
+            $representationOnly = ['historical_aggregate_initialization_existing_evidence', 'coursework_has_no_explicit_component_mapping',
+                'examination_not_representable', 'component_definitions_require_canonical_preparation_preview',
+                'existing_values_require_separate_correction_review', 'official_or_submitted_result_locked'];
+            if (!$assessment['blockers'] && !array_diff($a['blockers'], $representationOnly)) {
+                $a['blockers'] = [];
+                // The resolved status is recorded by the pure projection, not inferred from legacy part totals.
+                $equivalent = $a['official'] && $base['result'] && !($base['result']['is_deprived'] ?? false)
+                    && ExamProjection::cents($base['result']['final_mark']) === $assessment['total_cents']
+                    && $a['current_result_status_code'] === $assessment['canonical_outcome'];
+                $a['classification'] = $equivalent ? 'existing_equivalent' : 'historical_aggregate_review';
+                $a['execution_kind'] = $equivalent ? null : 'stage'; $a['eligible'] = !$equivalent;
+                $a['required_next_action'] = $equivalent ? 'Official outcome already agrees: no result or timestamp rewrite. Source aggregates remain evidence; no activity definitions are invented.'
+                    : 'Review then explicitly adopt sourced 40/60 aggregates without creating activities or relabelling retained legacy parts. Offering approval remains independently required.';
+            }
+        }
         $credits=$base['credit_evidence']??[];usort($credits,fn($x,$y)=>(int)$y['revision']<=>(int)$x['revision']);
         $planCredits=array_values(array_filter($base['plan_credit_evidence']??[],fn($e)=>(int)$e['program_course_id']===(int)($base['registration']['plan_program_course_id']??0)));
         usort($planCredits,fn($x,$y)=>(int)$y['revision']<=>(int)$x['revision']);
@@ -203,8 +229,10 @@ final class ExamReconciliationProjection
         if($a['classification']==='existing_equivalent' && $base['registration'] && $a['source_credits']!==$actualCredits) {
             $a['classification']='credit_context_review';$a['execution_kind']='stage';$a['eligible']=true;
             $a['required_next_action']='Review applicable attempt credits separately; preserve the equivalent result and all its timestamps.';
-        } elseif ($a['ordinary_ungraded'] || $a['absence_evidence'] || in_array('aggregate_known_component_breakdown_missing', $a['blockers'], true)
-            || ($this->intact($a)&&array_intersect($a['blockers'],['component_definitions_require_canonical_preparation_preview','component_semantics_not_faithfully_representable']))) {
+        } elseif ($a['classification'] === 'historical_aggregate_review') {
+            // The independently validated proposal above is staged, never adopted by the completion writer.
+        } elseif (($this->contract === self::LEGACY_CONTRACT || $a['classification'] !== 'existing_equivalent') && ($a['ordinary_ungraded'] || $a['absence_evidence'] || in_array('aggregate_known_component_breakdown_missing', $a['blockers'], true)
+            || ($this->intact($a)&&array_intersect($a['blockers'],['component_definitions_require_canonical_preparation_preview','component_semantics_not_faithfully_representable'])))) {
             $a['classification'] = $a['ordinary_ungraded'] ? 'ungraded_followup' : ($a['effective_final_absence'] ? 'final_absence_review' : 'aggregate_incomplete_followup');
             $a['execution_kind'] = 'stage';
             $a['eligible'] = true;
@@ -215,6 +243,14 @@ final class ExamReconciliationProjection
             $a['required_next_action'] = 'Stage only. The current official outcome remains unchanged until a separately reviewed authorized correction is committed.';
         } elseif (! $a['blockers'] && $a['classification'] !== 'existing_equivalent' && ($a['proposed_components'] || ! $base['registration'])) {
             $a['execution_kind'] = 'draft'; $a['eligible'] = true;
+        }
+        if ($this->contract === self::CONTRACT && $a['classification'] === 'aggregate_incomplete_followup' && !$base['components']) {
+            $needs = [];
+            if (!$base['registration']) $needs[] = 'Establish the uniquely verified historical registration/program/period and any blocked guidance evidence before an adoption review; no registration is guessed.';
+            if (!$this->intact($a)) $needs[] = 'Provide the independently observed final-examination cell and its attempt/chronology where required; a cached total or L-J is not an examination mark.';
+            $needs[] = $base['offering'] ? 'The actual offering has no assessment definitions. Missing fictional activities or virtual initialization are NOT required; the source aggregates remain staged evidence.'
+                : 'The assessment context is not established. Do not classify that absence of context as missing activity marks.';
+            $a['required_next_action'] = implode(' ', $needs);
         }
         return $a;
     }

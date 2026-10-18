@@ -177,6 +177,40 @@ catch(\App\Exceptions\GradeException $e){$check($e->errorCode==='historical_outc
 $metrics=app(\App\Services\GradeService::class)->calculateGpa($student,$year,1);$check($metrics['total_included_credit_hours']===(int)$course->credit_hours,'Current GPA did not use recorded attempt credits');
 echo "PASS two independent correction adopters / one outcome / exact replay / parent verification / preserved approval + announcement / ordinary recalculation locked / MariaDB credit reader\n";
 
+// New v5 representation: existing offering evidence, but genuinely no definitions or marks.
+// The two independent workers adopt the same immutable review/UUID once under the installed catalog lock.
+$year=DB::table('academic_years')->insertGetId(['year_name'=>'2245-2246','start_date'=>'2245-09-01','end_date'=>'2246-08-31','is_current'=>false],'academic_year_id');
+$aggregateOffering=app(\App\Services\CourseOfferingContextService::class)->createManualRecordingOffering($student,$course,$year,1,$actor);
+$aggregateRegistration=app(\App\Services\RegistrationService::class)->prepareManualGradeRegistration($student,$aggregateOffering,$actor,['confirmed'=>true,'reason'=>'Synthetic absent definitions aggregate','course_id'=>$course->getKey(),'academic_year_id'=>$year,'semester_id'=>1]);
+DB::table('grade_approvals')->insert(['course_offering_id'=>$aggregateOffering->getKey(),'approval_status_id'=>$approved]);
+$dir=$environment->config['directory'].'/approved-historical-aggregate';mkdir($dir,0700);
+$fixture=\Tests\Support\SyntheticApprovedExamSources::write($dir,array_replace($values,['year'=>'2245-2246','coursework'=>'40','exam'=>'60','total'=>'100','condition'=>'T']));
+$app->instance(ExamSources::class,$fixture['reader']);$aggregate=$fixture['reader']->prepare($fixture['inputs']);
+\App\Services\StudentCompletion\CompletionFiles::write($dir.'/bundle.json',$aggregate);$aggregate=$fixture['reader']->load($dir.'/bundle.json',hash_file('sha256',$dir.'/bundle.json'));
+$preview=$service->preview($actor,$aggregate);$check(($preview['counts']['classifications']['historical_aggregate_review']??0)===1,'Absent definitions were confused with missing detailed activities');
+$parentId=(string)Str::uuid();$saved=$service->apply($actor,$aggregate,$preview['review'],$preview['review_hash'],$parentId,$preview['review']['revision']);
+$work=collect($saved['actions'])->firstWhere('status','STAGED_PENDING_REVIEW');$check($work!==null,'Aggregate staging did not succeed: '.json_encode($saved));$review=$workService->reviewCorrection($actor,$aggregate,$work['work_item_id']);
+$before=\App\Support\HistoricalOutcomeGuard::snapshot((int)$aggregateRegistration->getKey());$approvalHistory=$pdo->query('SELECT * FROM grade_approvals ORDER BY grade_approval_id')->fetchAll(PDO::FETCH_ASSOC);
+$request=(string)Str::uuid();$job=['mode'=>'adopt','bundle'=>$aggregate,'review'=>$review['review'],'hash'=>$review['review_hash'],'id'=>$request,'revision'=>$review['review']['revision']];
+DB::beginTransaction();$tx->revision(true);$left=$spawn($job);$right=$spawn($job);$check($left[2]!==$right[2],'Aggregate adopters shared a connection');$wait($left[2]);$wait($right[2]);DB::commit();
+$one=$close($left);$two=$close($right);$check($one['ok']&&$two['ok']&&$one['result']['historical_outcome_id']===$two['result']['historical_outcome_id'],'Concurrent aggregate adoption was not exactly once: '.json_encode([$one,$two]));
+$check(DB::table(Contract::OUTCOMES)->where('student_course_registration_id',$aggregateRegistration->getKey())->count()===1,'Aggregate outcomes duplicated');
+$after=\App\Support\HistoricalOutcomeGuard::snapshot((int)$aggregateRegistration->getKey());
+$check($before['marks']===[]&&$after['marks']===[]&&!DB::table('grade_components')->where('course_offering_id',$aggregateOffering->getKey())->exists(),'Aggregate adoption fabricated activities');
+$check($after['results'][0]['theoretical_total']===null&&$after['results'][0]['practical_total']===null&&$after['results'][0]['result_announced_at']===null,'Aggregate adoption relabelled legacy parts or invented publication');
+$check($approvalHistory===$pdo->query('SELECT * FROM grade_approvals ORDER BY grade_approval_id')->fetchAll(PDO::FETCH_ASSOC),'Aggregate adoption changed approvals');
+$gpa=app(\App\Services\GradeService::class)->calculateGpa($student,$year,1);$check($gpa['gpa']===4.0&&$gpa['total_included_credit_hours']===(int)$course->credit_hours,'MariaDB aggregate GPA reader disagrees');
+$aggregateSql=\App\Support\HistoricalOutcomeGuard::aggregateEligibilitySql('r.student_course_registration_id','x.final_mark','s.status_code');
+$eligibility=\App\Support\OfficialGradeScale::gpaEligibilitySql('s.status_code','x.final_mark','x.theoretical_total','x.practical_total','1','1',$aggregateSql);
+$check(DB::table('student_course_registrations as r')->join('student_course_results as x','x.student_course_registration_id','=','r.student_course_registration_id')->join('result_statuses as s','s.result_status_id','=','x.result_status_id')
+    ->where('r.student_course_registration_id',$aggregateRegistration->getKey())->whereRaw($eligibility)->count()===1,'MariaDB SQL aggregate eligibility disagrees with PHP');
+$check(\App\Support\HistoricalOutcomeGuard::preservesOutcome($aggregateRegistration->fresh()),'Aggregate proof failed');
+$check($workService->verifyCorrection($actor,$aggregate,$request)['status']==='ADOPTED','Aggregate receipt failed verification');
+$check($service->verify($actor,$aggregate,$parentId)['current_adopted_work_items']===1,'Aggregate parent receipt failed verification');
+\App\Services\StudentCompletion\CompletionFiles::write($dir.'/before-proposal-after.json',['server_version'=>$pdo->query('SELECT VERSION()')->fetchColumn(),
+    'synthetic_only'=>true,'before'=>$before,'proposal'=>$review,'after'=>$after,'connections'=>[$left[2],$right[2]],'GPA'=>$gpa,'SQL_eligible'=>true]);
+echo "PASS persisted v5 absent-definition aggregate / independently blocked adopters / one outcome + exact replay / no fake components or legacy parts / MariaDB PHP-GPA + SQL parity / receipts verified\n";
+
 // Fully synthetic Sports plan, including an existing student. Publication uses the
 // canonical fixation/copy/approval/default services and races another reviewed import.
 $scientific=User::findOrFail(1);$sport=\App\Models\AcademicProgram::where('program_code','RU2-ES-TS')->sole();$oldStudent=Student::where('student_number','SYN-SPORTS-CREDIT')->sole();

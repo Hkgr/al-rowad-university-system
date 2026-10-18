@@ -1,5 +1,10 @@
 // Presentation only: no GPA, repeat selection, withdrawal, or deadline calculation.
 export const missingValue = value => value === null || value === undefined || value === '' ? '—' : String(value)
+export function historicalAssessmentText(course) {
+  const summary = course?.assessment_summary
+  if (summary?.kind !== 'historical-source-aggregates.v1') return ''
+  return `أعمال الفصل: ${missingValue(summary.coursework_mark)} / 40 · الامتحان النهائي: ${missingValue(summary.examination_mark)} / 60`
+}
 export function resultSymbol(course) {
   const lifecycle = course.result_lifecycle
   const state = lifecycle?.state

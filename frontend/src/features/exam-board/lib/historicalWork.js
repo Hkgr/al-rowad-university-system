@@ -3,6 +3,7 @@ import { apiRequest } from '../../../services/apiClient.js'
 export const historicalWorkKinds = {
   ungraded_followup: 'عمل غير مُقيّم — ليس منحة I',
   aggregate_incomplete_followup: 'مجموع مرصود يحتاج تفصيلًا',
+  correction_review: 'تصحيح نتيجة — مقترح يحتاج مراجعة واعتمادًا',
   final_absence_review: 'غياب عن النهائي — بانتظار مراجعة مخوّلة',
 }
 export function historicalWorkQuery(search) {

@@ -12,15 +12,16 @@ use Ramsey\Uuid\Uuid;
 final class ExamCompletionService
 {
     public function __construct(private ExamDatabase $db,private ExamProjection $projection,private CompletionReceipts $receipts,private AcademicCatalogTransaction $tx,private ExamManualGradeEntryAccess $access){}
-    public function preview(User $actor,array $bundle): array
+    public function preview(User $actor,array $bundle,?string $reviewContract=null): array
     {
         $this->access->authorize($actor);
-        return $this->tx->snapshot(function()use($actor,$bundle) {
+        return $this->tx->snapshot(function()use($actor,$bundle,$reviewContract) {
             $state=$this->db->read($actor);
             if(isset($bundle['approved_authority'])) {
                 $state['_actor_id']=(int)$actor->getKey();
                 $state['_historical_exam_schema_ready']=\App\Support\HistoricalExamSchema::ready();
             }
+            if (isset($bundle['approved_authority'])) return (new ExamReconciliationProjection($reviewContract ?? ExamReconciliationProjection::CONTRACT))->build($bundle,$state,$this->tx->revision());
             return $this->projection->build($bundle,$state,$this->tx->revision());
         });
     }
@@ -43,7 +44,7 @@ final class ExamCompletionService
     }
     public function apply(User $actor,array $bundle,array $review,string $hash,string $id,string $expected,bool $resume=false): array
     {
-        if(($review['contract']??null)===ExamReconciliationProjection::CONTRACT)return app(ExamApprovedCompletionService::class)->apply($actor,$bundle,$review,$hash,$id,$expected,$resume);
+        if(ExamReconciliationProjection::supports($review['contract']??null))return app(ExamApprovedCompletionService::class)->apply($actor,$bundle,$review,$hash,$id,$expected,$resume);
         if(!Uuid::isValid($id)||($review['contract']??null)!==ExamProjection::CONTRACT||!hash_equals(CompletionData::hash($review),$hash)||!hash_equals($review['bundle_digest'],CompletionData::hash($bundle)))$this->fail('review_invalid');
         $this->authorizeReview($actor,$review);$digest=CompletionData::hash([$hash,$bundle['sources'],(int)$actor->getKey()]);
         $old=$this->tx->run(function()use($actor,$review,$hash,$id,$digest,$expected,$resume,$bundle) {
@@ -159,7 +160,7 @@ final class ExamCompletionService
         $this->access->authorize($actor);
         if($this->receipts->find('exam_correction',$id))return app(HistoricalExamWorkService::class)->verifyCorrection($actor,$bundle,$id);
         $start=$this->receipts->find('exam_start',$id);
-        if(($start['value']['review']['contract']??null)===ExamReconciliationProjection::CONTRACT)return app(ExamApprovedCompletionService::class)->verify($actor,$bundle,$id);
+        if(ExamReconciliationProjection::supports($start['value']['review']['contract']??null))return app(ExamApprovedCompletionService::class)->verify($actor,$bundle,$id);
         $this->access->authorize($actor);
         return $this->tx->snapshot(function()use($actor,$bundle,$id){$status=$this->status($actor,$id);$start=$this->receipts->find('exam_start',$id);$review=$start['value']['review'];
             if(!hash_equals($review['bundle_digest'],CompletionData::hash($bundle)))$this->fail('bundle_changed');
