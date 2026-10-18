@@ -144,7 +144,7 @@ The existing `/exam-board/incomplete-results?view=imported` and `/vp/administrat
 
 ## Full offline reconciliation
 
-The private JSON and two-tab workbook account for **all 16,461 observations**, including six unnumbered observations. They retain original cells/hashes, complete source references, identity/period/selection evidence, proposed stage, every overlapping blocker and its concrete missing evidence. No identifying rows are committed. Public aggregates are in [the de-identified summary](reports/historical-examination-approved-reconciliation.json).
+The private JSON and two-tab workbook account for **all 16,461 observations**, including six unnumbered observations. They retain original cells/hashes, complete source references, identity/period/selection evidence, proposed stage, every overlapping blocker and its concrete missing evidence. The fresh `reconciliation-v4-04.json` adds explicit per-blocker and per-observation resolution categories. The workbook preserves the existing review layout and adds filterable column R, **Required resolution**. No identifying rows are committed. Public aggregates are in [the de-identified summary](reports/historical-examination-approved-reconciliation.json).
 
 | Exclusive operational disposition | Observations |
 | --- | ---: |
@@ -162,6 +162,8 @@ The explicit deferral union is 367 (not a sum of overlapping categories): course
 
 Most remaining work needs real component/activity definitions or independent person/program/period evidence. Known aggregate evidence is staged, not hidden or allocated. Supplementary chronology remains specifically blocked where unproved. Local candidate staging counts do not assert write readiness, approval, a current production revision or complete adoption. No real results were applied.
 
+Resolution categories distinguish **source evidence**, **academic decision**, **existing authorized workflow**, and **implementation fix**. Each blocked observation has at least one explicit category, alongside all of its original blocker codes and concrete evidence/action. Categories overlap: 13,340 observations require source evidence, 8,374 reference an existing workflow, and six blocker-bearing observations require a new scoped academic decision. Existing explicit deferrals remain separately recorded; these overlapping counts do not replace or add to the 6,501 exclusive blocked observations. No remaining source blocker was identified as an uncorrected implementation defect. This does not imply completed live/visual acceptance or authorize any new academic decision. The original v4 bundle and original files have not been regenerated or edited for this report-only enrichment.
+
 ## Verification record
 
 Runtime: PHP **8.4.14**, PHPUnit **12.5.30**, Node **24.11.0**, Vite **8.0.16**. No dependencies installed or changed. MariaDB output is the actual `SELECT VERSION()` value **10.11.18-MariaDB**, REPEATABLE READ, on newly marked disposable servers. No real dump was imported.
@@ -170,11 +172,10 @@ Runtime: PHP **8.4.14**, PHPUnit **12.5.30**, Node **24.11.0**, Vite **8.0.16**.
 | --- | --- |
 | Historical v3/v4, catalog credits, plans, workspace and offering proposals | **239 test executions / 4,860 assertions passed**. Includes inherited/provider cases, not 239 distinct new scenarios |
 | New focused approved/copy/publication/replay checks | 32 executions passed during focused verification; actual correction review/adopt commands and read-only HTTP work projection exercised |
-| Node / ReactDOM/router recovery, imported work and pagination | **53 passed**; synthetic API/no-layout host, NOT live browser acceptance |
-| Shared transcript/PDF builder semantics and manual-entry regressions | **27 passed**; no real PDF download/opening |
+| Node / ReactDOM/router recovery, imported work, shared transcript/PDF builder and manual-entry regressions | **80 passed** in the combined rerun (53 + 27); synthetic API/no-layout host, NOT live browser or actual PDF acceptance |
 | Changed-file ESLint | Four frontend source files passed |
 | Frontend production build | Passed, 989 modules; existing >500kB chunk warning remains. An earlier unconstrained attempt hit OS/paging pressure; bounded process settings completed successfully |
-| PHP syntax | All changed/new PHP files passed (51 files after the final legacy study-plan reader integration) |
+| PHP syntax | All 53 changed/new PHP files passed, including the dedicated supplementary fixture/runner |
 | Composer | `validate --no-check-publish` and `check-platform-reqs` passed |
 | SQL render contract | `php backend/tools/render-historical-exam-schema.php` passed |
 | Existing full Incomplete MariaDB acceptance | `course-result-symbols.ps1 -Scenario all` passed on **10.11.18-MariaDB**, both fallback and installed catalog paths |
@@ -184,9 +185,19 @@ Runtime: PHP **8.4.14**, PHPUnit **12.5.30**, Node **24.11.0**, Vite **8.0.16**.
 
 The approved MariaDB runner completed successfully: `tests/mariadb/approved-exam-reconciliation.ps1 -MariaDbHome <existing-10.11.18-directory>`. It installs/reapplies/verifies the four-table package, rejects populated incompatible datetime/type, text capacity, unique sequence, FK rule, CHECK and no-op trigger definitions without changing evidence, and refuses history-erasing rollback. It covers persisted v3/v4 command artifacts, independent same-UUID imports, actual manual/legacy writes, approval/finalization, registration/catalog mutations, I grant/resolution/expiry, credit changes, two correction adopters, exact lost-response replay/explicit resume, canonical Sports publication, retained old students/origins, parent verification and competing merged offering-proposal approval. The earlier FK-negative fixture needed separate MariaDB DROP/ADD statements, and an artificial expiry date exceeded a legacy TIMESTAMP range; both synthetic fixture issues were corrected before the successful full rerun.
 
-The separate existing Incomplete acceptance suite also finished `OVERALL | PASS`: real HTTP kernel/middleware, populated upgrade/reapplication, B+F/Z GPA 1.50, retained/missing Z marks, summer/calendar/deadline boundaries, completed-registration settlement, independent expiry/extension/resolution/finalization/manual-write/registration-transition races in **both** locking paths, exact incompatible-object rejection and batch=1 starvation progress. An earlier memory-pressured attempt did not observe both lock waiters; the later full serial rerun did and passed. This is not a substitute for a dedicated supplementary/import race.
+The separate existing Incomplete acceptance suite also finished `OVERALL | PASS` during the initial implementation: real HTTP kernel/middleware, populated upgrade/reapplication, B+F/Z GPA 1.50, retained/missing Z marks, summer/calendar/deadline boundaries, completed-registration settlement, independent expiry/extension/resolution/finalization/manual-write/registration-transition races in **both** locking paths, exact incompatible-object rejection and batch=1 starvation progress. An earlier memory-pressured attempt did not observe both lock waiters; the later full serial rerun did and passed. This follow-up changes synthetic acceptance fixtures and report documentation, not those lifecycle writers or their schema.
 
-The supplementary services' installed catalog-first transaction boundaries and dedicated target guards were inspected and remain unchanged. **A dedicated supplementary materialization-versus-import multi-connection race was not executed in the new runner.** Do not infer that proof from an ordinary grade race or from SQLite. This remains a release-acceptance limitation.
+### Dedicated supplementary/import acceptance completed
+
+`tests/mariadb/supplementary-import-race.php` now executes the **actual** `SupplementaryExamMaterializationService::materializeOffering()` against the **actual** persisted-v4 `ExamCompletionService::apply()` on the same registration, with real authorization/scope and installed academic-plan/catalog revision triggers. The approved MariaDB runner includes it. Actual server: **10.11.18-MariaDB**, **REPEATABLE-READ**.
+
+Both deterministic orders passed. A pipe barrier pauses the first service at its real uncommitted result/receipt write, after its catalog `FOR UPDATE`. A separate guarded observer must capture the contender's real `INNODB_TRX` IDs and corresponding `INNODB_LOCK_WAITS` edge on that catalog query before release. A polling delay alone never releases the barrier. The metadata polling interval permits InnoDB's cache to refresh. The evidence JSON retains connection/transaction IDs, query, actual boundary, before/after content hashes and materialization receipt.
+
+- **Import first:** the reviewed attempt is already owned by the published supplementary roster. The importer accurately records a BLOCKED action in a PARTIAL operational receipt, with no mark, work-item, credit or result write. Only then can the dedicated materializer commit. Lost-response status and exact UUID replay return the original receipt even after the later revision. Verification deliberately reports changed preserved academic evidence after the independent supplementary outcome; it does not invent a historical correction chain or rewrite the original review.
+- **Materializer first:** the importer reaches the held catalog lock and then rejects its now-stale review without an import start/final receipt or partial academic mutation. The supplementary service has one materialization and one audit event; explicit repeat execution validates the existing materialization without a second academic write.
+- Both orders preserve exact unrelated registrations/results/components, retained practical marks, completed/approved component metadata, lifecycle rows/events, recorded attempt credits, plan assignments/versions, shared course origins, approvals and announcement timestamps. Only the dedicated theoretical/result transition is permitted and its outcome is checked against the existing calculator. The synthetic stale `coursework_total` remains retained, not double-added. Counts and durable before/after provenance prohibit duplicate results, registrations, work items or materialization/import receipts.
+
+Initial fixture attempts exposed empty partial supplementary tables, missing synthetic status/approval columns and overlong auto-generated index names. These were corrected additively in the test fixture only. Initial observer attempts failed to capture a real engine wait and were not counted as acceptance. No production service, grading rule, lifecycle writer, permission or SQL package was changed to make the race pass.
 
 ### Inherited failures, reproduced on the same clean base
 
@@ -201,4 +212,23 @@ The supplementary registration failing methods are `test_phase4_full_runtime_con
 
 ### Pending visual/live acceptance
 
-The permitted browser inventory was retried: no browser surfaces were available, and creating the in-app browser returned `Browser is not available: iab`. An earlier initialization also failed writing browser kernel assets. No workaround or alternate automation bypass was used. **React connected to a real isolated Laravel database, 390/768/1440px screenshots/reference comparison, and actual PDF download/opening remain unexecuted.** Synthetic component and shared-PDF-builder checks do not establish visual or interactive acceptance. Private workbook images are spreadsheet QA, not application screenshots. Keep the PR Draft pending review and these release checks.
+The permitted browser inventory was retried again for this acceptance increment: `getState()` returned `{"apps":[],"browsers":[]}` and `createBrowserTab('iab', 'about:blank', {visible: true})` returned `Browser is not available: iab`. An earlier initialization also failed writing browser kernel assets. No workaround or alternate automation bypass was used. **React connected to a real isolated Laravel database in both Exam Affairs and administrative VP contexts, 390/768/1440px screenshots/reference comparison, and actual transcript PDF generation/download/opening remain unexecuted.** Filtering, server pagination, details/back/context, manual-entry capabilities, authorization loss and errors remain live-browser checks even though their synthetic component/HTTP contracts were exercised. The corrected/credit/absence PDF marks/hours/totals/Arabic/pagination acceptance remains pending. Private workbook images are spreadsheet QA, not application screenshots. Keep the PR Draft pending review and these release checks.
+
+### Downloadable private review delivery
+
+The PR body's **Downloadable review artifacts** section links an encrypted archive and a non-identifying inventory. These are review assets on an **unpublished draft GitHub release**, not a software release, deployment or production operation. A repository collaborator/owner must authenticate to view/download a draft release. There is no automatic expiry; the owner can remove the review assets after acceptance. Do not publish the draft release or upload its unencrypted payload.
+
+The archive contains the unchanged immutable v4 bundle, complete snapshot projection, enriched 16,461-case JSON, full XLSX/row data, all eight original handoff files (including CHECKSUMS), the three exact pinned input files, reproduction helpers, actual verification logs/ledger and MariaDB concurrency evidence. The inventory records each filename, size and SHA-256 plus the exact final code SHA. Workbook QA images are labeled separately. No application screenshots or downloaded transcript PDF are included because those checks were unavailable; the actual browser failure and exact pending list are included instead.
+
+Encryption uses OpenPGP **AES-256**, a random 256-bit key and iterated/salted SHA-512 S2K. The key is delivered directly to the requester separately, never in Git, the PR, the release or the archive. Archive entry hashes, authenticated decryption/ZIP round-trip and retrieval through GitHub are verified. Preserve private extraction permissions and never import the included university SQL into a test database.
+
+```powershell
+# Authenticated repository owner/collaborator; download only, no apply/deploy.
+gh release download pr-179-review-artifacts-20261018 --repo Hkgr/al-rowad-university-system `
+  --pattern '*.gpg' --pattern 'download-inventory.json' --dir '<new-private-review-directory>'
+# Check the encrypted file SHA-256 against download-inventory.json first.
+# Interactive secret entry keeps the separately delivered key out of shell history.
+gpg --output '<new-private-review-directory>/review.zip' --decrypt '<downloaded-archive>.gpg'
+```
+
+Preserve all earlier artifacts and receipts. Review the archive's source pins and blockers. The immutable bundle embeds the original preparation paths; a different operating environment must use a **fresh** preparation with its actual local pinned paths, never hand-edit an issued bundle. Then run a fresh authorized **read-only live preview** to a new filename. Only a later separately reviewed application may use its actual current hash/revision and a newly persisted UUID. Neither this offline report nor installing the guarded schema applies academic data or proves live readiness.

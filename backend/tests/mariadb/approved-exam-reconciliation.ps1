@@ -10,7 +10,8 @@ try {
         @('academic-plans.php','complete-runtime-fixture'),@('academic-plans.php','complete-decision-fixture'),
         @('catalog-completion.php','prepare'),@('student-completion.php','fixture'),@('approved-exam-reconciliation.php','catalog-fixture'),@('academic-plans.php','01_apply.sql'),
         @('academic-plans.php','02_verify.sql'),@('catalog-completion.php','01_apply.sql'),@('catalog-completion.php','02_verify.sql'),
-        @('elective-placement.php','install'),@('historical-exams.php','run'),@('approved-exam-reconciliation.php','run'))
+        @('elective-placement.php','install'),@('historical-exams.php','run'),@('approved-exam-reconciliation.php','run'),
+        @('supplementary-import-race.php','run'))
     foreach($step in $steps) {
         & php (Join-Path $PSScriptRoot $step[0]) $step[1]
         if($LASTEXITCODE -ne 0){throw ('Failed isolated step: '+($step -join ' '))}
