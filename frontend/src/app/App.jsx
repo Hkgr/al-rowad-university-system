@@ -76,6 +76,9 @@ import ProfessorGradesPage       from '../features/professor-dashboard/pages/Pro
 import ProfessorSupplementaryExams from '../features/professor-dashboard/pages/ProfessorSupplementaryExams'
 import SupplementaryGradesPage from '../features/exam-board/pages/SupplementaryGradesPage'
 
+import DeanOfferingsPage from '../features/dean-portal/pages/DeanOfferingsPage'
+import VicePresidentOfferingsPage from '../features/vice-president-portal/pages/VicePresidentOfferingsPage'
+
 // ── بوابة عميد الكلية (Dean Dashboard) ─────────────────────────────────────
 import DeanLayout          from '../features/dean-dashboard/DeanLayout'
 import DeanHome            from '../features/dean-dashboard/pages/DeanHome'
@@ -377,6 +380,7 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/dean/courses"       element={<DeanCourses />} />
           <Route path="/dean/courses/:id"   element={<DeanCourseOfferingProfile />} />
           <Route path="/dean/registration-offerings" element={protect(<DeanRegistrationOfferings />, { allRoles: [ROLES.dean], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView] })} />
+          <Route path="/dean/term-offerings" element={<DeanOfferingsPage />} />
           <Route path="/dean/registration-requests" element={<DeanRegistrationRequests />} />
           <Route path="/dean/registration-requests/:id" element={<DeanRegistrationRequestDetail />} />
           <Route path="/dean/registration-modifications/:id" element={<DeanRegistrationModificationDetail />} />
@@ -411,6 +415,7 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/vp/scientific/reports" element={protect(<ExecutiveReportsPage office="scientific" />, reportAccessForOffice('scientific'))} />
           <Route path="/vp/scientific/teaching-assignments" element={<TeachingAssignmentQueue office="scientific" />} />
           <Route path="/vp/scientific/semester-offerings" element={protect(<SemesterOfferingQueue />, { allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView], actualUniversityScope: true })} />
+          <Route path="/vp/scientific/offering-proposals" element={<VicePresidentOfferingsPage />} />
           <Route path="/vp/scientific/semester-offerings/minimum-enrollment" element={protect(<MinimumEnrollmentQueue />, { allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView], actualUniversityScope: true })} />
           <Route path="/vp/scientific/semester-offerings/:id" element={protect(<SemesterOfferingDetail />, { allRoles: [ROLES.vicePresidentScientific], assignedPermissions: [PERMISSIONS.semesterOfferingGovernanceView], actualUniversityScope: true })} />
           <Route path="/vp/scientific/teaching-assignments/:id" element={<TeachingAssignmentDetail office="scientific" />} />

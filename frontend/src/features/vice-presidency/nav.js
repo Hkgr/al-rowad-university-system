@@ -1,4 +1,4 @@
-import { FaCalendarAlt, FaChalkboardTeacher, FaChartBar, FaClipboardCheck, FaClipboardList, FaHome, FaUnlock, FaQuestionCircle, FaUniversity, FaUserTie } from 'react-icons/fa'
+import { FaCalendarAlt, FaChalkboardTeacher, FaChartBar, FaCheckDouble, FaClipboardCheck, FaClipboardList, FaHome, FaUnlock, FaQuestionCircle, FaUniversity, FaUserTie } from 'react-icons/fa'
 
 import { ACCESS, PERMISSIONS, ROLES } from '../auth/auth'
 import { WORKSPACE_ACCESS } from '../scientific-programs/workspace'
@@ -34,6 +34,12 @@ export const scientificVicePresidentNav = [
     items: [
       { to: '/vp/scientific/calendar', Icon: FaCalendarAlt, ar: 'التقويم الأكاديمي', en: 'Academic calendar' },
       { to: '/vp/scientific/programs-courses', Icon: FaClipboardList, ar: 'البرامج والمواد', en: 'Programs and courses', ...WORKSPACE_ACCESS },
+      {
+        to: '/vp/scientific/offering-proposals',
+        Icon: FaCheckDouble,
+        ar: 'اعتماد طرح العميد',
+        en: 'Dean offering approvals',
+      },
       {
         to: '/vp/scientific/semester-offerings',
         Icon: FaClipboardCheck,

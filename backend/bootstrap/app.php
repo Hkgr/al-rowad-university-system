@@ -14,6 +14,7 @@ use App\Exceptions\CourseOfferingClosureException;
 use App\Exceptions\ExceptionalOpeningException;
 use App\Exceptions\GraduationEligibilityException;
 use App\Exceptions\OfferingInstructorCoverageException;
+use App\Exceptions\OfferingProposalException;
 use App\Exceptions\RegistrationException;
 use App\Exceptions\RegistrationRequestException;
 use App\Exceptions\SemesterOfferingGovernanceException;
@@ -174,6 +175,18 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->render(function (DisciplinaryCaseException $exception, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'errors' => $exception->errors,
+            ], $exception->status);
+        });
+
+        $exceptions->render(function (OfferingProposalException $exception, Request $request) {
             if (! $request->is('api/*')) {
                 return null;
             }
