@@ -20,6 +20,7 @@ import StudentProfilePage   from '../features/student-affairs/pages/StudentProfi
 import ArchivedStudentsPage from '../features/student-affairs/pages/ArchivedStudentsPage'
 import GraduatesPage       from '../features/student-affairs/pages/GraduatesPage'
 import SupplementaryExamRegistrations from '../features/student-affairs/pages/SupplementaryExamRegistrations'
+import StudentAffairsCourseRegistrationPage from '../features/student-affairs/pages/StudentAffairsCourseRegistrationPage'
 import MinistryPlacementsPage from '../features/student-affairs/pages/MinistryPlacementsPage'
 
 // ── بوابة الطالب (Student Dashboard) ────────────────────────────────────────
@@ -222,6 +223,7 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/student-affairs/students/:id"      element={<StudentProfilePage />}    />
           <Route path="/student-affairs/students/:id/edit" element={protect(<EditStudentPage />, { permissions: ['students.manage'] })} />
           <Route path="/student-affairs/supplementary-exams" element={protect(<SupplementaryExamRegistrations />, { allRoles: ['registration_officer'], assignedPermissions: ['supplementary_exams.registrations.view'] })} />
+          <Route path="/student-affairs/course-registration" element={protect(<StudentAffairsCourseRegistrationPage />, ACCESS.studentAffairsCourseRegistration)} />
           <Route path="/student-affairs/approved-registration-requests" element={protect(<ApprovedRegistrationRequestsPage />, { permissions: ['registration.view'] })} />
           <Route path="/student-affairs/calendar" element={<AcademicCalendarPage />} />
         </Route>
@@ -460,6 +462,7 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/vp/administrative/student-affairs/students/:id/edit" element={protect(<EditStudentPage />, ACCESS.studentAffairsArchivedStudents)} />
           <Route path="/vp/administrative/student-affairs/ministry-placements" element={protect(<MinistryPlacementsPage />, { assignedPermissions: ['admissions.view'], actualUniversityScope: true })} />
           <Route path="/vp/administrative/student-affairs/supplementary-exams" element={protect(<SupplementaryExamRegistrations />, { allRoles: ['registration_officer'], assignedPermissions: ['supplementary_exams.registrations.view', 'students.view'] })} />
+          <Route path="/vp/administrative/student-affairs/course-registration" element={protect(<StudentAffairsCourseRegistrationPage />, ACCESS.studentAffairsCourseRegistration)} />
           <Route path="/vp/administrative/student-affairs/approved-registration-requests" element={protect(<ApprovedRegistrationRequestsPage />, ACCESS.studentAffairsApprovedRegistrationRequests)} />
           <Route path="/vp/administrative/student-affairs/reports" element={protect(<PortalReportsPage portal="student-affairs" />, reportAccess('student-affairs'))} />
           <Route path="/vp/administrative/exams/manual-grade-entry" element={protect(<ManualGradeEntryPage />, ACCESS.manualGradeEntry)} />

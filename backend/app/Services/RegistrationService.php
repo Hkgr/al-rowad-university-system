@@ -14,6 +14,7 @@ use App\Models\RegistrationStatus;
 use App\Models\Semester;
 use App\Models\Student;
 use App\Models\StudentCourseRegistration;
+use App\Models\User;
 use App\Models\StudentRegistrationRequest;
 use App\Models\StudentRegistrationRequestItem;
 use App\Models\StudentRegistrationModificationItem;
@@ -25,6 +26,7 @@ use App\Support\CourseRequirementClassification;
 use App\Support\CourseRegistrationDeadlineResult;
 use App\Support\CourseRegistrationPhase;
 use App\Support\RegistrationMaterializationContext;
+use App\Support\StudentAffairsCourseRegistration;
 use App\Support\RegistrationProjectionContext;
 use App\Support\RegistrationModificationWorkflow;
 use App\Support\SupplementaryExamTargetGuard;
@@ -36,6 +38,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 class RegistrationService
 {
@@ -556,6 +559,121 @@ class RegistrationService
         }
 
         throw RegistrationException::academicCalendarConfigurationInvalid();
+    }
+
+    /**
+     * Staff entry of courses already confirmed by the advisor on paper.
+     * Academic gates stay in force. The student self-registration window does not.
+     *
+     * @param  list<int>  $offeringIds
+     * @return array{registered_count: int, registered_hours: int, max_allowed_hours: int, remaining_hours: int}
+     */
+    public function registerByStudentAffairs(User $actor, int $studentId, array $offeringIds): array
+    {
+        if (! $actor->hasPermission(StudentAffairsCourseRegistration::PERMISSION)) {
+            throw new AccessDeniedHttpException('لا تملك صلاحية تسجيل مواد الطلاب.');
+        }
+
+        $offeringIds = array_values(array_unique(array_map(intval(...), $offeringIds)));
+        if ($offeringIds === []) {
+            throw new RegistrationException('اختر مادة واحدة على الأقل.', [
+                'course_offering_ids' => ['اختر مادة واحدة على الأقل.'],
+            ]);
+        }
+
+        $offerings = CourseOffering::query()->whereIn('course_offering_id', $offeringIds)->get();
+        if ($offerings->count() !== count($offeringIds)) {
+            throw new RegistrationException('إحدى المواد المختارة غير موجودة.', [
+                'course_offering_ids' => ['إحدى المواد المختارة غير موجودة.'],
+            ]);
+        }
+        if ($offerings->pluck('academic_year_id')->unique()->count() !== 1
+            || $offerings->pluck('semester_id')->unique()->count() !== 1) {
+            throw new RegistrationException('كل المواد يجب أن تكون من نفس السنة والفصل.', [
+                'course_offering_ids' => ['كل المواد يجب أن تكون من نفس السنة والفصل.'],
+            ]);
+        }
+
+        try {
+            return DB::transaction(function () use ($actor, $studentId, $offeringIds): array {
+                $results = [];
+                foreach ($offeringIds as $index => $offeringId) {
+                    $results[] = $this->performRegisterStudent([
+                        'student_id' => $studentId,
+                        'course_offering_id' => $offeringId,
+                        'notes' => StudentAffairsCourseRegistration::NOTE,
+                    ], (int) $actor->getKey(), RegistrationMaterializationContext::STUDENT_AFFAIRS_ENTRY, array_values(array_slice($offeringIds, $index + 1)));
+                }
+                $last = $results[array_key_last($results)];
+
+                return [
+                    'registered_count' => count($results),
+                    'registered_hours' => (int) $last['registered_hours'],
+                    'max_allowed_hours' => (int) $last['max_allowed_hours'],
+                    'remaining_hours' => (int) $last['remaining_hours'],
+                ];
+            });
+        } catch (QueryException $exception) {
+            if ($this->isDuplicateRegistrationQueryException($exception)) {
+                throw new RegistrationException('الطالب مسجّل أصلًا في إحدى هذه المواد.', [
+                    'course_offering_id' => ['الطالب مسجّل أصلًا في إحدى هذه المواد.'],
+                ]);
+            }
+
+            throw $exception;
+        } catch (RegistrationException $exception) {
+            if (preg_match('/\p{Arabic}/u', $exception->getMessage()) === 1) {
+                throw $exception;
+            }
+
+            throw new RegistrationException(
+                $this->studentAffairsRegistrationMessage($exception),
+                $exception->errors,
+                $exception->status,
+                $exception->errorCode,
+                $exception->data,
+            );
+        }
+    }
+
+    private function studentAffairsRegistrationMessage(RegistrationException $exception): string
+    {
+        $byCode = match ($exception->errorCode) {
+            RegistrationException::COURSE_ALREADY_PASSED => 'الطالب ناجح أصلًا في هذه المادة.',
+            RegistrationException::TIMETABLE_CONFLICT => 'يوجد تعارض في أوقات المواد المختارة.',
+            RegistrationException::OFFERING_SCHEDULE_INCOMPLETE => 'جدول إحدى المواد غير مكتمل.',
+            RegistrationException::TIMETABLE_REFERENCE_INCOMPLETE => 'جدول إحدى المواد المرجعية غير مكتمل.',
+            RegistrationException::TIMETABLE_SCHEMA_NOT_READY => 'جدول المواد غير جاهز.',
+            default => null,
+        };
+        if ($byCode !== null) {
+            return $byCode;
+        }
+
+        $message = $exception->getMessage();
+        if (str_contains($message, 'not open for registration')) {
+            return 'المادة غير مفتوحة للتسجيل.';
+        }
+        if (str_contains($message, 'already registered')) {
+            return 'الطالب مسجّل أصلًا في إحدى هذه المواد.';
+        }
+        if (str_contains($message, 'missing prerequisites')) {
+            return 'تنقص الطالب متطلبات سابقة: '.str_replace('Student has missing prerequisites: ', '', $message);
+        }
+        if (str_contains($message, 'Credit hour limit')) {
+            return 'تجاوز مجموع الساعات الحد الأعلى المسموح لهذا الفصل.';
+        }
+        if (str_contains($message, 'student does not exist')) {
+            return 'الطالب غير موجود.';
+        }
+        if (str_contains($message, 'not part of the student current program')) {
+            return 'المادة ليست ضمن خطة الطالب الحالية.';
+        }
+        if (str_contains($message, 'not available')) {
+            return 'المادة غير مطروحة لبرنامج الطالب.';
+        }
+
+        return 'تعذر تسجيل المواد المختارة.';
     }
 
     private function performRegisterStudent(
