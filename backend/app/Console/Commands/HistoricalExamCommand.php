@@ -3,7 +3,7 @@ namespace App\Console\Commands;
 
 use App\Models\User;
 use App\Services\HistoricalExams\{ExamSources,ExamProjection,ExamCompletionService};
-use App\Services\StudentCompletion\{CompletionData,CompletionFiles};
+use App\Services\StudentCompletion\{CompletionData,CompletionFiles,CompletionJson};
 use Illuminate\Console\Command;
 
 /** Local preparation never resolves an actor or database-backed service. All artifacts are private/immutable. */
@@ -26,18 +26,20 @@ abstract class HistoricalExamCommand extends Command
             $actor=User::findOrFail($this->required('actor'));$service=app(ExamCompletionService::class);
             $catalog=$this->getDefinition()->hasOption('catalog-credits') && $this->option('catalog-credits');
             $catalogService=app(\App\Services\HistoricalExams\ExamCatalogCreditService::class);
-            if($this->operation==='status')$result=$catalog?$catalogService->status($actor,$this->required('operation-id')):$service->status($actor,$this->required('operation-id'));
+            $recovery=$this->getDefinition()->hasOption('recovery-check') && $this->option('recovery-check');
+            if($recovery&&$catalog)throw new \InvalidArgumentException('--recovery-check is for examination completion, not catalog-credit operations.');
+            if($this->operation==='status')$result=$catalog?$catalogService->status($actor,$this->required('operation-id')):($recovery?$service->recoveryCheck($actor,$this->required('operation-id')):$service->status($actor,$this->required('operation-id')));
             else {
                 $bundle=app(ExamSources::class)->load($this->required('bundle'),$this->required('bundle-hash'));
                 $result=match($this->operation){'preview'=>$catalog?$catalogService->preview($actor,$bundle,$this->option('program-code')):$service->preview($actor,$bundle),'verify'=>$catalog?$catalogService->status($actor,$this->required('operation-id'),$bundle):$service->verify($actor,$bundle,$this->required('operation-id')),
-                    'apply'=>($catalog?$catalogService:$service)->apply($actor,$bundle,json_decode(file_get_contents($this->required('review')),true,flags:JSON_THROW_ON_ERROR),$this->required('review-hash'),$this->required('operation-id'),$this->required('expected-revision'),(bool)$this->option('resume')),
+                    'apply'=>($catalog?$catalogService:$service)->apply($actor,$bundle,CompletionJson::file($this->required('review')),$this->required('review-hash'),$this->required('operation-id'),$this->required('expected-revision'),(bool)$this->option('resume')),
                     'review-correction'=>app(\App\Services\HistoricalExams\HistoricalExamWorkService::class)->reviewCorrection($actor,$bundle,$this->required('work-item')),
                     'adopt-correction'=>$this->option('confirmed')?app(\App\Services\HistoricalExams\HistoricalExamWorkService::class)->adopt($actor,$bundle,
-                        json_decode(file_get_contents($this->required('review')),true,flags:JSON_THROW_ON_ERROR),$this->required('review-hash'),$this->required('operation-id'),$this->required('expected-revision'),$this->required('reason')):
+                        CompletionJson::file($this->required('review')),$this->required('review-hash'),$this->required('operation-id'),$this->required('expected-revision'),$this->required('reason')):
                         throw new \InvalidArgumentException('--confirmed is required for explicit correction adoption.')};
             }
             CompletionFiles::write($output,$result);if(in_array($this->operation,['preview','review-correction'],true))CompletionFiles::write($output.'.review.json',$result['review']);
-            $this->line(CompletionData::json(['output'=>$output,'status'=>$result['status'],'review_hash'=>$result['review_hash']??null,'counts'=>$result['counts']??null]));
+            $this->line(CompletionData::json($recovery?$result:['output'=>$output,'status'=>$result['status'],'review_hash'=>$result['review_hash']??null,'counts'=>$result['counts']??null]));
             return in_array($result['status'],['PARTIAL','BLOCKED','INTERRUPTED'],true)?2:0;
         } catch(\Throwable $e) {$this->error(CompletionData::json(['error_code'=>$e->errorCode??'historical_exam_failed','message'=>$e->getMessage(),'note'=>'Do not infer rollback after a lost response. Inspect status; never retry a write automatically.']));return 1;}
     }

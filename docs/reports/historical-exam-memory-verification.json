@@ -1,0 +1,87 @@
+{
+  "report_contract": "historical-exam-memory-verification.v1",
+  "date": "2026-10-19",
+  "base_commit": "cd8a48bbccc2942c14c3e46790e549bea7c21321",
+  "privacy": "Only synthetic counts and deidentified execution metadata; no student rows, private sources, credentials, database configuration or encryption keys.",
+  "runtime": {
+    "php": "8.4.14",
+    "phpunit": "12.5.30",
+    "pdo_sqlite": "3.49.2",
+    "isolated_server_select_version": "10.11.18-MariaDB",
+    "os": "Windows x64"
+  },
+  "production": {
+    "connected": false,
+    "applied": false,
+    "deployed": false,
+    "incident_current_state_verified": false
+  },
+  "private_artifact_read_only_checks": [
+    {
+      "artifact": "Earlier issued v5 report, not the production incident artifact",
+      "database_bootstrapped": false,
+      "bytes": 258811927,
+      "observations": 16461,
+      "recorded_canonical_review_hash_preserved": true,
+      "peak_php_bytes": 12582912,
+      "memory_limit": "512M",
+      "duration_seconds": 75.548,
+      "writes_performed": false
+    },
+    {
+      "artifact": "Earlier immutable approved bundle and reconstruction from its original pinned sources; not the incident bundle",
+      "database_bootstrapped": false,
+      "bytes": 38897369,
+      "observations": 16461,
+      "raw_file_hash_and_original_source_reconstruction": "PASS",
+      "peak_php_bytes": 287309824,
+      "memory_limit": "2048M",
+      "duration_seconds": 16.503,
+      "writes_performed": false
+    }
+  ],
+  "full_candidate_stress_run": {
+    "status": "INCOMPLETE_STOPPED",
+    "synthetic_only": true,
+    "observations": 16461,
+    "expected_draft_candidates": 1854,
+    "expected_stage_candidates": 1409,
+    "bundle_bytes": 38254828,
+    "report_bytes": 336283777,
+    "companion_review_bytes": 336282976,
+    "topology": "3293 registrations in one offering; not a throughput-representative university topology",
+    "completed_phases": ["prepare", "preview", "start_commit_then_interruption", "status_start_only", "one_action_commit_then_interruption"],
+    "new_code_peak_php_bytes_in_completed_phases": 243269632,
+    "new_code_max_os_peak_working_set_bytes_in_completed_phases": 257474560,
+    "first_action_interruption_elapsed_seconds": 32618.508,
+    "timing_cause": "Not established; no claim that this wall time is CPU time or a production throughput estimate",
+    "resume": "Stopped only the verified owned isolated PHP worker after prolonged execution; committed test receipts and input artifacts retained; guarded runner stopped its own disposable server",
+    "all_3263_candidates_completed": false,
+    "pre_fix_negative_controls": [
+      {"path": "full bundle/review decoding", "memory_limit": "2048M", "result": "EXPECTED_OOM", "peak_php_bytes": 2147483648, "os_peak_working_set_bytes": 1469321216, "duration_seconds": 3.992},
+      {"path": "exact old CompletionReceipts decoder with bounded input loader", "location": "memory-baseline-receipts.php:26 (exact exported CompletionReceipts.php)", "public_code_sha256": "8733c2eea1547ec9171465c81f43754776b2f4518cdabc66bf008561d0a4c0a2", "memory_limit": "2048M", "result": "EXPECTED_OOM", "peak_php_bytes": 2147483648, "os_peak_working_set_bytes": 1868021760, "duration_seconds": 115.892}
+    ]
+  },
+  "large_artifact_end_to_end": {
+    "status": "PENDING_MEASUREMENT",
+    "scope": "16461 synthetic observations with representative actual draft/staging writes, committed interruption, explicit same-UUID resume, status, verification and replay; not certification of all 3263 incident candidate writes"
+  },
+  "checks": {
+    "focused_and_affected_phpunit": {"result": "PASS", "tests": 385, "assertions": 12161, "duration_ms": 308577, "note": "Includes inherited regression methods from the existing reconciliation fixture, not 385 newly added tests"},
+    "shared_completion_receipt_regressions": {"result": "PASS", "tests": 64, "assertions": 364},
+    "manual_grade_contracts_and_source_checks": {"result": "PASS", "tests": 11, "assertions": 25},
+    "php_syntax": "PASS for all 17 changed/new PHP files at check time; final recheck before commit",
+    "powershell_syntax": "PASS",
+    "composer_validate_strict": "PASS",
+    "composer_check_platform_requirements": "PASS",
+    "git_diff_check": "PASS at check time; final recheck before commit",
+    "frontend_build_or_browser": "Not run; no frontend changes or visual acceptance claim"
+  },
+  "remaining_limits": [
+    "No production state or production artifact has been read through a live connection.",
+    "The original incident bundle/review fingerprints and revision 6243 are operator conditions, not a new live readiness assertion.",
+    "Completion of all 1854 draft and 1409 staging writes in a single full-candidate test remains unproved; the long full-candidate run was stopped, not marked successful.",
+    "The process memory budget requires private disk-backed temporary storage with sufficient space; tmpfs or arbitrarily larger database/source populations are not certified.",
+    "SQLite tests do not prove MariaDB locking. Independent-connection evidence uses the explicitly guarded MariaDB 10.11.18 server."
+  ]
+}

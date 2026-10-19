@@ -366,3 +366,7 @@ The existing details table now labels its column **التقييمات المسج
 Runtime: PHP **8.4.14**, PHPUnit **12.5.30**, Node **24.11.0**, PDO SQLite **3.49.2** with synthetic in-memory fixtures. These selected suites have no inherited failures; broader inherited diagnostics documented above were not rerun or represented as fixed. No MariaDB/concurrency rerun was performed for this read/presentation-only change; the earlier isolated MariaDB evidence remains separate and unchanged.
 
 The permitted browser inventory was retried and returned `{"apps":[],"browsers":[]}`. **Live React + isolated Laravel verification, 390/768/1440px desktop/mobile visual comparison, and actual PDF download/opening remain unexecuted.** No browser-policy bypass, production connection, SQL/migration, mark/selection/policy/credit change, permission change or real-data application occurred. Keep PR #179 Draft, open, unmerged and undeployed.
+
+## Post-merge bounded-memory recovery
+
+PR #179 was subsequently merged. The memory-only follow-up and conditional recovery instructions for an existing interrupted operation are in [Historical examination memory recovery](historical-examination-memory-recovery.md). That fix does not regenerate the source bundle/review, change these archived classifications or authorize a new application/adoption. Read the current operation status and revision before any explicit same-UUID resume.

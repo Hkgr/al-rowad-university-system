@@ -2,7 +2,7 @@
 
 namespace App\Services\HistoricalExams;
 
-use App\Services\StudentCompletion\CompletionData;
+use App\Services\StudentCompletion\{CompletionData,CompletionRecords};
 
 /** Versioned v4/v5 reviews. Source facts, value evidence and sitting chronology remain distinct. */
 final class ExamReconciliationProjection
@@ -26,9 +26,9 @@ final class ExamReconciliationProjection
     {
         $this->authorityHashes = $bundle['approved_authority']['document_hashes'];
         $state = $this->state($bundle, $state);
-        $rows = array_column($bundle['rows'], null, 'id');
+        $rows = new CompletionRecords(false);foreach($bundle['rows'] as $row)$rows[$row['id']]=$row;
         $projector = new ExamProjection;
-        $observations = [];
+        $observations = new CompletionRecords(false);
         $supplementary = [];
         foreach ($rows as $id => $row) {
             $a = $projector->row($row, $state, $bundle['student_master'] ?? []);
@@ -48,9 +48,9 @@ final class ExamReconciliationProjection
                 $a['required_next_action']='The approved sitting year is known separately. Establish the actual semester and parent attempt before creating a supplementary sitting; do not copy this year into the parent registration.';
             } elseif ($row['kind'] !== 'regular') $a['supplementary_sitting'] = ['academic_year' => null, 'semester_id' => null, 'date' => null, 'basis' => 'source_sitting_undated'];
             $observations[$id] = $a;
-            if ($row['kind'] !== 'regular' && $this->identityKey($a) !== null && ! $a['owner']['blockers']) $supplementary[$this->identityKey($a)][] = $a;
+            if ($row['kind'] !== 'regular' && $this->identityKey($a) !== null && ! $a['owner']['blockers']) $supplementary[$this->identityKey($a)][] = $id;
         }
-        foreach ($observations as $id => &$a) {
+        foreach ($observations as $id => $a) {
             $row = $rows[$id];
             if ($row['kind'] !== 'regular') continue;
             $original = $row['values'];
@@ -67,7 +67,8 @@ final class ExamReconciliationProjection
                 $fold = ['kind' => 'intact_original_components', 'examination_reference' => $id, 'observed_exam' => $original['exam']];
             } elseif ($work !== null && $total !== null && CompletionData::text($original['supplementary'] ?? null) !== '') {
                 $matches = [];
-                foreach ($supplementary[$this->identityKey($a)] ?? [] as $candidate) {
+                foreach ($supplementary[$this->identityKey($a)] ?? [] as $candidateId) {
+                    $candidate=$observations[$candidateId];
                     $source = $candidate['original_source'];
                     if (CompletionData::text($source['values']['number']) !== CompletionData::text($original['number'])
                         || CompletionData::text($source['values']['code']) !== CompletionData::text($original['code'])) continue;
@@ -98,6 +99,7 @@ final class ExamReconciliationProjection
                 && (CompletionData::text($original['condition'] ?? null)==='غير مكتمل' || CompletionData::text($original['display_outcome'] ?? null)==='غير مكتمل');
             if($a['ordinary_ungraded'])$a['blockers']=array_values(array_diff($a['blockers'],['source_condition_not_supported_by_ordinary_completion']));
             $a['source_credits'] = filter_var($original['credits'], FILTER_VALIDATE_INT);
+            $observations[$id]=$a;
         }
         unset($a);
 
@@ -108,7 +110,7 @@ final class ExamReconciliationProjection
                 $a['baseline']['student']['student_id'],$a['baseline']['course']['course_id'],$a['baseline']['program_id'],$a['interpreted']['kind'],$a['source_values']['year']??null]));
             $groups[$key][] = $id;
         }
-        $actions = [];
+        $actions = new CompletionRecords;
         foreach ($groups as $key => $ids) {
             $deferred = array_filter($ids, fn($id) => $observations[$id]['explicit_deferrals'] !== []);
             $explicit = array_values(array_filter($ids, fn($id) => isset($state['_exam_approved']['selected'][$id])));
@@ -147,19 +149,21 @@ final class ExamReconciliationProjection
                 $actions[] = $a;
             }
         }
-        $primary = []; $blockers = []; $deferredUnion = []; $eligible = 0; $noOp = 0;
+        $primary = []; $blockers = []; $deferredUnion = []; $eligible = 0; $noOp = 0;$students=[];$courses=[];
         foreach ($actions as $a) {
             $primary[$a['classification']] = ($primary[$a['classification']] ?? 0) + 1;
             foreach ($a['blockers'] as $reason) $blockers[$reason] = ($blockers[$reason] ?? 0) + 1;
             if ($a['explicit_deferrals']) $deferredUnion[] = $a['source_id'];
             $eligible += (int)$a['eligible'];
             $noOp += (int)($a['classification'] === 'existing_equivalent');
+            if($student=$a['baseline']['student']['student_id']??null)$students[$student]=true;
+            if($course=$a['baseline']['course']['course_id']??null)$courses[$course]=true;
         }
         ksort($primary); ksort($blockers); sort($deferredUnion);
         $counts = ['observations' => count($actions), 'actions' => count($actions), 'attempt_review_groups' => count($groups), 'eligible' => $eligible, 'no_op' => $noOp,
             'classifications' => $primary, 'overlapping_blockers' => $blockers, 'explicit_deferral_union' => count($deferredUnion),
-            'students' => count(array_unique(array_filter(array_map(fn($a) => $a['baseline']['student']['student_id'] ?? null, $actions)))),
-            'courses' => count(array_unique(array_filter(array_map(fn($a) => $a['baseline']['course']['course_id'] ?? null, $actions))))];
+            'students' => count($students),'courses' => count($courses)];
+        $actions=$actions->compact();
         $review = ['contract' => $this->contract, 'actor_id'=>$state['_actor_id']??null,'schema_readiness_checked'=>array_key_exists('_historical_exam_schema_ready',$state),
             'sources' => $bundle['sources'], 'authority_hashes' => $bundle['approved_authority']['document_hashes'],
             'bundle_file_hash' => $bundle['artifact_file_sha256'] ?? null, 'bundle_digest' => CompletionData::hash($bundle), 'revision' => $revision, 'actions' => $actions];

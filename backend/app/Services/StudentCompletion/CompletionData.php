@@ -19,15 +19,22 @@ final class CompletionData
 
     public static function json(mixed $value): string
     {
-        $json='';foreach(self::tokens($value) as $part)$json.=$part;return $json;
+        $json='';foreach(self::blocks($value) as $part)$json.=$part;return $json;
     }
 
     public static function hash(mixed $value): string
     {
-        $hash=hash_init('sha256');foreach(self::tokens($value) as $part)hash_update($hash,$part);return hash_final($hash);
+        $hash=hash_init('sha256');foreach(self::blocks($value) as $part)hash_update($hash,$part);return hash_final($hash);
+    }
+    /** Buffer the identical canonical bytes, not a second JSON document or decoded population. */
+    public static function blocks(mixed $value): \Generator
+    {
+        $buffer='';foreach(self::tokens($value) as $part){$buffer.=$part;if(strlen($buffer)>=65536){yield $buffer;$buffer='';}}
+        if($buffer!=='')yield $buffer;
     }
     public static function tokens(mixed $value): \Generator
     {
+        if($value instanceof CompletionRecords){yield from $value->tokens();return;}
         if(!is_array($value)){yield json_encode($value,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);return;}
         $list=array_is_list($value);yield $list?'[':'{';$keys=array_keys($value);if(!$list)sort($keys,SORT_STRING);$first=true;
         foreach($keys as $key) {

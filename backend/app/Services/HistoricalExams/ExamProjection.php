@@ -1,7 +1,7 @@
 <?php
 namespace App\Services\HistoricalExams;
 
-use App\Services\StudentCompletion\{CompletionData,CompletionProgramIdentity};
+use App\Services\StudentCompletion\{CompletionData,CompletionProgramIdentity,CompletionRecords};
 
 /** Pure reconciliation shared by snapshot analysis, live preview and locked revalidation. */
 final class ExamProjection
@@ -31,30 +31,30 @@ final class ExamProjection
     public function build(array $bundle,array $state,string $revision): array
     {
         if(isset($bundle['approved_authority']))return (new ExamReconciliationProjection)->build($bundle,$state,$revision);
-        $state=$this->index($state);$actions=[];$groups=[];
+        $state=$this->index($state);$actions=new CompletionRecords;$groups=[];$records=new CompletionRecords;
         foreach($bundle['rows'] as $row) {
             $a=$this->row($row,$state,$bundle['student_master']??[]);$a['references']=[$row['reference']+['row_hash'=>$row['row_hash']]];
             $v=$row['values'];
             $key=$a['attempt_key']??('unresolved-source/'.CompletionData::hash([$a['owner']['number']??$v['number'],$row['kind'],CompletionData::text($v['college']),CompletionData::text($v['program']),preg_replace('/\s+/u','',CompletionData::text($v['code'])),CompletionData::text($v['course']),$v['credits'],$v['year']??null]));
-            $groups[$key][]=$a;
+            $groups[$key][]=count($records);$records[]=$a;
         }
-        foreach($groups as $rows) {
-            $facts=[];foreach($rows as $r)$facts[CompletionData::hash($r['interpreted'])]=true;
-            if(count($facts)>1)foreach($rows as &$r){$r['blockers'][]='conflicting_observations_not_distinct_attempt_evidence';$r['classification']='source_conflict';$r['eligible']=false;}unset($r);
-            $dedup=[];
-            foreach($rows as $r) {
+        foreach($groups as $ids) {
+            $facts=[];foreach($ids as $index){$r=$records[$index];$facts[CompletionData::hash($r['interpreted'])]=true;}
+            $dedup=new CompletionRecords(false);
+            foreach($ids as $index) {
+                $r=$records[$index];if(count($facts)>1){$r['blockers'][]='conflicting_observations_not_distinct_attempt_evidence';$r['classification']='source_conflict';$r['eligible']=false;}
                 $key=CompletionData::hash([$r['interpreted'],$r['blockers']]);
-                if(isset($dedup[$key])){$dedup[$key]['references']=[...$dedup[$key]['references'],...$r['references']];continue;}
+                if(isset($dedup[$key])){$old=$dedup[$key];$old['references']=[...$old['references'],...$r['references']];$dedup[$key]=$old;continue;}
                 $dedup[$key]=$r;
             }
             foreach($dedup as $r){$r['action_id']=CompletionData::hash([$r['attempt_key']??null,$r['references']]);$actions[]=$r;}
         }
         $counts=['observations'=>count($bundle['rows']),'actions'=>count($actions),'eligible'=>0,'no_op'=>0,'conflict'=>0,'deferred'=>0,'pending_approval'=>0,'classifications'=>[]];
         foreach($actions as $a){$counts['eligible']+=(int)$a['eligible'];$counts['no_op']+=(int)($a['classification']==='existing_equivalent'&&!$a['blockers']);$counts['conflict']+=(int)in_array($a['classification'],['source_conflict','existing_value_conflict'],true);$counts['deferred']+=(int)($a['classification']==='deferred_identity');$counts['pending_approval']+=(int)($a['classification']==='pending_approval');$counts['classifications'][$a['classification']]=($counts['classifications'][$a['classification']]??0)+1;}
-        $counts['aggregate_known_component_breakdown_missing']=collect($actions)->filter(fn($a)=>in_array('aggregate_known_component_breakdown_missing',$a['blockers'],true))->count();
-        $initializations=collect($actions)->filter(fn($a)=>$a['eligible']&&$a['component_mapping']['initialize_aggregate_profile']);
-        $counts['aggregate_initialization_actions']=$initializations->count();
-        $counts['aggregate_initialization_contexts']=$initializations->map(fn($a)=>implode('/',[$a['interpreted']['course_id'],$a['interpreted']['program_id'],$a['period']['academic_year_id'],$a['period']['semester_id']]))->unique()->count();
+        $counts['aggregate_known_component_breakdown_missing']=0;$counts['aggregate_initialization_actions']=0;$contexts=[];
+        foreach($actions as $a){$counts['aggregate_known_component_breakdown_missing']+=(int)in_array('aggregate_known_component_breakdown_missing',$a['blockers'],true);
+            if($a['eligible']&&$a['component_mapping']['initialize_aggregate_profile']){$counts['aggregate_initialization_actions']++;$contexts[implode('/',[$a['interpreted']['course_id'],$a['interpreted']['program_id'],$a['period']['academic_year_id'],$a['period']['semester_id']])]=true;}}
+        $counts['aggregate_initialization_contexts']=count($contexts);$actions=$actions->compact();
         $review=['contract'=>self::CONTRACT,'sources'=>$bundle['sources'],'bundle_file_hash'=>$bundle['artifact_file_sha256']??null,'bundle_digest'=>CompletionData::hash($bundle),'revision'=>$revision,'actions'=>$actions];
         return ['status'=>$counts['eligible']?'PARTIAL':($counts['no_op']===count($actions)?'COMPLETE':'BLOCKED'),'writes_performed'=>false,'counts'=>$counts,'review'=>$review,'review_hash'=>CompletionData::hash($review)];
     }
