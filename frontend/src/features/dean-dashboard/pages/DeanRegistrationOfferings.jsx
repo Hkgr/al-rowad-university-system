@@ -286,15 +286,6 @@ function CourseCard({
             >
               إدارة الطرح
             </button>
-            {canManage ? (
-              <button
-                type="button"
-                className="px-3 py-2 border border-primary/25 text-primary-dark rounded-[10px] text-[12.5px] font-bold hover:bg-primary/5"
-                onClick={() => onManageTimetable(offering)}
-              >
-                تحرير الجدول الأسبوعي الرسمي
-              </button>
-            ) : null}
             {canManage && offering.status === 'closed' && proposalEditable ? (
               <button
                 type="button"
@@ -985,6 +976,88 @@ export default function DeanRegistrationOfferings() {
     })))
   }
 
+  async function sendAllToVicePresident() {
+    if (savingRef.current) return
+    const rows = actualTermRows.filter(row => (
+      row.offering
+      && row.offering.status === 'closed'
+      && governanceProposalEditable(row.offering.semester_offering_governance)
+    ))
+    if (rows.length === 0) {
+      showNotice('لا توجد مسودات للإرسال. المواد المفتوحة لا تُرسل مرة ثانية.', 'warning')
+      return
+    }
+
+    const exceptionReason = 'استثناء تلقائي: مادة إجبارية بدون مدرس، تُفتح للتسجيل إلى حين تأمين مدرس.'
+    savingRef.current = true
+    setBusyIds(current => ({ ...current, bulk: true }))
+    setError('')
+    let sent = 0
+    let exceptions = 0
+    let skipped = 0
+    const failed = []
+
+    try {
+      for (const row of rows) {
+        const offering = row.offering
+        const complete = instructorCoverageComplete(offering.instructor_coverage)
+        const mandatory = isRegularMandatoryCourse(row, semesterCode)
+        try {
+          if (complete) {
+            const minimum = minimumEnrollments[row.program_course_id]
+            await apiRequest(`/v1/dean/registration-offerings/${offering.course_offering_id}/proposal`, {
+              method: 'PUT',
+              body: JSON.stringify({
+                is_selected: true,
+                minimum_enrollment: minimum === '' || minimum == null ? null : Number(minimum),
+              }),
+            })
+            await apiRequest(`/v1/dean/registration-offerings/${offering.course_offering_id}/submit`, { method: 'POST' })
+            sent += 1
+          } else if (mandatory) {
+            const existing = offering.exceptional_opening_request
+            if (existing && !['returned', 'superseded'].includes(existing.status)) {
+              skipped += 1
+              continue
+            }
+            if (existing?.status === 'returned') {
+              await apiRequest(`/v1/dean/course-offering-exceptions/${existing.course_offering_exception_request_id}/resubmit`, {
+                method: 'POST',
+                body: JSON.stringify({ reason: exceptionReason }),
+              })
+            } else {
+              await apiRequest('/v1/dean/course-offering-exceptions', {
+                method: 'POST',
+                body: JSON.stringify({
+                  course_offering_id: offering.course_offering_id,
+                  reason: exceptionReason,
+                }),
+              })
+            }
+            exceptions += 1
+          } else {
+            skipped += 1
+          }
+        } catch {
+          failed.push(displayValue(row.course?.course_code))
+        }
+      }
+      await reloadCatalog()
+      const parts = [`تم إرسال ${sent} طرحاً للاعتماد العلمي`]
+      if (exceptions) parts.push(`${exceptions} استثناء تلقائي لمواد إجبارية بلا مدرس`)
+      if (skipped) parts.push(`${skipped} لم تُرسل لأنها اختيارية بلا مدرس أو سبق إرسالها`)
+      if (failed.length) parts.push(`تعذّر إرسال: ${failed.join('، ')}`)
+      showNotice(parts.join('. '), failed.length ? 'warning' : 'success')
+    } finally {
+      savingRef.current = false
+      setBusyIds(current => {
+        const next = { ...current }
+        delete next.bulk
+        return next
+      })
+    }
+  }
+
   async function savePreparation() {
     if (savingRef.current) return
     savingRef.current = true
@@ -1079,7 +1152,7 @@ export default function DeanRegistrationOfferings() {
       <div className="mb-5">
         <h2 className="text-[20px] font-black text-text-dark mb-[3px]">حوكمة طروحات الفصل</h2>
         <p className="text-[12.5px] text-text-light">
-          جهّز مواد الفصل، استكمل التكليفات الفعالة، ثم أرسل كل طرح لاعتماد نائب الرئيس العلمي وفتحه ذريًا.
+          جهّز مواد الفصل، ثم أرسل المسودات دفعة واحدة إلى النائب العلمي. المادة الإجبارية بلا مدرس تُرسل كاستثناء تلقائي.
         </p>
       </div>
 
@@ -1275,8 +1348,55 @@ export default function DeanRegistrationOfferings() {
             {actualTermRows.length === 0 ? (
               <p className="text-[13px] text-text-light py-5 text-center">لم تُحدد أي مادة للتجهيز في هذا الفصل بعد.</p>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                {actualTermRows.map(row => courseCard(row))}
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-[13px]">
+                  <thead>
+                    <tr className="text-[11.5px] text-text-light border-b border-primary/10">
+                      <th className="py-2 font-bold">المادة</th>
+                      <th className="py-2 font-bold">النوع</th>
+                      <th className="py-2 font-bold">الحالة</th>
+                      <th className="py-2 font-bold">المدرسون</th>
+                      <th className="py-2 font-bold">الحوكمة</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {actualTermRows.map(row => {
+                      const offering = row.offering
+                      const coverage = offering?.instructor_coverage
+                      const complete = instructorCoverageComplete(coverage)
+                      const mandatory = isRegularMandatoryCourse(row, semesterCode)
+                      const statusLabel = !offering
+                        ? 'غير محفوظ'
+                        : offering.status === 'open'
+                          ? 'مفتوح'
+                          : complete
+                            ? 'محفوظ — مغلق'
+                            : 'بانتظار اكتمال التكليف'
+                      return (
+                        <tr key={row.program_course_id} className="border-b border-primary/8 align-top">
+                          <td className="py-2.5 pe-3">
+                            <span className="font-mono font-black text-primary-dark">{displayValue(row.course?.course_code)}</span>
+                            <span className="block font-bold text-text-dark">{displayValue(row.course?.course_name)}</span>
+                          </td>
+                          <td className="py-2.5">{row.course_type === 'mandatory' ? 'إجباري' : 'اختياري'}</td>
+                          <td className="py-2.5">{statusLabel}</td>
+                          <td className="py-2.5">{offering ? instructorCoverageSummary(coverage) : '—'}</td>
+                          <td className="py-2.5">
+                            {offering ? governanceStatusLabel(offering.semester_offering_governance?.status, offering.semester_offering_governance?.materialized_at, offering.status) : '—'}
+                            {mandatory && offering && offering.status === 'closed' && !complete ? (
+                              <span className="block text-[11.5px] font-bold text-amber-800">استثناء تلقائي عند الإرسال</span>
+                            ) : null}
+                            {offering ? (
+                              <button type="button" className="block mt-1 text-[12px] font-bold text-primary-dark" onClick={() => navigate(`/dean/courses/${offering.course_offering_id}`)}>
+                                إدارة الطرح
+                              </button>
+                            ) : null}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </section>
@@ -1288,14 +1408,25 @@ export default function DeanRegistrationOfferings() {
                 <p><b>{preview.existing}</b> محفوظة مسبقًا</p>
                 <p><b>{preview.creating}</b> سيتم إنشاؤها</p>
               </div>
-              <button
-                type="button"
-                className="px-4 py-2 bg-primary text-white rounded-[10px] text-[13px] font-bold hover:enabled:bg-primary-dark disabled:opacity-40"
-                disabled={!canManageLocal || preview.total < 1 || Boolean(busyIds.bulk) || catalogRefreshRequired}
-                onClick={savePreparation}
-              >
-                {busyIds.bulk ? 'جاري الحفظ' : 'حفظ التجهيز'}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="px-4 py-2 bg-primary text-white rounded-[10px] text-[13px] font-bold hover:enabled:bg-primary-dark disabled:opacity-40"
+                  disabled={!canManageLocal || preview.total < 1 || Boolean(busyIds.bulk) || catalogRefreshRequired}
+                  onClick={savePreparation}
+                >
+                  {busyIds.bulk ? 'جاري الحفظ' : 'حفظ التجهيز'}
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 px-4 py-2 border border-primary text-primary-dark rounded-[10px] text-[13px] font-bold hover:bg-primary/5 disabled:opacity-40"
+                  disabled={!canManageLocal || Boolean(busyIds.bulk) || catalogRefreshRequired}
+                  onClick={() => { void sendAllToVicePresident() }}
+                >
+                  <FaPaperPlane className="text-[12px]" aria-hidden="true" />
+                  إرسال للاعتماد العلمي
+                </button>
+              </div>
             </div>
           </section>
 
