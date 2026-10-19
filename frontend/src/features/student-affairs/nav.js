@@ -1,5 +1,5 @@
 import {
-  FaHome, FaGraduationCap, FaUserPlus, FaArchive, FaUsers, FaClipboardCheck, FaBookOpen, FaCalendarAlt, FaQuestionCircle,
+  FaHome, FaGraduationCap, FaUserPlus, FaArchive, FaUsers, FaClipboardCheck, FaBookOpen, FaCalendarAlt, FaQuestionCircle, FaPen,
 } from 'react-icons/fa'
 import { ACCESS } from '../auth/auth'
 import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
@@ -26,6 +26,7 @@ const studentAffairsNav = [
   {
     label: 'التسجيل',
     items: [
+      { to: '/student-affairs/course-registration', Icon: FaPen, ar: 'تسجيل مواد الطلاب', en: 'Course registration', end: true, ...ACCESS.studentAffairsCourseRegistration },
       { to: '/student-affairs/supplementary-exams', Icon: FaBookOpen, ar: 'التسجيل التكميلي', en: 'Supplementary registration', end: true, allPermissions: ['students.view'], allRoles: ['registration_officer'], assignedPermissions: ['supplementary_exams.registrations.view'] },
       { to: '/student-affairs/approved-registration-requests', Icon: FaClipboardCheck, FaBookOpen, ar: 'طلبات التسجيل المعتمدة', en: 'Approved requests', end: true, ...ACCESS.studentAffairsApprovedRegistrationRequests },
     ],
