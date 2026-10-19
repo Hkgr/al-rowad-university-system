@@ -13,6 +13,21 @@ const server = await createServer({ mode: 'test', server: { middlewareMode: true
 }] })
 after(async () => server.close())
 const { exportTranscriptPdf } = await server.ssrLoadModule('/src/features/academic-record/lib/transcriptPdf.js')
+
+test('adopted aggregate transcript/PDF semantics use explicit coursework/final labels without inventing legacy parts or leaking provenance', async () => {
+  const { historicalAssessmentText } = await server.ssrLoadModule('/src/features/academic-record/lib/resultSymbols.js')
+  const course = { course_name: 'مقرر اصطناعي', course_code: 'SYN-AGG', credit_hours: 3, theoretical_mark: null, practical_mark: null, final_mark: 80,
+    letter_grade: 'B', result_status: { status_code: 'passed' }, assessment_summary: { kind: 'historical-source-aggregates.v1', coursework_mark: 30, examination_mark: 50,
+      provenance: 'PRIVATE_SOURCE_REFERENCE', reason: 'PRIVATE_INTERNAL_REASON' } }
+  const text = historicalAssessmentText(course)
+  assert.equal(text, 'أعمال الفصل: 30 / 40 · الامتحان النهائي: 50 / 60')
+  assert.equal(historicalAssessmentText({}), '')
+  assert.match(historicalAssessmentText({ assessment_summary: { kind: 'historical-source-aggregates.v1', coursework_mark: 0, examination_mark: 0 } }), /0 \/ 40/)
+  const result = await exportTranscriptPdf({ academicRecord: { student: { full_name: 'طالب اصطناعي' }, transcript: { terms: [{ courses: [course] }] } } })
+  const html = result.pages.join('')
+  assert.ok(html.includes(text)); assert.match(html, />80<\/td>/); assert.match(html, />—<\/td>/)
+  assert.ok(!/PRIVATE_SOURCE_REFERENCE|PRIVATE_INTERNAL_REASON/.test(html))
+})
 test('real shared builder preserves symbols, zero, missing marks, withdrawal and semantic hour labels without internal evidence', async () => {
   const courses = [
     { registration_id: 1, course_name: 'نشطة', course_code: 'SYN1', final_mark: null, letter_grade: 'I', result_status: { status_code: 'incomplete' }, result_lifecycle: { state: 'incomplete_active', case_id: 1 } },

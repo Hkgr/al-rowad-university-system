@@ -702,6 +702,7 @@ class DeanRegistrationOfferingService
             ->orderBy('academic_level_id')
             ->get()
             ->filter(fn (ProgramCourse $row) => $row->course !== null);
+        \App\Support\ApplicableCourseCredits::attachMemberships($rows);
 
         if ($search !== null && trim($search) !== '') {
             $pattern = mb_strtolower(trim($search));
@@ -779,7 +780,7 @@ class DeanRegistrationOfferingService
                                 'course_id' => $row->course->course_id,
                                 'course_code' => $row->course->course_code,
                                 'course_name' => $row->course->course_name,
-                                'credit_hours' => $row->course->credit_hours,
+                                'credit_hours' => \App\Support\ApplicableCourseCredits::planHours($row),
                                 'theoretical_hours' => $row->course->theoretical_hours,
                                 'practical_hours' => $row->course->practical_hours,
                             ],

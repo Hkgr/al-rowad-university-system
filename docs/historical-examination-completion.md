@@ -1,5 +1,7 @@
 # Guarded historical examination completion
 
+For the approved October 18 handoff, use the explicit [v4 approved reconciliation and operating guide](historical-examination-approved-reconciliation.md). The v2/v3 evidence below is retained history, not the current v4 eligibility report or authorization to apply.
+
 Current interpretation is **v3: coursework aggregate 40 + final examination 60**. See [clarified assessment groups, current counts and verification](historical-examination-coursework-groups.md). The v2 reconciliation retained below is historical evidence, not the current eligibility report.
 
 ## Scope

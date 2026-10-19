@@ -5,6 +5,7 @@ export const partLabel = part => ({ practical: 'العملي', theoretical: 'ا�
 export const stateLabel = state => ({ draft: 'مسودة', returned: 'معاد للتصحيح', submitted: 'مرسل للاعتماد', approved: 'معتمد' }[state] ?? 'حالة غير متاحة')
 export const registrationLabel = status => ({ registered: 'مسجل', completed: 'مكتمل', dropped: 'مسقط', withdrawn: 'منسحب', cancelled: 'ملغى' }[status] ?? 'حالة غير متاحة')
 export const blockedLabel = code => ({
+  historical_outcome_locked: 'النتيجة مثبتة بمراجعة تاريخية مدققة؛ يلزم مسار التصحيح المخوّل ولا يسمح بالتعديل العادي.',
   incomplete_outcome_locked: 'لهذا التسجيل دورة I موثقة؛ التعديل العادي مقفل. افتح النتائج غير المكتملة.',
   grade_part_locked: 'الجزء مقفل وفق دورة الاعتماد.',
   official_result_locked: 'النتيجة رسمية؛ التصحيح بعد الاعتماد غير مدعوم هنا.',

@@ -1,0 +1,150 @@
+-- Rendered by tools/render-historical-exam-schema.php; no migration or source-data import.
+-- Selected isolated/reviewed database only. Stop affected writers/workers during installation.
+-- Refuse rollback whenever real evidence exists; never discard receipts/history or invent marks.
+SET @hx_db=DATABASE();
+SET @hx_core=(SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=@hx_db AND ENGINE='InnoDB' AND TABLE_NAME IN ('users','students','courses','academic_programs','academic_years','semesters','course_offerings','student_course_registrations','academic_plan_events','program_courses','academic_plan_versions','academic_catalog_control'));
+SET @hx_keys=(SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=@hx_db AND IS_NULLABLE='NO' AND COLUMN_KEY='PRI' AND COLUMN_TYPE NOT LIKE '%unsigned%' AND ((DATA_TYPE='int' AND ((TABLE_NAME='users' AND COLUMN_NAME='user_id') OR (TABLE_NAME='students' AND COLUMN_NAME='student_id') OR (TABLE_NAME='courses' AND COLUMN_NAME='course_id') OR (TABLE_NAME='academic_programs' AND COLUMN_NAME='academic_program_id') OR (TABLE_NAME='academic_years' AND COLUMN_NAME='academic_year_id') OR (TABLE_NAME='semesters' AND COLUMN_NAME='semester_id') OR (TABLE_NAME='course_offerings' AND COLUMN_NAME='course_offering_id') OR (TABLE_NAME='student_course_registrations' AND COLUMN_NAME='student_course_registration_id') OR (TABLE_NAME='program_courses' AND COLUMN_NAME='program_course_id'))) OR (DATA_TYPE='bigint' AND TABLE_NAME='academic_plan_events' AND COLUMN_NAME='academic_plan_event_id')));
+SET @hx_control_sql=IF(@hx_core=12,'SELECT COUNT(*) INTO @hx_control FROM academic_catalog_control WHERE control_id=1 AND schema_version=1 AND is_ready=1','SET @hx_control=0');
+PREPARE hx_control_read FROM @hx_control_sql;
+EXECUTE hx_control_read;
+DEALLOCATE PREPARE hx_control_read;
+SET @hx_issues=(SELECT COUNT(*) FROM (
+WITH expected_columns AS (SELECT 'historical_exam_work_items' AS tbl, 'work_item_id' AS col, 'char(36)' AS typ, 'NO' AS nullable, '' AS extra, 'utf8mb4' AS charset_name, 'utf8mb4_unicode_ci' AS collation_name
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'operation_id' AS col, 'char(36)' AS typ, 'NO' AS nullable, '' AS extra, 'utf8mb4' AS charset_name, 'utf8mb4_unicode_ci' AS collation_name
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'action_id' AS col, 'char(64)' AS typ, 'NO' AS nullable, '' AS extra, 'utf8mb4' AS charset_name, 'utf8mb4_unicode_ci' AS collation_name
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'actor_user_id' AS col, 'int' AS typ, 'NO' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'student_id' AS col, 'int' AS typ, 'NO' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'course_id' AS col, 'int' AS typ, 'NO' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'academic_program_id' AS col, 'int' AS typ, 'NO' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'academic_year_id' AS col, 'int' AS typ, 'NO' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'semester_id' AS col, 'int' AS typ, 'NO' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'course_offering_id' AS col, 'int' AS typ, 'YES' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'student_course_registration_id' AS col, 'int' AS typ, 'YES' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'kind' AS col, 'varchar(40)' AS typ, 'NO' AS nullable, '' AS extra, 'utf8mb4' AS charset_name, 'utf8mb4_unicode_ci' AS collation_name
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'source_reference' AS col, 'varchar(160)' AS typ, 'NO' AS nullable, '' AS extra, 'utf8mb4' AS charset_name, 'utf8mb4_unicode_ci' AS collation_name
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'baseline_hash' AS col, 'char(64)' AS typ, 'NO' AS nullable, '' AS extra, 'utf8mb4' AS charset_name, 'utf8mb4_unicode_ci' AS collation_name
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'proposal' AS col, 'longtext' AS typ, 'NO' AS nullable, '' AS extra, 'utf8mb4' AS charset_name, 'utf8mb4_unicode_ci' AS collation_name
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'created_at' AS col, 'datetime' AS typ, 'NO' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'credit_evidence_id' AS col, 'bigint' AS typ, 'NO' AS nullable, 'auto_increment' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'student_course_registration_id' AS col, 'int' AS typ, 'NO' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'revision' AS col, 'int unsigned' AS typ, 'NO' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'credit_hours' AS col, 'int unsigned' AS typ, 'NO' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'basis' AS col, 'varchar(48)' AS typ, 'NO' AS nullable, '' AS extra, 'utf8mb4' AS charset_name, 'utf8mb4_unicode_ci' AS collation_name
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'work_item_id' AS col, 'char(36)' AS typ, 'YES' AS nullable, '' AS extra, 'utf8mb4' AS charset_name, 'utf8mb4_unicode_ci' AS collation_name
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'operation_id' AS col, 'char(36)' AS typ, 'NO' AS nullable, '' AS extra, 'utf8mb4' AS charset_name, 'utf8mb4_unicode_ci' AS collation_name
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'action_id' AS col, 'char(64)' AS typ, 'NO' AS nullable, '' AS extra, 'utf8mb4' AS charset_name, 'utf8mb4_unicode_ci' AS collation_name
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'source_hash' AS col, 'char(64)' AS typ, 'NO' AS nullable, '' AS extra, 'utf8mb4' AS charset_name, 'utf8mb4_unicode_ci' AS collation_name
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'actor_user_id' AS col, 'int' AS typ, 'NO' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'created_at' AS col, 'datetime' AS typ, 'NO' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'plan_course_credit_evidence' AS tbl, 'credit_evidence_id' AS col, 'bigint' AS typ, 'NO' AS nullable, 'auto_increment' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'plan_course_credit_evidence' AS tbl, 'program_course_id' AS col, 'int' AS typ, 'NO' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'plan_course_credit_evidence' AS tbl, 'revision' AS col, 'int unsigned' AS typ, 'NO' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'plan_course_credit_evidence' AS tbl, 'credit_hours' AS col, 'int unsigned' AS typ, 'NO' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'plan_course_credit_evidence' AS tbl, 'academic_plan_event_id' AS col, 'bigint' AS typ, 'NO' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'plan_course_credit_evidence' AS tbl, 'created_at' AS col, 'datetime' AS typ, 'NO' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'historical_outcome_id' AS col, 'bigint' AS typ, 'NO' AS nullable, 'auto_increment' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'student_course_registration_id' AS col, 'int' AS typ, 'NO' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'work_item_id' AS col, 'char(36)' AS typ, 'NO' AS nullable, '' AS extra, 'utf8mb4' AS charset_name, 'utf8mb4_unicode_ci' AS collation_name
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'revision' AS col, 'int unsigned' AS typ, 'NO' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'request_id' AS col, 'char(36)' AS typ, 'NO' AS nullable, '' AS extra, 'utf8mb4' AS charset_name, 'utf8mb4_unicode_ci' AS collation_name
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'request_hash' AS col, 'char(64)' AS typ, 'NO' AS nullable, '' AS extra, 'utf8mb4' AS charset_name, 'utf8mb4_unicode_ci' AS collation_name
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'actor_user_id' AS col, 'int' AS typ, 'NO' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'reason' AS col, 'text' AS typ, 'NO' AS nullable, '' AS extra, 'utf8mb4' AS charset_name, 'utf8mb4_unicode_ci' AS collation_name
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'before_values' AS col, 'longtext' AS typ, 'NO' AS nullable, '' AS extra, 'utf8mb4' AS charset_name, 'utf8mb4_unicode_ci' AS collation_name
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'after_values' AS col, 'longtext' AS typ, 'NO' AS nullable, '' AS extra, 'utf8mb4' AS charset_name, 'utf8mb4_unicode_ci' AS collation_name
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'created_at' AS col, 'datetime' AS typ, 'NO' AS nullable, '' AS extra, '' AS charset_name, '' AS collation_name), expected_indexes AS (SELECT 'historical_exam_work_items' AS tbl, 'PRIMARY' AS idx, '0' AS non_unique, 'work_item_id' AS cols
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'uq_hx_work_unit' AS idx, '0' AS non_unique, 'action_id,baseline_hash' AS cols
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'uq_hx_work_operation' AS idx, '0' AS non_unique, 'operation_id,action_id' AS cols
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'idx_hx_work_list' AS idx, '1' AS non_unique, 'kind,academic_year_id,semester_id,student_id,work_item_id' AS cols
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'idx_hx_work_registration' AS idx, '1' AS non_unique, 'student_course_registration_id,work_item_id' AS cols
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'PRIMARY' AS idx, '0' AS non_unique, 'credit_evidence_id' AS cols
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'uq_hx_credit_revision' AS idx, '0' AS non_unique, 'student_course_registration_id,revision' AS cols
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'uq_hx_credit_operation' AS idx, '0' AS non_unique, 'operation_id,action_id,student_course_registration_id' AS cols
+ UNION ALL SELECT 'plan_course_credit_evidence' AS tbl, 'PRIMARY' AS idx, '0' AS non_unique, 'credit_evidence_id' AS cols
+ UNION ALL SELECT 'plan_course_credit_evidence' AS tbl, 'uq_hx_plan_credit_revision' AS idx, '0' AS non_unique, 'program_course_id,revision' AS cols
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'PRIMARY' AS idx, '0' AS non_unique, 'historical_outcome_id' AS cols
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'uq_hx_outcome_revision' AS idx, '0' AS non_unique, 'student_course_registration_id,revision' AS cols
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'uq_hx_outcome_work' AS idx, '0' AS non_unique, 'work_item_id' AS cols
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'uq_hx_outcome_request' AS idx, '0' AS non_unique, 'request_id' AS cols), expected_fks AS (SELECT 'historical_exam_work_items' AS tbl, 'fk_hx_work_actor' AS fk, 'actor_user_id' AS cols, 'users' AS target, 'user_id' AS target_cols
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'fk_hx_work_student' AS fk, 'student_id' AS cols, 'students' AS target, 'student_id' AS target_cols
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'fk_hx_work_course' AS fk, 'course_id' AS cols, 'courses' AS target, 'course_id' AS target_cols
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'fk_hx_work_program' AS fk, 'academic_program_id' AS cols, 'academic_programs' AS target, 'academic_program_id' AS target_cols
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'fk_hx_work_year' AS fk, 'academic_year_id' AS cols, 'academic_years' AS target, 'academic_year_id' AS target_cols
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'fk_hx_work_semester' AS fk, 'semester_id' AS cols, 'semesters' AS target, 'semester_id' AS target_cols
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'fk_hx_work_offering' AS fk, 'course_offering_id' AS cols, 'course_offerings' AS target, 'course_offering_id' AS target_cols
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'fk_hx_work_registration' AS fk, 'student_course_registration_id' AS cols, 'student_course_registrations' AS target, 'student_course_registration_id' AS target_cols
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'fk_hx_credit_registration' AS fk, 'student_course_registration_id' AS cols, 'student_course_registrations' AS target, 'student_course_registration_id' AS target_cols
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'fk_hx_credit_work' AS fk, 'work_item_id' AS cols, 'historical_exam_work_items' AS target, 'work_item_id' AS target_cols
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'fk_hx_credit_actor' AS fk, 'actor_user_id' AS cols, 'users' AS target, 'user_id' AS target_cols
+ UNION ALL SELECT 'plan_course_credit_evidence' AS tbl, 'fk_hx_plan_credit_member' AS fk, 'program_course_id' AS cols, 'program_courses' AS target, 'program_course_id' AS target_cols
+ UNION ALL SELECT 'plan_course_credit_evidence' AS tbl, 'fk_hx_plan_credit_event' AS fk, 'academic_plan_event_id' AS cols, 'academic_plan_events' AS target, 'academic_plan_event_id' AS target_cols
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'fk_hx_outcome_registration' AS fk, 'student_course_registration_id' AS cols, 'student_course_registrations' AS target, 'student_course_registration_id' AS target_cols
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'fk_hx_outcome_work' AS fk, 'work_item_id' AS cols, 'historical_exam_work_items' AS target, 'work_item_id' AS target_cols
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'fk_hx_outcome_actor' AS fk, 'actor_user_id' AS cols, 'users' AS target, 'user_id' AS target_cols), expected_checks AS (SELECT 'historical_exam_work_items' AS tbl, 'ck_hx_work_json' AS chk, 'json_valid(proposal)' AS body
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'ck_hx_work_kind' AS chk, 'kind in (''correction_review'',''credit_context_review'',''ungraded_followup'',''final_absence_review'',''aggregate_incomplete_followup'')' AS body
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'ck_hx_credit_hours' AS chk, 'credit_hours >= 1 and credit_hours <= 30' AS body
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'ck_hx_credit_revision' AS chk, 'revision >= 1' AS body
+ UNION ALL SELECT 'plan_course_credit_evidence' AS tbl, 'ck_hx_plan_credit_hours' AS chk, 'credit_hours >= 1 and credit_hours <= 30' AS body
+ UNION ALL SELECT 'plan_course_credit_evidence' AS tbl, 'ck_hx_plan_credit_revision' AS chk, 'revision >= 1' AS body
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'ck_hx_outcome_json' AS chk, 'json_valid(before_values) and json_valid(after_values)' AS body
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'ck_hx_outcome_revision' AS chk, 'revision >= 1' AS body), expected_triggers AS (SELECT 'historical_exam_work_items' AS tbl, 'hx_history_0_u' AS trg, 'UPDATE' AS op, 'BEGIN SIGNAL SQLSTATE ''45000'' SET MESSAGE_TEXT=''historical_exam_evidence_append_only''; END' AS body
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'hx_history_0_d' AS trg, 'DELETE' AS op, 'BEGIN SIGNAL SQLSTATE ''45000'' SET MESSAGE_TEXT=''historical_exam_evidence_append_only''; END' AS body
+ UNION ALL SELECT 'historical_exam_work_items' AS tbl, 'hx_epoch_0_i' AS trg, 'INSERT' AS op, 'BEGIN IF NOT EXISTS(SELECT 1 FROM academic_catalog_control WHERE control_id=1 AND schema_version=1 AND is_ready=1) THEN SIGNAL SQLSTATE ''45000'' SET MESSAGE_TEXT=''academic_catalog_schema_not_ready''; END IF; UPDATE academic_catalog_control SET revision=revision+1 WHERE control_id=1; END' AS body
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'hx_history_1_u' AS trg, 'UPDATE' AS op, 'BEGIN SIGNAL SQLSTATE ''45000'' SET MESSAGE_TEXT=''historical_exam_evidence_append_only''; END' AS body
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'hx_history_1_d' AS trg, 'DELETE' AS op, 'BEGIN SIGNAL SQLSTATE ''45000'' SET MESSAGE_TEXT=''historical_exam_evidence_append_only''; END' AS body
+ UNION ALL SELECT 'registration_credit_evidence' AS tbl, 'hx_epoch_1_i' AS trg, 'INSERT' AS op, 'BEGIN IF NOT EXISTS(SELECT 1 FROM academic_catalog_control WHERE control_id=1 AND schema_version=1 AND is_ready=1) THEN SIGNAL SQLSTATE ''45000'' SET MESSAGE_TEXT=''academic_catalog_schema_not_ready''; END IF; UPDATE academic_catalog_control SET revision=revision+1 WHERE control_id=1; END' AS body
+ UNION ALL SELECT 'plan_course_credit_evidence' AS tbl, 'hx_history_2_u' AS trg, 'UPDATE' AS op, 'BEGIN SIGNAL SQLSTATE ''45000'' SET MESSAGE_TEXT=''historical_exam_evidence_append_only''; END' AS body
+ UNION ALL SELECT 'plan_course_credit_evidence' AS tbl, 'hx_history_2_d' AS trg, 'DELETE' AS op, 'BEGIN SIGNAL SQLSTATE ''45000'' SET MESSAGE_TEXT=''historical_exam_evidence_append_only''; END' AS body
+ UNION ALL SELECT 'plan_course_credit_evidence' AS tbl, 'hx_epoch_2_i' AS trg, 'INSERT' AS op, 'BEGIN IF NOT EXISTS(SELECT 1 FROM academic_catalog_control WHERE control_id=1 AND schema_version=1 AND is_ready=1) THEN SIGNAL SQLSTATE ''45000'' SET MESSAGE_TEXT=''academic_catalog_schema_not_ready''; END IF; UPDATE academic_catalog_control SET revision=revision+1 WHERE control_id=1; IF NOT EXISTS(SELECT 1 FROM program_courses pc JOIN academic_plan_versions v ON v.academic_plan_version_id=pc.academic_plan_version_id WHERE pc.program_course_id=NEW.program_course_id AND v.status=''draft'' AND v.fixed_at IS NULL) THEN SIGNAL SQLSTATE ''45000'' SET MESSAGE_TEXT=''historical_exam_fixed_plan_credit_locked''; END IF; END' AS body
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'hx_history_3_u' AS trg, 'UPDATE' AS op, 'BEGIN SIGNAL SQLSTATE ''45000'' SET MESSAGE_TEXT=''historical_exam_evidence_append_only''; END' AS body
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'hx_history_3_d' AS trg, 'DELETE' AS op, 'BEGIN SIGNAL SQLSTATE ''45000'' SET MESSAGE_TEXT=''historical_exam_evidence_append_only''; END' AS body
+ UNION ALL SELECT 'historical_exam_outcomes' AS tbl, 'hx_epoch_3_i' AS trg, 'INSERT' AS op, 'BEGIN IF NOT EXISTS(SELECT 1 FROM academic_catalog_control WHERE control_id=1 AND schema_version=1 AND is_ready=1) THEN SIGNAL SQLSTATE ''45000'' SET MESSAGE_TEXT=''academic_catalog_schema_not_ready''; END IF; UPDATE academic_catalog_control SET revision=revision+1 WHERE control_id=1; END' AS body),
+owned_tables AS (SELECT * FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('historical_exam_work_items','registration_credit_evidence','plan_course_credit_evidence','historical_exam_outcomes')),
+actual_columns AS (SELECT * FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('historical_exam_work_items','registration_credit_evidence','plan_course_credit_evidence','historical_exam_outcomes')),
+actual_indexes AS (SELECT TABLE_NAME,INDEX_NAME,NON_UNIQUE,INDEX_TYPE,GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX SEPARATOR ',') AS cols,MAX(COALESCE(SUB_PART,0)) AS prefix_length FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('historical_exam_work_items','registration_credit_evidence','plan_course_credit_evidence','historical_exam_outcomes') GROUP BY TABLE_NAME,INDEX_NAME,NON_UNIQUE,INDEX_TYPE),
+actual_fks AS (SELECT r.TABLE_NAME,r.CONSTRAINT_NAME,r.DELETE_RULE,r.UPDATE_RULE,r.MATCH_OPTION,GROUP_CONCAT(u.COLUMN_NAME ORDER BY u.ORDINAL_POSITION SEPARATOR ',') AS cols,MIN(u.REFERENCED_TABLE_SCHEMA) AS target_schema,MIN(u.REFERENCED_TABLE_NAME) AS target,GROUP_CONCAT(u.REFERENCED_COLUMN_NAME ORDER BY u.ORDINAL_POSITION SEPARATOR ',') AS target_cols FROM information_schema.REFERENTIAL_CONSTRAINTS r JOIN information_schema.KEY_COLUMN_USAGE u ON u.CONSTRAINT_SCHEMA=r.CONSTRAINT_SCHEMA AND u.TABLE_NAME=r.TABLE_NAME AND u.CONSTRAINT_NAME=r.CONSTRAINT_NAME WHERE r.CONSTRAINT_SCHEMA=DATABASE() AND r.TABLE_NAME IN ('historical_exam_work_items','registration_credit_evidence','plan_course_credit_evidence','historical_exam_outcomes') GROUP BY r.TABLE_NAME,r.CONSTRAINT_NAME,r.DELETE_RULE,r.UPDATE_RULE,r.MATCH_OPTION),
+actual_checks AS (SELECT * FROM information_schema.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA=DATABASE() AND TABLE_NAME IN ('historical_exam_work_items','registration_credit_evidence','plan_course_credit_evidence','historical_exam_outcomes')),
+actual_triggers AS (SELECT * FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()),
+issues AS (
+ SELECT e.tbl AS object_name,'table_definition' AS problem FROM (SELECT DISTINCT tbl FROM expected_columns) e LEFT JOIN owned_tables a ON a.TABLE_NAME=e.tbl WHERE (a.TABLE_NAME IS NOT NULL) AND (a.TABLE_NAME IS NULL OR a.ENGINE<>'InnoDB' OR a.TABLE_TYPE<>'BASE TABLE' OR BINARY a.TABLE_COMMENT<>BINARY 'historical-exam-approved-reconciliation-v1' OR a.TABLE_COLLATION<>'utf8mb4_unicode_ci')
+ UNION ALL SELECT CONCAT(e.tbl,'.',e.col),'column_definition' FROM expected_columns e JOIN owned_tables p ON p.TABLE_NAME=e.tbl LEFT JOIN actual_columns a ON a.TABLE_NAME=e.tbl AND a.COLUMN_NAME=e.col WHERE a.COLUMN_NAME IS NULL OR BINARY (CASE WHEN a.DATA_TYPE IN ('int','bigint') THEN REGEXP_REPLACE(a.COLUMN_TYPE,'[(][0-9]+[)]','') ELSE a.COLUMN_TYPE END)<>BINARY e.typ OR a.IS_NULLABLE<>e.nullable OR BINARY a.EXTRA<>BINARY e.extra OR COALESCE(a.CHARACTER_SET_NAME,'')<>e.charset_name OR COALESCE(a.COLLATION_NAME,'')<>e.collation_name OR (a.COLUMN_DEFAULT IS NOT NULL AND a.COLUMN_DEFAULT<>'NULL') OR COALESCE(a.GENERATION_EXPRESSION,'')<>''
+ UNION ALL SELECT CONCAT(a.TABLE_NAME,'.',a.COLUMN_NAME),'unexpected_column' FROM actual_columns a LEFT JOIN expected_columns e ON e.tbl=a.TABLE_NAME AND e.col=a.COLUMN_NAME WHERE e.col IS NULL
+ UNION ALL SELECT CONCAT(e.tbl,'.',e.idx),'index_definition' FROM expected_indexes e JOIN owned_tables p ON p.TABLE_NAME=e.tbl LEFT JOIN actual_indexes a ON a.TABLE_NAME=e.tbl AND a.INDEX_NAME=e.idx WHERE a.INDEX_NAME IS NULL OR a.cols IS NULL OR a.NON_UNIQUE<>e.non_unique OR BINARY a.cols<>BINARY e.cols OR a.INDEX_TYPE<>'BTREE' OR a.prefix_length<>0
+ UNION ALL SELECT CONCAT(a.TABLE_NAME,'.',a.INDEX_NAME),'unexpected_unique_index' FROM actual_indexes a LEFT JOIN expected_indexes e ON e.tbl=a.TABLE_NAME AND e.idx=a.INDEX_NAME WHERE a.NON_UNIQUE=0 AND e.idx IS NULL
+ UNION ALL SELECT CONCAT(e.tbl,'.',e.fk),'foreign_key_definition' FROM expected_fks e JOIN owned_tables p ON p.TABLE_NAME=e.tbl LEFT JOIN actual_fks a ON a.TABLE_NAME=e.tbl AND a.CONSTRAINT_NAME=e.fk WHERE a.CONSTRAINT_NAME IS NULL OR a.target_schema IS NULL OR a.target_cols IS NULL OR BINARY a.cols<>BINARY e.cols OR BINARY a.target_schema<>BINARY DATABASE() OR BINARY a.target<>BINARY e.target OR BINARY a.target_cols<>BINARY e.target_cols OR a.DELETE_RULE NOT IN ('RESTRICT','NO ACTION') OR a.UPDATE_RULE NOT IN ('RESTRICT','NO ACTION') OR a.MATCH_OPTION<>'NONE'
+ UNION ALL SELECT CONCAT(a.TABLE_NAME,'.',a.CONSTRAINT_NAME),'unexpected_foreign_key' FROM actual_fks a LEFT JOIN expected_fks e ON e.tbl=a.TABLE_NAME AND e.fk=a.CONSTRAINT_NAME WHERE e.fk IS NULL
+ UNION ALL SELECT CONCAT(e.tbl,'.',e.chk),'check_definition' FROM expected_checks e JOIN owned_tables p ON p.TABLE_NAME=e.tbl LEFT JOIN actual_checks a ON a.TABLE_NAME=e.tbl AND a.CONSTRAINT_NAME=e.chk WHERE a.CONSTRAINT_NAME IS NULL OR a.CHECK_CLAUSE IS NULL OR BINARY REGEXP_REPLACE(TRIM(REPLACE(a.CHECK_CLAUSE,CHAR(96),'')),'[[:space:]]+',' ')<>BINARY e.body
+ UNION ALL SELECT CONCAT(a.TABLE_NAME,'.',a.CONSTRAINT_NAME),'unexpected_check' FROM actual_checks a LEFT JOIN expected_checks e ON e.tbl=a.TABLE_NAME AND e.chk=a.CONSTRAINT_NAME WHERE e.chk IS NULL
+ UNION ALL SELECT e.trg,'trigger_definition' FROM expected_triggers e LEFT JOIN actual_triggers a ON a.TRIGGER_NAME=e.trg WHERE (a.TRIGGER_NAME IS NOT NULL) AND (a.TRIGGER_NAME IS NULL OR BINARY a.EVENT_OBJECT_TABLE<>BINARY e.tbl OR a.EVENT_MANIPULATION<>e.op OR a.ACTION_TIMING<>'BEFORE' OR a.ACTION_ORIENTATION<>'ROW' OR a.ACTION_STATEMENT IS NULL OR BINARY REGEXP_REPLACE(TRIM(a.ACTION_STATEMENT),'[[:space:]]+',' ')<>BINARY e.body)
+ UNION ALL SELECT a.TRIGGER_NAME,'unexpected_trigger' FROM actual_triggers a LEFT JOIN expected_triggers e ON e.trg=a.TRIGGER_NAME WHERE a.EVENT_OBJECT_TABLE IN ('historical_exam_work_items','registration_credit_evidence','plan_course_credit_evidence','historical_exam_outcomes') AND e.trg IS NULL
+)
+SELECT object_name,problem FROM issues
+) hx_issues);
+SET @hx_history=0;
+SET @hx_read=IF(EXISTS(SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='historical_exam_work_items'),'SELECT @hx_history+COUNT(*) INTO @hx_history FROM historical_exam_work_items','SET @hx_history=@hx_history');
+PREPARE hx_history_read FROM @hx_read;
+EXECUTE hx_history_read;
+DEALLOCATE PREPARE hx_history_read;
+SET @hx_read=IF(EXISTS(SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='registration_credit_evidence'),'SELECT @hx_history+COUNT(*) INTO @hx_history FROM registration_credit_evidence','SET @hx_history=@hx_history');
+PREPARE hx_history_read FROM @hx_read;
+EXECUTE hx_history_read;
+DEALLOCATE PREPARE hx_history_read;
+SET @hx_read=IF(EXISTS(SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='plan_course_credit_evidence'),'SELECT @hx_history+COUNT(*) INTO @hx_history FROM plan_course_credit_evidence','SET @hx_history=@hx_history');
+PREPARE hx_history_read FROM @hx_read;
+EXECUTE hx_history_read;
+DEALLOCATE PREPARE hx_history_read;
+SET @hx_read=IF(EXISTS(SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='historical_exam_outcomes'),'SELECT @hx_history+COUNT(*) INTO @hx_history FROM historical_exam_outcomes','SET @hx_history=@hx_history');
+PREPARE hx_history_read FROM @hx_read;
+EXECUTE hx_history_read;
+DEALLOCATE PREPARE hx_history_read;
+DELIMITER $$
+BEGIN NOT ATOMIC
+ IF @hx_db IS NULL OR @hx_core<>12 OR @hx_keys<>10 OR @hx_control<>1 OR @hx_issues<>0 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='historical_exam_schema_incompatible'; END IF;
+ IF @hx_history<>0 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='historical_exam_rollback_would_erase_history'; END IF;
+ DROP TABLE IF EXISTS historical_exam_outcomes;
+ DROP TABLE IF EXISTS plan_course_credit_evidence;
+ DROP TABLE IF EXISTS registration_credit_evidence;
+ DROP TABLE IF EXISTS historical_exam_work_items;
+END$$
+DELIMITER ;
+SELECT 'EMPTY_PACKAGE_REMOVED_ONLY' AS result;

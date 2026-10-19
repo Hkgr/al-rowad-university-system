@@ -17,11 +17,12 @@ final class CompletionSnapshot
     public const EXAM_TABLES=['grade_components','student_grade_components','grade_part_approvals','grading_policies','grade_scales',
         'student_course_incomplete_cases','student_course_incomplete_events','student_exam_deferrals','course_departments','grade_audit_logs','grade_part_approval_events'];
 
-    public function read(string $file,bool $followup=false,bool $identityContext=false,bool $examinations=false): array
+    public function read(string $file,bool $followup=false,bool $identityContext=false,bool $examinations=false,bool $approvedExams=false): array
     {
         $sql = file_get_contents($file);
         if ($sql === false) throw new \InvalidArgumentException('Snapshot is unreadable.');
         $tables = array_fill_keys(array_unique(array_merge(self::TABLES,$followup?self::FOLLOWUP_TABLES:[],$identityContext?['course_departments']:[],$examinations?self::EXAM_TABLES:[])), []);
+        if($approvedExams)foreach(array_keys(\App\Support\HistoricalExamSchema::columns()) as $table)$tables[$table]=[];
         // The lexical terminator respects SQL strings, including escaped semicolons/newlines.
         preg_match_all('/^INSERT INTO `([^`]+)` \(([^\r\n]+)\) VALUES\s*/m', $sql, $headers, PREG_OFFSET_CAPTURE);
         foreach ($headers[0] as $i => [$header, $offset]) {

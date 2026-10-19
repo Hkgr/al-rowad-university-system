@@ -623,8 +623,8 @@ class RegistrationModificationService
         );
         $baseHours = $this->registration->hoursSnapshot($student, (int) $request->academic_year_id, (int) $request->semester_id);
         $projectedBase = $this->registration->hoursSnapshot($student, (int) $request->academic_year_id, (int) $request->semester_id, $projection);
-        $removedHours = (int) $remove->sum(fn ($item): int => (int) ($item->courseOffering?->course?->credit_hours ?? 0));
-        $addedHours = (int) $add->sum(fn ($item): int => (int) ($item->courseOffering?->course?->credit_hours ?? 0));
+        $removedHours = (int) $remove->sum(fn ($item): int => $this->itemHours($student, $item));
+        $addedHours = (int) $add->sum(fn ($item): int => $this->itemHours($student, $item));
         $projectedHours = (int) $projectedBase['registered_hours'] + $addedHours;
         $finalIds = collect([...$keep->pluck('course_offering_id')->all(), ...$add->pluck('course_offering_id')->all()])
             ->map(fn ($id): int => (int) $id)->unique()->values();
@@ -708,7 +708,7 @@ class RegistrationModificationService
                 'course_id' => (int) $offering->course_id,
                 'course_code' => $offering->course?->course_code,
                 'course_name' => $offering->course?->course_name,
-                'credit_hours' => (int) ($offering->course?->credit_hours ?? 0),
+                'credit_hours' => \App\Support\ApplicableCourseCredits::candidateHours($student, $offering),
                 'eligibility_status' => $offering->getAttribute('eligibility_status'),
                 'eligibility_reasons' => $offering->getAttribute('eligibility_reasons') ?? [],
                 'official_timetable' => $offering->getAttribute('official_timetable'),
@@ -755,7 +755,7 @@ class RegistrationModificationService
                     'course_id' => (int) $item->courseOffering->course->course_id,
                     'course_code' => $item->courseOffering->course->course_code,
                     'course_name' => $item->courseOffering->course->course_name,
-                    'credit_hours' => (int) $item->courseOffering->course->credit_hours,
+                    'credit_hours' => $this->itemHours($student, $item),
                 ],
                 'official_timetable' => $projection['schedules'][(int) $item->course_offering_id]['schedule'] ?? null,
             ])->values()->all(),
@@ -780,11 +780,11 @@ class RegistrationModificationService
     {
         $baselineHours = (int) $request->items
             ->whereNotNull('source_student_course_registration_id')
-            ->sum(fn ($item): int => (int) ($item->courseOffering?->course?->credit_hours ?? 0));
+            ->sum(fn ($item): int => $this->itemHours($request->student, $item));
         $removedHours = (int) $request->items->where('operation', Workflow::OPERATION_REMOVE)
-            ->sum(fn ($item): int => (int) ($item->courseOffering?->course?->credit_hours ?? 0));
+            ->sum(fn ($item): int => $this->itemHours($request->student, $item));
         $addedHours = (int) $request->items->where('operation', Workflow::OPERATION_ADD)
-            ->sum(fn ($item): int => (int) ($item->courseOffering?->course?->credit_hours ?? 0));
+            ->sum(fn ($item): int => $this->itemHours($request->student, $item));
 
         return [
             'student_registration_modification_request_id' => (int) $request->getKey(),
@@ -1026,6 +1026,11 @@ class RegistrationModificationService
                 'registration_modification_schema_not_ready',
             );
         }
+    }
+
+    private function itemHours(?Student $student, $item): int
+    {
+        return \App\Support\ApplicableCourseCredits::choiceHours($student,$item->courseOffering,$item->sourceRegistration??$item->materializedRegistration);
     }
 
     private function writeEvent(

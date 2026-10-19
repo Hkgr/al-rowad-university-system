@@ -4,9 +4,12 @@ export const incompleteBase = '/v1/exams/incomplete-results'
 export const incompletePage = '/exam-board/incomplete-results'
 export const caseStates = { active: 'نشطة', resolved: 'مسوّاة', expired: 'منتهية' }
 export const expiryOutcomes = { F: 'F — رسوب', Z: 'Z — حرمان' }
-export const registrationResultStates = { no_result: 'لا توجد نتيجة محفوظة', pending_approval: 'نتيجة بانتظار الاعتماد', ordinary_missing_components: 'نقص مكونات عادي — ليس منحة I موثقة', official_result: 'نتيجة رسمية', incomplete_active: 'I نشطة موثقة', incomplete_resolved: 'نتيجة مسوّاة لها تاريخ I', incomplete_expired: 'نتيجة انتهاء مهلة I' }
+export const registrationResultStates = { no_result: 'لا توجد نتيجة محفوظة', pending_approval: 'نتيجة بانتظار الاعتماد', ordinary_missing_components: 'نقص مكونات عادي — ليس منحة I موثقة', official_result: 'نتيجة رسمية', historical_reconciled: 'نتيجة مثبتة بمراجعة تاريخية مدققة — ليست منحة I', incomplete_active: 'I نشطة موثقة', incomplete_resolved: 'نتيجة مسوّاة لها تاريخ I', incomplete_expired: 'نتيجة انتهاء مهلة I' }
 export const operationLabels = { grant: 'منح I', deadline_changed: 'تعديل المهلة', resolved: 'تسوية', expired: 'انتهاء المهلة' }
 export const incompleteLabels = {
+  historical_exam_schema_not_ready: 'قراءة العمل المستورد غير متاحة قبل استكمال مخطط الحماية؛ لا يعني ذلك عدم وجود حالات.',
+  historical_outcome_locked: 'النتيجة مثبتة بمراجعة تاريخية مدققة؛ التعديل العادي مقفل ويلزم مسار التصحيح المخوّل.',
+  historical_outcome_conflict: 'لا تطابق البيانات الحالية التسوية التاريخية المثبتة؛ يلزم فحص مخوّل، دون تصحيح تلقائي.',
   incomplete_supplementary_conflict: 'يوجد تأجيل أو سياق تكميلي متعارض؛ لا يُعاد تغييره تلقائيًا لمعالجة I.',
   incomplete_components_not_configured: 'المكونات المطلوبة غير معرّفة؛ يلزم تجهيزها عبر المسار المخوّل.',
   incomplete_component_configuration_invalid: 'تعريف المكونات غير صالح للتسوية. راجع تجهيز الطرح.',

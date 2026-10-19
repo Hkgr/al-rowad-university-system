@@ -70,7 +70,7 @@ class GradePartWorkflowService
             $editableStatus = in_array($status, ['draft', 'returned'], true);
             $complete = $this->partComplete($registrations, $offering->gradeComponents, $part);
             $gradeStateAllowsEditing = $registrations->contains(
-                fn ($registration): bool => $registration->allowsGradeEntry() && ! $this->registrationIsDeprived($registration) && IncompleteOutcomeGuard::forRegistration($registration) === null
+                fn ($registration): bool => $registration->allowsGradeEntry() && ! $this->registrationIsDeprived($registration) && IncompleteOutcomeGuard::forRegistration($registration) === null && \App\Support\HistoricalOutcomeGuard::forRegistration($registration) === null
             );
             $parts[$part] = [
                 'required' => $requiredPart,

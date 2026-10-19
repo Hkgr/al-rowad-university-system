@@ -172,7 +172,7 @@ class RegistrationService
             );
         }
 
-        $courseCreditHours = (int) ($courseOffering->course?->credit_hours ?? 0);
+        $courseCreditHours = \App\Support\ApplicableCourseCredits::candidateHours($student,$courseOffering);
         $hours = $this->getHoursSnapshot(
             $student,
             (int) $courseOffering->academic_year_id,
@@ -467,7 +467,7 @@ class RegistrationService
         $projection=new RegistrationProjectionContext(proposedAddOfferingIds:$targetIds->unique()->all());
         $requirementFailures=$this->requirements->validateProjectedCandidates($lockedStudent,$targetCollection,$projection);
         $timetables=$this->schedules->registrationEvaluations($lockedStudent,$targetCollection,$currentIds,$targetIds->unique()->all());foreach($timetables as $targetId=>$evaluation)if(($evaluation['reason']??null)!==null)$failures[]=['course_offering_id'=>(int)$targetId,'reason'=>$evaluation['reason'],'timetable'=>$evaluation];
-        $hours=$this->hoursSnapshot($lockedStudent,(int)$lockedRequest->academic_year_id,(int)$lockedRequest->semester_id);$replacementHours=(int)$targetCollection->sum(fn($offering)=>(int)$offering->course?->credit_hours);if($hours['registered_hours']+$replacementHours>$hours['max_allowed_hours'])$failures[]=['reason'=>'credit_hours_exceeded'];
+        $hours=$this->hoursSnapshot($lockedStudent,(int)$lockedRequest->academic_year_id,(int)$lockedRequest->semester_id);$replacementHours=(int)$targetCollection->sum(fn($offering)=>\App\Support\ApplicableCourseCredits::candidateHours($lockedStudent,$offering));if($hours['registered_hours']+$replacementHours>$hours['max_allowed_hours'])$failures[]=['reason'=>'credit_hours_exceeded'];
         if($failures!==[]||$requirementFailures!==[])throw SemesterRegistrationPhase6Exception::fail('registration_replacement_validation_failed','The complete replacement request is not eligible.',409,['items'=>array_merge($failures,$requirementFailures)]);
 
         if($items->firstWhere('student_registration_replacement_item_id',$item->getKey())===null)throw RegistrationException::liveWorkflowRequired();
@@ -1339,7 +1339,7 @@ class RegistrationService
             $academicStanding,
         );
         $reasons = [];
-        $courseCreditHours = (int) ($offering->course?->credit_hours ?? 0);
+        $courseCreditHours = \App\Support\ApplicableCourseCredits::candidateHours($student,$offering);
         $offeringId = (int) $offering->course_offering_id;
         $alreadyInRequest = in_array($offeringId, $requestOfferingIds, true);
 
@@ -1506,7 +1506,7 @@ class RegistrationService
             $hoursQuery->whereNotIn('student_course_registrations.student_course_registration_id', $projection->excludedRegistrationIds())
                 ->whereNotIn('student_course_registrations.course_offering_id', $projection->excludedOfferingIds());
         }
-        $registeredHours = (int) $hoursQuery->sum('courses.credit_hours');
+        $registeredHours = (int) $hoursQuery->sum(DB::raw(\App\Support\ApplicableCourseCredits::sql('student_course_registrations','courses')));
 
         $maxAllowedHours = (int) $academicStanding['max_allowed_hours'];
 

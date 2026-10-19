@@ -1,5 +1,7 @@
 # Historical examination completion: clarified assessment groups (v3)
 
+The separately approved [v4 reconciliation](historical-examination-approved-reconciliation.md) adds scoped staging, explicit correction adoption and contextual credits. This v3 document and its earlier counts remain historical evidence; issued artifacts are not edited or silently upgraded.
+
 ## Authority and implementation boundary
 
 The approved academic model is **coursework 40 + original final examination 60**. A practical examination is an activity within coursework, not a third assessment group. Source J is an aggregate, K is the original final-examination mark, and cached L may contain supplementary effects. Source facts, approved personal/course identities, Data evidence, period provenance and all earlier protections are unchanged.

@@ -409,6 +409,7 @@ class GradeService
 
     public function getTranscript(Student $student): array
     {
+        if($this->historicalReadFence())return app(AcademicCatalogTransaction::class)->snapshot(fn()=>$this->getTranscript($student));
         $student->load(['currentAcademicLevel', 'academicProgram.department.college']);
 
         $registrations = $this->loadOfficialVisibleAttempts($student);
@@ -470,6 +471,7 @@ class GradeService
 
     public function calculateGpa(Student $student, int $academicYearId, int $semesterId): array
     {
+        if($this->historicalReadFence())return app(AcademicCatalogTransaction::class)->snapshot(fn()=>$this->calculateGpa($student,$academicYearId,$semesterId));
         $student->loadMissing(['academicProgram']);
 
         $registrations = $this->gpaEligibleRegistrations($student)
@@ -488,6 +490,7 @@ class GradeService
 
     public function calculateCgpa(Student $student): array
     {
+        if($this->historicalReadFence())return app(AcademicCatalogTransaction::class)->snapshot(fn()=>$this->calculateCgpa($student));
         $student->loadMissing(['academicProgram']);
 
         $registrations = $this->selectBestAttempts(
@@ -503,6 +506,7 @@ class GradeService
 
     public function getGpaOverview(Student $student): array
     {
+        if($this->historicalReadFence())return app(AcademicCatalogTransaction::class)->snapshot(fn()=>$this->getGpaOverview($student));
         $student->load(['currentAcademicLevel', 'academicProgram.department.college']);
 
         $registrations = $this->officialAcademicAttempts($student)
@@ -827,7 +831,8 @@ class GradeService
         $statusCode = $this->resolveEffectiveResultStatusCode($registration);
         $officiallyVisible ??= $this->isOfficiallyVisibleAttempt($registration);
         $lifecycle = IncompleteOutcomeGuard::readState($registration);
-        if ($result !== null && ($officiallyVisible || $lifecycle['case_id'] !== null) && $statusCode !== null) {
+        $assessmentSummary = \App\Support\HistoricalOutcomeGuard::aggregateSummary($registration);
+        if ($result !== null && ($officiallyVisible || $lifecycle['case_id'] !== null || $lifecycle['state']==='historical_reconciled') && $statusCode !== null) {
             $finalMark = $result->final_mark === null ? null : (float) $result->final_mark;
             $letterGrade = $this->letterGradeFromOfficialResult(
                 $theoretical,
@@ -870,15 +875,16 @@ class GradeService
                 'course_id' => $registration->courseOffering->course->course_id,
                 ...\App\Support\HistoricalCourseCode::fields($registration),
                 'course_name' => $registration->courseOffering->course->course_name,
-                'credit_hours' => $registration->courseOffering->course->credit_hours,
+                ...\App\Support\ApplicableCourseCredits::fields($registration),
                 'requirement_classification' => CourseRequirementClassification::forOffering($registration->courseOffering),
             ] : null,
-            'theoretical_mark' => $theoretical,
-            'practical_mark' => $practical,
+            'theoretical_mark' => $assessmentSummary ? null : $theoretical,
+            'practical_mark' => $assessmentSummary ? null : $practical,
             'final_mark' => in_array($statusCode, ['incomplete', 'withdrawn'], true) ? null : $calculation['final_mark'],
             'letter_grade' => $result === null && $statusCode !== 'withdrawn' ? null : $calculation['letter_grade'],
             'grade_points' => in_array($statusCode, ['incomplete', 'withdrawn'], true) || $result === null ? null : $calculation['grade_points'],
             'result_lifecycle' => $lifecycle,
+            'assessment_summary' => $assessmentSummary,
             'result_status' => $this->compactResultStatus($calculation['result_status_code']),
             'notes' => $registration->notes,
         ];
@@ -922,6 +928,7 @@ class GradeService
 
     private function formatTranscriptCourse(StudentCourseRegistration $registration): array
     {
+        $assessmentSummary = \App\Support\HistoricalOutcomeGuard::aggregateSummary($registration);
         $offering = $registration->courseOffering;
         $course = $offering?->course;
         $result = $registration->studentCourseResult;
@@ -942,12 +949,13 @@ class GradeService
         $loadedStatus = $result?->resultStatus;
 
         return [
+            'assessment_summary' => $assessmentSummary,
             'registration_id' => $registration->student_course_registration_id,
             'course_offering_id' => $registration->course_offering_id,
             'course_id' => $course?->course_id,
             ...\App\Support\HistoricalCourseCode::fields($registration),
             'course_name' => $course?->course_name,
-            'credit_hours' => $course?->credit_hours,
+            ...\App\Support\ApplicableCourseCredits::fields($registration),
             'requirement_classification' => CourseRequirementClassification::forStudent(
                 $registration->student?->academic_program_id === null ? null : (int) $registration->student->academic_program_id,
                 $course?->course_id === null ? null : (int) $course->course_id,
@@ -956,14 +964,14 @@ class GradeService
             'academic_year' => $this->compactAcademicYear($offering?->academicYear),
             'semester' => $this->compactSemester($offering?->semester),
             'grades' => [
-                'theoretical_mark' => $visibility['theoretical'] ? $theoretical : null,
-                'practical_mark' => $visibility['practical'] ? $practical : null,
+                'theoretical_mark' => !$assessmentSummary && $visibility['theoretical'] ? $theoretical : null,
+                'practical_mark' => !$assessmentSummary && $visibility['practical'] ? $practical : null,
                 'final_mark' => $finalMark,
                 'letter_grade' => $letterGrade,
                 'grade_points' => in_array($statusCode, ['incomplete', 'withdrawn'], true) ? null : $this->resolveGradePoints($letterGrade, $statusCode),
             ],
-            'theoretical_mark' => $visibility['theoretical'] ? $theoretical : null,
-            'practical_mark' => $visibility['practical'] ? $practical : null,
+            'theoretical_mark' => !$assessmentSummary && $visibility['theoretical'] ? $theoretical : null,
+            'practical_mark' => !$assessmentSummary && $visibility['practical'] ? $practical : null,
             'final_mark' => $finalMark,
             'letter_grade' => $letterGrade,
             'grade_points' => in_array($statusCode, ['incomplete', 'withdrawn'], true) ? null : $this->resolveGradePoints($letterGrade, $statusCode),
@@ -983,6 +991,8 @@ class GradeService
         ?int $semesterId = null,
         ?string $repeatedCoursesHandling = null
     ): array {
+        \App\Support\ApplicableCourseCredits::attach($registrations);
+        \App\Support\HistoricalOutcomeGuard::assertBatch($registrations);
         \App\Support\HistoricalCourseCode::attach($registrations);
         $included = [];
         $excluded = [];
@@ -1058,7 +1068,7 @@ class GradeService
         $registrationStatus = $registration->registrationStatus?->status_code;
         $result = $registration->studentCourseResult;
         $course = $registration->courseOffering?->course;
-        $creditHours = (int) ($course?->credit_hours ?? 0);
+        $creditHours = (int) (\App\Support\ApplicableCourseCredits::hours($registration) ?? 0);
 
         $base = [
             'course_id' => $course?->course_id,
@@ -1093,7 +1103,7 @@ class GradeService
 
         $statusCode = $this->resolveEffectiveResultStatusCode($registration);
         $visibility = $this->officialComponentVisibility($registration->courseOffering);
-        if (!OfficialGradeScale::isFailure($statusCode) && (($visibility['theoretical'] && $result->theoretical_total === null)
+        if (!OfficialGradeScale::isFailure($statusCode) && !\App\Support\HistoricalOutcomeGuard::aggregateSummary($registration) && (($visibility['theoretical'] && $result->theoretical_total === null)
             || ($visibility['practical'] && $result->practical_total === null)
             || $result->final_mark === null)) {
             return [
@@ -1140,6 +1150,7 @@ class GradeService
 
     private function selectBestAttempts(Collection $registrations): Collection
     {
+        \App\Support\ApplicableCourseCredits::attach($registrations);
         \App\Support\HistoricalCourseCode::attach($registrations);
         return $registrations
             ->groupBy(fn (StudentCourseRegistration $registration) => $registration->courseOffering?->course_id)
@@ -1166,6 +1177,12 @@ class GradeService
                     ->first()['registration'];
             })
             ->values();
+    }
+
+    /** Reuse the canonical official repeat selector, including F/Z and later unresolved W/I. */
+    public function selectOfficialBestAttempts(Collection $registrations): Collection
+    {
+        return $this->selectBestAttempts($registrations->filter(fn($r)=>$this->isOfficiallyVisibleAttempt($r))->values());
     }
 
     private function gpaEligibleRegistrations(Student $student): Builder
@@ -1200,6 +1217,7 @@ class GradeService
      */
     public function loadOfficialVisibleAttempts(Student $student): Collection
     {
+        if($this->historicalReadFence())return app(AcademicCatalogTransaction::class)->snapshot(fn()=>$this->loadOfficialVisibleAttempts($student));
         $student->loadMissing(['academicProgram']);
 
         $registrations = StudentCourseRegistration::query()->where('student_id', $student->getKey())
@@ -1208,6 +1226,8 @@ class GradeService
                 'courseOffering.gradeApprovals.approvalStatus', 'studentCourseResult.resultStatus', 'registrationStatus'])->get()
             ->filter(fn ($r) => $r->registrationStatus?->status_code === 'withdrawn' || $this->isOfficiallyVisibleAttempt($r))->values();
         IncompleteOutcomeGuard::attach($registrations);
+        \App\Support\ApplicableCourseCredits::attach($registrations);
+        \App\Support\HistoricalOutcomeGuard::assertBatch($registrations);
         \App\Support\HistoricalCourseCode::attach($registrations);
         $registrations->each(fn (StudentCourseRegistration $registration) => $registration->setRelation('student', $student));
 
@@ -1251,7 +1271,7 @@ class GradeService
         $attemptedHours = 0;
         $earnedHours = 0;
         foreach ($term as $registration) {
-            $hours = (int) ($registration->courseOffering?->course?->credit_hours ?? 0);
+            $hours = (int) (\App\Support\ApplicableCourseCredits::hours($registration) ?? 0);
             if ($registration->registrationStatus?->status_code === 'withdrawn') continue;
             $attemptedHours += $hours;
             if ($this->isOfficiallyPassedAttempt($registration)) {
@@ -1308,6 +1328,7 @@ class GradeService
      */
     public function officialCumulativeMetrics(Student $student): array
     {
+        if($this->historicalReadFence())return app(AcademicCatalogTransaction::class)->snapshot(fn()=>$this->officialCumulativeMetrics($student));
         $all = $this->loadOfficialVisibleAttempts($student);
         $cgpaEvaluation = $this->summarizeGpaCollection($this->selectBestAttempts($all));
         $summary = $this->officialTranscriptSummary($all, $cgpaEvaluation['gpa']);
@@ -1325,7 +1346,7 @@ class GradeService
                 'course_id' => $courseId,
                 ...\App\Support\HistoricalCourseCode::fields($registration),
                 'course_name' => $course?->course_name,
-                'credit_hours' => (int) ($course?->credit_hours ?? 0),
+                ...\App\Support\ApplicableCourseCredits::fields($registration),
                 'result_status' => $statusCode,
                 'final_mark' => $registration->studentCourseResult?->final_mark !== null
                     ? (float) $registration->studentCourseResult->final_mark
@@ -1626,7 +1647,7 @@ class GradeService
         $historyHours = 0;
 
         foreach ($registrations as $registration) {
-            $hours = (int) ($registration->courseOffering?->course?->credit_hours ?? 0);
+            $hours = (int) (\App\Support\ApplicableCourseCredits::hours($registration) ?? 0);
             $statusCode = $this->resolveEffectiveResultStatusCode($registration);
             $historyHours += $hours;
             if ($statusCode === 'withdrawn') continue;
@@ -1700,7 +1721,12 @@ class GradeService
             ->join('course_offerings as workload_co', 'workload_co.course_offering_id', '=', 'student_course_registrations.course_offering_id')
             ->join('courses as workload_c', 'workload_c.course_id', '=', 'workload_co.course_id')
             ->when($year !== null, fn ($q) => $q->where('workload_co.academic_year_id', $year))
-            ->when($semester !== null, fn ($q) => $q->where('workload_co.semester_id', $semester))->sum('workload_c.credit_hours');
+            ->when($semester !== null, fn ($q) => $q->where('workload_co.semester_id', $semester))->sum(DB::raw(\App\Support\ApplicableCourseCredits::sql('student_course_registrations','workload_c')));
+    }
+
+    private function historicalReadFence(): bool
+    {
+        return DB::transactionLevel()===0&&\App\Support\HistoricalExamSchema::installed();
     }
 
     private function loadRegistration(int $registrationId, bool $lock = false): StudentCourseRegistration

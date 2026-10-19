@@ -10,9 +10,9 @@ final class OfficialGradeScale
     public static function isFailure(?string $status): bool { return in_array($status, ['failed', 'deprived'], true); }
 
     /** Shared eligibility: a persisted failure does not require a fabricated numeric mark. */
-    public static function gpaEligibilitySql(string $status, string $final, string $theory, string $practice, string $requiresTheory, string $requiresPractice): string
+    public static function gpaEligibilitySql(string $status, string $final, string $theory, string $practice, string $requiresTheory, string $requiresPractice, string $historicalAggregate = '0'): string
     {
-        return "({$status} IN ('failed','deprived') OR ({$status}='passed' AND {$final} IS NOT NULL AND ({$requiresTheory}=0 OR {$theory} IS NOT NULL) AND ({$requiresPractice}=0 OR {$practice} IS NOT NULL)))";
+        return "({$status} IN ('failed','deprived') OR ({$status}='passed' AND {$final} IS NOT NULL AND (({$historicalAggregate}) OR (({$requiresTheory}=0 OR {$theory} IS NOT NULL) AND ({$requiresPractice}=0 OR {$practice} IS NOT NULL)))))";
     }
 
     public static function numericAverageSql(string $mark, string $status): string { return "AVG(CASE WHEN {$status} NOT IN ('incomplete','pending_approval','withdrawn') THEN {$mark} END)"; }
