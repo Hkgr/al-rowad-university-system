@@ -179,8 +179,9 @@ class CourseOfferingScheduleService
     }
 
     /**
-     * Evaluate complete schedules and conflicts for all candidate Offerings
-     * from one batch-loaded graph.
+     * Evaluate slot conflicts for candidate Offerings from one batch-loaded graph.
+     * A missing or partial timetable is optional and does not block registration.
+     * Overlapping slots that actually exist still conflict.
      *
      * @param list<int> $officialOfferingIds
      * @param list<int> $requestOfferingIds
@@ -262,17 +263,17 @@ class CourseOfferingScheduleService
         foreach ($targetIds as $targetId) {
             $target = $offerings->get($targetId);
             $schedule = $descriptions[$targetId] ?? null;
-            if ($target === null || $schedule === null || $schedule['complete'] !== true) {
+            if ($target === null || $schedule === null) {
                 $evaluations[$targetId] = [
-                    'reason' => CourseOfferingScheduleException::INCOMPLETE,
+                    'reason' => null,
                     'schedule' => $schedule ?? $this->unavailableDescription($targets->firstWhere('course_offering_id', $targetId)),
                     'conflicts' => [],
+                    'incomplete_timetable_sources' => [],
                 ];
                 continue;
             }
 
             $conflicts = [];
-            $incompleteSources = [];
             foreach ($comparisonIds as $comparisonId) {
                 if ($comparisonId === $targetId) {
                     continue;
@@ -285,20 +286,14 @@ class CourseOfferingScheduleService
                     || (int) $other->semester_id !== (int) $target->semester_id) {
                     continue;
                 }
-                if ($otherSchedule['complete'] !== true) {
-                    $incompleteSources[] = $this->incompleteSourcePayload($other, $otherSchedule);
-                    continue;
-                }
                 $conflicts = [...$conflicts, ...$this->conflictsBetween($target, $schedule, $other, $otherSchedule)];
             }
 
             $evaluations[$targetId] = [
-                'reason' => $incompleteSources !== []
-                    ? CourseOfferingScheduleException::REFERENCE_INCOMPLETE
-                    : ($conflicts === [] ? null : CourseOfferingScheduleException::CONFLICT),
+                'reason' => $conflicts === [] ? null : CourseOfferingScheduleException::CONFLICT,
                 'schedule' => $schedule,
                 'conflicts' => $conflicts,
-                'incomplete_timetable_sources' => $incompleteSources,
+                'incomplete_timetable_sources' => [],
             ];
         }
 
@@ -551,19 +546,6 @@ class CourseOfferingScheduleService
         }
 
         return $conflicts;
-    }
-
-    private function incompleteSourcePayload(CourseOffering $offering, array $schedule): array
-    {
-        return [
-            'course_offering_id' => (int) $offering->course_offering_id,
-            'course_id' => (int) $offering->course_id,
-            'course_code' => $offering->course?->course_code,
-            'course_name' => $offering->course?->course_name,
-            'components_defined' => $schedule['components_defined'] ?? false,
-            'missing_components' => $schedule['missing_components'] ?? [],
-            'invalid_components' => $schedule['invalid_components'] ?? [],
-        ];
     }
 
     private function overlaps(array $a, array $b): bool

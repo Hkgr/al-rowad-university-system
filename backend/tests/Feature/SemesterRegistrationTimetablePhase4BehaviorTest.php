@@ -30,7 +30,7 @@ class SemesterRegistrationTimetablePhase4BehaviorTest extends TestCase
         $this->seedContext();
     }
 
-    public function test_zero_hour_course_is_readable_but_never_vacuously_complete_or_registration_eligible(): void
+    public function test_zero_hour_course_is_readable_but_never_vacuously_complete_and_timetable_is_optional(): void
     {
         $service = $this->service();
         $offering = CourseOffering::query()->with('course')->findOrFail(1);
@@ -48,7 +48,8 @@ class SemesterRegistrationTimetablePhase4BehaviorTest extends TestCase
             [],
             [],
         )[1];
-        self::assertSame(CourseOfferingScheduleException::INCOMPLETE, $evaluation['reason']);
+        self::assertNull($evaluation['reason']);
+        self::assertFalse($evaluation['schedule']['complete']);
         self::assertFalse($evaluation['schedule']['components_defined']);
     }
 
@@ -92,7 +93,7 @@ class SemesterRegistrationTimetablePhase4BehaviorTest extends TestCase
         self::assertCount(2, $description['slots']);
     }
 
-    public function test_incompatible_persisted_component_fails_closed_and_does_not_create_a_conflict(): void
+    public function test_incompatible_persisted_component_does_not_block_registration_or_create_a_conflict(): void
     {
         DB::table('course_offering_schedule_slots')->insert([
             $this->storedSlot(2, 'theoretical', 1, '08:00:00', '09:00:00'),
@@ -112,7 +113,7 @@ class SemesterRegistrationTimetablePhase4BehaviorTest extends TestCase
             [5],
             [],
         )[2];
-        self::assertSame(CourseOfferingScheduleException::INCOMPLETE, $evaluation['reason']);
+        self::assertNull($evaluation['reason']);
         self::assertSame([], $evaluation['conflicts']);
     }
 
@@ -137,7 +138,7 @@ class SemesterRegistrationTimetablePhase4BehaviorTest extends TestCase
         self::assertSame(5, $overlap['conflicts'][0]['conflicting_with']['course_offering_id']);
     }
 
-    public function test_incomplete_same_term_official_timetable_fails_closed_without_claiming_a_conflict(): void
+    public function test_incomplete_same_term_official_timetable_does_not_block_registration(): void
     {
         DB::table('course_offering_schedule_slots')->insert(
             $this->storedSlot(2, 'theoretical', 1, '08:00:00', '09:00:00'),
@@ -155,10 +156,9 @@ class SemesterRegistrationTimetablePhase4BehaviorTest extends TestCase
             [],
         )[2];
 
-        self::assertSame(CourseOfferingScheduleException::REFERENCE_INCOMPLETE, $evaluation['reason']);
+        self::assertNull($evaluation['reason']);
         self::assertSame([], $evaluation['conflicts']);
-        self::assertSame(4, $evaluation['incomplete_timetable_sources'][0]['course_offering_id']);
-        self::assertSame(['theoretical', 'practical'], $evaluation['incomplete_timetable_sources'][0]['missing_components']);
+        self::assertSame([], $evaluation['incomplete_timetable_sources']);
     }
 
     public function test_incomplete_timetable_in_another_term_does_not_block_the_target(): void
@@ -177,6 +177,27 @@ class SemesterRegistrationTimetablePhase4BehaviorTest extends TestCase
 
         self::assertNull($evaluation['reason']);
         self::assertSame([], $evaluation['incomplete_timetable_sources']);
+    }
+
+    public function test_partial_timetable_still_reports_an_actual_slot_conflict(): void
+    {
+        DB::table('course_offering_schedule_slots')->insert([
+            $this->storedSlot(4, 'theoretical', 1, '08:00:00', '09:00:00'),
+            $this->storedSlot(2, 'theoretical', 1, '08:30:00', '09:30:00'),
+        ]);
+        $service = $this->service();
+        $target = CourseOffering::query()->with('course')->findOrFail(4);
+
+        self::assertFalse($service->describe($target)['complete']);
+        $evaluation = $service->registrationEvaluations(
+            new Student(['student_id' => 1]),
+            collect([$target]),
+            [2],
+            [],
+        )[4];
+
+        self::assertSame(CourseOfferingScheduleException::CONFLICT, $evaluation['reason']);
+        self::assertSame(2, $evaluation['conflicts'][0]['conflicting_with']['course_offering_id']);
     }
 
     /** @dataProvider invalidWeekdayProvider */
