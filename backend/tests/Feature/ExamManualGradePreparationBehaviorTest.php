@@ -139,11 +139,13 @@ class ExamManualGradePreparationBehaviorTest extends ExamManualGradeGridBehavior
         foreach (['course_offerings', 'student_course_registrations', 'grade_components', 'student_grade_components', 'grade_audit_logs', 'user_activity_logs'] as $table) self::assertSame(0, DB::table($table)->count(), $table);
     }
 
-    public function test_ordinary_registration_still_rejects_absent_and_conflicting_timetables(): void
+    public function test_ordinary_registration_allows_an_absent_timetable_and_rejects_a_conflict(): void
     {
         DB::table('student_course_registrations')->where('student_id', 1)->delete();
         DB::table('course_offering_schedule_slots')->delete();
-        $this->assertOrdinaryBlocked('offering_schedule_incomplete');
+        DB::transaction(fn () => app(RegistrationService::class)->registerStudentWithinTransaction(['student_id' => 1, 'course_offering_id' => 1], 1));
+        self::assertSame(1, DB::table('student_course_registrations')->where('student_id', 1)->where('course_offering_id', 1)->count());
+        DB::table('student_course_registrations')->where('student_id', 1)->where('course_offering_id', 1)->delete();
         foreach (['theoretical', 'practical'] as $i => $part) DB::table('course_offering_schedule_slots')->insert([
             'course_offering_id' => 1, 'component_type' => $part, 'day_of_week' => $i + 1, 'start_time' => '08:00:00', 'end_time' => '09:00:00']);
         DB::table('courses')->insert(['course_id' => 2, 'course_code' => 'Conflict', 'credit_hours' => 3, 'theoretical_hours' => 2]);

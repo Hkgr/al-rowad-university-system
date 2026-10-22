@@ -53,7 +53,8 @@ $contract = static function (string $backendRoot): array {
     $expect(str_contains($service, 'new EloquentCollection($offerings->all())') && str_contains($service, '$offerings->loadMissing(\'course\')'), 'Batch descriptions must eager-load Course rows once rather than once per Offering.');
     $expect(str_contains($service, "(string) \$a['start_time'] < (string) \$b['end_time']") && str_contains($service, "(string) \$b['start_time'] < (string) \$a['end_time']"), 'Conflict detection must use half-open intervals.');
     $expect(str_contains($service, "->current()\n                    ->pluck('course_offering_id')"), 'Canonical current registrations must be resolved inside the central timetable service.');
-    $expect(str_contains($service, 'REFERENCE_INCOMPLETE') && str_contains($service, 'incomplete_timetable_sources') && str_contains($service, "\$otherSchedule['complete'] !== true"), 'Incomplete same-term comparison schedules must fail closed without being reported as conflicts.');
+    $expect(! str_contains($service, 'REFERENCE_INCOMPLETE') && ! str_contains($service, "reason' => CourseOfferingScheduleException::INCOMPLETE"), 'A missing or partial timetable must not be a registration reason.');
+    $expect(str_contains($service, 'conflictsBetween') && str_contains($service, 'CourseOfferingScheduleException::CONFLICT'), 'Existing slots must still be checked for conflicts when a timetable is optional.');
     $expect(str_contains($service, 'Schema::hasTable(\'course_offering_schedule_slots\')'), 'Missing Phase 4 schema must be detected before schedule queries.');
     $expect(str_contains($service, 'LOCK_REGISTRATION_STARTED') && str_contains($service, 'LOCK_OFFICIAL_REGISTRATION') && str_contains($service, 'LOCK_REQUEST_RELIANCE'), 'All irreversible timetable locking boundaries must be represented.');
     $expect(str_contains($service, '$this->scope->canMutateProgram(') && ! str_contains($service, "hasRoleCode('super_admin')"), 'Dean timetable writes must require actual mutation DataScope without a super-admin shortcut.');
@@ -63,7 +64,7 @@ $contract = static function (string $backendRoot): array {
     $expect(str_contains($calendar, '): ?bool') && str_contains($calendar, "registrationDeadlineSchemaReady()) {\n            return null;"), 'Missing deadline schema must be represented as unknown rather than falsely proving registration never started.');
     $expect(str_contains($service, 'LOCK_CALENDAR_SCHEMA_NOT_READY') && str_contains($service, 'calendarSchemaNotReady()'), 'Timetable reads and writes must fail closed when registration calendar readiness is unknown.');
     $expect(str_contains($service, "'initialization_only' => \$initializationOnly && \$reason === null") && str_contains($service, '$lockedSlots->isNotEmpty()'), 'Exactly one initial definition must be derived from persisted rows under the locked Offering.');
-    $expect(str_contains($registration, '$this->schedules->registrationEvaluations(') && str_contains($registration, '$this->assertTimetableEvaluation($timetable)'), 'Final registration materialization must freshly defend timetable completeness/conflicts.');
+    $expect(str_contains($registration, '$this->schedules->registrationEvaluations(') && str_contains($registration, '$this->assertTimetableEvaluation($timetable)'), 'Final registration materialization must freshly defend timetable conflicts.');
     $expect(str_contains($registration, '$requestPeerOfferingIds = StudentRegistrationRequestItem::query()') && str_contains($registration, '$requestOfferingIds,') && str_contains($registration, '$requestPeerOfferingIds,'), 'Trusted advisor materialization must pass locked request-peer Offering IDs into the canonical final timetable evaluation.');
     $finalTimetableCheck = strpos($registration, '$timetable = $this->schedules->registrationEvaluations(');
     $registrationWrite = strpos($registration, '$registrationDate = $data[\'registration_date\']');
@@ -89,13 +90,13 @@ $contract = static function (string $backendRoot): array {
         $expect(str_contains($apply, $guard), 'Apply must independently recompute critical prerequisite/compatibility guard '.$guard.'.');
     }
     foreach ([
-        'test_phase4_complete_timetable_allows_add_but_incomplete_target_fails',
+        'test_phase4_complete_and_incomplete_timetables_both_allow_add',
         'test_phase4_add_item_distinguishes_conflict_reference_completeness_and_term_scope',
         'test_phase4_request_items_use_half_open_intervals_and_submit_rechecks_the_whole_request',
         'test_phase4_advisor_approval_revalidates_conflicts_atomically_then_materializes_valid_request_after_cutoff',
         'test_phase4_final_materialization_service_cannot_bypass_an_official_timetable_conflict',
         'test_phase4_trusted_materialization_cannot_bypass_a_conflicting_request_peer',
-        'test_phase4_trusted_materialization_fails_closed_for_an_incomplete_request_peer',
+        'test_phase4_trusted_materialization_allows_an_incomplete_request_peer',
     ] as $behavior) {
         $expect(str_contains($workflowBehavior, $behavior), 'Missing real registration-workflow timetable regression '.$behavior.'.');
     }

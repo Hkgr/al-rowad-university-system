@@ -711,7 +711,7 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
         self::assertSame(2, (int) DB::table('course_offerings')->where('course_offering_id', 1)->value('available_seats'));
     }
 
-    public function test_phase4_complete_timetable_allows_add_but_incomplete_target_fails(): void
+    public function test_phase4_complete_and_incomplete_timetables_both_allow_add(): void
     {
         $this->registrationWindow();
         $this->seedRegistrationRequestContext('draft');
@@ -726,13 +726,8 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
 
         DB::table('student_registration_request_items')->delete();
         DB::table('course_offering_schedule_slots')->delete();
-        try {
-            $requests->addItem($student, CourseOffering::query()->findOrFail(1), $actor);
-            self::fail('An incomplete target timetable must block addItem.');
-        } catch (RegistrationRequestException $exception) {
-            self::assertSame(RegistrationException::OFFERING_SCHEDULE_INCOMPLETE, $exception->errorCode);
-            self::assertSame(0, DB::table('student_registration_request_items')->count());
-        }
+        $addedWithoutTimetable = $requests->addItem($student, CourseOffering::query()->findOrFail(1), $actor);
+        self::assertSame([1], $addedWithoutTimetable->items->pluck('course_offering_id')->map(fn ($id): int => (int) $id)->all());
     }
 
     public function test_phase4_add_item_distinguishes_conflict_reference_completeness_and_term_scope(): void
@@ -778,13 +773,8 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
         DB::table('student_registration_request_items')->delete();
         DB::table('course_offerings')->where('course_offering_id', 2)->update(['semester_id' => 1]);
         DB::table('course_offering_schedule_slots')->where('course_offering_id', 2)->delete();
-        try {
-            $requests->addItem($student, CourseOffering::query()->findOrFail(1), $actor);
-            self::fail('An incomplete same-term official source must fail closed.');
-        } catch (RegistrationRequestException $exception) {
-            self::assertSame(RegistrationException::TIMETABLE_REFERENCE_INCOMPLETE, $exception->errorCode);
-            self::assertSame(2, $exception->itemFailures[0]['incomplete_timetable_sources'][0]['course_offering_id']);
-        }
+        $added = $requests->addItem($student, CourseOffering::query()->findOrFail(1), $actor);
+        self::assertSame(1, $added->items->count(), 'An incomplete same-term timetable must not block registration.');
     }
 
     public function test_phase4_request_items_use_half_open_intervals_and_submit_rechecks_the_whole_request(): void
@@ -933,7 +923,7 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
         }
     }
 
-    public function test_phase4_trusted_materialization_fails_closed_for_an_incomplete_request_peer(): void
+    public function test_phase4_trusted_materialization_allows_an_incomplete_request_peer(): void
     {
         $this->registrationWindow();
         $this->seedRegistrationRequestContext();
@@ -950,19 +940,13 @@ class SemesterRegistrationDeadlinesPhase2BehaviorTest extends TestCase
             'official_completed_courses' => [],
         ], $this->realScheduleService());
 
-        try {
-            DB::transaction(fn () => $registration->materializeAdvisorApprovedRequestItemWithinTransaction(
-                StudentRegistrationRequest::query()->findOrFail(1),
-                StudentRegistrationRequestItem::query()->findOrFail(1),
-                7,
-                CarbonImmutable::parse('2026-09-06T00:00:00Z'),
-            ));
-            self::fail('The trusted boundary must fail closed for incomplete request peers.');
-        } catch (RegistrationException $exception) {
-            self::assertSame(RegistrationException::TIMETABLE_REFERENCE_INCOMPLETE, $exception->errorCode);
-            self::assertSame(2, $exception->data['incomplete_timetable_sources'][0]['course_offering_id']);
-            self::assertSame(0, DB::table('student_course_registrations')->count());
-        }
+        DB::transaction(fn () => $registration->materializeAdvisorApprovedRequestItemWithinTransaction(
+            StudentRegistrationRequest::query()->findOrFail(1),
+            StudentRegistrationRequestItem::query()->findOrFail(1),
+            7,
+            CarbonImmutable::parse('2026-09-06T00:00:00Z'),
+        ));
+        self::assertSame(1, DB::table('student_course_registrations')->count());
     }
 
     private function requestService(): RegistrationRequestService
