@@ -99,6 +99,7 @@ use App\Http\Controllers\Api\StudentAcademicTermController;
 use App\Http\Controllers\Api\StudentCourseRegistrationController;
 use App\Http\Controllers\Api\StudentCourseResultController;
 use App\Http\Controllers\Api\StudentCreditLimitController;
+use App\Http\Controllers\Api\StudentAffairsCourseRegistrationController;
 use App\Http\Controllers\Api\StudentAffairsDashboardController;
 use App\Http\Controllers\Api\StudentDocumentController;
 use App\Http\Controllers\Api\StudentStatusController;
@@ -521,6 +522,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
         Route::post('registrations/register-student', [RegistrationController::class, 'registerStudent']);
         Route::post('registrations/{id}/drop', [RegistrationController::class, 'drop']);
         Route::post('registrations/{id}/withdraw', [RegistrationController::class, 'withdraw']);
+    });
+    Route::middleware(\App\Http\Middleware\RequirePermission::class.':student_affairs.course_registration.manage')->group(function (): void {
+        Route::post('student-affairs/course-registrations', [StudentAffairsCourseRegistrationController::class, 'store']);
     });
 
     /*

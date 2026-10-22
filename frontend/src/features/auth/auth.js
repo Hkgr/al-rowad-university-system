@@ -15,6 +15,7 @@ export const ROLES = Object.freeze({
 export const PERMISSIONS = Object.freeze({
   registrationView: 'registration.view',
   registrationManage: 'registration.manage',
+  studentAffairsCourseRegistration: 'student_affairs.course_registration.manage',
   coursesView: 'courses.view',
   coursesManage: 'courses.manage',
   courseOfferingsManage: 'course_offerings.manage',
@@ -95,6 +96,7 @@ export const ACCESS = Object.freeze({
   courseRegistration: { allPermissions: [PERMISSIONS.registrationView, PERMISSIONS.studentsView, PERMISSIONS.academicStructureView, PERMISSIONS.coursesView, PERMISSIONS.systemSettingsView] },
   courseManagement: { allPermissions: [PERMISSIONS.coursesView, PERMISSIONS.academicStructureView, PERMISSIONS.systemSettingsView] },
   studentAffairs: { allPermissions: [PERMISSIONS.studentsView] },
+  studentAffairsCourseRegistration: { allPermissions: [PERMISSIONS.studentsView], assignedPermissions: [PERMISSIONS.studentAffairsCourseRegistration] },
   studentAffairsAddStudent: { anyAccess: [
     { allPermissions: [PERMISSIONS.studentsView, PERMISSIONS.studentsManage] },
     { assignedPermissions: [PERMISSIONS.admissionsManage], actualUniversityScope: true },

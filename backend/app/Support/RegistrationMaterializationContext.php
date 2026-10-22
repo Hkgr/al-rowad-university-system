@@ -7,4 +7,5 @@ enum RegistrationMaterializationContext
     case STUDENT_WINDOW;
     case ADVISOR_APPROVAL;
     case EXAM_MANUAL_RECORDING;
+    case STUDENT_AFFAIRS_ENTRY;
 }
