@@ -10,7 +10,7 @@ final class AcademicPlanException extends \RuntimeException
         parent::__construct($message);
     }
 
-    public function render(): \Illuminate\Http\JsonResponse
+    public function render(mixed $request = null): \Illuminate\Http\JsonResponse
     {
         return response()->json(['success' => false, 'message' => $this->getMessage(), 'error_code' => $this->errorCode], $this->status);
     }

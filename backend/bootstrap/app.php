@@ -502,7 +502,7 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->render(function (Throwable $exception, Request $request) {
-            if (! $request->is('api/*')) {
+            if (! $request->is('api/*') || $exception instanceof ValidationException) {
                 return null;
             }
 

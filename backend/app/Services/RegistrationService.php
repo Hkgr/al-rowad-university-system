@@ -630,7 +630,13 @@ class RegistrationService
                 ]);
             }
 
-            throw $exception;
+            $driverCode = (int) ($exception->errorInfo[1] ?? 0);
+            throw new RegistrationException(
+                $driverCode === 0 ? 'تعذر تسجيل المواد المختارة.' : 'تعذر تسجيل المواد المختارة. ('.$driverCode.')',
+                ['course_offering_ids' => ['تعذر تسجيل المواد المختارة.']],
+                409,
+                'student_affairs_registration_failed',
+            );
         } catch (RegistrationException $exception) {
             if (preg_match('/\p{Arabic}/u', $exception->getMessage()) === 1) {
                 throw $exception;
