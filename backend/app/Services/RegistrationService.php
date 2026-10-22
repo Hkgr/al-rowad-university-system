@@ -595,14 +595,24 @@ class RegistrationService
         }
 
         try {
-            return DB::transaction(function () use ($actor, $studentId, $offeringIds): array {
-                $results = [];
-                foreach ($offeringIds as $index => $offeringId) {
-                    $results[] = $this->performRegisterStudent([
-                        'student_id' => $studentId,
-                        'course_offering_id' => $offeringId,
-                        'notes' => StudentAffairsCourseRegistration::NOTE,
-                    ], (int) $actor->getKey(), RegistrationMaterializationContext::STUDENT_AFFAIRS_ENTRY, array_values(array_slice($offeringIds, $index + 1)));
+            return AcademicPlanContext::transaction(function () use ($actor, $studentId, $offeringIds): array {
+                try {
+                    $results = [];
+                    foreach ($offeringIds as $index => $offeringId) {
+                        $results[] = $this->performRegisterStudent([
+                            'student_id' => $studentId,
+                            'course_offering_id' => $offeringId,
+                            'notes' => StudentAffairsCourseRegistration::NOTE,
+                        ], (int) $actor->getKey(), RegistrationMaterializationContext::STUDENT_AFFAIRS_ENTRY, array_values(array_slice($offeringIds, $index + 1)));
+                    }
+                } catch (QueryException $exception) {
+                    if ($this->isDuplicateRegistrationQueryException($exception)) {
+                        throw new RegistrationException('الطالب مسجّل أصلًا في إحدى هذه المواد.', [
+                            'course_offering_id' => ['الطالب مسجّل أصلًا في إحدى هذه المواد.'],
+                        ]);
+                    }
+
+                    throw $exception;
                 }
                 $last = $results[array_key_last($results)];
 

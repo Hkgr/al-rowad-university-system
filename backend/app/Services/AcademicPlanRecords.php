@@ -23,11 +23,15 @@ final class AcademicPlanRecords
         if (!AcademicPlanContext::installed()) return;
         $context = AcademicPlanContext::forStudent($student);
         if ($context->versionId === null) return;
-        $membership = $context->membership($courseId);
-        if ($registration->academic_plan_version_id !== null
-            && (int) $registration->academic_plan_version_id !== $context->versionId) {
-            throw AcademicPlanException::conflict('academic_plan_registration_context_changed', 'هذا التسجيل مرتبط بخطة سابقة؛ لا يجوز إعادة ربطه ضمنيًا.');
+        $registration->refresh();
+        if ($registration->academic_plan_version_id !== null) {
+            if ((int) $registration->academic_plan_version_id !== $context->versionId) {
+                throw AcademicPlanException::conflict('academic_plan_registration_context_changed', 'هذا التسجيل مرتبط بخطة سابقة؛ لا يجوز إعادة ربطه ضمنيًا.');
+            }
+            // The insert trigger already stored this provenance. A second write is rejected.
+            return;
         }
+        $membership = $context->membership($courseId);
         $registration->forceFill(['academic_plan_version_id' => $context->versionId,
             'plan_program_course_id' => $membership?->getKey()])->save();
     }

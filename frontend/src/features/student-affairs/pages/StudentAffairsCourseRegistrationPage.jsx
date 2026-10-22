@@ -22,6 +22,14 @@ function hoursOf(course) {
   return Number.isFinite(hours) ? hours : 0
 }
 
+function requirementLabel(value) {
+  if (!value || typeof value !== 'object') return typeof value === 'string' ? value : ''
+  const type = value.requirement_type === 'elective'
+    ? 'اختياري'
+    : (value.requirement_type === 'mandatory' || value.requirement_type === 'required' ? 'إجباري' : '')
+  return [type, value.group_name].filter(Boolean).join(' — ')
+}
+
 export default function StudentAffairsCourseRegistrationPage() {
   const [query, setQuery] = useState('')
   const [matches, setMatches] = useState([])
@@ -198,12 +206,13 @@ export default function StudentAffairsCourseRegistrationPage() {
                   const eligible = course.eligibility_status === 'eligible'
                   const checked = selected.includes(course.course_offering_id)
                   const wouldExceed = !checked && hours != null && selectedHours + hoursOf(course) > remaining
+                  const requirement = requirementLabel(course.requirement_classification)
                   return (
                     <li key={course.course_offering_id} className="flex items-start gap-3 py-3">
                       <input type="checkbox" className="mt-1" checked={checked} disabled={!eligible || wouldExceed} onChange={() => toggle(course)} />
                       <div>
                         <p className="text-[13px] font-bold text-text-dark">{course.course_code} — {course.course_name}</p>
-                        <p className="text-[12px] text-text-light">{hoursOf(course)} ساعة{course.requirement_classification ? ` — ${course.requirement_classification}` : ''}</p>
+                        <p className="text-[12px] text-text-light">{hoursOf(course)} ساعة{requirement ? ` — ${requirement}` : ''}</p>
                         {!eligible && <p className="text-[12px] text-amber-800">{(course.eligibility_reasons ?? []).map(reason => REASONS[reason] ?? reason).join('، ')}</p>}
                         {wouldExceed && <p className="text-[12px] text-amber-800">إضافتها تتجاوز الحد الأعلى للساعات.</p>}
                       </div>
