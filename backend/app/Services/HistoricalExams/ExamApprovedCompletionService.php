@@ -4,7 +4,7 @@ namespace App\Services\HistoricalExams;
 
 use App\Models\{Course, Student, User};
 use App\Services\{AcademicCatalogTransaction, ExamManualGradePreparationService};
-use App\Services\StudentCompletion\{CompletionData, CompletionException, CompletionReceipts};
+use App\Services\StudentCompletion\{CompletionData, CompletionException, CompletionReceipts, CompletionRecords};
 use App\Support\HistoricalExamSchema;
 use Illuminate\Support\Facades\DB;
 use Ramsey\Uuid\Uuid;
@@ -45,7 +45,7 @@ final class ExamApprovedCompletionService
         if($old!==null)return $old;
         $start=$this->receipts->find('exam_start',$id);
         if(!app(ExamEvidence::class)->verify($actor,$start['value']['preserved']))$this->fail('preserved_evidence_changed');
-        $next=$expected;$out=[];$owned=[];
+        $next=$expected;$out=new CompletionRecords;$owned=[];
         foreach($review['actions'] as $a) {
             if(!$a['eligible']) {
                 $status=match($a['classification']){'existing_equivalent'=>'UNCHANGED','retained_source_history'=>'RETAINED','explicitly_deferred','deferred_same_attempt'=>'DEFERRED',default=>'BLOCKED'};
@@ -111,8 +111,10 @@ final class ExamApprovedCompletionService
                 if($next!==$this->tx->revision())break;
             }
         }
-        $result=CompletionData::canonical(['operation_id'=>$id,'status'=>count($out)===count($review['actions'])&&!collect($out)->contains(fn($r)=>in_array($r['status'],['BLOCKED','DEFERRED','STAGED_PENDING_REVIEW'],true))?'COMPLETE':'PARTIAL',
-            'actions'=>$out,'saved_pending_approval'=>collect($out)->where('status','SAVED_PENDING_APPROVAL')->count(),'staged_pending_review'=>collect($out)->where('status','STAGED_PENDING_REVIEW')->count()]);
+        $pending=0;$staged=0;$partial=count($out)!==count($review['actions']);
+        foreach($out as $r){$pending+=(int)($r['status']==='SAVED_PENDING_APPROVAL');$staged+=(int)($r['status']==='STAGED_PENDING_REVIEW');$partial=$partial||in_array($r['status'],['BLOCKED','DEFERRED','STAGED_PENDING_REVIEW'],true);}
+        $result=CompletionData::canonical(['operation_id'=>$id,'status'=>$partial?'PARTIAL':'COMPLETE',
+            'actions'=>$out->compact(),'saved_pending_approval'=>$pending,'staged_pending_review'=>$staged]);
         $this->tx->run(function()use($actor,$bundle,$review,$id,$digest,$next,$start,$result) {
             $this->authorize($actor,$review);
             if($next!==$this->tx->revision())$this->fail('stale');
@@ -151,7 +153,7 @@ final class ExamApprovedCompletionService
 
     private function validateSaved(User $actor,array $bundle,array $review,string $id,string $digest,array $result): void
     {
-        $saved=array_column(array_filter($result['actions']??[],fn($a)=>in_array($a['status'],['SAVED_PENDING_APPROVAL','STAGED_PENDING_REVIEW'],true)),null,'action_id');
+        $saved=[];foreach($result['actions']??[] as $a)if(in_array($a['status'],['SAVED_PENDING_APPROVAL','STAGED_PENDING_REVIEW'],true))$saved[$a['action_id']]=true;
         foreach($review['actions'] as $a)if($a['eligible']) {
             $stage=(string)Uuid::uuid5(Uuid::NAMESPACE_URL,$id.'/'.$a['action_id']);$r=$this->receipts->find('exam_action',$stage);
             if(!$r){if(isset($saved[$a['action_id']]))$this->fail('completed_receipt_missing');continue;}
@@ -166,7 +168,7 @@ final class ExamApprovedCompletionService
             if(!hash_equals($review['bundle_digest'],CompletionData::hash($bundle)))$this->fail('bundle_changed');
             if(!app(ExamEvidence::class)->verify($actor,$start['value']['preserved']))$this->fail('preserved_evidence_changed');
             $this->validateSaved($actor,$bundle,$review,$id,$start['value']['digest'],$status);
-            $workIds=array_column(array_filter($status['actions']??[],fn($a)=>$a['status']==='STAGED_PENDING_REVIEW'),'work_item_id');
+            $workIds=[];foreach($status['actions']??[] as $a)if($a['status']==='STAGED_PENDING_REVIEW')$workIds[]=$a['work_item_id'];
             $adopted=DB::table(HistoricalExamSchema::OUTCOMES)->whereIn('work_item_id',$workIds)->count();
             return ['operation_id'=>$id,'status'=>$status['status'],'writes_performed'=>false,'saved_pending_approval'=>$status['saved_pending_approval']??0,
                 'staged_pending_review'=>$status['staged_pending_review']??0,'current_adopted_work_items'=>$adopted,

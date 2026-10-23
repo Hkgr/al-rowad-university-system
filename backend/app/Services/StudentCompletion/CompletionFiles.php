@@ -14,7 +14,7 @@ final class CompletionFiles
         if (file_exists($path)) throw new \InvalidArgumentException('Refusing to overwrite an existing private artifact: '.$path);
         $handle=fopen($path,'xb');if(!$handle)throw new \RuntimeException('Cannot create private artifact.');
         try {
-            foreach(CompletionData::tokens($value) as $part)if(fwrite($handle,$part)!==strlen($part))throw new \RuntimeException('Private artifact write failed.');
+            foreach(CompletionData::blocks($value) as $part)CompletionJson::writeAll($handle,$part);
             if(fwrite($handle,"\n")!==1)throw new \RuntimeException('Private artifact write failed.');
         }
         finally {fclose($handle);}

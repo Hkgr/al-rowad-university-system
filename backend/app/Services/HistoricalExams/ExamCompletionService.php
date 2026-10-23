@@ -3,7 +3,7 @@ namespace App\Services\HistoricalExams;
 
 use App\Models\{Course,CourseOffering,Student,StudentCourseRegistration,User};
 use App\Services\{AcademicCatalogTransaction,ExamManualGradePreparationService};
-use App\Services\StudentCompletion\{CompletionData,CompletionException,CompletionReceipts};
+use App\Services\StudentCompletion\{CompletionData,CompletionException,CompletionReceipts,CompletionRecords};
 use App\Support\ExamManualGradeEntryAccess;
 use Illuminate\Support\Facades\DB;
 use Ramsey\Uuid\Uuid;
@@ -62,7 +62,7 @@ final class ExamCompletionService
         });if($old!==null)return $old;
         $start=$this->receipts->find('exam_start',$id);
         if(!app(ExamEvidence::class)->verify($actor,$start['value']['preserved']))$this->fail('preserved_evidence_changed');
-        $out=[];$next=$expected;$owned=[];
+        $out=new CompletionRecords;$next=$expected;$owned=[];
         foreach($review['actions'] as $a) {
             if(!$a['eligible']){$out[]=['action_id'=>$a['action_id'],'status'=>$a['classification']==='existing_equivalent'&&!$a['blockers']?'UNCHANGED':'BLOCKED','blockers'=>$a['blockers']];continue;}
             $stage=(string)Uuid::uuid5(Uuid::NAMESPACE_URL,$id.'/'.$a['action_id']);
@@ -77,7 +77,7 @@ final class ExamCompletionService
                         return ['result'=>$r['value']['result'],'revision'=>$this->tx->revision()];
                     }
                     if($next!==$this->tx->revision())$this->fail('stale');
-                    $row=collect($bundle['rows'])->firstWhere('id',$a['source_id']);$current=$this->projection->row($row,$this->db->read($actor),$bundle['student_master']??[]);
+                    $row=$this->sourceRow($bundle,$a['source_id']);$current=$this->projection->row($row,$this->db->read($actor),$bundle['student_master']??[]);
                     $baseline=$current['baseline'];
                     foreach($owned as $created) {
                         if($baseline['offering']&&isset($created['course_offerings'][$baseline['offering']['course_offering_id']])) {
@@ -109,7 +109,8 @@ final class ExamCompletionService
                 if($next!==$this->tx->revision())break;
             }
         }
-        $result=CompletionData::canonical(['operation_id'=>$id,'status'=>count($out)===count($review['actions'])&&!collect($out)->contains(fn($x)=>$x['status']==='BLOCKED')?'COMPLETE':'PARTIAL','actions'=>$out,'saved_pending_approval'=>collect($out)->where('status','SAVED_PENDING_APPROVAL')->count()]);
+        $pending=0;$blocked=count($out)!==count($review['actions']);foreach($out as $r){$pending+=(int)($r['status']==='SAVED_PENDING_APPROVAL');$blocked=$blocked||$r['status']==='BLOCKED';}
+        $result=CompletionData::canonical(['operation_id'=>$id,'status'=>$blocked?'PARTIAL':'COMPLETE','actions'=>$out->compact(),'saved_pending_approval'=>$pending]);
         $this->tx->run(function()use($actor,$bundle,$review,$id,$digest,$result,$next,$start){$this->authorizeReview($actor,$review);if($next!==$this->tx->revision())$this->fail('stale');if(!app(ExamEvidence::class)->verify($actor,$start['value']['preserved']))$this->fail('preserved_evidence_changed');$this->validateSavedActions($actor,$bundle,$review,$id,$digest,$result);$this->receipts->put($actor,'exam_result',$id,['digest'=>$digest,'result'=>$result]);});return $result;
     }
     public function lock(array $a): void
@@ -124,7 +125,7 @@ final class ExamCompletionService
     }
     private function assertAfter(User $actor,array $result,array $reviewed,array $bundle): void
     {
-        $source=collect($bundle['rows'])->firstWhere('id',$reviewed['source_id']);$target=$reviewed['baseline'];$after=$result['after'];
+        $source=$this->sourceRow($bundle,$reviewed['source_id']);$target=$reviewed['baseline'];$after=$result['after'];
         if(isset($reviewed['component_mapping']['profile'])&&!hash_equals(CompletionData::hash($reviewed['component_mapping']),CompletionData::hash($result['assessment_evidence']??null)))$this->fail('receipt_assessment_changed');
         if(!$source||$result['action_id']!==$reviewed['action_id']||!hash_equals(CompletionData::hash($source),CompletionData::hash($result['source_row']))
             ||(int)$after['student']['student_id']!==(int)$target['student']['student_id']||(int)$after['course']['course_id']!==(int)$target['course']['course_id']
@@ -135,12 +136,35 @@ final class ExamCompletionService
     }
     private function validateSavedActions(User $actor,array $bundle,array $review,string $id,string $digest,array $status): void
     {
-        $saved=array_column(array_filter($status['actions']??[],fn($a)=>$a['status']==='SAVED_PENDING_APPROVAL'),null,'action_id');
+        $saved=[];foreach($status['actions']??[] as $a)if($a['status']==='SAVED_PENDING_APPROVAL')$saved[$a['action_id']]=true;
         foreach($review['actions'] as $a)if($a['eligible']) {
             $stage=(string)Uuid::uuid5(Uuid::NAMESPACE_URL,$id.'/'.$a['action_id']);$r=$this->receipts->find('exam_action',$stage);
             if(!$r){if(isset($saved[$a['action_id']]))$this->fail('completed_receipt_missing');continue;}
             $this->check($actor,$r,$digest);$this->assertAfter($actor,$r['value']['result'],$a,$bundle);
         }
+    }
+    private function sourceRow(array $bundle,string $id): ?array { foreach($bundle['rows'] as $row)if($row['id']===$id)return $row;return null; }
+    /** Authorized diagnostic only, never a new review, revision bypass or authorization to resume. */
+    public function recoveryCheck(User $actor,string $id): array
+    {
+        $this->access->authorize($actor);
+        return $this->tx->snapshot(function()use($actor,$id) {
+            $status=$this->status($actor,$id);$start=$this->receipts->find('exam_start',$id);
+            if(!$start||$start['actor_id']!==(int)$actor->getKey())$this->fail('operation_unavailable');
+            $review=$start['value']['review'];$hash=CompletionData::hash($review);
+            $this->check($actor,$start,CompletionData::hash([$hash,$review['sources'],(int)$actor->getKey()]));
+            $ids=[];foreach($review['actions'] as $a)if($a['eligible'])$ids[]=(string)Uuid::uuid5(Uuid::NAMESPACE_URL,$id.'/'.$a['action_id']);
+            $headers=0;foreach(array_chunk($ids,500) as $batch)$headers+=\App\Models\UserActivityLog::where('action_code','student_completion.exam_action')->whereIn('description->operation_id',$batch)->count();
+            $approved=ExamReconciliationProjection::supports($review['contract']??null);if($approved)\App\Support\HistoricalExamSchema::requireReady();
+            return ['operation_id'=>$id,'actor_id'=>(int)$actor->getKey(),'status'=>$status['status'],'writes_performed'=>false,
+                'review_contract'=>$review['contract'],'review_hash'=>$hash,'bundle_hash'=>$review['bundle_file_hash']??null,
+                'review_revision'=>$review['revision'],'current_revision'=>$this->tx->revision(),'exam_action_receipt_headers'=>$headers,
+                'exam_start_activity_log_id'=>\App\Models\UserActivityLog::where('action_code','student_completion.exam_start')->where('description->operation_id',$id)->max('activity_log_id'),
+                'exam_result_present'=>$this->receipts->find('exam_result',$id)!==null,
+                'staged_work_items'=>$approved?DB::table(\App\Support\HistoricalExamSchema::WORK)->where('operation_id',$id)->count():0,
+                'registration_credit_evidence'=>$approved?DB::table(\App\Support\HistoricalExamSchema::CREDITS)->where('operation_id',$id)->count():0,
+                'note'=>'Read-only diagnostic. Inspect unchanged intent, receipts, evidence and current revision before explicit same-operation resume; this is not a new review.'];
+        });
     }
     public function status(User $actor,string $id): array
     {

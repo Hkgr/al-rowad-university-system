@@ -63,7 +63,7 @@ final class ExamSources
     public function load(string $path,string $hash): array
     {
         if(!preg_match('/^[a-f0-9]{64}$/D',$hash)||!hash_equals($hash,hash_file('sha256',$path)))throw new \InvalidArgumentException('Bundle fingerprint differs.');
-        $b=json_decode(file_get_contents($path),true,flags:JSON_THROW_ON_ERROR);
+        $b=\App\Services\StudentCompletion\CompletionJson::file($path,['rows']);
         if(!in_array($b['contract']??null,[self::CONTRACT,self::APPROVED_CONTRACT],true)||!hash_equals(CompletionData::hash($b),CompletionData::hash($this->prepare($b['inputs']))))throw new \InvalidArgumentException('Bundle/source interpretation changed; prepare a new bundle/review/UUID.');
         $b['artifact_file_sha256']=$hash;return $b;
     }
