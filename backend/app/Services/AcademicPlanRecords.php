@@ -3,7 +3,8 @@
 namespace App\Services;
 
 use App\Exceptions\AcademicPlanException;
-use App\Models\{Student, StudentCourseRegistration};
+use App\Models\{AcademicPlanVersion, Student, StudentCourseRegistration};
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
 /** Pins provenance; it never changes marks, status, academic identity or requirement budgets. */
@@ -31,9 +32,23 @@ final class AcademicPlanRecords
             // The insert trigger already stored this provenance. A second write is rejected.
             return;
         }
+        // An approved plan may be pinned only by the insert trigger. Writing it
+        // afterwards is rejected and would roll the new registration back.
+        $status = AcademicPlanVersion::query()->whereKey($context->versionId)->value('status');
+        if (DB::getDriverName() === 'mysql' && $status !== 'transitional') {
+            return;
+        }
         $membership = $context->membership($courseId);
-        $registration->forceFill(['academic_plan_version_id' => $context->versionId,
-            'plan_program_course_id' => $membership?->getKey()])->save();
+        try {
+            $registration->forceFill(['academic_plan_version_id' => $context->versionId,
+                'plan_program_course_id' => $membership?->getKey()])->save();
+        } catch (QueryException $exception) {
+            if (! str_contains($exception->getMessage(), 'academic_plan_record_immutable')
+                && ! str_contains($exception->getMessage(), 'academic_plan_context_invalid')) {
+                throw $exception;
+            }
+            $registration->refresh();
+        }
     }
 
     public static function pinTransition(int $programId, int $versionId): void
