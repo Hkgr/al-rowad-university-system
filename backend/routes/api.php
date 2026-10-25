@@ -524,6 +524,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
         Route::post('registrations/{id}/withdraw', [RegistrationController::class, 'withdraw']);
     });
     Route::middleware(\App\Http\Middleware\RequirePermission::class.':student_affairs.course_registration.manage')->group(function (): void {
+        Route::get('student-affairs/course-registrations/pdf', [StudentAffairsCourseRegistrationController::class, 'pdf']);
         Route::post('student-affairs/course-registrations', [StudentAffairsCourseRegistrationController::class, 'store']);
     });
 
