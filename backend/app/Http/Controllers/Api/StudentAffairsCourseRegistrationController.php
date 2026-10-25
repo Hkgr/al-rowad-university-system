@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Controller;
 use App\Exceptions\AcademicCatalogException;
 use App\Exceptions\AcademicPlanException;
 use App\Exceptions\AcademicRequirementConfigurationException;
@@ -23,7 +24,7 @@ use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable;
 
-class StudentAffairsCourseRegistrationController extends ApiController
+class StudentAffairsCourseRegistrationController extends Controller
 {
     public function store(Request $request, RegistrationService $service): JsonResponse
     {
@@ -109,5 +110,14 @@ class StudentAffairsCourseRegistrationController extends ApiController
         }
 
         return mb_substr($message, 0, 180);
+    }
+
+    protected function successResponse(mixed $data = [], string $message = 'Operation completed successfully', int $status = 200): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'message' => $message,
+            'data' => $data,
+        ], $status);
     }
 }
