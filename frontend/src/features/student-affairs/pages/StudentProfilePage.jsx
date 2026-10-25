@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom'
 import { useOfficeNavigate as useNavigate } from '../../vice-presidency/utils/administrativeOfficePaths'
 import { motion } from 'framer-motion'
 import {
-  FaArrowRight, FaEdit, FaSpinner, FaUser,
+  FaArrowRight, FaEdit, FaSpinner, FaUser, FaBookOpen,
   FaGraduationCap, FaChartBar, FaCalendarCheck, FaCheckCircle, FaFolderOpen, FaCamera,
 } from 'react-icons/fa'
 import TranscriptPdfExportAction from '../../academic-record/components/TranscriptPdfExportAction'
@@ -47,6 +47,7 @@ const TABS = [
   { id: 'gpa',        ar: 'المعدل',              Icon: FaChartBar      },
   { id: 'attendance', ar: 'الحضور والغياب',      Icon: FaCalendarCheck },
   { id: 'documents',  ar: 'ملفات الطالب',        Icon: FaFolderOpen    },
+  { id: 'registrations', ar: 'المواد المسجلة',   Icon: FaBookOpen      },
 ]
 
 // ── All sub-components defined OUTSIDE the main component ─────────────────────
@@ -489,6 +490,125 @@ function AttendanceTab({ attendance }) {
   )
 }
 
+const REGISTRATION_STATUS = {
+  registered: 'مسجّلة',
+  completed: 'مكتملة',
+}
+
+function RegisteredCoursesTab({ studentId, academicYears, semesters }) {
+  const [yearId, setYearId] = useState('')
+  const [semId, setSemId] = useState('')
+  const [courses, setCourses] = useState([])
+  const [totalHours, setTotalHours] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      setLoading(true)
+      setError('')
+      const params = new URLSearchParams()
+      if (yearId) params.set('academic_year_id', yearId)
+      if (semId) params.set('semester_id', semId)
+      const query = params.toString()
+      try {
+        const data = await get(`${API}/students/${studentId}/registered-courses${query ? `?${query}` : ''}`)
+        if (cancelled) return
+        if (!data.success) {
+          setCourses([])
+          setTotalHours(0)
+          setError(data.message || 'تعذر تحميل المواد المسجلة.')
+          return
+        }
+        setCourses(Array.isArray(data.data?.courses) ? data.data.courses : [])
+        setTotalHours(Number(data.data?.total_hours ?? 0))
+      } catch {
+        if (!cancelled) {
+          setCourses([])
+          setError('تعذر تحميل المواد المسجلة.')
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [studentId, yearId, semId])
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-end justify-between gap-3 flex-wrap" dir="rtl">
+        <div className="flex items-end gap-3 flex-wrap">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[12px] font-bold text-text-dark">العام الدراسي</label>
+            <select
+              className="px-3 py-2 border border-primary/20 rounded-[10px] bg-white text-[13.5px] text-text-dark outline-none focus:border-primary min-w-[160px]"
+              value={yearId}
+              onChange={event => setYearId(event.target.value)}
+              dir="rtl"
+            >
+              <option value="">كل الأعوام</option>
+              {academicYears.map(year => (
+                <option key={year.academic_year_id} value={year.academic_year_id}>{year.year_name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[12px] font-bold text-text-dark">الفصل الدراسي</label>
+            <select
+              className="px-3 py-2 border border-primary/20 rounded-[10px] bg-white text-[13.5px] text-text-dark outline-none focus:border-primary min-w-[160px]"
+              value={semId}
+              onChange={event => setSemId(event.target.value)}
+              dir="rtl"
+            >
+              <option value="">كل الفصول</option>
+              {semesters.map(semester => (
+                <option key={semester.semester_id} value={semester.semester_id}>{semester.semester_name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <p className="text-[12px] text-text-light">{courses.length} مواد — {totalHours} ساعة</p>
+      </div>
+
+      {loading ? <p className="text-[13px] text-text-light" dir="rtl">جارٍ تحميل المواد المسجلة...</p> : null}
+      {error ? <p className="text-[13px] text-red-600" dir="rtl">{error}</p> : null}
+      {!loading && !error && courses.length === 0 ? (
+        <p className="py-6 text-[13px] text-text-light" dir="rtl">لا توجد مواد مسجلة لهذا الاختيار.</p>
+      ) : null}
+      {!loading && !error && courses.length > 0 ? (
+        <div className="overflow-x-auto" dir="rtl">
+          <table className="w-full text-right text-[13px]">
+            <thead>
+              <tr className="border-b border-primary/15 text-[12px] text-text-light">
+                <th className="px-3 py-2 font-bold">رمز المادة</th>
+                <th className="px-3 py-2 font-bold">اسم المادة</th>
+                <th className="px-3 py-2 font-bold">الساعات</th>
+                <th className="px-3 py-2 font-bold">العام</th>
+                <th className="px-3 py-2 font-bold">الفصل</th>
+                <th className="px-3 py-2 font-bold">الحالة</th>
+              </tr>
+            </thead>
+            <tbody>
+              {courses.map(course => (
+                <tr key={course.student_course_registration_id} className="border-b border-primary/10">
+                  <td className="px-3 py-2.5 font-bold text-text-dark">{course.course_code}</td>
+                  <td className="px-3 py-2.5 text-text-dark">{course.course_name}</td>
+                  <td className="px-3 py-2.5">{course.credit_hours}</td>
+                  <td className="px-3 py-2.5">{course.year_name || '—'}</td>
+                  <td className="px-3 py-2.5">{course.semester_name || '—'}</td>
+                  <td className="px-3 py-2.5">{REGISTRATION_STATUS[course.status_code] || course.status_name || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 // ── Status badge helper ────────────────────────────────────────────────────────
 
 const STATUS_STYLES = {
@@ -791,6 +911,9 @@ export default function StudentProfilePage() {
           {activeTab === 'gpa'        && <GPATab studentId={id} cgpa={cgpa} academicYears={academicYears} semesters={semesters} />}
           {activeTab === 'attendance' && <AttendanceTab attendance={attendance} />}
           {activeTab === 'documents'  && <StudentDocuments studentId={id} />}
+          {activeTab === 'registrations' && (
+            <RegisteredCoursesTab studentId={id} academicYears={academicYears} semesters={semesters} />
+          )}
         </motion.div>
       </div>
     </>

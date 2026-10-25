@@ -16,6 +16,7 @@ use App\Http\Resources\StudentResource;
 use App\Http\Resources\StudentRegistrationSummaryResource;
 use App\Http\Resources\StudentTranscriptResource;
 use App\Models\Student;
+use App\Models\StudentCourseRegistration;
 use App\Models\StudentStatus;
 use App\Services\AcademicRequirementService;
 use App\Services\AttendanceService;
@@ -24,6 +25,7 @@ use App\Services\AcademicProgressionService;
 use App\Services\GraduationDecisionService;
 use App\Services\GraduationEligibilityService;
 use App\Support\AcademicRecordWorkflow;
+use App\Support\ApplicableCourseCredits;
 use App\Services\RegistrationService;
 use App\Services\AcademicAuthorizationService;
 use App\Services\DataScopeService;
@@ -387,6 +389,62 @@ class StudentController extends ApiController
         return $this->successResponse(
             StudentCourseRegistrationResource::collection($registrations)->response(request())->getData(true)
         );
+    }
+
+    public function registeredCourses(Student $student, Request $request): JsonResponse
+    {
+        Gate::authorize('view', $student);
+        $validated = $request->validate([
+            'academic_year_id' => ['sometimes', 'nullable', 'integer', 'exists:academic_years,academic_year_id'],
+            'semester_id' => ['sometimes', 'nullable', 'integer', 'exists:semesters,semester_id'],
+        ]);
+
+        $registrations = $student->studentCourseRegistrations()
+            ->with([
+                'courseOffering.course',
+                'courseOffering.academicYear',
+                'courseOffering.semester',
+                'registrationStatus',
+            ])
+            ->whereHas('registrationStatus', fn ($query) => $query->whereIn('status_code', StudentCourseRegistration::HISTORICAL_ATTEMPT_STATUSES))
+            ->when($validated['academic_year_id'] ?? null, fn ($query, $yearId) => $query->whereHas(
+                'courseOffering',
+                fn ($offering) => $offering->where('academic_year_id', $yearId),
+            ))
+            ->when($validated['semester_id'] ?? null, fn ($query, $semesterId) => $query->whereHas(
+                'courseOffering',
+                fn ($offering) => $offering->where('semester_id', $semesterId),
+            ))
+            ->get();
+        ApplicableCourseCredits::attach($registrations);
+
+        $courses = $registrations->map(function (StudentCourseRegistration $registration): array {
+            $offering = $registration->courseOffering;
+            $course = $offering?->course;
+
+            return [
+                'student_course_registration_id' => $registration->student_course_registration_id,
+                'course_code' => (string) ($course->course_code ?? ''),
+                'course_name' => (string) ($course->course_name ?? ''),
+                'credit_hours' => (int) (ApplicableCourseCredits::hours($registration) ?? 0),
+                'academic_year_id' => $offering?->academic_year_id,
+                'year_name' => (string) ($offering?->academicYear?->year_name ?? ''),
+                'semester_id' => $offering?->semester_id,
+                'semester_name' => (string) ($offering?->semester?->semester_name ?? ''),
+                'status_code' => (string) ($registration->registrationStatus?->status_code ?? ''),
+                'status_name' => (string) ($registration->registrationStatus?->status_name ?? ''),
+            ];
+        })->sortBy([
+            ['year_name', 'desc'],
+            ['semester_name', 'asc'],
+            ['course_code', 'asc'],
+        ])->values();
+
+        return $this->successResponse([
+            'courses' => $courses,
+            'count' => $courses->count(),
+            'total_hours' => (int) $courses->sum('credit_hours'),
+        ]);
     }
 
     public function transcript(Student $student, GradeService $gradeService): JsonResponse
