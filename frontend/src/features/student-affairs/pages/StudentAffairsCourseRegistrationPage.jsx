@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { FaSearch, FaSpinner } from 'react-icons/fa'
-import { apiRequest } from '../../../services/apiClient'
+import { apiDownload, apiRequest } from '../../../services/apiClient'
 
 const REASONS = {
   already_registered: 'مسجّلة أصلًا',
@@ -141,12 +141,41 @@ export default function StudentAffairsCourseRegistrationPage() {
     }
   }
 
+  async function printSheet() {
+    if (!student || !year?.academic_year_id || !semesterId) return
+    const preview = window.open('', '_blank')
+    setBusy('pdf')
+    setError('')
+    try {
+      const params = new URLSearchParams({
+        student_id: String(student.student_id),
+        academic_year_id: String(year.academic_year_id),
+        semester_id: String(semesterId),
+      })
+      const file = await apiDownload(`/v1/student-affairs/course-registrations/pdf?${params}`)
+      const url = URL.createObjectURL(file.blob)
+      if (preview) preview.location = url
+      else {
+        const link = document.createElement('a')
+        link.href = url
+        link.download = file.filename || `registration-${student.student_number}.pdf`
+        link.click()
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (err) {
+      preview?.close()
+      setError(err.message || 'تعذر إنشاء كشف التسجيل.')
+    } finally {
+      setBusy('')
+    }
+  }
+
   return (
     <div className="space-y-5 px-2 py-6" dir="rtl">
       <header className="rounded-[18px] border border-primary/15 bg-white p-6">
         <h1 className="text-[22px] font-black text-text-dark">تسجيل مواد الطلاب</h1>
         <p className="mt-2 text-[13px] leading-6 text-text-light">
-          تُدخل هنا المواد التي اعتمدها المرشد الأكاديمي على الورق. الصفحة لا تظهر لحساب شؤون الطلاب إلا إذا منح الأدمن دور «تسجيل مواد الطلاب»، ويسحبها في أي وقت من شاشة الحسابات.
+          تُدخل هنا المواد التي اعتمدها المرشد الأكاديمي على الورق. بعد الحفظ يمكن طباعة كشف المواد المسجّلة ليوقّعه المرشد الأكاديمي ويصادق عليه عميد الكلية. الصفحة لا تظهر لحساب شؤون الطلاب إلا إذا منح الأدمن دور «تسجيل مواد الطلاب»، ويسحبها في أي وقت من شاشة الحسابات.
         </p>
       </header>
 
@@ -183,12 +212,17 @@ export default function StudentAffairsCourseRegistrationPage() {
               <h2 className="text-[16px] font-extrabold text-text-dark">{studentName(student)}</h2>
               <p className="text-[12px] text-text-light">رقم القيد {student.student_number}{year?.year_name ? ` — ${year.year_name}` : ''}</p>
             </div>
-            <label className="text-[12px] font-bold text-text-dark">
+            <div className="flex flex-wrap items-end gap-2">
+              <button type="button" className="rounded-[10px] border border-primary/25 px-4 py-2 text-[13px] font-bold text-primary-dark disabled:opacity-50" disabled={busy === 'pdf' || !year?.academic_year_id || !semesterId} onClick={printSheet}>
+                {busy === 'pdf' ? 'جارٍ إعداد الكشف...' : 'طباعة كشف التسجيل'}
+              </button>
+              <label className="text-[12px] font-bold text-text-dark">
               الفصل
               <select className="mt-1 block rounded-[9px] border border-primary/20 px-3 py-2 text-[13px]" value={semesterId} onChange={event => { setSemesterId(event.target.value); loadStudent(student, event.target.value) }}>
                 {semesters.map(semester => <option key={semester.semester_id} value={semester.semester_id}>{semester.semester_name}</option>)}
               </select>
             </label>
+            </div>
           </div>
 
           {hours && (
