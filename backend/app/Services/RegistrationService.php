@@ -594,6 +594,8 @@ class RegistrationService
             ]);
         }
 
+        AcademicPlanRecords::ensureRegistrationPlanLookup();
+
         try {
             return AcademicPlanContext::transaction(function () use ($actor, $studentId, $offeringIds): array {
                 try {
