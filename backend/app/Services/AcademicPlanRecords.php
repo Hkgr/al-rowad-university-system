@@ -19,6 +19,54 @@ final class AcademicPlanRecords
         if ($recorded !== $actual) throw AcademicPlanException::conflict('academic_plan_request_stale', 'خطة الطلب لا تطابق إسناد الطالب؛ راجع سياق العملية قبل اعتمادها.');
     }
 
+    /** A missing assignment must return NULL. Without this handler the lookup aborts the insert. */
+    public static function ensureRegistrationPlanLookup(): void
+    {
+        static $attempted = false;
+        if ($attempted || DB::getDriverName() !== 'mysql') {
+            return;
+        }
+        $attempted = true;
+        foreach ([
+            "CREATE OR REPLACE FUNCTION sc_plan_student_version(student_key INT) RETURNS INT READS SQL DATA
+BEGIN
+  DECLARE version_key INT DEFAULT NULL;
+  DECLARE owner_key INT DEFAULT NULL;
+  DECLARE state_value VARCHAR(20) DEFAULT NULL;
+  DECLARE CONTINUE HANDLER FOR NOT FOUND BEGIN END;
+  SELECT academic_program_id INTO owner_key FROM students WHERE student_id=student_key;
+  SELECT plan_state INTO state_value FROM academic_programs WHERE academic_program_id=owner_key;
+  SELECT academic_plan_version_id INTO version_key FROM student_academic_plan_assignments
+    WHERE student_id=student_key AND academic_program_id=owner_key AND current_slot=1;
+  IF version_key IS NULL AND (state_value='ready' OR EXISTS(SELECT 1 FROM academic_plan_versions WHERE academic_program_id=owner_key AND status='transitional')) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='academic_plan_context_invalid';
+  END IF;
+  RETURN version_key;
+END",
+            "CREATE OR REPLACE TRIGGER sc_plan_course_registrations_i BEFORE INSERT ON student_course_registrations FOR EACH ROW
+BEGIN
+  DECLARE version_key INT DEFAULT NULL;
+  CALL sc_plan_touch();
+  SET version_key=sc_plan_student_version(NEW.student_id);
+  IF NEW.academic_plan_version_id IS NOT NULL AND NOT(NEW.academic_plan_version_id<=>version_key) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='academic_plan_context_invalid';
+  END IF;
+  SET NEW.academic_plan_version_id=version_key;
+  IF version_key IS NOT NULL THEN
+    SET NEW.plan_program_course_id=(SELECT pc.program_course_id FROM program_courses pc JOIN course_offerings o ON o.course_id=pc.course_id
+      WHERE o.course_offering_id=NEW.course_offering_id AND pc.academic_plan_version_id=version_key AND pc.is_active=1 LIMIT 1);
+  ELSE SET NEW.plan_program_course_id=NULL;
+  END IF;
+END",
+        ] as $statement) {
+            try {
+                DB::unprepared($statement);
+            } catch (\Throwable) {
+                // The database user may not be allowed to replace routines. The save still reports its own failure.
+            }
+        }
+    }
+
     public static function pinRegistration(StudentCourseRegistration $registration, Student $student, int $courseId): void
     {
         if (!AcademicPlanContext::installed()) return;
