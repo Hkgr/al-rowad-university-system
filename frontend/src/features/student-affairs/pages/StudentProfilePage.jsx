@@ -495,9 +495,11 @@ const REGISTRATION_STATUS = {
   completed: 'مكتملة',
 }
 
-function RegisteredCoursesTab({ studentId, academicYears, semesters }) {
+function RegisteredCoursesTab({ studentId }) {
   const [yearId, setYearId] = useState('')
   const [semId, setSemId] = useState('')
+  const [years, setYears] = useState([])
+  const [semesters, setSemesters] = useState([])
   const [courses, setCourses] = useState([])
   const [totalHours, setTotalHours] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -523,6 +525,8 @@ function RegisteredCoursesTab({ studentId, academicYears, semesters }) {
         }
         setCourses(Array.isArray(data.data?.courses) ? data.data.courses : [])
         setTotalHours(Number(data.data?.total_hours ?? 0))
+        setYears(Array.isArray(data.data?.years) ? data.data.years : [])
+        setSemesters(Array.isArray(data.data?.semesters) ? data.data.semesters : [])
       } catch {
         if (!cancelled) {
           setCourses([])
@@ -549,7 +553,7 @@ function RegisteredCoursesTab({ studentId, academicYears, semesters }) {
               dir="rtl"
             >
               <option value="">كل الأعوام</option>
-              {academicYears.map(year => (
+              {years.map(year => (
                 <option key={year.academic_year_id} value={year.academic_year_id}>{year.year_name}</option>
               ))}
             </select>
@@ -911,9 +915,7 @@ export default function StudentProfilePage() {
           {activeTab === 'gpa'        && <GPATab studentId={id} cgpa={cgpa} academicYears={academicYears} semesters={semesters} />}
           {activeTab === 'attendance' && <AttendanceTab attendance={attendance} />}
           {activeTab === 'documents'  && <StudentDocuments studentId={id} />}
-          {activeTab === 'registrations' && (
-            <RegisteredCoursesTab studentId={id} academicYears={academicYears} semesters={semesters} />
-          )}
+          {activeTab === 'registrations' && <RegisteredCoursesTab studentId={id} />}
         </motion.div>
       </div>
     </>

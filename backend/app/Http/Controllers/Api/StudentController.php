@@ -15,6 +15,8 @@ use App\Http\Resources\StudentRequirementProgressResource;
 use App\Http\Resources\StudentResource;
 use App\Http\Resources\StudentRegistrationSummaryResource;
 use App\Http\Resources\StudentTranscriptResource;
+use App\Models\AcademicYear;
+use App\Models\Semester;
 use App\Models\Student;
 use App\Models\StudentCourseRegistration;
 use App\Models\StudentStatus;
@@ -407,14 +409,6 @@ class StudentController extends ApiController
                 'registrationStatus',
             ])
             ->whereHas('registrationStatus', fn ($query) => $query->whereIn('status_code', StudentCourseRegistration::HISTORICAL_ATTEMPT_STATUSES))
-            ->when($validated['academic_year_id'] ?? null, fn ($query, $yearId) => $query->whereHas(
-                'courseOffering',
-                fn ($offering) => $offering->where('academic_year_id', $yearId),
-            ))
-            ->when($validated['semester_id'] ?? null, fn ($query, $semesterId) => $query->whereHas(
-                'courseOffering',
-                fn ($offering) => $offering->where('semester_id', $semesterId),
-            ))
             ->get();
         ApplicableCourseCredits::attach($registrations);
 
@@ -440,10 +434,53 @@ class StudentController extends ApiController
             ['course_code', 'asc'],
         ])->values();
 
+        $yearIds = $courses->pluck('academic_year_id')->filter()->unique()->values();
+        $semesterIds = $courses->pluck('semester_id')->filter()->unique()->values();
+        $selectedYear = $validated['academic_year_id'] ?? null;
+        $selectedSemester = $validated['semester_id'] ?? null;
+        $courses = $courses->filter(function (array $course) use ($selectedYear, $selectedSemester): bool {
+            if ($selectedYear !== null && (int) $course['academic_year_id'] !== (int) $selectedYear) {
+                return false;
+            }
+            if ($selectedSemester !== null && (int) $course['semester_id'] !== (int) $selectedSemester) {
+                return false;
+            }
+
+            return true;
+        })->values();
+
         return $this->successResponse([
             'courses' => $courses,
             'count' => $courses->count(),
             'total_hours' => (int) $courses->sum('credit_hours'),
+            'years' => AcademicYear::query()
+                ->where(function ($query) use ($yearIds): void {
+                    $query->where('is_active', true);
+                    if ($yearIds->isNotEmpty()) {
+                        $query->orWhereIn('academic_year_id', $yearIds);
+                    }
+                })
+                ->orderByDesc('start_date')
+                ->get(['academic_year_id', 'year_name'])
+                ->map(fn (AcademicYear $year) => [
+                    'academic_year_id' => $year->academic_year_id,
+                    'year_name' => $year->year_name,
+                ])
+                ->values(),
+            'semesters' => Semester::query()
+                ->where(function ($query) use ($semesterIds): void {
+                    $query->where('is_active', true);
+                    if ($semesterIds->isNotEmpty()) {
+                        $query->orWhereIn('semester_id', $semesterIds);
+                    }
+                })
+                ->orderBy('semester_order')
+                ->get(['semester_id', 'semester_name'])
+                ->map(fn (Semester $semester) => [
+                    'semester_id' => $semester->semester_id,
+                    'semester_name' => $semester->semester_name,
+                ])
+                ->values(),
         ]);
     }
 
