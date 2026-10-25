@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\Api\StudentAffairsCourseRegistrationController;
+use App\Http\Controllers\Controller;
 use App\Services\StudentAffairsRegistrationPdf;
 use Tests\TestCase;
 
@@ -27,5 +29,13 @@ class StudentAffairsRegistrationPdfTest extends TestCase
 
         $this->assertStringStartsWith('%PDF', $bytes);
         $this->assertGreaterThan(2000, strlen($bytes));
+    }
+
+    public function test_store_is_not_forced_into_the_crud_signature(): void
+    {
+        $method = new \ReflectionMethod(StudentAffairsCourseRegistrationController::class, 'store');
+
+        $this->assertTrue($method->getDeclaringClass()->isSubclassOf(Controller::class));
+        $this->assertSame(2, $method->getNumberOfRequiredParameters());
     }
 }
