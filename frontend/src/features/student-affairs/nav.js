@@ -7,12 +7,11 @@ import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
 import { reportNav } from '../portal-reports/reportNav'
 
 const studentAffairsNav = [
-  reportNav('student-affairs'),
   {
     label: 'الرئيسية',
     items: [
-      { to: '/student-affairs/calendar', Icon: FaCalendarAlt, ar: 'التقويم الأكاديمي', en: 'Calendar', ...ACCESS.studentAffairs },
       { to: '/student-affairs', Icon: FaHome, ar: 'الرئيسية', en: 'Home', end: true, ...ACCESS.studentAffairs },
+      { to: '/student-affairs/calendar', Icon: FaCalendarAlt, ar: 'التقويم الأكاديمي', en: 'Calendar', ...ACCESS.studentAffairs },
     ],
   },
   {
@@ -37,6 +36,7 @@ const studentAffairsNav = [
       { to: '/student-affairs/graduates', Icon: FaGraduationCap, ar: 'قائمة الخريجين', en: 'Graduates', end: true, ...ACCESS.studentAffairs },
     ],
   },
+  reportNav('student-affairs'),
   { label: 'المساعدة', items: [{ to: GUIDE_PATHS.studentAffairs, Icon: FaQuestionCircle, ar: 'دليل الاستخدام', en: 'User guide', ...GUIDE_ACCESS.studentAffairs }] },
 ]
 
