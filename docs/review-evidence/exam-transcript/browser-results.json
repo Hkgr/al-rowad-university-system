@@ -1,0 +1,65 @@
+{
+  "results": [
+    {
+      "name": "short",
+      "pages": 1,
+      "courses": 3,
+      "bytes": 341230
+    },
+    {
+      "name": "long",
+      "pages": 8,
+      "courses": 132,
+      "bytes": 3938058
+    },
+    {
+      "name": "states-missing",
+      "pages": 1,
+      "courses": 4,
+      "bytes": 291271
+    },
+    {
+      "name": "historical",
+      "pages": 1,
+      "courses": 2,
+      "bytes": 297983
+    },
+    {
+      "name": "withdrawal-only",
+      "pages": 1,
+      "courses": 1,
+      "bytes": 279776
+    },
+    {
+      "name": "default-other-offices",
+      "pages": 2,
+      "courses": 3,
+      "bytes": 377554
+    },
+    {
+      "name": "fresh-request",
+      "pages": 1,
+      "courses": 3,
+      "bytes": 343794
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:8000/api/v1/students/1/academic-record"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:8000/api/v1/students/1/academic-record"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:8000/api/v1/students/1/exam-transcript"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:8000/api/v1/grade-part-approvals?status=submitted&page=1&per_page=15"
+    }
+  ],
+  "errors": []
+}

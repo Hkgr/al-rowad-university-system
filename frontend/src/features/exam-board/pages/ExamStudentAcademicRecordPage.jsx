@@ -155,7 +155,7 @@ function TranscriptSection({ transcript }) {
   )
 }
 
-export default function ExamStudentAcademicRecordPage() {
+export default function ExamStudentAcademicRecordPage({ transcriptTemplate = 'default' }) {
   const { studentId } = useParams()
   const navigate = useNavigate()
   const [record, setRecord] = useState(null)
@@ -189,7 +189,7 @@ export default function ExamStudentAcademicRecordPage() {
     <div className="space-y-6" dir="rtl">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <button type="button" onClick={() => navigate('/exam-board/grade-sheet')} className="inline-flex items-center gap-2 rounded-[10px] border border-primary/20 px-3.5 py-2 text-[12.5px] font-bold text-primary-dark hover:bg-primary/6"><FaArrowRight aria-hidden="true" />العودة إلى كشوف الدرجات</button>
-        {record ? <TranscriptPdfExportAction endpoint={endpoint} onFreshRecord={setRecord} /> : null}
+        {record ? <TranscriptPdfExportAction endpoint={endpoint} onFreshRecord={setRecord} template={transcriptTemplate} examExportEndpoint={endpoint.replace(/\/academic-record$/, '/exam-transcript')} /> : null}
       </div>
       {loading ? <><div className="h-48 animate-pulse rounded-[20px] bg-primary/10" /><AcademicRequirementProgressSkeleton /></> : null}
       {!loading && error ? <section className="rounded-[18px] border border-red-200 bg-white px-6 py-12 text-center" role="alert"><p className="mb-4 text-[14px] font-bold text-red-700">{error}</p><button type="button" onClick={() => setReloadKey(key => key + 1)} className="inline-flex items-center gap-2 rounded-[10px] border border-red-200 px-4 py-2 text-[12.5px] font-bold text-red-700"><FaRedo />إعادة المحاولة</button></section> : null}

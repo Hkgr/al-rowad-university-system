@@ -8,6 +8,8 @@ import { paginateMeasuredSections } from '../../../utils/pdfPagination'
 import { escapeHtml, exportPagedHtmlToPdf, PDF_PAGE_CONFIGS } from '../../../utils/pdfExport'
 import { transcriptGenerationMetadata } from './academicRecordPresentation'
 import { historicalAssessmentText, resultDescription, resultSymbol, termWithdrawalText } from './resultSymbols'
+import { exportExamBoardTranscriptPdf } from '../../exam-board/lib/examTranscriptPdf'
+import { EXAM_TRANSCRIPT_TEMPLATE } from '../../exam-board/lib/examTranscriptModel'
 
 const DISCLAIMER = 'تنبيه: هذا الكشف مُولّد إلكترونيًا من نظام جامعة الرواد، ولا يُعد وثيقة رسمية أو مصدقة، ولا يكتسب الحجية إلا بعد استكمال التواقيع والأختام الرسمية المعتمدة.'
 
@@ -162,7 +164,10 @@ function generationHtml(metadata) {
   return `<section style="border:1px solid #dce7d7;background:#f8faf7;border-radius:8px;padding:9px;margin-bottom:10px;display:grid;grid-template-columns:1fr 1fr${unit ? ' 1fr' : ''};gap:8px;font-size:8.5px;box-sizing:border-box;"><div><strong style="color:#417327;">تاريخ ووقت الإنشاء:</strong> ${escapeHtml(metadata.generatedAt)}</div><div><strong style="color:#417327;">تم الإنشاء بواسطة:</strong> ${escapeHtml(metadata.generatedBy)}</div>${unit}</section>`
 }
 
-export async function exportTranscriptPdf({ academicRecord }) {
+export async function exportTranscriptPdf({ academicRecord, template = 'default', request = {} }) {
+  if (template === EXAM_TRANSCRIPT_TEMPLATE) {
+    return exportExamBoardTranscriptPdf({ academicRecord, request })
+  }
   const student = academicRecord?.student
   const transcript = academicRecord?.transcript ?? {}
   const requirements = academicRecord?.requirements ?? {}
