@@ -37,7 +37,7 @@ $contract = static function (string $backendRoot): array {
     $expect(str_contains($sources['student_affairs'], '/v1/students/${id}/academic-record'), 'Student Affairs must use the authorized staff aggregate endpoint.');
     $expect(str_contains($sources['dean'], '/v1/students/${id}/academic-record'), 'Dean must use the authorized staff aggregate endpoint.');
 
-    foreach (['if (exporting.current) return', 'apiRequest(endpoint)', 'exportTranscriptPdf({ academicRecord: response.data })', 'جاري إنشاء الملف...', 'استخراج كشف العلامات الإلكتروني', 'تعذّر إنشاء كشف العلامات الإلكتروني. يرجى المحاولة مجدداً.'] as $required) {
+    foreach (['if (exporting.current) return', ': await apiRequest(endpoint)', '? await apiRequest(examExportEndpoint)', 'exportTranscriptPdf({ academicRecord: response.data })', 'جاري إنشاء الملف...', 'استخراج كشف العلامات الإلكتروني', 'تعذّر إنشاء كشف العلامات الإلكتروني. يرجى المحاولة مجدداً.'] as $required) {
         $expect(str_contains($sources['action'], $required), 'Shared export action contract missing: '.$required);
     }
 
@@ -52,6 +52,11 @@ $contract = static function (string $backendRoot): array {
         }
     }
     $expect(count($generatorFiles) === 1 && str_ends_with($generatorFiles[0] ?? '', '/features/academic-record/lib/transcriptPdf.js'), 'There must be exactly one shared transcript PDF generator.');
+    $expect(str_contains($sources['pdf'], "template = 'default'"), 'Shared transcript template must preserve its default.');
+    $expect(str_contains($sources['pdf'], 'if (template === EXAM_TRANSCRIPT_TEMPLATE)'), 'The approved exam form must be an explicit template exception.');
+    foreach (['student_affairs', 'student', 'dean'] as $surface) {
+        $expect(! str_contains($sources[$surface], 'exam-board-approved'), 'The approved exam template leaked into '.$surface.'.');
+    }
 
     foreach (['html2canvas', 'new jsPDF', 'pdfContentRef', 'heightLeft', 'position -= pageHeight'] as $legacy) {
         $expect(! str_contains($sources['student_affairs'], $legacy), 'Legacy tall-canvas export remains: '.$legacy);

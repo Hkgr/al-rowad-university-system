@@ -382,6 +382,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::get('students/{student}/requirements', [StudentController::class, 'requirements']);
     Route::get('students/{student}/graduation-eligibility', [StudentController::class, 'graduationEligibility']);
     Route::get('students/{student}/academic-record', [ExamStudentAcademicRecordController::class, 'show']);
+    Route::get('students/{student}/exam-transcript', [ExamStudentAcademicRecordController::class, 'export']);
     Route::get('students/{student}/documents', [StudentController::class, 'documents']);
     Route::post('students/{student}/documents', [StudentDocumentController::class, 'upload']);
     Route::get('students/{student}/registrations', [StudentController::class, 'registrations']);

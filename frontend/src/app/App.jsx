@@ -298,7 +298,7 @@ const router = createBrowserRouter(createRoutesFromElements(
         >
           <Route path="/exam-board"                element={protect(<ExamBoardHome />, { allPermissions: ['exams.view', 'exams.manage'] })} />
           <Route path="/exam-board/grade-sheet"   element={protect(<GradeSheetPage />, { permissions: ['grades.view'] })} />
-          <Route path="/exam-board/grade-sheet/:studentId" element={protect(<ExamStudentAcademicRecordPage />, { permissions: ['grades.view'] })} />
+          <Route path="/exam-board/grade-sheet/:studentId" element={protect(<ExamStudentAcademicRecordPage transcriptTemplate="exam-board-approved" />, { permissions: ['grades.view'] })} />
           <Route path="/exam-board/approvals"     element={protect(<ApprovalsPage />, { permissions: ['exams.manage'] })} />
           <Route path="/exam-board/deprivation"   element={protect(<DeprivationPage />, { permissions: ['exams.manage'] })} />
           <Route path="/exam-board/supplementary" element={protect(<SupplementaryExamsPage />, { permissions: [PERMISSIONS.supplementaryExamsRegistrationsView] })} />

@@ -35,19 +35,26 @@ test('all four individual transcript surfaces use the shared export action', () 
 
 test('shared action always refetches the full official record and prevents duplicate exports', () => {
   assert.match(action, /if \(exporting\.current\) return/)
-  assert.match(action, /const response = await apiRequest\(endpoint\)/)
+  assert.match(action, /: await apiRequest\(endpoint\)/)
+  assert.match(action, /\? await apiRequest\(examExportEndpoint\)/)
   assert.match(action, /exportTranscriptPdf\(\{ academicRecord: response\.data \}\)/)
   assert.match(action, /جاري إنشاء الملف\.\.\./)
   assert.match(action, /استخراج كشف العلامات الإلكتروني/)
   assert.match(action, /تعذّر إنشاء كشف العلامات الإلكتروني\. يرجى المحاولة مجدداً\./)
 })
 
-test('only the shared page-safe transcript generator remains', () => {
+test('the shared dispatcher preserves the default and explicitly opts the exam office into its paper template', () => {
   const generators = sourceFiles(srcRoot).filter(path => /export\s+(?:async\s+)?function\s+exportTranscriptPdf/.test(readFileSync(path, 'utf8')))
   assert.equal(generators.length, 1)
   assert.ok(generators[0].replaceAll('\\', '/').endsWith('/features/academic-record/lib/transcriptPdf.js'))
   assert.equal(existsSync(new URL('../src/features/exam-board/lib/transcriptPdf.js', import.meta.url)), false)
   assert.equal(existsSync(new URL('../src/features/exam-board/lib/academicRecordPresentation.js', import.meta.url)), false)
+  assert.match(pdf, /template = 'default'/)
+  assert.match(pdf, /if \(template === EXAM_TRANSCRIPT_TEMPLATE\)/)
+  const app = readFileSync(new URL('../src/app/App.jsx', import.meta.url), 'utf8')
+  assert.match(app, /path="\/exam-board\/grade-sheet\/:studentId" element=\{protect\(<ExamStudentAcademicRecordPage transcriptTemplate="exam-board-approved"/)
+  assert.match(app, /path="\/vp\/administrative\/exams\/grade-sheet\/:studentId" element=\{protect\(<ExamStudentAcademicRecordPage \/>/)
+  for (const surface of [studentAffairs, student, dean]) assert.equal(surface.includes('exam-board-approved'), false)
 
   for (const forbidden of ['html2canvas', 'new jsPDF', 'pdfContentRef', 'heightLeft', 'position -= pageHeight']) {
     assert.equal(studentAffairs.includes(forbidden), false, `${forbidden} must not remain in StudentProfilePage`)

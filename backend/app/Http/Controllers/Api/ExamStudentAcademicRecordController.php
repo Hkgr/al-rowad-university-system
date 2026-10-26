@@ -11,6 +11,21 @@ use Illuminate\Support\Facades\Gate;
 
 class ExamStudentAcademicRecordController extends ActionApiController
 {
+    public function export(
+        Request $request,
+        Student $student,
+        ExamStudentAcademicRecordService $records
+    ): JsonResponse {
+        $actor = $request->user();
+        abort_unless($actor?->isExamOfficer() === true && $actor->hasPermission('grades.view'), 403);
+        Gate::authorize('view', $student);
+
+        $payload = $records->examExportSnapshot($student, $actor);
+        $payload['student'] = (new StudentAcademicInfoResource($student))->resolve($request);
+
+        return $this->successResponse($payload);
+    }
+
     public function show(
         Request $request,
         Student $student,
