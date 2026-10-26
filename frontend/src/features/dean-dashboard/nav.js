@@ -9,25 +9,35 @@ const deanNav = [
     label: 'الرئيسية',
     items: [
       { to: '/dean', Icon: FaHome, ar: 'الرئيسية', en: 'Home', end: true },
+      { to: '/dean/calendar', Icon: FaCalendarAlt, ar: 'التقويم', en: 'Calendar' },
     ],
   },
   {
-    label: 'إدارة الكلية',
+    label: 'الطلاب والكوادر',
     items: [
       { to: '/dean/students', Icon: FaUsers, ar: 'الطلاب', en: 'Students' },
       { to: '/dean/teachers', Icon: FaChalkboardTeacher, ar: 'المدرسين', en: 'Teachers' },
+    ],
+  },
+  {
+    label: 'المواد والطروحات',
+    items: [
       { to: '/dean/courses', Icon: FaBook, ar: 'المواد', en: 'Courses' },
       { to: '/dean/registration-offerings', Icon: FaLockOpen, ar: 'حوكمة طروحات الفصل', en: 'Semester offering governance', assignedPermissions: ['course_offerings.semester_governance.view'] },
       { to: '/dean/term-offerings', Icon: FaPaperPlane, ar: 'طرح مواد الفصل', en: 'Term offerings' },
+    ],
+  },
+  {
+    label: 'التسجيل والامتحانات',
+    items: [
       { to: '/dean/registration-requests', Icon: FaClipboardList, ar: 'طلبات تسجيل الطلاب', en: 'Registration requests' },
       { to: '/dean/supplementary-exams', Icon: FaClipboardCheck, ar: 'الامتحانات التكميلية', en: 'Supplementary exams', allRoles: ['dean'], assignedPermissions: ['supplementary_exams.offerings.view'] },
     ],
   },
   {
-    label: 'المتابعة',
+    label: 'التقارير',
     items: [
       { to: '/dean/reports', Icon: FaChartBar, ar: 'التقارير', en: 'Reports', ...reportAccess('dean') },
-      { to: '/dean/calendar', Icon: FaCalendarAlt, ar: 'التقويم', en: 'Calendar' },
     ],
   },
   { label: 'المساعدة', items: [{ to: GUIDE_PATHS.dean, Icon: FaQuestionCircle, ar: 'دليل الاستخدام', en: 'User guide', ...GUIDE_ACCESS.dean }] },

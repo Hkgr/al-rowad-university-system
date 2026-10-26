@@ -4,17 +4,22 @@ import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
 import { reportNav } from '../portal-reports/reportNav'
 
 const professorNav = [
-  reportNav('professor'),
   {
-    label: 'بوابة الأستاذ',
+    label: 'الرئيسية',
     items: [
-      { to: '/professor/calendar', Icon: FaCalendarAlt, ar: 'التقويم الأكاديمي', en: 'Calendar' },
       { to: '/professor',            Icon: FaHome,          ar: 'الرئيسية',        en: 'Home',      end: true, permissions: ['grades.manage', 'attendance.manage'] },
+      { to: '/professor/calendar', Icon: FaCalendarAlt, ar: 'التقويم الأكاديمي', en: 'Calendar' },
+    ],
+  },
+  {
+    label: 'التدريس والامتحانات',
+    items: [
       { to: '/professor/attendance', Icon: FaCalendarCheck, ar: 'الحضور والحرمان', en: 'Attendance', permissions: ['attendance.manage'] },
       { to: '/professor/grades',     Icon: FaEdit,          ar: 'إدارة العلامات',  en: 'Grades',     permissions: ['grades.manage'] },
       { to: '/professor/supplementary-exams', Icon: FaEdit, ar: 'الامتحانات التكميلية', en: 'Supplementary', allRoles: ['doctor_instructor'], assignedPermissions: ['supplementary_exams.grades.view'] },
     ],
   },
+  reportNav('professor'),
   { label: 'المساعدة', items: [{ to: GUIDE_PATHS.professor, Icon: FaQuestionCircle, ar: 'دليل الاستخدام', en: 'User guide', ...GUIDE_ACCESS.professor }] },
 ]
 
