@@ -4,10 +4,12 @@ import { useOfficeNavigate as useNavigate } from '../../vice-presidency/utils/ad
 import { motion } from 'framer-motion'
 import {
   FaArrowRight, FaEdit, FaSpinner, FaUser, FaBookOpen,
-  FaGraduationCap, FaChartBar, FaCalendarCheck, FaCheckCircle, FaFolderOpen, FaCamera,
+  FaGraduationCap, FaChartBar, FaCalendarCheck, FaCheckCircle, FaFolderOpen, FaCamera, FaBalanceScale,
 } from 'react-icons/fa'
 import TranscriptPdfExportAction from '../../academic-record/components/TranscriptPdfExportAction'
 import StudentDocuments from '../components/StudentDocuments'
+import DisciplinaryCasesPage from './DisciplinaryCasesPage'
+import { DISCIPLINE_ACCESS, disciplineTitle } from '../lib/discipline'
 import { canAccess } from '../../auth/auth'
 import CourseRequirementBadges from '../../../components/academic/CourseRequirementBadges'
 
@@ -44,6 +46,7 @@ function gradeColor(letter) {
 const TABS = [
   { id: 'info',       ar: 'المعلومات الشخصية', Icon: FaUser          },
   { id: 'transcript', ar: 'كشف الدرجات',        Icon: FaGraduationCap },
+  { id: 'discipline', ar: disciplineTitle,       Icon: FaBalanceScale },
   { id: 'gpa',        ar: 'المعدل',              Icon: FaChartBar      },
   { id: 'attendance', ar: 'الحضور والغياب',      Icon: FaCalendarCheck },
   { id: 'documents',  ar: 'ملفات الطالب',        Icon: FaFolderOpen    },
@@ -627,7 +630,7 @@ const STATUS_STYLES = {
 export default function StudentProfilePage() {
   const { id }   = useParams()
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const [loading,        setLoading]        = useState(true)
   const [error,          setError]          = useState('')
@@ -637,13 +640,16 @@ export default function StudentProfilePage() {
   const [attendance,     setAttendance]     = useState(null)
   const [academicYears,  setAcademicYears]  = useState([])
   const [semesters,      setSemesters]      = useState([])
-  const initialTab = TABS.some(t => t.id === searchParams.get('tab')) ? searchParams.get('tab') : 'info'
-  const [activeTab,      setActiveTab]      = useState(initialTab)
+  const activeTab = TABS.some(t => t.id === searchParams.get('tab')) ? searchParams.get('tab') : 'info'
   const [photoUrl,       setPhotoUrl]       = useState(null)
   const [photoTypeId,    setPhotoTypeId]    = useState(null)
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [avatarError,    setAvatarError]    = useState('')
   const avatarInputRef = useRef(null)
+  const activeTabRef = useRef(null)
+  useEffect(() => {
+    if (!loading) activeTabRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  }, [activeTab, loading])
 
   useEffect(() => {
     let objectUrl = null
@@ -878,15 +884,16 @@ export default function StudentProfilePage() {
       <div className="bg-white border border-primary/12 rounded-[18px] shadow-[0_2px_16px_rgba(26,46,16,0.06)] overflow-hidden">
         {/* Tab bar */}
         <div className="flex border-b border-primary/10 overflow-x-auto" dir="rtl">
-          {TABS.map(tab => (
+          {TABS.filter(tab => tab.id !== 'discipline' || canAccess(DISCIPLINE_ACCESS)).map(tab => (
             <button
               key={tab.id}
+              ref={activeTab === tab.id ? activeTabRef : undefined}
               className={`flex items-center gap-2 px-5 py-3.5 text-[13px] font-bold whitespace-nowrap border-b-2 transition-all duration-[180ms] ${
                 activeTab === tab.id
                   ? 'text-primary border-primary bg-primary/[0.04]'
                   : 'text-text-gray border-transparent hover:text-text-dark hover:bg-primary/[0.02]'
               }`}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => setSearchParams(current => { const next = new URLSearchParams(current); next.set('tab', tab.id); return next }, { replace: true })}
             >
               <tab.Icon />
               <span>{tab.ar}</span>
@@ -913,6 +920,7 @@ export default function StudentProfilePage() {
             </>
           )}
           {activeTab === 'gpa'        && <GPATab studentId={id} cgpa={cgpa} academicYears={academicYears} semesters={semesters} />}
+          {activeTab === 'discipline' && <DisciplinaryCasesPage key={id} studentId={id} />}
           {activeTab === 'attendance' && <AttendanceTab attendance={attendance} />}
           {activeTab === 'documents'  && <StudentDocuments studentId={id} />}
           {activeTab === 'registrations' && <RegisteredCoursesTab studentId={id} />}

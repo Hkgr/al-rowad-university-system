@@ -1,10 +1,11 @@
 import {
-  FaHome, FaGraduationCap, FaUserPlus, FaArchive, FaUsers, FaClipboardCheck, FaBookOpen, FaCalendarAlt, FaQuestionCircle, FaPen,
+  FaHome, FaGraduationCap, FaUserPlus, FaArchive, FaUsers, FaClipboardCheck, FaBookOpen, FaCalendarAlt, FaQuestionCircle, FaPen, FaBalanceScale,
 } from 'react-icons/fa'
 import { ACCESS } from '../auth/auth'
 import { GUIDE_ACCESS, GUIDE_PATHS } from '../user-guide/guideAccess'
 
 import { reportNav } from '../portal-reports/reportNav'
+import { DISCIPLINE_ACCESS, disciplineTitle } from './lib/discipline'
 
 const studentAffairsNav = [
   {
@@ -29,6 +30,10 @@ const studentAffairsNav = [
       { to: '/student-affairs/supplementary-exams', Icon: FaBookOpen, ar: 'التسجيل التكميلي', en: 'Supplementary registration', end: true, allPermissions: ['students.view'], allRoles: ['registration_officer'], assignedPermissions: ['supplementary_exams.registrations.view'] },
       { to: '/student-affairs/approved-registration-requests', Icon: FaClipboardCheck, FaBookOpen, ar: 'طلبات التسجيل المعتمدة', en: 'Approved requests', end: true, ...ACCESS.studentAffairsApprovedRegistrationRequests },
     ],
+  },
+  {
+    label: 'الحياة الجامعية',
+    items: [{ to: '/student-affairs/disciplinary-cases', Icon: FaBalanceScale, ar: disciplineTitle, en: 'Warnings and penalties', ...DISCIPLINE_ACCESS }],
   },
   {
     label: 'الخريجون',

@@ -619,6 +619,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureActiveAccount::cla
     Route::apiResource('grade-audit-logs', GradeAuditLogController::class);
     Route::apiResource('grade-components', GradeComponentController::class);
     Route::apiResource('grading-policies', GradingPolicyController::class);
+    Route::get('disciplinary-cases/options', [DisciplinaryCaseController::class, 'options']);
     Route::apiResource('disciplinary-cases', DisciplinaryCaseController::class)
         ->only(['index', 'show', 'store']);
     Route::apiResource('disciplinary-case-appeals', DisciplinaryCaseAppealController::class)

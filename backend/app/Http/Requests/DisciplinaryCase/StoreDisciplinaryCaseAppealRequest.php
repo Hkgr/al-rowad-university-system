@@ -15,7 +15,7 @@ class StoreDisciplinaryCaseAppealRequest extends FormRequest
     {
         return [
             'case_id' => 'required|integer|exists:student_disciplinary_cases,case_id',
-            'appeal_reason' => 'required|string',
+            'appeal_reason' => 'required|string|max:10000',
         ];
     }
 }

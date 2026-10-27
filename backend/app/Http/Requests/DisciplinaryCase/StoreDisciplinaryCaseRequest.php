@@ -17,7 +17,7 @@ class StoreDisciplinaryCaseRequest extends FormRequest
             'student_id' => 'required|integer|exists:students,student_id',
             'violation_type_id' => 'required|integer|exists:disciplinary_violation_types,violation_type_id',
             'trigger_course_offering_id' => 'nullable|integer|exists:course_offerings,course_offering_id',
-            'violation_description' => 'required|string',
+            'violation_description' => 'required|string|max:10000',
             'violation_date' => 'required|date',
             'decision_number' => 'nullable|string|max:80',
             'decision_date' => 'required|date',
