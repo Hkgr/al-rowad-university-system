@@ -6,6 +6,52 @@
 
 ## Introduction
 
+### Student Affairs interface and access (2026-10-27)
+
+The existing module is now available at `/student-affairs/disciplinary-cases` and
+`/vp/administrative/student-affairs/disciplinary-cases`. Student profile URLs support
+`?tab=discipline`, immediately after the transcript tab. The Arabic label is
+**الإنذارات والعقوبات**: recorded disciplinary warnings/penalties, not GPA warnings.
+
+- Every disciplinary case/appeal read and write now checks an active account,
+  actual registration-officer role and actual academic scope, or the actual
+  administrative VP role with university scope. The central super-admin bypass
+  remains unchanged. Read requires existing `students.view`; recording requires
+  that plus existing `students.manage` and mutation scope for the actual student.
+  No permissions, roles or scopes are assigned by this feature.
+- Case listing accepts nullable `q` (120 characters maximum), `case_status`,
+  `student_id`, `page` and `per_page` (1–100; default 15). It keeps the original
+  `success/data/data`, `links` and `meta` pagination envelope. Search matches name
+  parts and university number. Relations are eagerly loaded and student identity
+  is limited to ID, number, name and archive indicator.
+- `GET /api/v1/disciplinary-cases/options` provides active recorded violation/
+  penalty types, up to 20 scoped non-archived student search results (`q`), and
+  target-specific capabilities. Optional `student_id` also provides that scoped
+  identity and offerings from its latest 100 matching registrations; `offering_q`
+  searches all its registrations by course name/code before the limit. It does not create
+  lookup values, evidence, cases or registrations.
+- Detail reads load recorded appeals/statuses and affected-course history.
+  `capabilities.record_appeal` and `can_record_decision` describe actual target
+  access; mutation requests independently reauthorize. Broad list responses do
+  not advertise record-specific mutation authority before opening a detail.
+- POST endpoints and payloads remain the existing service contracts. They record
+  already-issued decisions; selecting an issuing authority does not assign that
+  authority's role to the operator. Existing zero-mark/restore and Incomplete/
+  supplementary protections remain in `DisciplinaryCaseService` and grade models.
+- Controller entry transactions acquire the existing catalog context before the
+  student/case/appeal locks. A decided appeal cannot be overwritten (`409`);
+  an overturned/expired case cannot be reopened by another appeal registration.
+- Missing existing disciplinary tables return controlled `503`, not an empty
+  history. Unauthorized access returns `403`, out-of-scope reads `404`, invalid
+  inputs `422`, and state conflicts `409`.
+- These legacy endpoints have no operation UUID receipt contract. The UI never
+  automatically retries a POST. Missing/invalid acknowledgements retain the
+  proposal and disable submission; explicit read recovery is not presented as
+  proof that the original write succeeded. Review the record before discarding
+  that proposal or manually preparing another operation.
+
+See `docs/student-disciplinary-interface.md` for verification and limitations.
+
 هذا الوحدة تدير **نظام العقوبات التأديبية** وفق الفصل العاشر من اللائحة (المواد 68–73): تسجيل مخالفات الطلاب، ربطها بأنواع العقوبات، تطبيق عقوبة صفر المقرر والمقررات اللاحقة عند الحاجة، وتقديم الطعون والبت فيها.
 
 This module manages student disciplinary cases: create cases with a penalty type, optionally cascade zero marks to the trigger course and subsequent same-term offerings (by theoretical exam date), and handle appeals (submit / accept / reject with mark restore on accept).

@@ -2,10 +2,12 @@
 
 namespace App\Http\Resources;
 
+use App\Models\DisciplinaryCaseAppeal;
+use App\Support\StudentDisciplineAccess;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-/** @mixin \App\Models\DisciplinaryCaseAppeal */
+/** @mixin DisciplinaryCaseAppeal */
 class DisciplinaryCaseAppealResource extends JsonResource
 {
     public function toArray(Request $request): array
@@ -22,8 +24,9 @@ class DisciplinaryCaseAppealResource extends JsonResource
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
             'appeal_status' => $this->whenLoaded('appealStatus'),
-            'disciplinary_case' => $this->whenLoaded('disciplinaryCase'),
-            'reviewed_by' => $this->whenLoaded('reviewedBy'),
+            'disciplinary_case' => $this->whenLoaded('disciplinaryCase', fn () => $this->disciplinaryCase?->attributesToArray()),
+            'can_record_decision' => StudentDisciplineAccess::presentationWrite($request)
+                && $this->relationLoaded('appealStatus') && $this->appealStatus?->status_code === 'submitted',
         ];
     }
 }

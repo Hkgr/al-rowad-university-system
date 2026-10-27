@@ -22,7 +22,7 @@ export const ADMINISTRATIVE_DIRECTORATES = Object.freeze([
   directorate('73', 'مديرية شؤون الطلاب', [
     office('731', 'مكتب الإرشاد والتوجيه', ['/vp/administrative/calendar']),
     office('732', 'مكتب القبول والتسجيل', ['/vp/administrative/student-affairs/students/add', '/vp/administrative/student-affairs/ministry-placements', '/vp/administrative/student-affairs/supplementary-exams', '/vp/administrative/exams/course-registration', '/vp/administrative/exams/approved-registration-requests', '/vp/administrative/exams/registration-reports']),
-    office('733', 'مكتب الخدمات الطلابية', ['/vp/administrative/student-affairs/students', '/vp/administrative/student-affairs/students/archived', '/vp/administrative/student-affairs/graduates', '/vp/administrative/student-affairs/reports']),
+    office('733', 'مكتب الخدمات الطلابية', ['/vp/administrative/student-affairs/students', '/vp/administrative/student-affairs/students/archived', '/vp/administrative/student-affairs/disciplinary-cases', '/vp/administrative/student-affairs/graduates', '/vp/administrative/student-affairs/reports']),
     office('734', 'مكتب المنح والإيفاد والتبادل الطلابي'),
     office('735', 'إدارة الامتحانات', ['/vp/administrative/exams/courses', '/vp/administrative/exams/course-offerings', '/vp/administrative/exams/course-table', '/vp/administrative/exams/deprivation', '/vp/administrative/exams/manual-grade-entry', '/vp/administrative/exams/grade-sheet', '/vp/administrative/exams/approvals', '/vp/administrative/exams/incomplete-results', '/vp/administrative/exams/supplementary', '/vp/administrative/exams/supplementary-grades', '/vp/administrative/exams/results']),
     office('736', 'مكتب التوثيق والتدقيق', ['/vp/administrative/student-affairs/approved-registration-requests']),

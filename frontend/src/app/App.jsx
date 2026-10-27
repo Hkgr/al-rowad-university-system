@@ -12,6 +12,8 @@ import { ACCESS, PERMISSIONS, ROLES, canAccess, clearIdentity, getIdentity, land
 
 // ── شؤون الطلاب (Student Affairs) ──────────────────────────────────────────
 import studentAffairsNav from '../features/student-affairs/nav'
+import DisciplinaryCasesPage from '../features/student-affairs/pages/DisciplinaryCasesPage'
+import { DISCIPLINE_ACCESS } from '../features/student-affairs/lib/discipline'
 import StudentAffairsHome   from '../features/student-affairs/pages/StudentAffairsHome'
 import StudentsPage         from '../features/student-affairs/pages/StudentsPage'
 import AddStudentPage       from '../features/student-affairs/pages/AddStudentPage'
@@ -226,6 +228,7 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/student-affairs/course-registration" element={protect(<StudentAffairsCourseRegistrationPage />, ACCESS.studentAffairsCourseRegistration)} />
           <Route path="/student-affairs/approved-registration-requests" element={protect(<ApprovedRegistrationRequestsPage />, { permissions: ['registration.view'] })} />
           <Route path="/student-affairs/calendar" element={<AcademicCalendarPage />} />
+          <Route path="/student-affairs/disciplinary-cases" element={protect(<DisciplinaryCasesPage />, DISCIPLINE_ACCESS)} />
         </Route>
 
         {/* ── دليل شؤون الطلاب: union of the three groups that render studentAffairsNav ── */}
@@ -465,6 +468,7 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route path="/vp/administrative/student-affairs/course-registration" element={protect(<StudentAffairsCourseRegistrationPage />, ACCESS.studentAffairsCourseRegistration)} />
           <Route path="/vp/administrative/student-affairs/approved-registration-requests" element={protect(<ApprovedRegistrationRequestsPage />, ACCESS.studentAffairsApprovedRegistrationRequests)} />
           <Route path="/vp/administrative/student-affairs/reports" element={protect(<PortalReportsPage portal="student-affairs" />, reportAccess('student-affairs'))} />
+          <Route path="/vp/administrative/student-affairs/disciplinary-cases" element={protect(<DisciplinaryCasesPage />, DISCIPLINE_ACCESS)} />
           <Route path="/vp/administrative/exams/manual-grade-entry" element={protect(<ManualGradeEntryPage />, ACCESS.manualGradeEntry)} />
           <Route path="/vp/administrative/exams/incomplete-results" element={protect(<IncompleteResultsPage />, ACCESS.manualGradeEntry)} />
           <Route path="/vp/administrative/exams/incomplete-results/:caseId" element={protect(<IncompleteResultsPage />, ACCESS.manualGradeEntry)} />

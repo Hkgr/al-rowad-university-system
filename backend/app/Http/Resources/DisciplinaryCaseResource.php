@@ -2,10 +2,12 @@
 
 namespace App\Http\Resources;
 
+use App\Models\StudentDisciplinaryCase;
+use App\Support\StudentDisciplineAccess;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-/** @mixin \App\Models\StudentDisciplinaryCase */
+/** @mixin StudentDisciplinaryCase */
 class DisciplinaryCaseResource extends JsonResource
 {
     public function toArray(Request $request): array
@@ -33,12 +35,14 @@ class DisciplinaryCaseResource extends JsonResource
             'case_status' => $this->case_status,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
-            'student' => $this->whenLoaded('student'),
+            'student' => $this->whenLoaded('student', fn () => $this->student ? StudentDisciplineAccess::identity($this->student) : null),
             'violation_type' => $this->whenLoaded('violationType'),
             'penalty_type' => $this->whenLoaded('penaltyType'),
             'trigger_course_offering' => $this->whenLoaded('triggerCourseOffering'),
             'affected_courses' => $this->whenLoaded('affectedCourses'),
             'appeals' => DisciplinaryCaseAppealResource::collection($this->whenLoaded('appeals')),
+            'capabilities' => ['record_appeal' => StudentDisciplineAccess::presentationWrite($request)
+                && ! in_array($this->case_status, ['overturned', 'expired'], true)],
         ];
     }
 }
